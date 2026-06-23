@@ -5,9 +5,9 @@ import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vs } from "react-syntax-highlighter/dist/cjs/styles/prism";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/cjs/styles/prism";
 import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import { useTheme } from "@/hooks/useTheme";
 import { encodeFilePathForApi, getFileName, getRelativeFilePath } from "@/lib/file-paths";
+import { markdownPreviewRehypePlugins, markdownPreviewRemarkPlugins } from "@/lib/markdown";
 
 interface Props {
   filePath: string;
@@ -958,7 +958,12 @@ function TextFileViewer({ filePath, cwd }: Props) {
             className="markdown-body markdown-file-preview"
             style={{ padding: "24px 32px", maxWidth: 800 }}
           >
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{data.content}</ReactMarkdown>
+            <ReactMarkdown
+              remarkPlugins={markdownPreviewRemarkPlugins}
+              rehypePlugins={markdownPreviewRehypePlugins}
+            >
+              {data.content}
+            </ReactMarkdown>
           </div>
         ) : (
           <SyntaxHighlighter

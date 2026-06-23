@@ -2,13 +2,11 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
-import rehypeKatex from "rehype-katex";
-import remarkGfm from "remark-gfm";
-import remarkMath from "remark-math";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vs } from "react-syntax-highlighter/dist/cjs/styles/prism";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/cjs/styles/prism";
 import { useTheme } from "@/hooks/useTheme";
+import { markdownRehypePlugins, markdownRemarkPlugins } from "@/lib/markdown";
 
 interface MarkdownBodyProps {
   children: string;
@@ -41,8 +39,8 @@ export function MarkdownBody({ children, className, isStreaming }: MarkdownBodyP
   return (
     <div className={["markdown-body", className].filter(Boolean).join(" ")}>
       <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkMath]}
-        rehypePlugins={[[rehypeKatex, { throwOnError: false, strict: false }]]}
+        remarkPlugins={markdownRemarkPlugins}
+        rehypePlugins={markdownRehypePlugins}
         components={{
           code({ className, children, ...props }) {
             const lang = className?.replace("language-", "").toLowerCase() ?? "";

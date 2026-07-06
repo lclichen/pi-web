@@ -105,6 +105,7 @@ type SlashCommandSource = SlashCommandPaletteItem["source"];
 
 const BUILTIN_SLASH_COMMANDS: SlashCommandPaletteItem[] = [
   { name: "compact", description: "Compress context, optionally with instructions", source: "builtin" },
+  { name: "reload", description: "Reload extensions, skills, prompts, and tools", source: "builtin" },
   { name: "name", description: "Set the session display name", source: "builtin" },
   { name: "session", description: "Show session message, token, and cost stats", source: "builtin" },
   { name: "copy", description: "Copy the last assistant message", source: "builtin" },

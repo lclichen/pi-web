@@ -430,12 +430,18 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       setEntryIds(d.context.entryIds ?? []);
       setCurrentModelOverride(null);
       setError(null);
-      if (d.agentState?.state?.extensionStatuses) setExtensionStatuses(d.agentState.state.extensionStatuses);
-      if (d.agentState?.state?.extensionWidgets) setExtensionWidgets(d.agentState.state.extensionWidgets);
-      if (d.agentState?.state?.queuedMessages !== undefined) setQueuedMessages(normalizeQueuedMessages(d.agentState.state.queuedMessages));
+      const liveState = d.agentState?.state;
+      if (liveState) {
+        if (liveState.contextUsage !== undefined) setContextUsage(liveState.contextUsage ?? null);
+        if (liveState.systemPrompt !== undefined) setSystemPrompt(liveState.systemPrompt ?? null);
+        if (liveState.thinkingLevel !== undefined) setThinkingLevel((liveState.thinkingLevel as ThinkingLevelOption) ?? "auto");
+        if (liveState.extensionStatuses !== undefined) setExtensionStatuses(liveState.extensionStatuses ?? []);
+        if (liveState.extensionWidgets !== undefined) setExtensionWidgets(liveState.extensionWidgets ?? []);
+        if (liveState.queuedMessages !== undefined) setQueuedMessages(normalizeQueuedMessages(liveState.queuedMessages));
+      }
       else if (d.agentState && !d.agentState.running) setQueuedMessages({ steering: [], followUp: [] });
       // If no live agent state, fall back to thinking level from session file
-      if (!d.agentState?.state?.thinkingLevel && d.context.thinkingLevel && d.context.thinkingLevel !== "off") {
+      if (!liveState?.thinkingLevel && d.context.thinkingLevel && d.context.thinkingLevel !== "off") {
         setThinkingLevel(d.context.thinkingLevel as ThinkingLevelOption);
       }
       return d.agentState ?? null;
@@ -1123,6 +1129,26 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }
   }, [isCompacting, loadSession]);
 
+  const loadModels = useCallback(async (signal?: AbortSignal) => {
+    const modelCwd = newSessionCwd ?? session?.cwd ?? "";
+    const modelsUrl = modelCwd ? `/api/models?cwd=${encodeURIComponent(modelCwd)}` : "/api/models";
+    const res = await fetch(modelsUrl, signal ? { signal } : undefined);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const d = await res.json() as ModelsResponse;
+    setModelNames(d.models);
+    setModelThinkingLevels(d.thinkingLevels ?? {});
+    setModelThinkingLevelMaps(d.thinkingLevelMaps ?? {});
+    const nextModelList = d.modelList ?? [];
+    setModelList(nextModelList);
+    if (isNew) {
+      const match = d.defaultModel
+        ? nextModelList.find((m) => m.id === d.defaultModel?.modelId && m.provider === d.defaultModel?.provider)
+        : undefined;
+      const displayModel = match ?? nextModelList[0];
+      setNewSessionDefaultModel(displayModel ? { provider: displayModel.provider, modelId: displayModel.id } : null);
+    }
+  }, [isNew, newSessionCwd, session?.cwd]);
+
   const handleBuiltinSlashCommand = useCallback(async (text: string): Promise<BuiltinSlashCommandResult> => {
     if (!text.startsWith("/")) return { handled: false };
     const match = text.match(/^\/([^\s]+)(?:\s+([\s\S]*))?$/);
@@ -1155,6 +1181,18 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           setCompactResult(readCompactResult(result, "manual"));
           if (await loadSession(sid, true)) promoteNewSession();
           return complete({ handled: true, message: "Compacted context" });
+        }
+
+        case "reload": {
+          if (!sid) return complete({ handled: true, error: "No active session to reload" });
+          await sendAgentCommand(sid, { type: "reload" });
+          await Promise.all([
+            loadSession(sid, false, true),
+            loadTools(sid),
+            loadSlashCommands(),
+            loadModels(),
+          ]);
+          return complete({ handled: true, message: "Reloaded session resources" });
         }
 
         case "name": {
@@ -1192,7 +1230,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     } finally {
       if (commandName === "compact") setIsCompacting(false);
     }
-  }, [addNotice, ensureNewSession, isCompacting, loadSession, promoteNewSession, onSessionStatsPanelOpen]);
+  }, [addNotice, ensureNewSession, isCompacting, loadModels, loadSession, loadSlashCommands, loadTools, promoteNewSession, onSessionStatsPanelOpen]);
 
   // Queued (undelivered) messages live in the queue panel only; the chat gets
   // the real user message when pi delivers it (user message_end event). An
@@ -1414,30 +1452,12 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
   // Load model list
   useEffect(() => {
-    const modelCwd = newSessionCwd ?? session?.cwd ?? "";
-    const modelsUrl = modelCwd ? `/api/models?cwd=${encodeURIComponent(modelCwd)}` : "/api/models";
     const controller = new AbortController();
-    fetch(modelsUrl, { signal: controller.signal }).then((r) => {
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      return r.json();
-    }).then((d: ModelsResponse) => {
-      setModelNames(d.models);
-      setModelThinkingLevels(d.thinkingLevels ?? {});
-      setModelThinkingLevelMaps(d.thinkingLevelMaps ?? {});
-      const nextModelList = d.modelList ?? [];
-      setModelList(nextModelList);
-      if (isNew) {
-        const match = d.defaultModel
-          ? nextModelList.find((m) => m.id === d.defaultModel?.modelId && m.provider === d.defaultModel?.provider)
-          : undefined;
-        const displayModel = match ?? nextModelList[0];
-        setNewSessionDefaultModel(displayModel ? { provider: displayModel.provider, modelId: displayModel.id } : null);
-      }
-    }).catch((e) => {
+    loadModels(controller.signal).catch((e) => {
       if (e instanceof DOMException && e.name === "AbortError") return;
     });
     return () => controller.abort();
-  }, [isNew, modelsRefreshKey, newSessionCwd, session?.cwd]);
+  }, [loadModels, modelsRefreshKey]);
 
   // Compact error auto-dismiss
   useEffect(() => {

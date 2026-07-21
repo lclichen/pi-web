@@ -32,9 +32,9 @@
     "release": "npm version patch --no-git-tag-version && npm run build && npm publish --access public"
   },
   "dependencies": {
-    "@earendil-works/pi-ai": "^0.80.10",
-    "@earendil-works/pi-coding-agent": "^0.80.10",
-    "@earendil-works/pi-tui": "^0.80.10",
+    "@earendil-works/pi-ai": "^0.81.0",
+    "@earendil-works/pi-coding-agent": "^0.81.0",
+    "@earendil-works/pi-tui": "^0.81.0",
     "@lobehub/icons": "^5.6.0",
     "@types/react-syntax-highlighter": "^15.5.13",
     "katex": "^0.16.47",

@@ -33,6 +33,28 @@ PORT=8080 pi-web                # 也支持环境变量
 PI_WEB_NO_OPEN=1 pi-web         # 适用于后台服务或开机自启
 ```
 
+## HTTP 代理
+
+Pi Web 的服务端模型请求和 API 请求会读取标准的 `HTTP_PROXY`、`HTTPS_PROXY` 和 `NO_PROXY` 环境变量。
+
+macOS 或 Linux：
+
+```bash
+HTTP_PROXY=http://127.0.0.1:7890 \
+HTTPS_PROXY=http://127.0.0.1:7890 \
+NO_PROXY=localhost,127.0.0.1 \
+npx @agegr/pi-web@latest
+```
+
+Windows PowerShell：
+
+```powershell
+$env:HTTP_PROXY = "http://127.0.0.1:7890"
+$env:HTTPS_PROXY = "http://127.0.0.1:7890"
+$env:NO_PROXY = "localhost,127.0.0.1"
+npx @agegr/pi-web@latest
+```
+
 ## 功能介绍
 
 - **把历史工作接回来**：打开网页就能按项目找到以前的 pi 对话，不必在终端里翻文件或记住会话路径。
@@ -95,6 +117,7 @@ components/
   FileExplorer.tsx    # 文件树
   FileViewer.tsx      # 源码、diff、图片、音频、PDF、DOCX 预览
 lib/
+  http-dispatcher.ts  # 服务端 fetch 的 HTTP(S) 代理配置
   rpc-manager.ts      # AgentSessionWrapper 生命周期和全局 registry
   session-reader.ts   # 解析 .jsonl 会话文件和分支上下文
   normalize.ts        # 规范化 toolCall 字段名
@@ -109,4 +132,5 @@ hooks/
   useTheme.ts         # 主题切换
 bin/
   pi-web.js           # npm CLI 入口
+instrumentation.ts    # 初始化服务端 HTTP dispatcher
 ```

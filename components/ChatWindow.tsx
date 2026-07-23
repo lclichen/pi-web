@@ -7,6 +7,7 @@ import { asBracketedPaste, toTerminalKeyData } from "@/lib/terminal-input";
 import { countToolCallBlocks, getDisplayableAssistantBlocks, splitFinalAssistantBlocks } from "@/lib/message-display";
 import { MessageView } from "./MessageView";
 import { ChatInput, type ChatInputHandle } from "./ChatInput";
+import { LabTrainingButtons } from "./LabTrainingButtons";
 import { ChatMinimap, useMessageRefs } from "./ChatMinimap";
 import { useAgentSession, type AgentPhase, type NoticeItem } from "@/hooks/useAgentSession";
 import { useAudio } from "@/hooks/useAudio";
@@ -430,6 +431,11 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
               </div>
             </div>
             <NoticeShelf notices={notices} align="right" />
+            <LabTrainingButtons
+              extensionWidgets={extensionWidgets}
+              onSendCommand={(cmd) => handleSend(cmd)}
+              disabled={sessionBusy}
+            />
             {chatInputElement}
           </div>
         </div>
@@ -683,6 +689,11 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
             <ExtensionWidgets widgets={belowEditorWidgets} />
           </div>
         </div>
+        <LabTrainingButtons
+          extensionWidgets={extensionWidgets}
+          onSendCommand={(cmd) => handleSend(cmd)}
+          disabled={sessionBusy}
+        />
         {chatInputElement}
       </div>
       </>

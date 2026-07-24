@@ -128,6 +128,7 @@ export interface ServerEntry {
   lifecycle?: "keep-alive" | "lazy" | "eager";
   idleTimeout?: number;
   requestTimeoutMs?: number;
+  toolTimeoutMs?: number;
   exposeResources?: boolean;
   directTools?: boolean | string[];
   excludeTools?: string[];
@@ -185,3 +186,22 @@ export interface ProbeResult {
   error?: string;
   needsAuth?: boolean;
 }
+
+export interface McpServerTools {
+  server: string;
+  scope: ConfigScope;
+  transport: McpTransport;
+  tools: McpTool[];
+  error?: string;
+  needsAuth?: boolean;
+}
+
+export interface WebPreferences {
+  mcpEnabled: boolean;
+  subagentsEnabled: boolean;
+}
+
+export const DEFAULT_PREFERENCES: WebPreferences = {
+  mcpEnabled: true,
+  subagentsEnabled: true,
+};

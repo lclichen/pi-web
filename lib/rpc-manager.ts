@@ -4,6 +4,8 @@ import { randomUUID } from "crypto";
 import { existsSync, writeFileSync } from "fs";
 import { invalidateModelsCache } from "./models-cache";
 import { cacheSessionPath, invalidateSessionListCache } from "./session-reader";
+import { readPreferences } from "./preferences-service";
+import { readMcpConfig } from "./mcp-config";
 import type { SlashCommandInfo } from "@earendil-works/pi-coding-agent";
 import type { AgentSessionLike, ExtensionUiContextLike, ToolInfo } from "./pi-types";
 import type { ExtensionUiRequest, ExtensionUiResponse, ExtensionWidgetItem } from "./types";
@@ -59,6 +61,22 @@ type ExtensionBindingOptions = {
 };
 
 const CODING_TOOL_NAMES = ["read", "bash", "edit", "write", "grep", "find", "ls"];
+const SUBAGENT_TOOL_NAMES = new Set(["Agent", "get_subagent_result", "steer_subagent"]);
+
+function getMcpServerPrefixes(cwd: string): Set<string> {
+  try {
+    return new Set(readMcpConfig(cwd).servers.map((s) => s.name));
+  } catch {
+    return new Set();
+  }
+}
+
+function isMcpTool(name: string, prefixes: Set<string>): boolean {
+  for (const p of prefixes) {
+    if (name.startsWith(`${p}_`)) return true;
+  }
+  return false;
+}
 
 // Extensions require a complete Theme, while the web UI applies its own styling.
 class PlainTextTheme extends Theme {
@@ -233,6 +251,30 @@ export class AgentSessionWrapper {
         ? this.extensionBindingError
         : new Error(String(this.extensionBindingError));
     }
+  }
+
+  /** Apply web-preferences tool filtering after extensions are bound. */
+  applyToolPreferences(cwd: string): void {
+    void this.waitForExtensionsBound()
+      .then(() => {
+        const prefs = readPreferences(cwd);
+        if (prefs.mcpEnabled && prefs.subagentsEnabled) return;
+        const allNames = this.inner.getAllTools().map((t) => t.name);
+        let filtered = allNames;
+        if (!prefs.mcpEnabled) {
+          const prefixes = getMcpServerPrefixes(cwd);
+          if (prefixes.size > 0) {
+            filtered = filtered.filter((n) => !isMcpTool(n, prefixes));
+          }
+        }
+        if (!prefs.subagentsEnabled) {
+          filtered = filtered.filter((n) => !SUBAGENT_TOOL_NAMES.has(n));
+        }
+        if (filtered.length !== allNames.length) {
+          this.inner.setActiveToolsByName(filtered);
+        }
+      })
+      .catch(() => {});
   }
 
   private shouldWaitForExtensions(type: string): boolean {
@@ -534,6 +576,12 @@ export class AgentSessionWrapper {
         this.setForceEmptySystemPrompt(toolNames.length === 0);
         this.inner.setActiveToolsByName(withExtensionTools(this.inner, toolNames));
         this.applyForcedEmptySystemPrompt();
+        return null;
+      }
+
+      case "apply_preferences": {
+        const prefCwd = command.cwd as string;
+        this.applyToolPreferences(prefCwd);
         return null;
       }
 
@@ -1096,6 +1144,7 @@ export async function startRpcSession(
     wrapper.onDestroy(() => registry.delete(realSessionId));
     registry.set(realSessionId, wrapper);
     wrapper.beginExtensionBinding({ forceEmptySystemPrompt: toolNames?.length === 0 });
+    wrapper.applyToolPreferences(cwd);
 
     return { session: wrapper, realSessionId };
   })().finally(() => locks.delete(sessionId));

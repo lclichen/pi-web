@@ -17,7 +17,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { copyText } from "@/lib/clipboard";
 import { getFileName } from "@/lib/file-paths";
-import { buildAtMentionText, buildFileAtMentionsText } from "@/lib/file-fuzzy";
+import { buildAtMentionText, buildFileAtMentionsText, buildFileLineMentionText } from "@/lib/file-fuzzy";
 import { getInitialNavigation } from "@/lib/initial-navigation";
 import type { SessionInfo, SessionTreeNode } from "@/lib/types";
 import type { ChatInputHandle } from "./ChatInput";
@@ -164,6 +164,10 @@ export function AppShell() {
   const handleAtMentions = useCallback((relativePaths: string[]) => {
     const mentions = buildFileAtMentionsText(relativePaths);
     if (mentions) chatInputRef.current?.insertText(mentions);
+  }, []);
+
+  const handleFileLineMention = useCallback((relativePath: string, startLine: number, endLine: number) => {
+    chatInputRef.current?.insertText(buildFileLineMentionText(relativePath, startLine, endLine));
   }, []);
 
   const initialSessionId = initialNavigation.sessionId;
@@ -1268,6 +1272,7 @@ export function AppShell() {
               cwd={activeCwd ?? undefined}
               sourceSessionId={activeFileTab.sourceSessionId}
               gitRefreshKey={explorerRefreshKey}
+              onMentionLines={rightPanelOpen ? handleFileLineMention : undefined}
               onOpenFile={(filePath) => handleOpenFile(
                 filePath,
                 getFileName(filePath),

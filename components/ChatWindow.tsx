@@ -1,7 +1,7 @@
 "use client";
 import { registerAbortHandler } from "@/hooks/useKeyboardShortcuts";
-import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import type { AgentMessage, AssistantContentBlock, AssistantMessage, BashExecutionMessage, ExtensionUiRequest, SessionInfo, SessionTreeNode, ToolResultMessage } from "@/lib/types";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import type { AgentMessage, AssistantContentBlock, AssistantMessage, BashExecutionMessage, CustomMessage, ExtensionUiRequest, SessionInfo, SessionTreeNode, ToolResultMessage } from "@/lib/types";
 import { normalizeCustomPanelLines, parseAnsiLine } from "@/lib/ansi";
 import { asBracketedPaste, toTerminalKeyData } from "@/lib/terminal-input";
 import { countToolCallBlocks, getDisplayableAssistantBlocks, splitFinalAssistantBlocks } from "@/lib/message-display";
@@ -74,6 +74,20 @@ function findFinalAssistantIndex(messages: AgentMessage[], userIdx: number, endI
   return -1;
 }
 
+function getUserInputText(message: AgentMessage): string | null {
+  if (message.role !== "user") return null;
+  if (typeof message.content === "string") {
+    const text = message.content.trim();
+    return text.length > 0 ? text : null;
+  }
+  const text = message.content
+    .filter((block) => block.type === "text")
+    .map((block) => block.text)
+    .join("\n")
+    .trim();
+  return text.length > 0 ? text : null;
+}
+
 function countToolCalls(messages: AgentMessage[], indices: number[]): number {
   let count = 0;
   for (const idx of indices) {
@@ -89,6 +103,19 @@ function hasDisplayableProcessMessage(message: AgentMessage): boolean {
     return getDisplayableAssistantBlocks(message as AssistantMessage).length > 0;
   }
   return message.role === "custom";
+}
+
+// A user message normally anchors a turn (user prompt → process → final
+// answer), and the process messages in between get folded into a collapsed
+// ProcessDetailsGroup. When compaction fires mid-turn, pi drops the original
+// user prompt and inserts a compaction summary (role "custom", customType
+// "compaction") in its place; the agent then keeps producing tool calls and a
+// final answer with no user message left to anchor them. Treat a compaction
+// summary as an anchor too, otherwise every post-compaction message renders
+// standalone and never collapses.
+function isGroupAnchor(message: AgentMessage): boolean {
+  if (message.role === "user") return true;
+  return message.role === "custom" && (message as CustomMessage).customType === "compaction";
 }
 
 function withAssistantBlocks(
@@ -170,7 +197,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
 
   const {
     loading, error, messages, entryIds, streamState,
-    agentRunning, bashRunning, pendingBash, modelNames, modelList, modelThinkingLevels, modelThinkingLevelMaps, toolPreset, thinkingLevel,
+    agentRunning, bashRunning, pendingBash, modelNames, modelList, modelError, modelThinkingLevels, modelThinkingLevelMaps, toolPreset, thinkingLevel,
     retryInfo, contextUsage, forkingEntryId,
     isCompacting, compactError, compactResult, displayModel: displayModelValue, sessionStats,
     slashCommands, slashCommandsLoading, queuedMessages,
@@ -278,6 +305,18 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
   const { isDragOver, handleDragEnter, handleDragOver, handleDragLeave, handleDrop } = useDragDrop(onDrop);
 
   const visibleMessages = messages.filter((m) => m.role === "user" || m.role === "assistant");
+  const inputHistory = useMemo(() => {
+    const seen = new Set<string>();
+    const history: string[] = [];
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      const text = getUserInputText(messages[i]);
+      if (!text || seen.has(text)) continue;
+      seen.add(text);
+      history.push(text);
+      if (history.length >= 50) break;
+    }
+    return history.reverse();
+  }, [messages]);
   const messageRefs = useMessageRefs(visibleMessages.length);
 
   const labWidget = extensionWidgets.find((w) => w.key === "lab-training");
@@ -308,6 +347,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
       isAutoModelSelection={isAutoModelSelection}
       modelNames={modelNames}
       modelList={modelList}
+      modelError={modelError}
       onModelChange={handleModelChange}
       onCompact={session || isNew ? handleCompact : undefined}
       onAbortCompaction={handleAbortCompaction}
@@ -322,6 +362,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
       thinkingLevelMap={currentThinkingLevelMap}
       retryInfo={retryInfo}
       queuedMessages={queuedMessages}
+      inputHistory={inputHistory}
       onRecallQueue={handleRecallQueue}
       slashCommands={slashCommands}
       slashCommandsLoading={slashCommandsLoading}
@@ -482,6 +523,15 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
               for (let i = messages.length - 1; i >= 0; i--) {
                 if (messages[i].role === "user") { lastUserIdx = i; break; }
               }
+              // Anchor for live-tail detection: the last user message, or a
+              // compaction summary when compaction has replaced it mid-turn.
+              // Computed independently from lastUserIdx (which is kept for the
+              // scroll-to-user ref) because a compaction summary can sit after
+              // the last user message and anchor the still-streaming segment.
+              let lastAnchorIdx = -1;
+              for (let i = messages.length - 1; i >= 0; i--) {
+                if (isGroupAnchor(messages[i])) { lastAnchorIdx = i; break; }
+              }
 
               const visibleRefIndexByMessage = new Map<number, number>();
               let refIdx = 0;
@@ -553,7 +603,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
                   idx += 1;
                   continue;
                 }
-                if (msg.role !== "user") {
+                if (!isGroupAnchor(msg)) {
                   rendered.push(renderMessage(idx));
                   idx += 1;
                   continue;
@@ -561,7 +611,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
 
                 const userIdx = idx;
                 let endIdx = userIdx + 1;
-                while (endIdx < messages.length && messages[endIdx].role !== "user") endIdx += 1;
+                while (endIdx < messages.length && !isGroupAnchor(messages[endIdx])) endIdx += 1;
 
                 const finalAssistantIdx = findFinalAssistantIndex(messages, userIdx, endIdx);
 
@@ -573,7 +623,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
                   continue;
                 }
 
-                const isLiveTail = (sessionBusy || streamState.isStreaming) && endIdx === messages.length && userIdx === lastUserIdx;
+                const isLiveTail = (sessionBusy || streamState.isStreaming) && endIdx === messages.length && userIdx === lastAnchorIdx;
                 if (isLiveTail) {
                   for (let renderIdx = userIdx; renderIdx < endIdx; renderIdx++) {
                     rendered.push(renderMessage(renderIdx));

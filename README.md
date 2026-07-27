@@ -1,6 +1,6 @@
 # Pi Web
 
-[中文文档](./README.zh-CN.md)
+[中文文档](./README.zh-CN.md) | [日本語](./README.ja.md)
 
 Local web UI for the [pi coding agent](https://github.com/badlogic/pi-mono). Pi Web reads your local pi session files and gives you a browser workspace for session browsing, real-time chat, model configuration, skill management, and project file preview.
 
@@ -9,6 +9,8 @@ Local web UI for the [pi coding agent](https://github.com/badlogic/pi-mono). Pi 
 The same pi session in CLI and Pi Web: structured tool calls, readable Markdown, session browsing, and cleaner results.
 
 ## Quick Start
+
+Pi Web requires Node.js 22.19.0 or newer. Check your version with `node --version`.
 
 **Run without installing:**
 
@@ -23,19 +25,22 @@ npm install -g @agegr/pi-web
 pi-web
 ```
 
-Then open [http://localhost:30141](http://localhost:30141). The CLI will try to open the browser automatically after the server is ready.
+Then open [http://127.0.0.1:30141](http://127.0.0.1:30141). The CLI will try to open the browser automatically after the server is ready. Pi Web listens on `127.0.0.1` by default.
 
 **Options:**
 
 ```bash
 pi-web --port 8080              # custom port
-pi-web --hostname 127.0.0.1     # local access only
-pi-web -p 8080 -H 127.0.0.1     # combine options
+pi-web --hostname 0.0.0.0       # expose on a trusted network
+pi-web -p 8080 -H 0.0.0.0       # combine options
 pi-web --no-open                # do not open the browser automatically
 
 PORT=8080 pi-web                # environment variable is also supported
+PI_WEB_HOSTNAME=0.0.0.0 pi-web  # explicit network exposure
 PI_WEB_NO_OPEN=1 pi-web         # useful when running as a background service
 ```
+
+Pi Web has no application-level authentication and can invoke a high-privilege agent. Do not expose it to the internet; only use non-loopback bindings on a trusted network.
 
 ## HTTP Proxy
 
@@ -84,7 +89,7 @@ npm install
 npm run dev
 ```
 
-The local dev server runs at [http://localhost:30141](http://localhost:30141).
+The local dev server runs at [http://127.0.0.1:30141](http://127.0.0.1:30141).
 
 Common checks:
 
@@ -102,6 +107,7 @@ app/
   api/
     agent/          # creates/drives AgentSession and exposes SSE events
     auth/           # OAuth and API key management
+    cwd/browse/     # browsable server directory listing
     cwd/validate/   # custom working directory validation
     default-cwd/    # pi default working directory lookup
     files/          # file listing, reading, preview, and watching
@@ -113,6 +119,7 @@ app/
 components/
   AppShell.tsx        # main layout, URL state, top panels, file tabs
   SessionSidebar.tsx  # project selector, session tree, Explorer
+  DirectoryPicker.tsx # browsable and editable working-directory picker
   ChatWindow.tsx      # messages, SSE, image drag/drop, minimap
   ChatInput.tsx       # input bar, model/tools/thinking/compact/slash controls
   MessageView.tsx     # message, thinking, tool call/result rendering
@@ -121,6 +128,7 @@ components/
   FileExplorer.tsx    # file tree
   FileViewer.tsx      # source, diff, image, audio, PDF, DOCX preview
 lib/
+  directory-browser.ts # directory normalization and safe listing helpers
   http-dispatcher.ts  # HTTP(S) proxy setup for server-side fetch
   rpc-manager.ts      # AgentSessionWrapper lifecycle and global registry
   session-reader.ts   # parses .jsonl session files and branch contexts

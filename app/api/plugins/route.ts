@@ -9,6 +9,7 @@ import {
   type ResolvedPaths,
   type ResolvedResource,
 } from "@earendil-works/pi-coding-agent";
+import { getAllowedFileRoots, isExistingFilePathAllowed } from "@/lib/file-access";
 import type {
   PluginDiagnostic,
   PluginPackageInfo,
@@ -272,6 +273,10 @@ export async function GET(req: Request) {
   if (!cwd) return NextResponse.json({ error: "cwd required" }, { status: 400 });
 
   try {
+    const allowedRoots = await getAllowedFileRoots();
+    if (!isExistingFilePathAllowed(cwd, allowedRoots)) {
+      return NextResponse.json({ error: "Access denied" }, { status: 403 });
+    }
     return NextResponse.json(await readPlugins(cwd));
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
@@ -289,6 +294,10 @@ export async function POST(req: Request) {
     };
     if (!body.cwd) return NextResponse.json({ error: "cwd required" }, { status: 400 });
     if (!body.action) return NextResponse.json({ error: "action required" }, { status: 400 });
+    const allowedRoots = await getAllowedFileRoots();
+    if (!isExistingFilePathAllowed(body.cwd, allowedRoots)) {
+      return NextResponse.json({ error: "Access denied" }, { status: 403 });
+    }
 
     const settingsManager = SettingsManager.create(body.cwd, getAgentDir());
     const packageManager = new DefaultPackageManager({

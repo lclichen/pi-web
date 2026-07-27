@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { runNpx } from "@/lib/npx";
+import { getAllowedFileRoots, isExistingFilePathAllowed } from "@/lib/file-access";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +13,13 @@ export async function POST(req: Request) {
     if (!pkg?.trim()) return NextResponse.json({ error: "package required" }, { status: 400 });
 
     const isGlobal = scope !== "project";
+    if (!isGlobal) {
+      if (!cwd) return NextResponse.json({ error: "cwd required for project install" }, { status: 400 });
+      const allowedRoots = await getAllowedFileRoots();
+      if (!isExistingFilePathAllowed(cwd, allowedRoots)) {
+        return NextResponse.json({ error: "Access denied" }, { status: 403 });
+      }
+    }
     const args = ["skills", "add", pkg.trim(), "-y", "--agent", "pi"];
     if (isGlobal) args.push("-g");
 

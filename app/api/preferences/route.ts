@@ -20,6 +20,7 @@ export async function PUT(req: Request) {
     const prefs: WebPreferences = {
       mcpEnabled: body.mcpEnabled ?? true,
       subagentsEnabled: body.subagentsEnabled ?? true,
+      labVerifyEnabled: body.labVerifyEnabled ?? true,
     };
     writePreferences(body.cwd, prefs);
     return NextResponse.json({ success: true });

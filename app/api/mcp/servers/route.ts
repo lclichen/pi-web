@@ -22,9 +22,9 @@ export async function POST(req: Request) {
     if (!body.entry || typeof body.entry !== "object") {
       return NextResponse.json({ error: "entry required" }, { status: 400 });
     }
-    if (!body.entry.command && !body.entry.url) {
+    if (!body.entry.command && !body.entry.url && !body.entry.socket) {
       return NextResponse.json(
-        { error: "entry must have either command or url" },
+        { error: "entry must have command, url, or socket" },
         { status: 400 },
       );
     }

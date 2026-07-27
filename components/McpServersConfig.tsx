@@ -42,11 +42,11 @@ interface ServerForm {
   bearerToken: string; bearerTokenEnv: string;
   lifecycle: string; idleTimeout: string; toolTimeoutMs: string;
   directToolsMode: "off" | "all" | "list"; directToolsList: string;
-  excludeTools: string; debug: boolean;
+  includeTools: string; excludeTools: string; debug: boolean;
 }
 
 function emptyServerForm(scope: ConfigScope = "project"): ServerForm {
-  return { name: "", scope, transport: "http", command: "", args: "", env: "", cwd: "", url: "", headers: "", auth: "none", bearerToken: "", bearerTokenEnv: "", lifecycle: "keep-alive", idleTimeout: "", toolTimeoutMs: "", directToolsMode: "all", directToolsList: "", excludeTools: "", debug: false };
+  return { name: "", scope, transport: "http", command: "", args: "", env: "", cwd: "", url: "", headers: "", auth: "none", bearerToken: "", bearerTokenEnv: "", lifecycle: "keep-alive", idleTimeout: "", toolTimeoutMs: "", directToolsMode: "all", directToolsList: "", includeTools: "", excludeTools: "", debug: false };
 }
 
 function entryToForm(name: string, scope: ConfigScope, entry: ServerEntry): ServerForm {
@@ -63,6 +63,7 @@ function entryToForm(name: string, scope: ConfigScope, entry: ServerEntry): Serv
     lifecycle: entry.lifecycle ?? "", idleTimeout: entry.idleTimeout !== undefined ? String(entry.idleTimeout) : "",
     toolTimeoutMs: entry.toolTimeoutMs !== undefined ? String(entry.toolTimeoutMs) : (entry.requestTimeoutMs !== undefined ? String(entry.requestTimeoutMs) : ""),
     directToolsMode, directToolsList,
+    includeTools: entry.includeTools?.join(", ") ?? "",
     excludeTools: entry.excludeTools?.join(", ") ?? "", debug: entry.debug === true,
   };
 }
@@ -85,6 +86,7 @@ function formToEntry(form: ServerForm): ServerEntry {
   if (form.toolTimeoutMs.trim() !== "") { const n = Number(form.toolTimeoutMs); if (Number.isFinite(n)) entry.toolTimeoutMs = n; }
   if (form.directToolsMode === "all") entry.directTools = true;
   else if (form.directToolsMode === "list") { const list = form.directToolsList.split(",").map((s) => s.trim()).filter(Boolean); if (list.length) entry.directTools = list; }
+  const include = form.includeTools.split(",").map((s) => s.trim()).filter(Boolean); if (include.length) entry.includeTools = include;
   const exclude = form.excludeTools.split(",").map((s) => s.trim()).filter(Boolean); if (exclude.length) entry.excludeTools = exclude;
   if (form.debug) entry.debug = true;
   return entry;
@@ -114,7 +116,7 @@ export function McpServersConfig({ cwd, onClose }: { cwd: string; onClose: () =>
   const [showSettings, setShowSettings] = useState(false);
   const [settingsDraft, setSettingsDraft] = useState<McpSettings>({});
   const [settingsSaving, setSettingsSaving] = useState(false);
-  const [prefs, setPrefs] = useState<WebPreferences>({ mcpEnabled: true, subagentsEnabled: true });
+  const [prefs, setPrefs] = useState<WebPreferences>({ mcpEnabled: true, subagentsEnabled: true, labVerifyEnabled: true });
 
   const servers = useMemo(() => doc?.servers ?? [], [doc]);
   const grouped = useMemo(() => {
@@ -265,7 +267,7 @@ export function McpServersConfig({ cwd, onClose }: { cwd: string; onClose: () =>
 
         {showSettings && (
           <div style={{ padding: "10px 16px", borderBottom: "1px solid var(--border)", background: "var(--bg-panel)", display: "flex", flexWrap: "wrap", gap: 10, alignItems: "flex-end" }}>
-            <div style={{ width: 140 }}><Field label="toolPrefix"><select style={inputStyle} value={settingsDraft.toolPrefix ?? ""} onChange={(e) => setSettingsDraft((s) => ({ ...s, toolPrefix: (e.target.value || undefined) as McpSettings["toolPrefix"] }))}><option value="">(default)</option><option value="server">server</option><option value="none">none</option><option value="short">short</option></select></Field></div>
+            <div style={{ width: 140 }}><Field label="toolPrefix"><select style={inputStyle} value={settingsDraft.toolPrefix ?? ""} onChange={(e) => setSettingsDraft((s) => ({ ...s, toolPrefix: (e.target.value || undefined) as McpSettings["toolPrefix"] }))}><option value="">(default)</option><option value="server">server</option><option value="none">none</option><option value="short">short</option><option value="mcp">mcp</option></select></Field></div>
             <div style={{ width: 110 }}><Field label="idleTimeout (min)"><input style={inputStyle} value={settingsDraft.idleTimeout ?? ""} onChange={(e) => setSettingsDraft((s) => ({ ...s, idleTimeout: e.target.value === "" ? undefined : Number(e.target.value) }))} /></Field></div>
             <button onClick={saveSettings} disabled={settingsSaving} style={buttonStyle(true)}>{settingsSaving ? "Saving..." : "Save Settings"}</button>
           </div>
@@ -357,7 +359,7 @@ export function McpServersConfig({ cwd, onClose }: { cwd: string; onClose: () =>
 
                 {/* Common params */}
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                  <div style={{ width: 140 }}><Field label="lifecycle"><select style={inputStyle} value={form.lifecycle} onChange={(e) => set("lifecycle", e.target.value)}><option value="">(default)</option><option value="keep-alive">keep-alive</option><option value="lazy">lazy</option><option value="eager">eager</option></select></Field></div>
+                  <div style={{ width: 140 }}><Field label="lifecycle"><select style={inputStyle} value={form.lifecycle} onChange={(e) => set("lifecycle", e.target.value)}><option value="">(default)</option><option value="keep-alive">keep-alive</option><option value="lazy">lazy</option><option value="lazy-keep-alive">lazy-keep-alive</option><option value="eager">eager</option></select></Field></div>
                   <div style={{ width: 130 }}><Field label="idleTimeout"><input style={inputStyle} value={form.idleTimeout} onChange={(e) => set("idleTimeout", e.target.value)} placeholder="10000" /></Field></div>
                   <div style={{ width: 150 }}><Field label="toolTimeoutMs"><input style={inputStyle} value={form.toolTimeoutMs} onChange={(e) => set("toolTimeoutMs", e.target.value)} placeholder="1800000" /></Field></div>
                 </div>
@@ -365,6 +367,7 @@ export function McpServersConfig({ cwd, onClose }: { cwd: string; onClose: () =>
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                   <div style={{ width: 140 }}><Field label="directTools"><select style={inputStyle} value={form.directToolsMode} onChange={(e) => set("directToolsMode", e.target.value as ServerForm["directToolsMode"])}><option value="off">off</option><option value="all">all (true)</option><option value="list">whitelist</option></select></Field></div>
                   {form.directToolsMode === "list" && <div style={{ flex: 1 }}><Field label="directTools whitelist (comma-separated)"><input style={inputStyle} value={form.directToolsList} onChange={(e) => set("directToolsList", e.target.value)} /></Field></div>}
+                  <div style={{ flex: 1 }}><Field label="includeTools (comma-separated)"><input style={inputStyle} value={form.includeTools} onChange={(e) => set("includeTools", e.target.value)} /></Field></div>
                   <div style={{ flex: 1 }}><Field label="excludeTools (comma-separated)"><input style={inputStyle} value={form.excludeTools} onChange={(e) => set("excludeTools", e.target.value)} /></Field></div>
                 </div>
 

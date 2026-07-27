@@ -114,9 +114,12 @@ export interface AgentDetail extends AgentInfo {
 
 // Structured mirror of pi-mcp-adapter ServerEntry (types.ts) — copied, not imported,
 // to avoid a direct dependency on the third-party package.
+// Keep in sync with pi-mcp-adapter 2.15.0 types.ts.
 export interface ServerEntry {
   command?: string;
   args?: string[];
+  /** Explicit rmcp-mux Unix-domain socket path (2.15.0). Mutually exclusive with command and url. */
+  socket?: string;
   env?: Record<string, string>;
   cwd?: string;
   url?: string;
@@ -125,18 +128,36 @@ export interface ServerEntry {
   bearerToken?: string;
   bearerTokenEnv?: string;
   oauth?: unknown;
-  lifecycle?: "keep-alive" | "lazy" | "eager";
+  lifecycle?: "keep-alive" | "lazy" | "lazy-keep-alive" | "eager";
   idleTimeout?: number;
   requestTimeoutMs?: number;
   toolTimeoutMs?: number;
   exposeResources?: boolean;
   directTools?: boolean | string[];
+  /** Include/exclude specific MCP tools/resources by original or prefixed name (2.13.0). */
+  includeTools?: string[];
   excludeTools?: string[];
   debug?: boolean;
+  /** Enable metadata-only JSONL protocol tracing for this server (2.13.0). */
+  trace?: boolean;
+  /** Keep configuration visible without allowing connections or execution (2.12.0). */
+  disabled?: boolean;
+}
+
+export type McpToolPrefix = "server" | "none" | "short" | "mcp";
+export type McpHostConfigDiscovery = "off" | "prompt" | "on";
+
+export interface McpTraceSettings {
+  enabled?: boolean;
+  file?: string;
+  maxBytes?: number;
+  maxEvents?: number;
 }
 
 export interface McpSettings {
-  toolPrefix?: "server" | "none" | "short";
+  toolPrefix?: McpToolPrefix;
+  showStatusIcon?: boolean;
+  hostConfigDiscovery?: McpHostConfigDiscovery;
   idleTimeout?: number;
   requestTimeoutMs?: number;
   directTools?: boolean;
@@ -146,7 +167,9 @@ export interface McpSettings {
   samplingAutoApprove?: boolean;
   elicitation?: boolean;
   outputGuard?: boolean | Record<string, number>;
+  trace?: McpTraceSettings;
   authRequiredMessage?: string;
+  oauthDir?: string;
 }
 
 export type McpTransport = "stdio" | "http";
@@ -199,9 +222,11 @@ export interface McpServerTools {
 export interface WebPreferences {
   mcpEnabled: boolean;
   subagentsEnabled: boolean;
+  labVerifyEnabled: boolean;
 }
 
 export const DEFAULT_PREFERENCES: WebPreferences = {
   mcpEnabled: true,
   subagentsEnabled: true,
+  labVerifyEnabled: true,
 };

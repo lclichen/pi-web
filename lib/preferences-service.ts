@@ -17,6 +17,7 @@ export function readPreferences(cwd: string): WebPreferences {
     return {
       mcpEnabled: raw.mcpEnabled ?? DEFAULT_PREFERENCES.mcpEnabled,
       subagentsEnabled: raw.subagentsEnabled ?? DEFAULT_PREFERENCES.subagentsEnabled,
+      labVerifyEnabled: raw.labVerifyEnabled ?? DEFAULT_PREFERENCES.labVerifyEnabled,
     };
   } catch {
     return { ...DEFAULT_PREFERENCES };

@@ -48,8 +48,11 @@ export async function probeServer(
   entry: ServerEntry,
   timeoutMs: number = DEFAULT_TIMEOUT_MS,
 ): Promise<ProbeResult> {
-  if (!entry.url && !entry.command) {
-    return { tools: [], error: "Server entry has neither url nor command" };
+  if (!entry.url && !entry.command && !entry.socket) {
+    return { tools: [], error: "Server entry has neither url, command, nor socket" };
+  }
+  if (entry.socket) {
+    return { tools: [], error: "rmcp-mux Unix socket probing is not supported from the web panel" };
   }
   const client = new Client(
     { name: "pi-web-mcp-probe", version: "1.0.0" },

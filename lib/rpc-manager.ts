@@ -916,6 +916,7 @@ export class AgentSessionWrapper {
             key,
             lines: content,
             placement: options?.placement ?? "aboveEditor",
+            metadata: options?.metadata,
           });
         }
         this.emit({
@@ -925,6 +926,7 @@ export class AgentSessionWrapper {
           widgetKey: key,
           widgetLines: content,
           widgetPlacement: options?.placement,
+          widgetMetadata: options?.metadata,
         } as ExtensionUiRequest as AgentEvent);
       },
       setFooter: () => {},

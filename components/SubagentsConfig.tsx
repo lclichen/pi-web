@@ -195,7 +195,7 @@ export function SubagentsConfig({ cwd, onClose }: { cwd: string; onClose: () => 
   const [discovery, setDiscovery] = useState<ToolDiscovery | null>(null);
   const [discoveryLoading, setDiscoveryLoading] = useState(false);
   const [showToolPicker, setShowToolPicker] = useState(false);
-  const [prefs, setPrefs] = useState<WebPreferences>({ mcpEnabled: true, subagentsEnabled: true });
+  const [prefs, setPrefs] = useState<WebPreferences>({ mcpEnabled: true, subagentsEnabled: true, labVerifyEnabled: true });
 
   const grouped = useMemo(() => {
     return (["project", "global"] as ConfigScope[])

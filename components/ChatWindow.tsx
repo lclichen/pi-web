@@ -8,6 +8,8 @@ import { countToolCallBlocks, getDisplayableAssistantBlocks, splitFinalAssistant
 import { MessageView } from "./MessageView";
 import { ChatInput, type ChatInputHandle } from "./ChatInput";
 import { LabTrainingButtons } from "./LabTrainingButtons";
+import { LabTrainingPanel } from "./LabTrainingPanel";
+import { SessionToolbar } from "./SessionToolbar";
 import { ChatMinimap, useMessageRefs } from "./ChatMinimap";
 import { useAgentSession, type AgentPhase, type NoticeItem } from "@/hooks/useAgentSession";
 import { useAudio } from "@/hooks/useAudio";
@@ -278,6 +280,10 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
   const visibleMessages = messages.filter((m) => m.role === "user" || m.role === "assistant");
   const messageRefs = useMessageRefs(visibleMessages.length);
 
+  const labWidget = extensionWidgets.find((w) => w.key === "lab-training");
+  const hasLabPanel = !!labWidget && !!labWidget.metadata;
+  const hasLabTraining = slashCommands.some((c) => c.name === "lab" || c.name === "/lab");
+
   const isEmptyNew = isNew && messages.length === 0 && !streamState.isStreaming && !sessionBusy;
   const messageCwd = session?.cwd ?? newSessionCwd ?? undefined;
 
@@ -542,6 +548,10 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
               const rendered: ReactNode[] = [];
               for (let idx = 0; idx < messages.length;) {
                 const msg = messages[idx];
+                if (hasLabPanel && msg.role === "custom" && (msg as { customType?: string }).customType === "lab-training") {
+                  idx += 1;
+                  continue;
+                }
                 if (msg.role !== "user") {
                   rendered.push(renderMessage(idx));
                   idx += 1;
@@ -668,7 +678,13 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
             </div>
           </div>
         </div>
-        {isMobile ? null : (
+        {isMobile ? null : hasLabPanel ? (
+          <LabTrainingPanel
+            widgetMetadata={labWidget!.metadata}
+            onSendCommand={(cmd) => handleSend(cmd)}
+            disabled={sessionBusy}
+          />
+        ) : (
           <ChatMinimap
             messages={messages}
             streamingMessage={streamState.streamingMessage}
@@ -689,11 +705,24 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
             <ExtensionWidgets widgets={belowEditorWidgets} />
           </div>
         </div>
-        <LabTrainingButtons
-          extensionWidgets={extensionWidgets}
-          onSendCommand={(cmd) => handleSend(cmd)}
-          disabled={sessionBusy}
-        />
+        {!hasLabPanel && (
+          <LabTrainingButtons
+            extensionWidgets={extensionWidgets}
+            onSendCommand={(cmd) => handleSend(cmd)}
+            disabled={sessionBusy}
+          />
+        )}
+        <div style={{ padding: `0 ${CHAT_COLUMN_PADDING}px`, paddingRight: isMobile ? CHAT_COLUMN_PADDING : CHAT_INPUT_RIGHT_PADDING }}>
+          <div style={{ maxWidth: 820, margin: "0 auto" }}>
+            <SessionToolbar
+              cwd={messageCwd ?? ""}
+              sessionId={session?.id ?? null}
+              hasLabTraining={hasLabTraining}
+              onSendCommand={(cmd) => handleSend(cmd)}
+              disabled={sessionBusy}
+            />
+          </div>
+        </div>
         {chatInputElement}
       </div>
       </>

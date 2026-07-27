@@ -20,23 +20,9 @@ interface WidgetState {
 }
 
 const WIDGET_KEY = "lab-training";
-const METADATA_PREFIX = "<!--lab-training:widget:";
-const METADATA_SUFFIX = "-->";
-
-function parseWidgetState(lines: string[] | undefined): WidgetState | null {
-  if (!lines || lines.length === 0) return null;
-  const first = lines[0];
-  if (!first.startsWith(METADATA_PREFIX)) return null;
-  const json = first.slice(METADATA_PREFIX.length, -METADATA_SUFFIX.length);
-  try {
-    return JSON.parse(json) as WidgetState;
-  } catch {
-    return null;
-  }
-}
 
 interface LabTrainingButtonsProps {
-  extensionWidgets: Array<{ key: string; lines: string[]; placement?: string }>;
+  extensionWidgets: Array<{ key: string; lines: string[]; placement?: string; metadata?: unknown }>;
   onSendCommand: (command: string) => void;
   disabled?: boolean;
 }
@@ -47,7 +33,7 @@ export function LabTrainingButtons({
   disabled,
 }: LabTrainingButtonsProps) {
   const widget = extensionWidgets.find((w) => w.key === WIDGET_KEY);
-  const state = parseWidgetState(widget?.lines);
+  const state = (widget?.metadata as WidgetState | undefined) ?? null;
 
   if (!state || state.actions.length === 0) return null;
 

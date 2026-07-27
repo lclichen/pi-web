@@ -25,17 +25,25 @@ interface LabTrainingButtonsProps {
   extensionWidgets: Array<{ key: string; lines: string[]; placement?: string; metadata?: unknown }>;
   onSendCommand: (command: string) => void;
   disabled?: boolean;
+  showStartFallback?: boolean;
 }
 
 export function LabTrainingButtons({
   extensionWidgets,
   onSendCommand,
   disabled,
+  showStartFallback,
 }: LabTrainingButtonsProps) {
   const widget = extensionWidgets.find((w) => w.key === WIDGET_KEY);
   const state = (widget?.metadata as WidgetState | undefined) ?? null;
 
-  if (!state || state.actions.length === 0) return null;
+  const actions = state?.actions.length
+    ? state.actions
+    : showStartFallback
+      ? [{ id: "start", label: "开始Lab Training", command: "/lab", variant: "primary" as const }]
+      : [];
+
+  if (actions.length === 0) return null;
 
   const variantClass = {
     primary: "bg-blue-600 text-white hover:bg-blue-700",
@@ -43,23 +51,23 @@ export function LabTrainingButtons({
     danger: "bg-red-600 text-white hover:bg-red-700",
   };
 
-  const showProgress = state.mode === "training" && state.stepTotal > 0;
-  const showLocation = state.mode === "training" || state.mode === "qa";
+  const showProgress = state?.mode === "training" && state.stepTotal > 0;
+  const showLocation = state?.mode === "training" || state?.mode === "qa";
 
   return (
     <div className="border-t border-gray-200 dark:border-gray-700 px-4 py-2">
       <div className="flex items-center gap-2 mb-2">
-        {state.mode === "qa" && (
+        {state?.mode === "qa" && (
           <span className="px-2 py-0.5 text-xs font-bold rounded bg-purple-600 text-white animate-pulse">
             QA MODE
           </span>
         )}
-        {state.labTitle && (
+        {state?.labTitle && (
           <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
             {state.labTitle}
           </span>
         )}
-        {showLocation && state.sectionTitle && (
+        {showLocation && state?.sectionTitle && (
           <span className="text-xs text-gray-500">
             {state.sectionTitle}
             {state.blockTitle ? ` > ${state.blockTitle}` : ""}
@@ -81,14 +89,14 @@ export function LabTrainingButtons({
         </div>
       )}
 
-      {state.pendingManualConfirm && (
+        {state?.pendingManualConfirm && (
         <p className="text-xs text-amber-600 dark:text-amber-400 mb-2">
           Complete the step above, then click &quot;Confirm Done&quot;
         </p>
       )}
 
       <div className="flex gap-2 flex-wrap">
-        {state.actions.map((action) => (
+        {actions.map((action) => (
           <button
             key={action.id}
             onClick={() => onSendCommand(action.command)}

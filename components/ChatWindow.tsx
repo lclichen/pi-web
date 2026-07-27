@@ -441,6 +441,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
               extensionWidgets={extensionWidgets}
               onSendCommand={(cmd) => handleSend(cmd)}
               disabled={sessionBusy}
+              showStartFallback={hasLabTraining}
             />
             {chatInputElement}
           </div>

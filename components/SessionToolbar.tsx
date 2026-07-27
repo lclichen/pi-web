@@ -79,7 +79,7 @@ export function SessionToolbar({ cwd, sessionId, hasLabTraining, onSendCommand, 
               <path d="M5 3l14 9-14 9V3z" />
             </svg>
           </span>
-          Start Lab
+          开始Lab Training
         </button>,
       );
 

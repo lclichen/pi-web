@@ -10,7 +10,16 @@ interface StepView {
   expectedResult?: string;
   image?: string;
   notes: Note[];
+  teaching?: TeachingGuidance;
   subSteps?: NavSubStep[];
+}
+
+interface TeachingGuidance {
+  goal?: string;
+  why?: string;
+  commonMistakes?: string[];
+  successSignals?: string[];
+  hints?: string[];
 }
 
 interface Note {
@@ -25,6 +34,7 @@ interface NavSubStep {
   codeLanguage?: string;
   expectedResult?: string;
   notes: Note[];
+  teaching?: TeachingGuidance;
 }
 
 interface WidgetAction {
@@ -205,7 +215,15 @@ export function LabTrainingPanel({ widgetMetadata, onSendCommand, disabled }: Pr
 function StepContent({ step }: { step: StepView }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      {step.teaching?.goal && (
+        <div style={{ fontSize: 12, color: "var(--accent)", fontWeight: 600 }}>{step.teaching.goal}</div>
+      )}
+
       <div style={{ fontSize: 13, lineHeight: 1.6, color: "var(--text)" }}>{step.instruction}</div>
+
+      {step.teaching?.why && (
+        <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5 }}>{step.teaching.why}</div>
+      )}
 
       {step.code && (
         <pre
@@ -265,6 +283,10 @@ function StepContent({ step }: { step: StepView }) {
         </div>
       )}
 
+      <TeachingList title="Success" items={step.teaching?.successSignals} />
+      <TeachingList title="Hints" items={step.teaching?.hints} />
+      <TeachingList title="Watch" items={step.teaching?.commonMistakes} />
+
       {step.subSteps && step.subSteps.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 8, paddingTop: 4, borderTop: "1px solid var(--border)" }}>
           <span style={{ fontSize: 10, fontWeight: 600, color: "var(--text-dim)", textTransform: "uppercase" }}>Sub-steps</span>
@@ -307,6 +329,7 @@ function SubStepView({ sub, num }: { sub: NavSubStep; num: number }) {
           {sub.expectedResult}
         </div>
       )}
+      <TeachingList title="Hints" items={sub.teaching?.hints} compact />
       {sub.notes.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
           {sub.notes.map((note, i) => {
@@ -320,6 +343,20 @@ function SubStepView({ sub, num }: { sub: NavSubStep; num: number }) {
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+function TeachingList({ title, items, compact }: { title: string; items?: string[]; compact?: boolean }) {
+  if (!items || items.length === 0) return null;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: compact ? 2 : 4 }}>
+      <span style={{ fontSize: compact ? 9 : 10, fontWeight: 600, color: "var(--text-dim)", textTransform: "uppercase" }}>{title}</span>
+      {items.map((item, i) => (
+        <div key={i} style={{ fontSize: compact ? 10 : 11, color: "var(--text-muted)", lineHeight: 1.45 }}>
+          {item}
+        </div>
+      ))}
     </div>
   );
 }

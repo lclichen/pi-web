@@ -802,6 +802,10 @@ function TextFileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onMentionL
   const gitDiffRequestRef = useRef(0);
   const contentRef = useRef<HTMLDivElement | null>(null);
   const [selectedLineRange, setSelectedLineRange] = useState<SelectedLineRange | null>(null);
+  const [editMode, setEditMode] = useState(false);
+  const [editContent, setEditContent] = useState("");
+  const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   const fetchContent = useCallback((filePath: string) => {
     return fetch(getFileApiUrl(filePath, "read", sourceSessionId))
@@ -838,6 +842,55 @@ function TextFileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onMentionL
       if (requestId === gitDiffRequestRef.current) setGitDiff(null);
     }
   }, [cwd]);
+
+  const handleEnterEdit = useCallback(() => {
+    if (!data) return;
+    setEditContent(data.content);
+    setDirty(false);
+    setEditMode(true);
+    setDisplayMode("source");
+  }, [data]);
+
+  const handleCancelEdit = useCallback(() => {
+    setEditMode(false);
+    setDirty(false);
+  }, []);
+
+  const handleSave = useCallback(async () => {
+    if (!filePath) return;
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/files/${encodeFilePathForApi(filePath)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "file", content: editContent }),
+      });
+      if (!res.ok) {
+        const e = await res.json().catch(() => ({}));
+        throw new Error(e.error ?? `HTTP ${res.status}`);
+      }
+      setData((prev) => prev ? { ...prev, content: editContent } : prev);
+      setDirty(false);
+      setEditMode(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  }, [filePath, editContent]);
+
+  // Enter edit shortcut: Ctrl/Cmd+S to save when dirty
+  useEffect(() => {
+    if (!editMode) return;
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "s") {
+        e.preventDefault();
+        if (dirty) handleSave();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [editMode, dirty, handleSave]);
 
   // Initial load + SSE watch setup
   useEffect(() => {
@@ -1071,16 +1124,67 @@ function TextFileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onMentionL
                   </svg>
                 </button>
               </>
-            )}
+             )}
           </div>
+
+          {editMode ? (
+            <>
+              {dirty && <span style={{ fontSize: 10, color: "#f59e0b", fontWeight: 600 }}>unsaved</span>}
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={saving || !dirty}
+                title="Save (Ctrl+S)"
+                className="file-viewer-icon-button"
+                style={{ fontWeight: 600, fontSize: 11, padding: "0 8px", color: dirty ? "var(--accent)" : "var(--text-dim)", cursor: dirty && !saving ? "pointer" : "default" }}
+              >
+                {saving ? "Saving..." : "Save"}
+              </button>
+              <button
+                type="button"
+                onClick={handleCancelEdit}
+                title="Cancel edit"
+                className="file-viewer-icon-button"
+                style={{ fontSize: 11, padding: "0 6px" }}
+              >
+                Cancel
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={handleEnterEdit}
+              title="Edit file"
+              className="file-viewer-icon-button"
+              style={{ fontSize: 11, padding: "0 6px" }}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4Z" />
+              </svg>
+              Edit
+            </button>
+          )}
 
           <DownloadLink filePath={filePath} sourceSessionId={sourceSessionId} />
         </div>
       </div>
 
       {/* Content area */}
-      <div ref={contentRef} className="file-viewer-content" style={{ flex: 1, overflow: "auto", background: "var(--bg)" }}>
-        {displayMode === "diff" && hasGitDiff ? (
+      <div ref={contentRef} className="file-viewer-content" style={{ flex: 1, overflow: editMode ? "hidden" : "auto", background: "var(--bg)" }}>
+        {editMode ? (
+          <textarea
+            value={editContent}
+            onChange={(e) => { setEditContent(e.target.value); setDirty(true); }}
+            spellCheck={false}
+            style={{
+              width: "100%", height: "100%", border: "none", outline: "none",
+              resize: "none", background: "var(--bg)", color: "var(--text)",
+              fontFamily: "var(--font-mono)", fontSize: 13, lineHeight: 1.5,
+              padding: "12px 16px", tabSize: 2,
+            }}
+          />
+        ) : displayMode === "diff" && hasGitDiff ? (
           <DiffView patch={gitDiff.patch!} />
         ) : isHtml && displayMode === "preview" ? (
           <iframe

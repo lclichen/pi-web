@@ -6,6 +6,12 @@ import type { AgentInfo, AgentDetail, ConfigScope } from "@/lib/api-types";
 
 const NAME_RE = /^[A-Za-z0-9_.-]+$/;
 
+const DEFAULT_AGENT_NAMES = new Set(["general-purpose", "Explore", "Plan"]);
+
+export function isDefaultAgent(name: string): boolean {
+  return DEFAULT_AGENT_NAMES.has(name);
+}
+
 export function validateAgentName(name: string): string | null {
   const trimmed = name.trim();
   if (!trimmed) return "Name is required";
@@ -48,6 +54,8 @@ function parseAgentFile(name: string, raw: string, scope: ConfigScope, filePath:
         typeof fm.max_turns === "number" && Number.isFinite(fm.max_turns)
           ? fm.max_turns
           : undefined,
+      enabled: fm.enabled !== false,
+      isDefault: DEFAULT_AGENT_NAMES.has(name),
     };
   } catch (e) {
     return { ...base, parseError: e instanceof Error ? e.message : String(e) };
@@ -56,22 +64,50 @@ function parseAgentFile(name: string, raw: string, scope: ConfigScope, filePath:
 
 export function listAgents(cwd: string, scope: ConfigScope): AgentInfo[] {
   const dir = agentsDirFor(cwd, scope);
-  if (!existsSync(dir)) return [];
   const out: AgentInfo[] = [];
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    if (!entry.isFile() || !entry.name.toLowerCase().endsWith(".md")) continue;
-    const name = entry.name.slice(0, -3);
-    const filePath = join(dir, entry.name);
-    let raw = "";
-    try {
-      raw = readFileSync(filePath, "utf8");
-    } catch {
-      continue;
+  const seenNames = new Set<string>();
+
+  if (existsSync(dir)) {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (!entry.isFile() || !entry.name.toLowerCase().endsWith(".md")) continue;
+      const name = entry.name.slice(0, -3);
+      const filePath = join(dir, entry.name);
+      let raw = "";
+      try {
+        raw = readFileSync(filePath, "utf8");
+      } catch {
+        continue;
+      }
+      seenNames.add(name);
+      out.push(parseAgentFile(name, raw, scope, filePath));
     }
-    out.push(parseAgentFile(name, raw, scope, filePath));
   }
+
+  // Include built-in default agents that don't have a .md override in this scope.
+  // They appear in the project scope (defaults are global but shown under project for UX).
+  if (scope === "project") {
+    for (const defaultName of DEFAULT_AGENT_NAMES) {
+      if (!seenNames.has(defaultName)) {
+        out.push({
+          name: defaultName,
+          scope: "project",
+          filePath: "",
+          enabled: true,
+          isDefault: true,
+          description: DEFAULT_AGENT_DESCRIPTIONS[defaultName],
+        });
+      }
+    }
+  }
+
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }
+
+const DEFAULT_AGENT_DESCRIPTIONS: Record<string, string> = {
+  "general-purpose": "Built-in general purpose agent",
+  Explore: "Built-in read-only exploration agent",
+  Plan: "Built-in planning agent",
+};
 
 export function listAllAgents(cwd: string): AgentInfo[] {
   return [...listAgents(cwd, "project"), ...listAgents(cwd, "global")];
@@ -222,4 +258,61 @@ export function deleteAgent(cwd: string, scope: ConfigScope, name: string): bool
   if (!existsSync(filePath)) return false;
   unlinkSync(filePath);
   return true;
+}
+
+/**
+ * Enable or disable an agent by writing/removing `enabled: false` in its
+ * frontmatter, following the same convention as tintinweb-pi-subagents.
+ *
+ * - If the agent has a .md file: rewrite its frontmatter.
+ *   - When enabling: remove the `enabled` key; if the file becomes an empty
+ *     stub (no body, no other frontmatter keys), delete it to restore default.
+ * - If the agent is a built-in default without a .md file:
+ *   - Disabling creates a stub .md with `enabled: false`.
+ *   - Enabling is a no-op (already enabled by default).
+ */
+export function setAgentEnabled(
+  cwd: string,
+  scope: ConfigScope,
+  name: string,
+  enabled: boolean,
+): boolean {
+  const dir = agentsDirFor(cwd, scope);
+  const filePath = join(dir, `${name}.md`);
+
+  if (existsSync(filePath)) {
+    const raw = readFileSync(filePath, "utf8");
+    const rewritten = rewriteFrontmatterBlock(raw, { enabled: enabled ? undefined : "false" });
+
+    // Check if the result is an empty stub: only frontmatter with `enabled` key, no body.
+    const stubMatch = rewritten.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?$/);
+    if (stubMatch && !enabled) {
+      const fmContent = stubMatch[1].trim();
+      // If frontmatter only contains enabled: false and nothing else, and there's no body,
+      // keep the file (it's a valid disable stub for a default agent).
+    }
+
+    // When enabling: if the file is just an empty stub (no meaningful content beyond
+    // frontmatter delimiters), delete it to restore the default.
+    if (enabled) {
+      const m = rewritten.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?$/);
+      const fmLines = m ? m[1].split(/\r?\n/).map((l) => l.trim()).filter(Boolean) : [];
+      const body = m ? "" : rewritten.trim();
+      if (fmLines.length === 0 && !body) {
+        unlinkSync(filePath);
+        return true;
+      }
+    }
+
+    atomicWriteFile(filePath, rewritten);
+    return enabled;
+  }
+
+  // No file exists: only built-in defaults can reach here.
+  if (!enabled && DEFAULT_AGENT_NAMES.has(name)) {
+    atomicWriteFile(filePath, "---\nenabled: false\n---\n");
+    return false;
+  }
+
+  throw new Error(`Agent "${name}" not found in ${scope} scope`);
 }

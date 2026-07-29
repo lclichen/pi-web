@@ -118,6 +118,7 @@ function toServerInfo(
     transport: detectTransport(entry),
     summary: serverSummary(entry),
     directToolsOn: isDirectToolsOn(entry),
+    disabled: Boolean((entry as ServerEntry).disabled),
     sourcePath,
   };
 }
@@ -212,6 +213,26 @@ export function removeMcpServer(cwd: string, scope: ConfigScope, name: string): 
     throw new Error(`Server "${name}" not found in ${scope} scope`);
   }
   delete cfg.mcpServers[name];
+  persist(path, cfg);
+}
+
+export function setMcpServerDisabled(
+  cwd: string,
+  scope: ConfigScope,
+  name: string,
+  disabled: boolean,
+): void {
+  const path = mcpConfigPath(cwd, scope);
+  const cfg = loadWritable(path);
+  if (!cfg.mcpServers?.[name]) {
+    throw new Error(`Server "${name}" not found in ${scope} scope`);
+  }
+  const entry = cfg.mcpServers[name] as ServerEntry;
+  if (disabled) {
+    entry.disabled = true;
+  } else {
+    delete entry.disabled;
+  }
   persist(path, cfg);
 }
 

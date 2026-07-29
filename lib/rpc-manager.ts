@@ -72,6 +72,26 @@ function getMcpServerPrefixes(cwd: string): Set<string> {
   }
 }
 
+interface McpPrefixInfo {
+  allPrefixes: Set<string>;
+  disabledPrefixes: Set<string>;
+}
+
+function getMcpServerPrefixesWithDisabled(cwd: string): McpPrefixInfo {
+  try {
+    const servers = readMcpConfig(cwd).servers;
+    const all = new Set<string>();
+    const disabled = new Set<string>();
+    for (const s of servers) {
+      all.add(s.name);
+      if (s.disabled) disabled.add(s.name);
+    }
+    return { allPrefixes: all, disabledPrefixes: disabled };
+  } catch {
+    return { allPrefixes: new Set(), disabledPrefixes: new Set() };
+  }
+}
+
 function isMcpTool(name: string, prefixes: Set<string>): boolean {
   for (const p of prefixes) {
     if (name.startsWith(`${p}_`)) return true;
@@ -259,15 +279,21 @@ export class AgentSessionWrapper {
     void this.waitForExtensionsBound()
       .then(() => {
         const prefs = readPreferences(cwd);
-        if (prefs.mcpEnabled && prefs.subagentsEnabled) return;
         const allNames = this.inner.getAllTools().map((t) => t.name);
         let filtered = allNames;
-        if (!prefs.mcpEnabled) {
-          const prefixes = getMcpServerPrefixes(cwd);
-          if (prefixes.size > 0) {
-            filtered = filtered.filter((n) => !isMcpTool(n, prefixes));
-          }
+
+        // Filter MCP tools: global toggle or per-server disabled
+        const mcpDoc = getMcpServerPrefixesWithDisabled(cwd);
+        const shouldFilterAllMcp = !prefs.mcpEnabled;
+        const hasDisabledServers = mcpDoc.disabledPrefixes.size > 0;
+        if (shouldFilterAllMcp || hasDisabledServers) {
+          filtered = filtered.filter((n) => {
+            if (shouldFilterAllMcp && isMcpTool(n, mcpDoc.allPrefixes)) return false;
+            if (isMcpTool(n, mcpDoc.disabledPrefixes)) return false;
+            return true;
+          });
         }
+
         if (!prefs.subagentsEnabled) {
           filtered = filtered.filter((n) => !SUBAGENT_TOOL_NAMES.has(n));
         }
@@ -591,8 +617,19 @@ export class AgentSessionWrapper {
 
       case "apply_preferences": {
         const prefCwd = command.cwd as string;
+        const action = command.action as string | undefined;
+        if (action === "reload_agents") {
+          await this.waitForExtensionsBound();
+          this.extensionStatuses.clear();
+          this.extensionWidgets.clear();
+          await this.inner.reload();
+          if (typeof this.inner.bindExtensions !== "function") {
+            this.inner.extensionRunner.setUIContext?.(this.createExtensionUiContext(), "rpc");
+          }
+          this.applyForcedEmptySystemPrompt();
+        }
         this.applyToolPreferences(prefCwd);
-        return null;
+        return { success: true };
       }
 
       case "reload": {

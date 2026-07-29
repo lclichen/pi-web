@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { deleteAgent, getAgentDetail, updateAgent } from "@/lib/agents-service";
+import { deleteAgent, getAgentDetail, setAgentEnabled, updateAgent } from "@/lib/agents-service";
 import type { AgentFields } from "@/lib/agents-service";
 import type { ConfigScope } from "@/lib/api-types";
 
@@ -58,6 +58,35 @@ export async function PUT(
         },
         body.systemPrompt ?? "",
       );
+      return NextResponse.json({ success: true });
+    } catch (e) {
+      return NextResponse.json(
+        { error: e instanceof Error ? e.message : String(e) },
+        { status: 404 },
+      );
+    }
+  } catch (e) {
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : String(e) },
+      { status: 500 },
+    );
+  }
+}
+
+type PatchBody = { cwd?: string; scope?: string; enabled?: boolean };
+
+// PATCH /api/agents/[name]  body: { cwd, scope?, enabled }
+export async function PATCH(
+  req: Request,
+  { params }: { params: Promise<{ name: string }> },
+) {
+  const { name } = await params;
+  try {
+    const body = (await req.json()) as PatchBody;
+    if (!body.cwd) return NextResponse.json({ error: "cwd required" }, { status: 400 });
+    const scope = readScope(body.scope ?? null);
+    try {
+      setAgentEnabled(body.cwd, scope, name, body.enabled !== false);
       return NextResponse.json({ success: true });
     } catch (e) {
       return NextResponse.json(

@@ -38,6 +38,8 @@ interface Props {
   onSessionStatsPanelOpen?: () => void;
   onContextUsageChange?: (usage: { percent: number | null; contextWindow: number; tokens: number | null } | null) => void;
   onOpenFile?: (filePath: string) => void;
+  onLabStateChange?: (labWidget: { metadata?: unknown } | null, hasLabTraining: boolean) => void;
+  sendCommandRef?: React.MutableRefObject<((cmd: string) => void) | null>;
 }
 
 function phaseLabel(phase: AgentPhase): string {
@@ -171,7 +173,7 @@ function ProcessDetailsGroup({ messageCount, toolCallCount, children }: { messag
   );
 }
 
-export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile }: Props) {
+export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onLabStateChange, sendCommandRef }: Props) {
   const { soundEnabled, onSoundToggle, playDoneSound, unlockAudio } = useAudio();
   const isMobile = useIsMobile();
 
@@ -322,6 +324,18 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
   const labWidget = extensionWidgets.find((w) => w.key === "lab-training");
   const hasLabPanel = !!labWidget && !!labWidget.metadata;
   const hasLabTraining = slashCommands.some((c) => c.name === "lab" || c.name === "/lab");
+
+  // Expose lab state and command sender to parent (AppShell)
+  useEffect(() => {
+    onLabStateChange?.(labWidget ?? null, hasLabTraining);
+  }, [labWidget, hasLabTraining, onLabStateChange]);
+
+  useEffect(() => {
+    if (sendCommandRef) {
+      sendCommandRef.current = (cmd: string) => handleSend(cmd);
+    }
+    return () => { if (sendCommandRef) sendCommandRef.current = null; };
+  }, [handleSend, sendCommandRef]);
 
   const isEmptyNew = isNew && messages.length === 0 && !streamState.isStreaming && !sessionBusy;
   const messageCwd = session?.cwd ?? newSessionCwd ?? undefined;
@@ -478,11 +492,18 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
               </div>
             </div>
             <NoticeShelf notices={notices} align="right" />
-            <LabTrainingButtons
-              extensionWidgets={extensionWidgets}
+            <SessionToolbar
+              cwd={messageCwd ?? ""}
+              sessionId={session?.id ?? null}
+              hasLabTraining={false}
               onSendCommand={(cmd) => handleSend(cmd)}
+              onApplyPreferences={(action) => {
+                if (!session?.id) return;
+                import("@/lib/agent-client").then(({ sendAgentCommand }) =>
+                  sendAgentCommand(session.id!, { type: "apply_preferences", cwd: messageCwd, action }).catch(() => {}),
+                );
+              }}
               disabled={sessionBusy}
-              showStartFallback={hasLabTraining}
             />
             {chatInputElement}
           </div>
@@ -756,20 +777,19 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
             <ExtensionWidgets widgets={belowEditorWidgets} />
           </div>
         </div>
-        {!hasLabPanel && (
-          <LabTrainingButtons
-            extensionWidgets={extensionWidgets}
-            onSendCommand={(cmd) => handleSend(cmd)}
-            disabled={sessionBusy}
-          />
-        )}
         <div style={{ padding: `0 ${CHAT_COLUMN_PADDING}px`, paddingRight: isMobile ? CHAT_COLUMN_PADDING : CHAT_INPUT_RIGHT_PADDING }}>
           <div style={{ maxWidth: 820, margin: "0 auto" }}>
             <SessionToolbar
               cwd={messageCwd ?? ""}
               sessionId={session?.id ?? null}
-              hasLabTraining={hasLabTraining}
+              hasLabTraining={false}
               onSendCommand={(cmd) => handleSend(cmd)}
+              onApplyPreferences={(action) => {
+                if (!session?.id) return;
+                import("@/lib/agent-client").then(({ sendAgentCommand }) =>
+                  sendAgentCommand(session.id!, { type: "apply_preferences", cwd: messageCwd, action }).catch(() => {}),
+                );
+              }}
               disabled={sessionBusy}
             />
           </div>

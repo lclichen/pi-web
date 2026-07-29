@@ -6,6 +6,8 @@ import { useGlobalKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { SessionSidebar } from "./SessionSidebar";
 import { ChatWindow } from "./ChatWindow";
 import { FileViewer } from "./FileViewer";
+import { GitPanel } from "./GitPanel";
+import { LabTrainingSidePanel } from "./LabTrainingSidePanel";
 import { TabBar, type Tab } from "./TabBar";
 import { ModelsConfig } from "./ModelsConfig";
 import { SkillsConfig } from "./SkillsConfig";
@@ -154,6 +156,37 @@ export function AppShell() {
   const [fileTabs, setFileTabs] = useState<Tab[]>([]);
   const [activeFileTabId, setActiveFileTabId] = useState<string | null>(null);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
+  const [rightPanelMode, setRightPanelMode] = useState<"files" | "git">("files");
+
+  // Lab Training side panel (independent from file viewer)
+  const [labWidget, setLabWidget] = useState<{ metadata?: unknown } | null>(null);
+  const [hasLabTraining, setHasLabTraining] = useState(false);
+  const [labPanelOpen, setLabPanelOpen] = useState(true);
+  const [labSettingsOpen, setLabSettingsOpen] = useState(false);
+  const sendCommandRef = useRef<((cmd: string) => void) | null>(null);
+
+  const handleSendCommand = useCallback((cmd: string) => {
+    sendCommandRef.current?.(cmd);
+  }, []);
+
+  const handleStartLabTraining = useCallback(() => {
+    const cwd = selectedSession?.cwd ?? newSessionCwd;
+    if (!cwd) return;
+    // Navigate to new session view, then send /lab on next tick.
+    // This ensures the training starts in a fresh, isolated session
+    // with its own extension state (step position, QA mode, etc).
+    setSelectedSession(null);
+    setNewSessionCwd(cwd);
+    setSessionKey((k) => k + 1);
+    setBranchTree([]);
+    setBranchActiveLeafId(null);
+    setSystemPrompt(null);
+    router.replace("/", { scroll: false });
+    // Wait for the next render cycle before sending the command
+    setTimeout(() => {
+      sendCommandRef.current?.("/lab");
+    }, 100);
+  }, [selectedSession?.cwd, newSessionCwd, router]);
 
   // Same @mention format as the chat input's @ autocomplete, so the agent's
   // read tool resolves it the same way (it strips the @ prefix).
@@ -455,6 +488,23 @@ export function AppShell() {
         selectedCwd={selectedSession?.cwd ?? newSessionCwd ?? null}
         onCwdChange={handleCwdChange}
         onOpenFile={handleOpenFile}
+        onFileDeleted={(filePath) => {
+          const tabId = `file:${filePath}`;
+          if (fileTabs.some((t) => t.id === tabId)) handleCloseFileTab(tabId);
+          setExplorerRefreshKey((k) => k + 1);
+        }}
+        onFileRenamed={(oldPath, newPath) => {
+          const oldTabId = `file:${oldPath}`;
+          setFileTabs((prev) => prev.map((t) =>
+            t.id === oldTabId
+              ? { ...t, id: `file:${newPath}`, filePath: newPath, label: getFileName(newPath) }
+              : t,
+          ));
+          if (activeFileTabId === oldTabId) {
+            setActiveFileTabId(`file:${newPath}`);
+          }
+          setExplorerRefreshKey((k) => k + 1);
+        }}
         explorerRefreshKey={explorerRefreshKey}
         onExplorerRefresh={handleExplorerRefresh}
         onAtMention={handleAtMention}
@@ -1196,6 +1246,8 @@ export function AppShell() {
               onSessionStatsPanelOpen={openSessionStatsPanel}
               onContextUsageChange={handleContextUsageChange}
               onOpenFile={handleOpenLinkedFile}
+              onLabStateChange={(w, has) => { setLabWidget(w); setHasLabTraining(has); }}
+              sendCommandRef={sendCommandRef}
             />
           ) : initialCwdStatus === "validating" ? (
             <div
@@ -1253,20 +1305,56 @@ export function AppShell() {
       >
         {/* Right panel tab bar */}
         <div style={{ display: "flex", alignItems: "center", flexShrink: 0, background: "var(--bg-panel)", borderBottom: "1px solid var(--border)", height: 36 }}>
+          <button
+            onClick={() => setRightPanelMode("files")}
+            title="Files"
+            style={{
+              height: "100%", padding: "0 10px", border: "none",
+              background: "transparent",
+              color: rightPanelMode === "files" ? "var(--accent)" : "var(--text-dim)",
+              fontSize: 11, fontWeight: 600, cursor: "pointer",
+              borderBottom: rightPanelMode === "files" ? "2px solid var(--accent)" : "2px solid transparent",
+            }}
+          >
+            Files
+          </button>
+          <button
+            onClick={() => { setRightPanelMode("git"); setRightPanelOpen(true); }}
+            title="Git"
+            style={{
+              height: "100%", padding: "0 10px", border: "none",
+              background: "transparent",
+              color: rightPanelMode === "git" ? "var(--accent)" : "var(--text-dim)",
+              fontSize: 11, fontWeight: 600, cursor: "pointer",
+              borderBottom: rightPanelMode === "git" ? "2px solid var(--accent)" : "2px solid transparent",
+            }}
+          >
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: "text-bottom", marginRight: 3 }}>
+              <circle cx="6" cy="6" r="3" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="6" r="3" /><path d="M18 9v2c0 2-2 3-4 3H9" /><path d="M6 9v6" />
+            </svg>
+            Git
+          </button>
           <div style={{ flex: 1, overflow: "hidden" }}>
-            <TabBar
-              tabs={fileTabs}
-              activeTabId={activeFileTabId ?? ""}
-              onSelectTab={setActiveFileTabId}
-              onCloseTab={handleCloseFileTab}
-            />
+            {rightPanelMode === "files" && (
+              <TabBar
+                tabs={fileTabs}
+                activeTabId={activeFileTabId ?? ""}
+                onSelectTab={setActiveFileTabId}
+                onCloseTab={handleCloseFileTab}
+              />
+            )}
           </div>
-
         </div>
 
-        {/* File content */}
+        {/* Panel content */}
         <div style={{ flex: 1, overflow: "hidden" }}>
-          {activeFileTab?.filePath ? (
+          {rightPanelMode === "git" ? (
+            <GitPanel
+              cwd={(activeCwd ?? selectedSession?.cwd ?? newSessionCwd) ?? ""}
+              refreshKey={explorerRefreshKey}
+              onClose={() => { setRightPanelMode("files"); }}
+            />
+          ) : activeFileTab?.filePath ? (
             <FileViewer
               filePath={activeFileTab.filePath}
               cwd={activeCwd ?? undefined}
@@ -1286,6 +1374,49 @@ export function AppShell() {
           )}
         </div>
       </div>
+
+      {/* Lab Training panel — far right, independent from file viewer */}
+      {(hasLabTraining || labWidget) && labPanelOpen && (
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            borderLeft: "1px solid var(--border)",
+            background: "var(--bg)",
+            width: 340,
+            flexShrink: 0,
+          }}
+        >
+          <LabTrainingSidePanel
+            widgetState={(labWidget?.metadata as any) ?? null}
+            hasLabTraining={hasLabTraining}
+            onSendCommand={handleSendCommand}
+            onStartLabTraining={handleStartLabTraining}
+            onOpenSettings={() => setLabSettingsOpen(true)}
+          />
+        </div>
+      )}
+
+      {/* Lab Training panel toggle — graduation cap icon */}
+      {(hasLabTraining || labWidget) && (
+        <button
+          onClick={() => setLabPanelOpen((v) => !v)}
+          title={labPanelOpen ? "Hide Lab Training panel" : "Show Lab Training panel"}
+          aria-label={labPanelOpen ? "Hide Lab Training panel" : "Show Lab Training panel"}
+          style={{
+            position: "fixed", top: 0, right: 36, zIndex: 300,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            width: 36, height: 36, padding: 0,
+            background: "var(--bg-panel)", border: "none", borderLeft: "1px solid var(--border)", borderBottom: "1px solid var(--border)",
+            color: labPanelOpen ? "var(--accent)" : "var(--text-muted)",
+            cursor: "pointer", transition: "color 0.12s",
+          }}
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M22 10v6M2 10l10-5 10 5-10 5z" /><path d="M6 12v5c3 3 9 3 12 0v-5" />
+          </svg>
+        </button>
+      )}
     </div>
     {/* File panel toggle — always visible at top-right */}
     <button
@@ -1293,7 +1424,7 @@ export function AppShell() {
       title={rightPanelOpen ? "Hide file panel" : "Show file panel"}
       aria-label={rightPanelOpen ? "Hide file panel" : "Show file panel"}
       style={{
-        position: "fixed", top: 0, right: 0, zIndex: 300,
+        position: "fixed", top: 0, right: (hasLabTraining || labWidget) ? 72 : 0, zIndex: 300,
         display: "flex", alignItems: "center", justifyContent: "center",
         width: 36, height: 36, padding: 0,
         background: "var(--bg-panel)", border: "none", borderLeft: "1px solid var(--border)", borderBottom: "1px solid var(--border)",

@@ -105,6 +105,8 @@ export interface AgentInfo {
   thinking?: string;
   maxTurns?: number;
   parseError?: string;
+  enabled?: boolean;
+  isDefault?: boolean;
 }
 
 export interface AgentDetail extends AgentInfo {
@@ -181,6 +183,7 @@ export interface McpServerInfo {
   transport: McpTransport;
   summary: string;
   directToolsOn: boolean;
+  disabled: boolean;
   sourcePath: string;
 }
 

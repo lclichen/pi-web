@@ -34,6 +34,8 @@ interface Props {
   onAtMention?: (relativePath: string, isDir: boolean) => void;
   onAtMentions?: (relativePaths: string[]) => void;
   onUploadBusyChange?: (busy: boolean) => void;
+  onFileDeleted?: (filePath: string) => void;
+  onFileRenamed?: (oldPath: string, newPath: string) => void;
 }
 
 export interface FileExplorerHandle {
@@ -193,6 +195,12 @@ function TreeNode({
   highlightedPaths,
   gitStatusByPath,
   changedDirectoryPaths,
+  onContextMenu,
+  renamingPath,
+  renamingName,
+  onRenamingNameChange,
+  onRenamingSubmit,
+  onRenamingCancel,
 }: {
   node: FileNode;
   depth: number;
@@ -205,6 +213,12 @@ function TreeNode({
   highlightedPaths: Set<string>;
   gitStatusByPath: Map<string, GitFileStatus>;
   changedDirectoryPaths: Set<string>;
+  onContextMenu?: (e: React.MouseEvent, node: FileNode) => void;
+  renamingPath?: string | null;
+  renamingName?: string;
+  onRenamingNameChange?: (v: string) => void;
+  onRenamingSubmit?: () => void;
+  onRenamingCancel?: () => void;
 }) {
   const open = expandedPaths.has(node.fullPath);
   const highlighted = highlightedPaths.has(node.fullPath);
@@ -254,6 +268,7 @@ function TreeNode({
     <div>
       <div
         onClick={handleClick}
+        onContextMenu={onContextMenu ? (e) => onContextMenu(e, node) : undefined}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
         style={{
@@ -283,6 +298,17 @@ function TreeNode({
         <span style={{ flexShrink: 0, display: "flex", alignItems: "center" }}>
           {node.isDir ? <FolderIcon size={14} open={open} /> : getFileIcon(node.name, 14)}
         </span>
+        {renamingPath === node.fullPath ? (
+          <input
+            autoFocus
+            value={renamingName ?? ""}
+            onChange={(e) => onRenamingNameChange?.(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") onRenamingSubmit?.(); if (e.key === "Escape") onRenamingCancel?.(); }}
+            onBlur={() => onRenamingSubmit?.()}
+            onClick={(e) => e.stopPropagation()}
+            style={{ flex: 1, minWidth: 0, height: 18, border: "1px solid var(--accent)", borderRadius: 3, background: "var(--bg)", color: "var(--text)", fontSize: 11, padding: "0 4px", outline: "none" }}
+          />
+        ) : (
         <span
           style={{
             fontSize: 12,
@@ -296,6 +322,7 @@ function TreeNode({
         >
           {node.name}
         </span>
+        )}
         {highlighted && (
           <span
             title="Newly uploaded"
@@ -450,6 +477,8 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
   onAtMention,
   onAtMentions,
   onUploadBusyChange,
+  onFileDeleted,
+  onFileRenamed,
 }, ref) {
   const [roots, setRoots] = useState<FileNode[]>([]);
   const [loading, setLoading] = useState(true);
@@ -632,6 +661,79 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
 
   const showUploadFeedback = uploadBusy || pendingConflict !== null || uploadError !== null || uploadSummary !== null;
 
+  // ---- File management state ----
+  const [creating, setCreating] = useState<{ type: "file" | "dir"; dir: string } | null>(null);
+  const [creatingName, setCreatingName] = useState("");
+  const [renaming, setRenaming] = useState<{ oldPath: string; oldName: string } | null>(null);
+  const [renamingName, setRenamingName] = useState("");
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; node: FileNode } | null>(null);
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    const close = () => setContextMenu(null);
+    window.addEventListener("click", close);
+    window.addEventListener("scroll", close, true);
+    return () => { window.removeEventListener("click", close); window.removeEventListener("scroll", close, true); };
+  }, [contextMenu]);
+
+  const refreshTree = useCallback(() => setTreeRefreshKey((k) => k + 1), []);
+
+  const handleCreate = useCallback(async () => {
+    if (!creating || !creatingName.trim()) { setCreating(null); setCreatingName(""); return; }
+    const name = creatingName.trim();
+    const fullPath = joinFilePath(creating.dir, name);
+    try {
+      const res = await fetch(`/api/files/${encodeFilePathForApi(fullPath)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: creating.type, content: "" }),
+      });
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error ?? `HTTP ${res.status}`); }
+      if (creating.dir !== cwd) {
+        const dir = creating.dir;
+        setExpandedPaths((prev) => new Set(prev).add(dir));
+      }
+      refreshTree();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+    setCreating(null);
+    setCreatingName("");
+  }, [creating, creatingName, cwd, refreshTree]);
+
+  const handleDelete = useCallback(async (fullPath: string) => {
+    try {
+      const res = await fetch(`/api/files/${encodeFilePathForApi(fullPath)}`, { method: "DELETE" });
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error ?? `HTTP ${res.status}`); }
+      onFileDeleted?.(fullPath);
+      refreshTree();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }, [onFileDeleted, refreshTree]);
+
+  const handleRename = useCallback(async () => {
+    if (!renaming || !renamingName.trim()) { setRenaming(null); setRenamingName(""); return; }
+    const oldPath = renaming.oldPath;
+    const dir = getFileDirectory(oldPath);
+    const newPath = joinFilePath(dir, renamingName.trim());
+    if (newPath === oldPath) { setRenaming(null); setRenamingName(""); return; }
+    try {
+      const res = await fetch(`/api/files/${encodeFilePathForApi(oldPath)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ newPath }),
+      });
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error ?? `HTTP ${res.status}`); }
+      onFileRenamed?.(oldPath, newPath);
+      refreshTree();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+    setRenaming(null);
+    setRenamingName("");
+  }, [renaming, renamingName, onFileRenamed, refreshTree]);
+
   const addUploadedFilesToChat = useCallback(() => {
     if (!uploadSummary || uploadSummary.uploaded.length === 0) return;
     onAtMentions?.(
@@ -760,13 +862,59 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
         </div>
       )}
 
+      <div style={{ display: "flex", gap: 4, padding: "2px 4px 4px", borderBottom: "1px solid var(--border)" }}>
+        <button
+          onClick={() => { setCreating({ type: "file", dir: cwd }); setCreatingName(""); }}
+          title="New File"
+          style={{ flex: 1, height: 22, border: "1px solid var(--border)", borderRadius: 4, background: "var(--bg-panel)", color: "var(--text-muted)", cursor: "pointer", fontSize: 11, display: "flex", alignItems: "center", justifyContent: "center", gap: 3 }}
+        >
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+          New File
+        </button>
+        <button
+          onClick={() => { setCreating({ type: "dir", dir: cwd }); setCreatingName(""); }}
+          title="New Folder"
+          style={{ flex: 1, height: 22, border: "1px solid var(--border)", borderRadius: 4, background: "var(--bg-panel)", color: "var(--text-muted)", cursor: "pointer", fontSize: 11, display: "flex", alignItems: "center", justifyContent: "center", gap: 3 }}
+        >
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>
+          New Folder
+        </button>
+      </div>
+
+      {contextMenu && (
+        <div style={{ position: "fixed", left: contextMenu.x, top: contextMenu.y, zIndex: 1000, background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: 6, boxShadow: "0 4px 12px rgba(0,0,0,0.2)", padding: 4, minWidth: 120 }}>
+          <div onClick={() => { const n = contextMenu.node; setRenaming({ oldPath: n.fullPath, oldName: n.name }); setRenamingName(n.name); setContextMenu(null); }} style={{ padding: "4px 10px", cursor: "pointer", fontSize: 11, borderRadius: 3, color: "var(--text)" }} onMouseEnter={(e) => e.currentTarget.style.background = "var(--bg-hover)"} onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
+            Rename
+          </div>
+          <div onClick={() => { const n = contextMenu.node; setContextMenu(null); if (confirm(`Delete "${n.name}"?`)) handleDelete(n.fullPath); }} style={{ padding: "4px 10px", cursor: "pointer", fontSize: 11, borderRadius: 3, color: "#f87171" }} onMouseEnter={(e) => e.currentTarget.style.background = "var(--bg-hover)"} onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
+            Delete
+          </div>
+        </div>
+      )}
+
       <div style={{ padding: "2px 4px" }}>
         {loading ? (
           <div style={{ padding: "8px 12px", fontSize: 11, color: "var(--text-dim)" }}>Loading files...</div>
         ) : error ? (
           <div style={{ padding: "8px 12px", fontSize: 11, color: "#f87171" }}>{error}</div>
         ) : (
-          roots.map((node) => (
+          <>
+          {creating && creating.dir === cwd && (
+            <div style={{ paddingLeft: 8, paddingRight: 4, height: 24, display: "flex", alignItems: "center", gap: 4 }}>
+              <span style={{ fontSize: 12, flexShrink: 0 }}>{creating.type === "dir" ? "\u{1F4C1}" : "\u{1F4C4}"}</span>
+              <input
+                autoFocus
+                value={creatingName}
+                onChange={(e) => setCreatingName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") handleCreate(); if (e.key === "Escape") { setCreating(null); setCreatingName(""); } }}
+                onBlur={handleCreate}
+                placeholder={creating.type === "dir" ? "folder name" : "file name"}
+                style={{ flex: 1, minWidth: 0, height: 18, border: "1px solid var(--accent)", borderRadius: 3, background: "var(--bg)", color: "var(--text)", fontSize: 11, padding: "0 4px", outline: "none" }}
+                onClick={(e) => e.stopPropagation()}
+              />
+            </div>
+          )}
+          {roots.map((node) => (
             <TreeNode
               key={node.fullPath}
               node={node}
@@ -780,8 +928,16 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
               highlightedPaths={highlightedPaths}
               gitStatusByPath={gitStatusByPath}
               changedDirectoryPaths={changedDirectoryPaths}
+              onContextMenu={(e, node) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, node }); }}
+              renamingPath={renaming?.oldPath ?? null}
+              renamingName={renamingName}
+              onRenamingNameChange={setRenamingName}
+              onRenamingSubmit={handleRename}
+              onRenamingCancel={() => { setRenaming(null); setRenamingName(""); }}
             />
-          ))
+           ))
+          }
+          </>
         )}
         {!loading && !error && roots.length === 0 && (
           <div style={{ padding: "8px 12px", fontSize: 11, color: "var(--text-dim)" }}>

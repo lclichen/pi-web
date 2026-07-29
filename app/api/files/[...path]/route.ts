@@ -604,3 +604,121 @@ export async function GET(
     return NextResponse.json({ error: String(error) }, { status: 500 });
   }
 }
+
+// PUT /api/files/[...path]  — Create file or directory, or save file content
+// Body: { type?: "file" | "dir", content?: string }
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: Promise<{ path: string[] }> },
+) {
+  try {
+    const { path: segments } = await params;
+    const filePath = filePathFromSegments(segments);
+    const allowedRoots = await getAllowedFileRoots();
+    if (!isFilePathAllowed(filePath, allowedRoots)) {
+      return NextResponse.json({ error: "Access denied" }, { status: 403 });
+    }
+
+    const body = await request.json().catch(() => ({})) as {
+      type?: string;
+      content?: string;
+    };
+    const isDir = body.type === "dir";
+    const content = typeof body.content === "string" ? body.content : "";
+
+    // Reject if target already exists (use PATCH for rename, PUT for new/overwrite)
+    // Actually allow overwrite for files (save), reject for dirs
+    const exists = fs.existsSync(filePath);
+    if (exists && isDir) {
+      return NextResponse.json({ error: "Directory already exists" }, { status: 409 });
+    }
+
+    // Ensure parent directory exists
+    const parentDir = path.dirname(filePath);
+    if (!fs.existsSync(parentDir)) {
+      fs.mkdirSync(parentDir, { recursive: true });
+    }
+
+    if (isDir) {
+      fs.mkdirSync(filePath, { recursive: true });
+    } else {
+      fs.writeFileSync(filePath, content, "utf8");
+    }
+
+    return NextResponse.json({ success: true, path: filePath });
+  } catch (error) {
+    return NextResponse.json({ error: String(error) }, { status: 500 });
+  }
+}
+
+// DELETE /api/files/[...path]  — Delete a file or directory
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ path: string[] }> },
+) {
+  try {
+    const { path: segments } = await params;
+    const filePath = filePathFromSegments(segments);
+    const allowedRoots = await getAllowedFileRoots();
+    if (!isExistingFilePathAllowed(filePath, allowedRoots)) {
+      return NextResponse.json({ error: "Access denied" }, { status: 403 });
+    }
+
+    if (!fs.existsSync(filePath)) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
+    const stat = fs.statSync(filePath);
+    if (stat.isDirectory()) {
+      fs.rmSync(filePath, { recursive: true });
+    } else {
+      fs.unlinkSync(filePath);
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    return NextResponse.json({ error: String(error) }, { status: 500 });
+  }
+}
+
+// PATCH /api/files/[...path]  — Rename or move a file/directory
+// Body: { newPath: string }
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ path: string[] }> },
+) {
+  try {
+    const { path: segments } = await params;
+    const oldPath = filePathFromSegments(segments);
+    const allowedRoots = await getAllowedFileRoots();
+    if (!isExistingFilePathAllowed(oldPath, allowedRoots)) {
+      return NextResponse.json({ error: "Access denied" }, { status: 403 });
+    }
+
+    const body = await request.json().catch(() => ({})) as { newPath?: string };
+    if (!body.newPath) {
+      return NextResponse.json({ error: "newPath required" }, { status: 400 });
+    }
+    const newPath = normalizeSlashes(body.newPath);
+    if (!isFilePathAllowed(newPath, allowedRoots)) {
+      return NextResponse.json({ error: "Access denied for destination" }, { status: 403 });
+    }
+
+    if (!fs.existsSync(oldPath)) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    if (fs.existsSync(newPath)) {
+      return NextResponse.json({ error: "Destination already exists" }, { status: 409 });
+    }
+
+    const parentDir = path.dirname(newPath);
+    if (!fs.existsSync(parentDir)) {
+      fs.mkdirSync(parentDir, { recursive: true });
+    }
+
+    fs.renameSync(oldPath, newPath);
+    return NextResponse.json({ success: true, oldPath, newPath });
+  } catch (error) {
+    return NextResponse.json({ error: String(error) }, { status: 500 });
+  }
+}

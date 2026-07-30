@@ -712,7 +712,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       case "setStatus":
         setExtensionStatuses((prev) => {
           const rest = prev.filter((item) => item.key !== request.statusKey);
-          return request.statusText ? [...rest, { key: request.statusKey, text: request.statusText }] : rest;
+          return request.statusText !== undefined
+            ? [...rest, { key: request.statusKey, text: request.statusText }]
+            : rest;
         });
         break;
       case "setWidget":
@@ -816,7 +818,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   // missed (network drop, mobile tab backgrounded, half-open connection),
   // agent_end never arrives and the UI stays in streaming state forever.
   // If the server reports idle while we still think it's running, finish
-  // through the same path as prompt_done.
+  // through the same settlement path used by non-streaming prompts.
   const reconcileAgentState = useCallback(async (sid: string) => {
     if (!agentRunningRef.current) return;
     const runId = promptRunIdRef.current;
@@ -913,7 +915,14 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         break;
       case "prompt_done":
         if (!agentRunningRef.current) break;
-        void finishPromptWithoutStream(sessionIdRef.current);
+        // Extension commands can call pi.sendUserMessage(), which starts its
+        // agent run asynchronously. In that case prompt_done for the command
+        // arrives before agent_start for the injected message. Give that run
+        // time to start and settle against server state instead of ending the
+        // UI immediately and dropping its subsequent streaming events.
+        if (sessionIdRef.current) {
+          void waitForPromptSettlement(sessionIdRef.current, promptRunIdRef.current);
+        }
         break;
       case "prompt_error":
         addNotice({ type: "error", message: (event.errorMessage as string | undefined) ?? "Command failed" });
@@ -1024,7 +1033,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         handleExtensionUiRequest(event as ExtensionUiRequest);
         break;
     }
-  }, [addNotice, finishPromptWithoutStream, handleExtensionUiRequest, loadSession, onAgentEnd]);
+  }, [addNotice, handleExtensionUiRequest, loadSession, onAgentEnd, waitForPromptSettlement]);
   handleAgentEventRef.current = handleAgentEvent;
 
   const handleSend = useCallback(async (message: string, images?: AttachedImage[]) => {
@@ -1588,13 +1597,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     });
     return () => controller.abort();
   }, [loadModels, modelsRefreshKey]);
-
-  // Compact error auto-dismiss
-  useEffect(() => {
-    if (!compactError) return;
-    const t = setTimeout(() => setCompactError(null), 3000);
-    return () => clearTimeout(t);
-  }, [compactError]);
 
   useEffect(() => {
     if (!compactResult) return;

@@ -64,7 +64,6 @@ interface Props {
   onSendCommand: (command: string) => void;
   onStartLabTraining?: () => void;
   disabled?: boolean;
-  onOpenSettings?: () => void;
 }
 
 const NOTE_STYLES: Record<string, { icon: string; color: string; bg: string }> = {
@@ -73,7 +72,7 @@ const NOTE_STYLES: Record<string, { icon: string; color: string; bg: string }> =
   info: { icon: "i", color: "var(--text-muted)", bg: "transparent" },
 };
 
-export function LabTrainingSidePanel({ widgetState, hasLabTraining, onSendCommand, onStartLabTraining, disabled, onOpenSettings }: Props) {
+export function LabTrainingSidePanel({ widgetState, hasLabTraining, onSendCommand, onStartLabTraining, disabled }: Props) {
   const [outlineExpanded, setOutlineExpanded] = useState(false);
 
   if (!hasLabTraining && !widgetState) return null;
@@ -92,32 +91,17 @@ export function LabTrainingSidePanel({ widgetState, hasLabTraining, onSendComman
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
-      {/* Header */}
+      {/* Header — height matches the File panel tab bar so the two columns align */}
       <div style={{
         display: "flex", alignItems: "center", gap: 6,
-        padding: "6px 10px", borderBottom: "1px solid var(--border)", flexShrink: 0,
+        height: 36, padding: "0 10px", borderBottom: "1px solid var(--border)", flexShrink: 0,
         background: "var(--bg-panel)",
       }}>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M22 10v6M2 10l10-5 10 5-10 5z" /><path d="M6 12v5c3 3 9 3 12 0v-5" />
         </svg>
         <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text)" }}>Lab Training</span>
-        {state?.verifyEnabled === false && (
-          <span style={{ fontSize: 9, color: "#f59e0b", fontWeight: 600, padding: "1px 5px", borderRadius: 8, background: "rgba(245,158,11,0.1)" }}>
-            VERIFY OFF
-          </span>
-        )}
         <div style={{ flex: 1 }} />
-        <button
-          onClick={onOpenSettings}
-          title="Lab Training Settings"
-          style={{ background: "none", border: "none", color: "var(--text-dim)", cursor: "pointer", padding: 2 }}
-        >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="12" cy="12" r="3" />
-            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-          </svg>
-        </button>
       </div>
 
       {/* QA Mode Banner */}
@@ -196,21 +180,20 @@ export function LabTrainingSidePanel({ widgetState, hasLabTraining, onSendComman
                   ({state.progressPercent}%)
                 </span>
                 <div style={{ flex: 1 }} />
-                {state.verifyEnabled !== false && (
-                  <button
-                    onClick={() => onSendCommand("/lab verify")}
-                    disabled={disabled}
-                    title="Toggle verification"
-                    style={{
-                      height: 18, padding: "0 6px", borderRadius: 9,
-                      border: "1px solid var(--border)", background: "transparent",
-                      color: state.verifyEnabled ? "var(--accent)" : "var(--text-dim)",
-                      fontSize: 9, fontWeight: 600, cursor: "pointer",
-                    }}
-                  >
-                    {state.verifyEnabled ? "Verify ON" : "Verify OFF"}
-                  </button>
-                )}
+                <button
+                  onClick={() => onSendCommand("/lab verify")}
+                  disabled={disabled}
+                  title="Toggle verification"
+                  style={{
+                    height: 18, padding: "0 6px", borderRadius: 9,
+                    border: `1px solid ${state.verifyEnabled === false ? "#f59e0b" : "var(--border)"}`,
+                    background: state.verifyEnabled === false ? "rgba(245,158,11,0.08)" : "transparent",
+                    color: state.verifyEnabled === false ? "#f59e0b" : "var(--accent)",
+                    fontSize: 9, fontWeight: 600, cursor: "pointer",
+                  }}
+                >
+                  {state.verifyEnabled === false ? "Verify OFF" : "Verify ON"}
+                </button>
               </div>
               <div style={{ height: 3, borderRadius: 2, background: "var(--border)", overflow: "hidden" }}>
                 <div style={{ width: `${state.progressPercent}%`, height: "100%", background: "var(--accent)", borderRadius: 2, transition: "width 0.2s" }} />

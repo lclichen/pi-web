@@ -9,6 +9,10 @@ export const RIGHT_PANEL_FALLBACK_WIDTH = 560;
 export const RIGHT_PANEL_MIN_WIDTH = 300;
 export const RIGHT_PANEL_MAX_WIDTH = 1200;
 
+export const LAB_PANEL_DEFAULT_WIDTH = 340;
+export const LAB_PANEL_MIN_WIDTH = 240;
+export const LAB_PANEL_MAX_WIDTH = 600;
+
 const COMPACT_CHAT_MIN_WIDTH = 320;
 const DESKTOP_CHAT_MIN_WIDTH = 420;
 

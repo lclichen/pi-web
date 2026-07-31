@@ -751,6 +751,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
                 key: request.widgetKey,
                 lines: request.widgetLines,
                 placement: request.widgetPlacement ?? "aboveEditor",
+                metadata: request.widgetMetadata,
               }]
             : rest;
         });

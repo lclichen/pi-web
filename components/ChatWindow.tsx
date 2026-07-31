@@ -7,8 +7,6 @@ import { asBracketedPaste, toTerminalKeyData } from "@/lib/terminal-input";
 import { countToolCallBlocks, getAssistantErrorMessage, getDisplayableAssistantBlocks, splitFinalAssistantBlocks } from "@/lib/message-display";
 import { MessageView } from "./MessageView";
 import { ChatInput, type ChatInputHandle } from "./ChatInput";
-import { LabTrainingButtons } from "./LabTrainingButtons";
-import { LabTrainingPanel } from "./LabTrainingPanel";
 import { SessionToolbar } from "./SessionToolbar";
 import { ChatMinimap, useMessageRefs } from "./ChatMinimap";
 import { ExtensionStatusBar } from "./ExtensionStatusBar";
@@ -757,13 +755,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
             </div>
           </div>
         </div>
-        {isMobile ? null : hasLabPanel ? (
-          <LabTrainingPanel
-            widgetMetadata={labWidget!.metadata}
-            onSendCommand={(cmd) => handleSend(cmd)}
-            disabled={sessionBusy}
-          />
-        ) : (
+        {isMobile ? null : (
           <ChatMinimap
             messages={messages}
             streamingMessage={streamState.streamingMessage}

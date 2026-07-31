@@ -34,6 +34,9 @@ import {
   SIDEBAR_DEFAULT_WIDTH,
   SIDEBAR_MAX_WIDTH,
   SIDEBAR_MIN_WIDTH,
+  LAB_PANEL_DEFAULT_WIDTH,
+  LAB_PANEL_MIN_WIDTH,
+  LAB_PANEL_MAX_WIDTH,
 } from "@/lib/panel-layout";
 import type { SessionInfo, SessionTreeNode } from "@/lib/types";
 import type { ProjectTrustStatus } from "@/lib/api-types";
@@ -82,6 +85,7 @@ export function AppShell() {
   const [mobileSidebarReady, setMobileSidebarReady] = useState(false);
   const sidebarWidthRef = useRef(SIDEBAR_DEFAULT_WIDTH);
   const rightPanelWidthRef = useRef(RIGHT_PANEL_FALLBACK_WIDTH);
+  const labPanelWidthRef = useRef(LAB_PANEL_DEFAULT_WIDTH);
   const getResponsiveRightPanelWidth = useCallback(
     () => typeof window === "undefined"
       ? RIGHT_PANEL_FALLBACK_WIDTH
@@ -130,6 +134,17 @@ export function AppShell() {
     minWidth: RIGHT_PANEL_MIN_WIDTH,
     storageKey: "pi-right-panel-width",
     widthRef: rightPanelWidthRef,
+  });
+  const labPanelResizer = useResizablePanel({
+    ariaLabel: "Resize Lab Training panel",
+    cssVariable: "--lab-panel-width",
+    defaultWidth: LAB_PANEL_DEFAULT_WIDTH,
+    growthDirection: "left",
+    maxWidth: LAB_PANEL_MAX_WIDTH,
+    minWidth: LAB_PANEL_MIN_WIDTH,
+    storageKey: "pi-lab-panel-width",
+    widthRef: labPanelWidthRef,
+    getMaxWidth: () => LAB_PANEL_MAX_WIDTH,
   });
   const reclampSidebarWidth = sidebarResizer.reclampWidth;
   const reclampRightPanelWidth = rightPanelResizer.reclampWidth;
@@ -255,7 +270,11 @@ export function AppShell() {
   const [labWidget, setLabWidget] = useState<{ metadata?: unknown } | null>(null);
   const [hasLabTraining, setHasLabTraining] = useState(false);
   const [labPanelOpen, setLabPanelOpen] = useState(true);
-  const [labSettingsOpen, setLabSettingsOpen] = useState(false);
+  useEffect(() => {
+    if (!labPanelOpen) return;
+    reclampSidebarWidth();
+    labPanelResizer.reclampWidth();
+  }, [labPanelResizer.reclampWidth, reclampSidebarWidth, labPanelOpen]);
   const sendCommandRef = useRef<((cmd: string) => void) | null>(null);
 
   const handleSendCommand = useCallback((cmd: string) => {
@@ -1243,7 +1262,11 @@ export function AppShell() {
                   marginLeft: "auto",
                   display: "flex", alignItems: "center", gap: 10,
                   paddingLeft: 12,
-                  paddingRight: rightPanelOpen ? 12 : 48,
+                  paddingRight: 8,
+                  // Keep the session-stats box itself clear of the two fixed
+                  // top-right panel toggles (File + Lab Training, 72px total)
+                  // so neither the box nor its text is overlapped.
+                  marginRight: 72,
                   height: "100%",
                   background: activeTopPanel === "session" ? "var(--bg-selected)" : "none",
                   border: "none",
@@ -1711,24 +1734,34 @@ export function AppShell() {
 
       {/* Lab Training panel — far right, independent from file viewer */}
       {labPanelOpen && (
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            borderLeft: "1px solid var(--border)",
-            background: "var(--bg)",
-            width: 340,
-            flexShrink: 0,
-          }}
-        >
-          <LabTrainingSidePanel
-            widgetState={(labWidget?.metadata as any) ?? null}
-            hasLabTraining={hasLabTraining}
-            onSendCommand={handleSendCommand}
-            onStartLabTraining={handleStartLabTraining}
-            onOpenSettings={() => setLabSettingsOpen(true)}
+        <>
+          <div
+            {...labPanelResizer.separatorProps}
+            aria-controls="lab-training-panel"
+            className={`panel-resize-handle lab-panel-resize-handle${labPanelResizer.isResizing ? " is-resizing" : ""}`}
+            data-resize-handle="lab-panel"
+            title="Resize Lab Training panel: Drag to resize, double-click to reset"
           />
-        </div>
+          <div
+            ref={labPanelResizer.panelRef}
+            id="lab-training-panel"
+            className={`lab-panel-container lab-panel-open${labPanelResizer.isResizing ? " lab-panel-resizing" : ""}`}
+            style={{
+              "--lab-panel-width": `${labPanelResizer.width}px`,
+              display: "flex",
+              flexDirection: "column",
+              borderLeft: "1px solid var(--border)",
+              background: "var(--bg)",
+            } as React.CSSProperties}
+          >
+            <LabTrainingSidePanel
+              widgetState={(labWidget?.metadata as any) ?? null}
+              hasLabTraining={hasLabTraining}
+              onSendCommand={handleSendCommand}
+              onStartLabTraining={handleStartLabTraining}
+            />
+          </div>
+        </>
       )}
 
       {/* Lab Training panel toggle — graduation cap icon, always visible */}
@@ -1737,7 +1770,7 @@ export function AppShell() {
         title={labPanelOpen ? "Hide Lab Training panel" : "Show Lab Training panel"}
         aria-label={labPanelOpen ? "Hide Lab Training panel" : "Show Lab Training panel"}
           style={{
-            position: "fixed", top: 0, right: 36, zIndex: 300,
+            position: "fixed", top: 0, right: 0, zIndex: 300,
             display: "flex", alignItems: "center", justifyContent: "center",
             width: 36, height: 36, padding: 0,
             background: "var(--bg-panel)", border: "none", borderLeft: "1px solid var(--border)", borderBottom: "1px solid var(--border)",
@@ -1758,7 +1791,7 @@ export function AppShell() {
        title={rightPanelOpen ? translate("files.hidePanel") : translate("files.showPanel")}
        aria-label={rightPanelOpen ? translate("files.hidePanel") : translate("files.showPanel")}
       style={{
-        position: "fixed", top: 0, right: 72, zIndex: 300,
+        position: "fixed", top: 0, right: 36, zIndex: 300,
         display: "flex", alignItems: "center", justifyContent: "center",
         width: 36, height: 36, padding: 0,
         background: "var(--bg-panel)", border: "none", borderLeft: "1px solid var(--border)", borderBottom: "1px solid var(--border)",

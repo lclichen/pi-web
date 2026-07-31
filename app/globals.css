@@ -1018,7 +1018,8 @@ span.linenumber {
     min-width: 0;
   }
   .panel-resize-handle,
-  .right-panel-overlay-backdrop {
+  .right-panel-overlay-backdrop,
+  .lab-panel-resize-handle {
     display: none;
   }
   .directory-picker-back,
@@ -1033,4 +1034,28 @@ span.linenumber {
     flex-wrap: wrap;
     padding-bottom: max(10px, env(safe-area-inset-bottom)) !important;
   }
+}
+
+/* =========================================================================
+   Lab Training panel — resizable, far right column
+   ========================================================================= */
+.lab-panel-container {
+  overflow: hidden;
+  transition: width 0.2s ease;
+  flex-shrink: 0;
+}
+.lab-panel-container.lab-panel-open {
+  width: var(--lab-panel-width, 340px);
+  min-width: 240px;
+}
+.lab-panel-container > * {
+  width: var(--lab-panel-width, 340px);
+  min-width: 240px;
+}
+.lab-panel-container.lab-panel-resizing,
+.lab-panel-container.lab-panel-resizing > * {
+  transition: none !important;
+}
+.lab-panel-resize-handle {
+  display: block;
 }

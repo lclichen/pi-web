@@ -167,7 +167,7 @@ export function SessionToolbar({ cwd, sessionId, hasLabTraining, onSendCommand, 
   const loadAgents = useCallback(() => {
     fetch(`/api/agents?cwd=${encodeURIComponent(cwd)}`)
       .then((r) => r.json())
-      .then((a: AgentInfo[]) => setAgents(a ?? []))
+      .then((d: { agents: AgentInfo[] }) => setAgents(d.agents ?? []))
       .catch(() => {});
   }, [cwd]);
 
@@ -275,7 +275,8 @@ export function SessionToolbar({ cwd, sessionId, hasLabTraining, onSendCommand, 
     </div>,
   );
 
-  const agentEnabledCount = agents.filter((a) => a.enabled !== false).length;
+  const agentList = Array.isArray(agents) ? agents : [];
+  const agentEnabledCount = agentList.filter((a) => a.enabled !== false).length;
   buttons.push(
     <div key="subagents" style={{ position: "relative" }}>
       <button
@@ -283,7 +284,7 @@ export function SessionToolbar({ cwd, sessionId, hasLabTraining, onSendCommand, 
         disabled={disabled}
         style={chipStyle(prefs.subagentsEnabled)}
       >
-        Agents {agents.length > 0 && `(${agentEnabledCount}/${agents.length})`}
+        Agents {agentList.length > 0 && `(${agentEnabledCount}/${agentList.length})`}
       </button>
       {agentsOpen && (
         <Popover onClose={() => setAgentsOpen(false)}>
@@ -298,12 +299,12 @@ export function SessionToolbar({ cwd, sessionId, hasLabTraining, onSendCommand, 
               Enable All Agents
             </label>
           </div>
-          {agents.length === 0 ? (
+          {agentList.length === 0 ? (
             <div style={{ padding: "10px 12px", fontSize: 11, color: "var(--text-dim)" }}>
               No subagents configured
             </div>
           ) : (
-            agents.map((a) => (
+            agentList.map((a) => (
               <ToggleRow
                 key={`${a.scope}/${a.name}`}
                 name={a.name}

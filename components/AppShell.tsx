@@ -1610,7 +1610,7 @@ export function AppShell() {
       </div>
 
       {/* Lab Training panel — far right, independent from file viewer */}
-      {(hasLabTraining || labWidget) && labPanelOpen && (
+      {labPanelOpen && (
         <div
           style={{
             display: "flex",
@@ -1631,12 +1631,11 @@ export function AppShell() {
         </div>
       )}
 
-      {/* Lab Training panel toggle — graduation cap icon */}
-      {(hasLabTraining || labWidget) && (
-        <button
-          onClick={() => setLabPanelOpen((v) => !v)}
-          title={labPanelOpen ? "Hide Lab Training panel" : "Show Lab Training panel"}
-          aria-label={labPanelOpen ? "Hide Lab Training panel" : "Show Lab Training panel"}
+      {/* Lab Training panel toggle — graduation cap icon, always visible */}
+      <button
+        onClick={() => setLabPanelOpen((v) => !v)}
+        title={labPanelOpen ? "Hide Lab Training panel" : "Show Lab Training panel"}
+        aria-label={labPanelOpen ? "Hide Lab Training panel" : "Show Lab Training panel"}
           style={{
             position: "fixed", top: 0, right: 36, zIndex: 300,
             display: "flex", alignItems: "center", justifyContent: "center",
@@ -1650,7 +1649,6 @@ export function AppShell() {
             <path d="M22 10v6M2 10l10-5 10 5-10 5z" /><path d="M6 12v5c3 3 9 3 12 0v-5" />
           </svg>
         </button>
-      )}
     </div>
     {/* File panel toggle — always visible at top-right */}
     <button
@@ -1658,7 +1656,7 @@ export function AppShell() {
        title={rightPanelOpen ? translate("files.hidePanel") : translate("files.showPanel")}
        aria-label={rightPanelOpen ? translate("files.hidePanel") : translate("files.showPanel")}
       style={{
-        position: "fixed", top: 0, right: (hasLabTraining || labWidget) ? 72 : 0, zIndex: 300,
+        position: "fixed", top: 0, right: 72, zIndex: 300,
         display: "flex", alignItems: "center", justifyContent: "center",
         width: 36, height: 36, padding: 0,
         background: "var(--bg-panel)", border: "none", borderLeft: "1px solid var(--border)", borderBottom: "1px solid var(--border)",

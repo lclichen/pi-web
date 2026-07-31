@@ -501,7 +501,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
             <SessionToolbar
               cwd={messageCwd ?? ""}
               sessionId={session?.id ?? null}
-              hasLabTraining={false}
+              hasLabTraining={hasLabTraining}
               onSendCommand={(cmd) => handleSend(cmd)}
               onApplyPreferences={(action) => {
                 if (!session?.id) return;
@@ -789,7 +789,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
             <SessionToolbar
               cwd={messageCwd ?? ""}
               sessionId={session?.id ?? null}
-              hasLabTraining={false}
+              hasLabTraining={hasLabTraining}
               onSendCommand={(cmd) => handleSend(cmd)}
               onApplyPreferences={(action) => {
                 if (!session?.id) return;

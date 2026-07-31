@@ -242,6 +242,11 @@ function TreeNode({
   onRenamingNameChange,
   onRenamingSubmit,
   onRenamingCancel,
+  creating,
+  creatingName,
+  onCreateNameChange,
+  onCreateSubmit,
+  onCreateCancel,
   t,
 }: {
   node: FileNode;
@@ -261,6 +266,11 @@ function TreeNode({
   onRenamingNameChange?: (v: string) => void;
   onRenamingSubmit?: () => void;
   onRenamingCancel?: () => void;
+  creating?: { type: "file" | "dir"; dir: string } | null;
+  creatingName?: string;
+  onCreateNameChange?: (v: string) => void;
+  onCreateSubmit?: () => void;
+  onCreateCancel?: () => void;
   t: Translate;
 }) {
   const open = expandedPaths.has(node.fullPath);
@@ -467,6 +477,21 @@ function TreeNode({
       </div>
       {node.isDir && open && (
         <div>
+          {creating && creating.dir === node.fullPath && (
+            <div style={{ paddingLeft: 8 + (depth + 1) * 14, paddingRight: 4, height: 24, display: "flex", alignItems: "center", gap: 4 }}>
+              <span style={{ fontSize: 12, flexShrink: 0 }}>{creating.type === "dir" ? "\u{1F4C1}" : "\u{1F4C4}"}</span>
+              <input
+                autoFocus
+                value={creatingName ?? ""}
+                onChange={(e) => onCreateNameChange?.(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") onCreateSubmit?.(); if (e.key === "Escape") onCreateCancel?.(); }}
+                onBlur={onCreateSubmit}
+                placeholder={creating.type === "dir" ? "folder name" : "file name"}
+                style={{ flex: 1, minWidth: 0, height: 18, border: "1px solid var(--accent)", borderRadius: 3, background: "var(--bg)", color: "var(--text)", fontSize: 11, padding: "0 4px", outline: "none" }}
+                onClick={(e) => e.stopPropagation()}
+              />
+            </div>
+          )}
           {children.map((child) => (
             <TreeNode
               key={child.fullPath}
@@ -487,10 +512,15 @@ function TreeNode({
               onRenamingNameChange={onRenamingNameChange}
               onRenamingSubmit={onRenamingSubmit}
               onRenamingCancel={onRenamingCancel}
+              creating={creating}
+              creatingName={creatingName}
+              onCreateNameChange={onCreateNameChange}
+              onCreateSubmit={onCreateSubmit}
+              onCreateCancel={onCreateCancel}
               t={t}
             />
           ))}
-          {children.length === 0 && loaded && (
+          {children.length === 0 && loaded && !creating && (
             <div style={{ paddingLeft: 8 + (depth + 1) * 14, fontSize: 11, color: "var(--text-dim)", height: 22, display: "flex", alignItems: "center" }}>
               empty
             </div>
@@ -593,6 +623,17 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
   const uploadInputRef = useRef<HTMLInputElement>(null);
   const refreshToken = `${refreshKey ?? 0}:${treeRefreshKey}`;
   const uploadBusy = uploadPhase !== "idle";
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    const close = () => setContextMenu(null);
+    window.addEventListener("click", close);
+    window.addEventListener("contextmenu", close);
+    return () => {
+      window.removeEventListener("click", close);
+      window.removeEventListener("contextmenu", close);
+    };
+  }, [contextMenu]);
 
   const gitStatusByPath = useMemo(() => new Map(
     gitFiles.map((status) => [normalizeFilePathSlashes(status.filePath), status]),
@@ -977,7 +1018,17 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
           </div>
 
           {contextMenu && (
-            <div style={{ position: "fixed", left: contextMenu.x, top: contextMenu.y, zIndex: 1000, background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: 6, boxShadow: "0 4px 12px rgba(0,0,0,0.2)", padding: 4, minWidth: 120 }}>
+            <div
+              style={{ position: "fixed", left: contextMenu.x, top: contextMenu.y, zIndex: 1000, background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: 6, boxShadow: "0 4px 12px rgba(0,0,0,0.2)", padding: 4, minWidth: 120 }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {contextMenu.node.isDir && (
+                <>
+                  <ContextMenuButton label="New File" color="var(--text)" onClick={() => { setCreating({ type: "file", dir: contextMenu.node.fullPath }); setCreatingName(""); setContextMenu(null); }} />
+                  <ContextMenuButton label="New Folder" color="var(--text)" onClick={() => { setCreating({ type: "dir", dir: contextMenu.node.fullPath }); setCreatingName(""); setContextMenu(null); }} />
+                  <div style={{ height: 1, background: "var(--border)", margin: "2px 0" }} />
+                </>
+              )}
               <ContextMenuButton label="Rename" color="var(--text)" onClick={() => { const n = contextMenu.node; setRenaming({ oldPath: n.fullPath, oldName: n.name }); setRenamingName(n.name); setContextMenu(null); }} />
               <ContextMenuButton label="Delete" color="#f87171" onClick={() => { const n = contextMenu.node; setContextMenu(null); if (window.confirm(`Delete ${n.name}?`)) handleDelete(n.fullPath); }} />
             </div>
@@ -1024,6 +1075,11 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
                 onRenamingNameChange={setRenamingName}
                 onRenamingSubmit={handleRename}
                 onRenamingCancel={() => { setRenaming(null); setRenamingName(""); }}
+                creating={creating}
+                creatingName={creatingName}
+                onCreateNameChange={setCreatingName}
+                onCreateSubmit={handleCreate}
+                onCreateCancel={() => { setCreating(null); setCreatingName(""); }}
                 t={t}
               />
             ))}

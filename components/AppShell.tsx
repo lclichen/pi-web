@@ -264,7 +264,6 @@ export function AppShell() {
   // Right panel — file tabs only
   const [fileTabs, setFileTabs] = useState<Tab[]>([]);
   const [activeFileTabId, setActiveFileTabId] = useState<string | null>(null);
-  const [rightPanelOpen, setRightPanelOpen] = useState(false);
   const [rightPanelMode, setRightPanelMode] = useState<"files" | "git">("files");
 
   // Lab Training side panel (independent from file viewer)

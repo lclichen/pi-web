@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
+import { MarkdownBody } from "./MarkdownBody";
 
 interface StepView {
   stepId: string;
@@ -168,7 +169,7 @@ export function LabTrainingSidePanel({ widgetState, hasLabTraining, onSendComman
 
       {/* Training Content */}
       {(isTraining || isQA) && state && step && (
-        <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden" }}>
+        <div className="lab-panel-content" style={{ flex: 1, overflowY: "auto", overflowX: "hidden" }}>
           {/* Progress bar */}
           {state.stepTotal > 0 && (
             <div style={{ padding: "6px 12px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
@@ -216,8 +217,8 @@ export function LabTrainingSidePanel({ widgetState, hasLabTraining, onSendComman
 
           {/* Step instruction */}
           <div style={{ padding: "4px 12px 8px" }}>
-            <div style={{ fontSize: 12, color: "var(--text)", lineHeight: 1.5, fontWeight: 500 }}>
-              {step.instruction}
+            <div className="lab-md lab-md-instruction">
+              <MarkdownBody>{step.instruction}</MarkdownBody>
             </div>
           </div>
 
@@ -236,8 +237,10 @@ export function LabTrainingSidePanel({ widgetState, hasLabTraining, onSendComman
           {/* Expected result */}
           {step.expectedResult && (
             <div style={{ margin: "4px 12px", padding: "6px 10px", borderRadius: 4, background: "rgba(34,197,94,0.06)", border: "1px solid rgba(34,197,94,0.15)" }}>
-              <div style={{ fontSize: 9, color: "#22c55e", fontWeight: 600, marginBottom: 2 }}>Expected Result</div>
-              <div style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.4 }}>{step.expectedResult}</div>
+              <div style={{ fontSize: 10, color: "#22c55e", fontWeight: 600, marginBottom: 4 }}>Expected Result</div>
+              <div className="lab-md lab-md-expected">
+                <MarkdownBody>{step.expectedResult}</MarkdownBody>
+              </div>
             </div>
           )}
 
@@ -247,7 +250,9 @@ export function LabTrainingSidePanel({ widgetState, hasLabTraining, onSendComman
             return (
               <div key={i} style={{ margin: "3px 12px", padding: "4px 8px", borderRadius: 4, background: ns.bg, display: "flex", gap: 6 }}>
                 <span style={{ fontSize: 11, fontWeight: 700, color: ns.color, flexShrink: 0 }}>{ns.icon}</span>
-                <span style={{ fontSize: 10, color: "var(--text-muted)", lineHeight: 1.4 }}>{note.content}</span>
+                <div className="lab-md lab-md-note" style={{ flex: 1, minWidth: 0 }}>
+                  <MarkdownBody>{note.content}</MarkdownBody>
+                </div>
               </div>
             );
           })}
@@ -258,15 +263,31 @@ export function LabTrainingSidePanel({ widgetState, hasLabTraining, onSendComman
               <summary style={{ fontSize: 10, color: "var(--text-dim)", cursor: "pointer", fontWeight: 600 }}>
                 Teaching Guide
               </summary>
-              <div style={{ padding: "6px 0", fontSize: 10, color: "var(--text-muted)", lineHeight: 1.5 }}>
-                {step.teaching.goal && <div><strong>Goal:</strong> {step.teaching.goal}</div>}
-                {step.teaching.why && <div style={{ marginTop: 3 }}><strong>Why:</strong> {step.teaching.why}</div>}
-                {step.teaching.hints?.map((h, i) => (
-                  <div key={i} style={{ marginTop: 3 }}><strong>Hint {i + 1}:</strong> {h}</div>
-                ))}
-                {step.teaching.commonMistakes?.map((m, i) => (
-                  <div key={`m${i}`} style={{ marginTop: 3, color: "#f59e0b" }}><strong>Common Mistake:</strong> {m}</div>
-                ))}
+              <div className="lab-md lab-md-teaching" style={{ padding: "6px 0" }}>
+                {step.teaching.goal && (
+                  <div style={{ marginBottom: 4 }}>
+                    <div style={{ fontSize: 10, fontWeight: 600, color: "var(--text)" }}>Goal</div>
+                    <MarkdownBody>{step.teaching.goal}</MarkdownBody>
+                  </div>
+                )}
+                {step.teaching.why && (
+                  <div style={{ marginBottom: 4 }}>
+                    <div style={{ fontSize: 10, fontWeight: 600, color: "var(--text)" }}>Why</div>
+                    <MarkdownBody>{step.teaching.why}</MarkdownBody>
+                  </div>
+                )}
+                {step.teaching.hints && step.teaching.hints.length > 0 && (
+                  <div style={{ marginBottom: 4 }}>
+                    <div style={{ fontSize: 10, fontWeight: 600, color: "var(--text)" }}>Hints</div>
+                    <MarkdownBody>{step.teaching.hints.map((h, i) => `${i + 1}. ${h}`).join("\n")}</MarkdownBody>
+                  </div>
+                )}
+                {step.teaching.commonMistakes && step.teaching.commonMistakes.length > 0 && (
+                  <div>
+                    <div style={{ fontSize: 10, fontWeight: 600, color: "#f59e0b" }}>Common Mistakes</div>
+                    <MarkdownBody>{step.teaching.commonMistakes.map((m, i) => `${i + 1}. ${m}`).join("\n")}</MarkdownBody>
+                  </div>
+                )}
               </div>
             </details>
           )}
@@ -277,14 +298,18 @@ export function LabTrainingSidePanel({ widgetState, hasLabTraining, onSendComman
               <div style={{ fontSize: 10, color: "var(--text-dim)", fontWeight: 600, marginBottom: 4 }}>Sub-steps</div>
               {step.subSteps.map((sub, i) => (
                 <div key={sub.stepId} style={{ marginBottom: 8, paddingLeft: 8, borderLeft: "2px solid var(--border)" }}>
-                  <div style={{ fontSize: 11, color: "var(--text)", fontWeight: 500 }}>{i + 1}. {sub.instruction}</div>
+                  <div className="lab-md lab-md-substep">
+                    <MarkdownBody>{`${i + 1}. ${sub.instruction}`}</MarkdownBody>
+                  </div>
                   {sub.code && (
                     <pre style={{ margin: "3px 0", padding: "4px 6px", fontSize: 10, fontFamily: "var(--font-mono)", color: "var(--text-muted)", background: "var(--bg-panel)", borderRadius: 3, overflowX: "auto" }}>
                       <code>{sub.code}</code>
                     </pre>
                   )}
                   {sub.expectedResult && (
-                    <div style={{ fontSize: 10, color: "var(--text-dim)" }}>Expected: {sub.expectedResult}</div>
+                    <div className="lab-md lab-md-substep-expected">
+                      <MarkdownBody>{`**Expected:** ${sub.expectedResult}`}</MarkdownBody>
+                    </div>
                   )}
                 </div>
               ))}

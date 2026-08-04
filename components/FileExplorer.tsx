@@ -822,17 +822,17 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
     if (!creating || !creatingName.trim()) { setCreating(null); return; }
     const name = creatingName.trim();
     const fullPath = joinFilePath(creating.dir, name);
-    fetch("/api/files/" + encodeURIComponent(fullPath.replace(/^\//, "")), {
-      method: creating.type === "dir" ? "POST" : "PUT",
+    fetch(`/api/files/${encodeFilePathForApi(fullPath)}`, {
+      method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type: creating.type === "dir" ? "directory" : "file" }),
+      body: JSON.stringify({ type: creating.type === "dir" ? "dir" : "file" }),
     }).then(() => {
       setCreating(null); setCreatingName(""); setTreeRefreshKey((k) => k + 1);
     }).catch((e) => { setError(e instanceof Error ? e.message : String(e)); setCreating(null); });
   }, [creating, creatingName]);
 
   const handleDelete = useCallback((fullPath: string) => {
-    fetch("/api/files/" + encodeURIComponent(fullPath.replace(/^\//, "")), { method: "DELETE" })
+    fetch(`/api/files/${encodeFilePathForApi(fullPath)}`, { method: "DELETE" })
       .then(() => {
         onFileDeleted?.(fullPath);
         setTreeRefreshKey((k) => k + 1);
@@ -843,7 +843,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
   const handleRename = useCallback(() => {
     if (!renaming || !renamingName.trim()) { setRenaming(null); return; }
     const newPath = joinFilePath(getFileDirectory(renaming.oldPath), renamingName.trim());
-    fetch("/api/files/" + encodeURIComponent(renaming.oldPath.replace(/^\//, "")), {
+    fetch(`/api/files/${encodeFilePathForApi(renaming.oldPath)}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ newPath }),

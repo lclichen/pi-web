@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { MarkdownBody } from "./MarkdownBody";
 
 interface StepView {
@@ -42,6 +42,14 @@ interface SectionNode {
   blocks?: { id: string; title: string }[];
 }
 
+interface QAExchange {
+  question: string;
+  answer: string;
+  error?: string;
+  pending: boolean;
+  timestamp: string;
+}
+
 interface WidgetState {
   mode: "training" | "qa" | "idle";
   labTitle: string | null;
@@ -57,6 +65,7 @@ interface WidgetState {
   currentStep: StepView | null;
   sections: SectionNode[];
   verifyEnabled: boolean;
+  qaHistory?: QAExchange[];
 }
 
 interface Props {
@@ -75,6 +84,13 @@ const NOTE_STYLES: Record<string, { icon: string; color: string; bg: string }> =
 
 export function LabTrainingSidePanel({ widgetState, hasLabTraining, onSendCommand, onStartLabTraining, disabled }: Props) {
   const [outlineExpanded, setOutlineExpanded] = useState(false);
+  const qaEndRef = useRef<HTMLDivElement | null>(null);
+
+  // Keep the newest Q&A exchange in view while a question is being answered.
+  const qaHistory = widgetState?.mode === "qa" ? widgetState.qaHistory : undefined;
+  useEffect(() => {
+    qaEndRef.current?.scrollIntoView({ block: "nearest" });
+  }, [qaHistory]);
 
   if (!hasLabTraining && !widgetState) return null;
 
@@ -170,6 +186,50 @@ export function LabTrainingSidePanel({ widgetState, hasLabTraining, onSendComman
       {/* Training Content */}
       {(isTraining || isQA) && state && step && (
         <div className="lab-panel-content" style={{ flex: 1, overflowY: "auto", overflowX: "hidden" }}>
+          {/* QA Session — exchanges shown only in the panel, never in the
+              main chat stream or the LLM context (pure widget channel). */}
+          {isQA && state.qaHistory && state.qaHistory.length > 0 && (
+            <div style={{ borderBottom: "1px solid var(--border)", background: "var(--bg-panel)" }}>
+              <div style={{
+                padding: "5px 12px", fontSize: 10, fontWeight: 700, color: "var(--text-dim)",
+                position: "sticky", top: 0, background: "var(--bg-panel)",
+                borderBottom: "1px solid var(--border)",
+              }}>
+                Q&amp;A Session
+              </div>
+              {state.qaHistory.map((ex, i) => (
+                <div key={i} style={{ padding: "6px 12px", borderTop: i > 0 ? "1px solid var(--border)" : "none" }}>
+                  <div style={{ display: "flex", gap: 6, marginBottom: 3 }}>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: "#a855f7", flexShrink: 0, lineHeight: "16px" }}>Q</span>
+                    <div className="lab-md lab-md-qa-q" style={{ flex: 1, minWidth: 0 }}>
+                      <MarkdownBody>{ex.question}</MarkdownBody>
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: "var(--accent)", flexShrink: 0, lineHeight: "16px" }}>A</span>
+                    {ex.pending ? (
+                      <span style={{ fontSize: 10, color: "var(--text-muted)", fontStyle: "italic" }}>thinking…</span>
+                    ) : ex.error ? (
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        {ex.answer && (
+                          <div className="lab-md lab-md-qa-a" style={{ marginBottom: 2 }}>
+                            <MarkdownBody>{ex.answer}</MarkdownBody>
+                          </div>
+                        )}
+                        <div style={{ fontSize: 10, color: "#ef4444" }}>{ex.error}</div>
+                      </div>
+                    ) : (
+                      <div className="lab-md lab-md-qa-a" style={{ flex: 1, minWidth: 0 }}>
+                        <MarkdownBody>{ex.answer || "(no response)"}</MarkdownBody>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+              <div ref={qaEndRef} />
+            </div>
+          )}
+
           {/* Progress bar */}
           {state.stepTotal > 0 && (
             <div style={{ padding: "6px 12px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>

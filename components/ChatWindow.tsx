@@ -632,7 +632,17 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
               const rendered: ReactNode[] = [];
               for (let idx = 0; idx < messages.length;) {
                 const msg = messages[idx];
-                if (hasLabPanel && msg.role === "custom" && (msg as { customType?: string }).customType === "lab-training") {
+                // lab-training custom messages are internal extension artifacts
+                // (e.g. legacy QA exchanges). They are surfaced in the Lab
+                // Training side panel, never in the main chat stream. Filter as
+                // long as the extension is active (widget present or /lab
+                // command registered), so they cannot flash into the transcript
+                // while the widget state is still settling.
+                if (
+                  (hasLabPanel || hasLabTraining) &&
+                  msg.role === "custom" &&
+                  (msg as { customType?: string }).customType === "lab-training"
+                ) {
                   idx += 1;
                   continue;
                 }

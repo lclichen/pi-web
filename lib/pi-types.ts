@@ -70,6 +70,7 @@ interface ExtensionRunnerLike {
     description?: string;
     sourceInfo: SlashCommandInfo["sourceInfo"];
   }>;
+  emit?(event: { type: "session_shutdown"; reason: "quit" }): Promise<unknown>;
   setUIContext?(uiContext?: unknown, mode?: "tui" | "rpc" | "json" | "print"): void;
 }
 
@@ -134,6 +135,7 @@ export interface AgentSessionLike {
   readonly resourceLoader: ResourceLoaderLike;
 
   readonly bindExtensions?: unknown;
+  dispose(): void;
   reload(options?: { beforeSessionStart?: () => void | Promise<void> }): Promise<void>;
   subscribe(listener: (event: AgentSessionEvent) => void): () => void;
   prompt(text: string, options?: {

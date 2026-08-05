@@ -19,6 +19,7 @@ import { BranchNavigator } from "./BranchNavigator";
 import { useTheme } from "@/hooks/useTheme";
 import { useI18n } from "@/hooks/useI18n";
 import { useIsMobile } from "@/hooks/useIsMobile";
+import { useViewportHeight } from "@/hooks/useViewportHeight";
 import { useResizablePanel } from "@/hooks/useResizablePanel";
 import { copyText } from "@/lib/clipboard";
 import { getFileName } from "@/lib/file-paths";
@@ -60,6 +61,7 @@ export function AppShell() {
   const { isDark, toggleTheme } = useTheme();
   const { locale, setLocale, t: translate, supportedLocales } = useI18n();
   const isMobile = useIsMobile();
+  useViewportHeight();
   const [selectedSession, setSelectedSession] = useState<SessionInfo | null>(null);
   // When user clicks +, we only store the cwd — no fake session id
   const [newSessionCwd, setNewSessionCwd] = useState<string | null>(null);
@@ -863,12 +865,20 @@ export function AppShell() {
           pointer-events: none !important;
         }
         .sidebar-container.sidebar-mobile-pending.sidebar-open {
-          transform: translateX(-100%);
+          transform: translateX(calc(-100% - env(safe-area-inset-left)));
           box-shadow: none;
         }
       }
     `}</style>
-    <div style={{ display: "flex", height: "100dvh", overflow: "hidden", background: "var(--bg)" }}>
+    <div style={{
+      display: "flex",
+      width: "100%",
+      height: "var(--app-viewport-height, 100dvh)",
+      paddingLeft: "env(safe-area-inset-left)",
+      paddingRight: "env(safe-area-inset-right)",
+      overflow: "hidden",
+      background: "var(--bg)",
+    }}>
       {/* Mobile overlay backdrop */}
       <div
         className={`sidebar-overlay-backdrop${mobileSidebarReady ? "" : " sidebar-mobile-pending"}`}
@@ -896,6 +906,8 @@ export function AppShell() {
           display: "flex",
           flexDirection: "column",
           flexShrink: 0,
+          paddingTop: "env(safe-area-inset-top)",
+          paddingBottom: "env(safe-area-inset-bottom)",
           zIndex: 200,
         } as React.CSSProperties}
       >
@@ -914,7 +926,7 @@ export function AppShell() {
       {/* Center: chat */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minWidth: 0 }}>
         {/* Top bar with sidebar toggle */}
-        <div ref={topBarRef} style={{ display: "flex", alignItems: "center", flexShrink: 0, borderBottom: "1px solid var(--border)", height: 36, background: "var(--bg-panel)" }}>
+        <div ref={topBarRef} style={{ display: "flex", alignItems: "center", flexShrink: 0, borderBottom: "1px solid var(--border)", height: "calc(36px + env(safe-area-inset-top))", paddingTop: "env(safe-area-inset-top)", background: "var(--bg-panel)" }}>
           <button
             onClick={handleSidebarToggle}
              title={sidebarOpen ? translate("sidebar.hide") : translate("sidebar.show")}
@@ -1660,7 +1672,15 @@ export function AppShell() {
         } as React.CSSProperties}
       >
         {/* Right panel tab bar */}
-        <div style={{ display: "flex", alignItems: "center", flexShrink: 0, background: "var(--bg-panel)", borderBottom: "1px solid var(--border)", height: 36 }}>
+        <div style={{
+          display: "flex",
+          alignItems: "center",
+          flexShrink: 0,
+          height: "calc(36px + env(safe-area-inset-top))",
+          paddingTop: "env(safe-area-inset-top)",
+          background: "var(--bg-panel)",
+          borderBottom: "1px solid var(--border)",
+        }}>
           <button
             onClick={() => setRightPanelMode("files")}
             title="Files"
@@ -1703,7 +1723,7 @@ export function AppShell() {
         </div>
 
         {/* Panel content */}
-        <div style={{ flex: 1, overflow: "hidden" }}>
+        <div style={{ flex: 1, overflow: "hidden", paddingBottom: "env(safe-area-inset-bottom)" }}>
           {rightPanelMode === "git" ? (
             <GitPanel
               cwd={(activeCwd ?? selectedSession?.cwd ?? newSessionCwd) ?? ""}
@@ -1770,9 +1790,9 @@ export function AppShell() {
         title={labPanelOpen ? "Hide Lab Training panel" : "Show Lab Training panel"}
         aria-label={labPanelOpen ? "Hide Lab Training panel" : "Show Lab Training panel"}
           style={{
-            position: "fixed", top: 0, right: 0, zIndex: 300,
+            position: "fixed", top: "env(safe-area-inset-top)", right: "env(safe-area-inset-right)", zIndex: 300,
             display: "flex", alignItems: "center", justifyContent: "center",
-            width: 36, height: 36, padding: 0,
+            width: 36, height: "calc(36px + env(safe-area-inset-top))", padding: 0, paddingTop: "env(safe-area-inset-top)",
             background: "var(--bg-panel)", border: "none", borderLeft: "1px solid var(--border)", borderBottom: "1px solid var(--border)",
             color: labPanelOpen ? "var(--accent)" : "var(--text-muted)",
             cursor: "pointer", transition: "color 0.12s",
@@ -1791,7 +1811,7 @@ export function AppShell() {
        title={rightPanelOpen ? translate("files.hidePanel") : translate("files.showPanel")}
        aria-label={rightPanelOpen ? translate("files.hidePanel") : translate("files.showPanel")}
       style={{
-        position: "fixed", top: 0, right: 36, zIndex: 300,
+        position: "fixed", top: "env(safe-area-inset-top)", right: "calc(36px + env(safe-area-inset-right))", zIndex: 300,
         display: "flex", alignItems: "center", justifyContent: "center",
         width: 36, height: 36, padding: 0,
         background: "var(--bg-panel)", border: "none", borderLeft: "1px solid var(--border)", borderBottom: "1px solid var(--border)",

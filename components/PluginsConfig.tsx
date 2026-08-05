@@ -13,6 +13,11 @@ function shortenPath(path: string): string {
   return path.replace(/^\/(?:Users|home)\/[^/]+/, "~");
 }
 
+function normalizePluginSourceInput(value: string): string {
+  const match = value.trim().match(/^\$?\s*pi\s+install\s+(\S+)\s*$/);
+  return match?.[1] ?? value;
+}
+
 function packageKey(pkg: Pick<PluginPackageInfo, "source" | "scope">): string {
   return `${pkg.scope}\0${pkg.source}`;
 }
@@ -312,8 +317,34 @@ function AddPluginPanel({
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 18, maxWidth: 660, minHeight: "100%" }}>
       <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>
-          {t("i18n.addPlugin")}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>
+            {t("i18n.addPlugin")}
+          </div>
+          <a
+            href="https://pi.dev/packages"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 5,
+              color: "var(--accent)",
+              fontSize: 12,
+              textDecoration: "none",
+              whiteSpace: "nowrap",
+            }}
+          >
+            <svg width="28" height="28" viewBox="0 0 800 800" aria-hidden="true" focusable="false" style={{ flexShrink: 0 }}>
+              <path
+                fill="#000"
+                fillRule="evenodd"
+                d="M165.29 165.29H517.36V400H400V517.36H282.65V634.72H165.29ZM282.65 282.65V400H400V282.65Z"
+              />
+              <path fill="#000" d="M517.36 400H634.72V634.72H517.36Z" />
+            </svg>
+            pi.dev/packages
+          </a>
         </div>
         <div style={{ fontSize: 12, color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>
           {installLocation(scope, cwd)}
@@ -329,6 +360,14 @@ function AddPluginPanel({
           ref={inputRef}
           value={source}
           onChange={(e) => onSourceChange(e.target.value)}
+          onPaste={(e) => {
+            const pasted = e.clipboardData.getData("text");
+            const normalized = normalizePluginSourceInput(pasted);
+            if (normalized === pasted) return;
+            e.preventDefault();
+            onSourceChange(normalized);
+          }}
+          onBlur={(e) => onSourceChange(normalizePluginSourceInput(e.currentTarget.value))}
           placeholder="npm:@scope/package"
           style={{
             width: "100%",
@@ -666,8 +705,9 @@ export function PluginsConfig({
   }, [cwd]);
 
   const installPlugin = useCallback(async () => {
-    const source = installSource.trim();
+    const source = normalizePluginSourceInput(installSource).trim();
     if (!source) return;
+    setInstallSource(source);
     const key = `${installScope}\0${source}`;
     setBusyKey(`install:${key}`);
     setActionError(null);

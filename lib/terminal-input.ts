@@ -38,24 +38,30 @@ function legacyCtrlSequence(key: string): string | null {
 
 export function toTerminalKeyData(event: TerminalKeyEventLike): string | null {
   if (event.metaKey) return null;
-  if (event.ctrlKey && !event.altKey && event.key.toLowerCase() === "v") return null;
+
+  // IME composition keydown events may carry key === undefined even though the
+  // type declares it as string — guard before any string operations.
+  const key = event.key;
+  if (typeof key !== "string") return null;
+
+  if (event.ctrlKey && !event.altKey && key.toLowerCase() === "v") return null;
 
   if (event.ctrlKey && !event.altKey) {
-    const control = legacyCtrlSequence(event.key);
+    const control = legacyCtrlSequence(key);
     if (control) return control;
   }
 
   if (event.altKey && !event.ctrlKey) {
-    if (event.key === "Backspace") return "\x1b\x7f";
-    const arrow = ALT_ARROW_SEQUENCES[event.key];
+    if (key === "Backspace") return "\x1b\x7f";
+    const arrow = ALT_ARROW_SEQUENCES[key];
     if (arrow) return arrow;
-    if (event.key.length === 1) return `\x1b${event.key}`;
+    if (key.length === 1) return `\x1b${key}`;
   }
 
-  if (event.key === "Enter") return event.shiftKey ? "\n" : "\r";
-  if (event.key === "Tab") return event.shiftKey ? "\x1b[Z" : "\t";
+  if (key === "Enter") return event.shiftKey ? "\n" : "\r";
+  if (key === "Tab") return event.shiftKey ? "\x1b[Z" : "\t";
 
-  return SPECIAL_KEY_SEQUENCES[event.key] ?? null;
+  return SPECIAL_KEY_SEQUENCES[key] ?? null;
 }
 
 export function asBracketedPaste(text: string): string {

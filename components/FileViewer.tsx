@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback, useMemo, type CSSProperties, type MouseEvent } from "react";
+import { useEffect, useState, useRef, useCallback, useMemo, useDeferredValue, type CSSProperties, type MouseEvent } from "react";
 import {
   Prism as SyntaxHighlighter,
   createElement as renderSyntaxNode,
@@ -815,6 +815,10 @@ function TextFileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onMentionL
   const [editContent, setEditContent] = useState("");
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
+  const highlightRef = useRef<HTMLDivElement | null>(null);
+  // Highlight layer trails the input so large files aren't re-highlighted on
+  // every keystroke.
+  const deferredEditContent = useDeferredValue(editContent);
 
   const fetchContent = useCallback((filePath: string) => {
     return fetch(getFileApiUrl(filePath, "read", sourceSessionId))
@@ -914,6 +918,12 @@ function TextFileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onMentionL
     setDisplayMode("source");
     setWrapLines(false);
     setWatching(false);
+    // Switching files must leave edit mode: the editor holds the previous
+    // file's content in local state and would otherwise keep showing it.
+    setEditMode(false);
+    setEditContent("");
+    setDirty(false);
+    setSaving(false);
 
     if (esRef.current) {
       esRef.current.close();
@@ -1026,7 +1036,8 @@ function TextFileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onMentionL
     if (!onMentionLines || displayMode !== "source") return;
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.repeat || event.key.toLowerCase() !== "i" || (!event.metaKey && !event.ctrlKey) || event.altKey || event.shiftKey) return;
+      // IME composition keydown events may carry key === undefined; guard it.
+      if (event.repeat || !event.key || event.key.toLowerCase() !== "i" || (!event.metaKey && !event.ctrlKey) || event.altKey || event.shiftKey) return;
 
       const target = event.target;
       if (target instanceof Element && target.closest("input, textarea, [contenteditable='true']")) return;
@@ -1114,7 +1125,7 @@ function TextFileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onMentionL
         )}
 
         <div className="file-viewer-controls">
-          {displayModes.length > 1 && (
+          {!editMode && displayModes.length > 1 && (
             <div className="file-viewer-mode-switch" aria-label={t("i18n.fileViewMode")}>
               {displayModes.map((mode) => {
                 const active = effectiveDisplayMode === mode;
@@ -1139,7 +1150,7 @@ function TextFileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onMentionL
           )}
 
           <div className="file-viewer-actions">
-            {effectiveDisplayMode === "source" && (
+            {effectiveDisplayMode === "source" && !editMode && (
               <>
                 <button
                   type="button"
@@ -1221,17 +1232,74 @@ function TextFileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onMentionL
       {/* Content area */}
       <div ref={contentRef} className="file-viewer-content" style={{ flex: 1, overflow: editMode ? "hidden" : "auto", background: "var(--bg)" }}>
         {editMode ? (
-          <textarea
-            value={editContent}
-            onChange={(e) => { setEditContent(e.target.value); setDirty(true); }}
-            spellCheck={false}
-            style={{
-              width: "100%", height: "100%", border: "none", outline: "none",
-              resize: "none", background: "var(--bg)", color: "var(--text)",
-              fontFamily: "var(--font-mono)", fontSize: 13, lineHeight: 1.5,
-              padding: "12px 16px", tabSize: 2,
-            }}
-          />
+          <div style={{ position: "relative", width: "100%", height: "100%", overflow: "hidden", background: "var(--bg)" }}>
+            {/* Highlight layer — rendered behind the transparent-input textarea.
+                It is panned with a transform to mirror the textarea scroll. */}
+            <div ref={highlightRef} aria-hidden="true" style={{ position: "absolute", inset: 0, overflow: "hidden" }}>
+              <SyntaxHighlighter
+                language={language === "text" ? "plaintext" : language}
+                style={isDark ? vscDarkPlus : vs}
+                showLineNumbers={false}
+                customStyle={{
+                  margin: 0,
+                  padding: "12px 16px",
+                  border: 0,
+                  background: "transparent",
+                  ...FILE_CODE_STYLE,
+                  whiteSpace: "pre",
+                  overflow: "visible",
+                  willChange: "transform",
+                }}
+                codeTagProps={{
+                  style: {
+                    fontFamily: "var(--font-mono)",
+                    whiteSpace: "pre",
+                  },
+                }}
+              >
+                {deferredEditContent}
+              </SyntaxHighlighter>
+            </div>
+            <textarea
+              value={editContent}
+              onChange={(e) => { setEditContent(e.target.value); setDirty(true); }}
+              onScroll={(e) => {
+                const pre = highlightRef.current?.querySelector("pre");
+                if (pre) {
+                  pre.style.transform = `translate(${-e.currentTarget.scrollLeft}px, ${-e.currentTarget.scrollTop}px)`;
+                }
+              }}
+              onKeyDown={(e) => {
+                if (e.key !== "Tab") return;
+                e.preventDefault();
+                const el = e.currentTarget;
+                const start = el.selectionStart;
+                const end = el.selectionEnd;
+                const next = editContent.slice(0, start) + "  " + editContent.slice(end);
+                setEditContent(next);
+                setDirty(true);
+                requestAnimationFrame(() => {
+                  el.selectionStart = el.selectionEnd = start + 2;
+                });
+              }}
+              spellCheck={false}
+              wrap="off"
+              autoFocus
+              className="file-editor-textarea"
+              style={{
+                position: "absolute", inset: 0,
+                width: "100%", height: "100%",
+                border: "none", outline: "none", resize: "none",
+                background: "transparent", color: "transparent",
+                caretColor: "var(--text)",
+                ...FILE_CODE_STYLE,
+                padding: "12px 16px",
+                tabSize: 2,
+                whiteSpace: "pre",
+                overflow: "auto",
+              }}
+            />
+          </div>
         ) : effectiveDisplayMode === "diff" && hasGitDiff ? (
           <DiffView patch={gitDiff.patch!} />
         ) : isHtml && effectiveDisplayMode === "preview" ? (

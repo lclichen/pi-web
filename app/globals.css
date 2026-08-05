@@ -601,6 +601,13 @@ pre, code {
   min-height: 35px;
 }
 
+/* Edit-mode editor: the textarea draws transparent glyphs over the highlighted
+   layer, so the selection needs an explicit background to stay visible. */
+.file-editor-textarea::selection {
+  background: rgba(168, 85, 247, 0.25);
+  color: transparent;
+}
+
 .file-viewer-path {
   flex: 1 1 auto;
   min-width: 48px;

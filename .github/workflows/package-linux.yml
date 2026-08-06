@@ -33,6 +33,9 @@ jobs:
           # 有私有托管地址时，在仓库 Settings -> Secrets and variables -> Actions
           # -> Variables 里配置同名变量，CI 构建就会自动替换 registry 版本。
           PI_CODING_AGENT_LOCAL: ${{ vars.PI_CODING_AGENT_LOCAL }}
+          # 可选：内置 Node 运行时来源（.tar.gz/.tar.xz 包 / 解压目录 / https URL
+          # 内网镜像），不访问 nodejs.org。同样在仓库 Variables 里配置。
+          NODE_RUNTIME_LOCAL: ${{ vars.NODE_RUNTIME_LOCAL }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

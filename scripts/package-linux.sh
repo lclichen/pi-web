@@ -20,12 +20,22 @@
 #                            PI_CODING_AGENT_LOCAL=/data/pi-coding-agent-0.83.1.tgz
 #                            PI_CODING_AGENT_LOCAL=/data/pi-coding-agent-src
 #                            PI_CODING_AGENT_LOCAL=https://intranet/pi-coding-agent.tgz
-#   NODE_VERSION          内置 Node.js 运行时版本 (默认: 22.19.0)
+#   NODE_RUNTIME_LOCAL    内置 Node.js 运行时的本地来源，用于不访问 nodejs.org 的
+#                         分发场景（优先级最高；设置后既不下载也不复用旧 runtime）:
+#                          - 一个 .tar.gz / .tar.xz 包（nodejs.org 官方同格式）
+#                          - 一个已解压的目录（node-v*-linux-*/ 或 runtime/ 布局）
+#                          - 一个 http(s):// URL（内网镜像）
+#                         示例:
+#                            NODE_RUNTIME_LOCAL=/data/node-v22.19.0-linux-x64.tar.gz
+#                            NODE_RUNTIME_LOCAL=/data/node-v22.19.0-linux-x64
+#                            NODE_RUNTIME_LOCAL=https://mirror.internal/node-v22.19.0-linux-x64.tar.gz
+#   NODE_VERSION          内置 Node.js 运行时版本 (默认: 22.19.0；仅当未设置
+#                         NODE_RUNTIME_LOCAL 时用于从 nodejs.org 下载)
 #   ARCH                  目标 CPU 架构: x64 | arm64 (默认: x64)
 #   OUT_DIR               产物输出目录 (默认: <仓库>/dist)
 #   SMOKE_TEST            设为 "0" 跳过构建后的冒烟测试 (默认: 1)
 #   SKIP_RUNTIME_DOWNLOAD 设为 "1" 复用包内已有的 runtime/，不再下载 Node
-#                         （构建机完全离线时使用）
+#                         （构建机完全离线时使用；NODE_RUNTIME_LOCAL 优先级更高）
 #
 # 构建机要求: Linux（或 WSL）、bash、curl（或 wget）、tar、Node.js >= 22
 #            （用于安装依赖和执行 next build；产物本身不需要）。
@@ -128,8 +138,53 @@ chmod +x "$PKG/pi" "$PKG/pi-web.sh" "$PKG/start.sh" "$PKG/open-pi-terminal.sh" "
 
 # ---------------------------------------------------------------------------
 # 8. 内置 Node.js 运行时
+#    优先级: NODE_RUNTIME_LOCAL（本地包/目录/URL）> SKIP_RUNTIME_DOWNLOAD 复用
+#           已有 runtime/ > 从 nodejs.org 下载
 # ---------------------------------------------------------------------------
-if [ "${SKIP_RUNTIME_DOWNLOAD:-0}" = "1" ] && [ -d "$PKG/runtime" ]; then
+if [ -n "${NODE_RUNTIME_LOCAL:-}" ]; then
+  LOCAL_RT="$NODE_RUNTIME_LOCAL"
+  case "$LOCAL_RT" in
+    http://*|https://*)
+      log "获取 Node 运行时 (URL): $LOCAL_RT"
+      if command -v curl >/dev/null 2>&1; then
+        curl -fsSL "$LOCAL_RT" -o "$WORK/node-local.tar.gz"
+      elif command -v wget >/dev/null 2>&1; then
+        wget -q -O "$WORK/node-local.tar.gz" "$LOCAL_RT"
+      else
+        die "需要 curl 或 wget 来获取 Node 运行时"
+      fi
+      LOCAL_RT="$WORK/node-local.tar.gz"
+      ;;
+  esac
+
+  if [ -d "$LOCAL_RT" ]; then
+    # 目录: 已解压的 node-v*-linux-*/ 目录，或直接是 runtime/ 布局
+    log "使用本地 Node 运行时目录: $LOCAL_RT"
+    if [ -x "$LOCAL_RT/bin/node" ]; then
+      RT_SRC="$LOCAL_RT"
+    elif [ -x "$LOCAL_RT/runtime/bin/node" ]; then
+      RT_SRC="$LOCAL_RT/runtime"
+    else
+      die "NODE_RUNTIME_LOCAL 目录中未找到 bin/node: $LOCAL_RT"
+    fi
+    rm -rf "$PKG/runtime"
+    mkdir -p "$PKG/runtime"
+    cp -a "$RT_SRC/." "$PKG/runtime/"
+  else
+    [ -f "$LOCAL_RT" ] || die "NODE_RUNTIME_LOCAL 不存在: $LOCAL_RT"
+    log "使用本地 Node 运行时包: $LOCAL_RT"
+    case "$LOCAL_RT" in
+      *.tar.xz) tar -xJf "$LOCAL_RT" -C "$WORK" ;;
+      *)        tar -xzf "$LOCAL_RT" -C "$WORK" ;;
+    esac
+    # 找到解压结果中的 bin/node（兼容 node-v*-linux-*/ 或任意自定义布局）
+    RT_BIN="$(find "$WORK" -maxdepth 4 -path '*/bin/node' -type f 2>/dev/null | head -n 1)"
+    [ -n "$RT_BIN" ] || die "本地 Node 包解压后未找到 bin/node: $LOCAL_RT"
+    rm -rf "$PKG/runtime"
+    mkdir -p "$PKG/runtime"
+    cp -a "$(dirname "$(dirname "$RT_BIN")")/." "$PKG/runtime/"
+  fi
+elif [ "${SKIP_RUNTIME_DOWNLOAD:-0}" = "1" ] && [ -d "$PKG/runtime" ]; then
   log "复用已有 runtime/（$("$PKG/runtime/bin/node" -v 2>/dev/null || echo '未知版本')）"
 else
   URL="https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-linux-$ARCH.tar.gz"
@@ -142,8 +197,19 @@ else
     die "需要 curl 或 wget 来下载 Node 运行时"
   fi
   tar -xzf "$WORK/node.tar.gz" -C "$WORK"
+  rm -rf "$PKG/runtime"
   mkdir -p "$PKG/runtime"
   cp -a "$WORK/node-v$NODE_VERSION-linux-$ARCH/." "$PKG/runtime/"
+fi
+
+# 版本核对（无法在本机执行时跳过，例如交叉架构构建）
+if [ -x "$PKG/runtime/bin/node" ] && RT_VER="$("$PKG/runtime/bin/node" -v 2>/dev/null)"; then
+  log "内置 Node 版本: $RT_VER"
+  RT_MAJOR="${RT_VER#v}"
+  RT_MAJOR="${RT_MAJOR%%.*}"
+  if [ "${RT_MAJOR:-0}" -lt 22 ] 2>/dev/null; then
+    log "警告: pi-web 要求 Node >= 22.19.0，当前内置 $RT_VER"
+  fi
 fi
 
 # ---------------------------------------------------------------------------
@@ -151,6 +217,13 @@ fi
 # ---------------------------------------------------------------------------
 if [ "$SMOKE_TEST" != "0" ]; then
   log "冒烟测试"
+  if ! "$PKG/runtime/bin/node" -e 'process.exit(0)' >/dev/null 2>&1; then
+    echo "   内置 Node 无法在本机执行（交叉架构构建？），自动跳过冒烟测试"
+    echo "   （如确需冒烟测试，请在目标架构的机器上构建，或显式设置 SMOKE_TEST=0）"
+    SMOKE_TEST=0
+  fi
+fi
+if [ "$SMOKE_TEST" != "0" ]; then
   "$PKG/runtime/bin/node" -v
 
   # pi CLI：TUI 需要 PTY，用 script 给它一个伪终端，验证进程能存活而不是立刻崩掉

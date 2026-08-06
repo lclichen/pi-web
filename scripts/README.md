@@ -51,10 +51,32 @@ PI_CODING_AGENT_LOCAL=https://intranet/pi-coding-agent-custom.tgz bash scripts/p
 | 环境变量 | 默认 | 说明 |
 |---|---|---|
 | `ARCH` | `x64` | 目标架构，可设 `arm64` |
-| `NODE_VERSION` | `22.19.0` | 内置 Node 运行时版本（>= 22.19.0） |
+| `NODE_RUNTIME_LOCAL` | - | 内置 Node 运行时来源，不访问 nodejs.org：`node-v*.tar.gz`/`.tar.xz` 包、已解压目录（`node-v*-linux-*/` 或 `runtime/` 布局）、或 http(s) URL（内网镜像）。优先级最高 |
+| `NODE_VERSION` | `22.19.0` | 内置 Node 运行时版本（>= 22.19.0；仅未设置 `NODE_RUNTIME_LOCAL` 时用于下载） |
 | `OUT_DIR` | `<仓库>/dist` | 产物目录 |
-| `SMOKE_TEST` | `1` | 设为 `0` 跳过冒烟测试 |
+| `SMOKE_TEST` | `1` | 设为 `0` 跳过冒烟测试（内置 Node 无法在本机执行时自动跳过） |
 | `SKIP_RUNTIME_DOWNLOAD` | - | 设为 `1` 复用包内已有的 `runtime/`（构建机离线时） |
+
+## 不访问 nodejs.org：使用本地 Node 运行时
+
+构建机完全离线、或只想走内网源时，用 `NODE_RUNTIME_LOCAL` 提供运行时
+（三种形式任选其一）：
+
+```bash
+# 本地官方格式压缩包（先在有网机器上下载好：nodejs.org/dist/v22.x.x/node-v22.x.x-linux-x64.tar.gz）
+NODE_RUNTIME_LOCAL=/data/node-v22.19.0-linux-x64.tar.gz bash scripts/package-linux.sh
+
+# 已解压的目录
+NODE_RUNTIME_LOCAL=/data/node-v22.19.0-linux-x64 bash scripts/package-linux.sh
+
+# 内网镜像 URL（适合 CI）
+NODE_RUNTIME_LOCAL=https://mirror.internal/node-v22.19.0-linux-x64.tar.gz bash scripts/package-linux.sh
+```
+
+注意：`NODE_RUNTIME_LOCAL` 只绕开 nodejs.org 的下载；脚本仍会执行
+`npm ci`（依赖从 registry 或内网镜像获取），这一步和 Node 运行时无关。
+若构建机连 registry 也没有，请配合内网 npm 镜像（`npm config set registry`）
+使用。
 
 冒烟测试会实际启动产物里的 `pi`（在伪终端里）和 `pi-web`（curl 检查
 HTTP 应答），确认原生模块与运行时都正常后才打包。

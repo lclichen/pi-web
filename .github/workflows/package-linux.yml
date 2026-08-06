@@ -1,0 +1,54 @@
+name: package-linux
+
+# 构建 pi-web + pi CLI 的 Linux 离线分发包。
+#   - 推送 v* tag 时自动构建，并把产物上传到对应的 GitHub Release；
+#   - 也可以手动触发（Actions 页面 "Run workflow"）。
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Build offline Linux package
+        run: bash scripts/package-linux.sh
+        env:
+          # 可选：指向自编译的 pi-coding-agent 安装包（.tgz / 目录 / https URL）。
+          # 有私有托管地址时，在仓库 Settings -> Secrets and variables -> Actions
+          # -> Variables 里配置同名变量，CI 构建就会自动替换 registry 版本。
+          PI_CODING_AGENT_LOCAL: ${{ vars.PI_CODING_AGENT_LOCAL }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pi-linux-offline
+          path: |
+            dist/*.tar.gz
+            dist/SHA256SUMS
+
+      - name: Attach to GitHub Release (tag push only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # release 可能尚未创建（docs/release.md 里是手动 gh release create），
+          # 不存在时先自动创建，避免 tag 推送先于 release 导致上传失败。
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 \
+            || gh release create "$GITHUB_REF_NAME" --generate-notes
+          gh release upload "$GITHUB_REF_NAME" dist/*.tar.gz dist/SHA256SUMS --clobber

@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+#
+# pi — CLI Agent 启动器（离线分发包内嵌版）。
+# 用法与官方 pi 命令完全一致，但使用包内自带的 Node 运行时，无需安装 Node。
+#
+# 例:  ./pi                 # 在当前目录开始会话
+#      ./pi /path/to/project
+set -euo pipefail
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec "$DIR/runtime/bin/node" "$DIR/app/node_modules/@earendil-works/pi-coding-agent/dist/cli.js" "$@"

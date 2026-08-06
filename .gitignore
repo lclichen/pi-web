@@ -20,6 +20,9 @@
 # production
 /build
 
+# offline distribution artifacts (scripts/package-linux.sh)
+/dist
+
 # misc
 .DS_Store
 *.pem

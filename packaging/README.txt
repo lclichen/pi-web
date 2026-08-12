@@ -32,13 +32,17 @@
   与官方安装共用同一份数据，互不冲突。
 
 【配置模板（可选，取决于打包者是否打入 config/pi/）】
-  本包可能自带一套 pi 配置模板（扩展、技能、提示词、主题、模型接口配置等）。
-  首次运行 pi / pi-web.sh 时自动合并到 ~/.pi/agent/：
-    * 扩展 / 技能 / 提示词 / 主题 / 工具：只补模板里有、你没有的文件，
+  本包可能自带一套 pi 配置模板（扩展、技能、提示词、主题、模型接口配置，
+  以及已装好的插件等）。首次运行 pi / pi-web.sh 时自动合并到 ~/.pi/agent/：
+    * 扩展 / 技能 / 提示词 / 主题 / 工具 / npm：只补模板里有、
+      你没有的文件（npm/ 是插件与依赖整树；extensions/ 下可含本地
+      扩展包目录，带各自 node_modules，安装后 pi 自动发现加载），
       你已有的文件不会被改动；
-    * models.json / settings.json：只有目标不存在时才安装。想改用打包
-      版本可手动运行 ./install-pi-config.sh --force（原文件会先备份到
+    * models.json：只有目标不存在时才安装。想改用打包版本可手动运行
+      ./install-pi-config.sh --force（原文件会先备份到
       ~/.pi/agent/.bundle-backup/）；
+    * settings.json：做字段级合并 —— 只把模板里的插件来源（packages）
+      合并进来，你已配置的其他项（默认模型等）不会被改动或重置；
     * 会话文件与 auth.json 永远不会被改动。
   手动执行:  ./install-pi-config.sh           （幂等，无事可做时静默）
   换配置目录: PI_CODING_AGENT_DIR=/path ./pi-web.sh （与官方 pi 一致）

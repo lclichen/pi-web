@@ -55,6 +55,7 @@ PI_CODING_AGENT_LOCAL=https://intranet/pi-coding-agent-custom.tgz bash scripts/p
 | `NODE_VERSION` | `22.19.0` | 内置 Node 运行时版本（>= 22.19.0；仅未设置 `NODE_RUNTIME_LOCAL` 时用于下载） |
 | `PI_CONFIG_DIR` | `<仓库>/pi-config` | pi 配置模板目录（扩展/模型接口等配置的规范分发）。指向 `~/.pi` 或 `~/.pi/agent` 均可（自动识别），打包进包内 `config/pi/` |
 | `PI_CONFIG_VERSION` | `1` | 配置模板版本号。发布新版包时递增，目标机据此做配置增量更新 |
+| `PI_EXTENSIONS` | - | 空格分隔的本地扩展目录列表（每个须含 `package.json`）。打包时预装依赖并随模板分发，目标机离线加载 |
 | `PI_UPDATE_BASE_URL` | - | 更新源目录（托管 `versions.json`），写入包内 `config/update-url.txt` |
 | `OUT_DIR` | `<仓库>/dist` | 产物目录 |
 | `SMOKE_TEST` | `1` | 设为 `0` 跳过冒烟测试（内置 Node 无法在本机执行时自动跳过） |
@@ -77,25 +78,60 @@ PI_CONFIG_DIR=~/.pi bash scripts/package-linux.sh
 
 ```
 pi-config/agent/
-├─ extensions/   # pi 扩展（.ts/.js）
+├─ extensions/   # pi 扩展（.ts/.js；可含本地扩展包目录，见下）
 ├─ skills/       # 技能（SKILL.md）
 ├─ prompts/      # 提示词模板
 ├─ themes/       # 主题
 ├─ tools/        # 自定义工具
+├─ npm/          # （可选）pi 已安装包与依赖整树，随包离线分发
 ├─ models.json   # 模型接口配置
-└─ settings.json # 设置（默认模型等）
+└─ settings.json # 设置（默认模型等，packages 数组声明插件来源）
 ```
 
 打包规则与目标机行为（`packaging/install-pi-config.sh`）：
 
 - 打包时排除 `sessions/`、`auth.json`、`bin/`、`tmp/`、调试日志 ——
   会话与凭证永远不会被打包或覆盖。
-- 目录类资源（extensions/skills/prompts/themes/tools）只补缺失文件，
-  不覆盖用户已有的；`models.json`/`settings.json` 目标不存在才安装，
+- 目录类资源（extensions/skills/prompts/themes/tools/npm）只补
+  缺失文件，不覆盖用户已有的；`models.json` 目标不存在才安装，
   可用 `./install-pi-config.sh --force` 覆盖（先备份）。
+- `settings.json` 做**字段级合并**：目标不存在则整体安装；已存在则只把
+  模板的 `packages` 数组并进目标（目标条目优先、按源去重追加），其余
+  字段（`defaultModel` 等）一律不动 —— 用户已有配置不会被覆盖或重置。
 - 版本化：`PI_CONFIG_VERSION` 写入 `config/pi/.bundle-version`，目标机
   已应用版本记录在 `~/.pi/agent/.bundle-version`。发布新版包时递增它，
   目标机下次启动自动应用配置增量。
+
+### 把本地扩展（文件夹）一起打包
+
+如果有一个本地扩展是文件夹、且需要 `npm install` 装依赖，用 `PI_EXTENSIONS`
+打包（相对路径按仓库根目录解析，目录名必须唯一）：
+
+```bash
+# 例：仓库内 my-extension/ 与 /data/another-ext/ 两个扩展
+PI_EXTENSIONS="my-extension /data/another-ext" bash scripts/package-linux.sh
+```
+
+打包过程（`package-linux.sh` 步骤 7c）：
+1. 校验入口可被 pi 自动发现：目录里有 `index.ts`/`index.js`，或
+   `package.json` 的 `pi.extensions` 指向存在的文件（否则报错提示）；
+2. 在构建机对该目录执行 `npm install --omit=dev`（含 `--legacy-peer-deps`，
+   与 pi 自身的安装行为一致），预装好生产依赖；
+3. 整个目录（含 `node_modules`）拷入包内 `config/pi/extensions/<目录名>/`。
+
+目标机安装后，`extensions/<目录名>/` 进入 `~/.pi/agent/extensions/`，pi
+启动时自动发现加载（`extensions/*/index.ts`、`extensions/*/index.js`，
+或 `extensions/*/package.json` 的 `pi.extensions`；自动发现会跳过
+`node_modules`，不会误扫依赖），依赖从扩展自带 `node_modules` 解析 ——
+完全离线，无需写入 `settings.json`，也不触发任何 `npm install`。
+
+两种扩展分发方式互补：
+
+| 方式 | 来源 | 适用 |
+|---|---|---|
+| `extensions/` 源码文件（模板目录） | 单文件/多文件扩展 | 本地修改、自用扩展 |
+| `extensions/` 本地扩展包（`PI_EXTENSIONS`） | 扩展包目录（含 node_modules） | 需 npm 依赖的本地扩展 |
+| `npm/`（模板目录，`PI_CONFIG_DIR` 指向完整 `~/.pi`） | 已装好的 npm 包+依赖整树 | 已发布/已安装的 registry 包离线分发 |
 
 ## 版本与更新
 

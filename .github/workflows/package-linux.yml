@@ -42,6 +42,9 @@ jobs:
           PI_CONFIG_DIR: ${{ vars.PI_CONFIG_DIR }}
           # 可选：配置模板版本号（默认 1）。发布新版包时递增，目标机增量更新。
           PI_CONFIG_VERSION: ${{ vars.PI_CONFIG_VERSION }}
+          # 可选：空格分隔的本地扩展目录列表（相对路径按仓库根目录解析）。
+          # 打包时预装依赖并随配置模板分发，目标机离线加载（见 scripts/README.md）。
+          PI_EXTENSIONS: ${{ vars.PI_EXTENSIONS }}
           # 可选：更新源目录（托管 versions.json）。未设置时 update.sh 从
           # app/package.json 的 repository 推导 GitHub Releases latest/download，
           # 并靠下面生成的 versions.json asset 生效（内网分发请设置本变量）。

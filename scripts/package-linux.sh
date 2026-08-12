@@ -37,6 +37,15 @@
 #                         用户数据与敏感文件。默认: <仓库>/pi-config（不存在则跳过）。
 #   PI_CONFIG_VERSION     配置模板版本号 (默认: 1)。发布新版包时递增，目标机
 #                         据此做配置的增量更新（见 packaging/install-pi-config.sh）。
+#   PI_EXTENSIONS         空格分隔的本地扩展目录列表（每个必须是含 package.json
+#                         的扩展包）。打包时在构建机执行 npm install --omit=dev
+#                         预装依赖，把整个目录（含 node_modules）拷进包内
+#                         config/pi/extensions/<目录名>/ —— 目标机安装后位于
+#                         ~/.pi/agent/extensions/<目录名>/，pi 启动时自动发现
+#                         加载（入口须为 index.ts/index.js，或 package.json 的
+#                         pi.extensions），依赖从扩展自带 node_modules 解析，
+#                         完全离线、无需再装依赖。相对路径按仓库根目录解析；
+#                         目录名冲突会报错。
 #   PI_UPDATE_BASE_URL    更新源目录（托管 versions.json）。写入包内
 #                         config/update-url.txt，目标机用 ./update.sh 检查更新。
 #                         未设置时 update.sh 尝试从 app/package.json 的
@@ -176,6 +185,43 @@ if [ -d "$PI_CONFIG_DIR" ]; then
   log "配置模板版本: $PI_CONFIG_VERSION"
 elif [ -n "$PI_CONFIG_DIR_EXPLICIT" ] && [ -n "$PI_CONFIG_DIR" ] && [ ! -e "$PI_CONFIG_DIR" ]; then
   die "PI_CONFIG_DIR 不存在: $PI_CONFIG_DIR"
+fi
+
+# ---------------------------------------------------------------------------
+# 7c.（可选）把本地扩展（文件夹，需 npm 安装依赖）打进配置模板
+#     对 PI_EXTENSIONS 里的每个扩展目录: 构建机先 npm install --omit=dev 预装
+#     依赖，再连同 node_modules 整体拷入 config/pi/extensions/<目录名>/。
+#     目标机安装后位于 ~/.pi/agent/extensions/<目录名>/，pi 启动时自动发现
+#     加载（index.ts / index.js 入口，或 package.json 的 pi.extensions），
+#     依赖从扩展自带 node_modules 解析 —— 完全离线，无需写入 settings.json。
+# ---------------------------------------------------------------------------
+if [ -n "${PI_EXTENSIONS:-}" ]; then
+  [ -d "$PKG/config/pi" ] || mkdir -p "$PKG/config/pi"
+  for p in $PI_EXTENSIONS; do
+    case "$p" in
+      /*) EXT_DIR="$p" ;;
+      *)  EXT_DIR="$ROOT/$p" ;;
+    esac
+    [ -d "$EXT_DIR" ] || die "PI_EXTENSIONS 中的扩展目录不存在: $p"
+    [ -f "$EXT_DIR/package.json" ] || die "扩展目录缺少 package.json: $p"
+    # 扩展必须能被 pi 自动发现（collectAutoExtensionEntries）: 有
+    # index.ts/index.js 入口，或 package.json 的 pi.extensions 指向存在的文件
+    if [ ! -f "$EXT_DIR/index.ts" ] && [ ! -f "$EXT_DIR/index.js" ]; then
+      if ! node -e 'const fs=require("fs"),path=require("path");const d=process.argv[1];const p=JSON.parse(fs.readFileSync(path.join(d,"package.json"),"utf8"));for(const e of (p.pi&&p.pi.extensions)||[]){if(fs.existsSync(path.join(d,e)))process.exit(0)}process.exit(1)' "$EXT_DIR" >/dev/null 2>&1; then
+        die "扩展入口无法被 pi 自动发现: $p（需 index.ts/index.js，或在 package.json 加 pi.extensions）"
+      fi
+    fi
+    NAME="$(basename "$EXT_DIR")"
+    log "打包本地扩展: $EXT_DIR -> config/pi/extensions/$NAME"
+    (cd "$EXT_DIR" && npm install --omit=dev --legacy-peer-deps --no-audit --no-fund)
+    mkdir -p "$PKG/config/pi/extensions"
+    [ -e "$PKG/config/pi/extensions/$NAME" ] \
+      && die "扩展目录名冲突: $NAME（PI_EXTENSIONS 里的目录名必须唯一，且不能与已有扩展同名）"
+    cp -a "$EXT_DIR" "$PKG/config/pi/extensions/$NAME"
+  done
+  # 仅扩展而配置模板未打包时，补一个配置模板版本标记
+  [ -f "$PKG/config/pi/.bundle-version" ] \
+    || echo "${PI_CONFIG_VERSION:-1}" > "$PKG/config/pi/.bundle-version"
 fi
 if [ -n "${PI_UPDATE_BASE_URL:-}" ]; then
   mkdir -p "$PKG/config"

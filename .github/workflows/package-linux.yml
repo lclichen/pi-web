@@ -36,6 +36,32 @@ jobs:
           # 可选：内置 Node 运行时来源（.tar.gz/.tar.xz 包 / 解压目录 / https URL
           # 内网镜像），不访问 nodejs.org。同样在仓库 Variables 里配置。
           NODE_RUNTIME_LOCAL: ${{ vars.NODE_RUNTIME_LOCAL }}
+          # 可选：pi 配置模板目录（扩展/模型接口等配置）。CI 里通常不设，
+          # 直接把模板放仓库 pi-config/ 目录即可自动打包（本地构建可用
+          # PI_CONFIG_DIR 指定 ~/.pi 等其他位置）。
+          PI_CONFIG_DIR: ${{ vars.PI_CONFIG_DIR }}
+          # 可选：配置模板版本号（默认 1）。发布新版包时递增，目标机增量更新。
+          PI_CONFIG_VERSION: ${{ vars.PI_CONFIG_VERSION }}
+          # 可选：更新源目录（托管 versions.json）。未设置时 update.sh 从
+          # app/package.json 的 repository 推导 GitHub Releases latest/download，
+          # 并靠下面生成的 versions.json asset 生效（内网分发请设置本变量）。
+          PI_UPDATE_BASE_URL: ${{ vars.PI_UPDATE_BASE_URL }}
+
+      - name: Generate versions.json update manifest (tag push only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          ARCH="$(basename "$(ls -d build/package-linux/pi-linux-* | head -n1)")"
+          ARCH="${ARCH#pi-linux-}"
+          VERSION="$(cat "build/package-linux/pi-linux-$ARCH/VERSION.txt")"
+          SHA="$(awk '{print $1}' dist/SHA256SUMS)"
+          jq -n \
+            --arg v "$VERSION" \
+            --arg d "$(date -u +%Y-%m-%d)" \
+            --arg u "https://github.com/${{ github.repository }}/releases/download/$GITHUB_REF_NAME/pi-linux-$ARCH-$VERSION.tar.gz" \
+            --arg s "$SHA" \
+            '{version:$v, date:$d, url:$u, sha256:$s}' > dist/versions.json
+          echo "versions.json:"
+          cat dist/versions.json
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -44,6 +70,7 @@ jobs:
           path: |
             dist/*.tar.gz
             dist/SHA256SUMS
+            dist/versions.json
 
       - name: Attach to GitHub Release (tag push only)
         if: startsWith(github.ref, 'refs/tags/v')
@@ -54,4 +81,4 @@ jobs:
           # 不存在时先自动创建，避免 tag 推送先于 release 导致上传失败。
           gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 \
             || gh release create "$GITHUB_REF_NAME" --generate-notes
-          gh release upload "$GITHUB_REF_NAME" dist/*.tar.gz dist/SHA256SUMS --clobber
+          gh release upload "$GITHUB_REF_NAME" dist/*.tar.gz dist/SHA256SUMS dist/versions.json --clobber

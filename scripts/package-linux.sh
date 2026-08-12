@@ -29,6 +29,18 @@
 #                            NODE_RUNTIME_LOCAL=/data/node-v22.19.0-linux-x64.tar.gz
 #                            NODE_RUNTIME_LOCAL=/data/node-v22.19.0-linux-x64
 #                            NODE_RUNTIME_LOCAL=https://mirror.internal/node-v22.19.0-linux-x64.tar.gz
+#   PI_CONFIG_DIR         要随包分发的 pi 配置模板目录（pi 扩展、模型接口配置等
+#                         的规范分发）。指向 ~/.pi 或 ~/.pi/agent 均可（自动识别）。
+#                         打包进包内 config/pi/，目标机首次运行时由
+#                         packaging/install-pi-config.sh 合并到 ~/.pi/agent。
+#                         打包时会排除 sessions/、auth.json、bin/、tmp/ 等
+#                         用户数据与敏感文件。默认: <仓库>/pi-config（不存在则跳过）。
+#   PI_CONFIG_VERSION     配置模板版本号 (默认: 1)。发布新版包时递增，目标机
+#                         据此做配置的增量更新（见 packaging/install-pi-config.sh）。
+#   PI_UPDATE_BASE_URL    更新源目录（托管 versions.json）。写入包内
+#                         config/update-url.txt，目标机用 ./update.sh 检查更新。
+#                         未设置时 update.sh 尝试从 app/package.json 的
+#                         repository 字段推导 GitHub Releases 地址。
 #   NODE_VERSION          内置 Node.js 运行时版本 (默认: 22.19.0；仅当未设置
 #                         NODE_RUNTIME_LOCAL 时用于从 nodejs.org 下载)
 #   ARCH                  目标 CPU 架构: x64 | arm64 (默认: x64)
@@ -49,6 +61,9 @@ NODE_VERSION="${NODE_VERSION:-22.19.0}"
 OUT_DIR="${OUT_DIR:-$ROOT/dist}"
 SMOKE_TEST="${SMOKE_TEST:-1}"
 LOCAL="${PI_CODING_AGENT_LOCAL:-}"
+# pi 配置模板默认取仓库内 pi-config/ 目录（未显式指定且目录不存在时静默跳过）
+PI_CONFIG_DIR_EXPLICIT="${PI_CONFIG_DIR+set}"
+PI_CONFIG_DIR="${PI_CONFIG_DIR:-$ROOT/pi-config}"
 
 log() { printf '\033[1;32m>>\033[0m %s\n' "$*"; }
 die() { printf '\033[1;31mERROR:\033[0m %s\n' "$*" >&2; exit 1; }
@@ -134,7 +149,39 @@ cp -a "$SRC/node_modules" "$PKG/app/"
 VERSION="$(node -p "require('$SRC/package.json').version")"
 echo "$VERSION" > "$PKG/VERSION.txt"
 cp -a "$ROOT/packaging/." "$PKG/"
-chmod +x "$PKG/pi" "$PKG/pi-web.sh" "$PKG/start.sh" "$PKG/open-pi-terminal.sh" "$PKG/install-to-path.sh"
+chmod +x "$PKG/pi" "$PKG/pi-web.sh" "$PKG/start.sh" "$PKG/open-pi-terminal.sh" \
+  "$PKG/install-to-path.sh" "$PKG/install-pi-config.sh" "$PKG/update.sh"
+
+# ---------------------------------------------------------------------------
+# 7b. 打包 pi 配置模板（扩展/模型接口等配置的规范分发）
+#     PI_CONFIG_DIR 指向一个 .pi 目录（或其 agent/ 子目录，自动识别），
+#     打包成 config/pi/；目标机首次运行时由 install-pi-config.sh 合并到
+#     ~/.pi/agent。打包时排除会话、凭证、托管二进制与临时文件。
+# ---------------------------------------------------------------------------
+if [ -d "$PI_CONFIG_DIR" ]; then
+  if [ -d "$PI_CONFIG_DIR/agent" ]; then
+    CFG_SRC="$PI_CONFIG_DIR/agent"     # 用户指向整个 ~/.pi
+  else
+    CFG_SRC="$PI_CONFIG_DIR"           # 用户指向 agent 目录本身
+  fi
+  [ -d "$CFG_SRC" ] || die "PI_CONFIG_DIR 中未找到配置目录: $CFG_SRC"
+  log "打包 pi 配置模板: $CFG_SRC"
+  mkdir -p "$PKG/config/pi"
+  (cd "$CFG_SRC" && tar --exclude='./sessions' --exclude='./auth.json' \
+    --exclude='./bin' --exclude='./tmp' --exclude='./pi-debug.log' \
+    --exclude='./.bundle-version' --exclude='./.bundle-backup' --exclude='./.gitkeep' \
+    -cf - .) | (cd "$PKG/config/pi" && tar -xf -)
+  PI_CONFIG_VERSION="${PI_CONFIG_VERSION:-1}"
+  echo "$PI_CONFIG_VERSION" > "$PKG/config/pi/.bundle-version"
+  log "配置模板版本: $PI_CONFIG_VERSION"
+elif [ -n "$PI_CONFIG_DIR_EXPLICIT" ] && [ -n "$PI_CONFIG_DIR" ] && [ ! -e "$PI_CONFIG_DIR" ]; then
+  die "PI_CONFIG_DIR 不存在: $PI_CONFIG_DIR"
+fi
+if [ -n "${PI_UPDATE_BASE_URL:-}" ]; then
+  mkdir -p "$PKG/config"
+  printf '%s\n' "$PI_UPDATE_BASE_URL" > "$PKG/config/update-url.txt"
+  log "更新源: $PI_UPDATE_BASE_URL"
+fi
 
 # ---------------------------------------------------------------------------
 # 8. 内置 Node.js 运行时
@@ -217,6 +264,9 @@ fi
 # ---------------------------------------------------------------------------
 if [ "$SMOKE_TEST" != "0" ]; then
   log "冒烟测试"
+  # 用隔离的 HOME 运行，避免 pi / pi-web（含配置模板合并）写构建机的真实 ~/.pi
+  SMOKE_HOME="$WORK/smoke-home"
+  mkdir -p "$SMOKE_HOME"
   if ! "$PKG/runtime/bin/node" -e 'process.exit(0)' >/dev/null 2>&1; then
     echo "   内置 Node 无法在本机执行（交叉架构构建？），自动跳过冒烟测试"
     echo "   （如确需冒烟测试，请在目标架构的机器上构建，或显式设置 SMOKE_TEST=0）"
@@ -230,9 +280,9 @@ if [ "$SMOKE_TEST" != "0" ]; then
   rm -f "$WORK/pi.log" "$WORK/pi.pid"
   if command -v script >/dev/null 2>&1; then
     PI_Q="$(printf '%q ' "$PKG/pi")"
-    ( script -qec "$PI_Q" /dev/null >"$WORK/pi.log" 2>&1 & echo $! >"$WORK/pi.pid" )
+    ( HOME="$SMOKE_HOME" script -qec "$PI_Q" /dev/null >"$WORK/pi.log" 2>&1 & echo $! >"$WORK/pi.pid" )
   else
-    ( "$PKG/pi" </dev/null >"$WORK/pi.log" 2>&1 & echo $! >"$WORK/pi.pid" )
+    ( HOME="$SMOKE_HOME" "$PKG/pi" </dev/null >"$WORK/pi.log" 2>&1 & echo $! >"$WORK/pi.pid" )
   fi
   sleep 8
   if kill -0 "$(cat "$WORK/pi.pid")" 2>/dev/null; then
@@ -246,7 +296,7 @@ if [ "$SMOKE_TEST" != "0" ]; then
 
   # pi-web：必须能应答 HTTP
   rm -f "$WORK/piweb.log" "$WORK/piweb.pid"
-  ( "$PKG/pi-web.sh" --no-open -p 31099 >"$WORK/piweb.log" 2>&1 & echo $! >"$WORK/piweb.pid" )
+  ( HOME="$SMOKE_HOME" "$PKG/pi-web.sh" --no-open -p 31099 >"$WORK/piweb.log" 2>&1 & echo $! >"$WORK/piweb.pid" )
   WEB_OK=0
   for _ in $(seq 1 30); do
     if curl -fsS -o /dev/null http://127.0.0.1:31099 2>/dev/null; then WEB_OK=1; break; fi
@@ -277,3 +327,6 @@ echo "  将 pi-linux-$ARCH/ 拷到目标 Linux 机器后："
 echo "    ./start.sh    菜单入口"
 echo "    ./pi          启动 CLI Agent（用法同官方 pi 命令）"
 echo "    ./pi-web.sh   启动 WebUI（浏览器访问 http://127.0.0.1:30141）"
+if [ -d "$PKG/config/pi" ]; then
+  echo "    ./update.sh  检查并更新（首次运行时配置模板已自动合并到 ~/.pi/agent）"
+fi

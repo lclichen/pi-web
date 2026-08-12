@@ -53,9 +53,72 @@ PI_CODING_AGENT_LOCAL=https://intranet/pi-coding-agent-custom.tgz bash scripts/p
 | `ARCH` | `x64` | 目标架构，可设 `arm64` |
 | `NODE_RUNTIME_LOCAL` | - | 内置 Node 运行时来源，不访问 nodejs.org：`node-v*.tar.gz`/`.tar.xz` 包、已解压目录（`node-v*-linux-*/` 或 `runtime/` 布局）、或 http(s) URL（内网镜像）。优先级最高 |
 | `NODE_VERSION` | `22.19.0` | 内置 Node 运行时版本（>= 22.19.0；仅未设置 `NODE_RUNTIME_LOCAL` 时用于下载） |
+| `PI_CONFIG_DIR` | `<仓库>/pi-config` | pi 配置模板目录（扩展/模型接口等配置的规范分发）。指向 `~/.pi` 或 `~/.pi/agent` 均可（自动识别），打包进包内 `config/pi/` |
+| `PI_CONFIG_VERSION` | `1` | 配置模板版本号。发布新版包时递增，目标机据此做配置增量更新 |
+| `PI_UPDATE_BASE_URL` | - | 更新源目录（托管 `versions.json`），写入包内 `config/update-url.txt` |
 | `OUT_DIR` | `<仓库>/dist` | 产物目录 |
 | `SMOKE_TEST` | `1` | 设为 `0` 跳过冒烟测试（内置 Node 无法在本机执行时自动跳过） |
 | `SKIP_RUNTIME_DOWNLOAD` | - | 设为 `1` 复用包内已有的 `runtime/`（构建机离线时） |
+
+## 打包 pi 配置模板（扩展 / 模型接口配置）
+
+把一套 pi 配置（扩展、技能、提示词、主题、模型接口配置等）随包分发，
+目标机首次运行时自动合并到 `~/.pi/agent/`：
+
+```bash
+# 使用仓库内 pi-config/ 目录（默认，见下）
+bash scripts/package-linux.sh
+
+# 或指定你自己的 .pi 目录
+PI_CONFIG_DIR=~/.pi bash scripts/package-linux.sh
+```
+
+模板布局 = `~/.pi/agent` 的内容：
+
+```
+pi-config/agent/
+├─ extensions/   # pi 扩展（.ts/.js）
+├─ skills/       # 技能（SKILL.md）
+├─ prompts/      # 提示词模板
+├─ themes/       # 主题
+├─ tools/        # 自定义工具
+├─ models.json   # 模型接口配置
+└─ settings.json # 设置（默认模型等）
+```
+
+打包规则与目标机行为（`packaging/install-pi-config.sh`）：
+
+- 打包时排除 `sessions/`、`auth.json`、`bin/`、`tmp/`、调试日志 ——
+  会话与凭证永远不会被打包或覆盖。
+- 目录类资源（extensions/skills/prompts/themes/tools）只补缺失文件，
+  不覆盖用户已有的；`models.json`/`settings.json` 目标不存在才安装，
+  可用 `./install-pi-config.sh --force` 覆盖（先备份）。
+- 版本化：`PI_CONFIG_VERSION` 写入 `config/pi/.bundle-version`，目标机
+  已应用版本记录在 `~/.pi/agent/.bundle-version`。发布新版包时递增它，
+  目标机下次启动自动应用配置增量。
+
+## 版本与更新
+
+每个包内置 `VERSION.txt`（来自 `package.json` 版本）。配合发布时生成的
+`versions.json` 更新清单，目标机可一键更新：
+
+```json
+{ "version": "0.0.2.alpha", "date": "2026-08-06",
+  "url": "https://.../pi-linux-x64-0.0.2.alpha.tar.gz",
+  "sha256": "...", "notes": "更新说明" }
+```
+
+- **版本号**：支持 `0.0.1.alpha → 0.0.2.alpha` 这类点分数字 + 字符串
+  后缀的格式（`npm version` 也兼容：`npm version 0.0.2-alpha.0`）。
+- **目标机操作**：`./update.sh` 检查更新源 → 比较版本 → 下载 → SHA256
+  校验 → 原子替换包目录。`./update.sh --check` 只检查。
+- **更新源**：优先级为环境变量 `PI_UPDATE_BASE_URL` > 包内
+  `config/update-url.txt` > 从 `app/package.json` 的 repository 推导
+  GitHub Releases（`.../releases/latest/download/versions.json`，GitHub
+  会自动重定向到最新 Release 的该 asset）。内网分发把 `versions.json`
+  和 tar.gz 放到内网任意静态目录，打包时指定
+  `PI_UPDATE_BASE_URL=http://内网/pi-update` 即可。
+- 用户数据（会话、`auth.json`）都在 `~/.pi/`，在包外，更新不受影响。
 
 ## 不访问 nodejs.org：使用本地 Node 运行时
 
@@ -101,6 +164,14 @@ bash scripts/package-linux.sh
 如需让 CI 使用你的自编译 pi-coding-agent，把可下载地址配置成仓库变量
 `PI_CODING_AGENT_LOCAL`（Settings → Secrets and variables → Actions →
 Variables）。
+
+- **pi 配置模板**：把 `pi-config/` 目录（含 `agent/` 子目录）提交进仓库，
+  CI 会自动打包；本地构建可用 `PI_CONFIG_DIR` 覆盖。
+- **更新清单**：tag 推送时 CI 自动生成 `dist/versions.json` 并随 Release
+  上传。GitHub 分发零配置（`update.sh` 自动推导 `latest/download`
+  地址）；内网分发请在仓库 Variables 里设置 `PI_UPDATE_BASE_URL`。
+- 注意：GitHub 的 `latest` 重定向不指向预发布（alpha/beta 若标为
+  prerelease）。alpha 阶段内网分发请配置 `PI_UPDATE_BASE_URL`。
 
 ## 注意事项
 

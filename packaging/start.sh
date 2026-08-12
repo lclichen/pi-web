@@ -23,6 +23,7 @@ menu() {
   echo "  2) 启动 CLI Agent（pi，在终端里直接交互）"
   echo "  3) 安装到 PATH（之后任意目录可敲 pi / pi-web）"
   echo "  4) 查看使用说明"
+  echo "  5) 检查更新（./update.sh，需要能访问更新源）"
   echo "  q) 退出"
   echo
   printf "  请选择: "
@@ -36,6 +37,7 @@ while true; do
     2) "$DIR/pi"; echo; echo "CLI 已退出。"; press_enter ;;
     3) bash "$DIR/install-to-path.sh"; press_enter ;;
     4) cat "$DIR/README.txt" 2>/dev/null || echo "（README.txt 不存在）"; press_enter ;;
+    5) bash "$DIR/update.sh"; echo; press_enter ;;
     q|Q|exit) echo "再见。"; exit 0 ;;
     *) echo "无效选择。"; sleep 1 ;;
   esac

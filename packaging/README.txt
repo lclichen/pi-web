@@ -31,6 +31,26 @@
   pi 会读写 ~/.pi/ 目录（会话文件、models.json、settings.json 等），
   与官方安装共用同一份数据，互不冲突。
 
+【配置模板（可选，取决于打包者是否打入 config/pi/）】
+  本包可能自带一套 pi 配置模板（扩展、技能、提示词、主题、模型接口配置等）。
+  首次运行 pi / pi-web.sh 时自动合并到 ~/.pi/agent/：
+    * 扩展 / 技能 / 提示词 / 主题 / 工具：只补模板里有、你没有的文件，
+      你已有的文件不会被改动；
+    * models.json / settings.json：只有目标不存在时才安装。想改用打包
+      版本可手动运行 ./install-pi-config.sh --force（原文件会先备份到
+      ~/.pi/agent/.bundle-backup/）；
+    * 会话文件与 auth.json 永远不会被改动。
+  手动执行:  ./install-pi-config.sh           （幂等，无事可做时静默）
+  换配置目录: PI_CODING_AGENT_DIR=/path ./pi-web.sh （与官方 pi 一致）
+
+【检查更新】
+  ./update.sh            检查更新源并更新（需要能访问更新源）
+  ./update.sh --check    只检查是否有新版本
+  更新只替换程序本体，下载包会做 SHA256 校验；你的会话与配置在
+  ~/.pi/，位于包外，不受更新影响。更新源默认取 app/package.json 里的
+  仓库地址（GitHub Releases 的 latest/download），内网分发请在打包时
+  用 PI_UPDATE_BASE_URL 指定托管 versions.json 的目录。
+
 【离线限制：以下功能需要联网】
   * 模型 API 请求本身（聊天 / 推理）
   * 技能搜索与安装（内部调用 npx skills ...）
@@ -40,11 +60,14 @@
 【目录结构】
   app/        pi-web 应用本体（bin / .next / public / node_modules）
   runtime/    内置 Node.js 运行时
+  config/     可选：pi 配置模板（config/pi/）与更新源地址（update-url.txt）
   pi          CLI Agent 启动器
   pi-web.sh   WebUI 启动器
   start.sh    菜单入口
   open-pi-terminal.sh   桌面双击进入 CLI
   install-to-path.sh    安装到 PATH
+  install-pi-config.sh  应用 pi 配置模板（自动调用，也可手动执行）
+  update.sh             检查并更新本包
   VERSION.txt 版本号
 
 ---------------------------------------------------------------------

@@ -4,7 +4,16 @@
 # 终端里运行 ./start.sh，或用文件管理器双击（多数桌面环境会用终端打开）。
 set -euo pipefail
 
-DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# 解析脚本真实路径（支持通过软链调用）
+SOURCE="${BASH_SOURCE[0]}"
+while [ -L "$SOURCE" ]; do
+  TARGET="$(readlink "$SOURCE")"
+  case "$TARGET" in
+    /*) SOURCE="$TARGET" ;;
+    *)  SOURCE="$(dirname "$SOURCE")/$TARGET" ;;
+  esac
+done
+DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
 VERSION="$(cat "$DIR/VERSION.txt" 2>/dev/null || echo 'unknown')"
 ARCH="$(uname -m)"
 

@@ -6,7 +6,23 @@
 #   ./pi-web.sh --port 8080 --no-open
 #   PI_WEB_PASSWORD='长密码' ./pi-web.sh # 启用 Basic Auth（用户名 pi）
 set -euo pipefail
-DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# 解析脚本真实路径（支持通过软链调用，如 install-to-path.sh 装的
+# ~/.local/bin/pi-web -> <包目录>/pi-web.sh）
+SOURCE="${BASH_SOURCE[0]}"
+while [ -L "$SOURCE" ]; do
+  TARGET="$(readlink "$SOURCE")"
+  case "$TARGET" in
+    /*) SOURCE="$TARGET" ;;
+    *)  SOURCE="$(dirname "$SOURCE")/$TARGET" ;;
+  esac
+done
+DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
+
+# 包内附带的 CLI 工具（fd / rg 等，打包时用 PI_BINARIES 拷入 bin/）加入 PATH
+if [ -d "$DIR/bin" ]; then
+  export PATH="$DIR/bin:$PATH"
+fi
 
 # 首次运行/配置模板升级时，自动把包内 config/pi/ 合并到 ~/.pi/agent
 # （幂等：无事可做时立即静默返回；失败不阻塞启动）

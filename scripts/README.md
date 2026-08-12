@@ -56,6 +56,7 @@ PI_CODING_AGENT_LOCAL=https://intranet/pi-coding-agent-custom.tgz bash scripts/p
 | `PI_CONFIG_DIR` | `<仓库>/pi-config` | pi 配置模板目录（扩展/模型接口等配置的规范分发）。指向 `~/.pi` 或 `~/.pi/agent` 均可（自动识别），打包进包内 `config/pi/` |
 | `PI_CONFIG_VERSION` | `1` | 配置模板版本号。发布新版包时递增，目标机据此做配置增量更新 |
 | `PI_EXTENSIONS` | - | 空格分隔的本地扩展目录列表（每个须含 `package.json`）。打包时预装依赖并随模板分发，目标机离线加载 |
+| `PI_BINARIES` | - | 空格分隔的本地二进制文件路径（Linux 版 fd/rg 等，架构须与 `ARCH` 一致）。拷入包内 `bin/`，启动器自动加入 PATH |
 | `PI_UPDATE_BASE_URL` | - | 更新源目录（托管 `versions.json`），写入包内 `config/update-url.txt` |
 | `OUT_DIR` | `<仓库>/dist` | 产物目录 |
 | `SMOKE_TEST` | `1` | 设为 `0` 跳过冒烟测试（内置 Node 无法在本机执行时自动跳过） |
@@ -132,6 +133,20 @@ PI_EXTENSIONS="my-extension /data/another-ext" bash scripts/package-linux.sh
 | `extensions/` 源码文件（模板目录） | 单文件/多文件扩展 | 本地修改、自用扩展 |
 | `extensions/` 本地扩展包（`PI_EXTENSIONS`） | 扩展包目录（含 node_modules） | 需 npm 依赖的本地扩展 |
 | `npm/`（模板目录，`PI_CONFIG_DIR` 指向完整 `~/.pi`） | 已装好的 npm 包+依赖整树 | 已发布/已安装的 registry 包离线分发 |
+
+### 附带 CLI 工具（fd / rg 等）
+
+pi 的 bash 工具会执行 `fd`、`rg` 等命令，目标机不装这些工具就会失败。
+用 `PI_BINARIES` 把本地的 Linux 二进制随包分发（架构须与 `ARCH` 一致；
+构建机本身不要求能执行它们）：
+
+```bash
+PI_BINARIES="/data/fd-x64 /data/rg-x64" bash scripts/package-linux.sh
+```
+
+打包时拷入包内 `bin/` 并加可执行位；`pi` / `pi-web.sh` 启动时自动把
+`bin/` 加进 `PATH`，pi 的 bash 工具里即可直接调用。冒烟测试会尝试运行
+`--version` 验证（交叉架构构建时跳过并提示）。
 
 ## 版本与更新
 

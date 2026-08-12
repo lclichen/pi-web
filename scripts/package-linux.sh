@@ -46,6 +46,10 @@
 #                         pi.extensions），依赖从扩展自带 node_modules 解析，
 #                         完全离线、无需再装依赖。相对路径按仓库根目录解析；
 #                         目录名冲突会报错。
+#   PI_BINARIES           空格分隔的本地二进制文件路径（如 fd、rg 的 Linux
+#                         版本，架构须与 ARCH 一致）。拷入包内 bin/，目标机
+#                         pi / pi-web.sh 启动时自动把该目录加进 PATH，
+#                         pi 的 bash 工具里即可直接调用（如 fd / rg）。
 #   PI_UPDATE_BASE_URL    更新源目录（托管 versions.json）。写入包内
 #                         config/update-url.txt，目标机用 ./update.sh 检查更新。
 #                         未设置时 update.sh 尝试从 app/package.json 的
@@ -306,6 +310,22 @@ if [ -x "$PKG/runtime/bin/node" ] && RT_VER="$("$PKG/runtime/bin/node" -v 2>/dev
 fi
 
 # ---------------------------------------------------------------------------
+# 8b.（可选）附带 CLI 工具（fd / rg 等）
+#     PI_BINARIES 是空格分隔的本地二进制文件路径（Linux 版本，架构须与
+#     ARCH 一致；构建机若是其他系统不影响，拷入后目标机直接可执行）。
+#     拷入包内 bin/，pi / pi-web.sh 启动时自动把该目录加进 PATH。
+# ---------------------------------------------------------------------------
+if [ -n "${PI_BINARIES:-}" ]; then
+  mkdir -p "$PKG/bin"
+  for b in $PI_BINARIES; do
+    [ -f "$b" ] || die "PI_BINARIES 中的二进制文件不存在: $b"
+    cp -a "$b" "$PKG/bin/"
+    chmod +x "$PKG/bin/$(basename "$b")"
+    log "附带 CLI 工具: $(basename "$b")（$(du -h "$b" | cut -f1)，请确认与目标架构 $ARCH 匹配）"
+  done
+fi
+
+# ---------------------------------------------------------------------------
 # 9. 冒烟测试（产物必须能启动）
 # ---------------------------------------------------------------------------
 if [ "$SMOKE_TEST" != "0" ]; then
@@ -322,17 +342,33 @@ fi
 if [ "$SMOKE_TEST" != "0" ]; then
   "$PKG/runtime/bin/node" -v
 
+  # 附带 CLI 工具（若可在本机执行，报告版本；交叉架构构建跳过）
+  if [ -d "$PKG/bin" ]; then
+    for b in "$PKG"/bin/*; do
+      [ -f "$b" ] || continue
+      if "$b" --version >"$WORK/binver.log" 2>&1; then
+        echo "   bin/$(basename "$b"): OK（$(head -n1 "$WORK/binver.log")）"
+      else
+        echo "   bin/$(basename "$b"): 无法在本机执行（交叉架构构建？），已随包分发"
+      fi
+    done
+  fi
+
   # pi CLI：TUI 需要 PTY，用 script 给它一个伪终端，验证进程能存活而不是立刻崩掉
+  # 通过软链调用（复现 install-to-path 场景）：启动器必须能解析出真实包目录
   rm -f "$WORK/pi.log" "$WORK/pi.pid"
+  mkdir -p "$WORK/linktest"
+  ln -sf "$PKG/pi" "$WORK/linktest/pi"
+  ln -sf "$PKG/pi-web.sh" "$WORK/linktest/pi-web"
   if command -v script >/dev/null 2>&1; then
-    PI_Q="$(printf '%q ' "$PKG/pi")"
+    PI_Q="$(printf '%q ' "$WORK/linktest/pi")"
     ( HOME="$SMOKE_HOME" script -qec "$PI_Q" /dev/null >"$WORK/pi.log" 2>&1 & echo $! >"$WORK/pi.pid" )
   else
-    ( HOME="$SMOKE_HOME" "$PKG/pi" </dev/null >"$WORK/pi.log" 2>&1 & echo $! >"$WORK/pi.pid" )
+    ( HOME="$SMOKE_HOME" "$WORK/linktest/pi" </dev/null >"$WORK/pi.log" 2>&1 & echo $! >"$WORK/pi.pid" )
   fi
   sleep 8
   if kill -0 "$(cat "$WORK/pi.pid")" 2>/dev/null; then
-    echo "   pi CLI: OK（保持存活）"
+    echo "   pi CLI（经软链）: OK（保持存活）"
     kill "$(cat "$WORK/pi.pid")" 2>/dev/null || true
   else
     echo "   pi CLI: 启动失败，日志如下："
@@ -340,9 +376,9 @@ if [ "$SMOKE_TEST" != "0" ]; then
     exit 1
   fi
 
-  # pi-web：必须能应答 HTTP
+  # pi-web：必须能应答 HTTP（同样经软链调用）
   rm -f "$WORK/piweb.log" "$WORK/piweb.pid"
-  ( HOME="$SMOKE_HOME" "$PKG/pi-web.sh" --no-open -p 31099 >"$WORK/piweb.log" 2>&1 & echo $! >"$WORK/piweb.pid" )
+  ( HOME="$SMOKE_HOME" "$WORK/linktest/pi-web" --no-open -p 31099 >"$WORK/piweb.log" 2>&1 & echo $! >"$WORK/piweb.pid" )
   WEB_OK=0
   for _ in $(seq 1 30); do
     if curl -fsS -o /dev/null http://127.0.0.1:31099 2>/dev/null; then WEB_OK=1; break; fi

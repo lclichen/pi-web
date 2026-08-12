@@ -64,12 +64,14 @@
 【目录结构】
   app/        pi-web 应用本体（bin / .next / public / node_modules）
   runtime/    内置 Node.js 运行时
+  bin/        可选：附带 CLI 工具（fd / rg 等，启动时自动加入 PATH）
   config/     可选：pi 配置模板（config/pi/）与更新源地址（update-url.txt）
   pi          CLI Agent 启动器
   pi-web.sh   WebUI 启动器
   start.sh    菜单入口
   open-pi-terminal.sh   桌面双击进入 CLI
-  install-to-path.sh    安装到 PATH
+  install-to-path.sh    安装到 PATH（软链到 ~/.local/bin；启动器会自行
+                        解析软链指向的真实包目录，安装后不受目录移动影响）
   install-pi-config.sh  应用 pi 配置模板（自动调用，也可手动执行）
   update.sh             检查并更新本包
   VERSION.txt 版本号

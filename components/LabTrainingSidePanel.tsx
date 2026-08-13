@@ -92,8 +92,10 @@ export function LabTrainingSidePanel({ widgetState, hasLabTraining, onSendComman
     qaEndRef.current?.scrollIntoView({ block: "nearest" });
   }, [qaHistory]);
 
-  if (!hasLabTraining && !widgetState) return null;
-
+  // Always render once mounted: AppShell mounts this panel whenever the lab
+  // panel toggle is on. Show the idle welcome state by default so even a
+  // brand-new empty session (no widget pushed yet, slash commands not loaded)
+  // displays "Lab Training Ready" + Start instead of an empty panel.
   const state = widgetState;
   const isIdle = !state || state.mode === "idle";
   const isQA = state?.mode === "qa";

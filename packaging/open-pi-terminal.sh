@@ -16,7 +16,9 @@ while [ -L "$SOURCE" ]; do
   esac
 done
 DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
-PI_CMD=("$DIR/pi")
+# 本脚本位于包内 scripts/ 子目录，包根为上一级
+ROOT="$(dirname "$DIR")"
+PI_CMD=("$ROOT/pi")
 
 if [ -n "${TERMINAL:-}" ] && command -v "$TERMINAL" >/dev/null 2>&1; then
   exec "$TERMINAL" -e "${PI_CMD[@]}"

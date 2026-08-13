@@ -55,7 +55,7 @@ jobs:
         run: |
           ARCH="$(basename "$(ls -d build/package-linux/pi-linux-* | head -n1)")"
           ARCH="${ARCH#pi-linux-}"
-          VERSION="$(cat "build/package-linux/pi-linux-$ARCH/VERSION.txt")"
+          VERSION="$(cat "build/package-linux/pi-linux-$ARCH/scripts/VERSION.txt")"
           SHA="$(awk '{print $1}' dist/SHA256SUMS)"
           jq -n \
             --arg v "$VERSION" \

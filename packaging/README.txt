@@ -10,16 +10,16 @@
     * runtime/ —— 内置的 Node.js 运行时
 
 【快速开始】
-  方式一（推荐）: 在终端运行  ./start.sh   菜单选择
+  方式一（推荐）: 在终端运行  ./scripts/start.sh   菜单选择
   方式二（直接）:
     ./pi              —— 终端里启动 CLI Agent，用法同官方 pi 命令
     ./pi-web.sh       —— 启动 WebUI，浏览器访问 http://127.0.0.1:30141
   桌面环境:
-    双击 open-pi-terminal.sh —— 自动开一个终端窗口进入 pi
-    双击 start.sh            —— 打开菜单
+    双击 scripts/open-pi-terminal.sh —— 自动开一个终端窗口进入 pi
+    双击 scripts/start.sh            —— 打开菜单
 
 【让 pi / pi-web 全局可用】
-  运行一次 ./install-to-path.sh
+  运行一次 ./scripts/install-to-path.sh
   之后在任意目录都可以直接敲 pi 或 pi-web（需要 ~/.local/bin 在 PATH 中）
 
 【WebUI 常用参数】  （./pi-web.sh 后面跟参数，与官方 pi-web 完全一致）
@@ -39,17 +39,17 @@
       扩展包目录，带各自 node_modules，安装后 pi 自动发现加载），
       你已有的文件不会被改动；
     * models.json：只有目标不存在时才安装。想改用打包版本可手动运行
-      ./install-pi-config.sh --force（原文件会先备份到
+      ./scripts/install-pi-config.sh --force（原文件会先备份到
       ~/.pi/agent/.bundle-backup/）；
     * settings.json：做字段级合并 —— 只把模板里的插件来源（packages）
       合并进来，你已配置的其他项（默认模型等）不会被改动或重置；
     * 会话文件与 auth.json 永远不会被改动。
-  手动执行:  ./install-pi-config.sh           （幂等，无事可做时静默）
+  手动执行:  ./scripts/install-pi-config.sh   （幂等，无事可做时静默）
   换配置目录: PI_CODING_AGENT_DIR=/path ./pi-web.sh （与官方 pi 一致）
 
 【检查更新】
-  ./update.sh            检查更新源并更新（需要能访问更新源）
-  ./update.sh --check    只检查是否有新版本
+  ./scripts/update.sh            检查更新源并更新（需要能访问更新源）
+  ./scripts/update.sh --check    只检查是否有新版本
   更新只替换程序本体，下载包会做 SHA256 校验；你的会话与配置在
   ~/.pi/，位于包外，不受更新影响。更新源默认取 app/package.json 里的
   仓库地址（GitHub Releases 的 latest/download），内网分发请在打包时
@@ -68,18 +68,20 @@
   config/     可选：pi 配置模板（config/pi/）与更新源地址（update-url.txt）
   pi          CLI Agent 启动器
   pi-web.sh   WebUI 启动器
-  start.sh    菜单入口
-  open-pi-terminal.sh   桌面双击进入 CLI
-  install-to-path.sh    安装到 PATH（软链到 ~/.local/bin；启动器会自行
-                        解析软链指向的真实包目录，安装后不受目录移动影响）
-  install-pi-config.sh  应用 pi 配置模板（自动调用，也可手动执行）
-  update.sh             检查并更新本包
-  VERSION.txt 版本号
+  scripts/    辅助脚本与文档（见下）
+    start.sh                 菜单入口
+    open-pi-terminal.sh      桌面双击进入 CLI
+    install-to-path.sh       安装到 PATH（软链到 ~/.local/bin；启动器会自行
+                             解析软链指向的真实包目录，安装后不受目录移动影响）
+    install-pi-config.sh     应用 pi 配置模板（自动调用，也可手动执行）
+    update.sh                检查并更新本包
+    README.txt               本说明
+    VERSION.txt              版本号
 
 ---------------------------------------------------------------------
 【常见问题】
   Q: 双击没反应？
-  A: 在终端里运行 ./start.sh 或 ./pi 查看报错信息。
+  A: 在终端里运行 ./scripts/start.sh 或 ./pi 查看报错信息。
   Q: 端口被占用？
   A: ./pi-web.sh --port 8080
   Q: 怎么卸载？

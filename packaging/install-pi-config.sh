@@ -35,7 +35,9 @@
 set -euo pipefail
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BUNDLED="$DIR/config/pi"
+# 本脚本位于包内 scripts/ 子目录，包根为上一级
+ROOT="$(dirname "$DIR")"
+BUNDLED="$ROOT/config/pi"
 FORCE=0
 DRY=0
 for arg in "$@"; do
@@ -81,8 +83,8 @@ run() {
 merge_settings_packages() {
   local target="$1" bundled="$2"
   local node_bin="${PI_NODE:-}"
-  if [ -z "$node_bin" ] && [ -x "$DIR/runtime/bin/node" ]; then
-    node_bin="$DIR/runtime/bin/node"
+  if [ -z "$node_bin" ] && [ -x "$ROOT/runtime/bin/node" ]; then
+    node_bin="$ROOT/runtime/bin/node"
   fi
   if [ -z "$node_bin" ] && command -v node >/dev/null 2>&1; then
     node_bin="$(command -v node)"

@@ -3,8 +3,8 @@
 # package-linux.sh — 构建 pi-web + pi CLI Agent 的 Linux 离线分发包。
 #
 # 产物（目录 + 压缩包）:
-#   dist/pi-linux-<arch>-<version>.tar.gz   (+ SHA256SUMS)
-#   build/package-linux/pi-linux-<arch>/    原始目录，可直接拷贝分发
+#   dist/amedac.ai-pi-linux-<arch>-<version>.tar.gz   (+ SHA256SUMS)
+#   build/package-linux/amedac.ai-pi-linux-<arch>/    原始目录，可直接拷贝分发
 #
 # 用法:
 #   bash scripts/package-linux.sh
@@ -26,9 +26,9 @@
 #                          - 一个已解压的目录（node-v*-linux-*/ 或 runtime/ 布局）
 #                          - 一个 http(s):// URL（内网镜像）
 #                         示例:
-#                            NODE_RUNTIME_LOCAL=/data/node-v22.19.0-linux-x64.tar.gz
-#                            NODE_RUNTIME_LOCAL=/data/node-v22.19.0-linux-x64
-#                            NODE_RUNTIME_LOCAL=https://mirror.internal/node-v22.19.0-linux-x64.tar.gz
+#                            NODE_RUNTIME_LOCAL=/data/node-v22.23.0-linux-x64.tar.gz
+#                            NODE_RUNTIME_LOCAL=/data/node-v22.23.0-linux-x64
+#                            NODE_RUNTIME_LOCAL=https://mirror.internal/node-v22.23.0-linux-x64.tar.gz
 #   PI_CONFIG_DIR         要随包分发的 pi 配置模板目录（pi 扩展、模型接口配置等
 #                         的规范分发）。指向 ~/.pi 或 ~/.pi/agent 均可（自动识别）。
 #                         打包进包内 config/pi/，目标机首次运行时由
@@ -54,7 +54,7 @@
 #                         config/update-url.txt，目标机用 ./update.sh 检查更新。
 #                         未设置时 update.sh 尝试从 app/package.json 的
 #                         repository 字段推导 GitHub Releases 地址。
-#   NODE_VERSION          内置 Node.js 运行时版本 (默认: 22.19.0；仅当未设置
+#   NODE_VERSION          内置 Node.js 运行时版本 (默认: 22.23.0；仅当未设置
 #                         NODE_RUNTIME_LOCAL 时用于从 nodejs.org 下载)
 #   ARCH                  目标 CPU 架构: x64 | arm64 (默认: x64)
 #   OUT_DIR               产物输出目录 (默认: <仓库>/dist)
@@ -70,7 +70,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORK="$ROOT/build/package-linux"
 SRC="$WORK/src"
 ARCH="${ARCH:-x64}"
-NODE_VERSION="${NODE_VERSION:-22.19.0}"
+NODE_VERSION="${NODE_VERSION:-22.23.0}"
 OUT_DIR="${OUT_DIR:-$ROOT/dist}"
 SMOKE_TEST="${SMOKE_TEST:-1}"
 LOCAL="${PI_CODING_AGENT_LOCAL:-}"
@@ -124,7 +124,7 @@ if [ -n "$LOCAL" ]; then
   (cd "$SRC" && npm pkg set "dependencies.@earendil-works/pi-coding-agent=$SPEC")
   (cd "$SRC" && npm install --no-audit --no-fund)
 fi
-(cd "$SRC" && node -e 'console.log("   pi-coding-agent ->", require("@earendil-works/pi-coding-agent/package.json").version)')
+# (cd "$SRC" && node -e 'console.log("   pi-coding-agent ->", require("@earendil-works/pi-coding-agent/package.json").version)')
 
 # ---------------------------------------------------------------------------
 # 4. 生产构建
@@ -139,7 +139,8 @@ log "npm prune --omit=dev"
 (cd "$SRC" && npm prune --omit=dev --no-audit --no-fund)
 if [ -n "$LOCAL" ]; then
   # 把 shipped package.json 里的 file: 说明符还原成具体版本号，保持整洁
-  LOCAL_VER="$(cd "$SRC" && node -p 'require("@earendil-works/pi-coding-agent/package.json").version')"
+  LOCAL_VER="0.83.0"
+  # "$(cd "$SRC" && node -p 'require("@earendil-works/pi-coding-agent/package.json").version')"
   (cd "$SRC" && npm pkg set "dependencies.@earendil-works/pi-coding-agent=$LOCAL_VER")
 fi
 
@@ -153,17 +154,26 @@ find "$SRC/.next" -name '*.map' -type f -delete
 # ---------------------------------------------------------------------------
 # 7. 组装包目录
 # ---------------------------------------------------------------------------
-PKG="$WORK/pi-linux-$ARCH"
+PKG="$WORK/amedac.ai-pi-linux-$ARCH"
 rm -rf "$PKG"
 mkdir -p "$PKG/app"
 log "组装 $PKG"
 cp -a "$SRC/bin" "$SRC/.next" "$SRC/public" "$SRC/next.config.ts" "$SRC/package.json" "$PKG/app/"
 cp -a "$SRC/node_modules" "$PKG/app/"
 VERSION="$(node -p "require('$SRC/package.json').version")"
-echo "$VERSION" > "$PKG/VERSION.txt"
-cp -a "$ROOT/packaging/." "$PKG/"
-chmod +x "$PKG/pi" "$PKG/pi-web.sh" "$PKG/start.sh" "$PKG/open-pi-terminal.sh" \
-  "$PKG/install-to-path.sh" "$PKG/install-pi-config.sh" "$PKG/update.sh"
+
+# 根目录只保留 pi / pi-web.sh 两个启动器；其余脚本与文档统一收进 scripts/
+# （start.sh / update.sh / install-to-path.sh / install-pi-config.sh /
+#   open-pi-terminal.sh / README.txt / VERSION.txt 等）
+mkdir -p "$PKG/scripts"
+for f in "$ROOT"/packaging/*; do
+  case "$(basename "$f")" in
+    pi|pi-web.sh) cp -a "$f" "$PKG/" ;;
+    *)            cp -a "$f" "$PKG/scripts/" ;;
+  esac
+done
+echo "$VERSION" > "$PKG/scripts/VERSION.txt"
+chmod +x "$PKG/pi" "$PKG/pi-web.sh" "$PKG/scripts/"*.sh
 
 # ---------------------------------------------------------------------------
 # 7b. 打包 pi 配置模板（扩展/模型接口等配置的规范分发）
@@ -305,7 +315,7 @@ if [ -x "$PKG/runtime/bin/node" ] && RT_VER="$("$PKG/runtime/bin/node" -v 2>/dev
   RT_MAJOR="${RT_VER#v}"
   RT_MAJOR="${RT_MAJOR%%.*}"
   if [ "${RT_MAJOR:-0}" -lt 22 ] 2>/dev/null; then
-    log "警告: pi-web 要求 Node >= 22.19.0，当前内置 $RT_VER"
+    log "警告: pi-web 要求 Node >= 22.23.0，当前内置 $RT_VER"
   fi
 fi
 
@@ -398,17 +408,20 @@ fi
 # ---------------------------------------------------------------------------
 # 10. 打包
 # ---------------------------------------------------------------------------
-OUT="$OUT_DIR/pi-linux-$ARCH-$VERSION.tar.gz"
+OUT="$OUT_DIR/amedac.ai-pi-linux-$ARCH-$VERSION.tar.gz"
 log "打包 $OUT"
-(cd "$WORK" && tar -czf "$OUT" "pi-linux-$ARCH")
-(cd "$OUT_DIR" && sha256sum "pi-linux-$ARCH-$VERSION.tar.gz" > SHA256SUMS)
+(cd "$WORK" && tar -czf "$OUT" "amedac.ai-pi-linux-$ARCH")
+(cd "$OUT_DIR" && sha256sum "amedac.ai-pi-linux-$ARCH-$VERSION.tar.gz" > SHA256SUMS)
 log "完成，产物："
 ls -lh "$OUT" "$OUT_DIR/SHA256SUMS"
 echo
-echo "  将 pi-linux-$ARCH/ 拷到目标 Linux 机器后："
-echo "    ./start.sh    菜单入口"
+echo "  将 amedac.ai-pi-linux-$ARCH/ 拷到目标 Linux 机器后："
 echo "    ./pi          启动 CLI Agent（用法同官方 pi 命令）"
 echo "    ./pi-web.sh   启动 WebUI（浏览器访问 http://127.0.0.1:30141）"
+echo "    ./scripts/start.sh    菜单入口（含安装到 PATH / 检查更新）"
+echo "    ./scripts/install-to-path.sh  把 pi / pi-web 装到 PATH"
+echo "    ./scripts/update.sh           检查并更新本包"
+echo "    其余辅助脚本与文档均在 scripts/ 下（README.txt / VERSION.txt 等）"
 if [ -d "$PKG/config/pi" ]; then
   echo "    ./update.sh  检查并更新（首次运行时配置模板已自动合并到 ~/.pi/agent）"
 fi

@@ -26,8 +26,8 @@ fi
 
 # 首次运行/配置模板升级时，自动把包内 config/pi/ 合并到 ~/.pi/agent
 # （幂等：无事可做时立即静默返回；失败不阻塞启动）
-if [ -x "$DIR/install-pi-config.sh" ]; then
-  "$DIR/install-pi-config.sh" || true
+if [ -x "$DIR/scripts/install-pi-config.sh" ]; then
+  "$DIR/scripts/install-pi-config.sh" || true
 fi
 
 exec "$DIR/runtime/bin/node" "$DIR/app/bin/pi-web.js" "$@"

@@ -18,9 +18,9 @@
 # 逐段比较，首个不同的段决定大小；数字段按数值比较。
 #
 # 用法:
-#   ./update.sh           检查；有新版则询问后更新
-#   ./update.sh --check   只检查（有新版退出码 2，已最新退出码 0）
-#   ./update.sh --yes     有新版直接更新，不询问
+#   ./scripts/update.sh           检查；有新版则询问后更新
+#   ./scripts/update.sh --check   只检查（有新版退出码 2，已最新退出码 0）
+#   ./scripts/update.sh --yes     有新版直接更新，不询问
 #
 # 退出码: 0 = 已最新或更新完成；2 = 有新版（--check 时）；1 = 出错
 #
@@ -31,7 +31,7 @@
 #   * GitHub 的 latest 重定向不指向预发布（alpha/beta 若标为 prerelease），
 #     此时请用 PI_UPDATE_BASE_URL 指定具体地址，例如:
 #       PI_UPDATE_BASE_URL=https://github.com/OWNER/REPO/releases/download/v0.0.2.alpha \
-#         ./update.sh
+#         ./scripts/update.sh
 set -euo pipefail
 
 # 解析脚本真实路径（支持通过软链调用）
@@ -44,10 +44,12 @@ while [ -L "$SOURCE" ]; do
   esac
 done
 DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
+# 本脚本位于包内 scripts/ 子目录: ROOT 是包根，PARENT 是包所在目录
+# （原子交换要把整个包目录改名，CWD 必须先离开包目录）
 ROOT="$(dirname "$DIR")"
-# 先离开包目录，避免交换目录时本脚本 CWD 被一并重命名
-cd "$ROOT"
-NODE="$DIR/runtime/bin/node"
+PARENT="$(dirname "$ROOT")"
+cd "$PARENT"
+NODE="$ROOT/runtime/bin/node"
 CUR_VER="$(cat "$DIR/VERSION.txt" 2>/dev/null || echo "unknown")"
 CHECK=0
 YES=0
@@ -65,9 +67,9 @@ die() { echo "ERROR: $*" >&2; exit 1; }
 [ -x "$NODE" ] || die "未找到内置 Node 运行时（$NODE）"
 
 # ---- 1. 确定更新源 ----
-BASE="${PI_UPDATE_BASE_URL:-$(cat "$DIR/config/update-url.txt" 2>/dev/null || true)}"
+BASE="${PI_UPDATE_BASE_URL:-$(cat "$ROOT/config/update-url.txt" 2>/dev/null || true)}"
 if [ -z "$BASE" ]; then
-  REPO_URL="$("$NODE" -e 'console.log(require(process.argv[1]).repository?.url || "")' "$DIR/app/package.json" 2>/dev/null || true)"
+  REPO_URL="$("$NODE" -e 'console.log(require(process.argv[1]).repository?.url || "")' "$ROOT/app/package.json" 2>/dev/null || true)"
   REPO_URL="$(printf '%s' "$REPO_URL" | sed -E 's#^(git\+|git@github.com:)?##; s#\.git$##')"
   case "$REPO_URL" in
     https://github.com/*) BASE="${REPO_URL%/}/releases/latest/download" ;;
@@ -171,22 +173,22 @@ tar -xzf "$PKG_FILE" -C "$NEW_DIR" --strip-components=1 || die "解压失败（�
   || die "下载的包结构不完整（缺少 pi / pi-web.sh / runtime/bin/node），已中止"
 
 # 用户可能自定义过 config/update-url.txt（环境变量只影响本次运行），保留它
-if [ -f "$DIR/config/update-url.txt" ] && [ ! -f "$NEW_DIR/config/update-url.txt" ]; then
-  cp -a "$DIR/config/update-url.txt" "$NEW_DIR/config/update-url.txt"
+if [ -f "$ROOT/config/update-url.txt" ] && [ ! -f "$NEW_DIR/config/update-url.txt" ]; then
+  cp -a "$ROOT/config/update-url.txt" "$NEW_DIR/config/update-url.txt"
 fi
 
-CUR_NAME="$(basename "$DIR")"
-OLD_DIR="$ROOT/.$CUR_NAME.old"
+CUR_NAME="$(basename "$ROOT")"
+OLD_DIR="$PARENT/.$CUR_NAME.old"
 rm -rf "$OLD_DIR"
 log "替换包目录（用户数据在 ~/.pi，不受影响）..."
-mv "$DIR" "$OLD_DIR" || die "无法移动当前目录（对包所在目录 $ROOT 没有写权限？）"
-if ! mv "$NEW_DIR" "$DIR"; then
-  mv "$OLD_DIR" "$DIR" || true
+mv "$ROOT" "$OLD_DIR" || die "无法移动当前目录（对包所在目录 $PARENT 没有写权限？）"
+if ! mv "$NEW_DIR" "$ROOT"; then
+  mv "$OLD_DIR" "$ROOT" || true
   die "替换失败，已回滚"
 fi
 rm -rf "$OLD_DIR"
 
 echo
 echo "更新完成: v$CUR_VER → v$LATEST_VER"
-echo "新版本目录仍在 $DIR，启动器（./start.sh、./pi、./pi-web.sh）照常使用。"
+echo "新版本目录仍在 $ROOT，启动器（./pi、./pi-web.sh、./scripts/start.sh）照常使用。"
 echo "提示: 新包若带更新版本的配置模板（config/pi），下次启动时会自动合并。"

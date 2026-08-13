@@ -14,6 +14,8 @@ while [ -L "$SOURCE" ]; do
   esac
 done
 DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
+# 本脚本位于包内 scripts/ 子目录，包根为上一级
+ROOT="$(dirname "$DIR")"
 VERSION="$(cat "$DIR/VERSION.txt" 2>/dev/null || echo 'unknown')"
 ARCH="$(uname -m)"
 
@@ -32,7 +34,7 @@ menu() {
   echo "  2) 启动 CLI Agent（pi，在终端里直接交互）"
   echo "  3) 安装到 PATH（之后任意目录可敲 pi / pi-web）"
   echo "  4) 查看使用说明"
-  echo "  5) 检查更新（./update.sh，需要能访问更新源）"
+  echo "  5) 检查更新（./scripts/update.sh，需要能访问更新源）"
   echo "  q) 退出"
   echo
   printf "  请选择: "
@@ -42,8 +44,8 @@ while true; do
   menu
   read -r choice
   case "$choice" in
-    1) "$DIR/pi-web.sh"; echo; echo "WebUI 已退出。"; press_enter ;;
-    2) "$DIR/pi"; echo; echo "CLI 已退出。"; press_enter ;;
+    1) "$ROOT/pi-web.sh"; echo; echo "WebUI 已退出。"; press_enter ;;
+    2) "$ROOT/pi"; echo; echo "CLI 已退出。"; press_enter ;;
     3) bash "$DIR/install-to-path.sh"; press_enter ;;
     4) cat "$DIR/README.txt" 2>/dev/null || echo "（README.txt 不存在）"; press_enter ;;
     5) bash "$DIR/update.sh"; echo; press_enter ;;

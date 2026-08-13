@@ -1,6 +1,6 @@
 // Client-side helper for POST /api/agent-relay/rpc. Mirrors lib/agent-client.ts:
 // same { success, data } / { error } envelope and error convention.
-import type { FsEntry, FsReadResult, FsStatResult, ExecResult, AgentInfo } from "@/lib/relay/protocol";
+import type { FsEntry, FsReadResult, FsStatResult, ExecResult, AgentInfo, GrepMatch } from "@/lib/relay/protocol";
 
 export async function relayRpc<T = unknown>(
   method: string,
@@ -28,6 +28,15 @@ export const relayFs = {
   write: (path: string, content: string) => relayRpc<{ ok: boolean; size: number }>("fs.write", { path, content }),
   stat: (path: string) => relayRpc<FsStatResult>("fs.stat", { path }),
   mkdir: (path: string) => relayRpc<{ ok: boolean }>("fs.mkdir", { path }),
+  delete: (path: string) => relayRpc<{ ok: boolean }>("fs.delete", { path }),
+  rename: (from: string, to: string) => relayRpc<{ ok: boolean; path: string }>("fs.rename", { from, to }),
+};
+
+export const relaySearch = {
+  grep: (pattern: string, opts?: { path?: string; glob?: string; maxResults?: number }) =>
+    relayRpc<GrepMatch[]>("search.grep", { pattern, ...opts }),
+  fd: (pattern: string, opts?: { path?: string; type?: "f" | "d"; maxResults?: number }) =>
+    relayRpc<string[]>("search.fd", { pattern, ...opts }),
 };
 
 export function relayExec(argv: string[], cwd = ".", timeout?: number) {

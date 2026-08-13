@@ -104,7 +104,8 @@ curl -X POST .../api/agent-relay/rpc -d '{"method":"exec.run","params":{"argv":[
 
 - **Phase 1（已完成）**：Relay + Agent + 配对 + 在线状态 + fs(list/read/write/stat/mkdir)
   + exec.run + 前端按钮/模态/面板。
-- **Phase 2**：exec 流式、search.grep/fd（缺 rg/fd 退化 grep/find）、PTY 终端（xterm.js +
-  ConPTY/pty）、fs.watch、把主 FileExplorer 与聊天 Agent 的 fs/bash 后端抽象为「local 或
-  connected-agent」可切换。
+- **Phase 2a（已完成）**：search.grep / search.fd（Go 原生遍历，不依赖 rg/grep/fd/find，
+  行为跨平台一致）+ fs.delete / fs.rename；面板内置搜索框与重命名/删除。
+- **Phase 2（进行中）**：exec 流式、PTY 终端（xterm.js + ConPTY/pty）、fs.watch、把主
+  FileExplorer 与聊天 Agent 的 fs/bash 后端抽象为「local 或 connected-agent」可切换。
 - **Phase 3**：多 Agent/多设备、命令白名单/审计、端到端加密、Agent 自更新、本机托盘状态。

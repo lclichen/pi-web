@@ -60,6 +60,10 @@ export type RpcMethod =
   | "fs.write"
   | "fs.stat"
   | "fs.mkdir"
+  | "fs.delete"
+  | "fs.rename"
+  | "search.grep"
+  | "search.fd"
   | "exec.run";
 
 /** Static metadata describing the connected machine + its workspace. */
@@ -102,6 +106,13 @@ export interface ExecResult {
   exitCode: number;
   stdout: string;
   stderr: string;
+}
+
+/** One hit from search.grep. */
+export interface GrepMatch {
+  file: string;
+  line: number;
+  text: string;
 }
 
 /** Public-facing snapshot returned by /api/agent-relay/status. */

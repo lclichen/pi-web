@@ -198,6 +198,14 @@ func callMethod(method string, params map[string]interface{}, ws *workspace.Work
 		return ws.Stat(params)
 	case "fs.mkdir":
 		return ws.Mkdir(params)
+	case "fs.delete":
+		return ws.Delete(params)
+	case "fs.rename":
+		return ws.Rename(params)
+	case "search.grep":
+		return ws.Grep(params)
+	case "search.fd":
+		return ws.Fd(params)
 	case "exec.run":
 		return ws.Exec(params)
 	default:

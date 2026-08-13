@@ -141,3 +141,46 @@ func (w *Workspace) Mkdir(params map[string]interface{}) (interface{}, error) {
 	}
 	return map[string]interface{}{"ok": true}, nil
 }
+
+// Delete removes a file or directory tree. Refuses the workspace root.
+func (w *Workspace) Delete(params map[string]interface{}) (interface{}, error) {
+	p := paramString(params, "path", "")
+	if p == "" {
+		return nil, fmt.Errorf("path required")
+	}
+	abs, err := w.resolve(p)
+	if err != nil {
+		return nil, err
+	}
+	if abs == w.realRoot() {
+		return nil, fmt.Errorf("refuse to delete workspace root")
+	}
+	if err := os.RemoveAll(abs); err != nil {
+		return nil, err
+	}
+	return map[string]interface{}{"ok": true}, nil
+}
+
+// Rename moves a file/directory. Both endpoints must stay within the root.
+func (w *Workspace) Rename(params map[string]interface{}) (interface{}, error) {
+	from := paramString(params, "from", "")
+	to := paramString(params, "to", "")
+	if from == "" || to == "" {
+		return nil, fmt.Errorf("from and to required")
+	}
+	absFrom, err := w.resolve(from)
+	if err != nil {
+		return nil, err
+	}
+	absTo, err := w.resolve(to)
+	if err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(filepath.Dir(absTo), 0o755); err != nil {
+		return nil, err
+	}
+	if err := os.Rename(absFrom, absTo); err != nil {
+		return nil, err
+	}
+	return map[string]interface{}{"ok": true, "path": w.relToRoot(absTo)}, nil
+}

@@ -79,8 +79,13 @@ exists.
 
 ## Protocol
 
-JSON-RPC over one WebSocket. Methods (Phase 1): `workspace.info`, `fs.list`,
-`fs.read`, `fs.write`, `fs.stat`, `fs.mkdir`, `exec.run`. Phase 2 adds
-`fs.delete/rename/watch`, `search.grep/fd`, `exec.stream`, `pty.*`. The shapes
+JSON-RPC over one WebSocket. Methods: `workspace.info`, `fs.list`, `fs.read`,
+`fs.write`, `fs.stat`, `fs.mkdir`, `fs.delete`, `fs.rename`, `search.grep`,
+`search.fd`, `exec.run`. Pending: `exec.stream`, `pty.*`, `fs.watch`. The shapes
 live in `internal/protocol/protocol.go` (mirrors
 `pi-web/lib/relay/protocol.ts`).
+
+`search.grep`/`search.fd` are **Go-native** (tree walk + `regexp`) — they do not
+shell out to rg/fd/grep/find, so behavior is identical on CentOS 7 and elsewhere
+and the binary stays dependency-free. Heavy dirs (`node_modules`, `.git`, ...)
+are skipped during traversal.

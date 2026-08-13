@@ -34,23 +34,24 @@ func (w *Workspace) resolve(p string) (string, error) {
 	if real, err := filepath.EvalSymlinks(abs); err == nil {
 		abs = real
 	}
-	realRoot, err := filepath.EvalSymlinks(w.Root)
-	if err != nil {
-		realRoot = w.Root
-	}
+	realRoot := w.realRoot()
 	if !isWithin(abs, realRoot) {
 		return "", fmt.Errorf("path outside workspace root: %s", p)
 	}
 	return abs, nil
 }
 
+// realRoot returns Root with symlinks resolved.
+func (w *Workspace) realRoot() string {
+	if r, err := filepath.EvalSymlinks(w.Root); err == nil {
+		return r
+	}
+	return w.Root
+}
+
 // relToRoot returns a clean slash path relative to Root, for response payloads.
 func (w *Workspace) relToRoot(abs string) string {
-	realRoot, err := filepath.EvalSymlinks(w.Root)
-	if err != nil {
-		realRoot = w.Root
-	}
-	rel, err := filepath.Rel(realRoot, abs)
+	rel, err := filepath.Rel(w.realRoot(), abs)
 	if err != nil {
 		return filepath.ToSlash(abs)
 	}

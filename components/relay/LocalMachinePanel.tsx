@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { AgentInfo, FsEntry, GrepMatch } from "@/lib/relay/protocol";
-import { relayFs, relayExec, relaySearch } from "@/lib/relay-client";
+import { relayFs, relaySearch, relayStreamExec } from "@/lib/relay-client";
 
 interface Props {
   info: AgentInfo;
@@ -160,12 +160,29 @@ export function LocalMachinePanel({ info, onClose }: Props) {
     const argv = parseArgv(cmd.trim());
     if (argv.length === 0) return;
     setRunning(true);
-    setResult(null);
+    setResult({ exitCode: -1, stdout: "", stderr: "" });
     setError(null);
     try {
-      setResult(await relayExec(argv, path || ".", 60));
+      const { exitCode } = await relayStreamExec(
+        argv,
+        path || ".",
+        (c) => {
+          setResult((r) => {
+            if (!r) return r;
+            return c.stream === "stdout"
+              ? { ...r, stdout: r.stdout + c.text }
+              : { ...r, stderr: r.stderr + c.text };
+          });
+        },
+        60,
+      );
+      setResult((r) => (r ? { ...r, exitCode } : { exitCode, stdout: "", stderr: "" }));
     } catch (err) {
-      setResult({ exitCode: -1, stdout: "", stderr: err instanceof Error ? err.message : String(err) });
+      setResult((r) => ({
+        exitCode: -1,
+        stdout: r?.stdout ?? "",
+        stderr: (r?.stderr ?? "") + (err instanceof Error ? err.message : String(err)),
+      }));
     } finally {
       setRunning(false);
     }
@@ -296,7 +313,7 @@ export function LocalMachinePanel({ info, onClose }: Props) {
               </div>
               {result && (
                 <pre style={{ margin: "8px 0 0", padding: 8, maxHeight: 160, overflow: "auto", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 4, fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--text-muted)", whiteSpace: "pre-wrap" }}>
-                  <span style={{ color: result.exitCode === 0 ? "#22c55e" : "#ef4444" }}>[exit {result.exitCode}]</span>{"\n"}{result.stdout}{result.stderr && `${result.stdout ? "\n" : ""}${result.stderr}`}
+                  <span style={{ color: result.exitCode === 0 ? "#22c55e" : result.exitCode === -1 ? "var(--text-muted)" : "#ef4444" }}>{result.exitCode === -1 ? "[running]" : `[exit ${result.exitCode}]`}</span>{"\n"}{result.stdout}{result.stderr && `${result.stdout ? "\n" : ""}${result.stderr}`}
                 </pre>
               )}
             </div>

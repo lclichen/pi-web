@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os/exec"
+	"sync"
 	"time"
 )
 
@@ -103,4 +105,79 @@ func truncate(s string) string {
 		return s[:maxExecOutput] + "\n...[truncated]"
 	}
 	return s
+}
+
+// ExecStream runs argv like Exec but emits stdout/stderr incrementally via the
+// emit callback (stream = "stdout" | "stderr") as they arrive, then returns the
+// exit code. The caller (agent) wraps each emit as a streamed chunk frame and
+// the final exitCode as a terminal end frame over the WebSocket.
+func (w *Workspace) ExecStream(params map[string]interface{}, emit func(stream, text string)) (int, error) {
+	argv, err := parseArgv(params)
+	if err != nil {
+		return -1, err
+	}
+	cwd := paramString(params, "cwd", ".")
+	absCwd, err := w.resolve(cwd)
+	if err != nil {
+		return -1, err
+	}
+
+	timeout := defaultExecTimeout
+	if v, ok := toFloat(params["timeout"]); ok {
+		d := time.Duration(v) * time.Second
+		if d > 0 && d < maxExecTimeout {
+			timeout = d
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	cmd.Dir = absCwd
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return -1, err
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return -1, err
+	}
+	if err := cmd.Start(); err != nil {
+		return -1, err
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() { defer wg.Done(); pipeStream(stdout, "stdout", emit) }()
+	go func() { defer wg.Done(); pipeStream(stderr, "stderr", emit) }()
+	wg.Wait()
+
+	err = cmd.Wait()
+	exitCode := 0
+	if err != nil {
+		if ee, ok := err.(*exec.ExitError); ok {
+			exitCode = ee.ExitCode()
+		} else if ctx.Err() == context.DeadlineExceeded {
+			emit("stderr", "\n[timeout]")
+			return -1, nil
+		} else {
+			return -1, err
+		}
+	}
+	return exitCode, nil
+}
+
+// pipeStream copies r to emit in up-to-4KB chunks until EOF.
+func pipeStream(r io.Reader, stream string, emit func(stream, text string)) {
+	buf := make([]byte, 4096)
+	for {
+		n, err := r.Read(buf)
+		if n > 0 {
+			emit(stream, string(buf[:n]))
+		}
+		if err != nil {
+			return
+		}
+	}
 }

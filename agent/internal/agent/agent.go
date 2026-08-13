@@ -163,11 +163,39 @@ func handleRequest(sc *safeConn, msg []byte, ws *workspace.Workspace) {
 	if err := json.Unmarshal(msg, &req); err != nil {
 		return
 	}
+	// exec.stream emits incremental chunk frames then a terminal end frame.
+	if req.Method == "exec.stream" {
+		handleStreamRequest(sc, req, ws)
+		return
+	}
 	resp := dispatch(req, ws)
 	out, err := json.Marshal(resp)
 	if err != nil {
 		return
 	}
+	_ = sc.writeText(out)
+}
+
+func handleStreamRequest(sc *safeConn, req protocol.Request, ws *workspace.Workspace) {
+	emit := func(stream, text string) {
+		frame, _ := json.Marshal(map[string]interface{}{
+			"id":   req.ID,
+			"type": "chunk",
+			"data": map[string]string{"stream": stream, "text": text},
+		})
+		_ = sc.writeText(frame)
+	}
+	exitCode, err := ws.ExecStream(req.Params, emit)
+
+	end := map[string]interface{}{"id": req.ID, "type": "end"}
+	if err != nil {
+		end["ok"] = false
+		end["error"] = err.Error()
+	} else {
+		end["ok"] = true
+		end["result"] = map[string]interface{}{"exitCode": exitCode}
+	}
+	out, _ := json.Marshal(end)
 	_ = sc.writeText(out)
 }
 

@@ -43,4 +43,66 @@ export function relayExec(argv: string[], cwd = ".", timeout?: number) {
   return relayRpc<ExecResult>("exec.run", { argv, cwd, ...(timeout ? { timeout } : {}) });
 }
 
+export interface ExecChunk {
+  stream: "stdout" | "stderr";
+  text: string;
+}
+
+/**
+ * Streaming exec via POST /api/agent-relay/rpc/stream (SSE body). Invokes
+ * onChunk for each streamed stdout/stderr frame and resolves with the exit
+ * code once the terminal `end` frame arrives. Gives the panel a live,
+ * scrolling command output.
+ */
+export async function relayStreamExec(
+  argv: string[],
+  cwd: string,
+  onChunk: (c: ExecChunk) => void,
+  timeout?: number,
+): Promise<{ exitCode: number }> {
+  const res = await fetch("/api/agent-relay/rpc/stream", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      method: "exec.stream",
+      params: { argv, cwd, ...(timeout ? { timeout } : {}) },
+    }),
+  });
+  if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  let exitCode = 0;
+  let ended = false;
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    let sep: number;
+    while ((sep = buf.indexOf("\n\n")) >= 0) {
+      const frame = buf.slice(0, sep);
+      buf = buf.slice(sep + 2);
+      const dataLine = frame.split("\n").find((l) => l.startsWith("data: "));
+      if (!dataLine) continue;
+      let payload: { type?: string; data?: ExecChunk; ok?: boolean; error?: string; result?: { exitCode?: number } };
+      try {
+        payload = JSON.parse(dataLine.slice(6));
+      } catch {
+        continue;
+      }
+      if (payload.type === "chunk" && payload.data) {
+        onChunk(payload.data);
+      } else if (payload.type === "end") {
+        ended = true;
+        if (!payload.ok) throw new Error(payload.error ?? "stream failed");
+        if (payload.result?.exitCode != null) exitCode = payload.result.exitCode;
+      }
+    }
+  }
+  if (!ended) throw new Error("stream ended unexpectedly");
+  return { exitCode };
+}
+
 export type { AgentInfo };

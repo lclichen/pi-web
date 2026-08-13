@@ -64,7 +64,8 @@ export type RpcMethod =
   | "fs.rename"
   | "search.grep"
   | "search.fd"
-  | "exec.run";
+  | "exec.run"
+  | "exec.stream";
 
 /** Static metadata describing the connected machine + its workspace. */
 export interface AgentInfo {

@@ -1,0 +1,26 @@
+# systemd unit for pi-agent. Copy to /etc/systemd/system/pi-agent.service and
+# edit the ExecStart / User / Environment lines, then:
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now pi-agent
+#   journalctl -u pi-agent -f
+#
+# The agent is a static binary with no runtime deps, so it runs fine on CentOS 7.
+[Unit]
+Description=pi-web Local Agent (file/command bridge)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Edit: point to the binary and the pi-web relay URL.
+ExecStart=/usr/local/bin/pi-agent run
+# Optionally pin the shared workspace root (default: service working directory).
+# WorkingDirectory=/home/youruser/projects
+# Environment=PI_RELAY... not needed; config is read from ~/.pi-agent/config.json
+User=youruser
+Restart=always
+RestartSec=3
+# Run as a non-privileged user; pair first as that user so ~/.pi-agent/config.json exists.
+
+[Install]
+WantedBy=multi-user.target

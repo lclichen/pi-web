@@ -15,6 +15,7 @@ import { PluginsConfig } from "./PluginsConfig";
 import { SubagentsConfig } from "./SubagentsConfig";
 import { McpServersConfig } from "./McpServersConfig";
 import { ProjectTrustDialog } from "./ProjectTrustDialog";
+import { ConnectLocalMachine } from "./relay/ConnectLocalMachine";
 import { BranchNavigator } from "./BranchNavigator";
 import { useTheme } from "@/hooks/useTheme";
 import { useI18n } from "@/hooks/useI18n";
@@ -1022,6 +1023,7 @@ export function AppShell() {
                <path d="M14 18h6" />
              </svg>
            </button>
+          <ConnectLocalMachine />
           {showChat && projectTrust?.requiresTrust && !projectTrust.trusted && (
             <button
               type="button"

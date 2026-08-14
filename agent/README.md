@@ -81,9 +81,15 @@ exists.
 
 JSON-RPC over one WebSocket. Methods: `workspace.info`, `fs.list`, `fs.read`,
 `fs.write`, `fs.stat`, `fs.mkdir`, `fs.delete`, `fs.rename`, `search.grep`,
-`search.fd`, `exec.run`. Pending: `exec.stream`, `pty.*`, `fs.watch`. The shapes
-live in `internal/protocol/protocol.go` (mirrors
-`pi-web/lib/relay/protocol.ts`).
+`search.fd`, `exec.run`, `exec.stream`, `pty.create`, `pty.input`,
+`pty.resize`, `pty.close`. Pending: `fs.watch`. The shapes live in
+`internal/protocol/protocol.go` (mirrors `pi-web/lib/relay/protocol.ts`).
+
+The interactive terminal (`pty.*`) uses **creack/pty** (pure Go, CGO-free → the
+Linux binary stays statically linked). It is built only on Linux/macOS; on
+Windows the agent compiles with a stub so the rest still runs — runtime PTY
+testing happens on the CentOS 7 target. PTY output is pushed as unsolicited
+`{type:"event", event:"pty.output", sessionId, data}` frames.
 
 `search.grep`/`search.fd` are **Go-native** (tree walk + `regexp`) — they do not
 shell out to rg/fd/grep/find, so behavior is identical on CentOS 7 and elsewhere

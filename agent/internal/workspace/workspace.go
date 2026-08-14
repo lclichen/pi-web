@@ -49,6 +49,13 @@ func (w *Workspace) realRoot() string {
 	return w.Root
 }
 
+// Resolve is the exported path-safety check: enforces p is inside Root (after
+// symlink resolution) and returns the absolute real path. Used by callers
+// outside the workspace package (e.g. the pty handler resolving a cwd).
+func (w *Workspace) Resolve(p string) (string, error) {
+	return w.resolve(p)
+}
+
 // relToRoot returns a clean slash path relative to Root, for response payloads.
 func (w *Workspace) relToRoot(abs string) string {
 	rel, err := filepath.Rel(w.realRoot(), abs)

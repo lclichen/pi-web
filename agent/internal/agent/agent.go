@@ -20,12 +20,14 @@ import (
 	"github.com/gorilla/websocket"
 
 	"piagent/internal/config"
+	"piagent/internal/pty"
 	"piagent/internal/protocol"
 	"piagent/internal/workspace"
 )
 
-// Run is the `pi-agent run` (default) subcommand. It never returns under normal
-// operation — it reconnects forever with backoff.
+// ptyMgr owns the live PTY sessions for the web terminal. Tied to a single
+// relay connection: cleared on disconnect/reconnect.
+var ptyMgr = pty.NewManager()
 func Run(args []string, version string) int {
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
 	configPath := fs.String("config", "", "path to config.json (default ~/.pi-agent/config.json)")
@@ -142,6 +144,9 @@ func serveOnce(wsURL string, info protocol.AgentInfo, ws *workspace.Workspace) e
 	defer conn.Close()
 
 	sc := &safeConn{c: conn}
+	// PTY sessions are bound to this connection; tear them down on disconnect so
+	// they don't leak (and don't write to a dead socket after reconnect).
+	defer ptyMgr.CloseAll()
 
 	hello, _ := json.Marshal(protocol.Hello{Type: "hello", Info: info})
 	if err := sc.writeText(hello); err != nil {
@@ -166,6 +171,12 @@ func handleRequest(sc *safeConn, msg []byte, ws *workspace.Workspace) {
 	// exec.stream emits incremental chunk frames then a terminal end frame.
 	if req.Method == "exec.stream" {
 		handleStreamRequest(sc, req, ws)
+		return
+	}
+	// pty.* manage interactive terminals; the agent pushes unsolicited
+	// pty.output "event" frames as the PTY produces output.
+	if strings.HasPrefix(req.Method, "pty.") {
+		handlePtyRequest(sc, req, ws)
 		return
 	}
 	resp := dispatch(req, ws)
@@ -197,6 +208,105 @@ func handleStreamRequest(sc *safeConn, req protocol.Request, ws *workspace.Works
 	}
 	out, _ := json.Marshal(end)
 	_ = sc.writeText(out)
+}
+
+// handlePtyRequest serves pty.create/input/resize/close. PTY output is pushed
+// asynchronously as unsolicited {type:"event", event:"pty.output", ...} frames
+// (no request id) — the relay routes these to the per-session SSE subscriber.
+func handlePtyRequest(sc *safeConn, req protocol.Request, ws *workspace.Workspace) {
+	emit := func(event string, payload map[string]interface{}) {
+		frame := map[string]interface{}{"type": "event", "event": event}
+		for k, v := range payload {
+			frame[k] = v
+		}
+		out, _ := json.Marshal(frame)
+		_ = sc.writeText(out)
+	}
+
+	var result interface{}
+	var perr error
+	switch req.Method {
+	case "pty.create":
+		shell := paramString(req.Params, "shell", defaultShell())
+		absCwd, e := ws.Resolve(paramString(req.Params, "cwd", "."))
+		if e != nil {
+			perr = e
+			break
+		}
+		cols := paramInt(req.Params, "cols", 80)
+		rows := paramInt(req.Params, "rows", 24)
+		sess, e := ptyMgr.Create(shell, absCwd, cols, rows, func(sessionID, data string) {
+			emit("pty.output", map[string]interface{}{"sessionId": sessionID, "data": data})
+		})
+		if e != nil {
+			perr = e
+			break
+		}
+		result = map[string]interface{}{"sessionId": sess.ID}
+	case "pty.input":
+		sess, ok := ptyMgr.Get(paramString(req.Params, "sessionId", ""))
+		if !ok {
+			perr = fmt.Errorf("unknown pty session")
+			break
+		}
+		perr = sess.Write([]byte(paramString(req.Params, "data", "")))
+		result = map[string]interface{}{"ok": true}
+	case "pty.resize":
+		sess, ok := ptyMgr.Get(paramString(req.Params, "sessionId", ""))
+		if !ok {
+			perr = fmt.Errorf("unknown pty session")
+			break
+		}
+		perr = sess.Resize(paramInt(req.Params, "cols", 80), paramInt(req.Params, "rows", 24))
+		result = map[string]interface{}{"ok": true}
+	case "pty.close":
+		ptyMgr.Close(paramString(req.Params, "sessionId", ""))
+		result = map[string]interface{}{"ok": true}
+	default:
+		perr = fmt.Errorf("unknown pty method: %s", req.Method)
+	}
+
+	resp := protocol.Response{ID: req.ID}
+	if perr != nil {
+		resp.OK = false
+		resp.Error = perr.Error()
+	} else {
+		resp.OK = true
+		resp.Result = result
+	}
+	out, _ := json.Marshal(resp)
+	_ = sc.writeText(out)
+}
+
+func defaultShell() string {
+	if s := os.Getenv("SHELL"); s != "" {
+		return s
+	}
+	return "/bin/sh"
+}
+
+func paramString(params map[string]interface{}, key, dflt string) string {
+	if params == nil {
+		return dflt
+	}
+	if v, ok := params[key]; ok {
+		if s, ok := v.(string); ok {
+			return s
+		}
+	}
+	return dflt
+}
+
+func paramInt(params map[string]interface{}, key string, dflt int) int {
+	if params == nil {
+		return dflt
+	}
+	if v, ok := params[key]; ok {
+		if n, ok := v.(float64); ok {
+			return int(n)
+		}
+	}
+	return dflt
 }
 
 func dispatch(req protocol.Request, ws *workspace.Workspace) protocol.Response {

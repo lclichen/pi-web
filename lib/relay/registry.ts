@@ -32,6 +32,9 @@ interface RelayRegistry {
   pairCodes: Map<string, PairingCode>;
   agent: AgentConn | null;
   statusSubscribers: Set<(status: RelayStatus) => void>;
+  // PTY output subscribers, keyed by agent-side session id. The agent pushes
+  // unsolicited pty.output "event" frames; these fan out to the SSE streams.
+  ptySubscribers: Map<string, Set<(data: string) => void>>;
 }
 
 declare global {
@@ -39,7 +42,12 @@ declare global {
 }
 
 function newRegistry(): RelayRegistry {
-  return { pairCodes: new Map(), agent: null, statusSubscribers: new Set() };
+  return {
+    pairCodes: new Map(),
+    agent: null,
+    statusSubscribers: new Set(),
+    ptySubscribers: new Map(),
+  };
 }
 
 export function getRegistry(): RelayRegistry {
@@ -138,6 +146,19 @@ export function attachAgentSocket(ws: WebSocket): void {
       return;
     }
 
+    // Unsolicited agent-pushed event (e.g. pty.output) — no request id.
+    if ((msg as { type?: string }).type === "event") {
+      const event = (msg as { event?: string }).event;
+      if (event === "pty.output") {
+        const sessionId = (msg as { sessionId?: string }).sessionId;
+        const data = (msg as { data?: string }).data;
+        if (typeof sessionId === "string" && typeof data === "string") {
+          notifyPtyOutput(sessionId, data);
+        }
+      }
+      return;
+    }
+
     const id = (msg as { id?: number }).id;
     if (typeof id !== "number") return;
     const pending = conn.pending.get(id);
@@ -215,6 +236,39 @@ function notifyStatus(): void {
   for (const cb of getRegistry().statusSubscribers) {
     try {
       cb(status);
+    } catch {
+      // ignore subscriber errors
+    }
+  }
+}
+
+// --- PTY output pub/sub (web terminal) ---
+
+export function subscribePtyOutput(
+  sessionId: string,
+  cb: (data: string) => void,
+): () => void {
+  const reg = getRegistry();
+  let set = reg.ptySubscribers.get(sessionId);
+  if (!set) {
+    set = new Set();
+    reg.ptySubscribers.set(sessionId, set);
+  }
+  set.add(cb);
+  return () => {
+    const s = reg.ptySubscribers.get(sessionId);
+    if (!s) return;
+    s.delete(cb);
+    if (s.size === 0) reg.ptySubscribers.delete(sessionId);
+  };
+}
+
+function notifyPtyOutput(sessionId: string, data: string): void {
+  const set = getRegistry().ptySubscribers.get(sessionId);
+  if (!set) return;
+  for (const cb of set) {
+    try {
+      cb(data);
     } catch {
       // ignore subscriber errors
     }

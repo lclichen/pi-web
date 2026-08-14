@@ -106,6 +106,12 @@ curl -X POST .../api/agent-relay/rpc -d '{"method":"exec.run","params":{"argv":[
   + exec.run + 前端按钮/模态/面板。
 - **Phase 2a（已完成）**：search.grep / search.fd（Go 原生遍历，不依赖 rg/grep/fd/find，
   行为跨平台一致）+ fs.delete / fs.rename；面板内置搜索框与重命名/删除。
-- **Phase 2（进行中）**：exec 流式、PTY 终端（xterm.js + ConPTY/pty）、fs.watch、把主
-  FileExplorer 与聊天 Agent 的 fs/bash 后端抽象为「local 或 connected-agent」可切换。
+- **Phase 2b（已完成）**：exec.stream 流式命令输出（SSE 分块，面板实时滚动）。
+- **Phase 2c（已完成，待 CentOS 实测）**：PTY Web 终端。Agent 用 creack/pty（Linux/mac，
+  静态二进制保持）开 PTY，输出以 event 帧推到 Relay；浏览器用 xterm.js 交互（create →
+  SSE 输出 → POST 输入/resize/close）。链路已在 Windows 验证（create/events 路由、event
+  路由、SSE），真实 PTY 输出需在 CentOS 7 上验证。
+- **Phase 2（进行中）**：fs.watch；2d——把 pi-coding-agent 内置工具（read/bash/edit/
+  write/grep/find/ls）经各工具的 `*Operations` 接口重定向到本 Agent（参照
+  `pi-sandbox-extension`，写一个 pi 扩展即可，零核心改动）。
 - **Phase 3**：多 Agent/多设备、命令白名单/审计、端到端加密、Agent 自更新、本机托盘状态。

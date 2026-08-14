@@ -65,7 +65,11 @@ export type RpcMethod =
   | "search.grep"
   | "search.fd"
   | "exec.run"
-  | "exec.stream";
+  | "exec.stream"
+  | "pty.create"
+  | "pty.input"
+  | "pty.resize"
+  | "pty.close";
 
 /** Static metadata describing the connected machine + its workspace. */
 export interface AgentInfo {

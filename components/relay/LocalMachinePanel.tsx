@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { AgentInfo, FsEntry, GrepMatch } from "@/lib/relay/protocol";
 import { relayFs, relaySearch, relayStreamExec } from "@/lib/relay-client";
+import { Terminal } from "./Terminal";
 
 interface Props {
   info: AgentInfo;
@@ -31,6 +32,9 @@ export function LocalMachinePanel({ info, onClose }: Props) {
   const [grepResults, setGrepResults] = useState<GrepMatch[] | null>(null);
   const [fdResults, setFdResults] = useState<string[] | null>(null);
   const [searching, setSearching] = useState(false);
+
+  // terminal state
+  const [termOpen, setTermOpen] = useState(false);
 
   const refresh = useCallback(async (p: string) => {
     setLoading(true);
@@ -211,6 +215,7 @@ export function LocalMachinePanel({ info, onClose }: Props) {
           <button onClick={goParent} disabled={!path} style={btnStyle}>↑ 上级</button>
           <button onClick={newFolder} style={btnStyle}>＋ 新建文件夹</button>
           <button onClick={() => refresh(path)} style={btnStyle}>↻ 刷新</button>
+          <button onClick={() => setTermOpen(true)} title="在此目录打开交互式终端" style={btnStyle}>⌗ 终端</button>
           <span style={{ flex: 1 }} />
           <span style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>/{path || ""}</span>
         </div>
@@ -320,6 +325,10 @@ export function LocalMachinePanel({ info, onClose }: Props) {
           </div>
         </div>
       </div>
+
+      {termOpen && (
+        <Terminal cwd={path || "."} onClose={() => setTermOpen(false)} />
+      )}
     </div>
   );
 }

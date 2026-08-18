@@ -4,9 +4,9 @@ import "katex/dist/katex.min.css";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Pi Web",
-  description: "Pi Web interface for the pi coding agent",
-  applicationName: "Pi Web",
+  title: "amedac.ai Agent WebUI",
+  description: "Web interface for the amedac.ai Agent",
+  applicationName: "amedac-pi-web",
   manifest: "/manifest.webmanifest",
   icons: {
     icon: [
@@ -27,7 +27,7 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "Pi Web",
+    title: "amedac.ai WebUI",
   },
   formatDetection: {
     telephone: false,

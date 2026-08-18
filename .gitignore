@@ -13,6 +13,9 @@
 # testing
 /coverage
 
+# generated monaco assets (scripts/copy-monaco.mjs)
+/public/monaco
+
 # next.js
 /.next/
 /out/

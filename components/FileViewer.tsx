@@ -1,13 +1,7 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback, useMemo, useDeferredValue, type CSSProperties, type MouseEvent } from "react";
-import {
-  Prism as SyntaxHighlighter,
-  createElement as renderSyntaxNode,
-  type SyntaxHighlighterProps,
-} from "react-syntax-highlighter";
-import { vs } from "react-syntax-highlighter/dist/cjs/styles/prism";
-import { vscDarkPlus } from "react-syntax-highlighter/dist/cjs/styles/prism";
+import { useEffect, useState, useRef, useCallback, useMemo, type MouseEvent } from "react";
+import dynamic from "next/dynamic";
 import ReactMarkdown from "react-markdown";
 import { useTheme } from "@/hooks/useTheme";
 import {
@@ -21,9 +15,26 @@ import { encodeFilePathForApi, getFileDirectory, getFileName, getRelativeFilePat
 import { resolveLocalFileHref } from "@/lib/file-links";
 import { markdownPreviewRehypePlugins, markdownPreviewRemarkPlugins, normalizeDisplayMath } from "@/lib/markdown";
 import { CodeBlock, MermaidBlock } from "./MermaidBlock";
-import { parseUnifiedPatch } from "@/lib/patch";
 import type { GitFileDiffResponse } from "@/lib/git-types";
 import { useI18n } from "@/hooks/useI18n";
+import { monacoLanguage } from "@/lib/monaco-language";
+
+// Monaco is a large client-only bundle — load it lazily, never during SSR.
+const MonacoEditor = dynamic(
+  () => import("./MonacoEditor").then((m) => m.MonacoEditor),
+  {
+    ssr: false,
+    loading: () => (
+      <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-dim)", fontSize: 12 }}>
+        加载编辑器…
+      </div>
+    ),
+  },
+);
+const MonacoDiffEditor = dynamic(
+  () => import("./MonacoDiffEditor").then((m) => m.MonacoDiffEditor),
+  { ssr: false },
+);
 
 interface Props {
   filePath: string;
@@ -33,6 +44,8 @@ interface Props {
   onMentionLines?: (relativePath: string, startLine: number, endLine: number) => void;
   gitRefreshKey?: number;
   initialDisplayMode?: DisplayMode;
+  /** Notifies the owner (tab bar) so closing a dirty tab can confirm first. */
+  onDirtyChange?: (dirty: boolean) => void;
 }
 
 interface FileData {
@@ -49,37 +62,17 @@ const DISPLAY_MODE_LABELS: Record<DisplayMode, string> = {
   diff: "Diff",
 };
 
-const FILE_CODE_STYLE: CSSProperties = {
-  fontFamily: "var(--font-mono)",
-  fontSize: 13,
-  lineHeight: 1.6,
-};
 
-const FILE_LINE_NUMBER_STYLE: CSSProperties = {
-  width: 48,
-  minWidth: 48,
-  padding: "0 10px",
-  textAlign: "right",
-  color: "var(--text-dim)",
-  background: "var(--bg-panel)",
-  borderRight: "1px solid var(--border)",
-  fontFamily: "var(--font-mono)",
-  fontSize: 11,
-  fontStyle: "normal",
-  fontVariantNumeric: "tabular-nums",
-  lineHeight: "20.8px",
-  userSelect: "none",
-  flexShrink: 0,
-  verticalAlign: "top",
-};
-
-type SourceCodeRendererProps = Parameters<NonNullable<SyntaxHighlighterProps["renderer"]>>[0] & {
-  wrapLines: boolean;
-};
 
 interface SelectedLineRange {
   startLine: number;
   endLine: number;
+}
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function MentionIcon() {
@@ -91,106 +84,6 @@ function MentionIcon() {
   );
 }
 
-function closestSourceLine(node: Node): HTMLElement | null {
-  const element = node.nodeType === Node.ELEMENT_NODE
-    ? node as Element
-    : node.parentElement;
-  return element?.closest<HTMLElement>(".file-source-line[data-line-number]") ?? null;
-}
-
-function getSelectedSourceLineRange(root: HTMLElement, selection: Selection | null): SelectedLineRange | null {
-  if (!selection || selection.isCollapsed || selection.rangeCount === 0) return null;
-
-  const range = selection.getRangeAt(0);
-  if (!root.contains(range.startContainer) || !root.contains(range.endContainer)) return null;
-
-  let startElement = closestSourceLine(range.startContainer);
-  let endElement = closestSourceLine(range.endContainer);
-  if (!startElement || !endElement || !root.contains(startElement) || !root.contains(endElement)) return null;
-
-  let startLine = Number(startElement.dataset.lineNumber);
-  let endLine = Number(endElement.dataset.lineNumber);
-  if (!Number.isInteger(startLine) || !Number.isInteger(endLine)) return null;
-
-  if (startLine < endLine) {
-    // Browser ranges can start at the end of the preceding line or end at the
-    // start of the following line. Exclude either boundary line when none of
-    // its source text is actually selected.
-    const startContent = startElement.querySelector<HTMLElement>(".file-source-line-content");
-    if (startContent?.contains(range.startContainer)) {
-      const selectedSuffix = document.createRange();
-      selectedSuffix.selectNodeContents(startContent);
-      selectedSuffix.setStart(range.startContainer, range.startOffset);
-      if (selectedSuffix.toString().length === 0) {
-        const nextLine = startElement.nextElementSibling;
-        if (nextLine instanceof HTMLElement && nextLine.matches(".file-source-line[data-line-number]")) {
-          startElement = nextLine;
-          startLine = Number(startElement.dataset.lineNumber);
-        }
-      }
-    }
-
-    const endContent = endElement.querySelector<HTMLElement>(".file-source-line-content");
-    if (endContent?.contains(range.endContainer)) {
-      const selectedPrefix = document.createRange();
-      selectedPrefix.selectNodeContents(endContent);
-      selectedPrefix.setEnd(range.endContainer, range.endOffset);
-      if (selectedPrefix.toString().length === 0) {
-        const previousLine = endElement.previousElementSibling;
-        if (previousLine instanceof HTMLElement && previousLine.matches(".file-source-line[data-line-number]")) {
-          endElement = previousLine;
-          endLine = Number(endElement.dataset.lineNumber);
-        }
-      }
-    }
-  }
-
-  if (startLine > endLine) return null;
-  return { startLine, endLine };
-}
-
-function SourceCodeRenderer({ rows, stylesheet, useInlineStyles, wrapLines }: SourceCodeRendererProps) {
-  return rows.map((row, lineIndex) => {
-    const children = row.children ?? [];
-    const firstChildClasses = children[0]?.properties?.className;
-    const hasLineNumber = Array.isArray(firstChildClasses)
-      && firstChildClasses.includes("react-syntax-highlighter-line-number");
-    const lineNumberNode = hasLineNumber ? children[0] : null;
-    const contentNodes = hasLineNumber ? children.slice(1) : children;
-
-    return (
-      <span
-        className="file-source-line"
-        data-line-number={lineIndex + 1}
-        key={`source-line-${lineIndex}`}
-        style={{ display: "flex", minWidth: "100%" }}
-      >
-        {lineNumberNode && renderSyntaxNode({
-          node: lineNumberNode,
-          stylesheet,
-          useInlineStyles,
-          key: `source-line-number-${lineIndex}`,
-        })}
-        <span
-          className="file-source-line-content"
-          style={{
-            flex: "1 1 auto",
-            minWidth: 0,
-            overflowWrap: wrapLines ? "anywhere" : "normal",
-            whiteSpace: wrapLines ? "pre-wrap" : "pre",
-          }}
-        >
-          {contentNodes.map((node, tokenIndex) => renderSyntaxNode({
-            node,
-            stylesheet,
-            useInlineStyles,
-            key: `source-token-${lineIndex}-${tokenIndex}`,
-          }))}
-        </span>
-      </span>
-    );
-  });
-}
 
 function getFileApiUrl(
   filePath: string,
@@ -226,189 +119,6 @@ function DownloadLink({ filePath, sourceSessionId }: { filePath: string; sourceS
   );
 }
 
-type DiffLine = {
-  type: "unchanged" | "removed" | "added";
-  text: string;
-  oldLineNo: number | null;
-  newLineNo: number | null;
-};
-
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function diffLines(patch: string): DiffLine[] {
-  const files = parseUnifiedPatch(patch);
-  if (!files) return [];
-
-  return files.flatMap((file) => file.rows.flatMap((row): DiffLine[] => {
-    if (row.type === "hunk") return [];
-    if (row.left.type === "context" && row.right.type === "context") {
-      return [{
-        type: "unchanged",
-        text: row.right.text,
-        oldLineNo: row.left.lineNo,
-        newLineNo: row.right.lineNo,
-      }];
-    }
-
-    const lines: DiffLine[] = [];
-    if (row.left.type === "removed") {
-      lines.push({
-        type: "removed",
-        text: row.left.text,
-        oldLineNo: row.left.lineNo,
-        newLineNo: null,
-      });
-    }
-    if (row.right.type === "added") {
-      lines.push({
-        type: "added",
-        text: row.right.text,
-        oldLineNo: null,
-        newLineNo: row.right.lineNo,
-      });
-    }
-    return lines;
-  }));
-}
-
-function DiffView({ patch }: { patch: string }) {
-  const { t } = useI18n();
-  const diff = diffLines(patch);
-
-  const hasChanges = diff.some((l) => l.type !== "unchanged");
-  if (!hasChanges) {
-    return (
-      <div style={{ padding: "12px 16px", fontSize: 12, color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>
-        {t("i18n.noChanges")}
-      </div>
-    );
-  }
-
-  // Render with context: show 3 lines around each change, collapse the rest
-  const CONTEXT = 3;
-  const changed = new Set(diff.flatMap((l, i) => (l.type !== "unchanged" ? [i] : [])));
-  const visible = new Set<number>();
-  for (const ci of changed) {
-    for (let j = Math.max(0, ci - CONTEXT); j <= Math.min(diff.length - 1, ci + CONTEXT); j++) {
-      visible.add(j);
-    }
-  }
-
-  const segments: Array<{ hidden: true; count: number } | { hidden: false; lines: DiffLine[] }> = [];
-  let i = 0;
-  while (i < diff.length) {
-    if (visible.has(i)) {
-      const block: DiffLine[] = [];
-      while (i < diff.length && visible.has(i)) {
-        block.push(diff[i]);
-        i++;
-      }
-      segments.push({ hidden: false, lines: block });
-    } else {
-      let count = 0;
-      while (i < diff.length && !visible.has(i)) {
-        count++;
-        i++;
-      }
-      segments.push({ hidden: true, count });
-    }
-  }
-
-  return (
-    <div
-      className="file-diff-view"
-      style={{
-        width: "max-content",
-        minWidth: "100%",
-        ...FILE_CODE_STYLE,
-      }}
-    >
-      {segments.map((seg, si) => {
-        if (seg.hidden) {
-          const result = (
-            <div
-              key={si}
-              style={{
-                padding: "2px 16px",
-                color: "var(--text-dim)",
-                background: "var(--bg-panel)",
-                fontSize: 11,
-                borderTop: "1px solid var(--border)",
-                borderBottom: "1px solid var(--border)",
-              }}
-            >
-              ... {seg.count} unchanged lines ...
-            </div>
-          );
-          return result;
-        }
-        const lines = seg.lines.map((line, li) => {
-          const bg =
-            line.type === "added"
-              ? "rgba(0,200,80,0.12)"
-              : line.type === "removed"
-              ? "rgba(240,60,60,0.14)"
-              : "transparent";
-          const prefix =
-            line.type === "added" ? "+" : line.type === "removed" ? "-" : " ";
-          const prefixColor =
-            line.type === "added" ? "#4ade80" : line.type === "removed" ? "#f87171" : "var(--text-dim)";
-
-          return (
-            <div
-              key={li}
-              className="file-diff-line"
-              style={{
-                display: "flex",
-                minWidth: "100%",
-                background: bg,
-                borderLeft: line.type === "added"
-                  ? "3px solid #4ade80"
-                  : line.type === "removed"
-                  ? "3px solid #f87171"
-                  : "3px solid transparent",
-              }}
-            >
-              <span
-                style={FILE_LINE_NUMBER_STYLE}
-              >
-                {line.type === "removed" ? line.oldLineNo : line.newLineNo}
-              </span>
-              <span
-                style={{
-                  minWidth: 16,
-                  padding: "0 6px",
-                  color: prefixColor,
-                  userSelect: "none",
-                  flexShrink: 0,
-                  fontWeight: 600,
-                }}
-              >
-                {prefix}
-              </span>
-              <span
-                className="file-diff-line-content"
-                style={{
-                  flexShrink: 0,
-                  padding: "0 8px 0 0",
-                  whiteSpace: "pre",
-                  color: "var(--text)",
-                }}
-              >
-                {line.text || "\u00a0"}
-              </span>
-            </div>
-          );
-        });
-        return <div key={si}>{lines}</div>;
-      })}
-    </div>
-  );
-}
 
 function ImageViewer({ filePath, cwd, sourceSessionId }: Props) {
   const { t } = useI18n();
@@ -783,7 +493,7 @@ function DocumentViewer({ filePath, cwd, sourceSessionId }: Props) {
   );
 }
 
-export function FileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onMentionLines, gitRefreshKey, initialDisplayMode }: Props) {
+export function FileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onMentionLines, gitRefreshKey, initialDisplayMode, onDirtyChange }: Props) {
   if (isImagePath(filePath)) {
     return <ImageViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} />;
   }
@@ -793,10 +503,10 @@ export function FileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onMenti
   if (isDocumentPreviewPath(filePath)) {
     return <DocumentViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} />;
   }
-  return <TextFileViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} onOpenFile={onOpenFile} onMentionLines={onMentionLines} gitRefreshKey={gitRefreshKey} initialDisplayMode={initialDisplayMode} />;
+  return <TextFileViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} onOpenFile={onOpenFile} onMentionLines={onMentionLines} gitRefreshKey={gitRefreshKey} initialDisplayMode={initialDisplayMode} onDirtyChange={onDirtyChange} />;
 }
 
-function TextFileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onMentionLines, gitRefreshKey, initialDisplayMode }: Props) {
+function TextFileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onMentionLines, gitRefreshKey, initialDisplayMode, onDirtyChange }: Props) {
   const { isDark } = useTheme();
   const { t } = useI18n();
   const [data, setData] = useState<FileData | null>(null);
@@ -815,10 +525,14 @@ function TextFileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onMentionL
   const [editContent, setEditContent] = useState("");
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
-  const highlightRef = useRef<HTMLDivElement | null>(null);
-  // Highlight layer trails the input so large files aren't re-highlighted on
-  // every keystroke.
-  const deferredEditContent = useDeferredValue(editContent);
+  // HEAD blob for the diff view (Monaco DiffEditor's "original" side). Null
+  // until fetched; tracked per path so switching tabs refetches.
+  const [headContent, setHeadContent] = useState<{ path: string; content: string | null } | null>(null);
+  const headRequestRef = useRef(0);
+
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+  }, [dirty, onDirtyChange]);
 
   const fetchContent = useCallback((filePath: string) => {
     return fetch(getFileApiUrl(filePath, "read", sourceSessionId))
@@ -860,6 +574,28 @@ function TextFileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onMentionL
     }
   }, [cwd]);
 
+  // HEAD blob for the Monaco DiffEditor's original side. Untracked files
+  // return content: null → the whole file renders as added.
+  const fetchHeadContent = useCallback(async (targetPath: string) => {
+    const requestId = ++headRequestRef.current;
+    if (!cwd) {
+      setHeadContent(null);
+      return;
+    }
+    try {
+      const params = new URLSearchParams({ cwd, path: targetPath });
+      const response = await fetch(`/api/git/file?${params.toString()}`);
+      const next = await response.json() as { content?: string | null };
+      if (requestId !== headRequestRef.current) return;
+      setHeadContent({
+        path: targetPath,
+        content: typeof next.content === "string" ? next.content : null,
+      });
+    } catch {
+      if (requestId === headRequestRef.current) setHeadContent({ path: targetPath, content: null });
+    }
+  }, [cwd]);
+
   const handleEnterEdit = useCallback(() => {
     if (!data) return;
     setEditContent(data.content);
@@ -867,7 +603,6 @@ function TextFileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onMentionL
     setEditMode(true);
     setDisplayMode("source");
   }, [data]);
-
   const handleCancelEdit = useCallback(() => {
     setEditMode(false);
     setDirty(false);
@@ -915,6 +650,7 @@ function TextFileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onMentionL
     setError(null);
     setData(null);
     setGitDiff(null);
+    setHeadContent(null);
     setDisplayMode("source");
     setWrapLines(false);
     setWatching(false);
@@ -963,14 +699,23 @@ function TextFileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onMentionL
     void fetchGitDiff(filePath);
   }, [fetchGitDiff, filePath, gitRefreshKey]);
 
+  const hasGitDiff = gitDiff?.supported === true && typeof gitDiff.patch === "string";
+  const isDeletedDiff = hasGitDiff && gitDiff.status === "deleted";
+
+  // Fetch the HEAD blob whenever the diff view is (or becomes) active for
+  // this path — including the deleted-file diff, whose HEAD side is the only
+  // content there is. `effectiveDisplayMode === "diff"` is spelled out via
+  // its inputs because it is declared below the hooks.
+  useEffect(() => {
+    if ((!isDeletedDiff && displayMode !== "diff") || !hasGitDiff) return;
+    void fetchHeadContent(filePath);
+  }, [displayMode, hasGitDiff, isDeletedDiff, filePath, fetchHeadContent, gitRefreshKey]);
+
   useEffect(() => {
     if (data?.language === "markdown" && initialDisplayMode !== "diff") {
       setDisplayMode("preview");
     }
   }, [data?.language, initialDisplayMode]);
-
-  const hasGitDiff = gitDiff?.supported === true && typeof gitDiff.patch === "string";
-  const isDeletedDiff = hasGitDiff && gitDiff.status === "deleted";
 
   useEffect(() => {
     if (!hasGitDiff && displayMode === "diff") setDisplayMode("source");
@@ -1002,23 +747,11 @@ function TextFileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onMentionL
     [data],
   );
 
-  useEffect(() => {
-    const updateSelectedLineRange = () => {
-      const root = contentRef.current;
-      setSelectedLineRange(
-        onMentionLines && displayMode === "source" && root
-          ? getSelectedSourceLineRange(root, window.getSelection())
-          : null,
-      );
-    };
-
-    updateSelectedLineRange();
-    if (!onMentionLines || displayMode !== "source") return;
-
-    document.addEventListener("selectionchange", updateSelectedLineRange);
-    return () => document.removeEventListener("selectionchange", updateSelectedLineRange);
-  }, [data?.content, displayMode, onMentionLines]);
-
+  // Line references now come from Monaco itself: gutter clicks fire
+  // onLineClick (immediate single-line mention) and multi-line selections
+  // drive the mention button via onSelectionChange — both wired below where
+  // the editors render. The old DOM-selectionchange plumbing is gone with
+  // the Prism renderer.
   const mentionLineRange = useCallback((lineRange: SelectedLineRange | null) => {
     if (!onMentionLines || !lineRange) return;
     onMentionLines(
@@ -1031,28 +764,6 @@ function TextFileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onMentionL
   const handleMentionSelectedLines = useCallback(() => {
     mentionLineRange(selectedLineRange);
   }, [mentionLineRange, selectedLineRange]);
-
-  useEffect(() => {
-    if (!onMentionLines || displayMode !== "source") return;
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      // IME composition keydown events may carry key === undefined; guard it.
-      if (event.repeat || !event.key || event.key.toLowerCase() !== "i" || (!event.metaKey && !event.ctrlKey) || event.altKey || event.shiftKey) return;
-
-      const target = event.target;
-      if (target instanceof Element && target.closest("input, textarea, [contenteditable='true']")) return;
-
-      const root = contentRef.current;
-      const lineRange = root ? getSelectedSourceLineRange(root, window.getSelection()) : null;
-      if (!lineRange) return;
-
-      event.preventDefault();
-      mentionLineRange(lineRange);
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [displayMode, mentionLineRange, onMentionLines]);
 
   if (loading || (initialDisplayMode === "diff" && gitDiffLoading && !data)) {
     return (
@@ -1230,78 +941,24 @@ function TextFileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onMentionL
       </div>
 
       {/* Content area */}
-      <div ref={contentRef} className="file-viewer-content" style={{ flex: 1, overflow: editMode ? "hidden" : "auto", background: "var(--bg)" }}>
+      <div ref={contentRef} className="file-viewer-content" style={{ flex: 1, overflow: "hidden", background: "var(--bg)" }}>
         {editMode ? (
-          <div style={{ position: "relative", width: "100%", height: "100%", overflow: "hidden", background: "var(--bg)" }}>
-            {/* Highlight layer — rendered behind the transparent-input textarea.
-                It is panned with a transform to mirror the textarea scroll. */}
-            <div ref={highlightRef} aria-hidden="true" style={{ position: "absolute", inset: 0, overflow: "hidden" }}>
-              <SyntaxHighlighter
-                language={language === "text" ? "plaintext" : language}
-                style={isDark ? vscDarkPlus : vs}
-                showLineNumbers={false}
-                customStyle={{
-                  margin: 0,
-                  padding: "12px 16px",
-                  border: 0,
-                  background: "transparent",
-                  ...FILE_CODE_STYLE,
-                  whiteSpace: "pre",
-                  overflow: "visible",
-                  willChange: "transform",
-                }}
-                codeTagProps={{
-                  style: {
-                    fontFamily: "var(--font-mono)",
-                    whiteSpace: "pre",
-                  },
-                }}
-              >
-                {deferredEditContent}
-              </SyntaxHighlighter>
-            </div>
-            <textarea
-              value={editContent}
-              onChange={(e) => { setEditContent(e.target.value); setDirty(true); }}
-              onScroll={(e) => {
-                const pre = highlightRef.current?.querySelector("pre");
-                if (pre) {
-                  pre.style.transform = `translate(${-e.currentTarget.scrollLeft}px, ${-e.currentTarget.scrollTop}px)`;
-                }
-              }}
-              onKeyDown={(e) => {
-                if (e.key !== "Tab") return;
-                e.preventDefault();
-                const el = e.currentTarget;
-                const start = el.selectionStart;
-                const end = el.selectionEnd;
-                const next = editContent.slice(0, start) + "  " + editContent.slice(end);
-                setEditContent(next);
-                setDirty(true);
-                requestAnimationFrame(() => {
-                  el.selectionStart = el.selectionEnd = start + 2;
-                });
-              }}
-              spellCheck={false}
-              wrap="off"
-              autoFocus
-              className="file-editor-textarea"
-              style={{
-                position: "absolute", inset: 0,
-                width: "100%", height: "100%",
-                border: "none", outline: "none", resize: "none",
-                background: "transparent", color: "transparent",
-                caretColor: "var(--text)",
-                ...FILE_CODE_STYLE,
-                padding: "12px 16px",
-                tabSize: 2,
-                whiteSpace: "pre",
-                overflow: "auto",
-              }}
-            />
-          </div>
+          <MonacoEditor
+            value={editContent}
+            language={monacoLanguage(language)}
+            isDark={isDark}
+            path={`edit:${filePath}`}
+            onChange={(v) => { setEditContent(v); setDirty(true); }}
+            onSave={() => { if (dirty && !saving) void handleSave(); }}
+            onLineClick={(line) => mentionLineRange({ startLine: line, endLine: line })}
+          />
         ) : effectiveDisplayMode === "diff" && hasGitDiff ? (
-          <DiffView patch={gitDiff.patch!} />
+          <MonacoDiffEditor
+            original={headContent?.path === filePath ? (headContent.content ?? "") : ""}
+            modified={content}
+            language={monacoLanguage(language)}
+            isDark={isDark}
+          />
         ) : isHtml && effectiveDisplayMode === "preview" ? (
           <iframe
             srcDoc={content}
@@ -1375,38 +1032,18 @@ function TextFileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onMentionL
             </ReactMarkdown>
           </div>
         ) : (
-          <SyntaxHighlighter
-            className={wrapLines ? "file-source-view is-wrapped" : "file-source-view"}
-            language={language === "text" ? "plaintext" : language}
-            style={isDark ? vscDarkPlus : vs}
-            showLineNumbers
-            lineNumberStyle={{
-              ...FILE_LINE_NUMBER_STYLE,
-            }}
-            customStyle={{
-              margin: 0,
-              padding: 0,
-              border: 0,
-              background: "var(--bg)",
-              ...FILE_CODE_STYLE,
-              width: wrapLines ? "100%" : "max-content",
-              minWidth: "100%",
-              minHeight: "100%",
-              overflow: "visible",
-            }}
-            codeTagProps={{
-              style: {
-                fontFamily: "var(--font-mono)",
-                overflowWrap: wrapLines ? "anywhere" : "normal",
-              },
-            }}
-            renderer={(rendererProps) => (
-              <SourceCodeRenderer {...rendererProps} wrapLines={wrapLines} />
-            )}
-            wrapLongLines={wrapLines}
-          >
-            {content}
-          </SyntaxHighlighter>
+          <MonacoEditor
+            value={content}
+            language={monacoLanguage(language)}
+            isDark={isDark}
+            path={`view:${filePath}`}
+            readOnly
+            onLineClick={(line) => mentionLineRange({ startLine: line, endLine: line })}
+            onSelectionChange={onMentionLines
+              ? (range) => setSelectedLineRange(range)
+              : undefined}
+            options={{ wordWrap: wrapLines ? "on" : "off" }}
+          />
         )}
       </div>
     </div>

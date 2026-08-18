@@ -16,6 +16,7 @@ import { SubagentsConfig } from "./SubagentsConfig";
 import { McpServersConfig } from "./McpServersConfig";
 import { ProjectTrustDialog } from "./ProjectTrustDialog";
 import { ConnectLocalMachine } from "./relay/ConnectLocalMachine";
+import { WorkspaceTerminal } from "./WorkspaceTerminal";
 import { BranchNavigator } from "./BranchNavigator";
 import { useTheme } from "@/hooks/useTheme";
 import { useI18n } from "@/hooks/useI18n";
@@ -267,7 +268,7 @@ export function AppShell() {
   // Right panel — file tabs only
   const [fileTabs, setFileTabs] = useState<Tab[]>([]);
   const [activeFileTabId, setActiveFileTabId] = useState<string | null>(null);
-  const [rightPanelMode, setRightPanelMode] = useState<"files" | "git">("files");
+  const [rightPanelMode, setRightPanelMode] = useState<"files" | "git" | "terminal">("files");
 
   // Lab Training side panel (independent from file viewer)
   const [labWidget, setLabWidget] = useState<{ metadata?: unknown } | null>(null);
@@ -583,7 +584,17 @@ export function AppShell() {
     handleOpenFile(filePath, getFileName(filePath), { sourceSessionId: selectedSession?.id ?? null });
   }, [handleOpenFile, selectedSession?.id]);
 
+  // Dirty flag of the active file tab (only the active tab can be dirty —
+  // switching tabs hard-resets edit state in FileViewer). Closing the active
+  // dirty tab confirms before discarding.
+  const [activeFileDirty, setActiveFileDirty] = useState(false);
+
   const handleCloseFileTab = useCallback((tabId: string) => {
+    if (tabId === activeFileTabId && activeFileDirty) {
+      const discard = window.confirm("此文件有未保存的修改，关闭将丢弃。确定关闭吗？");
+      if (!discard) return;
+      setActiveFileDirty(false);
+    }
     setFileTabs((prev) => {
       const next = prev.filter((t) => t.id !== tabId);
       if (next.length === 0) setRightPanelOpen(false);
@@ -594,7 +605,7 @@ export function AppShell() {
       const remaining = fileTabs.filter((t) => t.id !== tabId);
       return remaining.length > 0 ? remaining[remaining.length - 1].id : null;
     });
-  }, [fileTabs]);
+  }, [fileTabs, activeFileTabId, activeFileDirty]);
 
   const handleViewFullHistory = useCallback(() => {
     if (!selectedSession) return;
@@ -659,7 +670,7 @@ export function AppShell() {
 
   const activeFileTab = fileTabs.find((t) => t.id === activeFileTabId) ?? null;
   const activeCwdName = activeCwd ? getFileName(activeCwd) || activeCwd : null;
-  const windowTitle = activeCwdName ? `${activeCwdName} - Pi Web` : "Pi Web";
+  const windowTitle = activeCwdName ? `${activeCwdName} - amedac.ai` : "amedac.ai";
 
   useEffect(() => {
     const syncWindowTitle = () => {
@@ -1709,8 +1720,22 @@ export function AppShell() {
           >
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: "text-bottom", marginRight: 3 }}>
               <circle cx="6" cy="6" r="3" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="6" r="3" /><path d="M18 9v2c0 2-2 3-4 3H9" /><path d="M6 9v6" />
-            </svg>
-            Git
+            </svg>Git
+          </button>
+          <button
+            onClick={() => { setRightPanelMode("terminal"); setRightPanelOpen(true); }}
+            title="终端"
+            style={{
+              height: "100%", padding: "0 10px", border: "none",
+              background: "transparent",
+              color: rightPanelMode === "terminal" ? "var(--accent)" : "var(--text-dim)",
+              fontSize: 11, fontWeight: 600, cursor: "pointer",
+              borderBottom: rightPanelMode === "terminal" ? "2px solid var(--accent)" : "2px solid transparent",
+            }}
+          >
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: "text-bottom", marginRight: 3 }}>
+              <polyline points="4 17 10 11 4 5" /><line x1="12" y1="19" x2="20" y2="19" />
+            </svg>终端
           </button>
           <div style={{ flex: 1, overflow: "hidden" }}>
             {rightPanelMode === "files" && (
@@ -1726,7 +1751,24 @@ export function AppShell() {
 
         {/* Panel content */}
         <div style={{ flex: 1, overflow: "hidden", paddingBottom: "env(safe-area-inset-bottom)" }}>
-          {rightPanelMode === "git" ? (
+          {/* Workspace terminal: keyed by cwd — switching sessions within one
+              workspace keeps the shell, switching cwd destroys it. Stays
+              mounted while the panel is open so hopping to Files/Git and back
+              doesn't kill the process (hidden via display:none). */}
+          {(activeCwd ?? selectedSession?.cwd ?? newSessionCwd) ? (
+            <div style={{ display: rightPanelMode === "terminal" ? "flex" : "none", height: "100%", flexDirection: "column" }}>
+              <WorkspaceTerminal
+                key={activeCwd ?? selectedSession?.cwd ?? newSessionCwd}
+                cwd={activeCwd ?? selectedSession?.cwd ?? newSessionCwd ?? ""}
+                visible={rightPanelMode === "terminal"}
+              />
+            </div>
+          ) : null}
+          {rightPanelMode === "terminal" && !(activeCwd ?? selectedSession?.cwd ?? newSessionCwd) ? (
+            <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-dim)", fontSize: 12 }}>
+              选择或创建一个会话后即可在此打开工作区终端
+            </div>
+          ) : rightPanelMode === "git" ? (
             <GitPanel
               cwd={(activeCwd ?? selectedSession?.cwd ?? newSessionCwd) ?? ""}
               refreshKey={explorerRefreshKey}
@@ -1739,6 +1781,7 @@ export function AppShell() {
               sourceSessionId={activeFileTab.sourceSessionId}
               gitRefreshKey={explorerRefreshKey}
               initialDisplayMode={activeFileTab.initialDisplayMode}
+              onDirtyChange={setActiveFileDirty}
               onMentionLines={rightPanelOpen ? handleFileLineMention : undefined}
               onOpenFile={(filePath) => handleOpenFile(
                 filePath,

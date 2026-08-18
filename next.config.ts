@@ -12,6 +12,7 @@ try {
 const nextConfig: NextConfig = {
   serverExternalPackages: [
     "undici",
+    "@homebridge/node-pty-prebuilt-multiarch",
     "@earendil-works/pi-coding-agent",
     "@earendil-works/pi-agent-core",
     "@earendil-works/pi-ai",

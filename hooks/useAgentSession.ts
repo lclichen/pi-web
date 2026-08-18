@@ -115,6 +115,70 @@ export type AgentPhase =
   | { kind: "running_tools"; tools: { id: string; name: string }[] }
   | null;
 
+/**
+ * One Agent-tool invocation, tracked for the chat status widget and the
+ * subagent directory panel. Foreground calls settle via
+ * tool_execution_start/end; background spawns return immediately with
+ * status "background" and an agentId (their completion arrives through the
+ * session's subagents:record entries, read by the directory panel).
+ */
+export interface SubagentCall {
+  key: string;
+  type: string;
+  description: string;
+  startedAt: number;
+  endedAt?: number;
+  status: string;
+  agentId?: string;
+  durationMs?: number;
+}
+
+function subagentDetailsOf(raw: unknown): { status?: string; agentId?: string; durationMs?: number } {
+  if (raw === null || typeof raw !== "object") return {};
+  const d = raw as { status?: unknown; agentId?: unknown; durationMs?: unknown };
+  return {
+    ...(typeof d.status === "string" ? { status: d.status } : {}),
+    ...(typeof d.agentId === "string" ? { agentId: d.agentId } : {}),
+    ...(typeof d.durationMs === "number" ? { durationMs: d.durationMs } : {}),
+  };
+}
+
+/** Rebuild the call list from loaded session history (page load / reload). */
+function deriveSubagentCalls(messages: AgentMessage[]): SubagentCall[] {
+  const calls = new Map<string, SubagentCall>();
+  for (const message of messages) {
+    if (message.role === "assistant") {
+      for (const block of message.content) {
+        if (block.type !== "toolCall" || block.toolName !== "Agent") continue;
+        const input = block.input as { subagent_type?: unknown; description?: unknown };
+        calls.set(block.toolCallId, {
+          key: block.toolCallId,
+          type: typeof input.subagent_type === "string" ? input.subagent_type : "agent",
+          description: typeof input.description === "string" ? input.description : "",
+          startedAt: message.timestamp ?? Date.now(),
+          status: "running",
+        });
+      }
+    } else if (message.role === "toolResult") {
+      const call = calls.get(message.toolCallId);
+      if (!call) continue;
+      const { status, agentId, durationMs } = subagentDetailsOf(message.details);
+      const ended = message.timestamp ?? Date.now();
+      // "background" means the spawn succeeded and the tool call returned
+      // while the agent keeps running — keep it looking live.
+      const isBackground = status === "background";
+      calls.set(call.key, {
+        ...call,
+        ...(isBackground ? {} : { endedAt: ended }),
+        status: status ?? (message.isError ? "error" : "completed"),
+        ...(agentId ? { agentId } : {}),
+        ...(durationMs !== undefined ? { durationMs } : {}),
+      });
+    }
+  }
+  return [...calls.values()];
+}
+
 export interface CompactResultInfo {
   reason: "manual" | "threshold" | "overflow" | "auto" | string;
   tokensBefore: number;
@@ -368,6 +432,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [compactError, setCompactError] = useState<string | null>(null);
   const [compactResult, setCompactResult] = useState<CompactResultInfo | null>(null);
   const [agentPhase, setAgentPhase] = useState<AgentPhase>(null);
+  const [subagentCalls, setSubagentCalls] = useState<SubagentCall[]>([]);
+  // A brand-new chat has no history to derive calls from.
+  useEffect(() => {
+    if (isNew) setSubagentCalls([]);
+  }, [isNew]);
   const [slashCommands, setSlashCommands] = useState<SlashCommandInfo[]>([]);
   const [slashCommandsLoading, setSlashCommandsLoading] = useState(false);
   const [noticeState, dispatchNotice] = useReducer(noticeReducer, { visible: [], pending: [] });
@@ -463,6 +532,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           setData(null);
           setActiveLeafId(null);
           setMessages([]);
+          setSubagentCalls([]);
           setError(null);
         }
         return null;
@@ -473,6 +543,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       setData(d);
       setActiveLeafId(d.leafId);
       setMessages(d.context.messages);
+      setSubagentCalls(deriveSubagentCalls(d.context.messages));
       setEntryIds(d.context.entryIds ?? []);
       setCurrentModelOverride(null);
       setError(null);
@@ -523,6 +594,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const d = await res.json() as { context: { messages: AgentMessage[]; entryIds: string[] } };
       setMessages(d.context.messages);
+      setSubagentCalls(deriveSubagentCalls(d.context.messages));
       setEntryIds(d.context.entryIds ?? []);
     } catch (e) {
       console.error("Failed to load context:", e);
@@ -1171,6 +1243,19 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           if (!tools.some((t) => t.id === id)) tools.push({ id, name });
           return { kind: "running_tools", tools };
         });
+        if (name === "Agent") {
+          const args = (event.args ?? {}) as { subagent_type?: unknown; description?: unknown };
+          setSubagentCalls((prev) => [
+            ...prev.filter((c) => c.key !== id),
+            {
+              key: id,
+              type: typeof args.subagent_type === "string" ? args.subagent_type : "agent",
+              description: typeof args.description === "string" ? args.description : "",
+              startedAt: Date.now(),
+              status: "running",
+            },
+          ]);
+        }
         break;
       }
       case "tool_execution_end": {
@@ -1181,6 +1266,19 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           if (tools.length === 0) return { kind: "waiting_model" };
           return { kind: "running_tools", tools };
         });
+        if (event.toolName === "Agent") {
+          // result is { content: [...], details: AgentDetails }
+          const result = event.result as { details?: unknown } | undefined;
+          const { status, agentId, durationMs } = subagentDetailsOf(result?.details);
+          const isBackground = status === "background";
+          setSubagentCalls((prev) => prev.map((c) => c.key !== id ? c : {
+            ...c,
+            ...(isBackground ? {} : { endedAt: Date.now() }),
+            status: status ?? ((event as { isError?: boolean }).isError ? "error" : "completed"),
+            ...(agentId ? { agentId } : {}),
+            ...(durationMs !== undefined ? { durationMs } : {}),
+          }));
+        }
         break;
       }
       case "queue_update":
@@ -1846,6 +1944,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     notices: noticeState.visible, extensionDialog, extensionCustomUi, extensionStatuses, extensionWidgets, respondToExtensionUi, sendExtensionCustomInput,
     isAutoModelSelection: isNew && newSessionModel === null,
     agentPhase,
+    subagentCalls,
     isNew,
     // Refs
     sessionIdRef, eventSourceRef, messagesEndRef, scrollContainerRef,

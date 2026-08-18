@@ -95,6 +95,11 @@ export interface PluginPackageInfo {
   counts: PluginResourceCounts;
   resources: PluginResourceInfo[];
   status: "loaded" | "installed" | "missing" | "disabled";
+  /** Where the entry comes from: settings `packages`, the settings
+   * `extensions` array, or an auto-discovered extensions directory. */
+  origin?: "package" | "settings" | "directory";
+  /** Human label for the origin, e.g. "settings.json · extensions". */
+  sourceLabel?: string;
 }
 
 export interface PluginsResponse {

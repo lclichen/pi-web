@@ -42,7 +42,7 @@ function versionSummary(pkg: PluginPackageInfo, t: ReturnType<typeof useI18n>["t
 
 function installLocation(scope: PluginScope, cwd: string): string {
   return scope === "project"
-    ? `${shortenPath(cwd)}/.pi/agent/{npm,git}`
+    ? `${shortenPath(cwd)}/.pi/{npm,git}`
     : "~/.pi/agent/{npm,git}";
 }
 
@@ -292,9 +292,15 @@ function AddPluginPanel({
   projectResourcesLoaded,
   busy,
   actionError,
+  extensionPath,
+  directoryName,
   onSourceChange,
   onScopeChange,
   onInstall,
+  onExtensionPathChange,
+  onInstallExtensionPath,
+  onDirectoryNameChange,
+  onCreateDirectory,
 }: {
   cwd: string;
   source: string;
@@ -302,9 +308,15 @@ function AddPluginPanel({
   projectResourcesLoaded: boolean;
   busy: boolean;
   actionError: string | null;
+  extensionPath: string;
+  directoryName: string;
   onSourceChange: (value: string) => void;
   onScopeChange: (scope: PluginScope) => void;
   onInstall: () => void;
+  onExtensionPathChange: (value: string) => void;
+  onInstallExtensionPath: () => void;
+  onDirectoryNameChange: (value: string) => void;
+  onCreateDirectory: () => void;
 }) {
   const { t } = useI18n();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -446,6 +458,58 @@ function AddPluginPanel({
         </div>
       </div>
 
+      {/* Non-package install methods: settings.json extensions 数组与扩展目录 */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 7, paddingTop: 4, borderTop: "1px solid var(--border)" }}>
+        <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)" }}>
+          本地扩展
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <input
+            value={extensionPath}
+            onChange={(e) => onExtensionPathChange(e.target.value)}
+            placeholder="D:\path\to\extension\index.ts（写入 settings.json extensions）"
+            style={{
+              flex: "1 1 260px", height: 32, padding: "0 10px",
+              border: "1px solid var(--border)", borderRadius: 6,
+              background: "var(--bg-panel)", color: "var(--text)",
+              fontFamily: "var(--font-mono)", fontSize: 12, outline: "none",
+            }}
+          />
+          <button
+            type="button"
+            onClick={onInstallExtensionPath}
+            disabled={busy || !extensionPath.trim()}
+            style={buttonStyle(busy || !extensionPath.trim())}
+          >
+            添加路径
+          </button>
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <input
+            value={directoryName}
+            onChange={(e) => onDirectoryNameChange(e.target.value)}
+            placeholder="my-extension（在 .pi/extensions 下新建）"
+            style={{
+              flex: "1 1 260px", height: 32, padding: "0 10px",
+              border: "1px solid var(--border)", borderRadius: 6,
+              background: "var(--bg-panel)", color: "var(--text)",
+              fontFamily: "var(--font-mono)", fontSize: 12, outline: "none",
+            }}
+          />
+          <button
+            type="button"
+            onClick={onCreateDirectory}
+            disabled={busy || !directoryName.trim()}
+            style={buttonStyle(busy || !directoryName.trim())}
+          >
+            新建目录
+          </button>
+        </div>
+        <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
+          修改对新建会话生效（与 pi CLI 一致）；可在会话中点「重载会话」立即应用。
+        </div>
+      </div>
+
       {actionError && (
         <div style={{ fontSize: 12, color: "#ef4444", whiteSpace: "pre-wrap" }}>
           {actionError}
@@ -516,6 +580,25 @@ function PackageDetail({
               {t("i18n.filtered")}
             </span>
           )}
+          {pkg.origin && pkg.origin !== "package" && (
+            <span
+              title={pkg.origin === "settings" ? "来自 settings.json 的 extensions 配置" : "自动发现的扩展目录"}
+              style={{
+                fontSize: 10,
+                padding: "1px 5px",
+                borderRadius: 3,
+                background: "rgba(59,130,246,0.12)",
+                color: "#3b82f6",
+                flexShrink: 0,
+                maxWidth: 160,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {pkg.sourceLabel ?? (pkg.origin === "settings" ? "settings" : "目录")}
+            </span>
+          )}
           <span
             style={{
               fontFamily: "var(--font-mono)",
@@ -531,13 +614,15 @@ function PackageDetail({
         </div>
 
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <button
-            onClick={() => onAction("update", pkg)}
-            disabled={busy || reloadBusy}
-            style={buttonStyle(busy || reloadBusy)}
-          >
-             {busyKey === `update:${key}` ? t("i18n.updating") : t("i18n.update")}
-          </button>
+          {pkg.origin !== "settings" && pkg.origin !== "directory" && (
+            <button
+              onClick={() => onAction("update", pkg)}
+              disabled={busy || reloadBusy}
+              style={buttonStyle(busy || reloadBusy)}
+            >
+              {busyKey === `update:${key}` ? t("i18n.updating") : t("i18n.update")}
+            </button>
+          )}
           <button
             onClick={onReloadSession}
             disabled={!sessionId || reloadBusy || busy}
@@ -632,6 +717,8 @@ export function PluginsConfig({
   const [addMode, setAddMode] = useState(false);
   const [installSource, setInstallSource] = useState("");
   const [installScope, setInstallScope] = useState<PluginScope>("global");
+  const [extensionPath, setExtensionPath] = useState("");
+  const [directoryName, setDirectoryName] = useState("");
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
@@ -672,6 +759,10 @@ export function PluginsConfig({
 
   const runAction = useCallback(async (action: PluginAction, pkg: PluginPackageInfo) => {
     const key = packageKey(pkg);
+    if (action === "remove" && pkg.origin === "directory") {
+      const ok = window.confirm(`删除扩展目录及其全部内容？\n${pkg.source}`);
+      if (!ok) return;
+    }
     setBusyKey(`${action}:${key}`);
     setActionError(null);
     setActionMessage(null);
@@ -679,7 +770,7 @@ export function PluginsConfig({
       const res = await fetch("/api/plugins", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, source: pkg.source, scope: pkg.scope, cwd }),
+        body: JSON.stringify({ action, source: pkg.source, scope: pkg.scope, cwd, origin: pkg.origin }),
       });
       const next = (await res.json()) as PluginsResponse & { error?: string };
       if (!res.ok || next.error) throw new Error(next.error ?? `HTTP ${res.status}`);
@@ -732,6 +823,58 @@ export function PluginsConfig({
       setBusyKey(null);
     }
   }, [cwd, installScope, installSource]);
+
+  // settings.json extensions 数组：添加本地扩展路径
+  const installExtensionPath = useCallback(async () => {
+    const path = extensionPath.trim();
+    if (!path) return;
+    setBusyKey(`install-ext:${path}`);
+    setActionError(null);
+    setActionMessage(null);
+    try {
+      const res = await fetch("/api/plugins", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "install", kind: "extension-path", source: path, scope: installScope, cwd }),
+      });
+      const next = (await res.json()) as PluginsResponse & { error?: string };
+      if (!res.ok || next.error) throw new Error(next.error ?? `HTTP ${res.status}`);
+      setData(next);
+      setExtensionPath("");
+      setAddMode(false);
+      setActionMessage("扩展路径已写入 settings.json（新会话生效）。");
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusyKey(null);
+    }
+  }, [cwd, extensionPath, installScope]);
+
+  // .pi/extensions 下新建扩展目录（含模板 index.ts）
+  const createExtensionDirectory = useCallback(async () => {
+    const name = directoryName.trim();
+    if (!name) return;
+    setBusyKey(`install-dir:${name}`);
+    setActionError(null);
+    setActionMessage(null);
+    try {
+      const res = await fetch("/api/plugins", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "install", kind: "directory", name, scope: "project", cwd }),
+      });
+      const next = (await res.json()) as PluginsResponse & { error?: string };
+      if (!res.ok || next.error) throw new Error(next.error ?? `HTTP ${res.status}`);
+      setData(next);
+      setDirectoryName("");
+      setAddMode(false);
+      setActionMessage(`已创建 .pi/extensions/${name}（新会话生效）。`);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusyKey(null);
+    }
+  }, [cwd, directoryName]);
 
   const reloadSession = useCallback(async () => {
     if (!sessionId) return;
@@ -1020,9 +1163,15 @@ export function PluginsConfig({
                 projectResourcesLoaded={projectResourcesLoaded}
                 busy={addBusy}
                 actionError={actionError}
+                extensionPath={extensionPath}
+                directoryName={directoryName}
                 onSourceChange={setInstallSource}
                 onScopeChange={setInstallScope}
                 onInstall={installPlugin}
+                onExtensionPathChange={setExtensionPath}
+                onInstallExtensionPath={installExtensionPath}
+                onDirectoryNameChange={setDirectoryName}
+                onCreateDirectory={createExtensionDirectory}
               />
             ) : loading ? null : selectedPackage ? (
               <PackageDetail

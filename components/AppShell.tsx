@@ -17,6 +17,9 @@ import { McpServersConfig } from "./McpServersConfig";
 import { ProjectTrustDialog } from "./ProjectTrustDialog";
 import { ConnectLocalMachine } from "./relay/ConnectLocalMachine";
 import { WorkspaceTerminal } from "./WorkspaceTerminal";
+import { SubagentDirectoryPanel } from "./SubagentDirectoryPanel";
+import { PlanPanel } from "./PlanPanel";
+import type { SubagentCall } from "@/hooks/useAgentSession";
 import { BranchNavigator } from "./BranchNavigator";
 import { useTheme } from "@/hooks/useTheme";
 import { useI18n } from "@/hooks/useI18n";
@@ -268,7 +271,9 @@ export function AppShell() {
   // Right panel — file tabs only
   const [fileTabs, setFileTabs] = useState<Tab[]>([]);
   const [activeFileTabId, setActiveFileTabId] = useState<string | null>(null);
-  const [rightPanelMode, setRightPanelMode] = useState<"files" | "git" | "terminal">("files");
+  const [rightPanelMode, setRightPanelMode] = useState<"files" | "git" | "terminal" | "agents" | "plan">("files");
+  // Live subagent calls lifted from the active ChatWindow (useAgentSession).
+  const [subagentCalls, setSubagentCalls] = useState<SubagentCall[]>([]);
 
   // Lab Training side panel (independent from file viewer)
   const [labWidget, setLabWidget] = useState<{ metadata?: unknown } | null>(null);
@@ -1610,6 +1615,10 @@ export function AppShell() {
               onContextUsageChange={handleContextUsageChange}
               onOpenFile={handleOpenLinkedFile}
               onLabStateChange={(w, has) => { setLabWidget(w); setHasLabTraining(has); }}
+              onOpenAgentsPanel={() => { setRightPanelMode("agents"); setRightPanelOpen(true); }}
+              onOpenPlanPanel={() => { setRightPanelMode("plan"); setRightPanelOpen(true); }}
+              planPanelActive={rightPanelMode === "plan"}
+              onSubagentCallsChange={setSubagentCalls}
               sendCommandRef={sendCommandRef}
             />
           ) : initialCwdStatus === "validating" ? (
@@ -1737,6 +1746,36 @@ export function AppShell() {
               <polyline points="4 17 10 11 4 5" /><line x1="12" y1="19" x2="20" y2="19" />
             </svg>终端
           </button>
+          <button
+            onClick={() => { setRightPanelMode("agents"); setRightPanelOpen(true); }}
+            title="子智能体目录"
+            style={{
+              height: "100%", padding: "0 10px", border: "none",
+              background: "transparent",
+              color: rightPanelMode === "agents" ? "var(--accent)" : "var(--text-dim)",
+              fontSize: 11, fontWeight: 600, cursor: "pointer",
+              borderBottom: rightPanelMode === "agents" ? "2px solid var(--accent)" : "2px solid transparent",
+            }}
+          >
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: "text-bottom", marginRight: 3 }}>
+              <rect x="4" y="8" width="16" height="12" rx="2" /><path d="M12 8V4" /><circle cx="9" cy="14" r="0.5" /><circle cx="15" cy="14" r="0.5" />
+            </svg>智能体
+          </button>
+          <button
+            onClick={() => { setRightPanelMode("plan"); setRightPanelOpen(true); }}
+            title="计划"
+            style={{
+              height: "100%", padding: "0 10px", border: "none",
+              background: "transparent",
+              color: rightPanelMode === "plan" ? "var(--accent)" : "var(--text-dim)",
+              fontSize: 11, fontWeight: 600, cursor: "pointer",
+              borderBottom: rightPanelMode === "plan" ? "2px solid var(--accent)" : "2px solid transparent",
+            }}
+          >
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: "text-bottom", marginRight: 3 }}>
+              <path d="M9 4h6a2 2 0 0 1 2 2v14H7V6a2 2 0 0 1 2-2Z" /><path d="M7 20h10" /><path d="M10 8h4" />
+            </svg>计划
+          </button>
           <div style={{ flex: 1, overflow: "hidden" }}>
             {rightPanelMode === "files" && (
               <TabBar
@@ -1764,9 +1803,27 @@ export function AppShell() {
               />
             </div>
           ) : null}
-          {rightPanelMode === "terminal" && !(activeCwd ?? selectedSession?.cwd ?? newSessionCwd) ? (
+          {/* Subagent directory: stays mounted while the panel is open so its
+              5s record polling keeps the finished list fresh for the widget;
+              keyed by session, hidden via display:none. */}
+          {selectedSession?.id ? (
+            <div style={{ display: rightPanelMode === "agents" ? "flex" : "none", height: "100%", flexDirection: "column" }}>
+              <SubagentDirectoryPanel
+                key={selectedSession.id}
+                sessionId={selectedSession.id}
+                subagentCalls={subagentCalls}
+              />
+            </div>
+          ) : null}
+          {rightPanelMode === "plan" ? (
+            <PlanPanel cwd={(activeCwd ?? selectedSession?.cwd ?? newSessionCwd) ?? undefined} />
+          ) : rightPanelMode === "terminal" && !(activeCwd ?? selectedSession?.cwd ?? newSessionCwd) ? (
             <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-dim)", fontSize: 12 }}>
               选择或创建一个会话后即可在此打开工作区终端
+            </div>
+          ) : rightPanelMode === "agents" && !selectedSession?.id ? (
+            <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-dim)", fontSize: 12 }}>
+              选择或创建一个会话后可查看子智能体调用记录
             </div>
           ) : rightPanelMode === "git" ? (
             <GitPanel
@@ -1774,7 +1831,7 @@ export function AppShell() {
               refreshKey={explorerRefreshKey}
               onClose={() => { setRightPanelMode("files"); }}
             />
-          ) : activeFileTab?.filePath ? (
+          ) : rightPanelMode === "files" && activeFileTab?.filePath ? (
             <FileViewer
               filePath={activeFileTab.filePath}
               cwd={activeCwd ?? undefined}
@@ -1789,11 +1846,11 @@ export function AppShell() {
                 { sourceSessionId: activeFileTab.sourceSessionId },
               )}
             />
-          ) : (
+          ) : rightPanelMode === "files" ? (
             <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-dim)", fontSize: 12 }}>
                {translate("files.noneOpen")}
             </div>
-          )}
+          ) : null}
         </div>
       </div>
 

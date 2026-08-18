@@ -11,7 +11,8 @@ import { SessionToolbar } from "./SessionToolbar";
 import { ChatMinimap, useMessageRefs } from "./ChatMinimap";
 import { ExtensionStatusBar } from "./ExtensionStatusBar";
 import { useI18n } from "@/hooks/useI18n";
-import { useAgentSession, type AgentPhase, type NoticeItem } from "@/hooks/useAgentSession";
+import { useAgentSession, type AgentPhase, type NoticeItem, type SubagentCall } from "@/hooks/useAgentSession";
+import { ChatStatusWidget } from "./ChatStatusWidget";
 import { useAudio } from "@/hooks/useAudio";
 import { useDragDrop } from "@/hooks/useDragDrop";
 import { useIsMobile } from "@/hooks/useIsMobile";
@@ -40,6 +41,12 @@ interface Props {
   onOpenFile?: (filePath: string) => void;
   onLabStateChange?: (labWidget: { metadata?: unknown } | null, hasLabTraining: boolean) => void;
   sendCommandRef?: React.MutableRefObject<((cmd: string) => void) | null>;
+  /** Chat status widget → AppShell right panel. */
+  onOpenAgentsPanel?: () => void;
+  onOpenPlanPanel?: () => void;
+  planPanelActive?: boolean;
+  /** Live subagent calls lifted to AppShell for the directory panel. */
+  onSubagentCallsChange?: (calls: SubagentCall[]) => void;
 }
 
 function phaseLabel(phase: AgentPhase, t: (key: string, params?: Record<string, string | number>) => string): string | null {
@@ -173,7 +180,7 @@ function ProcessDetailsGroup({ messageCount, toolCallCount, children, t }: { mes
   );
 }
 
-export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onLabStateChange, sendCommandRef }: Props) {
+export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onLabStateChange, sendCommandRef, onOpenAgentsPanel, onOpenPlanPanel, planPanelActive, onSubagentCallsChange }: Props) {
   const { t } = useI18n();
   const { soundEnabled, onSoundToggle, playDoneSound, unlockAudio } = useAudio();
   const isMobile = useIsMobile();
@@ -208,6 +215,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
     notices, extensionDialog, extensionCustomUi, extensionStatuses, extensionWidgets, respondToExtensionUi, sendExtensionCustomInput,
     isAutoModelSelection,
     agentPhase,
+    subagentCalls,
     isNew,
     sessionIdRef, messagesEndRef, scrollContainerRef,
     lastUserMsgRef,
@@ -340,6 +348,11 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
   useEffect(() => {
     onLabStateChange?.(labWidget ?? null, hasLabTraining);
   }, [labWidget, hasLabTraining, onLabStateChange]);
+
+  // Lift live subagent calls for the AppShell-side directory panel.
+  useEffect(() => {
+    onSubagentCallsChange?.(subagentCalls);
+  }, [subagentCalls, onSubagentCallsChange]);
 
   useEffect(() => {
     if (sendCommandRef) {
@@ -524,6 +537,13 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
       ) : (
       <>
       <div className="relative flex min-w-0 flex-1 overflow-hidden">
+        <ChatStatusWidget
+          cwd={session?.cwd ?? newSessionCwd ?? undefined}
+          subagentCalls={subagentCalls}
+          onOpenAgents={() => onOpenAgentsPanel?.()}
+          onOpenPlan={() => onOpenPlanPanel?.()}
+          planActive={planPanelActive}
+        />
         <div
           style={{
             position: "absolute",

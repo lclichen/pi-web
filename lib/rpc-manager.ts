@@ -12,7 +12,7 @@ import { readPreferences } from "./preferences-service";
 import { readMcpConfig } from "./mcp-config";
 import { getProjectTrustStatus, projectTrustReloadOptions } from "./project-trust";
 import { persistExplicitStartupPreferences } from "./startup-preferences";
-import type { SlashCommandInfo } from "@earendil-works/pi-coding-agent";
+import type { InlineExtension, SlashCommandInfo } from "@earendil-works/pi-coding-agent";
 import type { AgentSessionLike, ExtensionUiContextLike, ToolInfo } from "./pi-types";
 import type { ExtensionUiRequest, ExtensionUiResponse, ExtensionWidgetItem } from "./types";
 import { createHeadlessCustomUiTui, DEFAULT_CUSTOM_UI_COLUMNS } from "./custom-ui-terminal";
@@ -87,6 +87,16 @@ export interface RpcSessionStartOptions {
   toolNames?: string[];
   initialModel?: { provider: string; modelId: string };
   thinkingLevel?: ThinkingLevel;
+  /** Session space shard for session files (design doc §4.1). Host = default dir. */
+  sessionDir?: string;
+  /** Owning web user id (0 = implicit host identity when auth is off). */
+  ownerId?: number;
+  /** Execution mode for this session's tool layer. */
+  mode?: "host" | "sandbox" | "local-machine";
+  /** Extra extension entry-point directories injected for this session only. */
+  additionalExtensionPaths?: string[];
+  /** Inline extension factories injected for this session only. */
+  extensionFactories?: InlineExtension[];
 }
 
 const CODING_TOOL_NAMES = ["read", "bash", "edit", "write", "grep", "find", "ls"];
@@ -191,6 +201,11 @@ export class AgentSessionWrapper {
   private _alive = true;
 
   constructor(public readonly inner: AgentSessionLike) {}
+
+  /** Owning web user id (0 = implicit host identity when auth is off). */
+  ownerId = 0;
+  /** Execution mode of this session's tool layer. */
+  mode: "host" | "sandbox" | "local-machine" = "host";
 
   get sessionId(): string {
     return this.inner.sessionId;
@@ -1173,6 +1188,22 @@ export function getRpcSession(sessionId: string): AgentSessionWrapper | undefine
   return getRegistry().get(sessionId);
 }
 
+/** Ownership/mode info for a live session (registry is authoritative). */
+export function getRpcSessionOwner(sessionId: string): { ownerId: number; mode: "host" | "sandbox" | "local-machine" } | undefined {
+  const session = getRegistry().get(sessionId);
+  if (!session) return undefined;
+  return { ownerId: session.ownerId, mode: session.mode };
+}
+
+/** Running sessions with ownership, for per-user live status. */
+export function getRunningRpcSessionInfos(): Array<{ sessionId: string; ownerId: number }> {
+  const out: Array<{ sessionId: string; ownerId: number }> = [];
+  for (const [key, session] of getRegistry()) {
+    if (session.isRunning()) out.push({ sessionId: session.sessionId || key, ownerId: session.ownerId });
+  }
+  return out;
+}
+
 export function hasBusyRpcSessionForCwd(cwd: string): boolean {
   const targetCwd = normalizeRpcCwd(cwd);
   if (getStartingSessionCwds().has(targetCwd)) return true;
@@ -1255,7 +1286,7 @@ export async function startRpcSession(
   cwd: string | undefined,
   options: RpcSessionStartOptions = {},
 ): Promise<{ session: AgentSessionWrapper; realSessionId: string }> {
-  const { toolNames, initialModel, thinkingLevel } = options;
+  const { toolNames, initialModel, thinkingLevel, sessionDir, ownerId, mode, additionalExtensionPaths, extensionFactories } = options;
   const registry = getRegistry();
   const locks = getLocks();
 
@@ -1267,10 +1298,10 @@ export async function startRpcSession(
 
   let sessionManager: SessionManager;
   if (sessionFile) {
-    sessionManager = SessionManager.open(sessionFile, undefined);
+    sessionManager = SessionManager.open(sessionFile, sessionDir);
   } else {
     if (!cwd) throw new Error("cwd is required for a new session");
-    sessionManager = SessionManager.create(cwd, undefined);
+    sessionManager = SessionManager.create(cwd, sessionDir);
   }
   const sessionCwd = sessionManager.getCwd();
   const finishStartingSession = trackStartingSession(sessionCwd);
@@ -1298,10 +1329,24 @@ export async function startRpcSession(
     // Gate untrusted project extensions so opening a repository does not run
     // its .pi/extensions code automatically (see lib/project-trust.ts, #236).
     const trustReloadOptions = projectTrustReloadOptions(sessionCwd, agentDir);
+    // Per-session extension injection (sandbox/local-machine modes): the SDK
+    // spreads these into its DefaultResourceLoader on top of the normal
+    // user/project extension discovery.
+    const resourceLoaderOptions: {
+      additionalExtensionPaths?: string[];
+      extensionFactories?: InlineExtension[];
+    } = {};
+    if (additionalExtensionPaths?.length) {
+      resourceLoaderOptions.additionalExtensionPaths = additionalExtensionPaths;
+    }
+    if (extensionFactories?.length) {
+      resourceLoaderOptions.extensionFactories = extensionFactories;
+    }
     const services = await createAgentSessionServices({
       cwd: sessionCwd,
       agentDir,
       ...(trustReloadOptions ? { resourceLoaderReloadOptions: trustReloadOptions } : {}),
+      ...(Object.keys(resourceLoaderOptions).length > 0 ? { resourceLoaderOptions } : {}),
     });
     const scope = await resolveVisibleModels(
       services.modelRuntime,
@@ -1352,6 +1397,8 @@ export async function startRpcSession(
     }
 
     const wrapper = new AgentSessionWrapper(inner);
+    wrapper.ownerId = ownerId ?? 0;
+    wrapper.mode = mode ?? "host";
     // When all tools are disabled, clear the system prompt entirely.
     // pi's buildSystemPrompt always produces a non-empty prompt even with no tools;
     // keep this forced after extension resource discovery and reloads as well.

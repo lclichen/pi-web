@@ -6,7 +6,7 @@ import { basename, dirname, join } from "path";
 import { promisify } from "util";
 import { fileURLToPath, pathToFileURL } from "url";
 import { NextResponse } from "next/server";
-import { resolveSessionPath } from "@/lib/session-reader";
+import { resolveSessionAccess } from "@/lib/session-access";
 
 const execFileAsync = promisify(execFile);
 
@@ -246,7 +246,9 @@ export async function GET(
   const inline = new URL(req.url).searchParams.get("inline") === "1";
 
   try {
-    const filePath = await resolveSessionPath(id);
+    const access = await resolveSessionAccess(req, id, new URL(req.url).searchParams);
+    if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
+    const filePath = access.path;
     if (!filePath) {
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
     }

@@ -8,6 +8,8 @@ import {
   resolveBashOutputPath,
 } from "@/lib/bash-output";
 import { isBashOutputPathReferencedBySession } from "@/lib/session-file-references";
+import { requireUserIdentity } from "@/lib/web-session";
+import { spaceForRequest } from "@/lib/session-spaces";
 
 // GET /api/agent/[id]/bash-output?path=<absPath>
 // Reads a bash output temp file referenced by this session. Inline display is
@@ -17,6 +19,9 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+  const identity = requireUserIdentity(_req);
+  if (!identity.ok) return NextResponse.json({ error: "登录已失效" }, { status: identity.status });
+  const space = spaceForRequest(identity.session);
   let path: string | null = null;
   let download = false;
   try {

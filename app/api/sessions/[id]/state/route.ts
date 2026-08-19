@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getRpcSession } from "@/lib/rpc-manager";
-import { resolveSessionPath } from "@/lib/session-reader";
+import { resolveSessionAccess } from "@/lib/session-access";
 
 export async function GET(
   _req: Request,
@@ -8,7 +8,9 @@ export async function GET(
 ) {
   const { id } = await params;
   try {
-    if (!await resolveSessionPath(id)) {
+    const access = await resolveSessionAccess(_req, id);
+    if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
+    if (!access.path) {
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
     }
 

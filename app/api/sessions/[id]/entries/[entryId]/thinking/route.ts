@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { getSessionEntries, resolveSessionPath } from "@/lib/session-reader";
+import { getSessionEntries } from "@/lib/session-reader";
+import { resolveSessionAccess } from "@/lib/session-access";
 
 export async function GET(
   req: Request,
@@ -13,7 +14,9 @@ export async function GET(
   }
 
   try {
-    const filePath = await resolveSessionPath(id);
+    const access = await resolveSessionAccess(req, id);
+    if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
+    const filePath = access.path;
     if (!filePath) return NextResponse.json({ error: "Session not found" }, { status: 404 });
 
     // SessionManager-backed parsing preserves the SDK's malformed-line tolerance.

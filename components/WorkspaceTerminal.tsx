@@ -13,6 +13,9 @@ interface ShellOption {
 
 interface Props {
   cwd: string;
+  /** Remote session scoping (sandbox / local-machine): shell runs on the
+   *  session's remote backend via /api/remoteterminal instead of the server. */
+  remote?: { sessionId: string; label: string } | null;
   /** Whether the terminal tab is active — re-fit when shown again. */
   visible: boolean;
 }
@@ -27,7 +30,7 @@ interface Props {
  * Mirrors components/relay/Terminal.tsx (the Go-agent terminal) but talks to
  * /api/terminal/* and adds a shell picker, clear and reconnect.
  */
-export function WorkspaceTerminal({ cwd, visible }: Props) {
+export function WorkspaceTerminal({ cwd, visible, remote = null }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [shells, setShells] = useState<ShellOption[]>([]);
   const [shellId, setShellId] = useState<string>("");
@@ -37,6 +40,7 @@ export function WorkspaceTerminal({ cwd, visible }: Props) {
   // Shell list for the dropdown (default = first detected entry).
   useEffect(() => {
     let cancelled = false;
+    if (remote) return;
     fetch("/api/terminal/shells")
       .then((r) => r.json())
       .then((body: { data?: { shells?: ShellOption[] } }) => {
@@ -91,10 +95,10 @@ export function WorkspaceTerminal({ cwd, visible }: Props) {
       }).catch(() => {});
 
     const inputSub = term.onData((data) => {
-      if (sessionId && !dead) void post(`/api/terminal/${sessionId}/input`, { data });
+      if (sessionId && !dead) void post(remote ? `/api/remoteterminal/${sessionId}/input` : `/api/terminal/${sessionId}/input`, { data });
     });
     const resizeSub = term.onResize(({ cols, rows }) => {
-      if (sessionId && !dead) void post(`/api/terminal/${sessionId}/resize`, { cols, rows });
+      if (sessionId && !dead) void post(remote ? `/api/remoteterminal/${sessionId}/resize` : `/api/terminal/${sessionId}/resize`, { cols, rows });
     });
 
     const ro = new ResizeObserver(fit);
@@ -102,10 +106,12 @@ export function WorkspaceTerminal({ cwd, visible }: Props) {
 
     (async () => {
       try {
-        const res = await fetch("/api/terminal/create", {
+        const res = await fetch(remote ? "/api/remoteterminal/create" : "/api/terminal/create", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ cwd, cols: term.cols, rows: term.rows, shell: shellId }),
+          body: JSON.stringify(remote
+            ? { sessionId: remote.sessionId, cols: term.cols, rows: term.rows }
+            : { cwd, cols: term.cols, rows: term.rows, shell: shellId }),
         });
         const body = (await res.json()) as {
           success?: boolean;
@@ -118,7 +124,7 @@ export function WorkspaceTerminal({ cwd, visible }: Props) {
         }
         sessionId = body.data.sessionId;
 
-        es = new EventSource(`/api/terminal/${sessionId}/events`);
+        es = new EventSource(remote ? `/api/remoteterminal/${sessionId}/events` : `/api/terminal/${sessionId}/events`);
         es.onmessage = (e) => {
           try {
             const payload = JSON.parse(e.data) as { type?: string; data?: string; code?: number };
@@ -144,12 +150,12 @@ export function WorkspaceTerminal({ cwd, visible }: Props) {
       resizeSub.dispose();
       ro.disconnect();
       es?.close();
-      if (sessionId) void post(`/api/terminal/${sessionId}/close`, {});
+      if (sessionId) void post(remote ? `/api/remoteterminal/${sessionId}/close` : `/api/terminal/${sessionId}/close`, {});
       term.dispose();
       fitRef.current = null;
       termRef.current = null;
     };
-  }, [cwd, shellId, reconnectNonce]);
+  }, [cwd, shellId, reconnectNonce, remote]);
 
   // Re-showing the tab (display:none → block) needs an explicit refit.
   useEffect(() => {
@@ -183,10 +189,10 @@ export function WorkspaceTerminal({ cwd, visible }: Props) {
           </select>
         )}
         <span
-          title={cwd}
+          title={remote ? remote.label : cwd}
           style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "var(--font-mono)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}
         >
-          {cwd}
+{remote ? remote.label : cwd}
         </span>
         <button
           onClick={() => termRef.current?.clear()}

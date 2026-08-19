@@ -15,6 +15,8 @@ const WRITE_OPTS = { encoding: "utf-8" as const, mode: 0o600 };
 interface RelayFile {
   token: string | null;
   generatedAt: string | null;
+  /** Multi-user: agent token -> owning web user id (0 = unbound). */
+  tokens?: Record<string, number>;
 }
 
 function relayFilePath(): string {
@@ -71,17 +73,34 @@ async function writeRelay(path: string, data: RelayFile): Promise<void> {
   }
 }
 
-/** Generate a fresh 32-byte agent token, persist it (0o600), and return it. */
-export async function issueAgentToken(): Promise<string> {
+/** Generate a fresh 32-byte agent token bound to a web user, persist it (0o600), and return it. */
+export async function issueAgentToken(ownerUserId = 0): Promise<string> {
   const token = randomBytes(32).toString("hex");
-  await writeRelay(relayFilePath(), { token, generatedAt: new Date().toISOString() });
+  const path = relayFilePath();
+  const data = readRelay(path);
+  const tokens = { ...(data.tokens ?? {}) };
+  // One live token per user: drop the user's older tokens.
+  for (const [t, owner] of Object.entries(tokens)) {
+    if (owner === ownerUserId) delete tokens[t];
+  }
+  tokens[token] = ownerUserId;
+  await writeRelay(path, { token, generatedAt: new Date().toISOString(), tokens });
   return token;
+}
+
+/** Owning web user for a token (0 = unknown / legacy single-token era). */
+export function lookupTokenOwner(token: string): number {
+  if (!token) return 0;
+  const owner = readRelay(relayFilePath()).tokens?.[token];
+  return typeof owner === "number" ? owner : 0;
 }
 
 /** Constant-time-ish comparison against the persisted token. */
 export function isKnownToken(token: string): boolean {
   if (!token) return false;
-  const stored = readRelay(relayFilePath()).token;
+  const file = readRelay(relayFilePath());
+  if (file.tokens && token in file.tokens) return true;
+  const stored = file.token;
   if (!stored || stored.length !== token.length) return false;
   // avoid early-return timing differences
   let diff = 0;

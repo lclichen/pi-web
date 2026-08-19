@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { resolveSessionPath } from "@/lib/session-reader";
+import { resolveSessionAccess } from "@/lib/session-access";
 import { findSubagentSessions, readSubagentRecords } from "@/lib/subagent-records";
 
 export const dynamic = "force-dynamic";
@@ -13,7 +13,9 @@ export async function GET(
 ): Promise<Response> {
   const { id } = await ctx.params;
   try {
-    const sessionFile = await resolveSessionPath(id);
+    const access = await resolveSessionAccess(_req, id);
+    if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
+    const sessionFile = access.path;
     if (!sessionFile) {
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
     }

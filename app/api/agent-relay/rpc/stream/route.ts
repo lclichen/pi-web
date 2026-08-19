@@ -1,4 +1,5 @@
 import { AgentUnavailableError, relayStream } from "@/lib/relay/forward";
+import { requireUserIdentity } from "@/lib/web-session";
 import type { RpcMethod } from "@/lib/relay/protocol";
 
 export const dynamic = "force-dynamic";
@@ -56,7 +57,8 @@ export async function POST(req: Request) {
       req.signal?.addEventListener("abort", close);
 
       try {
-        const result = await relayStream(method, params, (data) => send({ type: "chunk", data }));
+        const identity = requireUserIdentity(req);
+        const result = await relayStream(method, params, (data) => send({ type: "chunk", data }), { userId: identity.ok ? identity.session.user.id : 0 });
         send({ type: "end", ok: true, result });
       } catch (err) {
         if (err instanceof AgentUnavailableError) {

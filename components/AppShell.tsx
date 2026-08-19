@@ -70,6 +70,19 @@ export function AppShell() {
   const [selectedSession, setSelectedSession] = useState<SessionInfo | null>(null);
   // When user clicks +, we only store the cwd — no fake session id
   const [newSessionCwd, setNewSessionCwd] = useState<string | null>(null);
+  const [newSessionMode, setNewSessionMode] = useState<"host" | "sandbox" | "local-machine">("host");
+  const [sessionSpace, setSessionSpace] = useState<"mine" | "host">("mine");
+  // Web identity (PI_WEB_AUTH): null while loading, {user} when logged in.
+  const [webUser, setWebUser] = useState<{ id: number; username: string; role: "admin" | "user" } | null | "loading">("loading");
+  useEffect(() => {
+    fetch("/api/webauth/me")
+      .then((r) => (r.status === 401 ? null : r.json()))
+      .then((d) => {
+        if (d?.authEnabled === false) { setWebUser(null); return; }
+        setWebUser(d?.user ? { id: d.user.id, username: d.user.username, role: d.user.role } : null);
+      })
+      .catch(() => setWebUser(null));
+  }, []);
   const [initialCwdStatus, setInitialCwdStatus] = useState<"idle" | "validating" | "ready" | "error">(
     () => initialNavigation.requestedCwd ? "validating" : "idle",
   );
@@ -272,6 +285,12 @@ export function AppShell() {
   const [fileTabs, setFileTabs] = useState<Tab[]>([]);
   const [activeFileTabId, setActiveFileTabId] = useState<string | null>(null);
   const [rightPanelMode, setRightPanelMode] = useState<"files" | "git" | "terminal" | "agents" | "plan">("files");
+  // 活动会话的执行模式：选中会话带 mode；新建会话用 newSessionMode。
+  const activeSessionMode = selectedSession?.mode ?? (selectedSession === null && newSessionCwd !== null ? newSessionMode : undefined);
+  const remoteSessionCtx = activeSessionMode && activeSessionMode !== "host" && selectedSession
+    ? { sessionId: selectedSession.id, label: activeSessionMode === "sandbox" ? "沙箱容器" : "本机" }
+    : null;
+
   // Live subagent calls lifted from the active ChatWindow (useAgentSession).
   const [subagentCalls, setSubagentCalls] = useState<SubagentCall[]>([]);
 
@@ -431,9 +450,10 @@ export function AppShell() {
     }
   }, [router, isMobile]);
 
-  const handleNewSession = useCallback((_sessionId: string, cwd: string) => {
+  const handleNewSession = useCallback((_sessionId: string, cwd: string, mode?: "host" | "sandbox" | "local-machine") => {
     setSelectedSession(null);
     setNewSessionCwd(cwd);
+    if (mode) setNewSessionMode(mode);
     setSessionKey((k) => k + 1);
     setBranchTree([]);
     setBranchActiveLeafId(null);
@@ -691,6 +711,9 @@ export function AppShell() {
   const sidebarContent = (
     <>
       <SessionSidebar
+        authInfo={webUser === "loading" ? { enabled: false, user: null } : (webUser ? { enabled: true, user: webUser } : { enabled: true, user: null })}
+        sessionSpace={sessionSpace}
+        onSessionSpaceChange={setSessionSpace}
         selectedSessionId={selectedSession?.id ?? null}
         onSelectSession={handleSelectSession}
         onNewSession={handleNewSession}
@@ -1603,6 +1626,7 @@ export function AppShell() {
               key={sessionKey}
               session={selectedSession}
               newSessionCwd={effectiveNewSessionCwd}
+              newSessionMode={newSessionMode}
               onAgentEnd={handleAgentEnd}
               onSessionCreated={handleSessionCreated}
               onSessionForked={handleSessionForked}
@@ -1797,9 +1821,10 @@ export function AppShell() {
           {(activeCwd ?? selectedSession?.cwd ?? newSessionCwd) ? (
             <div style={{ display: rightPanelMode === "terminal" ? "flex" : "none", height: "100%", flexDirection: "column" }}>
               <WorkspaceTerminal
-                key={activeCwd ?? selectedSession?.cwd ?? newSessionCwd}
+                key={remoteSessionCtx ? remoteSessionCtx.sessionId : (activeCwd ?? selectedSession?.cwd ?? newSessionCwd)}
                 cwd={activeCwd ?? selectedSession?.cwd ?? newSessionCwd ?? ""}
                 visible={rightPanelMode === "terminal"}
+                remote={remoteSessionCtx}
               />
             </div>
           ) : null}
@@ -1839,6 +1864,7 @@ export function AppShell() {
               gitRefreshKey={explorerRefreshKey}
               initialDisplayMode={activeFileTab.initialDisplayMode}
               onDirtyChange={setActiveFileDirty}
+              remote={remoteSessionCtx}
               onMentionLines={rightPanelOpen ? handleFileLineMention : undefined}
               onOpenFile={(filePath) => handleOpenFile(
                 filePath,
@@ -1905,6 +1931,22 @@ export function AppShell() {
           </svg>
         </button>
     </div>
+    {/* Logout — auth mode only, sits left of the file-panel toggle */}
+    {webUser && webUser !== "loading" && (
+      <button
+        onClick={async () => { await fetch("/api/webauth/logout", { method: "POST" }).catch(() => {}); window.location.href = "/login"; }}
+        title={`登出（${webUser.username}）`}
+        style={{
+          position: "fixed", top: "env(safe-area-inset-top)", right: "calc(76px + env(safe-area-inset-right))", zIndex: 300,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          width: 36, height: 36, padding: 0,
+          background: "var(--bg-panel)", border: "none", borderLeft: "1px solid var(--border)", borderBottom: "1px solid var(--border)",
+          color: "var(--text-muted)", cursor: "pointer", fontSize: 11,
+        }}
+      >
+        ⎋
+      </button>
+    )}
     {/* File panel toggle — always visible at top-right */}
     <button
       onClick={() => setRightPanelOpen((v) => !v)}

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { resolveSessionPath } from "@/lib/session-reader";
+import { resolveSessionAccess } from "@/lib/session-access";
 import { startRpcSession, getRpcSession } from "@/lib/rpc-manager";
 
 // POST /api/agent/[id] - Send a command to an existing session
@@ -19,7 +19,9 @@ export async function POST(
       return NextResponse.json({ success: true, data: result });
     }
 
-    const filePath = await resolveSessionPath(id);
+    const access = await resolveSessionAccess(req, id);
+    if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
+    const filePath = access.path;
     if (!filePath) {
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
     }

@@ -1,5 +1,5 @@
 import type { RpcMethod, RpcRequest } from "./protocol";
-import { getAgent, type AgentConn } from "./registry";
+import { getAgent, getAgentForUser, type AgentConn } from "./registry";
 
 // Forwards browser-originated JSON-RPC calls to the connected agent over its
 // WebSocket, correlating each request id with a pending promise. Used by the
@@ -19,9 +19,10 @@ export class AgentUnavailableError extends Error {
 export function relayRpc(
   method: RpcMethod,
   params?: Record<string, unknown>,
+  opts?: { userId?: number },
 ): Promise<unknown> {
   return new Promise((resolve, reject) => {
-    const agent = getReadyAgent();
+    const agent = getReadyAgent(opts?.userId);
     if (!agent) {
       reject(new AgentUnavailableError());
       return;
@@ -49,9 +50,10 @@ export function relayStream(
   method: RpcMethod,
   params: Record<string, unknown> | undefined,
   onChunk: (data: unknown) => void,
+  opts?: { userId?: number },
 ): Promise<unknown> {
   return new Promise((resolve, reject) => {
-    const agent = getReadyAgent();
+    const agent = getReadyAgent(opts?.userId);
     if (!agent) {
       reject(new AgentUnavailableError());
       return;
@@ -71,8 +73,8 @@ export function relayStream(
   });
 }
 
-function getReadyAgent(): AgentConn | null {
-  const agent = getAgent();
+function getReadyAgent(userId?: number): AgentConn | null {
+  const agent = userId === undefined ? getAgent() : getAgentForUser(userId);
   // info is set once the agent's hello frame arrives; treat pre-hello as offline
   if (!agent || !agent.info) return null;
   return agent;

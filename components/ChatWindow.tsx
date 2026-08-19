@@ -41,6 +41,8 @@ interface Props {
   onOpenFile?: (filePath: string) => void;
   onLabStateChange?: (labWidget: { metadata?: unknown } | null, hasLabTraining: boolean) => void;
   sendCommandRef?: React.MutableRefObject<((cmd: string) => void) | null>;
+  /** Execution mode for a not-yet-created session (multi-user). */
+  newSessionMode?: "host" | "sandbox" | "local-machine";
   /** Chat status widget → AppShell right panel. */
   onOpenAgentsPanel?: () => void;
   onOpenPlanPanel?: () => void;
@@ -180,7 +182,7 @@ function ProcessDetailsGroup({ messageCount, toolCallCount, children, t }: { mes
   );
 }
 
-export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onLabStateChange, sendCommandRef, onOpenAgentsPanel, onOpenPlanPanel, planPanelActive, onSubagentCallsChange }: Props) {
+export function ChatWindow({ session, newSessionCwd, newSessionMode, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onLabStateChange, sendCommandRef, onOpenAgentsPanel, onOpenPlanPanel, planPanelActive, onSubagentCallsChange }: Props) {
   const { t } = useI18n();
   const { soundEnabled, onSoundToggle, playDoneSound, unlockAudio } = useAudio();
   const isMobile = useIsMobile();
@@ -225,7 +227,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
     handleBuiltinSlashCommand,
     handleToolPresetChange, handleThinkingLevelChange, loadSlashCommands,
   } = useAgentSession({
-    session, newSessionCwd, onAgentEnd: wrappedOnAgentEnd, onSessionCreated, onSessionForked,
+    session, newSessionCwd, newSessionMode, onAgentEnd: wrappedOnAgentEnd, onSessionCreated, onSessionForked,
     modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsPanelOpen,
   });
   const sessionBusy = agentRunning || bashRunning;

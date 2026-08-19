@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { AgentUnavailableError, relayRpc } from "@/lib/relay/forward";
+import { requireUserIdentity } from "@/lib/web-session";
 import type { RpcMethod } from "@/lib/relay/protocol";
 
 export const dynamic = "force-dynamic";
@@ -16,6 +17,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "invalid JSON body" }, { status: 400 });
   }
 
+  const identity = requireUserIdentity(req);
+  if (!identity.ok) return NextResponse.json({ error: "登录已失效" }, { status: identity.status });
+
   const method = body.method as RpcMethod;
   if (typeof method !== "string") {
     return NextResponse.json({ error: "missing 'method'" }, { status: 400 });
@@ -26,7 +30,7 @@ export async function POST(req: Request) {
       : undefined;
 
   try {
-    const data = await relayRpc(method, params);
+    const data = await relayRpc(method, params, { userId: identity.session.user.id });
     return NextResponse.json({ success: true, data });
   } catch (err) {
     if (err instanceof AgentUnavailableError) {

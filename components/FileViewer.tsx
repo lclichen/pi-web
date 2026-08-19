@@ -46,6 +46,8 @@ interface Props {
   initialDisplayMode?: DisplayMode;
   /** Notifies the owner (tab bar) so closing a dirty tab can confirm first. */
   onDirtyChange?: (dirty: boolean) => void;
+  /** Remote-mode data source (sandbox / local-machine session). */
+  remote?: { sessionId: string; label: string } | null;
 }
 
 interface FileData {
@@ -90,6 +92,7 @@ function getFileApiUrl(
   type: "read" | "download" | "meta" | "preview" | "watch",
   sourceSessionId?: string | null,
   params: Record<string, string | number | undefined> = {},
+  remote?: { sessionId: string } | null,
 ): string {
   const encoded = encodeFilePathForApi(filePath);
   const searchParams = new URLSearchParams({ type });
@@ -97,14 +100,17 @@ function getFileApiUrl(
   for (const [key, value] of Object.entries(params)) {
     if (value !== undefined) searchParams.set(key, String(value));
   }
+  if (remote) {
+    return `/api/remotefs/${encoded}?src=${encodeURIComponent(remote.sessionId)}&${searchParams.toString()}`;
+  }
   return `/api/files/${encoded}?${searchParams.toString()}`;
 }
 
-function DownloadLink({ filePath, sourceSessionId }: { filePath: string; sourceSessionId?: string | null }) {
+function DownloadLink({ filePath, sourceSessionId, remote }: { filePath: string; sourceSessionId?: string | null; remote?: { sessionId: string } | null }) {
   const { t } = useI18n();
   return (
     <a
-      href={getFileApiUrl(filePath, "download", sourceSessionId)}
+      href={getFileApiUrl(filePath, "download", sourceSessionId, undefined, remote)}
       download={getFileName(filePath)}
       title={t("i18n.downloadFile")}
       aria-label={t("i18n.downloadFile")}
@@ -493,7 +499,7 @@ function DocumentViewer({ filePath, cwd, sourceSessionId }: Props) {
   );
 }
 
-export function FileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onMentionLines, gitRefreshKey, initialDisplayMode, onDirtyChange }: Props) {
+export function FileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onMentionLines, gitRefreshKey, initialDisplayMode, onDirtyChange, remote }: Props) {
   if (isImagePath(filePath)) {
     return <ImageViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} />;
   }
@@ -503,10 +509,10 @@ export function FileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onMenti
   if (isDocumentPreviewPath(filePath)) {
     return <DocumentViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} />;
   }
-  return <TextFileViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} onOpenFile={onOpenFile} onMentionLines={onMentionLines} gitRefreshKey={gitRefreshKey} initialDisplayMode={initialDisplayMode} onDirtyChange={onDirtyChange} />;
+  return <TextFileViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} onOpenFile={onOpenFile} onMentionLines={onMentionLines} gitRefreshKey={gitRefreshKey} initialDisplayMode={initialDisplayMode} onDirtyChange={onDirtyChange} remote={remote} />;
 }
 
-function TextFileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onMentionLines, gitRefreshKey, initialDisplayMode, onDirtyChange }: Props) {
+function TextFileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onMentionLines, gitRefreshKey, initialDisplayMode, onDirtyChange, remote }: Props) {
   const { isDark } = useTheme();
   const { t } = useI18n();
   const [data, setData] = useState<FileData | null>(null);
@@ -535,7 +541,7 @@ function TextFileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onMentionL
   }, [dirty, onDirtyChange]);
 
   const fetchContent = useCallback((filePath: string) => {
-    return fetch(getFileApiUrl(filePath, "read", sourceSessionId))
+    return fetch(getFileApiUrl(filePath, "read", sourceSessionId, {}, remote))
       .then((r) => r.json())
       .then((d: FileData & { error?: string }) => {
         if (d.error) {
@@ -612,7 +618,9 @@ function TextFileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onMentionL
     if (!filePath) return;
     setSaving(true);
     try {
-      const res = await fetch(`/api/files/${encodeFilePathForApi(filePath)}`, {
+      const res = await fetch(remote
+        ? `/api/remotefs/${encodeFilePathForApi(filePath)}?src=${encodeURIComponent(remote.sessionId)}`
+        : `/api/files/${encodeFilePathForApi(filePath)}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ type: "file", content: editContent }),
@@ -629,7 +637,7 @@ function TextFileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onMentionL
     } finally {
       setSaving(false);
     }
-  }, [filePath, editContent]);
+  }, [filePath, editContent, remote]);
 
   // Enter edit shortcut: Ctrl/Cmd+S to save when dirty
   useEffect(() => {
@@ -669,8 +677,12 @@ function TextFileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onMentionL
     fetchContent(filePath).finally(() => setLoading(false));
 
     // Set up SSE watch
-    const es = new EventSource(getFileApiUrl(filePath, "watch", sourceSessionId));
+    const es = remote ? null : new EventSource(getFileApiUrl(filePath, "watch", sourceSessionId));
     esRef.current = es;
+    if (!es) {
+      // 远程会话无 watch：直接完成加载
+      return;
+    }
 
     es.addEventListener("connected", () => {
       setWatching(true);
@@ -936,7 +948,7 @@ function TextFileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onMentionL
              </button>
            )}
 
-           {!isDeletedDiff && <DownloadLink filePath={filePath} sourceSessionId={sourceSessionId} />}
+           {!isDeletedDiff && <DownloadLink filePath={filePath} sourceSessionId={sourceSessionId} remote={remote} />}
         </div>
       </div>
 

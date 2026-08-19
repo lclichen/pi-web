@@ -13,6 +13,10 @@
 # testing
 /coverage
 
+# pi-web runtime data (session metas, mode stub homes)
+/.e2e-data/
+/data/
+
 # generated monaco assets (scripts/copy-monaco.mjs)
 /public/monaco
 

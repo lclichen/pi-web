@@ -26,11 +26,16 @@ export interface AgentConn {
   connectedAt: number;
   pending: Map<number, PendingRequest>;
   nextId: number;
+  /** Owning web user id (0 = unbound/auth-off). */
+  ownerUserId: number;
 }
 
 interface RelayRegistry {
   pairCodes: Map<string, PairingCode>;
+  /** Latest connection (single-slot compat; see agentsByUser). */
   agent: AgentConn | null;
+  /** Multi-slot: one live agent per bound web user. */
+  agentsByUser: Map<number, AgentConn>;
   statusSubscribers: Set<(status: RelayStatus) => void>;
   // PTY output subscribers, keyed by agent-side session id. The agent pushes
   // unsolicited pty.output "event" frames; these fan out to the SSE streams.
@@ -45,6 +50,7 @@ function newRegistry(): RelayRegistry {
   return {
     pairCodes: new Map(),
     agent: null,
+    agentsByUser: new Map(),
     statusSubscribers: new Set(),
     ptySubscribers: new Map(),
   };
@@ -61,7 +67,7 @@ export function getRegistry(): RelayRegistry {
 // Pairing codes
 // ---------------------------------------------------------------------------
 
-export function createPairingCode(): PairingCode {
+export function createPairingCode(ownerUserId = 0): PairingCode {
   const reg = getRegistry();
   const now = Date.now();
   // sweep expired/consumed codes so the map can't grow unbounded
@@ -69,24 +75,24 @@ export function createPairingCode(): PairingCode {
     if (value.consumed || value.expiresAt <= now) reg.pairCodes.delete(key);
   }
   const code = generatePairingCode();
-  const pc: PairingCode = { code, createdAt: now, expiresAt: now + PAIRING_TTL_MS, consumed: false };
+  const pc: PairingCode = { ownerUserId, code, createdAt: now, expiresAt: now + PAIRING_TTL_MS, consumed: false };
   reg.pairCodes.set(code, pc);
   return pc;
 }
 
-/** Validate + atomically consume a pairing code. Returns false if invalid/expired. */
-export function consumePairingCode(rawCode: string): boolean {
+/** Validate + atomically consume a pairing code. Returns the owning user id, or null if invalid/expired. */
+export function consumePairingCode(rawCode: string): number | null {
   const reg = getRegistry();
   const code = normalizeCode(rawCode);
   const pc = reg.pairCodes.get(code);
   const now = Date.now();
   if (!pc || pc.consumed || pc.expiresAt <= now) {
     if (pc) reg.pairCodes.delete(code);
-    return false;
+    return null;
   }
   pc.consumed = true;
   reg.pairCodes.delete(code);
-  return true;
+  return pc.ownerUserId;
 }
 
 // ---------------------------------------------------------------------------
@@ -101,19 +107,26 @@ export function getAgent(): AgentConn | null {
   return getRegistry().agent;
 }
 
+/** The agent bound to a web user (0/unknown = the latest connection, auth-off compat). */
+export function getAgentForUser(userId: number): AgentConn | null {
+  const reg = getRegistry();
+  return reg.agentsByUser.get(userId) ?? (userId === 0 ? reg.agent : null);
+}
+
 /**
  * Wire a freshly-upgraded WebSocket into the registry. The agent must send an
  * initial `{type:"hello", info}` frame; until then `getAgent()` reports the
  * connection as not-yet-ready. All subsequent frames are RPC responses/chunks
  * dispatched by request id to the matching pending promise.
  */
-export function attachAgentSocket(ws: WebSocket): void {
+export function attachAgentSocket(ws: WebSocket, ownerUserId = 0): void {
   const reg = getRegistry();
 
-  // Single-slot MVP: evict any prior agent.
-  if (reg.agent) {
-    const prev = reg.agent;
-    reg.agent = null;
+  // One live agent per user: evict that user's previous connection. The
+  // legacy single-slot field keeps pointing at the most recent conn.
+  const prev = reg.agentsByUser.get(ownerUserId) ?? null;
+  if (prev) {
+    reg.agentsByUser.delete(ownerUserId);
     rejectAllPending(prev, new Error("agent replaced by a newer connection"));
     try {
       prev.ws.close();
@@ -128,7 +141,10 @@ export function attachAgentSocket(ws: WebSocket): void {
     connectedAt: Date.now(),
     pending: new Map(),
     nextId: 1,
+    ownerUserId,
   };
+  reg.agentsByUser.set(ownerUserId, conn);
+  reg.agent = conn;
 
   const onMessage = (raw: unknown): void => {
     let msg: AgentToRelayMessage;
@@ -183,6 +199,9 @@ export function attachAgentSocket(ws: WebSocket): void {
   const cleanup = (): void => {
     ws.off("message", onMessage);
     rejectAllPending(conn, new Error("agent disconnected"));
+    if (reg.agentsByUser.get(conn.ownerUserId) === conn) {
+      reg.agentsByUser.delete(conn.ownerUserId);
+    }
     if (reg.agent === conn) {
       reg.agent = null;
       notifyStatus();
@@ -220,6 +239,13 @@ function rejectAllPending(conn: AgentConn, err: Error): void {
 
 export function getStatus(): RelayStatus {
   const agent = getRegistry().agent;
+  return agent?.info ? { online: true, info: agent.info } : { online: false };
+}
+
+/** Status of the agent bound to a web user. */
+export function getStatusForUser(userId: number): RelayStatus {
+  if (userId === 0) return getStatus();
+  const agent = getRegistry().agentsByUser.get(userId);
   return agent?.info ? { online: true, info: agent.info } : { online: false };
 }
 

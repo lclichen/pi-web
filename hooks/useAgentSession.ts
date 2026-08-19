@@ -205,6 +205,8 @@ export type BuiltinSlashCommandResult =
 export interface UseAgentSessionOptions {
   session: SessionInfo | null;
   newSessionCwd: string | null;
+  /** Execution mode for the not-yet-created session (multi-user). */
+  newSessionMode?: "host" | "sandbox" | "local-machine";
   onAgentEnd?: () => void;
   onSessionCreated?: (session: SessionInfo) => void;
   onSessionForked?: (newSessionId: string) => void;
@@ -396,11 +398,13 @@ type SlashCommandsResponse = {
 
 export function useAgentSession(opts: UseAgentSessionOptions) {
   const {
-    session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked,
+    session, newSessionCwd, newSessionMode, onAgentEnd, onSessionCreated, onSessionForked,
     modelsRefreshKey, onBranchDataChange, onSystemPromptChange, onSessionStatsPanelOpen,
   } = opts;
 
   const isNew = session === null && newSessionCwd !== null;
+  const newSessionModeRef = useRef(newSessionMode);
+  newSessionModeRef.current = newSessionMode;
 
   const [data, setData] = useState<SessionData | null>(null);
   const [loading, setLoading] = useState(!isNew);
@@ -646,6 +650,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           cwd: newSessionCwd,
+          ...(newSessionModeRef.current ? { mode: newSessionModeRef.current } : {}),
           type: "ensure_session",
           toolNames,
           ...(selectedModel ? { provider: selectedModel.provider, modelId: selectedModel.modelId } : {}),

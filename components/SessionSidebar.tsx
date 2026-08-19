@@ -74,9 +74,14 @@ function ToolbarIconButton({
 }
 
 interface Props {
+  /** 多用户部署的认证信息（登录页/模式选择器显隐）。 */
+  authInfo?: { enabled: boolean; user: { id: number; username: string; role: "admin" | "user" } | null } | null;
+  /** 当前会话空间（admin 可切 Host）。 */
+  sessionSpace?: "mine" | "host";
+  onSessionSpaceChange?: (space: "mine" | "host") => void;
   selectedSessionId: string | null;
   onSelectSession: (session: SessionInfo, isRestore?: boolean) => void;
-  onNewSession?: (sessionId: string, cwd: string) => void;
+  onNewSession?: (sessionId: string, cwd: string, mode?: "host" | "sandbox" | "local-machine") => void;
   initialSessionId?: string | null;
   skipInitialProjectSelection?: boolean;
   onInitialRestoreDone?: () => void;
@@ -385,9 +390,15 @@ function PiWebTitle() {
   );
 }
 
-export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSession, initialSessionId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onOpenFile, onFileDeleted, onFileRenamed, explorerRefreshKey, onExplorerRefresh, onAtMention, onAtMentions }: Props) {
+export function SessionSidebar({ authInfo = null, sessionSpace = "mine", onSessionSpaceChange, selectedSessionId, onSelectSession, onNewSession, initialSessionId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onOpenFile, onFileDeleted, onFileRenamed, explorerRefreshKey, onExplorerRefresh, onAtMention, onAtMentions }: Props) {
   const { t } = useI18n();
   const [allSessions, setAllSessions] = useState<SessionInfo[]>([]);
+  // Remote-mode scoping for the file explorer (sandbox / local-machine).
+  const remoteSession = (() => {
+    const selected = allSessions.find((s) => s.id === selectedSessionId);
+    if (!selected?.mode || selected.mode === "host") return null;
+    return { sessionId: selected.id, label: selected.mode === "sandbox" ? "沙箱容器" : "本机" };
+  })();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedCwd, setSelectedCwd] = useState<string | null>(null);
@@ -431,7 +442,8 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const loadSessions = useCallback(async (showLoading = false) => {
     try {
       if (showLoading) setLoading(true);
-      const res = await fetch("/api/sessions");
+      const spaceQuery = authInfo?.user?.role === "admin" && sessionSpace === "host" ? "?space=host" : "";
+      const res = await fetch(`/api/sessions${spaceQuery}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json() as { sessions: SessionInfo[]; runningSessionIds?: string[] };
       setAllSessions(data.sessions);
@@ -808,15 +820,17 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     onSelectSession(s);
   }, [onSelectSession]);
 
+  const [newSessionMode, setNewSessionMode] = useState<"host" | "sandbox" | "local-machine">("host");
   const handleNewSession = useCallback(() => {
-    if (!selectedCwd) return;
+    if (!selectedCwd && newSessionMode === "host") return;
     // Generate a temporary UUID client-side — no backend call needed.
     // Pi will be spawned lazily when the user sends the first message.
     const tempId = typeof crypto.randomUUID === "function"
       ? crypto.randomUUID()
       : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
-    onNewSession?.(tempId, selectedCwd);
-  }, [selectedCwd, onNewSession]);
+    // 沙箱/本机模式不依赖本地 cwd（服务器端使用 stub home）。
+    onNewSession?.(tempId, selectedCwd ?? "/", newSessionMode);
+  }, [selectedCwd, newSessionMode, onNewSession]);
 
   const recentProjects = getRecentProjects(allSessions);
   const showProjectFilter = recentProjects.length > 8;
@@ -1602,7 +1616,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                 </svg>
               </ToolbarIconButton>
             )}
-            {explorerOpen && (
+            {explorerOpen && !remoteSession && (
               <ToolbarIconButton
                 onClick={() => fileExplorerRef.current?.openUploadPicker()}
                 disabled={explorerUploadBusy}
@@ -1646,7 +1660,8 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
             <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden" }}>
               <FileExplorer
                 ref={fileExplorerRef}
-                cwd={selectedCwd ?? selectedCwdProp!}
+                cwd={remoteSession ? "/" : (selectedCwd ?? selectedCwdProp!)}
+                remote={remoteSession}
                 onOpenFile={onOpenFile ?? (() => {})}
                 refreshKey={explorerKey}
                 onAtMention={onAtMention}
@@ -2020,6 +2035,11 @@ function SessionItem({
                 <span title={session.modified}>{formatRelativeTime(session.modified)}</span>
               )}
               <span>{t("sidebar.messagesCount", { count: session.messageCount })}</span>
+              {session.mode && session.mode !== "host" && (
+                <span title={session.mode === "sandbox" ? "沙箱模式（容器执行）" : "本机模式（relay 执行）"} style={{ color: session.mode === "sandbox" ? "#38bdf8" : "#a78bfa", fontWeight: 600 }}>
+                  {session.mode === "sandbox" ? "沙箱" : "本机"}
+                </span>
+              )}
               {session.worktreeBranch && (
                 <span
                   title={`Worktree: ${session.cwd}`}

@@ -1,14 +1,18 @@
 import { NextResponse } from "next/server";
 import { createPairingCode } from "@/lib/relay/registry";
 import { getRelayInfo } from "@/lib/relay/ws-server";
+import { requireUserIdentity } from "@/lib/web-session";
 
 export const dynamic = "force-dynamic";
 
 // POST /api/agent-relay/pair
 // Mint a one-time pairing code. The browser shows the code + an install/run
 // command for the user to execute on their local (e.g. CentOS 7) machine.
-export async function POST() {
-  const pc = createPairingCode();
+export async function POST(req: Request) {
+  const identity = requireUserIdentity(req);
+  if (!identity.ok) return NextResponse.json({ error: "登录已失效" }, { status: identity.status });
+  // The pairing code binds the connecting agent to the minting user.
+  const pc = createPairingCode(identity.session.user.id);
   const relay = getRelayInfo();
   return NextResponse.json(
     {

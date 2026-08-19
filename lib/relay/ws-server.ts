@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { URL } from "node:url";
 import { WebSocketServer, type WebSocket } from "ws";
 import { attachAgentSocket, consumePairingCode, isKnownAgentToken } from "./registry";
-import { issueAgentToken } from "./relay-store";
+import { issueAgentToken, lookupTokenOwner } from "./relay-store";
 
 // The agent-facing endpoint: a plain http.Server on its own port (default
 // 30142), started once from instrumentation.ts. It serves:
@@ -63,7 +63,7 @@ export async function startRelayServer(): Promise<void> {
       return;
     }
     wss.handleUpgrade(req, socket, head, (ws: WebSocket) => {
-      attachAgentSocket(ws);
+      attachAgentSocket(ws, lookupTokenOwner(token));
     });
   });
 

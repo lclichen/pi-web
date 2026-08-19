@@ -1,4 +1,5 @@
-import { resolveSessionPath } from "@/lib/session-reader";
+import { NextResponse } from "next/server";
+import { resolveSessionAccess } from "@/lib/session-access";
 import { getRpcSession, startRpcSession, type AgentEvent } from "@/lib/rpc-manager";
 
 export const dynamic = "force-dynamic";
@@ -26,7 +27,9 @@ export async function GET(
   // Fast path: already-running session
   let session = getRpcSession(id);
   if (!session || !session.isAlive()) {
-    const filePath = await resolveSessionPath(id);
+    const access = await resolveSessionAccess(req, id);
+    if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
+    const filePath = access.path;
     if (!filePath) {
       return new Response("Session not found", { status: 404 });
     }

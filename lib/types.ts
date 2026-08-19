@@ -300,7 +300,11 @@ export interface SessionInfo {
   projectRoot?: string;
   /** Branch name when cwd is a linked git worktree (not the main checkout) */
   worktreeBranch?: string;
+  /** pi-web execution mode (multi-user deployments); absent = host/legacy. */
+  mode?: "host" | "sandbox" | "local-machine";
 }
+
+export type SessionMode = SessionInfo["mode"];
 
 export interface SessionContext {
   messages: AgentMessage[];

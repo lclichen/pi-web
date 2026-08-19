@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import { generateSessionTitle } from "@/lib/session-title";
 import { getRpcSession, startRpcSession } from "@/lib/rpc-manager";
-import { invalidateSessionListCache, resolveSessionPath } from "@/lib/session-reader";
+import { invalidateSessionListCache } from "@/lib/session-reader";
+import { resolveSessionAccess } from "@/lib/session-access";
 
 export async function POST(
   _req: Request,
@@ -11,7 +12,9 @@ export async function POST(
   const { id } = await params;
 
   try {
-    const filePath = await resolveSessionPath(id);
+    const access = await resolveSessionAccess(_req, id);
+    if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
+    const filePath = access.path;
     if (!filePath) {
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
     }

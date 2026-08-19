@@ -10,12 +10,18 @@ import type { AgentMessage, SessionEntry, SessionHeader, SessionInfo, SessionCon
 import type { SessionEntry as PiSessionEntry, SessionInfo as PiSessionInfo } from "@earendil-works/pi-coding-agent";
 import { normalizeToolCalls } from "./normalize";
 import { sessionPathKey } from "./session-path";
+import { isPathInSpace, spaceDir, spaceKey, type SessionSpace } from "./session-spaces";
 import { resolveProject, type ProjectInfo } from "./worktree";
 
 export { getAgentDir };
 
-async function loadAllSessions(): Promise<SessionInfo[]> {
-  const piSessions: PiSessionInfo[] = await SessionManager.listAll();
+async function loadAllSessions(space: SessionSpace = { kind: "host" }): Promise<SessionInfo[]> {
+  // User shards list their own directory; the host space lists the global
+  // root (the users/ shard itself holds no session files directly, so it
+  // never leaks into the host listing).
+  const piSessions: PiSessionInfo[] = space.kind === "host"
+    ? await SessionManager.listAll()
+    : await SessionManager.listAll(spaceDir(space));
   const pathToId = new Map<string, string>();
   for (const s of piSessions) pathToId.set(sessionPathKey(s.path), s.id);
 
@@ -46,120 +52,149 @@ async function loadAllSessions(): Promise<SessionInfo[]> {
   });
 }
 
-export async function listAllSessions(): Promise<SessionInfo[]> {
-  const generation = globalThis.__piSessionListGeneration ?? 0;
+export async function listAllSessions(space: SessionSpace = { kind: "host" }): Promise<SessionInfo[]> {
+  const key = spaceKey(space);
+  const bundle = spaceBundle(key);
+  const generation = bundle.listGeneration ?? 0;
 
   // Return cached result if still fresh (avoids re-scanning session files
   // and re-spawning git processes on every page load).
-  if (globalThis.__piSessionListCache && Date.now() - globalThis.__piSessionListCache.ts < SESSION_LIST_CACHE_TTL_MS) {
-    return globalThis.__piSessionListCache.data;
+  if (bundle.listCache && Date.now() - bundle.listCache.ts < SESSION_LIST_CACHE_TTL_MS) {
+    return bundle.listCache.data;
   }
 
   // Coalescing dedup: concurrent callers share the same in-flight promise
   // only while it belongs to the current cache generation.
-  if (globalThis.__piSessionListPromise && globalThis.__piSessionListPromiseGeneration === generation) {
-    return globalThis.__piSessionListPromise;
+  if (bundle.listPromise && bundle.listPromiseGeneration === generation) {
+    return bundle.listPromise;
   }
 
-  const loadPromise = loadAllSessions().then((data) => {
+  const loadPromise = loadAllSessions(space).then((data) => {
     // An invalidation may happen while the scan is in flight. Do not let that
     // older result repopulate the cache after a session mutation.
-    if ((globalThis.__piSessionListGeneration ?? 0) === generation) {
-      globalThis.__piSessionListCache = { data, ts: Date.now() };
+    if ((bundle.listGeneration ?? 0) === generation) {
+      bundle.listCache = { data, ts: Date.now() };
     }
     return data;
   });
   const trackedPromise = loadPromise.finally(() => {
-    if (globalThis.__piSessionListPromise === trackedPromise) {
-      globalThis.__piSessionListPromise = undefined;
-      globalThis.__piSessionListPromiseGeneration = undefined;
+    if (bundle.listPromise === trackedPromise) {
+      bundle.listPromise = undefined;
+      bundle.listPromiseGeneration = undefined;
     }
   });
 
-  globalThis.__piSessionListPromise = trackedPromise;
-  globalThis.__piSessionListPromiseGeneration = generation;
+  bundle.listPromise = trackedPromise;
+  bundle.listPromiseGeneration = generation;
   return trackedPromise;
 }
 
 // ============================================================================
-// Session path caches, stored in globalThis for hot-reload safety.
+// Session path caches, stored on globalThis for hot-reload safety
+// (see SpaceCacheBundle above — one bundle per session space).
 // ============================================================================
-declare global {
-  var __piSessionPathCache: Map<string, string> | undefined;
-  var __piPathToSessionIdCache: Map<string, string> | undefined;
-  var __piSessionListPromise: Promise<SessionInfo[]> | undefined;
-  var __piSessionListPromiseGeneration: number | undefined;
-  var __piSessionListGeneration: number | undefined;
-  var __piSessionListCache: { data: SessionInfo[]; ts: number } | undefined;
-}
 
 const SESSION_LIST_CACHE_TTL_MS = 30_000;
 
-export function invalidateSessionListCache(): void {
-  globalThis.__piSessionListGeneration = (globalThis.__piSessionListGeneration ?? 0) + 1;
-  globalThis.__piSessionListCache = undefined;
+interface SpaceCacheBundle {
+  listCache?: { data: SessionInfo[]; ts: number };
+  listPromise?: Promise<SessionInfo[]>;
+  listPromiseGeneration?: number;
+  listGeneration?: number;
+  pathCache: Map<string, string>;
+  idToPathCache: Map<string, string>;
 }
 
-function getPathCache(): Map<string, string> {
-  if (!globalThis.__piSessionPathCache) globalThis.__piSessionPathCache = new Map();
-  return globalThis.__piSessionPathCache;
+declare global {
+  // eslint-disable-next-line no-var
+  var __piSessionSpaceCaches: Map<string, SpaceCacheBundle> | undefined;
 }
 
-function getPathToIdCache(): Map<string, string> {
-  if (!globalThis.__piPathToSessionIdCache) globalThis.__piPathToSessionIdCache = new Map();
-  return globalThis.__piPathToSessionIdCache;
+function spaceBundle(key: string): SpaceCacheBundle {
+  if (!globalThis.__piSessionSpaceCaches) {
+    globalThis.__piSessionSpaceCaches = new Map();
+  }
+  let bundle = globalThis.__piSessionSpaceCaches.get(key);
+  if (!bundle) {
+    bundle = { pathCache: new Map(), idToPathCache: new Map() };
+    globalThis.__piSessionSpaceCaches.set(key, bundle);
+  }
+  return bundle;
 }
 
-export async function resolveSessionPath(sessionId: string): Promise<string | null> {
-  const cached = getPathCache().get(sessionId);
-  if (cached) return cached;
+export function invalidateSessionListCache(space?: SessionSpace): void {
+  if (space) {
+    const bundle = spaceBundle(spaceKey(space));
+    bundle.listGeneration = (bundle.listGeneration ?? 0) + 1;
+    bundle.listCache = undefined;
+    return;
+  }
+  for (const bundle of globalThis.__piSessionSpaceCaches?.values() ?? []) {
+    bundle.listGeneration = (bundle.listGeneration ?? 0) + 1;
+    bundle.listCache = undefined;
+  }
+}
 
-  // Cache miss: scan all sessions to populate cache, then retry
-  await listAllSessions();
-  return getPathCache().get(sessionId) ?? null;
+export async function resolveSessionPath(sessionId: string, space: SessionSpace = { kind: "host" }): Promise<string | null> {
+  const bundle = spaceBundle(spaceKey(space));
+  const cached = bundle.pathCache.get(sessionId);
+  if (cached) return isPathInSpace(cached, space) ? cached : null;
+
+  // Cache miss: scan the space to populate its cache, then retry
+  await listAllSessions(space);
+  const resolved = bundle.pathCache.get(sessionId);
+  if (!resolved) return null;
+  return isPathInSpace(resolved, space) ? resolved : null;
 }
 
 export async function resolveSessionIdByPath(filePath: string): Promise<string | undefined> {
   const pathKey = sessionPathKey(filePath);
-  const cached = getPathToIdCache().get(pathKey);
-  if (cached) return cached;
+  for (const bundle of globalThis.__piSessionSpaceCaches?.values() ?? []) {
+    const cached = bundle.idToPathCache.get(pathKey);
+    if (cached) return cached;
+  }
 
   await listAllSessions();
-  return getPathToIdCache().get(pathKey);
+  const host = spaceBundle("host");
+  return host.idToPathCache.get(pathKey);
 }
 
 export function cacheSessionPath(sessionId: string, filePath: string): void {
   const normalizedPath = normalizePath(filePath);
   const pathKey = sessionPathKey(normalizedPath);
-  const pathCache = getPathCache();
-  const reverseCache = getPathToIdCache();
-  const previousPath = pathCache.get(sessionId);
-  const previousPathKey = previousPath ? sessionPathKey(previousPath) : undefined;
-  const previousSessionId = reverseCache.get(pathKey);
-  const previousOwnerPath = previousSessionId ? pathCache.get(previousSessionId) : undefined;
-  if (previousPathKey && previousPathKey !== pathKey && reverseCache.get(previousPathKey) === sessionId) {
-    reverseCache.delete(previousPathKey);
+  for (const bundle of globalThis.__piSessionSpaceCaches?.values() ?? []) {
+    const pathCache = bundle.pathCache;
+    const reverseCache = bundle.idToPathCache;
+    const previousPath = pathCache.get(sessionId);
+    const previousPathKey = previousPath ? sessionPathKey(previousPath) : undefined;
+    const previousSessionId = reverseCache.get(pathKey);
+    const previousOwnerPath = previousSessionId ? pathCache.get(previousSessionId) : undefined;
+    if (previousPathKey && previousPathKey !== pathKey && reverseCache.get(previousPathKey) === sessionId) {
+      reverseCache.delete(previousPathKey);
+    }
+    if (
+      previousSessionId &&
+      previousSessionId !== sessionId &&
+      previousOwnerPath &&
+      sessionPathKey(previousOwnerPath) === pathKey
+    ) {
+      pathCache.delete(previousSessionId);
+    }
+    pathCache.set(sessionId, normalizedPath);
+    reverseCache.set(pathKey, sessionId);
   }
-  if (
-    previousSessionId &&
-    previousSessionId !== sessionId &&
-    previousOwnerPath &&
-    sessionPathKey(previousOwnerPath) === pathKey
-  ) {
-    pathCache.delete(previousSessionId);
-  }
-  pathCache.set(sessionId, normalizedPath);
-  reverseCache.set(pathKey, sessionId);
 }
 
 export function invalidateSessionPathCache(sessionId: string): void {
-  const pathCache = getPathCache();
-  const reverseCache = getPathToIdCache();
-  const filePath = pathCache.get(sessionId);
-  pathCache.delete(sessionId);
-  const pathKey = filePath ? sessionPathKey(filePath) : undefined;
-  if (pathKey && reverseCache.get(pathKey) === sessionId) {
-    reverseCache.delete(pathKey);
+  for (const bundle of globalThis.__piSessionSpaceCaches?.values() ?? []) {
+    const pathCache = bundle.pathCache;
+    const reverseCache = bundle.idToPathCache;
+    const filePath = pathCache.get(sessionId);
+    pathCache.delete(sessionId);
+    const pathKey = filePath ? sessionPathKey(filePath) : undefined;
+    if (pathKey && reverseCache.get(pathKey) === sessionId) {
+      reverseCache.delete(pathKey);
+    }
   }
 }
 

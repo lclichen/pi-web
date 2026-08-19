@@ -128,6 +128,8 @@ export interface RelayStatus {
 
 /** Pairing code descriptor held in memory until consumed or expired. */
 export interface PairingCode {
+  /** Web user that minted the code; the connecting agent binds to them. */
+  ownerUserId: number;
   code: string;
   createdAt: number;
   expiresAt: number;

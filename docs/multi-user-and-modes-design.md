@@ -1,6 +1,6 @@
 # pi-web 用户系统与多模式融合设计
 
-> 状态：设计稿（待评审）
+> 状态：已实现（P0+P1 合并交付）——认证/会话空间/三模式/远程文件与终端面板
 > 关联：`AgentSandbox/docs/PI-WEB-INTEGRATION-REQUIREMENTS.md`（沙箱平台侧需求，另行补充实现）
 > 背景：pi-web 目前是单用户本地应用；sandbox-platform 提供多用户账号、容器隔离与配额。本文设计两者融合，以及 Go relay 与容器功能并行的三模式架构。
 
@@ -127,3 +127,27 @@ P0 采用（二选一，默认前者）：
 2. **CLI 会话写全局目录的竞争**：Host 空间与用户分片物理同根，需确保分片目录名（`users/`）不与现有编码 cwd 目录冲突（现存目录均为 `--encoded-cwd--` 形式，无冲突）。
 3. **relay 多槽改造**：现注册表多处假设单 agent（状态推送、forward），需系统性梳理。
 4. **平台 Demo 成熟度**：需求文档中的稳定性项（R3/R7）应在 P0 前置评审。
+
+
+## 10. 实现落地说明（P0+P1）
+
+### 环境变量
+
+| 变量 | 说明 |
+|---|---|
+| `PI_WEB_AUTH=on` | 启用多用户（平台账号登录）；缺省维持单用户现状 |
+| `PI_WEB_PLATFORM_URL` | 沙箱平台地址（登录 BFF 与沙箱模式必需） |
+| `PI_WEB_SANDBOX_EXTENSION_PATH` | pi-sandbox-extension 目录（沙箱模式注入用） |
+| `PI_WEB_DATA_DIR` | pi-web 数据目录（会话元数据/沙箱 stub home/本机 home，默认 `./data`） |
+| `PI_WEB_COOKIE_SECURE=on` | HTTPS 部署时给会话 cookie 加 Secure |
+
+### 与设计的偏差
+
+- 管理员的 Host 模式会话落在**管理员自己的分片**（非 Host 空间）；Host 空间专门保留给 CLI 原生会话，侧栏「Host 会话」切换即查看。
+- 每用户平台凭证采用**登录时自动创建的 API Key**（服务端持有），不托管 JWT refresh。
+- 普通登录用户的本地 fs 访问（/api/files、git、插件的项目 scope）一律拒绝（空 roots）；其文件/终端走 `/api/remotefs`、`/api/remoteterminal`。
+- 文件 watch（SSE）在远程模式返回 501，文件面板以打开时读取为准。
+
+### 平台侧依赖（均已就绪）
+
+R1 注册（off/open/approval + 审批）、R2 PTY WebSocket、R4 LLM 网关默认关闭、R5 workspaces、R6 容器过滤与 provision defaults、R7 稳定错误码。

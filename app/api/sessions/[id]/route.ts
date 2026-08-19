@@ -10,6 +10,7 @@ import {
   buildSessionContext,
   readSessionHeader,
 } from "@/lib/session-reader";
+import { resolveSessionAccess } from "@/lib/session-access";
 import { sessionPathKey } from "@/lib/session-path";
 import { getRpcSession } from "@/lib/rpc-manager";
 
@@ -119,7 +120,9 @@ export async function GET(
 ) {
   const { id } = await params;
   try {
-    const filePath = await resolveSessionPath(id);
+    const access = await resolveSessionAccess(req, id, new URL(req.url).searchParams);
+    if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
+    const filePath = access.path;
     if (!filePath) {
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
     }
@@ -181,7 +184,9 @@ export async function PATCH(
     if (typeof name !== "string") {
       return NextResponse.json({ error: "name is required" }, { status: 400 });
     }
-    const filePath = await resolveSessionPath(id);
+    const access = await resolveSessionAccess(req, id, new URL(req.url).searchParams);
+    if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
+    const filePath = access.path;
     if (!filePath) {
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
     }
@@ -196,12 +201,14 @@ export async function PATCH(
 
 // DELETE /api/sessions/[id]
 export async function DELETE(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
   try {
-    const filePath = await resolveSessionPath(id);
+    const access = await resolveSessionAccess(req, id, new URL(req.url).searchParams);
+    if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
+    const filePath = access.path;
     if (!filePath) {
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
     }

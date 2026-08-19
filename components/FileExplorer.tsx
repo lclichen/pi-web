@@ -31,6 +31,9 @@ interface FileNode {
 }
 
 interface Props {
+  /** Remote session scoping (sandbox / local-machine): file ops route to
+   *  /api/remotefs with the session id instead of the local /api/files. */
+  remote?: { sessionId: string; label: string } | null;
   cwd: string;
   onOpenFile: (filePath: string, fileName: string, options?: OpenFileOptions) => void;
   refreshKey?: number;
@@ -89,9 +92,13 @@ interface PendingConflict {
   nonReplaceable: string[];
 }
 
-async function fetchEntries(dirPath: string): Promise<FileNode[]> {
+async function fetchEntries(dirPath: string, remote?: { sessionId: string } | null): Promise<FileNode[]> {
+  // Remote sessions (sandbox / local-machine) list through /api/remotefs.
+  const url = remote
+    ? `/api/remotefs/${encodeFilePathForApi(dirPath)}?src=${encodeURIComponent(remote.sessionId)}&type=list`
+    : `/api/files/${encodeFilePathForApi(dirPath)}?type=list`;
   const encoded = encodeFilePathForApi(dirPath);
-  const res = await fetch(`/api/files/${encoded}?type=list`);
+  const res = await fetch(url);
   if (!res.ok) {
     let message = `Failed to load files (HTTP ${res.status})`;
     try {
@@ -228,6 +235,7 @@ function TreeNode({
   node,
   depth,
   cwd,
+  remote = null,
   onOpenFile,
   onAtMention,
   expandedPaths,
@@ -272,6 +280,7 @@ function TreeNode({
   onCreateSubmit?: () => void;
   onCreateCancel?: () => void;
   t: Translate;
+  remote?: { sessionId: string; label: string } | null;
 }) {
   const open = expandedPaths.has(node.fullPath);
   const highlighted = highlightedPaths.has(node.fullPath);
@@ -289,7 +298,7 @@ function TreeNode({
     if (loaded && !force) return;
     setLoading(true);
     try {
-      const entries = await fetchEntries(node.fullPath);
+      const entries = await fetchEntries(node.fullPath, remote);
       setChildren(entries);
       setLoaded(true);
     } catch {
@@ -315,7 +324,7 @@ function TreeNode({
     } else {
       onOpenFile(node.fullPath, node.name);
     }
-  }, [node.isDir, node.fullPath, node.name, loaded, open, loadChildren, onOpenFile, onToggleExpanded]);
+  }, [node.isDir, node.fullPath, node.name, loaded, open, loadChildren, onOpenFile, onToggleExpanded, remote]);
 
   return (
     <div>
@@ -498,6 +507,7 @@ function TreeNode({
               node={child}
               depth={depth + 1}
               cwd={cwd}
+              remote={remote}
               onOpenFile={onOpenFile}
               onAtMention={onAtMention}
               expandedPaths={expandedPaths}
@@ -590,6 +600,7 @@ function ChangeRow({
 
 export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileExplorer({
   cwd,
+  remote = null,
   onOpenFile,
   refreshKey,
   onAtMention,
@@ -783,9 +794,10 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
       .catch((e) => { if (!cancelled) setError(e instanceof Error ? e.message : String(e)); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [cwd, refreshKey, treeRefreshKey]);
+  }, [cwd, refreshKey, treeRefreshKey, remote]);
 
   useEffect(() => {
+    if (remote) { setGitFiles([]); setGitLineStats({ additions: 0, deletions: 0 }); return; }
     let cancelled = false;
     fetchGitStatus(cwd)
       .then((status) => {
@@ -822,6 +834,17 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
     if (!creating || !creatingName.trim()) { setCreating(null); return; }
     const name = creatingName.trim();
     const fullPath = joinFilePath(creating.dir, name);
+    if (remote) {
+      if (creating.type === "dir") { setError("远程会话暂不支持新建文件夹"); setCreating(null); return; }
+      fetch(`/api/remotefs/${encodeFilePathForApi(fullPath)}?src=${encodeURIComponent(remote.sessionId)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: "" }),
+      }).then(() => {
+        setCreating(null); setCreatingName(""); setTreeRefreshKey((k) => k + 1);
+      }).catch((e) => { setError(e instanceof Error ? e.message : String(e)); setCreating(null); });
+      return;
+    }
     fetch(`/api/files/${encodeFilePathForApi(fullPath)}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -829,7 +852,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
     }).then(() => {
       setCreating(null); setCreatingName(""); setTreeRefreshKey((k) => k + 1);
     }).catch((e) => { setError(e instanceof Error ? e.message : String(e)); setCreating(null); });
-  }, [creating, creatingName]);
+  }, [creating, creatingName, remote]);
 
   const handleDelete = useCallback((fullPath: string) => {
     fetch(`/api/files/${encodeFilePathForApi(fullPath)}`, { method: "DELETE" })
@@ -838,7 +861,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
         setTreeRefreshKey((k) => k + 1);
       })
       .catch((e) => setError(e instanceof Error ? e.message : String(e)));
-  }, [onFileDeleted]);
+  }, [onFileDeleted, remote]);
 
   const handleRename = useCallback(() => {
     if (!renaming || !renamingName.trim()) { setRenaming(null); return; }
@@ -851,7 +874,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
       onFileRenamed?.(renaming.oldPath, newPath);
       setRenaming(null); setRenamingName(""); setTreeRefreshKey((k) => k + 1);
     }).catch((e) => { setError(e instanceof Error ? e.message : String(e)); setRenaming(null); });
-  }, [renaming, renamingName, onFileRenamed]);
+  }, [renaming, renamingName, onFileRenamed, remote]);
 
   return (
     <div style={{ minHeight: "100%" }}>
@@ -1061,6 +1084,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
                 node={node}
                 depth={0}
                 cwd={cwd}
+                remote={remote}
                 onOpenFile={onOpenFile}
                 onAtMention={onAtMention}
                 expandedPaths={expandedPaths}

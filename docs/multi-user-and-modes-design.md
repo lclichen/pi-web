@@ -151,3 +151,15 @@ P0 采用（二选一，默认前者）：
 ### 平台侧依赖（均已就绪）
 
 R1 注册（off/open/approval + 审批）、R2 PTY WebSocket、R4 LLM 网关默认关闭、R5 workspaces、R6 容器过滤与 provision defaults、R7 稳定错误码。
+
+
+## 11. 项目与配置分层（已实现）
+
+两层配置完全走 pi 原生合并：agentDir=`~/.pi/agent`（**admin 全局层**：全局扩展/技能/settings.json 的 packages、models.json、auth.json）+ 项目 home 的 `.pi/`（**项目层**：settings/agents/skills/extensions、沙箱容器绑定、可选 models.json/auth.json）。无用户中间层——用户通过**复制项目**派生自己的配置集。
+
+- **项目实体**：`data/projects.json` sidecar（id/name/owner/mode/createdAt/pinnedSessions/containerId）；home 位于 `data/{sandbox,local}-homes/u<uid>/<projectId>/`；复制项目即拷贝 `.pi/` 快照。
+- **项目级模型凭证**：SDK 只从 agentDir 解析凭证，故会话启动时若项目 home 存在 `.pi/auth.json` 或 `.pi/models.json`，pi-web 自行构建 `ModelRuntime`（项目路径优先、缺失项回退全局）传入 `createAgentSessionServices`；项目设置对话框提供两个 JSON 编辑框（留空=继承全局）。
+- **沙箱容器按项目**：每项目 `.pi/sandbox-platform.json` 独立（复制项目随拷）。
+- **配置管理 API**：plugins/agents 路由统一走 `resolveConfigCwdSync`——`projectId` 服务端推导 home 并校验归属；裸 cwd 仅 admin/隐式 host；**全局 scope 写操作（scope=global）仅 admin**（修复了此前任何用户可写全局的问题）；agents 路由补齐了此前缺失的身份校验。
+- **侧栏两级树**（多用户模式；单用户保持旧 UI）：第一级项目（创建时间排序，hover ＋新建会话 / ⋮菜单[新建/重命名/复制/设置/容器选择/删除]），第二级会话（置顶★优先 + 最近 5 个 + 「显示全部」展开）；Host 空间（admin）的 CLI 会话按 projectRoot 动态分组同树呈现（仅展开/收起）。
+- 取舍：admin 全局层变更不自动推送进已有项目（项目 `.pi/` 是创建/复制时快照）；建议教学流程"改全局模板 → 复制新项目"。

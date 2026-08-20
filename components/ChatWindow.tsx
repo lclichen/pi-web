@@ -43,6 +43,8 @@ interface Props {
   sendCommandRef?: React.MutableRefObject<((cmd: string) => void) | null>;
   /** Execution mode for a not-yet-created session (multi-user). */
   newSessionMode?: "host" | "sandbox" | "local-machine";
+  /** Project id for a not-yet-created project-scoped session. */
+  newSessionProjectId?: string | null;
   /** Chat status widget → AppShell right panel. */
   onOpenAgentsPanel?: () => void;
   onOpenPlanPanel?: () => void;
@@ -182,7 +184,7 @@ function ProcessDetailsGroup({ messageCount, toolCallCount, children, t }: { mes
   );
 }
 
-export function ChatWindow({ session, newSessionCwd, newSessionMode, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onLabStateChange, sendCommandRef, onOpenAgentsPanel, onOpenPlanPanel, planPanelActive, onSubagentCallsChange }: Props) {
+export function ChatWindow({ session, newSessionCwd, newSessionMode, newSessionProjectId, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onLabStateChange, sendCommandRef, onOpenAgentsPanel, onOpenPlanPanel, planPanelActive, onSubagentCallsChange }: Props) {
   const { t } = useI18n();
   const { soundEnabled, onSoundToggle, playDoneSound, unlockAudio } = useAudio();
   const isMobile = useIsMobile();
@@ -227,7 +229,7 @@ export function ChatWindow({ session, newSessionCwd, newSessionMode, onAgentEnd,
     handleBuiltinSlashCommand,
     handleToolPresetChange, handleThinkingLevelChange, loadSlashCommands,
   } = useAgentSession({
-    session, newSessionCwd, newSessionMode, onAgentEnd: wrappedOnAgentEnd, onSessionCreated, onSessionForked,
+    session, newSessionCwd, newSessionMode, newSessionProjectId, onAgentEnd: wrappedOnAgentEnd, onSessionCreated, onSessionForked,
     modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsPanelOpen,
   });
   const sessionBusy = agentRunning || bashRunning;

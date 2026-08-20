@@ -71,6 +71,7 @@ export function AppShell() {
   // When user clicks +, we only store the cwd — no fake session id
   const [newSessionCwd, setNewSessionCwd] = useState<string | null>(null);
   const [newSessionMode, setNewSessionMode] = useState<"host" | "sandbox" | "local-machine">("host");
+  const [newSessionProjectId, setNewSessionProjectId] = useState<string | null>(null);
   const [sessionSpace, setSessionSpace] = useState<"mine" | "host">("mine");
   // Web identity (PI_WEB_AUTH): null while loading, {user} when logged in.
   const [webUser, setWebUser] = useState<{ id: number; username: string; role: "admin" | "user" } | null | "loading">("loading");
@@ -450,10 +451,11 @@ export function AppShell() {
     }
   }, [router, isMobile]);
 
-  const handleNewSession = useCallback((_sessionId: string, cwd: string, mode?: "host" | "sandbox" | "local-machine") => {
+  const handleNewSession = useCallback((_sessionId: string, cwd: string, mode?: "host" | "sandbox" | "local-machine", projectId?: string) => {
     setSelectedSession(null);
     setNewSessionCwd(cwd);
     if (mode) setNewSessionMode(mode);
+    setNewSessionProjectId(projectId ?? null);
     setSessionKey((k) => k + 1);
     setBranchTree([]);
     setBranchActiveLeafId(null);
@@ -1627,6 +1629,7 @@ export function AppShell() {
               session={selectedSession}
               newSessionCwd={effectiveNewSessionCwd}
               newSessionMode={newSessionMode}
+              newSessionProjectId={newSessionProjectId}
               onAgentEnd={handleAgentEnd}
               onSessionCreated={handleSessionCreated}
               onSessionForked={handleSessionForked}

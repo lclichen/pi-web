@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useState, useCallback, useRef, type CSSProperties, type ReactNode } from "react";
+import { ProjectSessionTree } from "./ProjectSessionTree";
+import type { ProjectRecord } from "@/lib/projects";
 import type { SessionInfo } from "@/lib/types";
 import { useI18n } from "@/hooks/useI18n";
 import { DirectoryPicker } from "./DirectoryPicker";
@@ -81,7 +83,7 @@ interface Props {
   onSessionSpaceChange?: (space: "mine" | "host") => void;
   selectedSessionId: string | null;
   onSelectSession: (session: SessionInfo, isRestore?: boolean) => void;
-  onNewSession?: (sessionId: string, cwd: string, mode?: "host" | "sandbox" | "local-machine") => void;
+  onNewSession?: (sessionId: string, cwd: string, mode?: "host" | "sandbox" | "local-machine", projectId?: string) => void;
   initialSessionId?: string | null;
   skipInitialProjectSelection?: boolean;
   onInitialRestoreDone?: () => void;
@@ -1542,7 +1544,33 @@ export function SessionSidebar({ authInfo = null, sessionSpace = "mine", onSessi
             {t("sidebar.noSessions")}
           </div>
         )}
-        {sessionTree.map((node) => (
+        {authInfo?.enabled ? (
+          <ProjectSessionTree
+            sessions={allSessions}
+            runningSessionIds={runningSessionIds}
+            selectedSessionId={selectedSessionId}
+            onSelectSession={handleSelectSessionFromList}
+            onNewSessionInProject={(project: ProjectRecord) => {
+              const tempId = typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now()}`;
+              onNewSession?.(tempId, "/", project.mode, project.id);
+            }}
+            onDeleteSession={async (id) => {
+              await fetch(`/api/sessions/${encodeURIComponent(id)}`, { method: "DELETE" }).catch(() => {});
+              onSessionDeleted?.(id);
+              loadSessions();
+            }}
+            onRenameSession={async (id, name) => {
+              await fetch(`/api/sessions/${encodeURIComponent(id)}`, {
+                method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }),
+              }).catch(() => {});
+              loadSessions();
+            }}
+            refreshSessions={loadSessions}
+            isAdmin={authInfo.user?.role === "admin"}
+            sessionSpace={sessionSpace}
+            onOpenServerDirectory={() => setCustomPathOpen(true)}
+          />
+        ) : sessionTree.map((node) => (
           <SessionTreeItem
             key={node.session.id}
             node={node}

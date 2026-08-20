@@ -207,6 +207,7 @@ export interface UseAgentSessionOptions {
   newSessionCwd: string | null;
   /** Execution mode for the not-yet-created session (multi-user). */
   newSessionMode?: "host" | "sandbox" | "local-machine";
+  newSessionProjectId?: string | null;
   onAgentEnd?: () => void;
   onSessionCreated?: (session: SessionInfo) => void;
   onSessionForked?: (newSessionId: string) => void;
@@ -398,13 +399,15 @@ type SlashCommandsResponse = {
 
 export function useAgentSession(opts: UseAgentSessionOptions) {
   const {
-    session, newSessionCwd, newSessionMode, onAgentEnd, onSessionCreated, onSessionForked,
+    session, newSessionCwd, newSessionMode, newSessionProjectId, onAgentEnd, onSessionCreated, onSessionForked,
     modelsRefreshKey, onBranchDataChange, onSystemPromptChange, onSessionStatsPanelOpen,
   } = opts;
 
   const isNew = session === null && newSessionCwd !== null;
   const newSessionModeRef = useRef(newSessionMode);
   newSessionModeRef.current = newSessionMode;
+  const newSessionProjectIdRef = useRef(newSessionProjectId);
+  newSessionProjectIdRef.current = newSessionProjectId;
 
   const [data, setData] = useState<SessionData | null>(null);
   const [loading, setLoading] = useState(!isNew);
@@ -651,6 +654,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         body: JSON.stringify({
           cwd: newSessionCwd,
           ...(newSessionModeRef.current ? { mode: newSessionModeRef.current } : {}),
+          ...(newSessionProjectIdRef.current ? { projectId: newSessionProjectIdRef.current } : {}),
           type: "ensure_session",
           toolNames,
           ...(selectedModel ? { provider: selectedModel.provider, modelId: selectedModel.modelId } : {}),

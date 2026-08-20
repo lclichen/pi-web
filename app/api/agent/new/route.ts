@@ -15,6 +15,8 @@ import { makeRelayToolsExtension } from "@/lib/extensions/relay-tools";
 import { ensureProjectHome, getOwnedProject, writeSandboxConfig, type ProjectRecord } from "@/lib/projects";
 import { getAgentForUser } from "@/lib/relay/registry";
 import { isApiRequestAllowed } from "@/lib/request-security";
+import { platformGet } from "@/lib/platform/client";
+import { readSandboxHomeConfig, setSandboxContainer } from "@/lib/mode-homes";
 
 const THINKING_LEVELS = new Set<ThinkingLevel>(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
 
@@ -24,6 +26,32 @@ function parseThinkingLevel(value: unknown): ThinkingLevel | undefined {
     return value as ThinkingLevel;
   }
   throw new Error(`Invalid thinking level: ${String(value)}`);
+}
+
+/**
+ * Resolve which container an unbound sandbox session should target. The
+ * sandbox extension's CLI fallback is INTERACTIVE (it prompts when several
+ * containers are running) — unusable in an embedded RPC session. pi-web
+ * resolves deterministically instead: exactly one running container is
+ * auto-picked; several require an explicit binding (clear 409); none leaves
+ * it unset so the extension's out-of-box auto-provision still applies.
+ */
+async function resolveAutoContainer(
+  apiKey: string,
+): Promise<{ containerId?: number; conflict?: string }> {
+  const list = await platformGet<{ containers: Array<{ id: number; name: string }> }>(
+    "/api/v1/containers",
+    apiKey,
+    { filter: "running" },
+  );
+  const running = list.containers ?? [];
+  if (running.length === 1) return { containerId: running[0].id };
+  if (running.length > 1) {
+    return {
+      conflict: `有 ${running.length} 个容器在运行（${running.map((c) => `#${c.id} ${c.name}`).join("、")}），请在项目菜单里绑定其中一个，或停止多余的容器`,
+    };
+  }
+  return {};
 }
 
 // POST /api/agent/new  body: { cwd: string; mode?: "host"|"sandbox"|"local-machine"; type: string; ... }
@@ -84,6 +112,21 @@ export async function POST(req: Request) {
         }
         // Project's own .pi/sandbox-platform.json carries url/container; refresh credentials.
         writeSandboxConfig(home, { apiKey: identity.session.apiKey });
+        if (project.containerId) {
+          writeSandboxConfig(home, { containerId: project.containerId });
+        } else {
+          // Unbound project ("跟随平台默认"): resolve deterministically here —
+          // the extension's interactive container picker cannot run in RPC mode.
+          let containerId = Number(readSandboxHomeConfig(user.id).containerId) || 0;
+          if (!containerId) {
+            const auto = await resolveAutoContainer(identity.session.apiKey);
+            if (auto.conflict) {
+              return NextResponse.json({ error: auto.conflict }, { status: 409 });
+            }
+            containerId = auto.containerId ?? 0;
+          }
+          if (containerId) writeSandboxConfig(home, { containerId });
+        }
         additionalExtensionPaths = [extPath];
       } else {
         if (!getAgentForUser(user.id)?.info) {
@@ -110,6 +153,15 @@ export async function POST(req: Request) {
         apiKey: identity.session.apiKey,
         disableLocalFallback: true,
       });
+      if (user.id !== 0 && !Number(readSandboxHomeConfig(user.id).containerId)) {
+        // No user-pinned default: resolve deterministically (same reasoning
+        // as the project branch — no interactive picker in RPC mode).
+        const auto = await resolveAutoContainer(identity.session.apiKey);
+        if (auto.conflict) {
+          return NextResponse.json({ error: auto.conflict }, { status: 409 });
+        }
+        if (auto.containerId) setSandboxContainer(user.id, auto.containerId);
+      }
       additionalExtensionPaths = [extPath];
     } else if (mode === "local-machine") {
       if (user.id !== 0 && !getAgentForUser(user.id)?.info) {

@@ -3,6 +3,7 @@ import { deleteProject, getOwnedProject, readProjectSandboxConfig, updateProject
 import { requireUserIdentity } from "@/lib/web-session";
 import { isApiRequestAllowed, hasJsonContentType } from "@/lib/request-security";
 import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from "fs";
+import { invalidateModelsCache } from "@/lib/models-cache";
 
 export const dynamic = "force-dynamic";
 
@@ -58,11 +59,13 @@ export async function PATCH(req: Request, ctx: RouteCtx) {
   }
 
   // Credential files: JSON-validated, empty string removes (inherit global).
+  let credentialsTouched = false;
   for (const key of ["modelsJson", "authJson"] as const) {
     if (body[key] === undefined) continue;
     const value = body[key];
     if (typeof value !== "string") return NextResponse.json({ error: `${key} must be a string` }, { status: 400 });
     const path = `${projectHome(project)}/.pi/${key === "modelsJson" ? "models.json" : "auth.json"}`;
+    credentialsTouched = true;
     if (value.trim() === "") {
       try { unlinkSync(path); } catch { /* absent is fine */ }
       continue;
@@ -72,9 +75,11 @@ export async function PATCH(req: Request, ctx: RouteCtx) {
     } catch {
       return NextResponse.json({ error: `${key} 不是合法 JSON` }, { status: 400 });
     }
-        mkdirSync(`${projectHome(project)}/.pi`, { recursive: true });
+    mkdirSync(`${projectHome(project)}/.pi`, { recursive: true });
     writeFileSync(path, value, "utf8");
   }
+  // The 60s models cache would otherwise serve the previous provider list.
+  if (credentialsTouched) invalidateModelsCache();
 
   // Sandbox credentials (platform API key) merge into the project config.
   if (typeof body.apiKey === "string" && body.apiKey && r.identity!.session.apiKey) {

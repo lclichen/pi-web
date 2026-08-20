@@ -450,7 +450,9 @@ function TreeNode({
         )}
         {hovered && !node.isDir && (
           <a
-            href={`/api/files/${encodeFilePathForApi(node.fullPath)}?type=download`}
+            href={remote
+              ? `/api/remotefs/${encodeFilePathForApi(node.fullPath)}?src=${encodeURIComponent(remote.sessionId)}&type=download`
+              : `/api/files/${encodeFilePathForApi(node.fullPath)}?type=download`}
             download
             onClick={(e) => e.stopPropagation()}
             title={t("files.download")}

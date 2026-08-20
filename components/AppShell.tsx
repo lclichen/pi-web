@@ -669,7 +669,10 @@ export function AppShell() {
     setProjectTrust(null);
     setProjectTrustDialogOpen(false);
     setProjectTrustError(null);
-    if (!projectTrustCwd) return;
+    // Trust is a host-space concept (server directories opened via the CLI /
+    // directory picker). Sandbox/local project homes are pi-web-managed and
+    // outside the file-access roots — querying them would 403 noisily.
+    if (!projectTrustCwd || (activeSessionMode && activeSessionMode !== "host")) return;
 
     const controller = new AbortController();
     fetch(`/api/project-trust?cwd=${encodeURIComponent(projectTrustCwd)}`, {
@@ -685,7 +688,7 @@ export function AppShell() {
         console.error("Failed to load project trust:", error);
       });
     return () => controller.abort();
-  }, [projectTrustCwd]);
+  }, [projectTrustCwd, activeSessionMode]);
 
   const handleTrustProject = useCallback(async () => {
     if (!projectTrustCwd || projectTrustBusy) return;

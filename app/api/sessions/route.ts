@@ -20,7 +20,7 @@ export async function GET(req: Request) {
     const [all, metas] = await Promise.all([listAllSessions(space), Promise.resolve(getSessionMetas())]);
     const sessions = all.map((s) => ({
       ...s,
-      ...(metas[s.id] ? { mode: metas[s.id].mode } : {}),
+      ...(metas[s.id] ? { mode: metas[s.id].mode, ...(metas[s.id].projectId ? { projectId: metas[s.id].projectId } : {}) } : {}),
     }));
     // Live-sessions are per-user unless the caller is an admin on the host space.
     const running = getRunningRpcSessionInfos()

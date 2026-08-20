@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { resolveConfigCwdSync } from "@/lib/config-cwd";
 import {
   createAgent,
   listAgents,
@@ -16,8 +17,9 @@ function readScope(v: string | null): ConfigScope | undefined {
 // GET /api/agents?cwd=&scope=  (scope omitted => project+global merged)
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
-  const cwd = searchParams.get("cwd");
-  if (!cwd) return NextResponse.json({ error: "cwd required" }, { status: 400 });
+  const dir = resolveConfigCwdSync(req, { projectId: searchParams.get("projectId"), cwd: searchParams.get("cwd") });
+  if (!dir.ok) return NextResponse.json({ error: dir.error }, { status: dir.status });
+  const cwd = dir.cwd;
   const scope = readScope(searchParams.get("scope"));
   try {
     const agents = scope ? listAgents(cwd, scope) : listAllAgents(cwd);
@@ -35,6 +37,7 @@ export async function POST(req: Request) {
   try {
     const body = (await req.json()) as {
       cwd?: string;
+      projectId?: string;
       scope?: string;
       name?: string;
       description?: string;
@@ -45,6 +48,9 @@ export async function POST(req: Request) {
       maxTurns?: number;
       systemPrompt?: string;
     };
+    const dir = resolveConfigCwdSync(req, { projectId: typeof body.projectId === "string" ? body.projectId : null, cwd: typeof body.cwd === "string" ? body.cwd : null });
+    if (!dir.ok) return NextResponse.json({ error: dir.error }, { status: dir.status });
+    body.cwd = dir.cwd;
     if (!body.cwd) return NextResponse.json({ error: "cwd required" }, { status: 400 });
     if (!body.name) return NextResponse.json({ error: "name required" }, { status: 400 });
     const nameErr = validateAgentName(body.name);

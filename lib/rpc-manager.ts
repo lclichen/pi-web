@@ -1,9 +1,9 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
-import { createAgentSessionFromServices, createAgentSessionServices, getAgentDir, initTheme, SessionManager, Theme } from "@earendil-works/pi-coding-agent";
+import { ModelRuntime, createAgentSessionFromServices, createAgentSessionServices, getAgentDir, initTheme, SessionManager, Theme } from "@earendil-works/pi-coding-agent";
 import { KeybindingsManager as TuiKeybindingsManager, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
 import { randomUUID } from "crypto";
 import { existsSync, realpathSync, writeFileSync } from "fs";
-import { resolve } from "path";
+import { join, resolve } from "path";
 import { validateAgentImages } from "./image-attachments";
 import { invalidateModelsCache } from "./models-cache";
 import { resolveVisibleModels, selectInitialModelScope } from "./model-scope";
@@ -97,6 +97,9 @@ export interface RpcSessionStartOptions {
   additionalExtensionPaths?: string[];
   /** Inline extension factories injected for this session only. */
   extensionFactories?: InlineExtension[];
+  /** Project home: if it contains .pi/auth.json or .pi/models.json, they
+   *  override the global credential/model files for this session. */
+  projectCredentialDir?: string;
 }
 
 const CODING_TOOL_NAMES = ["read", "bash", "edit", "write", "grep", "find", "ls"];
@@ -1286,7 +1289,7 @@ export async function startRpcSession(
   cwd: string | undefined,
   options: RpcSessionStartOptions = {},
 ): Promise<{ session: AgentSessionWrapper; realSessionId: string }> {
-  const { toolNames, initialModel, thinkingLevel, sessionDir, ownerId, mode, additionalExtensionPaths, extensionFactories } = options;
+  const { toolNames, initialModel, thinkingLevel, sessionDir, ownerId, mode, additionalExtensionPaths, extensionFactories, projectCredentialDir } = options;
   const registry = getRegistry();
   const locks = getLocks();
 
@@ -1342,7 +1345,22 @@ export async function startRpcSession(
     if (extensionFactories?.length) {
       resourceLoaderOptions.extensionFactories = extensionFactories;
     }
+    // Project-level model credentials: .pi/auth.json / .pi/models.json in the
+    // project home override the global files (SDK resolves them from agentDir
+    // only, so we build the runtime ourselves when either file exists).
+    let projectModelRuntime: ModelRuntime | undefined;
+    if (projectCredentialDir) {
+      const projectAuth = join(projectCredentialDir, ".pi", "auth.json");
+      const projectModels = join(projectCredentialDir, ".pi", "models.json");
+      if (existsSync(projectAuth) || existsSync(projectModels)) {
+        projectModelRuntime = await ModelRuntime.create({
+          authPath: existsSync(projectAuth) ? projectAuth : join(agentDir, "auth.json"),
+          modelsPath: existsSync(projectModels) ? projectModels : join(agentDir, "models.json"),
+        });
+      }
+    }
     const services = await createAgentSessionServices({
+      ...(projectModelRuntime ? { modelRuntime: projectModelRuntime } : {}),
       cwd: sessionCwd,
       agentDir,
       ...(trustReloadOptions ? { resourceLoaderReloadOptions: trustReloadOptions } : {}),

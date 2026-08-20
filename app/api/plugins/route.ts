@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireUserIdentity } from "@/lib/web-session";
+import { resolveConfigCwdSync } from "@/lib/config-cwd";
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "fs";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "path";
 import {
@@ -10,7 +10,6 @@ import {
   type ResolvedPaths,
   type ResolvedResource,
 } from "@earendil-works/pi-coding-agent";
-import { getAllowedFileRootsForRequest, isExistingFilePathAllowed } from "@/lib/file-access";
 import { hasJsonContentType, isApiRequestAllowed } from "@/lib/request-security";
 import { getProjectTrustStatus } from "@/lib/project-trust";
 import type {
@@ -421,14 +420,12 @@ function readScope(scope: unknown): PluginScope {
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
-  const cwd = searchParams.get("cwd");
-  if (!cwd) return NextResponse.json({ error: "cwd required" }, { status: 400 });
+  const dir = resolveConfigCwdSync(req, { projectId: searchParams.get("projectId"), cwd: searchParams.get("cwd") });
+  if (!dir.ok) return NextResponse.json({ error: dir.error }, { status: dir.status });
+  const cwd = dir.cwd;
 
   try {
-    const allowedRoots = await getAllowedFileRootsForRequest(req);
-    if (!isExistingFilePathAllowed(cwd, allowedRoots)) {
-      return NextResponse.json({ error: "Access denied" }, { status: 403 });
-    }
+    // Access is enforced by resolveConfigCwdSync (project ownership or admin).
     return NextResponse.json(await readPlugins(cwd));
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
@@ -445,7 +442,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const body = await req.json() as {
+    const rawBody = await req.json() as {
       action?: PluginAction;
       source?: string;
       scope?: PluginScope;
@@ -453,13 +450,19 @@ export async function POST(req: Request) {
       origin?: "package" | "settings" | "directory";
       kind?: "extension-path" | "directory";
       name?: string;
+      projectId?: string;
     };
+    const body = rawBody;
+    const configDir = resolveConfigCwdSync(req, { projectId: typeof body.projectId === "string" ? body.projectId : null, cwd: typeof body.cwd === "string" ? body.cwd : null });
+    if (!configDir.ok) return NextResponse.json({ error: configDir.error }, { status: configDir.status });
+    body.cwd = configDir.cwd;
+    // 全局层（admin 管理）：scope=global 的任何写操作（含 origin=package 的
+    // install/remove/update/disable/enable）仅 admin/隐式 host 可执行。
+    if (body.scope === "global" && !configDir.isAdmin) {
+      return NextResponse.json({ error: "全局插件配置仅管理员可修改" }, { status: 403 });
+    }
     if (!body.cwd) return NextResponse.json({ error: "cwd required" }, { status: 400 });
     if (!body.action) return NextResponse.json({ error: "action required" }, { status: 400 });
-    const allowedRoots = await getAllowedFileRootsForRequest(req);
-    if (!isExistingFilePathAllowed(body.cwd, allowedRoots)) {
-      return NextResponse.json({ error: "Access denied" }, { status: 403 });
-    }
 
     const agentDir = getAgentDir();
     const projectTrust = getProjectTrustStatus(body.cwd, agentDir);

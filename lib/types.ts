@@ -302,6 +302,8 @@ export interface SessionInfo {
   worktreeBranch?: string;
   /** pi-web execution mode (multi-user deployments); absent = host/legacy. */
   mode?: "host" | "sandbox" | "local-machine";
+  /** Owning project id (project-scoped sessions). */
+  projectId?: string;
 }
 
 export type SessionMode = SessionInfo["mode"];

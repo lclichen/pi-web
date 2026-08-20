@@ -12,6 +12,7 @@ import { spaceDir } from "@/lib/session-spaces";
 import { ensureSandboxHome, ensureLocalHome } from "@/lib/mode-homes";
 import { recordSessionMeta } from "@/lib/session-metas";
 import { makeRelayToolsExtension } from "@/lib/extensions/relay-tools";
+import { ensureProjectHome, getOwnedProject, writeSandboxConfig, type ProjectRecord } from "@/lib/projects";
 import { getAgentForUser } from "@/lib/relay/registry";
 import { isApiRequestAllowed } from "@/lib/request-security";
 
@@ -46,7 +47,10 @@ export async function POST(req: Request) {
     if (!mode) {
       return NextResponse.json({ error: `Invalid mode: ${String(rawMode)}` }, { status: 400 });
     }
-    const permission = modeAllowedForUser(mode, { id: user.id, role: user.role });
+    const effectiveMode = typeof body.projectId === "string" && body.projectId
+      ? (getOwnedProject(body.projectId, user.id, user.role === "admin")?.mode ?? mode)
+      : mode;
+    const permission = modeAllowedForUser(effectiveMode, { id: user.id, role: user.role });
     if (!permission.ok) {
       return NextResponse.json({ error: permission.reason }, { status: 403 });
     }
@@ -56,7 +60,39 @@ export async function POST(req: Request) {
     let extensionFactories: InlineExtension[] | undefined;
     let sessionDir: string | undefined;
 
-    if (mode === "sandbox") {
+    // Project-scoped session (sandbox / local-machine): the project record —
+    // not the client — decides mode and home directory.
+    let projectRef: ProjectRecord | undefined;
+    if (typeof body.projectId === "string" && body.projectId) {
+      if (user.id === 0) {
+        return NextResponse.json({ error: "项目会话需要登录（多用户模式）" }, { status: 400 });
+      }
+      const project = getOwnedProject(body.projectId, user.id, user.role === "admin");
+      if (!project) return NextResponse.json({ error: "项目不存在" }, { status: 404 });
+      projectRef = project;
+      const home = ensureProjectHome(project);
+      if (project.mode === "sandbox") {
+        if (!process.env.PI_WEB_PLATFORM_URL) {
+          return NextResponse.json({ error: "沙箱模式未配置（缺少 PI_WEB_PLATFORM_URL）" }, { status: 400 });
+        }
+        if (!identity.session.apiKey) {
+          return NextResponse.json({ error: "沙箱模式需要平台凭证，请重新登录" }, { status: 401 });
+        }
+        const extPath = process.env.PI_WEB_SANDBOX_EXTENSION_PATH;
+        if (!extPath || !existsSync(extPath)) {
+          return NextResponse.json({ error: "沙箱模式未配置（PI_WEB_SANDBOX_EXTENSION_PATH 无效）" }, { status: 400 });
+        }
+        // Project's own .pi/sandbox-platform.json carries url/container; refresh credentials.
+        writeSandboxConfig(home, { apiKey: identity.session.apiKey });
+        additionalExtensionPaths = [extPath];
+      } else {
+        if (!getAgentForUser(user.id)?.info) {
+          return NextResponse.json({ error: "本机模式需要先配对你的电脑（本机面板 → 连接本机）" }, { status: 400 });
+        }
+        extensionFactories = [makeRelayToolsExtension(user.id)];
+      }
+      effectiveCwd = home;
+    } else if (mode === "sandbox") {
       if (!process.env.PI_WEB_PLATFORM_URL) {
         return NextResponse.json({ error: "沙箱模式未配置（缺少 PI_WEB_PLATFORM_URL）" }, { status: 400 });
       }
@@ -121,9 +157,10 @@ export async function POST(req: Request) {
       mode,
       ...(additionalExtensionPaths ? { additionalExtensionPaths } : {}),
       ...(extensionFactories ? { extensionFactories } : {}),
+      ...(projectRef ? { projectCredentialDir: effectiveCwd } : {}),
     });
 
-    recordSessionMeta(realSessionId, { mode, ownerId: user.id, ownerName: user.username });
+    recordSessionMeta(realSessionId, { mode: effectiveMode, ownerId: user.id, ownerName: user.username, ...(projectRef ? { projectId: projectRef.id } : {}) });
     invalidateSessionListCache();
 
     // Host-mode sessions keep the files-route allowed-roots cache in sync so
@@ -143,7 +180,7 @@ export async function POST(req: Request) {
         success: true,
         sessionId: realSessionId,
         data: null,
-        mode,
+        mode: effectiveMode,
         model: state.model
           ? { provider: state.model.provider, modelId: state.model.id }
           : null,

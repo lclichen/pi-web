@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { resolveConfigCwdSync } from "@/lib/config-cwd";
 import { deleteAgent, getAgentDetail, setAgentEnabled, updateAgent } from "@/lib/agents-service";
 import type { AgentFields } from "@/lib/agents-service";
 import type { ConfigScope } from "@/lib/api-types";
@@ -9,7 +10,7 @@ function readScope(v: string | null): ConfigScope {
   return v === "global" ? "global" : "project";
 }
 
-type AgentBody = AgentFields & { cwd?: string; scope?: string; systemPrompt?: string };
+type AgentBody = AgentFields & { cwd?: string; projectId?: string; scope?: string; systemPrompt?: string };
 
 // GET /api/agents/[name]?cwd=&scope=
 export async function GET(
@@ -17,8 +18,9 @@ export async function GET(
   { params }: { params: Promise<{ name: string }> },
 ) {
   const { searchParams } = new URL(req.url);
-  const cwd = searchParams.get("cwd");
-  if (!cwd) return NextResponse.json({ error: "cwd required" }, { status: 400 });
+  const dir = resolveConfigCwdSync(req, { projectId: searchParams.get("projectId"), cwd: searchParams.get("cwd") });
+  if (!dir.ok) return NextResponse.json({ error: dir.error }, { status: dir.status });
+  const cwd = dir.cwd;
   const { name } = await params;
   const scope = readScope(searchParams.get("scope"));
   try {
@@ -41,6 +43,9 @@ export async function PUT(
   const { name } = await params;
   try {
     const body = (await req.json()) as AgentBody;
+    const dir = resolveConfigCwdSync(req, { projectId: typeof (body as Record<string, unknown>).projectId === "string" ? (body as Record<string, unknown>).projectId as string : null, cwd: typeof body.cwd === "string" ? body.cwd : null });
+    if (!dir.ok) return NextResponse.json({ error: dir.error }, { status: dir.status });
+    body.cwd = dir.cwd;
     if (!body.cwd) return NextResponse.json({ error: "cwd required" }, { status: 400 });
     const scope = readScope(body.scope ?? null);
     try {

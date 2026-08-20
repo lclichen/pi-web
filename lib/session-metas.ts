@@ -13,6 +13,8 @@ import type { SessionMode } from "./session-modes";
 export interface SessionMeta {
   mode: SessionMode;
   ownerId: number;
+  /** Owning project (project-scoped sessions). */
+  projectId?: string;
   ownerName?: string;
   createdAt?: number;
 }

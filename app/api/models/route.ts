@@ -4,8 +4,10 @@ import { createAgentSessionServices, getAgentDir, type SettingsManager } from "@
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import { loadModelsWithCache, withModelRuntimeError, type ModelsData } from "@/lib/models-cache";
 import { resolveVisibleModels, selectInitialModelScope } from "@/lib/model-scope";
-import { getAllowedFileRoots, isExistingFilePathAllowed } from "@/lib/file-access";
+import { getAllowedFileRootsForRequest, isExistingFilePathAllowed } from "@/lib/file-access";
 import { projectTrustReloadOptions } from "@/lib/project-trust";
+import { requireUserIdentity } from "@/lib/web-session";
+import { getOwnedProject, isCallerOwnedProjectHome, projectHome } from "@/lib/projects";
 
 export const dynamic = "force-dynamic";
 
@@ -93,8 +95,22 @@ const EMPTY_MODELS: ModelsData = {
 };
 
 export async function GET(req: Request) {
-  const requestedCwd = new URL(req.url).searchParams.get("cwd") || process.cwd();
-  const cwd = resolve(requestedCwd);
+  const identity = requireUserIdentity(req);
+  if (!identity.ok) return Response.json({ error: "登录已失效" }, { status: identity.status });
+  const { user } = identity.session;
+  const isAdmin = user.role === "admin";
+
+  // Project-scoped model config: ?projectId= resolves the home server-side
+  // (ownership-checked), so a not-yet-materialized session can pick models.
+  const projectId = new URL(req.url).searchParams.get("projectId");
+  let cwd: string;
+  if (projectId) {
+    const project = getOwnedProject(projectId, user.id, isAdmin);
+    if (!project) return Response.json({ error: "项目不存在" }, { status: 404 });
+    cwd = resolve(projectHome(project));
+  } else {
+    cwd = resolve(new URL(req.url).searchParams.get("cwd") || process.cwd());
+  }
 
   let cwdStat;
   try {
@@ -105,9 +121,13 @@ export async function GET(req: Request) {
   if (!cwdStat.isDirectory()) {
     return Response.json({ error: `Not a directory: ${cwd}` }, { status: 400 });
   }
-  const allowedRoots = await getAllowedFileRoots();
+  const allowedRoots = await getAllowedFileRootsForRequest(req);
   if (!isExistingFilePathAllowed(cwd, allowedRoots)) {
-    return Response.json({ error: "Access denied" }, { status: 403 });
+    // Project homes are config carriers outside the regular roots — allow the
+    // caller's own projects (the two-layer merge reads their .pi/ here).
+    if (!isCallerOwnedProjectHome(cwd, user.id, isAdmin)) {
+      return Response.json({ error: "Access denied" }, { status: 403 });
+    }
   }
 
   try {

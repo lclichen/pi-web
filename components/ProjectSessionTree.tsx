@@ -5,6 +5,7 @@ import type { SessionInfo } from "@/lib/types";
 import type { ProjectRecord } from "@/lib/projects";
 import { formatRelativeTime } from "@/lib/subagent-shared";
 import { ProjectSettingsDialog } from "./ProjectSettingsDialog";
+import { ProjectImportDialog } from "./ProjectImportDialog";
 
 interface Props {
   sessions: SessionInfo[];
@@ -59,6 +60,7 @@ export function ProjectSessionTree({
   const [showAll, setShowAll] = useState<Set<string>>(new Set());
   const [menu, setMenu] = useState<{ project: ProjectRecord; x: number; y: number } | null>(null);
   const [settingsId, setSettingsId] = useState<string | null>(null);
+  const [importId, setImportId] = useState<string | null>(null);
   const [containers, setContainers] = useState<Array<{ id: number; name: string }>>([]);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
@@ -354,6 +356,7 @@ export function ProjectSessionTree({
           }} />
           <MenuItem label="复制为新项目" onClick={() => { void duplicate(menu.project); setMenu(null); }} />
           <MenuItem label="设置（模型凭证等）" onClick={() => { setSettingsId(menu.project.id); setMenu(null); }} />
+          <MenuItem label="导入项目配置…" onClick={() => { setImportId(menu.project.id); setMenu(null); }} />
           {menu.project.mode === "sandbox" && (
             <div style={{ borderTop: "1px solid var(--border)", padding: "4px 10px", color: "var(--text-dim)", fontSize: 10 }}>沙箱容器</div>
           )}
@@ -380,6 +383,13 @@ export function ProjectSessionTree({
           projectId={settingsId}
           onClose={() => setSettingsId(null)}
           onChanged={() => { loadProjects(); refreshSessions(); }}
+        />
+      )}
+
+      {importId && (
+        <ProjectImportDialog
+          projectName={projects.find((p) => p.id === importId)?.name ?? importId}
+          onClose={() => setImportId(null)}
         />
       )}
     </div>

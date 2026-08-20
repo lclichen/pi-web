@@ -1570,7 +1570,13 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
   const loadModels = useCallback(async (signal?: AbortSignal) => {
     const modelCwd = newSessionCwd ?? session?.cwd ?? "";
-    const modelsUrl = modelCwd ? `/api/models?cwd=${encodeURIComponent(modelCwd)}` : "/api/models";
+    // Project-scoped sessions resolve their model config server-side from the
+    // project home (the client may only know the projectId, not the path).
+    const modelsUrl = newSessionProjectId
+      ? `/api/models?projectId=${encodeURIComponent(newSessionProjectId)}`
+      : modelCwd
+        ? `/api/models?cwd=${encodeURIComponent(modelCwd)}`
+        : "/api/models";
     const res = await fetch(modelsUrl, signal ? { signal } : undefined);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const d = await res.json() as ModelsResponse;
@@ -1594,7 +1600,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         setThinkingLevel((pinned as ThinkingLevelOption | undefined) ?? "auto");
       }
     }
-  }, [isNew, newSessionCwd, session?.cwd]);
+  }, [isNew, newSessionCwd, newSessionProjectId, session?.cwd]);
 
   const handleBuiltinSlashCommand = useCallback(async (text: string): Promise<BuiltinSlashCommandResult> => {
     if (!text.startsWith("/")) return { handled: false };

@@ -4,6 +4,7 @@ import { requireUserIdentity } from "./web-session";
 import { getAgentForUser } from "./relay/registry";
 import { platformGet, platformPost } from "./platform/client";
 import { readSandboxHomeConfig } from "./mode-homes";
+import { getOwnedProject, readProjectSandboxConfig } from "./projects";
 import { relayRpc } from "./relay/forward";
 import type { SessionMode } from "./session-modes";
 
@@ -51,13 +52,24 @@ export async function resolveRemoteSession(
     return { ok: true, ctx: { mode, userId: user.id, apiKey: "", containerId: 0, isAdmin: user.role === "admin" } };
   }
 
-  // Sandbox: platform credentials + target container.
+  // Sandbox: platform credentials + target container. Prefer the container
+  // bound to the session's PROJECT (source of truth — the same file the
+  // sandbox extension reads); the user-level default and "any running" are
+  // only fallbacks for pre-project sessions.
   if (user.id === 0 || !identity.session.apiKey) {
     return { ok: false, status: 401, error: "沙箱模式需要平台凭证，请重新登录" };
   }
-  const config = readSandboxHomeConfig(user.id);
-  let containerId = config.containerId ?? 0;
-  if (typeof containerId !== "number") containerId = Number(containerId) || 0;
+  let containerId = 0;
+  if (meta?.projectId) {
+    const project = getOwnedProject(meta.projectId, ownerId, user.role === "admin");
+    if (project && project.mode === "sandbox") {
+      containerId = Number(readProjectSandboxConfig(project).containerId) || 0;
+    }
+  }
+  if (!containerId) {
+    const config = readSandboxHomeConfig(user.id);
+    containerId = typeof config.containerId === "number" ? config.containerId : Number(config.containerId) || 0;
+  }
   if (!containerId) {
     try {
       const list = await platformGet<{ containers: PlatformContainer[] }>(

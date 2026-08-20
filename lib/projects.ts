@@ -87,6 +87,20 @@ export function projectHome(project: ProjectRecord): string {
   return join(dataDir(), `${project.mode === "sandbox" ? "sandbox-homes" : "local-homes"}`, `u${project.ownerId}`, project.id);
 }
 
+/**
+ * Is `homePath` the on-disk home of one of the caller's projects? Gates
+ * cwd-taking APIs (e.g. /api/models) that must read a project's config layer
+ * even though project homes are outside the regular file-access roots.
+ */
+export function isCallerOwnedProjectHome(homePath: string, ownerId: number, isAdmin = false): boolean {
+  const target = resolve(homePath).toLowerCase();
+  for (const project of Object.values(store().data.projects)) {
+    if (project.ownerId !== ownerId && !isAdmin && ownerId !== 0) continue;
+    if (resolve(projectHome(project)).toLowerCase() === target) return true;
+  }
+  return false;
+}
+
 export function ensureProjectHome(project: ProjectRecord): string {
   const home = projectHome(project);
   if (!existsSync(home)) mkdirSync(home, { recursive: true });

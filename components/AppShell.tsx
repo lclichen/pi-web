@@ -301,6 +301,11 @@ export function AppShell() {
   const remoteSessionCtx = activeSessionMode && activeSessionMode !== "host" && selectedSession
     ? { sessionId: selectedSession.id, label: activeSessionMode === "sandbox" ? "沙箱容器" : "本机" }
     : null;
+  // A remote-mode session that has not materialized yet (no first message):
+  // file/terminal panels must wait instead of hitting the local APIs.
+  const pendingRemoteSession = activeSessionMode && activeSessionMode !== "host" && !selectedSession
+    ? activeSessionMode
+    : null;
 
   // Live subagent calls lifted from the active ChatWindow (useAgentSession).
   const [subagentCalls, setSubagentCalls] = useState<SubagentCall[]>([]);
@@ -762,6 +767,7 @@ export function AppShell() {
           setSandboxManager({ projectId: project.id, projectName: project.name, containerId: project.containerId })
         }
         projectsRefreshKey={projectsRefreshKey}
+        pendingRemoteMode={pendingRemoteSession}
       />
       <div style={{ padding: "6px 8px", flexShrink: 0, display: "flex", flexWrap: "wrap", gap: 3 }}>
         {([
@@ -1850,7 +1856,11 @@ export function AppShell() {
               workspace keeps the shell, switching cwd destroys it. Stays
               mounted while the panel is open so hopping to Files/Git and back
               doesn't kill the process (hidden via display:none). */}
-          {(activeCwd ?? selectedSession?.cwd ?? newSessionCwd) ? (
+          {pendingRemoteSession ? (
+            <div style={{ display: rightPanelMode === "terminal" ? "flex" : "none", height: "100%", alignItems: "center", justifyContent: "center", color: "var(--text-dim)", fontSize: 12, padding: 20, textAlign: "center" }}>
+              {pendingRemoteSession === "sandbox" ? "沙箱" : "本机"}会话创建后（发送第一条消息）即可使用远程文件与终端
+            </div>
+          ) : (activeCwd ?? selectedSession?.cwd ?? newSessionCwd) ? (
             <div style={{ display: rightPanelMode === "terminal" ? "flex" : "none", height: "100%", flexDirection: "column" }}>
               <WorkspaceTerminal
                 key={remoteSessionCtx ? remoteSessionCtx.sessionId : (activeCwd ?? selectedSession?.cwd ?? newSessionCwd)}

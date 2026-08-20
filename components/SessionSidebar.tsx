@@ -102,6 +102,9 @@ interface Props {
   onManageSandbox?: (project: { id: string; name: string; mode: string; containerId?: number }) => void;
   /** Bump to reload project records in the tree (e.g. after container rebind). */
   projectsRefreshKey?: number;
+  /** Remote mode of a not-yet-materialized session: explorer waits with a
+   *  hint instead of falling back to the server-local /api/files. */
+  pendingRemoteMode?: "host" | "sandbox" | "local-machine" | null;
 }
 
 interface WorktreeEntry {
@@ -396,7 +399,7 @@ function PiWebTitle() {
   );
 }
 
-export function SessionSidebar({ authInfo = null, sessionSpace = "mine", onSessionSpaceChange, selectedSessionId, onSelectSession, onNewSession, initialSessionId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onOpenFile, onFileDeleted, onFileRenamed, explorerRefreshKey, onExplorerRefresh, onAtMention, onAtMentions, onManageSandbox, projectsRefreshKey }: Props) {
+export function SessionSidebar({ authInfo = null, sessionSpace = "mine", onSessionSpaceChange, selectedSessionId, onSelectSession, onNewSession, initialSessionId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onOpenFile, onFileDeleted, onFileRenamed, explorerRefreshKey, onExplorerRefresh, onAtMention, onAtMentions, onManageSandbox, projectsRefreshKey, pendingRemoteMode }: Props) {
   const { t } = useI18n();
   const [allSessions, setAllSessions] = useState<SessionInfo[]>([]);
   // Remote-mode scoping for the file explorer (sandbox / local-machine).
@@ -1690,7 +1693,11 @@ export function SessionSidebar({ authInfo = null, sessionSpace = "mine", onSessi
               )}
             </ToolbarIconButton>
           </div>
-          {explorerOpen && (
+          {explorerOpen && pendingRemoteMode && pendingRemoteMode !== "host" && !remoteSession ? (
+            <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-dim)", fontSize: 12, padding: 16, textAlign: "center" }}>
+              {pendingRemoteMode === "sandbox" ? "沙箱" : "本机"}会话创建后（发送第一条消息）即可浏览远端文件
+            </div>
+          ) : explorerOpen && (
             <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden" }}>
               <FileExplorer
                 ref={fileExplorerRef}

@@ -75,10 +75,14 @@ export function AppShell() {
   const [sessionSpace, setSessionSpace] = useState<"mine" | "host">("mine");
   // Web identity (PI_WEB_AUTH): null while loading, {user} when logged in.
   const [webUser, setWebUser] = useState<{ id: number; username: string; role: "admin" | "user" } | null | "loading">("loading");
+  // Deployment-wide Lab Training toggle (PI_WEB_LAB_TRAINING seeds the
+  // default; admins can flip it at runtime via /api/server-settings).
+  const [labTrainingEnabled, setLabTrainingEnabled] = useState(true);
   useEffect(() => {
     fetch("/api/webauth/me")
       .then((r) => (r.status === 401 ? null : r.json()))
       .then((d) => {
+        setLabTrainingEnabled(d?.labTraining !== false);
         if (d?.authEnabled === false) { setWebUser(null); return; }
         setWebUser(d?.user ? { id: d.user.id, username: d.user.username, role: d.user.role } : null);
       })
@@ -1884,7 +1888,7 @@ export function AppShell() {
       </div>
 
       {/* Lab Training panel — far right, independent from file viewer */}
-      {labPanelOpen && (
+      {labTrainingEnabled && labPanelOpen && (
         <>
           <div
             {...labPanelResizer.separatorProps}
@@ -1915,7 +1919,9 @@ export function AppShell() {
         </>
       )}
 
-      {/* Lab Training panel toggle — graduation cap icon, always visible */}
+      {/* Lab Training panel toggle — graduation cap icon (only when the
+          deployment offers the teaching panel) */}
+      {labTrainingEnabled && (
       <button
         onClick={() => setLabPanelOpen((v) => !v)}
         title={labPanelOpen ? "Hide Lab Training panel" : "Show Lab Training panel"}
@@ -1933,6 +1939,7 @@ export function AppShell() {
             <path d="M22 10v6M2 10l10-5 10 5-10 5z" /><path d="M6 12v5c3 3 9 3 12 0v-5" />
           </svg>
         </button>
+      )}
     </div>
     {/* Logout — auth mode only, sits left of the file-panel toggle */}
     {webUser && webUser !== "loading" && (
@@ -1948,6 +1955,33 @@ export function AppShell() {
         }}
       >
         ⎋
+      </button>
+    )}
+    {/* Teaching panel availability — admin runtime switch (PI_WEB_LAB_TRAINING
+        seeds the default; flipping affects every user on next page load) */}
+    {webUser && webUser !== "loading" && webUser.role === "admin" && (
+      <button
+        onClick={() => {
+          const next = !labTrainingEnabled;
+          setLabTrainingEnabled(next);
+          if (!next) setLabPanelOpen(false);
+          fetch("/api/server-settings", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ labTraining: next }),
+          }).then((r) => { if (!r.ok) setLabTrainingEnabled(!next); }).catch(() => setLabTrainingEnabled(!next));
+        }}
+        title={labTrainingEnabled ? "教学面板：已开启（点击对全员关闭）" : "教学面板：已关闭（点击对全员开启）"}
+        style={{
+          position: "fixed", top: "env(safe-area-inset-top)", right: "calc(112px + env(safe-area-inset-right))", zIndex: 300,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          width: 36, height: 36, padding: 0,
+          background: "var(--bg-panel)", border: "none", borderLeft: "1px solid var(--border)", borderBottom: "1px solid var(--border)",
+          color: labTrainingEnabled ? "var(--accent)" : "var(--text-muted)",
+          cursor: "pointer", fontSize: 12, fontWeight: 600,
+        }}
+      >
+        教
       </button>
     )}
     {/* File panel toggle — always visible at top-right */}

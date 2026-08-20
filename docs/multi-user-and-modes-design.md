@@ -140,6 +140,7 @@ P0 采用（二选一，默认前者）：
 | `PI_WEB_SANDBOX_EXTENSION_PATH` | pi-sandbox-extension 目录（沙箱模式注入用） |
 | `PI_WEB_DATA_DIR` | pi-web 数据目录（会话元数据/沙箱 stub home/本机 home，默认 `./data`） |
 | `PI_WEB_COOKIE_SECURE=on` | HTTPS 部署时给会话 cookie 加 Secure |
+| `PI_WEB_LAB_TRAINING=off` | 教学侧栏部署默认值（默认开）；管理员可在运行时经 `PATCH /api/server-settings` 切换（落盘 `data/server-settings.json`） |
 
 ### 与设计的偏差
 

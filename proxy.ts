@@ -27,13 +27,18 @@ export function proxy(request: NextRequest) {
     return NextResponse.json({ error: "Untrusted API request" }, { status: 403 });
   }
 
+  // Relay agent downloads are curl-able installers (the pairing modal emits
+  // `curl …/install.sh | sh`); they carry no secrets and are a fixed
+  // allowlist of prebuilt binaries, so they stay public in both auth modes.
+  const isRelayDownload = pathname.startsWith("/api/agent-relay/download/");
+
   // Multi-user mode: API routes carry their own session validation (the
   // session store lives outside the middleware runtime); here we enforce a
   // cheap cookie presence check so anonymous traffic never reaches route
   // handlers, and bounce anonymous page loads to the login screen.
   if (process.env.PI_WEB_AUTH === "on") {
     const isWebAuthRoute = pathname.startsWith("/api/webauth/");
-    if (!isWebAuthRoute && !hasSessionCookie(request)) {
+    if (!isRelayDownload && !isWebAuthRoute && !hasSessionCookie(request)) {
       if (isApiRequest) {
         return NextResponse.json({ error: "登录已失效" }, { status: 401 });
       }
@@ -44,7 +49,8 @@ export function proxy(request: NextRequest) {
 
   const password = process.env.PI_WEB_PASSWORD;
   if (
-    isWebPasswordEnabled(password)
+    !isRelayDownload
+    && isWebPasswordEnabled(password)
     && !isValidBasicAuthorization(request.headers.get("authorization"), password)
   ) {
     return new NextResponse("Authentication required", {

@@ -41,6 +41,16 @@
 4. Agent 连 `ws://<RELAY>:30142/ws?token=...`，发 `hello`（机器元信息）→ 注册为在线。
 5. 浏览器经 SSE `/status/events` 感知在线 → 自动切换到「已连接」视图。
 
+## 多用户（PI_WEB_AUTH=on）
+
+- Relay 支持多槽位：每个平台用户可配对自己的一台机器（`agentsByUser` 映射），会话的
+  relay-tools 扩展按 ownerId 路由到**自己的** Agent，用户之间互不可见。
+- 配对码签发时即绑定发起用户的 userId；换到的 token 在服务端记录归属
+  （`relay.json` 的 `tokens` 映射），Agent 重连后自动归位到原用户槽位。
+- 本机模式会话的 cwd 是该用户在 pi-web 服务器上的项目 home（`data/local-homes/u<uid>/<projectId>/`），
+  其 `.pi/` 承载项目级配置（两层合并同沙箱模式）；**文件操作则全部转发到用户机器**，
+  路径以 Agent 共享根目录为界的 workspace 相对路径，服务器不留文件副本。
+
 ## 配置（环境变量）
 
 | 变量 | 默认 | 说明 |

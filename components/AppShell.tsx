@@ -16,6 +16,7 @@ import { SubagentsConfig } from "./SubagentsConfig";
 import { McpServersConfig } from "./McpServersConfig";
 import { ProjectTrustDialog } from "./ProjectTrustDialog";
 import { ConnectLocalMachine } from "./relay/ConnectLocalMachine";
+import { SandboxManagerDialog } from "./SandboxManagerDialog";
 import { WorkspaceTerminal } from "./WorkspaceTerminal";
 import { SubagentDirectoryPanel } from "./SubagentDirectoryPanel";
 import { PlanPanel } from "./PlanPanel";
@@ -78,6 +79,11 @@ export function AppShell() {
   // Deployment-wide Lab Training toggle (PI_WEB_LAB_TRAINING seeds the
   // default; admins can flip it at runtime via /api/server-settings).
   const [labTrainingEnabled, setLabTrainingEnabled] = useState(true);
+  // Sandbox manager dialog: null = closed; bind = project context (optional).
+  const [sandboxManager, setSandboxManager] = useState<
+    { projectId?: string; projectName?: string; containerId?: number } | null
+  >(null);
+  const [projectsRefreshKey, setProjectsRefreshKey] = useState(0);
   useEffect(() => {
     fetch("/api/webauth/me")
       .then((r) => (r.status === 401 ? null : r.json()))
@@ -752,6 +758,10 @@ export function AppShell() {
         onExplorerRefresh={handleExplorerRefresh}
         onAtMention={handleAtMention}
         onAtMentions={handleAtMentions}
+        onManageSandbox={(project) =>
+          setSandboxManager({ projectId: project.id, projectName: project.name, containerId: project.containerId })
+        }
+        projectsRefreshKey={projectsRefreshKey}
       />
       <div style={{ padding: "6px 8px", flexShrink: 0, display: "flex", flexWrap: "wrap", gap: 3 }}>
         {([
@@ -1069,6 +1079,21 @@ export function AppShell() {
              </svg>
            </button>
           <ConnectLocalMachine />
+          {webUser && webUser !== "loading" && (
+            <button
+              type="button"
+              onClick={() => setSandboxManager({})}
+              title="沙箱容器管理（新建/启停/删除/绑定项目）"
+              style={{
+                display: "flex", alignItems: "center", gap: 6, height: "100%",
+                padding: "0 8px", background: "transparent", border: "none",
+                color: "var(--text-muted)", cursor: "pointer", fontSize: 11,
+              }}
+            >
+              <span style={{ width: 8, height: 8, borderRadius: 2, border: "1.5px solid currentColor", flexShrink: 0 }} />
+              <span>沙箱容器</span>
+            </button>
+          )}
           {showChat && projectTrust?.requiresTrust && !projectTrust.trusted && (
             <button
               type="button"
@@ -2007,6 +2032,13 @@ export function AppShell() {
       </svg>
     </button>
     {modelsConfigOpen && <ModelsConfig onClose={() => { setModelsConfigOpen(false); setModelsRefreshKey((k) => k + 1); }} />}
+    {sandboxManager !== null && (
+      <SandboxManagerDialog
+        bind={sandboxManager.projectId ? { projectId: sandboxManager.projectId, projectName: sandboxManager.projectName ?? "", containerId: sandboxManager.containerId } : null}
+        onClose={() => setSandboxManager(null)}
+        onChanged={() => setProjectsRefreshKey((k) => k + 1)}
+      />
+    )}
     {projectTrustDialogOpen && projectTrustCwd && (
       <ProjectTrustDialog
         cwd={projectTrustCwd}

@@ -1,11 +1,21 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { Suspense, useEffect, useState, type FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 type Phase = "login" | "register" | "change-password";
 
+// useSearchParams() requires a Suspense boundary during prerendering; the
+// form itself is the boundary's child.
 export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginForm />
+    </Suspense>
+  );
+}
+
+function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [phase, setPhase] = useState<Phase>("login");

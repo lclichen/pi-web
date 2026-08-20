@@ -18,6 +18,10 @@ interface Props {
   isAdmin: boolean;
   sessionSpace: "mine" | "host";
   onOpenServerDirectory?: () => void;
+  /** Open the sandbox manager dialog bound to a project (sandbox mode). */
+  onManageSandbox?: (project: ProjectRecord) => void;
+  /** Bump to force a project-list reload (e.g. container rebound elsewhere). */
+  projectsRefreshKey?: number;
 }
 
 const RECENT_COUNT = 5;
@@ -41,6 +45,8 @@ export function ProjectSessionTree({
   isAdmin,
   sessionSpace,
   onOpenServerDirectory,
+  onManageSandbox,
+  projectsRefreshKey,
 }: Props) {
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
   const [collapsed, setCollapsed] = useState<Set<string>>(() => {
@@ -62,7 +68,7 @@ export function ProjectSessionTree({
       .then((d: { projects?: ProjectRecord[] }) => setProjects(d.projects ?? []))
       .catch(() => {});
   }, []);
-  useEffect(() => { loadProjects(); }, [loadProjects]);
+  useEffect(() => { loadProjects(); }, [loadProjects, projectsRefreshKey]);
 
   // Running-container list for the sandbox container picker (admin/user alike).
   useEffect(() => {
@@ -360,6 +366,9 @@ export function ProjectSessionTree({
           ))}
           {menu.project.mode === "sandbox" && (
             <MenuItem label="跟随平台默认容器" onClick={() => void setContainer(menu.project, null)} />
+          )}
+          {menu.project.mode === "sandbox" && onManageSandbox && (
+            <MenuItem label="管理沙箱容器（新建/启停/删除）…" onClick={() => { onManageSandbox(menu.project); setMenu(null); }} />
           )}
           <div style={{ borderTop: "1px solid var(--border)" }} />
           <MenuItem label="删除项目" danger onClick={() => { void remove(menu.project); setMenu(null); }} />

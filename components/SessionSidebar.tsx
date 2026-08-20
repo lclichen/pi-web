@@ -98,6 +98,10 @@ interface Props {
   onExplorerRefresh?: () => void;
   onAtMention?: (relativePath: string, isDir: boolean) => void;
   onAtMentions?: (relativePaths: string[]) => void;
+  /** Open the sandbox manager bound to a project (passed to the tree). */
+  onManageSandbox?: (project: { id: string; name: string; mode: string; containerId?: number }) => void;
+  /** Bump to reload project records in the tree (e.g. after container rebind). */
+  projectsRefreshKey?: number;
 }
 
 interface WorktreeEntry {
@@ -392,7 +396,7 @@ function PiWebTitle() {
   );
 }
 
-export function SessionSidebar({ authInfo = null, sessionSpace = "mine", onSessionSpaceChange, selectedSessionId, onSelectSession, onNewSession, initialSessionId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onOpenFile, onFileDeleted, onFileRenamed, explorerRefreshKey, onExplorerRefresh, onAtMention, onAtMentions }: Props) {
+export function SessionSidebar({ authInfo = null, sessionSpace = "mine", onSessionSpaceChange, selectedSessionId, onSelectSession, onNewSession, initialSessionId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onOpenFile, onFileDeleted, onFileRenamed, explorerRefreshKey, onExplorerRefresh, onAtMention, onAtMentions, onManageSandbox, projectsRefreshKey }: Props) {
   const { t } = useI18n();
   const [allSessions, setAllSessions] = useState<SessionInfo[]>([]);
   // Remote-mode scoping for the file explorer (sandbox / local-machine).
@@ -1569,6 +1573,8 @@ export function SessionSidebar({ authInfo = null, sessionSpace = "mine", onSessi
             isAdmin={authInfo.user?.role === "admin"}
             sessionSpace={sessionSpace}
             onOpenServerDirectory={() => setCustomPathOpen(true)}
+            onManageSandbox={onManageSandbox}
+            projectsRefreshKey={projectsRefreshKey}
           />
         ) : sessionTree.map((node) => (
           <SessionTreeItem

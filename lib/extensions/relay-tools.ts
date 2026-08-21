@@ -1,5 +1,6 @@
 import { defineTool, type ExtensionAPI, type InlineExtension } from "@earendil-works/pi-coding-agent";
 import { Type } from "@earendil-works/pi-ai";
+import { join } from "node:path";
 import { relayRpc } from "@/lib/relay/forward";
 import type { ExecResult, FsEntry, FsReadResult, FsStatResult, GrepMatch } from "@/lib/relay/protocol";
 
@@ -28,6 +29,23 @@ function fail(text: string): ToolResult {
 /** Strip a leading "/" so workspace-relative fs.* paths stay in-root. */
 function rel(path: string): string {
   return path.replace(/^\/+/, "");
+}
+
+/**
+ * Instruction files (AGENTS.md) live in the PLATFORM directory (project
+ * home) — the SDK loads them from the session cwd, and duplicating a project
+ * carries them over. When the agent edits the workspace-root copy, mirror the
+ * change back so both sides stay in sync (the sync into the workspace is
+ * one-way home→workspace). Best-effort: mirroring failures never fail the tool.
+ */
+async function mirrorInstructionsFile(workspaceRel: string, content: string, sessionCwd?: string): Promise<void> {
+  if (!sessionCwd || workspaceRel.replace(/^\/+/, "") !== "AGENTS.md") return;
+  try {
+    const { writeFile } = await import("node:fs/promises");
+    await writeFile(join(sessionCwd, "AGENTS.md"), content, "utf8");
+  } catch {
+    // best-effort mirror
+  }
 }
 
 export function makeRelayToolsExtension(userId: number): InlineExtension {
@@ -62,9 +80,10 @@ export function makeRelayToolsExtension(userId: number): InlineExtension {
         path: Type.String({ description: "Workspace-relative file path" }),
         content: Type.String({ description: "Full file content" }),
       }),
-      execute: async (_id, params) => {
+      execute: async (_id, params, _signal, _onUpdate, ctx) => {
         try {
           await call("fs.write", { path: rel(params.path), content: params.content });
+          await mirrorInstructionsFile(rel(params.path), params.content, ctx?.cwd);
           return ok(`Wrote ${params.path}`);
         } catch (err) {
           return fail(err instanceof Error ? err.message : String(err));
@@ -81,7 +100,7 @@ export function makeRelayToolsExtension(userId: number): InlineExtension {
         oldText: Type.String({ description: "Exact text to replace (must appear exactly once)" }),
         newText: Type.String({ description: "Replacement text" }),
       }),
-      execute: async (_id, params) => {
+      execute: async (_id, params, _signal, _onUpdate, ctx) => {
         try {
           const r = await call<FsReadResult>("fs.read", { path: rel(params.path) });
           const count = r.content.split(params.oldText).length - 1;
@@ -89,6 +108,7 @@ export function makeRelayToolsExtension(userId: number): InlineExtension {
           if (count > 1) return fail(`oldText appears ${count} times in ${params.path}; make it unique`);
           const next = r.content.replace(params.oldText, params.newText);
           await call("fs.write", { path: rel(params.path), content: next });
+          await mirrorInstructionsFile(rel(params.path), next, ctx?.cwd);
           return ok(`Edited ${params.path}`);
         } catch (err) {
           return fail(err instanceof Error ? err.message : String(err));

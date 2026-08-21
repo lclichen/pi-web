@@ -13,17 +13,20 @@ interface ProjectDetail {
   project: ProjectRecord;
   modelsJson: string | null;
   authJson: string | null;
+  agentsMd: string | null;
 }
 
 /**
  * 项目设置 — rename + 项目级模型凭证（models.json / auth.json，留空=继承
- * admin 全局层）。沙箱容器选择在项目菜单里（调 /api/sandbox/containers）。
+ * admin 全局层）+ AGENTS.md 项目指令。沙箱容器选择在项目菜单里（调
+ * /api/sandbox/containers）。
  */
 export function ProjectSettingsDialog({ projectId, onClose, onChanged }: Props) {
   const [detail, setDetail] = useState<ProjectDetail | null>(null);
   const [name, setName] = useState("");
   const [modelsJson, setModelsJson] = useState("");
   const [authJson, setAuthJson] = useState("");
+  const [agentsMd, setAgentsMd] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -36,6 +39,7 @@ export function ProjectSettingsDialog({ projectId, onClose, onChanged }: Props) 
         setName(d.project.name);
         setModelsJson(d.modelsJson ?? "");
         setAuthJson(d.authJson ?? "");
+        setAgentsMd(d.agentsMd ?? "");
       })
       .catch((e) => setError(e instanceof Error ? e.message : String(e)));
   }, [projectId]);
@@ -54,6 +58,7 @@ export function ProjectSettingsDialog({ projectId, onClose, onChanged }: Props) 
           name,
           modelsJson,
           authJson,
+          agentsMd,
         }),
       });
       const d = (await res.json()) as { error?: string };
@@ -115,6 +120,21 @@ export function ProjectSettingsDialog({ projectId, onClose, onChanged }: Props) 
             style={{ ...inputStyle, height: 120, fontFamily: "var(--font-mono)", resize: "vertical" }}
           />
         </label>
+
+        <label style={{ display: "flex", flexDirection: "column", gap: 5, fontSize: 12, color: "var(--text-muted)" }}>
+          AGENTS.md（项目指令 / 提示词上下文；留空 = 无项目级指令）
+          <textarea
+            value={agentsMd}
+            onChange={(e) => setAgentsMd(e.target.value)}
+            placeholder={"# 项目指令\n\n本项目相关的约定、常用路径、教学要求…"}
+            spellCheck={false}
+            style={{ ...inputStyle, height: 140, fontFamily: "var(--font-mono)", resize: "vertical" }}
+          />
+        </label>
+        <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
+          AGENTS.md 保存在项目目录并随"复制项目"携带；会话以此作为提示词上下文（新建会话生效）。
+          在沙箱/本机会话中由 Agent 对工作区根 AGENTS.md 的修改也会同步回这里。
+        </div>
 
         <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
           项目内存在这两个文件时会覆盖全局模型配置（仅对该项目的会话生效）；删除内容并保存即可恢复继承全局。

@@ -113,7 +113,7 @@ function sandboxOps(sessionCwd: string): BridgeOps | null {
 
 /** Relay ops: the user's paired machine (workspace-relative fs + exec). */
 function relayOps(userId: number, sessionCwd: string): BridgeOps {
-  const call = <T>(method: string, params: Record<string, unknown>) =>
+  const call = <T>(method: Parameters<typeof relayRpc>[0], params: Record<string, unknown>) =>
     relayRpc(method, params, { userId }) as Promise<T>;
   return {
     fileExists: async (path) => {

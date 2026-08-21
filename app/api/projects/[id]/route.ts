@@ -29,11 +29,18 @@ export async function GET(req: Request, ctx: RouteCtx) {
       return null;
     }
   };
+  let agentsMd: string | null = null;
+  try {
+    agentsMd = readFileSync(`${projectHome(r.project!)}/AGENTS.md`, "utf8");
+  } catch {
+    // absent — inherited from the global layer / SDK defaults
+  }
   return NextResponse.json({
     project: r.project,
     ...(r.project!.mode === "sandbox" ? { sandbox: readProjectSandboxConfig(r.project!) } : {}),
     modelsJson: readOptional("models.json"),
     authJson: readOptional("auth.json"),
+    agentsMd,
   });
 }
 
@@ -80,6 +87,21 @@ export async function PATCH(req: Request, ctx: RouteCtx) {
   }
   // The 60s models cache would otherwise serve the previous provider list.
   if (credentialsTouched) invalidateModelsCache();
+
+  // Project instructions (AGENTS.md): written at the home root — the SDK
+  // loads it as session instructions from the session cwd (the home), it
+  // rides along on project duplication, and agent edits made in the
+  // workspace are mirrored back here (sandbox extension / relay tools).
+  // Empty string deletes the file.
+  if (typeof body.agentsMd === "string") {
+    const agentsPath = `${projectHome(project)}/AGENTS.md`;
+    mkdirSync(`${projectHome(project)}`, { recursive: true });
+    if (body.agentsMd.trim() === "") {
+      try { unlinkSync(agentsPath); } catch { /* absent is fine */ }
+    } else {
+      writeFileSync(agentsPath, body.agentsMd, "utf8");
+    }
+  }
 
   // Sandbox credentials (platform API key) merge into the project config.
   if (typeof body.apiKey === "string" && body.apiKey && r.identity!.session.apiKey) {

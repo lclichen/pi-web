@@ -1,23 +1,20 @@
 import { NextResponse } from "next/server";
 import { createMcpServer } from "@/lib/mcp-config";
-import type { ConfigScope, ServerEntry } from "@/lib/api-types";
+import { guardMcpRequest } from "@/lib/mcp-route-guard";
+import type { ServerEntry } from "@/lib/api-types";
 
 export const dynamic = "force-dynamic";
 
-function readScope(v: unknown): ConfigScope {
-  return v === "global" ? "global" : "project";
-}
-
-// POST /api/mcp/servers  body: { cwd, scope?, name, entry }
+// POST /api/mcp/servers  body: { cwd|projectId, scope?, name, entry }
 export async function POST(req: Request) {
   try {
-    const body = (await req.json()) as {
+    const body = await req.json() as {
       cwd?: string;
+      projectId?: string;
       scope?: string;
       name?: string;
       entry?: ServerEntry;
     };
-    if (!body.cwd) return NextResponse.json({ error: "cwd required" }, { status: 400 });
     if (!body.name?.trim()) return NextResponse.json({ error: "name required" }, { status: 400 });
     if (!body.entry || typeof body.entry !== "object") {
       return NextResponse.json({ error: "entry required" }, { status: 400 });
@@ -28,9 +25,11 @@ export async function POST(req: Request) {
         { status: 400 },
       );
     }
-    const scope = readScope(body.scope);
+    const guard = guardMcpRequest(req, body, { mutating: true });
+    if (!guard.ok) return guard.response;
+    const scope = body.scope === "global" ? "global" : "project";
     try {
-      createMcpServer(body.cwd, scope, body.name.trim(), body.entry);
+      createMcpServer(guard.cwd, scope, body.name.trim(), body.entry);
       return NextResponse.json({ success: true });
     } catch (e) {
       return NextResponse.json(

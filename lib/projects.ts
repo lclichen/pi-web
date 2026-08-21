@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "fs";
 import { join, resolve } from "path";
 import { randomUUID } from "crypto";
 import { dataDir } from "./mode-homes";
@@ -140,13 +140,32 @@ export function createProject(input: {
     });
   }
 
-  // Optionally seed from another project (config snapshot copy).
+  // Optionally seed from another project: copy its ENTIRE home — `.pi/` config
+  // plus project-level data such as labs/ and .lab-training/ state (the
+  // teaching workflow "复制项目" expects both to carry over). Copy after the
+  // sandbox config write above so the fresh credentials survive.
   if (input.seedFromProjectId) {
     const seed = getProject(input.seedFromProjectId);
     if (seed && seed.ownerId === input.ownerId && seed.id !== project.id) {
       const seedHome = projectHome(seed);
       if (existsSync(seedHome)) {
-        cpSync(join(seedHome, ".pi"), join(home, ".pi"), { recursive: true });
+        for (const entry of readdirSync(seedHome)) {
+          if (entry === ".pi") {
+            cpSync(join(seedHome, ".pi"), join(home, ".pi"), { recursive: true });
+            // The copy carries the seed's sandbox credentials; re-write this
+            // project's own binding on top.
+            if (project.mode === "sandbox") {
+              writeSandboxConfig(home, {
+                url: safePlatformUrl() ?? "",
+                apiKey: "",
+                ...(project.containerId !== undefined ? { containerId: project.containerId } : {}),
+                disableLocalFallback: true,
+              });
+            }
+          } else {
+            cpSync(join(seedHome, entry), join(home, entry), { recursive: true });
+          }
+        }
       }
     }
   }
@@ -203,7 +222,12 @@ export function deleteProject(projectId: string): boolean {
   return true;
 }
 
-/** Duplicate a project: copy its `.pi/` config snapshot under a new id. */
+/**
+ * Duplicate a project: copy its ENTIRE home under a new id. The container
+ * binding is intentionally NOT carried over — two projects sharing one
+ * container would overwrite each other's synced /workspace. The copy starts
+ * unbound; session-start resolution picks/creates its own container.
+ */
 export function duplicateProject(
   projectId: string,
   newName: string,
@@ -215,7 +239,6 @@ export function duplicateProject(
     ownerId: source.ownerId,
     ownerName: source.ownerName,
     mode: source.mode,
-    ...(source.containerId !== undefined ? { containerId: source.containerId } : {}),
     seedFromProjectId: source.id,
   });
 }

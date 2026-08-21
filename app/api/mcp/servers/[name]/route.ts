@@ -1,17 +1,18 @@
 import { NextResponse } from "next/server";
 import { removeMcpServer, setMcpServerDisabled, updateMcpServer } from "@/lib/mcp-config";
+import { guardMcpRequest } from "@/lib/mcp-route-guard";
 import type { ConfigScope, ServerEntry } from "@/lib/api-types";
 
 export const dynamic = "force-dynamic";
 
-function readScope(v: string | null): ConfigScope {
+function readScope(v: string | null | undefined): ConfigScope {
   return v === "global" ? "global" : "project";
 }
 
-type Body = { cwd?: string; scope?: string; entry?: ServerEntry };
-type PatchBody = { cwd?: string; scope?: string; disabled?: boolean };
+type Body = { cwd?: string; projectId?: string; scope?: string; entry?: ServerEntry };
+type PatchBody = { cwd?: string; projectId?: string; scope?: string; disabled?: boolean };
 
-// PUT /api/mcp/servers/[name]  body: { cwd, scope?, entry }
+// PUT /api/mcp/servers/[name]  body: { cwd|projectId, scope?, entry }
 export async function PUT(
   req: Request,
   { params }: { params: Promise<{ name: string }> },
@@ -19,13 +20,14 @@ export async function PUT(
   const { name } = await params;
   try {
     const body = (await req.json()) as Body;
-    if (!body.cwd) return NextResponse.json({ error: "cwd required" }, { status: 400 });
     if (!body.entry || typeof body.entry !== "object") {
       return NextResponse.json({ error: "entry required" }, { status: 400 });
     }
-    const scope = readScope(body.scope ?? null);
+    const guard = guardMcpRequest(req, body, { mutating: true });
+    if (!guard.ok) return guard.response;
+    const scope = readScope(body.scope);
     try {
-      updateMcpServer(body.cwd, scope, name, body.entry);
+      updateMcpServer(guard.cwd, scope, name, body.entry);
       return NextResponse.json({ success: true });
     } catch (e) {
       return NextResponse.json(
@@ -41,7 +43,7 @@ export async function PUT(
   }
 }
 
-// PATCH /api/mcp/servers/[name]  body: { cwd, scope?, disabled }
+// PATCH /api/mcp/servers/[name]  body: { cwd|projectId, scope?, disabled }
 export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ name: string }> },
@@ -49,10 +51,11 @@ export async function PATCH(
   const { name } = await params;
   try {
     const body = (await req.json()) as PatchBody;
-    if (!body.cwd) return NextResponse.json({ error: "cwd required" }, { status: 400 });
-    const scope = readScope(body.scope ?? null);
+    const guard = guardMcpRequest(req, body, { mutating: true });
+    if (!guard.ok) return guard.response;
+    const scope = readScope(body.scope);
     try {
-      setMcpServerDisabled(body.cwd, scope, name, Boolean(body.disabled));
+      setMcpServerDisabled(guard.cwd, scope, name, Boolean(body.disabled));
       return NextResponse.json({ success: true });
     } catch (e) {
       return NextResponse.json(
@@ -68,18 +71,22 @@ export async function PATCH(
   }
 }
 
-// DELETE /api/mcp/servers/[name]?cwd=&scope=
+// DELETE /api/mcp/servers/[name]?cwd=|projectId=&scope=
 export async function DELETE(
   req: Request,
   { params }: { params: Promise<{ name: string }> },
 ) {
   const { name } = await params;
   const { searchParams } = new URL(req.url);
-  const cwd = searchParams.get("cwd");
-  if (!cwd) return NextResponse.json({ error: "cwd required" }, { status: 400 });
+  const guard = guardMcpRequest(
+    req,
+    { cwd: searchParams.get("cwd"), projectId: searchParams.get("projectId"), scope: searchParams.get("scope") },
+    { mutating: true },
+  );
+  if (!guard.ok) return guard.response;
   const scope = readScope(searchParams.get("scope"));
   try {
-    removeMcpServer(cwd, scope, name);
+    removeMcpServer(guard.cwd, scope, name);
     return NextResponse.json({ success: true });
   } catch (e) {
     return NextResponse.json(

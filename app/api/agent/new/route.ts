@@ -12,6 +12,7 @@ import { spaceDir } from "@/lib/session-spaces";
 import { ensureSandboxHome, ensureLocalHome } from "@/lib/mode-homes";
 import { recordSessionMeta } from "@/lib/session-metas";
 import { makeRelayToolsExtension } from "@/lib/extensions/relay-tools";
+import { makeRemoteVerifyExtension } from "@/lib/extensions/remote-verify";
 import { ensureProjectHome, getOwnedProject, writeSandboxConfig, type ProjectRecord } from "@/lib/projects";
 import { getAgentForUser } from "@/lib/relay/registry";
 import { isApiRequestAllowed } from "@/lib/request-security";
@@ -128,11 +129,12 @@ export async function POST(req: Request) {
           if (containerId) writeSandboxConfig(home, { containerId });
         }
         additionalExtensionPaths = [extPath];
+        extensionFactories = [makeRemoteVerifyExtension("sandbox", user.id)];
       } else {
         if (!getAgentForUser(user.id)?.info) {
           return NextResponse.json({ error: "本机模式需要先配对你的电脑（本机面板 → 连接本机）" }, { status: 400 });
         }
-        extensionFactories = [makeRelayToolsExtension(user.id)];
+        extensionFactories = [makeRelayToolsExtension(user.id), makeRemoteVerifyExtension("local-machine", user.id)];
       }
       effectiveCwd = home;
     } else if (mode === "sandbox") {
@@ -163,12 +165,13 @@ export async function POST(req: Request) {
         if (auto.containerId) setSandboxContainer(user.id, auto.containerId);
       }
       additionalExtensionPaths = [extPath];
+      extensionFactories = [makeRemoteVerifyExtension("sandbox", user.id)];
     } else if (mode === "local-machine") {
       if (user.id !== 0 && !getAgentForUser(user.id)?.info) {
         return NextResponse.json({ error: "本机模式需要先配对你的电脑（本机面板 → 连接本机）" }, { status: 400 });
       }
       effectiveCwd = ensureLocalHome(user.id);
-      extensionFactories = [makeRelayToolsExtension(user.id)];
+      extensionFactories = [makeRelayToolsExtension(user.id), makeRemoteVerifyExtension("local-machine", user.id)];
     } else {
       // Host mode keeps the caller-supplied server directory.
       if (!effectiveCwd || !existsSync(effectiveCwd)) {

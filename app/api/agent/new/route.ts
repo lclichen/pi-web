@@ -13,6 +13,7 @@ import { ensureSandboxHome, ensureLocalHome } from "@/lib/mode-homes";
 import { recordSessionMeta } from "@/lib/session-metas";
 import { makeRelayToolsExtension } from "@/lib/extensions/relay-tools";
 import { makeRemoteVerifyExtension } from "@/lib/extensions/remote-verify";
+import { makeEnvironmentInfoExtension } from "@/lib/extensions/environment-info";
 import { ensureProjectHome, getOwnedProject, writeSandboxConfig, type ProjectRecord } from "@/lib/projects";
 import { getAgentForUser } from "@/lib/relay/registry";
 import { isApiRequestAllowed } from "@/lib/request-security";
@@ -129,12 +130,24 @@ export async function POST(req: Request) {
           if (containerId) writeSandboxConfig(home, { containerId });
         }
         additionalExtensionPaths = [extPath];
-        extensionFactories = [makeRemoteVerifyExtension("sandbox", user.id)];
+        extensionFactories = [
+          makeRemoteVerifyExtension("sandbox", user.id),
+          makeEnvironmentInfoExtension({
+            mode: "sandbox",
+            username: user.username,
+            projectName: project.name,
+            ...(project.containerId !== undefined && project.containerId !== null ? { containerId: Number(project.containerId) } : {}),
+          }),
+        ];
       } else {
         if (!getAgentForUser(user.id)?.info) {
           return NextResponse.json({ error: "本机模式需要先配对你的电脑（本机面板 → 连接本机）" }, { status: 400 });
         }
-        extensionFactories = [makeRelayToolsExtension(user.id), makeRemoteVerifyExtension("local-machine", user.id)];
+        extensionFactories = [
+          makeRelayToolsExtension(user.id),
+          makeRemoteVerifyExtension("local-machine", user.id),
+          makeEnvironmentInfoExtension({ mode: "local-machine", username: user.username, projectName: project.name }),
+        ];
       }
       effectiveCwd = home;
     } else if (mode === "sandbox") {
@@ -165,18 +178,26 @@ export async function POST(req: Request) {
         if (auto.containerId) setSandboxContainer(user.id, auto.containerId);
       }
       additionalExtensionPaths = [extPath];
-      extensionFactories = [makeRemoteVerifyExtension("sandbox", user.id)];
+      extensionFactories = [
+        makeRemoteVerifyExtension("sandbox", user.id),
+        makeEnvironmentInfoExtension({ mode: "sandbox", username: user.username }),
+      ];
     } else if (mode === "local-machine") {
       if (user.id !== 0 && !getAgentForUser(user.id)?.info) {
         return NextResponse.json({ error: "本机模式需要先配对你的电脑（本机面板 → 连接本机）" }, { status: 400 });
       }
       effectiveCwd = ensureLocalHome(user.id);
-      extensionFactories = [makeRelayToolsExtension(user.id), makeRemoteVerifyExtension("local-machine", user.id)];
+      extensionFactories = [
+        makeRelayToolsExtension(user.id),
+        makeRemoteVerifyExtension("local-machine", user.id),
+        makeEnvironmentInfoExtension({ mode: "local-machine", username: user.username }),
+      ];
     } else {
       // Host mode keeps the caller-supplied server directory.
       if (!effectiveCwd || !existsSync(effectiveCwd)) {
         return NextResponse.json({ error: `Directory does not exist: ${String(effectiveCwd)}` }, { status: 400 });
       }
+      extensionFactories = [makeEnvironmentInfoExtension({ mode: "host", username: user.username, hostDir: effectiveCwd })];
     }
 
     if (!effectiveCwd) {

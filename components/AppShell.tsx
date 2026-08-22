@@ -426,6 +426,12 @@ export function AppShell() {
     // Close any session that belongs to a different project — it no longer
     // matches the selected project directory.
     setSelectedSession(null);
+    // Switching project directories (e.g. the admin directory picker) starts
+    // a HOST session in the new folder: stale newSessionMode/newSessionProjectId
+    // from a previously open project would silently route the new session back
+    // into that project (server-side projectId branch wins over cwd).
+    setNewSessionMode("host");
+    setNewSessionProjectId(null);
     setNewSessionCwd((prev) => {
       if (prev && prev !== cwd) return null;
       return prev;

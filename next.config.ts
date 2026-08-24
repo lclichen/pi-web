@@ -17,6 +17,12 @@ const nextConfig: NextConfig = {
     "@earendil-works/pi-agent-core",
     "@earendil-works/pi-ai",
     "@earendil-works/pi-tui",
+    // ws + its native addons must stay external: bundling them breaks the
+    // unmask path at runtime ("b.unmask is not a function" uncaughtException
+    // whenever the relay receives a masked data frame, e.g. the agent hello).
+    "ws",
+    "bufferutil",
+    "utf-8-validate",
   ],
   allowedDevOrigins: ['192.168.*.*', '*.monkeycode-ai.online'],
   async headers() {

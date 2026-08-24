@@ -133,6 +133,12 @@ func (s *safeConn) writeText(b []byte) error {
 	return s.c.WriteMessage(websocket.TextMessage, b)
 }
 
+func (s *safeConn) ping() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.c.WriteControl(websocket.PingMessage, nil, time.Now().Add(pingTimeout))
+}
+
 func serveOnce(wsURL string, info protocol.AgentInfo, ws *workspace.Workspace) error {
 	dialer := websocket.Dialer{HandshakeTimeout: 10 * time.Second}
 	conn, resp, err := dialer.Dial(wsURL, http.Header{})
@@ -153,7 +159,17 @@ func serveOnce(wsURL string, info protocol.AgentInfo, ws *workspace.Workspace) e
 	// the agent only notices on the next write. Ping every 25s and drop the
 	// socket if the pong falls behind — the read loop then errors out and the
 	// outer loop reconnects.
-	go keepalive(conn)
+	//
+	// SetPongHandler must be called from the same goroutine as ReadMessage
+	// (gorilla/websocket treats it as a read method; concurrent calls race the
+	// handler field and the pong is silently dropped).
+	var lastPong atomic.Int64
+	lastPong.Store(time.Now().Unix())
+	conn.SetPongHandler(func(string) error {
+		lastPong.Store(time.Now().Unix())
+		return nil
+	})
+	go keepalive(sc, &lastPong)
 
 	hello, _ := json.Marshal(protocol.Hello{Type: "hello", Info: info})
 	if err := sc.writeText(hello); err != nil {
@@ -178,23 +194,18 @@ const (
 
 // keepalive pings the relay so idle connections survive NAT/firewall
 // timeouts. A failed ping or a stale pong closes the socket, failing the read
-// loop in serveOnce, which triggers the reconnect loop.
-func keepalive(conn *websocket.Conn) {
-	var lastPong atomic.Int64
-	lastPong.Store(time.Now().Unix())
-	conn.SetPongHandler(func(string) error {
-		lastPong.Store(time.Now().Unix())
-		return nil
-	})
+// loop in serveOnce, which triggers the reconnect loop. Writes go through the
+// safeConn mutex (gorilla forbids concurrent writers).
+func keepalive(sc *safeConn, lastPong *atomic.Int64) {
 	ticker := time.NewTicker(pingInterval)
 	defer ticker.Stop()
 	for range ticker.C {
-		if err := conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(pingTimeout)); err != nil {
-			_ = conn.Close()
+		if err := sc.ping(); err != nil {
+			_ = sc.c.Close()
 			return
 		}
 		if time.Since(time.Unix(lastPong.Load(), 0)) > pongGrace {
-			_ = conn.Close()
+			_ = sc.c.Close()
 			return
 		}
 	}

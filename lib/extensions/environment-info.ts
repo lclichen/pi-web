@@ -1,16 +1,17 @@
 import type { ExtensionAPI, InlineExtension } from "@earendil-works/pi-coding-agent";
 
 /**
- * Environment self-description injected into the system prompt (per session,
+ * Environment self-description appended to the system prompt (per session,
  * all three modes). The model otherwise has no idea WHERE its tools actually
  * execute — container /workspace, the user's own machine, or a server
  * directory — and mis-describes file locations to users.
  *
- * Injected via before_provider_request (the system prompt is not part of the
- * context-event message list). Idempotent: a sentinel-delimited block is
- * replaced in place, never stacked across turns. Handles OpenAI-compatible
- * (messages[0] system/developer) and Anthropic (top-level system) payload
- * shapes; unknown shapes are left untouched.
+ * Uses the OFFICIAL before_agent_start system-prompt hook (return
+ * { systemPrompt }): the SDK adopts it per turn and handles provider
+ * serialization — no payload-shape knowledge needed here. Sentinel-delimited
+ * replacement keeps the block idempotent. Static platform conventions belong
+ * in the admin-managed global AGENTS.md (pi's native file mechanism); this
+ * extension only adds per-session facts that files cannot know.
  */
 
 export interface EnvironmentInfo {
@@ -68,73 +69,13 @@ function replaceSentinelSpan(text: string, block: string): string {
   return `${text.slice(0, start)}${block}${text.slice(end + END.length)}`;
 }
 
-/** Mutate a string-or-text-blocks content field in place; returns true when touched. */
-function injectIntoContent(content: unknown, block: string): boolean {
-  if (typeof content === "string") return true; // handled by caller via replace
-  if (Array.isArray(content)) {
-    for (const part of content) {
-      if (part && typeof part === "object" && (part as { type?: string }).type === "text") {
-        const textPart = part as { text?: string };
-        if (typeof textPart.text === "string") {
-          textPart.text = replaceSentinelSpan(textPart.text, block);
-          return true;
-        }
-      }
-    }
-    // text-block list without a text part: append one
-    content.push({ type: "text", text: block });
-    return true;
-  }
-  return false;
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function injectIntoPayload(payload: any, block: string): void {
-  if (!payload || typeof payload !== "object") return;
-  // OpenAI-compatible: first system/developer message in payload.messages
-  if (Array.isArray(payload.messages)) {
-    for (const message of payload.messages) {
-      if (!message || typeof message !== "object") continue;
-      const role = (message as { role?: string }).role;
-      if (role === "system" || role === "developer") {
-        const msg = message as { content?: unknown };
-        if (typeof msg.content === "string") {
-          msg.content = replaceSentinelSpan(msg.content, block);
-        } else if (Array.isArray(msg.content)) {
-          injectIntoContent(msg.content, block);
-        } else {
-          msg.content = block;
-        }
-        return;
-      }
-    }
-  }
-  // Anthropic: top-level system (string or content blocks)
-  if ("system" in payload) {
-    const system = payload.system;
-    if (typeof system === "string") {
-      payload.system = replaceSentinelSpan(system, block);
-      return;
-    }
-    if (Array.isArray(system)) {
-      if (injectIntoContent(system, block)) return;
-    }
-  }
-  // OpenAI-compatible without any system message: prepend one
-  if (Array.isArray(payload.messages)) {
-    payload.messages.unshift({ role: "system", content: block });
-  }
-}
-
 export function makeEnvironmentInfoExtension(info: EnvironmentInfo): InlineExtension {
+  const block = buildBlock(info);
   return (pi: ExtensionAPI): void => {
-    pi.on("before_provider_request", async (event) => {
-      try {
-        injectIntoPayload(event.payload, buildBlock(info));
-      } catch {
-        // environment info is best-effort — never break the provider call
-      }
-      return undefined;
+    pi.on("before_agent_start", async (event) => {
+      // Defensive: the per-turn base prompt never contains our block, but keep
+      // the sentinel replace in case another extension chains onto ours.
+      return { systemPrompt: replaceSentinelSpan(event.systemPrompt, block) };
     });
   };
 }

@@ -281,16 +281,19 @@ export function ProjectSessionTree({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 2, padding: "6px 4px" }}>
-      {/* 新建项目入口 */}
-      <div style={{ display: "flex", gap: 6, padding: "0 4px 8px" }}>
-        <button type="button" onClick={() => void createProject("sandbox")} disabled={creating} style={{ ...createBtn, cursor: creating ? "default" : "pointer", opacity: creating ? 0.6 : 1 }}>
-          {creating ? "创建中…" : "+ 沙箱项目"}
-        </button>
-        <button type="button" onClick={() => void createProject("local-machine")} disabled={creating} style={{ ...createBtn, cursor: creating ? "default" : "pointer", opacity: creating ? 0.6 : 1 }}>
-          {creating ? "创建中…" : "+ 本机项目"}
-        </button>
+      {/* 新建项目入口：沙箱/本机一行，admin 的"打开服务器目录"独占下一行
+          （三个长按钮挤一行会在窄侧栏下把文字折成两行）。 */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "0 4px 8px" }}>
+        <div style={{ display: "flex", gap: 6 }}>
+          <button type="button" onClick={() => void createProject("sandbox")} disabled={creating} style={{ ...createBtn, cursor: creating ? "default" : "pointer", opacity: creating ? 0.6 : 1 }}>
+            {creating ? "创建中…" : "+ 沙箱项目"}
+          </button>
+          <button type="button" onClick={() => void createProject("local-machine")} disabled={creating} style={{ ...createBtn, cursor: creating ? "default" : "pointer", opacity: creating ? 0.6 : 1 }}>
+            {creating ? "创建中…" : "+ 本机项目"}
+          </button>
+        </div>
         {isAdmin && onOpenServerDirectory && (
-          <button type="button" onClick={onOpenServerDirectory} style={{ ...createBtn, marginLeft: "auto" }}>打开服务器目录</button>
+          <button type="button" onClick={onOpenServerDirectory} style={createBtn}>打开服务器目录</button>
         )}
       </div>
 
@@ -512,4 +515,5 @@ function MenuItem({ label, onClick, danger }: { label: string; onClick: () => vo
 const createBtn = {
   flex: 1, height: 28, borderRadius: 7, fontSize: 11, cursor: "pointer",
   background: "var(--bg)", color: "var(--text-muted)", border: "1px solid var(--border)",
+  whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
 } as const;

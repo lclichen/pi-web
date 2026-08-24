@@ -1037,19 +1037,19 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
           <div style={{ display: "flex", gap: 4, padding: "2px 4px 4px", borderBottom: "1px solid var(--border)" }}>
             <button
               onClick={() => { setCreating({ type: "file", dir: cwd }); setCreatingName(""); }}
-              title="New File"
-              style={{ flex: 1, height: 22, border: "1px solid var(--border)", borderRadius: 4, background: "var(--bg-panel)", color: "var(--text-muted)", cursor: "pointer", fontSize: 11, display: "flex", alignItems: "center", justifyContent: "center", gap: 3 }}
+              title="新建文件"
+              style={{ flex: 1, height: 22, border: "1px solid var(--border)", borderRadius: 4, background: "var(--bg-panel)", color: "var(--text-muted)", cursor: "pointer", fontSize: 11, display: "flex", alignItems: "center", justifyContent: "center", gap: 3, whiteSpace: "nowrap" }}
             >
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
-              New File
+              新建文件
             </button>
             <button
               onClick={() => { setCreating({ type: "dir", dir: cwd }); setCreatingName(""); }}
-              title="New Folder"
-              style={{ flex: 1, height: 22, border: "1px solid var(--border)", borderRadius: 4, background: "var(--bg-panel)", color: "var(--text-muted)", cursor: "pointer", fontSize: 11, display: "flex", alignItems: "center", justifyContent: "center", gap: 3 }}
+              title="新建文件夹"
+              style={{ flex: 1, height: 22, border: "1px solid var(--border)", borderRadius: 4, background: "var(--bg-panel)", color: "var(--text-muted)", cursor: "pointer", fontSize: 11, display: "flex", alignItems: "center", justifyContent: "center", gap: 3, whiteSpace: "nowrap" }}
             >
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>
-              New Folder
+              新建文件夹
             </button>
           </div>
 
@@ -1060,20 +1060,24 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
             >
               {contextMenu.node.isDir && (
                 <>
-                  <ContextMenuButton label="New File" color="var(--text)" onClick={() => { setCreating({ type: "file", dir: contextMenu.node.fullPath }); setCreatingName(""); setContextMenu(null); }} />
-                  <ContextMenuButton label="New Folder" color="var(--text)" onClick={() => { setCreating({ type: "dir", dir: contextMenu.node.fullPath }); setCreatingName(""); setContextMenu(null); }} />
+                  <ContextMenuButton label="新建文件" color="var(--text)" onClick={() => { setCreating({ type: "file", dir: contextMenu.node.fullPath }); setCreatingName(""); setContextMenu(null); }} />
+                  <ContextMenuButton label="新建文件夹" color="var(--text)" onClick={() => { setCreating({ type: "dir", dir: contextMenu.node.fullPath }); setCreatingName(""); setContextMenu(null); }} />
                   <div style={{ height: 1, background: "var(--border)", margin: "2px 0" }} />
                 </>
               )}
-              <ContextMenuButton label="Rename" color="var(--text)" onClick={() => { const n = contextMenu.node; setRenaming({ oldPath: n.fullPath, oldName: n.name }); setRenamingName(n.name); setContextMenu(null); }} />
-              <ContextMenuButton label="Delete" color="#f87171" onClick={() => { const n = contextMenu.node; setContextMenu(null); if (window.confirm(`Delete ${n.name}?`)) handleDelete(n.fullPath); }} />
+              <ContextMenuButton label="重命名" color="var(--text)" onClick={() => { const n = contextMenu.node; setRenaming({ oldPath: n.fullPath, oldName: n.name }); setRenamingName(n.name); setContextMenu(null); }} />
+              <ContextMenuButton label="删除" color="#f87171" onClick={() => { const n = contextMenu.node; setContextMenu(null); if (window.confirm(`删除 ${n.name}？`)) handleDelete(n.fullPath); }} />
             </div>
           )}
 
           {loading ? (
             <div style={{ padding: "8px 12px", fontSize: 11, color: "var(--text-dim)" }}>Loading files...</div>
           ) : error ? (
-            <div style={{ padding: "8px 12px", fontSize: 11, color: "#f87171" }}>{error}</div>
+            <div style={{ padding: "8px 12px", fontSize: 11, color: "#f87171", lineHeight: 1.5 }}>
+              {error === "Access denied"
+                ? "无权浏览该目录（服务器目录需先在会话中打开；项目会话请用容器内文件浏览器）"
+                : error}
+            </div>
           ) : (
             <>
             {creating && creating.dir === cwd && (

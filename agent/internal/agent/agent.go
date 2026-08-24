@@ -15,6 +15,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -148,6 +149,12 @@ func serveOnce(wsURL string, info protocol.AgentInfo, ws *workspace.Workspace) e
 	// they don't leak (and don't write to a dead socket after reconnect).
 	defer ptyMgr.CloseAll()
 
+	// Idle connections get silently cut by NATs/firewalls; without a heartbeat
+	// the agent only notices on the next write. Ping every 25s and drop the
+	// socket if the pong falls behind — the read loop then errors out and the
+	// outer loop reconnects.
+	go keepalive(conn)
+
 	hello, _ := json.Marshal(protocol.Hello{Type: "hello", Info: info})
 	if err := sc.writeText(hello); err != nil {
 		return fmt.Errorf("write hello: %w", err)
@@ -160,6 +167,36 @@ func serveOnce(wsURL string, info protocol.AgentInfo, ws *workspace.Workspace) e
 			return fmt.Errorf("read: %w", err)
 		}
 		go handleRequest(sc, msg, ws)
+	}
+}
+
+const (
+	pingInterval = 25 * time.Second
+	pingTimeout  = 5 * time.Second
+	pongGrace    = 60 * time.Second
+)
+
+// keepalive pings the relay so idle connections survive NAT/firewall
+// timeouts. A failed ping or a stale pong closes the socket, failing the read
+// loop in serveOnce, which triggers the reconnect loop.
+func keepalive(conn *websocket.Conn) {
+	var lastPong atomic.Int64
+	lastPong.Store(time.Now().Unix())
+	conn.SetPongHandler(func(string) error {
+		lastPong.Store(time.Now().Unix())
+		return nil
+	})
+	ticker := time.NewTicker(pingInterval)
+	defer ticker.Stop()
+	for range ticker.C {
+		if err := conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(pingTimeout)); err != nil {
+			_ = conn.Close()
+			return
+		}
+		if time.Since(time.Unix(lastPong.Load(), 0)) > pongGrace {
+			_ = conn.Close()
+			return
+		}
 	}
 }
 

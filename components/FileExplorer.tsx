@@ -788,10 +788,21 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
       setUploadError(null);
     }
 
+    // Host mode with no usable cwd (e.g. a pending remote session whose "/"
+    // leaked in) must not list the filesystem root — /api/files has no root
+    // handler and the request would 404/403. Show an empty pane instead.
+    const usableCwd = remote ? cwd : (cwd && cwd !== "/" ? cwd : null);
+    if (!usableCwd) {
+      setRoots([]);
+      setLoading(false);
+      setError(null);
+      return;
+    }
+
     setLoading(cwdChanged);
     setError(null);
     let cancelled = false;
-    fetchEntries(cwd)
+    fetchEntries(usableCwd)
       .then((entries) => { if (!cancelled) setRoots(entries); })
       .catch((e) => { if (!cancelled) setError(e instanceof Error ? e.message : String(e)); })
       .finally(() => { if (!cancelled) setLoading(false); });
@@ -1113,7 +1124,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
           )}
           {!loading && !error && roots.length === 0 && (
             <div style={{ padding: "8px 12px", fontSize: 11, color: "var(--text-dim)" }}>
-              {t("files.noFiles")}
+              {remote ? t("files.noFiles") : (cwd && cwd !== "/" ? t("files.noFiles") : "请先选择一个项目或目录")}
             </div>
           )}
         </div>

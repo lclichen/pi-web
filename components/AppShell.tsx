@@ -82,6 +82,8 @@ export function AppShell() {
   // default; admins can flip it at runtime via /api/server-settings).
   const [labTrainingEnabled, setLabTrainingEnabled] = useState(true);
   const [authEnabled, setAuthEnabled] = useState(true);
+  // Admin-only link to the sandbox platform ops console (from /api/webauth/me).
+  const [platformConsoleUrl, setPlatformConsoleUrl] = useState<string | null>(null);
   // Sandbox manager dialog: null = closed; bind = project context (optional).
   const [sandboxManager, setSandboxManager] = useState<
     { projectId?: string; projectName?: string; containerId?: number } | null
@@ -1143,7 +1145,7 @@ export function AppShell() {
             <button
               type="button"
               onClick={() => setSandboxManager({})}
-              title="沙箱容器管理（新建/启停/删除/绑定项目）"
+              title="沙箱容器管理（新建/启停/删除/快照/绑定项目）"
               style={{
                 display: "flex", alignItems: "center", gap: 6, height: "100%",
                 padding: "0 8px", background: "transparent", border: "none",
@@ -1152,6 +1154,25 @@ export function AppShell() {
             >
               <span style={{ width: 8, height: 8, borderRadius: 2, border: "1.5px solid currentColor", flexShrink: 0 }} />
               <span>沙箱容器</span>
+            </button>
+          )}
+          {platformConsoleUrl && webUser && webUser !== "loading" && webUser.role === "admin" && (
+            <button
+              type="button"
+              onClick={() => window.open(platformConsoleUrl, "_blank", "noopener")}
+              title={`沙盒平台管理台（镜像/用户/配额/LLM）：${platformConsoleUrl}`}
+              style={{
+                display: "flex", alignItems: "center", gap: 6, height: "100%",
+                padding: "0 8px", background: "transparent", border: "none",
+                color: "var(--text-muted)", cursor: "pointer", fontSize: 11,
+              }}
+            >
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
+                <rect x="2" y="3" width="20" height="14" rx="2" />
+                <line x1="8" y1="21" x2="16" y2="21" />
+                <line x1="12" y1="17" x2="12" y2="21" />
+              </svg>
+              <span>平台管理</span>
             </button>
           )}
           {showChat && projectTrust?.requiresTrust && !projectTrust.trusted && (

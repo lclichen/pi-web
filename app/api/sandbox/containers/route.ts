@@ -11,6 +11,18 @@ interface PlatformContainer {
   name: string;
   status: string;
   image_id: number;
+  cpu?: number;
+  memory_mb?: number;
+  disk_gb?: number;
+  image_name?: string;
+  created_at?: string;
+}
+
+export interface PlatformSnapshot {
+  id: number;
+  name: string;
+  description?: string | null;
+  created_at?: string;
 }
 
 interface PlatformImage {
@@ -39,11 +51,14 @@ async function requireSandboxUser(req: Request) {
 
 // GET /api/sandbox/containers — the user's containers in ALL states (for the
 // management panel) + public images (create dialog) + provisioning defaults.
+// ?containerId=N additionally returns that container's snapshots (the dialog
+// loads them lazily when a row is expanded).
 export async function GET(req: Request) {
   const guard = await requireSandboxUser(req);
   if ("error" in guard) return guard.error;
+  const snapshotFor = Number(new URL(req.url).searchParams.get("containerId"));
   try {
-    const [listRes, imagesRes, defaults] = await Promise.all([
+    const [listRes, imagesRes, defaults, snapshotsRes] = await Promise.all([
       platformGet<{ containers: PlatformContainer[] }>(
         "/api/v1/containers",
         guard.apiKey,
@@ -51,6 +66,9 @@ export async function GET(req: Request) {
       ),
       platformGet<{ images: PlatformImage[] }>("/api/v1/images", guard.apiKey).catch(() => ({ images: [] as PlatformImage[] })),
       platformGet<ProvisionDefaults>("/api/v1/provision/defaults", guard.apiKey).catch(() => null),
+      Number.isInteger(snapshotFor) && snapshotFor > 0
+        ? platformGet<{ snapshots: PlatformSnapshot[] }>(`/api/v1/containers/${snapshotFor}/snapshots`, guard.apiKey).catch(() => null)
+        : Promise.resolve(null),
     ]);
     return NextResponse.json({
       success: true,
@@ -61,6 +79,12 @@ export async function GET(req: Request) {
           id: c.id,
           name: c.name,
           status: c.status,
+          imageId: c.image_id,
+          imageName: c.image_name ?? "",
+          cpu: c.cpu ?? null,
+          memoryMb: c.memory_mb ?? null,
+          diskGb: c.disk_gb ?? null,
+          createdAt: c.created_at ?? null,
         })),
       images: (imagesRes.images ?? []).map((i) => ({
         id: i.id,
@@ -68,6 +92,7 @@ export async function GET(req: Request) {
         defaultResources: i.default_resources ?? null,
       })),
       defaults,
+      ...(snapshotsRes ? { snapshots: snapshotsRes.snapshots ?? [] } : {}),
     });
   } catch (err) {
     return NextResponse.json(
@@ -98,6 +123,7 @@ export async function POST(req: Request) {
     cpu?: unknown;
     memoryMb?: unknown;
     diskGb?: unknown;
+    snapshotId?: unknown;
   };
   try {
     body = (await req.json()) as typeof body;
@@ -149,6 +175,30 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: "containerId must be a number" }, { status: 400 });
       }
       await platformPost(`/api/v1/containers/${body.containerId}/${action}`, guard.apiKey);
+      return NextResponse.json({ success: true });
+    }
+    // Snapshots (restore points): create / restore / delete, scoped to the
+    // caller's own container (platform enforces ownership too).
+    if (action === "snapshot-create") {
+      if (typeof body.containerId !== "number") {
+        return NextResponse.json({ error: "containerId must be a number" }, { status: 400 });
+      }
+      const name =
+        typeof body.name === "string" && body.name.trim()
+          ? body.name.trim()
+          : `snap-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, "")}`;
+      await platformPost(`/api/v1/containers/${body.containerId}/snapshots`, guard.apiKey, { name });
+      return NextResponse.json({ success: true });
+    }
+    if (action === "snapshot-restore" || action === "snapshot-delete") {
+      if (typeof body.containerId !== "number" || typeof body.snapshotId !== "number") {
+        return NextResponse.json({ error: "containerId and snapshotId must be numbers" }, { status: 400 });
+      }
+      if (action === "snapshot-restore") {
+        await platformPost(`/api/v1/containers/${body.containerId}/snapshots/${body.snapshotId}/restore`, guard.apiKey);
+      } else {
+        await platformDelete(`/api/v1/containers/${body.containerId}/snapshots/${body.snapshotId}`, guard.apiKey);
+      }
       return NextResponse.json({ success: true });
     }
     return NextResponse.json({ error: `不支持的操作: ${String(action)}` }, { status: 400 });

@@ -14,6 +14,19 @@ interface ContainerEntry {
   id: number;
   name: string;
   status: string;
+  imageId: number;
+  imageName: string;
+  cpu: number | null;
+  memoryMb: number | null;
+  diskGb: number | null;
+  createdAt: string | null;
+}
+
+interface SnapshotEntry {
+  id: number;
+  name: string;
+  description?: string | null;
+  created_at?: string;
 }
 
 interface ImageEntry {
@@ -33,12 +46,14 @@ const STATUS_META: Record<string, { label: string; color: string }> = {
   stopped: { label: "已停止", color: "#9ca3af" },
   creating: { label: "创建中", color: "#f59e0b" },
   deleting: { label: "删除中", color: "#f59e0b" },
+  error: { label: "错误", color: "#ef4444" },
 };
 
 /**
  * 沙箱容器管理 — 用户对自己平台容器的友好管理入口：查看全部状态、从公共
- * 镜像新建、启动/停止、删除，以及（从项目菜单打开时）一键绑定到项目。
- * 数据经 pi-web BFF（/api/sandbox/containers）携带该用户的平台密钥。
+ * 镜像新建、启动/停止、删除、快照（创建/恢复/删除），以及（从项目菜单打开
+ * 时）一键绑定到项目。数据经 pi-web BFF（/api/sandbox/containers）携带该
+ * 用户的平台密钥。
  */
 export function SandboxManagerDialog({ bind, onClose, onChanged }: Props) {
   const [data, setData] = useState<ListResponse | null>(null);
@@ -48,6 +63,8 @@ export function SandboxManagerDialog({ bind, onClose, onChanged }: Props) {
   const [notice, setNotice] = useState<string | null>(null);
   const [createImageId, setCreateImageId] = useState<number | null>(null);
   const [createName, setCreateName] = useState("");
+  // 快照区：展开的容器 id -> 其快照列表（null = 加载中）。
+  const [expandedSnapshots, setExpandedSnapshots] = useState<Map<number, SnapshotEntry[] | null>>(new Map());
 
   const load = useCallback(async () => {
     try {
@@ -107,6 +124,43 @@ export function SandboxManagerDialog({ bind, onClose, onChanged }: Props) {
         }),
       c.id,
     );
+  };
+
+  const loadSnapshots = useCallback(async (containerId: number) => {
+    setExpandedSnapshots((prev) => new Map(prev).set(containerId, null));
+    try {
+      const res = await fetch(`/api/sandbox/containers?containerId=${containerId}`);
+      const d = (await res.json()) as { snapshots?: SnapshotEntry[]; error?: string };
+      if (!res.ok) throw new Error(d.error ?? `HTTP ${res.status}`);
+      setExpandedSnapshots((prev) => new Map(prev).set(containerId, d.snapshots ?? []));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setExpandedSnapshots((prev) => new Map(prev).set(containerId, []));
+    }
+  }, []);
+
+  const toggleSnapshots = (c: ContainerEntry) => {
+    if (expandedSnapshots.has(c.id)) {
+      setExpandedSnapshots((prev) => {
+        const next = new Map(prev);
+        next.delete(c.id);
+        return next;
+      });
+    } else {
+      void loadSnapshots(c.id);
+    }
+  };
+
+  const snapshotAction = async (
+    c: ContainerEntry,
+    action: "snapshot-create" | "snapshot-restore" | "snapshot-delete",
+    extra?: Record<string, unknown>,
+  ) => {
+    await act(async () => {
+      await post({ action, containerId: c.id, ...extra });
+      await loadSnapshots(c.id);
+      if (action === "snapshot-restore") setNotice(`已从快照恢复容器 #${c.id}（/workspace 回到快照时间点）。`);
+    }, c.id);
   };
 
   const bindToProject = async (c: ContainerEntry) => {
@@ -172,47 +226,120 @@ export function SandboxManagerDialog({ bind, onClose, onChanged }: Props) {
         {containers.map((c) => {
           const meta = STATUS_META[c.status] ?? { label: c.status, color: "#f59e0b" };
           const isBound = bind && bind.containerId === c.id;
+          const snaps = expandedSnapshots.get(c.id) ?? null;
+          const snapsOpen = expandedSnapshots.has(c.id);
           return (
             <div
               key={c.id}
               style={{
-                display: "flex", alignItems: "center", gap: 10, padding: "8px 10px",
                 border: "1px solid var(--border)", borderRadius: 8,
                 background: isBound ? "var(--bg-selected, rgba(79,124,255,0.08))" : "transparent",
               }}
             >
-              <span style={{ width: 8, height: 8, borderRadius: "50%", background: meta.color, flexShrink: 0 }} />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 12, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {c.name} <span style={{ color: "var(--text-dim)" }}>#{c.id}</span>
-                  {isBound && <span style={{ color: "var(--accent)", marginLeft: 6 }}>当前项目容器</span>}
+              <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px" }}>
+                <span style={{ width: 8, height: 8, borderRadius: "50%", background: meta.color, flexShrink: 0 }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 12, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {c.name} <span style={{ color: "var(--text-dim)" }}>#{c.id}</span>
+                    {isBound && <span style={{ color: "var(--accent)", marginLeft: 6 }}>当前项目容器</span>}
+                  </div>
+                  <div style={{ fontSize: 10, color: "var(--text-dim)" }}>
+                    {meta.label}
+                    {c.imageName && ` · ${c.imageName}`}
+                    {c.cpu != null && ` · ${c.cpu}C/${c.memoryMb ?? "?"}M/${c.diskGb ?? "?"}G`}
+                  </div>
                 </div>
-                <div style={{ fontSize: 10, color: "var(--text-dim)" }}>{meta.label}</div>
+                <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                  {bind && !isBound && (
+                    <button type="button" disabled={busyId !== null} onClick={() => void bindToProject(c)} style={smallBtnStyle}>
+                      绑定
+                    </button>
+                  )}
+                  {c.status === "running" ? (
+                    <button type="button" disabled={busyId !== null} onClick={() => void act(() => post({ action: "stop", containerId: c.id }), c.id)} style={smallBtnStyle}>
+                      停止
+                    </button>
+                  ) : c.status === "stopped" ? (
+                    <button type="button" disabled={busyId !== null} onClick={() => void act(() => post({ action: "start", containerId: c.id }), c.id)} style={smallBtnStyle}>
+                      启动
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    disabled={busyId !== null}
+                    onClick={() => toggleSnapshots(c)}
+                    title="快照（恢复点）"
+                    style={{ ...smallBtnStyle, color: snapsOpen ? "var(--accent)" : "var(--text)" }}
+                  >
+                    快照 {snapsOpen ? "▾" : "▸"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busyId !== null}
+                    onClick={() => void remove(c)}
+                    style={{ ...smallBtnStyle, color: "#f87171", borderColor: "#f8717155" }}
+                  >
+                    删除
+                  </button>
+                </div>
               </div>
-              <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-                {bind && !isBound && (
-                  <button type="button" disabled={busyId !== null} onClick={() => void bindToProject(c)} style={smallBtnStyle}>
-                    绑定
-                  </button>
-                )}
-                {c.status === "running" ? (
-                  <button type="button" disabled={busyId !== null} onClick={() => void act(() => post({ action: "stop", containerId: c.id }), c.id)} style={smallBtnStyle}>
-                    停止
-                  </button>
-                ) : c.status === "stopped" ? (
-                  <button type="button" disabled={busyId !== null} onClick={() => void act(() => post({ action: "start", containerId: c.id }), c.id)} style={smallBtnStyle}>
-                    启动
-                  </button>
-                ) : null}
-                <button
-                  type="button"
-                  disabled={busyId !== null}
-                  onClick={() => void remove(c)}
-                  style={{ ...smallBtnStyle, color: "#f87171", borderColor: "#f8717155" }}
-                >
-                  删除
-                </button>
-              </div>
+              {snapsOpen && (
+                <div style={{ borderTop: "1px dashed var(--border)", padding: "8px 10px", display: "flex", flexDirection: "column", gap: 6 }}>
+                  {snaps === null ? (
+                    <div style={{ fontSize: 11, color: "var(--text-dim)" }}>快照加载中…</div>
+                  ) : (
+                    <>
+                      {snaps.length === 0 && (
+                        <div style={{ fontSize: 11, color: "var(--text-dim)" }}>暂无快照——做危险实验前先打一个恢复点。</div>
+                      )}
+                      {snaps.map((s) => (
+                        <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11 }}>
+                          <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text)" }}>
+                            {s.name} <span style={{ color: "var(--text-dim)" }}>{s.created_at ? `· ${new Date(s.created_at).toLocaleString()}` : ""}</span>
+                          </span>
+                          <button
+                            type="button"
+                            disabled={busyId !== null}
+                            onClick={() => {
+                              if (!window.confirm(`恢复到快照「${s.name}」？当前 /workspace 在快照之后的改动将丢失。`)) return;
+                              void snapshotAction(c, "snapshot-restore", { snapshotId: s.id });
+                            }}
+                            style={smallBtnStyle}
+                          >
+                            恢复
+                          </button>
+                          <button
+                            type="button"
+                            disabled={busyId !== null}
+                            onClick={() => {
+                              if (!window.confirm(`删除快照「${s.name}」？`)) return;
+                              void snapshotAction(c, "snapshot-delete", { snapshotId: s.id });
+                            }}
+                            style={{ ...smallBtnStyle, color: "#f87171" }}
+                          >
+                            删除
+                          </button>
+                        </div>
+                      ))}
+                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                        <button
+                          type="button"
+                          disabled={busyId !== null}
+                          onClick={() => {
+                            const name = window.prompt("快照名称（可留空自动生成）：");
+                            if (name === null) return;
+                            void snapshotAction(c, "snapshot-create", ...(name.trim() ? [{ name: name.trim() }] : []));
+                          }}
+                          style={{ ...smallBtnStyle, color: "white", background: "var(--accent)", borderColor: "var(--accent)" }}
+                        >
+                          创建快照
+                        </button>
+                        <span style={{ fontSize: 10, color: "var(--text-dim)" }}>快照保存 /workspace 当前状态，恢复会覆盖之后的改动。</span>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
           );
         })}

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { AgentUnavailableError, relayRpc } from "@/lib/relay/forward";
+import { requireUserIdentity } from "@/lib/web-session";
 
 export const dynamic = "force-dynamic";
 
@@ -7,6 +8,8 @@ export const dynamic = "force-dynamic";
 // Ask the agent to start an interactive PTY and return its session id. The
 // browser then subscribes to .../terminal/[sid]/events for output.
 export async function POST(req: Request) {
+  const identity = requireUserIdentity(req);
+  if (!identity.ok) return NextResponse.json({ error: "登录已失效" }, { status: identity.status });
   let body: Record<string, unknown> = {};
   try {
     body = (await req.json()) as Record<string, unknown>;
@@ -14,7 +17,7 @@ export async function POST(req: Request) {
     // empty body is fine — agent uses defaults
   }
   try {
-    const data = await relayRpc("pty.create", body);
+    const data = await relayRpc("pty.create", body, { userId: identity.session.user.id });
     return NextResponse.json({ success: true, data });
   } catch (err) {
     if (err instanceof AgentUnavailableError) {

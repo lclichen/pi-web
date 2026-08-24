@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { AgentUnavailableError, relayRpc } from "@/lib/relay/forward";
+import { requireUserIdentity } from "@/lib/web-session";
 
 export const dynamic = "force-dynamic";
 
@@ -8,6 +9,8 @@ export async function POST(
   req: Request,
   ctx: { params: Promise<{ sid: string }> },
 ): Promise<Response> {
+  const identity = requireUserIdentity(req);
+  if (!identity.ok) return NextResponse.json({ error: "登录已失效" }, { status: identity.status });
   const { sid } = await ctx.params;
   let body: { cols?: unknown; rows?: unknown } = {};
   try {

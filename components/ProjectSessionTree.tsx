@@ -57,6 +57,7 @@ export function ProjectSessionTree({
     }
   });
   const [showAll, setShowAll] = useState<Set<string>>(new Set());
+  const [query, setQuery] = useState("");
   const [menu, setMenu] = useState<{ project: ProjectRecord; x: number; y: number } | null>(null);
   const [settingsId, setSettingsId] = useState<string | null>(null);
   const [importId, setImportId] = useState<string | null>(null);
@@ -252,6 +253,24 @@ export function ProjectSessionTree({
     return { visible: [...pinned, ...recent], total: all.length };
   };
 
+  // 全局会话搜索：按名称/首条消息/id 过滤全部会话，平铺显示（含所属项目标记）。
+  const searching = query.trim().length > 0;
+  const allSessionsSorted = useMemo(
+    () => [...sessions].sort((a, b) => b.modified.localeCompare(a.modified)),
+    [sessions],
+  );
+  const searchResults = useMemo(() => {
+    if (!searching) return [] as SessionInfo[];
+    const q = query.trim().toLowerCase();
+    return allSessionsSorted
+      .filter((s) =>
+        s.name?.toLowerCase().includes(q)
+        || s.firstMessage.toLowerCase().includes(q)
+        || s.id.toLowerCase().includes(q),
+      )
+      .slice(0, 50);
+  }, [searching, query, allSessionsSorted]);
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 2, padding: "6px 4px" }}>
       {/* 新建项目入口 */}
@@ -263,6 +282,41 @@ export function ProjectSessionTree({
         )}
       </div>
 
+      {/* 全局会话搜索 */}
+      <div style={{ padding: "0 4px 8px" }}>
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Escape") setQuery(""); }}
+          placeholder="搜索会话…"
+          spellCheck={false}
+          style={{
+            width: "100%", boxSizing: "border-box", height: 26, padding: "0 8px",
+            background: "var(--bg)", color: "var(--text)", border: "1px solid var(--border)",
+            borderRadius: 5, fontFamily: "var(--font-mono)", fontSize: 11, outline: "none",
+          }}
+        />
+      </div>
+
+      {searching && (
+        <div>
+          {searchResults.length === 0 ? (
+            <div style={{ padding: "8px 6px", fontSize: 11, color: "var(--text-dim)" }}>没有匹配的会话</div>
+          ) : searchResults.map((s) => {
+            const owner = projects.find((p) => p.id === s.projectId) ?? null;
+            return (
+              <div key={`search:${s.id}`} style={{ marginBottom: 2 }}>
+                <div style={{ padding: "2px 8px", fontSize: 10, color: "var(--text-dim)" }}>
+                  {owner ? `项目：${owner.name}` : s.projectRoot ?? "未分组"}
+                </div>
+                {renderItem(s, owner)}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {!searching && (<>
       {projects.map((project) => {
         const { visible, total } = projectSessions(project);
         const isCollapsed = collapsed.has(project.id);
@@ -344,6 +398,7 @@ export function ProjectSessionTree({
           </div>
         );
       })}
+      </>)}
 
       {/* 项目菜单 */}
       {menu && (

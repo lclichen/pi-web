@@ -843,6 +843,9 @@ export function SessionSidebar({ authInfo = null, sessionSpace = "mine", onSessi
 
   const recentProjects = getRecentProjects(allSessions);
   const showProjectFilter = recentProjects.length > 8;
+  // 顶部 New 是"服务器目录会话"入口（admin 专用）：普通用户在 auth-on 下
+  // 只能通过项目节点"＋"建会话，避免出现无意义的 host 入口。
+  const showTopNewButton = !(authInfo?.enabled && authInfo.user && authInfo.user.role !== "admin");
   const visibleProjects = projectFilter.trim()
     ? recentProjects.filter((p) => p.toLowerCase().includes(projectFilter.trim().toLowerCase()))
     : recentProjects;
@@ -908,6 +911,7 @@ export function SessionSidebar({ authInfo = null, sessionSpace = "mine", onSessi
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
           <PiWebTitle />
           <div style={{ display: "flex", gap: 6 }}>
+            {showTopNewButton && (
             <button
               onClick={handleNewSession}
               disabled={!selectedCwd}
@@ -946,6 +950,7 @@ export function SessionSidebar({ authInfo = null, sessionSpace = "mine", onSessi
               </svg>
               {t("sidebar.new")}
             </button>
+            )}
             <button
               onClick={() => loadSessions(false)}
               style={{

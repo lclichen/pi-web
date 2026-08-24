@@ -107,7 +107,7 @@ export async function remoteList(ctx: RemoteSessionContext, path: string): Promi
   const res = await platformGet<{ entries?: Array<{ name: string; isDirectory?: boolean; isDir?: boolean; size?: number; mtimeMs?: number }> }>(
     `/api/v1/containers/${ctx.containerId}/tools/ls`,
     ctx.apiKey,
-    { path },
+    { path: containerPath(path) },
   );
   return (res.entries ?? []).map((e) => ({
     name: e.name,
@@ -125,7 +125,7 @@ export async function remoteRead(ctx: RemoteSessionContext, path: string): Promi
   const r = await platformPost<{ contentBase64: string; size: number }>(
     `/api/v1/containers/${ctx.containerId}/tools/read`,
     ctx.apiKey,
-    { path },
+    { path: containerPath(path) },
   );
   return { content: Buffer.from(r.contentBase64, "base64").toString("utf8"), size: r.size };
 }
@@ -138,7 +138,7 @@ export async function remoteWrite(ctx: RemoteSessionContext, path: string, conte
   await platformPost(
     `/api/v1/containers/${ctx.containerId}/tools/write`,
     ctx.apiKey,
-    { path, content: Buffer.from(content, "utf8").toString("base64") },
+    { path: containerPath(path), content: Buffer.from(content, "utf8").toString("base64") },
   );
 }
 
@@ -150,7 +150,7 @@ export async function remoteDelete(ctx: RemoteSessionContext, path: string): Pro
   await platformPost(
     `/api/v1/containers/${ctx.containerId}/tools/bash`,
     ctx.apiKey,
-    { command: `rm -rf -- ${shellQuote(path)}` },
+    { command: `rm -rf -- ${shellQuote(containerPath(path))}` },
   );
 }
 
@@ -162,12 +162,21 @@ export async function remoteRename(ctx: RemoteSessionContext, path: string, newP
   await platformPost(
     `/api/v1/containers/${ctx.containerId}/tools/bash`,
     ctx.apiKey,
-    { command: `mkdir -p -- $(dirname ${shellQuote(newPath)}) && mv -- ${shellQuote(path)} ${shellQuote(newPath)}` },
+    { command: `mkdir -p -- $(dirname ${shellQuote(containerPath(newPath))}) && mv -- ${shellQuote(containerPath(path))} ${shellQuote(containerPath(newPath))}` },
   );
 }
 
 function stripSlash(path: string): string {
   return path.replace(/^\/+/, "");
+}
+
+/** Map a browser-side remote path to the container path: the virtual root
+ *  ("/" or "") is the container workspace (/workspace), everything else is
+ *  relative to it. Keeps the file explorer's root == the container's working
+ *  directory (extension tools use the same convention). */
+function containerPath(path: string): string {
+  const p = stripSlash(path);
+  return p ? `/workspace/${p}` : "/workspace";
 }
 
 function shellQuote(path: string): string {

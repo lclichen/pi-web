@@ -79,6 +79,7 @@ export function AppShell() {
   // Deployment-wide Lab Training toggle (PI_WEB_LAB_TRAINING seeds the
   // default; admins can flip it at runtime via /api/server-settings).
   const [labTrainingEnabled, setLabTrainingEnabled] = useState(true);
+  const [authEnabled, setAuthEnabled] = useState(true);
   // Sandbox manager dialog: null = closed; bind = project context (optional).
   const [sandboxManager, setSandboxManager] = useState<
     { projectId?: string; projectName?: string; containerId?: number } | null
@@ -86,14 +87,31 @@ export function AppShell() {
   const [projectsRefreshKey, setProjectsRefreshKey] = useState(0);
   useEffect(() => {
     fetch("/api/webauth/me")
-      .then((r) => (r.status === 401 ? null : r.json()))
-      .then((d) => {
+      .then(async (r) => {
+        // 401 也读 body：authEnabled 标识单用户模式，必须与"会话失效"区分。
+        const d = (await r.json().catch(() => ({}))) as {
+          authEnabled?: boolean;
+          user?: { id: number; username: string; role: "admin" | "user" } | null;
+          labTraining?: boolean;
+        };
         setLabTrainingEnabled(d?.labTraining !== false);
-        if (d?.authEnabled === false) { setWebUser(null); return; }
+        if (d?.authEnabled === false) {
+          setAuthEnabled(false);
+          setWebUser(null);
+          return;
+        }
+        setAuthEnabled(true);
         setWebUser(d?.user ? { id: d.user.id, username: d.user.username, role: d.user.role } : null);
       })
       .catch(() => setWebUser(null));
   }, []);
+  // 登录态失效（session 过期、pi-web 重启后内存 session 丢失但浏览器 cookie
+  // 仍在 → proxy 放行、API 层 401）时回登录页，而不是停在主界面。
+  useEffect(() => {
+    if (authEnabled && webUser !== "loading" && webUser === null) {
+      router.replace("/login");
+    }
+  }, [authEnabled, webUser, router]);
   const [initialCwdStatus, setInitialCwdStatus] = useState<"idle" | "validating" | "ready" | "error">(
     () => initialNavigation.requestedCwd ? "validating" : "idle",
   );

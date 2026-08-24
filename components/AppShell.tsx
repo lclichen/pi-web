@@ -73,6 +73,8 @@ export function AppShell() {
   const [newSessionCwd, setNewSessionCwd] = useState<string | null>(null);
   const [newSessionMode, setNewSessionMode] = useState<"host" | "sandbox" | "local-machine">("host");
   const [newSessionProjectId, setNewSessionProjectId] = useState<string | null>(null);
+  // Display name of the pending remote session's project (header badge). 
+  const [newSessionProjectLabel, setNewSessionProjectLabel] = useState<string | null>(null);
   const [sessionSpace, setSessionSpace] = useState<"mine" | "host">("mine");
   // Web identity (PI_WEB_AUTH): null while loading, {user} when logged in.
   const [webUser, setWebUser] = useState<{ id: number; username: string; role: "admin" | "user" } | null | "loading">("loading");
@@ -320,9 +322,13 @@ export function AppShell() {
     ? { sessionId: selectedSession.id, label: activeSessionMode === "sandbox" ? "沙箱容器" : "本机" }
     : null;
   // A remote-mode session that has not materialized yet (no first message):
-  // file/terminal panels must wait instead of hitting the local APIs.
-  const pendingRemoteSession = activeSessionMode && activeSessionMode !== "host" && !selectedSession
-    ? activeSessionMode
+  // file/terminal panels must wait instead of hitting the local APIs. Binds to
+  // the explicit new-session intent (mode + projectId), never to a cwd value —
+  // a remote session's "/" cwd must never fall through to host behavior.
+  const pendingRemoteSession = selectedSession === null
+    && newSessionCwd !== null
+    && newSessionMode !== "host"
+    ? newSessionMode
     : null;
 
   // Live subagent calls lifted from the active ChatWindow (useAgentSession).
@@ -424,6 +430,14 @@ export function AppShell() {
     setActiveCwd(cwd);
     // Skip if cwd is null (initial mount).
     if (!cwd) return;
+    // Echo of the cwd a new remote-mode session was just started with — the
+    // same flow, not a directory switch. Clear the marker and keep the
+    // sandbox/local mode + projectId intact.
+    if (newSessionOwnedCwdRef.current === cwd) {
+      newSessionOwnedCwdRef.current = null;
+      activeProjectRootRef.current = projectRoot ?? cwd;
+      return;
+    }
     const newProject = projectRoot ?? cwd;
     const currentProject = activeProjectRootRef.current
       ?? (selectedSession ? (selectedSession.projectRoot ?? selectedSession.cwd) : null);
@@ -490,11 +504,19 @@ export function AppShell() {
     }
   }, [router, isMobile]);
 
-  const handleNewSession = useCallback((_sessionId: string, cwd: string, mode?: "host" | "sandbox" | "local-machine", projectId?: string) => {
+  // Records the cwd a new remote-mode (sandbox/local) session was started
+  // with. The sidebar echoes that cwd back through onCwdChange; that echo is
+  // part of the SAME new-session flow, not a directory switch — without this
+  // guard handleCwdChange would reset newSessionMode/projectId back to host
+  // and the first message would silently open a host session.
+  const newSessionOwnedCwdRef = useRef<string | null>(null);
+
+  const handleNewSession = useCallback((_sessionId: string, cwd: string, mode?: "host" | "sandbox" | "local-machine", projectId?: string, projectLabel?: string) => {
     setSelectedSession(null);
     setNewSessionCwd(cwd);
     if (mode) setNewSessionMode(mode);
     setNewSessionProjectId(projectId ?? null);
+    newSessionOwnedCwdRef.current = mode && mode !== "host" ? cwd : null;
     setSessionKey((k) => k + 1);
     setBranchTree([]);
     setBranchActiveLeafId(null);
@@ -795,6 +817,11 @@ export function AppShell() {
         }
         projectsRefreshKey={projectsRefreshKey}
         pendingRemoteMode={pendingRemoteSession}
+        pendingProjectLabel={
+          pendingRemoteSession
+            ? newSessionProjectLabel ?? "新会话"
+            : (selectedSession?.mode && selectedSession.mode !== "host" ? (selectedSession.name ? `会话：${selectedSession.name}` : "远程会话") : null)
+        }
       />
       <div style={{ padding: "6px 8px", flexShrink: 0, display: "flex", flexWrap: "wrap", gap: 3 }}>
         {([

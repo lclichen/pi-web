@@ -134,9 +134,15 @@ export function ProjectSessionTree({
     setMenu(null);
   };
 
+  // 建项目期间禁用入口（沙盒项目要同步创建容器，耗时数秒；连点会
+  // 一次性创建多个容器）。
+  const [creating, setCreating] = useState(false);
+
   const createProject = async (mode: "sandbox" | "local-machine") => {
+    if (creating) return;
     const name = window.prompt(mode === "sandbox" ? "新沙箱项目名称：" : "新本机项目名称：");
     if (!name?.trim()) return;
+    setCreating(true);
     try {
       const res = await fetch("/api/projects", {
         method: "POST",
@@ -151,6 +157,8 @@ export function ProjectSessionTree({
     } catch (e) {
       window.alert(e instanceof Error ? e.message : String(e));
       return;
+    } finally {
+      setCreating(false);
     }
     loadProjects();
   };
@@ -275,8 +283,12 @@ export function ProjectSessionTree({
     <div style={{ display: "flex", flexDirection: "column", gap: 2, padding: "6px 4px" }}>
       {/* 新建项目入口 */}
       <div style={{ display: "flex", gap: 6, padding: "0 4px 8px" }}>
-        <button type="button" onClick={() => void createProject("sandbox")} style={createBtn}>+ 沙箱项目</button>
-        <button type="button" onClick={() => void createProject("local-machine")} style={createBtn}>+ 本机项目</button>
+        <button type="button" onClick={() => void createProject("sandbox")} disabled={creating} style={{ ...createBtn, cursor: creating ? "default" : "pointer", opacity: creating ? 0.6 : 1 }}>
+          {creating ? "创建中…" : "+ 沙箱项目"}
+        </button>
+        <button type="button" onClick={() => void createProject("local-machine")} disabled={creating} style={{ ...createBtn, cursor: creating ? "default" : "pointer", opacity: creating ? 0.6 : 1 }}>
+          {creating ? "创建中…" : "+ 本机项目"}
+        </button>
         {isAdmin && onOpenServerDirectory && (
           <button type="button" onClick={onOpenServerDirectory} style={{ ...createBtn, marginLeft: "auto" }}>打开服务器目录</button>
         )}
@@ -320,6 +332,9 @@ export function ProjectSessionTree({
       {projects.map((project) => {
         const { visible, total } = projectSessions(project);
         const isCollapsed = collapsed.has(project.id);
+        // 焦点会话所属项目高亮 + 左侧模式色条，一眼定位当前所在项目。
+        const projectHoldsFocus = Boolean(selectedSessionId && byProject.map.get(project.id)?.some((s) => s.id === selectedSessionId));
+        const modeColor = project.mode === "sandbox" ? "#38bdf8" : "#a78bfa";
         return (
           <div key={project.id} style={{ marginBottom: 2 }}>
             <div
@@ -327,15 +342,24 @@ export function ProjectSessionTree({
               style={{
                 display: "flex", alignItems: "center", gap: 6, padding: "5px 6px",
                 borderRadius: 6, cursor: "pointer", fontSize: 12, fontWeight: 600,
-                color: "var(--text)", background: "var(--bg-panel)",
+                color: "var(--text)",
+                background: projectHoldsFocus ? "var(--bg-selected)" : "var(--bg-panel)",
+                boxShadow: projectHoldsFocus ? `inset 2px 0 0 ${modeColor}` : "none",
               }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-selected)"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = "var(--bg-panel)"; }}
+              onMouseEnter={(e) => { if (!projectHoldsFocus) e.currentTarget.style.background = "var(--bg-selected)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = projectHoldsFocus ? "var(--bg-selected)" : "var(--bg-panel)"; }}
             >
               <span style={{ fontSize: 9, color: "var(--text-dim)", width: 10 }}>{isCollapsed ? "▸" : "▾"}</span>
+              <span style={{
+                flexShrink: 0, padding: "0 5px", borderRadius: 3, fontSize: 9, fontWeight: 700,
+                color: modeColor, background: project.mode === "sandbox" ? "rgba(56,189,248,0.12)" : "rgba(167,139,250,0.12)",
+              }}>
+                {project.mode === "sandbox" ? "沙盒" : "本地"}
+              </span>
               <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{project.name}</span>
-              {project.mode === "sandbox" && <span style={{ fontSize: 9, color: "#38bdf8" }}>沙箱</span>}
-              {project.mode === "local-machine" && <span style={{ fontSize: 9, color: "#a78bfa" }}>本机</span>}
+              {project.mode === "sandbox" && (
+                <span title="项目会话在容器 /workspace 内执行" style={{ flexShrink: 0, fontFamily: "var(--font-mono)", fontSize: 9, color: "var(--text-dim)" }}>/workspace</span>
+              )}
               <span style={{ fontSize: 10, color: "var(--text-dim)" }}>{total}</span>
               <button
                 type="button"
@@ -386,6 +410,10 @@ export function ProjectSessionTree({
               style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 6px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontWeight: 600, color: "var(--text-muted)", background: "transparent" }}
             >
               <span style={{ fontSize: 9, color: "var(--text-dim)", width: 10 }}>{isCollapsed ? "▸" : "▾"}</span>
+              <span style={{
+                flexShrink: 0, padding: "0 5px", borderRadius: 3, fontSize: 9, fontWeight: 700,
+                color: "var(--text-muted)", background: "rgba(128,128,128,0.14)",
+              }}>Host</span>
               <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={root}>{root}</span>
               <span style={{ fontSize: 10, color: "var(--text-dim)" }}>{list.length}</span>
             </div>

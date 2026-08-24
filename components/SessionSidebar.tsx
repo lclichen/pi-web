@@ -83,7 +83,7 @@ interface Props {
   onSessionSpaceChange?: (space: "mine" | "host") => void;
   selectedSessionId: string | null;
   onSelectSession: (session: SessionInfo, isRestore?: boolean) => void;
-  onNewSession?: (sessionId: string, cwd: string, mode?: "host" | "sandbox" | "local-machine", projectId?: string) => void;
+  onNewSession?: (sessionId: string, cwd: string, mode?: "host" | "sandbox" | "local-machine", projectId?: string, projectLabel?: string) => void;
   initialSessionId?: string | null;
   skipInitialProjectSelection?: boolean;
   onInitialRestoreDone?: () => void;
@@ -105,6 +105,9 @@ interface Props {
   /** Remote mode of a not-yet-materialized session: explorer waits with a
    *  hint instead of falling back to the server-local /api/files. */
   pendingRemoteMode?: "host" | "sandbox" | "local-machine" | null;
+  /** Project name for the pending remote session's header badge (e.g.
+   *  "[沙盒] 项目名 · /workspace"); null for host mode. */
+  pendingProjectLabel?: string | null;
 }
 
 interface WorktreeEntry {
@@ -399,7 +402,7 @@ function PiWebTitle() {
   );
 }
 
-export function SessionSidebar({ authInfo = null, sessionSpace = "mine", onSessionSpaceChange, selectedSessionId, onSelectSession, onNewSession, initialSessionId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onOpenFile, onFileDeleted, onFileRenamed, explorerRefreshKey, onExplorerRefresh, onAtMention, onAtMentions, onManageSandbox, projectsRefreshKey, pendingRemoteMode }: Props) {
+export function SessionSidebar({ authInfo = null, sessionSpace = "mine", onSessionSpaceChange, selectedSessionId, onSelectSession, onNewSession, initialSessionId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onOpenFile, onFileDeleted, onFileRenamed, explorerRefreshKey, onExplorerRefresh, onAtMention, onAtMentions, onManageSandbox, projectsRefreshKey, pendingRemoteMode, pendingProjectLabel }: Props) {
   const { t } = useI18n();
   const [allSessions, setAllSessions] = useState<SessionInfo[]>([]);
   // Remote-mode scoping for the file explorer (sandbox / local-machine).
@@ -408,6 +411,10 @@ export function SessionSidebar({ authInfo = null, sessionSpace = "mine", onSessi
     if (!selected?.mode || selected.mode === "host") return null;
     return { sessionId: selected.id, label: selected.mode === "sandbox" ? "沙箱容器" : "本机" };
   })();
+  // 选中远程会话时，CWD 按钮同样用模式徽标呈现（不显示服务器路径）。
+  const selectedRemoteMode = remoteSession
+    ? (allSessions.find((s) => s.id === selectedSessionId)?.mode as "sandbox" | "local-machine")
+    : null;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedCwd, setSelectedCwd] = useState<string | null>(null);
@@ -1014,15 +1021,45 @@ export function SessionSidebar({ authInfo = null, sessionSpace = "mine", onSessi
             }}
           >
             {selectedCwd ? (
-              <PathLabel
-                text={displayCwd(selectedProject ?? selectedCwd, homeDir)}
-                style={{
-                  flex: 1,
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 11,
-                  color: "var(--text)",
-                }}
-              />
+              (pendingRemoteMode && pendingRemoteMode !== "host") || selectedRemoteMode ? (
+                // 远程模式（沙盒/本机）：显示模式徽标 + 项目/工作区语义，
+                // 不显示服务器路径（用户不感知也不应感知它）。
+                (() => {
+                  const mode = (pendingRemoteMode && pendingRemoteMode !== "host" ? pendingRemoteMode : selectedRemoteMode)!;
+                  return (
+                    <span
+                      style={{ flex: 1, display: "flex", alignItems: "center", gap: 6, minWidth: 0, fontSize: 11 }}
+                      title={mode === "sandbox" ? "任务在容器 /workspace 内执行" : "任务在本机配对的工作区内执行"}
+                    >
+                      <span
+                        style={{
+                          flexShrink: 0, padding: "1px 6px", borderRadius: 4, fontSize: 10, fontWeight: 700,
+                          color: mode === "sandbox" ? "#38bdf8" : "#a78bfa",
+                          background: mode === "sandbox" ? "rgba(56,189,248,0.12)" : "rgba(167,139,250,0.12)",
+                        }}
+                      >
+                        {mode === "sandbox" ? "沙盒" : "本地"}
+                      </span>
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text)" }}>
+                        {pendingProjectLabel ?? ""}
+                      </span>
+                      {mode === "sandbox" && (
+                        <span style={{ flexShrink: 0, fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-dim)" }}>/workspace</span>
+                      )}
+                    </span>
+                  );
+                })()
+              ) : (
+                <PathLabel
+                  text={displayCwd(selectedProject ?? selectedCwd, homeDir)}
+                  style={{
+                    flex: 1,
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 11,
+                    color: "var(--text)",
+                  }}
+                />
+              )
             ) : (
               <span
                 style={{
@@ -1564,7 +1601,7 @@ export function SessionSidebar({ authInfo = null, sessionSpace = "mine", onSessi
             onSelectSession={handleSelectSessionFromList}
             onNewSessionInProject={(project: ProjectRecord) => {
               const tempId = typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now()}`;
-              onNewSession?.(tempId, "/", project.mode, project.id);
+              onNewSession?.(tempId, "/", project.mode, project.id, project.name);
             }}
             onDeleteSession={async (id) => {
               await fetch(`/api/sessions/${encodeURIComponent(id)}`, { method: "DELETE" }).catch(() => {});

@@ -124,6 +124,13 @@ export function createProject(input: {
   const name = input.name.trim();
   if (!name || name.length > 64) return { ok: false, error: "项目名不能为空且不超过 64 字符" };
   if (!PROJECT_MODES.has(input.mode)) return { ok: false, error: `不支持的模式：${input.mode}` };
+  // 同一用户下项目名唯一：重名会让侧栏分组与复制/导入的目标辨识混乱。
+  const duplicate = Object.values(store().data.projects).find(
+    (p) => p.ownerId === input.ownerId && p.name === name,
+  );
+  if (duplicate) {
+    return { ok: false, error: `已存在同名项目「${name}」，请换一个名称` };
+  }
 
   const project: ProjectRecord = {
     id: randomUUID(),
@@ -240,8 +247,14 @@ export function duplicateProject(
 ): { ok: true; project: ProjectRecord } | { ok: false; error: string } {
   const source = getProject(projectId);
   if (!source) return { ok: false, error: "项目不存在" };
+  // 复制的目标名若已占用，自动加序号后缀（用户的意图是"再来一份"）。
+  let candidate = newName;
+  let n = 2;
+  while (Object.values(store().data.projects).some((p) => p.ownerId === source.ownerId && p.name === candidate)) {
+    candidate = `${newName} (${n++})`;
+  }
   return createProject({
-    name: newName,
+    name: candidate,
     ownerId: source.ownerId,
     ownerName: source.ownerName,
     mode: source.mode,

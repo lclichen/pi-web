@@ -37,10 +37,19 @@ function readRelay(path: string): RelayFile {
   try {
     const parsed: unknown = JSON.parse(readFileSync(path, "utf-8"));
     if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
-      const obj = parsed as { token?: unknown; generatedAt?: unknown };
+      const obj = parsed as { token?: unknown; generatedAt?: unknown; tokens?: unknown };
+      const tokens = obj.tokens
+        && typeof obj.tokens === "object"
+        && !Array.isArray(obj.tokens)
+        ? (obj.tokens as Record<string, number>)
+        : undefined;
       return {
         token: typeof obj.token === "string" ? obj.token : null,
         generatedAt: typeof obj.generatedAt === "string" ? obj.generatedAt : null,
+        // The tokens map MUST survive a read — dropping it would invalidate
+        // every previously-issued per-user token (lookup falls back to the
+        // legacy single token) and wipe other users' tokens on the next issue.
+        ...(tokens ? { tokens } : {}),
       };
     }
   } catch {

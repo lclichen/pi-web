@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { createProject, listProjects } from "@/lib/projects";
+import { createProject, deleteProject, listProjects, updateProject, allProjects } from "@/lib/projects";
 import { requireUserIdentity } from "@/lib/web-session";
 import { isApiRequestAllowed, hasJsonContentType } from "@/lib/request-security";
+import { provisionContainerForProject } from "@/lib/platform/provision";
 
 export const dynamic = "force-dynamic";
 
@@ -43,5 +44,34 @@ export async function POST(req: Request) {
     ...(typeof body.seedFromProjectId === "string" ? { seedFromProjectId: body.seedFromProjectId } : {}),
   });
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
+
+  // 沙箱项目：没有指定容器时自动创建/恢复一个并绑定（"跟随平台默认" 不再
+  // 留下空项目——容器供给失败会立即报错并回滚，避免会话阶段静默失败）。
+  if (result.project.mode === "sandbox" && result.project.containerId === undefined) {
+    try {
+      if (!process.env.PI_WEB_PLATFORM_URL) {
+        throw new Error("沙箱模式未配置（缺少 PI_WEB_PLATFORM_URL）");
+      }
+      if (!identity.session.apiKey) {
+        throw new Error("沙箱模式需要平台凭证，请重新登录");
+      }
+      // 别绑定已被其他项目占用的容器（两个项目共享一个容器会互相覆盖 /workspace）。
+      const excluded = allProjects()
+        .filter((p) => p.mode === "sandbox" && p.id !== result.project.id && p.containerId !== undefined && p.containerId !== null)
+        .map((p) => Number(p.containerId));
+      const provisioned = await provisionContainerForProject(
+        identity.session.apiKey,
+        result.project.name,
+        excluded,
+      );
+      const updated = updateProject(result.project.id, { containerId: provisioned.containerId });
+      if (!updated.ok) throw new Error(updated.error);
+      return NextResponse.json({ project: updated.project }, { status: 201 });
+    } catch (error) {
+      deleteProject(result.project.id);
+      return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 400 });
+    }
+  }
+
   return NextResponse.json({ project: result.project }, { status: 201 });
 }

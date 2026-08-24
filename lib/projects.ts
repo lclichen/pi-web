@@ -71,6 +71,12 @@ export function listProjects(ownerId: number): ProjectRecord[] {
     .sort((a, b) => a.createdAt - b.createdAt);
 }
 
+/** All projects across users (container-binding lookups; callers must not
+ *  leak cross-user records to clients). */
+export function allProjects(): ProjectRecord[] {
+  return Object.values(store().data.projects);
+}
+
 export function getProject(projectId: string): ProjectRecord | undefined {
   return store().data.projects[projectId];
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useI18n } from "@/hooks/useI18n";
 
@@ -64,6 +64,11 @@ export function DirectoryPicker({ onCancel, onSelect, busy = false, error }: Pro
   const [drives, setDrives] = useState<DirectoryEntry[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [newFolderOpen, setNewFolderOpen] = useState(false);
+  const [newFolderName, setNewFolderName] = useState("");
+  const [newFolderBusy, setNewFolderBusy] = useState(false);
+  const [newFolderError, setNewFolderError] = useState<string | null>(null);
+  const newFolderInputRef = useRef<HTMLInputElement>(null);
 
   const navigateTo = useCallback(async (directory?: string) => {
     setLoading(true);
@@ -93,6 +98,42 @@ export function DirectoryPicker({ onCancel, onSelect, busy = false, error }: Pro
     const candidate = pathInput.trim();
     if (candidate) void navigateTo(candidate);
   };
+  const createFolder = useCallback(async (event?: FormEvent) => {
+    event?.preventDefault();
+    const name = newFolderName.trim();
+    if (!name || newFolderBusy) {
+      if (!name) setNewFolderError(t("directoryPicker.folderNameRequired"));
+      return;
+    }
+    if (/[\\/:*?"<>|]/.test(name)) {
+      setNewFolderError(t("directoryPicker.folderNameInvalid"));
+      return;
+    }
+    if (!currentPath) return;
+    setNewFolderBusy(true);
+    setNewFolderError(null);
+    try {
+      const target = `${currentPath.replace(/[\\/]+$/, "")}/${name}`;
+      const res = await fetch("/api/cwd/mkdir", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: target }),
+      });
+      const data = await res.json().catch(() => ({})) as { path?: string; error?: string };
+      if (!res.ok || !data.path) {
+        setNewFolderError(data?.error ?? `HTTP ${res.status}`);
+        return;
+      }
+      setNewFolderOpen(false);
+      setNewFolderName("");
+      // 进入新建的文件夹，方便直接选它。
+      await navigateTo(data.path);
+    } catch (cause) {
+      setNewFolderError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setNewFolderBusy(false);
+    }
+  }, [newFolderName, newFolderBusy, currentPath, navigateTo, t]);
   const hasUncommittedPath = pathInput.trim() !== currentPath;
   const canSelect = Boolean(currentPath) && !hasUncommittedPath && !busy;
   const canNavigateUp = Boolean(parentDirectory) || isWindowsDriveRoot(currentPath);
@@ -208,7 +249,78 @@ export function DirectoryPicker({ onCancel, onSelect, busy = false, error }: Pro
           {(loadError || error) && <div style={{ padding: "8px", color: "#dc2626", fontSize: 11 }}>{loadError ?? error}</div>}
         </div>
 
-        <div className="directory-picker-footer" style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 10, flexShrink: 0, padding: "10px 18px", borderTop: "1px solid var(--border)" }}>
+        <div className="directory-picker-footer" style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0, padding: "10px 18px", borderTop: "1px solid var(--border)" }}>
+          {newFolderOpen ? (
+            <form
+              onSubmit={createFolder}
+              style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0 }}
+            >
+              <label htmlFor="directory-new-folder" style={{ position: "absolute", width: 1, height: 1, padding: 0, margin: -1, overflow: "hidden", clip: "rect(0, 0, 0, 0)", whiteSpace: "nowrap", border: 0 }}>
+                {t("directoryPicker.newFolderPlaceholder")}
+              </label>
+              <input
+                className="directory-picker-new-folder"
+                id="directory-new-folder"
+                ref={newFolderInputRef}
+                value={newFolderName}
+                placeholder={t("directoryPicker.newFolderPlaceholder")}
+                autoFocus
+                disabled={newFolderBusy}
+                onChange={(event) => {
+                  setNewFolderName(event.target.value);
+                  setNewFolderError(null);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") {
+                    event.stopPropagation();
+                    setNewFolderOpen(false);
+                    setNewFolderName("");
+                    setNewFolderError(null);
+                  }
+                }}
+                style={{ minWidth: 0, flex: 1, height: 32, padding: "0 10px", border: "1px solid var(--accent)", borderRadius: 6, outline: "none", background: "var(--bg-panel)", color: "var(--text)", fontSize: 12 }}
+              />
+              <button
+                className="directory-picker-action"
+                type="submit"
+                disabled={newFolderBusy || !newFolderName.trim()}
+                style={{ minWidth: 56, height: 32, padding: "0 12px", border: 0, borderRadius: 6, background: "var(--accent)", color: "#fff", fontSize: 12, fontWeight: 600, opacity: newFolderBusy || !newFolderName.trim() ? 0.6 : 1, cursor: newFolderBusy || !newFolderName.trim() ? "default" : "pointer" }}
+              >
+                {newFolderBusy ? t("directoryPicker.creating") : t("sidebar.create")}
+              </button>
+              <button
+                className="directory-picker-action"
+                type="button"
+                onClick={() => { setNewFolderOpen(false); setNewFolderName(""); setNewFolderError(null); }}
+                disabled={newFolderBusy}
+                style={{ height: 32, padding: "0 10px", border: "1px solid var(--border)", borderRadius: 6, background: "none", color: "var(--text-muted)", fontSize: 12, cursor: newFolderBusy ? "default" : "pointer" }}
+              >
+                {t("sidebar.cancel")}
+              </button>
+            </form>
+          ) : (
+            <button
+              className="directory-picker-action"
+              type="button"
+              onClick={() => {
+                setNewFolderOpen(true);
+                setNewFolderError(null);
+                setTimeout(() => newFolderInputRef.current?.focus(), 0);
+              }}
+              disabled={!currentPath || busy || loading}
+              title={t("directoryPicker.newFolder")}
+              style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 12px", border: "1px solid var(--border)", borderRadius: 6, background: "none", color: "var(--text-muted)", cursor: !currentPath || busy || loading ? "default" : "pointer", fontSize: 12, opacity: !currentPath || busy || loading ? 0.5 : 1 }}
+            >
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" aria-hidden="true">
+                <path d="M1.5 3h4l1.5 2h7.5v7.5h-13z" />
+                <line x1="8" y1="7.5" x2="8" y2="11.5" />
+                <line x1="6" y1="9.5" x2="10" y2="9.5" />
+              </svg>
+              {t("directoryPicker.newFolder")}
+            </button>
+          )}
+          {newFolderError && <span style={{ flexShrink: 0, maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "#dc2626", fontSize: 11 }}>{newFolderError}</span>}
+          <div style={{ flex: newFolderOpen ? 0 : 1 }} />
           <button className="directory-picker-action" type="button" onClick={onCancel} disabled={busy} style={{ padding: "6px 14px", border: "1px solid var(--border)", borderRadius: 6, background: "none", color: "var(--text-muted)", cursor: busy ? "default" : "pointer", fontSize: 13 }}>{t("i18n.cancel")}</button>
           <button
             className="directory-picker-action"

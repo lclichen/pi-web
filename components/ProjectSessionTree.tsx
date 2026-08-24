@@ -44,7 +44,6 @@ export function ProjectSessionTree({
   onRenameSession,
   refreshSessions,
   isAdmin,
-  sessionSpace,
   onOpenServerDirectory,
   onManageSandbox,
   projectsRefreshKey,
@@ -137,11 +136,21 @@ export function ProjectSessionTree({
   const createProject = async (mode: "sandbox" | "local-machine") => {
     const name = window.prompt(mode === "sandbox" ? "新沙箱项目名称：" : "新本机项目名称：");
     if (!name?.trim()) return;
-    await fetch("/api/projects", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: name.trim(), mode }),
-    }).catch(() => {});
+    try {
+      const res = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name.trim(), mode }),
+      });
+      const data = await res.json().catch(() => ({})) as { error?: string };
+      if (!res.ok) {
+        window.alert(data?.error ?? `创建失败：HTTP ${res.status}`);
+        return;
+      }
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : String(e));
+      return;
+    }
     loadProjects();
   };
 
@@ -163,8 +172,11 @@ export function ProjectSessionTree({
     return { map, ungrouped };
   }, [sessions]);
 
+  // 管理员通过"打开服务器目录"（host 模式）建的会话没有 projectId，按目录
+  // 动态分组显示——不区分 mine/host 空间（UI 没有空间切换入口，之前 gate
+  // 在 sessionSpace==="host" 上导致这些会话永远不显示）。
   const hostGroups = useMemo(() => {
-    if (!isAdmin || sessionSpace !== "host") return [];
+    if (!isAdmin) return [];
     const groups = new Map<string, SessionInfo[]>();
     for (const s of byProject.ungrouped) {
       const key = s.projectRoot ?? s.cwd;
@@ -176,7 +188,7 @@ export function ProjectSessionTree({
       const latest = (entry: [string, SessionInfo[]]) => entry[1][0]?.modified ?? "";
       return latest(b).localeCompare(latest(a));
     });
-  }, [byProject.ungrouped, isAdmin, sessionSpace]);
+  }, [byProject.ungrouped, isAdmin]);
 
   const renderItem = (s: SessionInfo, project: ProjectRecord | null) => {
     const selected = s.id === selectedSessionId;
@@ -304,7 +316,7 @@ export function ProjectSessionTree({
           </div>
         );
       })}
-      {projects.length === 0 && (
+      {projects.length === 0 && hostGroups.length === 0 && (
         <div style={{ padding: "8px 6px", fontSize: 11, color: "var(--text-dim)" }}>还没有项目——点上方按钮创建第一个。</div>
       )}
 

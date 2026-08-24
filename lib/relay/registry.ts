@@ -137,7 +137,17 @@ export function attachAgentSocket(ws: WebSocket, ownerUserId = 0): void {
 
   const conn: AgentConn = {
     ws,
-    info: null,
+    // hello is OPTIONAL (older agents, e.g. pi-agent 0.1.0, never send it —
+    // the server used to drop them after a 10s grace, reconnect-looping
+    // forever). Placeholder info keeps the connection usable; a later hello
+    // upgrades it.
+    info: {
+      hostname: "agent",
+      os: "unknown",
+      arch: "unknown",
+      workspaceRoot: ".",
+      agentVersion: "unknown",
+    },
     connectedAt: Date.now(),
     pending: new Map(),
     nextId: 1,
@@ -211,18 +221,6 @@ export function attachAgentSocket(ws: WebSocket, ownerUserId = 0): void {
   ws.on("message", onMessage);
   ws.once("close", cleanup);
   ws.once("error", cleanup);
-
-  // If the agent never sends hello within a grace window, drop the socket.
-  const helloTimer = setTimeout(() => {
-    if (!conn.info) {
-      try {
-        ws.close();
-      } catch {
-        // ignore
-      }
-    }
-  }, 10_000);
-  ws.once("close", () => clearTimeout(helloTimer));
 }
 
 function rejectAllPending(conn: AgentConn, err: Error): void {

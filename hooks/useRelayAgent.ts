@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { AgentInfo } from "@/lib/relay/protocol";
 
 export interface RelayStatusResponse {
@@ -13,6 +13,8 @@ export interface RelayStatusResponse {
 export interface UseRelayAgent extends RelayStatusResponse {
   /** True once the first status snapshot has arrived (SSE or poll). */
   ready: boolean;
+  /** Re-fetch the status snapshot immediately. */
+  refresh: () => void;
 }
 
 /**
@@ -27,17 +29,19 @@ export function useRelayAgent(): UseRelayAgent {
     advertiseUrl: null,
   });
   const [ready, setReady] = useState(false);
+  const stoppedRef = useRef(false);
+  const apply = useCallback((data: Partial<RelayStatusResponse>) => {
+    if (stoppedRef.current) return;
+    setState((prev) => ({ ...prev, ...data }));
+    setReady(true);
+  }, []);
   const esRef = useRef<EventSource | null>(null);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
+    stoppedRef.current = false;
     let stopped = false;
 
-    const apply = (data: Partial<RelayStatusResponse>) => {
-      if (stopped) return;
-      setState((prev) => ({ ...prev, ...data }));
-      setReady(true);
-    };
 
     // Seed relayPort/advertiseUrl + initial status from a one-shot fetch so the
     // pairing command is correct even before the SSE frame lands.
@@ -86,5 +90,11 @@ export function useRelayAgent(): UseRelayAgent {
     };
   }, []);
 
-  return { ...state, ready };
+  const refresh = useCallback(() => {
+    fetch("/api/agent-relay/status", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d && !stoppedRef.current) apply(d as Partial<RelayStatusResponse>); })
+      .catch(() => {});
+  }, [apply]);
+  return { ...state, ready, refresh };
 }

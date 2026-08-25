@@ -14,11 +14,13 @@ interface Pairing {
 // when clicked, a pairing modal. Once an agent connects, offers an end-to-end
 // file/command panel. Mirrors the Style A modal pattern (ProjectTrustDialog).
 export function ConnectLocalMachine() {
-  const { online, info, relayPort, advertiseUrl, ready } = useRelayAgent();
+  const { online, info, relayPort, advertiseUrl, ready, refresh } = useRelayAgent();
   const [open, setOpen] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
   const [pairing, setPairing] = useState<Pairing | null>(null);
   const [pairingLoading, setPairingLoading] = useState(false);
+  // Bump to re-read status after the agent's workspace root changes.
+  const [wsRefresh, setWsRefresh] = useState(0);
 
   // Mint a fresh pairing code when the modal opens and no agent is connected.
   useEffect(() => {
@@ -90,6 +92,7 @@ export function ConnectLocalMachine() {
                 <Row label="系统" value={`${info.os} / ${info.arch}`} />
                 <Row label="工作目录" value={info.workspaceRoot} />
                 <Row label="Agent 版本" value={info.agentVersion} />
+                <WorkspaceRootEditor current={info.workspaceRoot} onSaved={() => setWsRefresh((k) => k + 1)} />
                 <div style={{ marginTop: 16, display: "flex", gap: 8 }}>
                   <button onClick={() => { setOpen(false); setPanelOpen(true); }} style={primaryBtnStyle}>
                     打开本地机器面板
@@ -152,6 +155,38 @@ function Row({ label, value }: { label: string; value: string }) {
     <div style={{ display: "flex", gap: 12, padding: "3px 0", fontSize: 12 }}>
       <span style={{ color: "var(--text-muted)", width: 80, flexShrink: 0 }}>{label}</span>
       <span style={{ fontFamily: "var(--font-mono)", wordBreak: "break-all" }}>{value}</span>
+    </div>
+  );
+}
+
+/** 更改本机工作区目录：调 agent 的 workspace.set-root（校验→持久化到
+ *  ~/.pi-agent/config.json→热切换并重发 hello）。仅 v0.1.2+ agent 支持。 */
+function WorkspaceRootEditor({ current, onSaved }: { current?: string; onSaved: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  return (
+    <div style={{ display: "flex", gap: 8, padding: "3px 0", alignItems: "center" }}>
+      <span style={{ color: "var(--text-muted)", fontSize: 11, flexShrink: 0 }}>更改目录</span>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => {
+          const next = window.prompt("新的工作区绝对路径（影响所有本机会话）：", current ?? "");
+          if (!next || !next.trim() || next.trim() === current) return;
+          setBusy(true);
+          setMsg(null);
+          import("@/lib/relay-client").then(({ relaySetWorkspaceRoot }) =>
+            relaySetWorkspaceRoot(next.trim())
+              .then(() => { setMsg("已更改"); onSaved(); })
+              .catch((e: unknown) => setMsg(e instanceof Error ? e.message : String(e)))
+              .finally(() => setBusy(false)),
+          );
+        }}
+        style={{ height: 24, padding: "0 10px", borderRadius: 5, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text)", fontSize: 11, cursor: busy ? "default" : "pointer" }}
+      >
+        {busy ? "应用中…" : "更改…"}
+      </button>
+      {msg && <span style={{ fontSize: 11, color: msg === "已更改" ? "#22c55e" : "#f87171" }}>{msg}</span>}
     </div>
   );
 }

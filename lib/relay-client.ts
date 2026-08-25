@@ -43,6 +43,12 @@ export function relayExec(argv: string[], cwd = ".", timeout?: number) {
   return relayRpc<ExecResult>("exec.run", { argv, cwd, ...(timeout ? { timeout } : {}) });
 }
 
+/** Hot-swap the agent's workspace root (validated, persisted to the agent's
+ *  config.json; requires agent ≥ v0.1.2). */
+export async function relaySetWorkspaceRoot(path: string): Promise<{ root: string }> {
+  return relayRpc<{ root: string }>("workspace.set-root", { path });
+}
+
 export interface ExecChunk {
   stream: "stdout" | "stderr";
   text: string;

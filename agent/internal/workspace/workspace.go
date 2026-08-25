@@ -8,16 +8,35 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
 )
 
-// Workspace is a rooted view of the filesystem.
+// Workspace is a rooted view of the filesystem. Root can be hot-swapped
+// (workspace.set-root RPC) while request goroutines resolve paths, so every
+// access goes through the RWMutex.
 type Workspace struct {
+	mu   sync.RWMutex
 	Root string
+}
+
+// SetRoot hot-swaps the workspace root (validated by the caller).
+func (w *Workspace) SetRoot(root string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.Root = root
+}
+
+// GetRoot returns the current root (snapshot value; fine for display).
+func (w *Workspace) GetRoot() string {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return w.Root
 }
 
 // resolve enforces that p (absolute or relative to Root) is inside Root after
 // cleaning and symlink resolution, and returns the absolute, real path.
 func (w *Workspace) resolve(p string) (string, error) {
+	root := w.GetRoot()
 	if p == "" {
 		p = "."
 	}
@@ -25,7 +44,7 @@ func (w *Workspace) resolve(p string) (string, error) {
 	if filepath.IsAbs(p) {
 		target = p
 	} else {
-		target = filepath.Join(w.Root, p)
+		target = filepath.Join(root, p)
 	}
 	abs, err := filepath.Abs(filepath.Clean(target))
 	if err != nil {
@@ -34,19 +53,19 @@ func (w *Workspace) resolve(p string) (string, error) {
 	if real, err := filepath.EvalSymlinks(abs); err == nil {
 		abs = real
 	}
-	realRoot := w.realRoot()
+	realRoot := w.realRoot(root)
 	if !isWithin(abs, realRoot) {
 		return "", fmt.Errorf("path outside workspace root: %s", p)
 	}
 	return abs, nil
 }
 
-// realRoot returns Root with symlinks resolved.
-func (w *Workspace) realRoot() string {
-	if r, err := filepath.EvalSymlinks(w.Root); err == nil {
+// realRoot returns the given root with symlinks resolved.
+func (w *Workspace) realRoot(root string) string {
+	if r, err := filepath.EvalSymlinks(root); err == nil {
 		return r
 	}
-	return w.Root
+	return root
 }
 
 // Resolve is the exported path-safety check: enforces p is inside Root (after
@@ -58,7 +77,8 @@ func (w *Workspace) Resolve(p string) (string, error) {
 
 // relToRoot returns a clean slash path relative to Root, for response payloads.
 func (w *Workspace) relToRoot(abs string) string {
-	rel, err := filepath.Rel(w.realRoot(), abs)
+	root := w.realRoot(w.GetRoot())
+	rel, err := filepath.Rel(root, abs)
 	if err != nil {
 		return filepath.ToSlash(abs)
 	}

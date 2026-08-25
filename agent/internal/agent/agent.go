@@ -64,11 +64,11 @@ func Run(args []string, version string) int {
 	}
 
 	ws := &workspace.Workspace{Root: absRoot}
-	info := buildInfo(version, absRoot)
+	info := buildInfo(version, ws.GetRoot())
 	log.Printf("pi-agent %s starting; server=%s root=%s os=%s/%s",
 		version, cfg.Server, absRoot, runtime.GOOS, runtime.GOARCH)
 
-	connectLoop(toWSURL(cfg.Server, cfg.Token), info, ws)
+	connectLoop(toWSURL(cfg.Server, cfg.Token), info, ws, cfg, version)
 	return 0
 }
 
@@ -104,11 +104,11 @@ func toWSURL(server, token string) string {
 	return u.String()
 }
 
-func connectLoop(wsURL string, info protocol.AgentInfo, ws *workspace.Workspace) {
+func connectLoop(wsURL string, info protocol.AgentInfo, ws *workspace.Workspace, cfg *config.Config, version string) {
 	backoff := time.Second
 	const maxBackoff = 30 * time.Second
 	for {
-		if err := serveOnce(wsURL, info, ws); err != nil {
+		if err := serveOnce(wsURL, info, ws, cfg, version); err != nil {
 			log.Printf("disconnected: %v", err)
 		}
 		log.Printf("reconnecting in %s ...", backoff)
@@ -139,7 +139,7 @@ func (s *safeConn) ping() error {
 	return s.c.WriteControl(websocket.PingMessage, nil, time.Now().Add(pingTimeout))
 }
 
-func serveOnce(wsURL string, info protocol.AgentInfo, ws *workspace.Workspace) error {
+func serveOnce(wsURL string, info protocol.AgentInfo, ws *workspace.Workspace, cfg *config.Config, version string) error {
 	dialer := websocket.Dialer{HandshakeTimeout: 10 * time.Second}
 	conn, resp, err := dialer.Dial(wsURL, http.Header{})
 	if resp != nil {
@@ -182,8 +182,60 @@ func serveOnce(wsURL string, info protocol.AgentInfo, ws *workspace.Workspace) e
 		if err != nil {
 			return fmt.Errorf("read: %w", err)
 		}
+		// workspace.set-root needs the write side (to re-announce hello with
+		// the new root), so handle it inline rather than in a goroutine.
+		if isMethod(msg, "workspace.set-root") {
+			go func() {
+				resp := handleSetRoot(msg, ws, cfg)
+				out, _ := json.Marshal(resp)
+				_ = sc.writeText(out)
+				if resp.OK {
+					// Re-announce so the relay's registry info reflects the new
+					// root immediately (the web UI reads it from the hello).
+					hello, _ := json.Marshal(protocol.Hello{Type: "hello", Info: buildInfo(version, ws.GetRoot())})
+					_ = sc.writeText(hello)
+					log.Printf("workspace root changed to %s", ws.GetRoot())
+				}
+			}()
+			continue
+		}
 		go handleRequest(sc, msg, ws)
 	}
+}
+
+// isMethod reports whether the frame is a request for the given method.
+func isMethod(msg []byte, method string) bool {
+	var probe struct {
+		Method string `json:"method"`
+	}
+	return json.Unmarshal(msg, &probe) == nil && probe.Method == method
+}
+
+// handleSetRoot validates and hot-swaps the workspace root, persisting it to
+// the config so it survives restarts.
+func handleSetRoot(msg []byte, ws *workspace.Workspace, cfg *config.Config) protocol.Response {
+	var req protocol.Request
+	if err := json.Unmarshal(msg, &req); err != nil {
+		return protocol.Response{OK: false, Error: err.Error()}
+	}
+	path, _ := req.Params["path"].(string)
+	if path == "" {
+		return protocol.Response{ID: req.ID, OK: false, Error: "path required"}
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return protocol.Response{ID: req.ID, OK: false, Error: err.Error()}
+	}
+	st, statErr := os.Stat(abs)
+	if statErr != nil || !st.IsDir() {
+		return protocol.Response{ID: req.ID, OK: false, Error: fmt.Sprintf("not a directory: %s", abs)}
+	}
+	ws.SetRoot(abs)
+	cfg.WorkspaceRoot = abs
+	if err := cfg.Save(); err != nil {
+		return protocol.Response{ID: req.ID, OK: false, Error: "root applied but save failed: " + err.Error()}
+	}
+	return protocol.Response{ID: req.ID, OK: true, Result: map[string]interface{}{"root": abs}}
 }
 
 const (

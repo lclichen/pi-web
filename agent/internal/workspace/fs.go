@@ -152,7 +152,7 @@ func (w *Workspace) Delete(params map[string]interface{}) (interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
-	if abs == w.realRoot() {
+	if abs == w.realRoot(w.GetRoot()) {
 		return nil, fmt.Errorf("refuse to delete workspace root")
 	}
 	if err := os.RemoveAll(abs); err != nil {

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { resolveSessionAccess } from "@/lib/session-access";
 import { getRpcSession, startRpcSession, type AgentEvent } from "@/lib/rpc-manager";
+import { restoreSessionOptions } from "@/lib/session-restore-options";
 
 export const dynamic = "force-dynamic";
 
@@ -34,7 +35,9 @@ export async function GET(
       return new Response("Session not found", { status: 404 });
     }
     try {
-      ({ session } = await startRpcSession(id, filePath, undefined));
+      // Same mode-extension injections as new sessions (sandbox bridge etc.).
+      const options = await restoreSessionOptions(req, id);
+      ({ session } = await startRpcSession(id, filePath, undefined, options));
     } catch (error) {
       return new Response(`Failed to start agent: ${error}`, { status: 500 });
     }

@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 import { resolveSessionAccess } from "@/lib/session-access";
 import { startRpcSession, getRpcSession } from "@/lib/rpc-manager";
+import { restoreSessionOptions } from "@/lib/session-restore-options";
 
 // POST /api/agent/[id] - Send a command to an existing session
 export async function POST(
   req: Request,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
 
@@ -26,7 +27,12 @@ export async function POST(
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
     }
 
-    const { session } = await startRpcSession(id, filePath, undefined);
+    // Restored sessions must get the SAME mode extensions as new ones
+    // (sandbox bridge / relay tools / remote-verify) — otherwise a restored
+    // sandbox session runs as a bare local session and every tool executes
+    // in the server-side project home.
+    const options = await restoreSessionOptions(req, id);
+    const { session } = await startRpcSession(id, filePath, undefined, options);
     const result = await session.send(body);
 
     return NextResponse.json({ success: true, data: result });

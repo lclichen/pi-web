@@ -2,17 +2,18 @@ import { NextResponse } from "next/server";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import { generateSessionTitle } from "@/lib/session-title";
 import { getRpcSession, startRpcSession } from "@/lib/rpc-manager";
+import { restoreSessionOptions } from "@/lib/session-restore-options";
 import { invalidateSessionListCache } from "@/lib/session-reader";
 import { resolveSessionAccess } from "@/lib/session-access";
 
 export async function POST(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
 
   try {
-    const access = await resolveSessionAccess(_req, id);
+    const access = await resolveSessionAccess(req, id);
     if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
     const filePath = access.path;
     if (!filePath) {
@@ -22,7 +23,7 @@ export async function POST(
     const existing = getRpcSession(id);
     const { session } = existing?.isAlive()
       ? { session: existing }
-      : await startRpcSession(id, filePath, undefined);
+      : await startRpcSession(id, filePath, undefined, await restoreSessionOptions(req, id));
 
     // globalThis keeps wrappers alive across dev hot reloads; older instances
     // may predate waitUntilReady(), but those have already completed startup.

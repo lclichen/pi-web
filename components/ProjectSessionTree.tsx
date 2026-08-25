@@ -520,7 +520,10 @@ export function ProjectSessionTree({
                 flexShrink: 0, padding: "0 5px", borderRadius: 3, fontSize: 9, fontWeight: 700,
                 color: "var(--text-muted)", background: "rgba(128,128,128,0.14)",
               }}>Host</span>
-              <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={root}>{root}</span>
+              {/* 显示末级文件夹名（完整路径进 tooltip）——全路径太冗余 */}
+              <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={root}>
+                {root.split("/").filter(Boolean).pop() ?? root}
+              </span>
               <span style={{ fontSize: 10, color: "var(--text-dim)" }}>{list.length}</span>
             </div>
             {visible.map((s) => renderItem(s, null))}

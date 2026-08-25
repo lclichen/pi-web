@@ -1050,15 +1050,19 @@ export function SessionSidebar({ authInfo = null, sessionSpace = "mine", onSessi
                   );
                 })()
               ) : (
-                <PathLabel
-                  text={displayCwd(selectedProject ?? selectedCwd, homeDir)}
-                  style={{
-                    flex: 1,
-                    fontFamily: "var(--font-mono)",
-                    fontSize: 11,
-                    color: "var(--text)",
-                  }}
-                />
+                (() => {
+                  // 项目显示用末级文件夹名（全路径太冗余）；完整路径在 title 里。
+                  const full = displayCwd(selectedProject ?? selectedCwd, homeDir);
+                  const base = full.split(/[\\/]/).filter(Boolean).pop() ?? full;
+                  return (
+                    <span
+                      title={full}
+                      style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--text)" }}
+                    >
+                      {base}
+                    </span>
+                  );
+                })()
               )
             ) : (
               <span
@@ -1588,7 +1592,7 @@ export function SessionSidebar({ authInfo = null, sessionSpace = "mine", onSessi
             {error}
           </div>
         )}
-        {!loading && !error && filteredSessions.length === 0 && (
+        {!loading && !error && filteredSessions.length === 0 && !authInfo?.enabled && (
           <div style={{ padding: "16px 14px", color: "var(--text-muted)", fontSize: 12 }}>
             {t("sidebar.noSessions")}
           </div>

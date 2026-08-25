@@ -100,5 +100,14 @@ export async function getAllowedFileRootsForRequest(req: Request | undefined | n
   if (!identity.ok || !identity.session || identity.session.user.id === 0) {
     return getAllowedFileRoots({ kind: "host" });
   }
+  // Admins run Host-mode sessions against arbitrary server directories — their
+  // requests must resolve the HOST space (whose roots derive from all host
+  // sessions' cwds, persisted in the session files). Routing admins through
+  // the user shard returned an EMPTY set: every server path then failed the
+  // root check after any restart (Skills/Models/files "Access denied",
+  // "No available models").
+  if (identity.session.user.role === "admin") {
+    return getAllowedFileRoots({ kind: "host" });
+  }
   return getAllowedFileRoots({ kind: "user", userId: identity.session.user.id });
 }

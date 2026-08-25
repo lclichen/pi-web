@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getFileName } from "@/lib/file-paths";
 import {
+  remoteCreateEmpty,
   remoteDelete,
   remoteList,
   remoteRead,
@@ -81,11 +82,26 @@ export async function PUT(
   const remote = await resolveRemoteSession(req, sessionId);
   if (!remote.ok) return NextResponse.json({ error: remote.error }, { status: remote.status });
 
-  let body: { content?: unknown };
+  let body: { content?: unknown; type?: unknown };
   try {
-    body = (await req.json()) as { content?: unknown };
+    body = (await req.json()) as { content?: unknown; type?: unknown };
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+  // Create semantics (same shape as the host /api/files PUT): {type:"file"}
+  // creates an empty file, {type:"dir"} creates a directory. The platform
+  // write schema rejects zero-length content, so empty creates go through
+  // touch/mkdir instead of the write tool.
+  if (body.content === undefined) {
+    if (body.type === "file" || body.type === "dir") {
+      try {
+        await remoteCreateEmpty(remote.ctx, filePath, body.type);
+        return NextResponse.json({ success: true, path: filePath });
+      } catch (err) {
+        return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 502 });
+      }
+    }
+    return NextResponse.json({ error: "content required" }, { status: 400 });
   }
   if (typeof body.content !== "string") {
     return NextResponse.json({ error: "content required" }, { status: 400 });

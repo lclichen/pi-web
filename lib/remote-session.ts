@@ -142,6 +142,26 @@ export async function remoteWrite(ctx: RemoteSessionContext, path: string, conte
   );
 }
 
+/** Create an EMPTY file or a directory (the platform write schema rejects
+ *  zero-length content, so empty files go through `touch`). */
+export async function remoteCreateEmpty(ctx: RemoteSessionContext, path: string, kind: "file" | "dir"): Promise<void> {
+  const target = ctx.mode === "local-machine" ? stripSlash(path) : containerPath(path);
+  if (ctx.mode === "local-machine") {
+    if (kind === "dir") {
+      await relayRpc("fs.mkdir", { path: target }, { userId: ctx.userId });
+    } else {
+      await relayRpc("fs.write", { path: target, content: "" }, { userId: ctx.userId });
+    }
+    return;
+  }
+  const command = kind === "dir" ? `mkdir -p -- ${shellQuote(target)}` : `mkdir -p -- $(dirname ${shellQuote(target)}) && touch -- ${shellQuote(target)}`;
+  await platformPost(
+    `/api/v1/containers/${ctx.containerId}/tools/bash`,
+    ctx.apiKey,
+    { command },
+  );
+}
+
 export async function remoteDelete(ctx: RemoteSessionContext, path: string): Promise<void> {
   if (ctx.mode === "local-machine") {
     await relayRpc("fs.delete", { path: stripSlash(path) }, { userId: ctx.userId });

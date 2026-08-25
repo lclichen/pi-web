@@ -847,29 +847,33 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
     if (!creating || !creatingName.trim()) { setCreating(null); return; }
     const name = creatingName.trim();
     const fullPath = joinFilePath(creating.dir, name);
-    if (remote) {
-      if (creating.type === "dir") { setError("远程会话暂不支持新建文件夹"); setCreating(null); return; }
-      fetch(`/api/remotefs/${encodeFilePathForApi(fullPath)}?src=${encodeURIComponent(remote.sessionId)}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: "" }),
-      }).then(() => {
-        setCreating(null); setCreatingName(""); setTreeRefreshKey((k) => k + 1);
-      }).catch((e) => { setError(e instanceof Error ? e.message : String(e)); setCreating(null); });
-      return;
-    }
-    fetch(`/api/files/${encodeFilePathForApi(fullPath)}`, {
+    const url = remote
+      ? `/api/remotefs/${encodeFilePathForApi(fullPath)}?src=${encodeURIComponent(remote.sessionId)}`
+      : `/api/files/${encodeFilePathForApi(fullPath)}`;
+    fetch(url, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
+      // Both endpoints understand create semantics: {type:"file"|"dir"}.
       body: JSON.stringify({ type: creating.type === "dir" ? "dir" : "file" }),
-    }).then(() => {
+    }).then(async (res) => {
+      if (!res.ok) {
+        const d = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(d.error ?? `HTTP ${res.status}`);
+      }
       setCreating(null); setCreatingName(""); setTreeRefreshKey((k) => k + 1);
     }).catch((e) => { setError(e instanceof Error ? e.message : String(e)); setCreating(null); });
   }, [creating, creatingName, remote]);
 
   const handleDelete = useCallback((fullPath: string) => {
-    fetch(`/api/files/${encodeFilePathForApi(fullPath)}`, { method: "DELETE" })
-      .then(() => {
+    const url = remote
+      ? `/api/remotefs/${encodeFilePathForApi(fullPath)}?src=${encodeURIComponent(remote.sessionId)}`
+      : `/api/files/${encodeFilePathForApi(fullPath)}`;
+    fetch(url, { method: "DELETE" })
+      .then(async (res) => {
+        if (!res.ok) {
+          const d = (await res.json().catch(() => ({}))) as { error?: string };
+          throw new Error(d.error ?? `HTTP ${res.status}`);
+        }
         onFileDeleted?.(fullPath);
         setTreeRefreshKey((k) => k + 1);
       })
@@ -879,11 +883,18 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
   const handleRename = useCallback(() => {
     if (!renaming || !renamingName.trim()) { setRenaming(null); return; }
     const newPath = joinFilePath(getFileDirectory(renaming.oldPath), renamingName.trim());
-    fetch(`/api/files/${encodeFilePathForApi(renaming.oldPath)}`, {
+    const url = remote
+      ? `/api/remotefs/${encodeFilePathForApi(renaming.oldPath)}?src=${encodeURIComponent(remote.sessionId)}`
+      : `/api/files/${encodeFilePathForApi(renaming.oldPath)}`;
+    fetch(url, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ newPath }),
-    }).then(() => {
+    }).then(async (res) => {
+      if (!res.ok) {
+        const d = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(d.error ?? `HTTP ${res.status}`);
+      }
       onFileRenamed?.(renaming.oldPath, newPath);
       setRenaming(null); setRenamingName(""); setTreeRefreshKey((k) => k + 1);
     }).catch((e) => { setError(e instanceof Error ? e.message : String(e)); setRenaming(null); });

@@ -802,7 +802,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
     setLoading(cwdChanged);
     setError(null);
     let cancelled = false;
-    fetchEntries(usableCwd)
+    fetchEntries(usableCwd, remote)
       .then((entries) => { if (!cancelled) setRoots(entries); })
       .catch((e) => { if (!cancelled) setError(e instanceof Error ? e.message : String(e)); })
       .finally(() => { if (!cancelled) setLoading(false); });

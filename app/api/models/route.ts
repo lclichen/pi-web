@@ -8,6 +8,7 @@ import { getAllowedFileRootsForRequest, isExistingFilePathAllowed } from "@/lib/
 import { projectTrustReloadOptions } from "@/lib/project-trust";
 import { requireUserIdentity } from "@/lib/web-session";
 import { getOwnedProject, isCallerOwnedProjectHome, projectHome } from "@/lib/projects";
+import { isCallerSessionCwdAllowed } from "@/lib/session-cwd-access";
 
 export const dynamic = "force-dynamic";
 
@@ -125,7 +126,13 @@ export async function GET(req: Request) {
   if (!isExistingFilePathAllowed(cwd, allowedRoots)) {
     // Project homes are config carriers outside the regular roots — allow the
     // caller's own projects (the two-layer merge reads their .pi/ here).
-    if (!isCallerOwnedProjectHome(cwd, user.id, isAdmin)) {
+    // Existing sessions' cwds pass too: the transient allowed-roots set is
+    // repopulated only at session creation, so after a restart this check
+    // would otherwise 403 every materialized session ("No available models").
+    if (
+      !isCallerOwnedProjectHome(cwd, user.id, isAdmin)
+      && !(await isCallerSessionCwdAllowed(req, cwd))
+    ) {
       return Response.json({ error: "Access denied" }, { status: 403 });
     }
   }

@@ -23,6 +23,7 @@ import {
 import { resolveDirentIsDirectory } from "@/lib/file-dirent";
 import { isFilePathReferencedBySession } from "@/lib/session-file-references";
 import { isApiRequestAllowed } from "@/lib/request-security";
+import { allowedRootsWithSessionCwds } from "@/lib/session-cwd-access";
 import {
   inspectUploadTargets,
   parseUploadConflictStrategy,
@@ -82,11 +83,11 @@ function parseFileRequestType(value: string): FileRequestType | null {
   return FILE_REQUEST_TYPE_SET.has(value) ? (value as FileRequestType) : null;
 }
 
-async function getUploadDirectory(segments: string[]): Promise<
+async function getUploadDirectory(request: NextRequest, segments: string[]): Promise<
   { directory: string } | { response: NextResponse }
 > {
   const directory = filePathFromSegments(segments);
-  const allowedRoots = await getAllowedFileRootsForRequest(null);
+  const allowedRoots = await allowedRootsWithSessionCwds(request, await getAllowedFileRootsForRequest(request));
   if (!isFilePathAllowed(directory, allowedRoots)) {
     return { response: NextResponse.json({ error: "Access denied" }, { status: 403 }) };
   }
@@ -134,7 +135,7 @@ export async function POST(
 
   try {
     const { path: segments } = await params;
-    const uploadDirectory = await getUploadDirectory(segments);
+    const uploadDirectory = await getUploadDirectory(request, segments);
     if ("response" in uploadDirectory) return uploadDirectory.response;
     const { directory } = uploadDirectory;
     const type = request.nextUrl.searchParams.get("type") ?? "upload";
@@ -427,7 +428,7 @@ export async function GET(
     }
     const sessionId = request.nextUrl.searchParams.get("sessionId");
 
-    const allowedRoots = await getAllowedFileRootsForRequest(null);
+    const allowedRoots = await allowedRootsWithSessionCwds(request, await getAllowedFileRootsForRequest(request));
     const allowedByRoot = isFilePathAllowed(filePath, allowedRoots);
     const allowedBySessionReference =
       !allowedByRoot &&
@@ -621,7 +622,7 @@ export async function PUT(
   try {
     const { path: segments } = await params;
     const filePath = filePathFromSegments(segments);
-    const allowedRoots = await getAllowedFileRootsForRequest(null);
+    const allowedRoots = await allowedRootsWithSessionCwds(request, await getAllowedFileRootsForRequest(request));
     if (!isFilePathAllowed(filePath, allowedRoots)) {
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
@@ -666,7 +667,7 @@ export async function DELETE(
   try {
     const { path: segments } = await params;
     const filePath = filePathFromSegments(segments);
-    const allowedRoots = await getAllowedFileRootsForRequest(null);
+    const allowedRoots = await allowedRootsWithSessionCwds(request, await getAllowedFileRootsForRequest(request));
     if (!isExistingFilePathAllowed(filePath, allowedRoots)) {
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
@@ -697,7 +698,7 @@ export async function PATCH(
   try {
     const { path: segments } = await params;
     const oldPath = filePathFromSegments(segments);
-    const allowedRoots = await getAllowedFileRootsForRequest(null);
+    const allowedRoots = await allowedRootsWithSessionCwds(request, await getAllowedFileRootsForRequest(request));
     if (!isExistingFilePathAllowed(oldPath, allowedRoots)) {
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }

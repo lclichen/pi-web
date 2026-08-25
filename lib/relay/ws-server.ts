@@ -99,12 +99,17 @@ async function handleHttp(req: IncomingMessage, res: ServerResponse): Promise<vo
   if (req.method === "POST" && url.pathname === "/pair/exchange") {
     const body = (await readJson(req)) as { code?: unknown };
     const code = typeof body.code === "string" ? body.code : "";
-    if (!consumePairingCode(code)) {
+    // consumePairingCode returns the minting user's id — the agent token MUST
+    // bind to it, otherwise every later per-user lookup (status/panel/RPC)
+    // treats the connected agent as someone else's and reports offline
+    // ("No local agent connected" despite a green dot).
+    const ownerUserId = consumePairingCode(code);
+    if (ownerUserId === null) {
       res.writeHead(401, { "content-type": "application/json" });
       res.end(JSON.stringify({ error: "invalid or expired pairing code" }));
       return;
     }
-    const token = await issueAgentToken();
+    const token = await issueAgentToken(ownerUserId);
     res.writeHead(200, { "content-type": "application/json" });
     res.end(JSON.stringify({ token, wsPath: "/ws" }));
     return;

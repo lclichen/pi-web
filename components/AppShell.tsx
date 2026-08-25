@@ -2079,15 +2079,20 @@ export function AppShell() {
       <button
         onClick={async () => { await fetch("/api/webauth/logout", { method: "POST" }).catch(() => {}); window.location.href = "/login"; }}
         title={`登出（${webUser.username}）`}
+        aria-label={`登出（${webUser.username}）`}
         style={{
           position: "fixed", top: "env(safe-area-inset-top)", right: "calc(76px + env(safe-area-inset-right))", zIndex: 300,
           display: "flex", alignItems: "center", justifyContent: "center",
           width: 36, height: 36, padding: 0,
           background: "var(--bg-panel)", border: "none", borderLeft: "1px solid var(--border)", borderBottom: "1px solid var(--border)",
-          color: "var(--text-muted)", cursor: "pointer", fontSize: 11,
+          color: "var(--text-muted)", cursor: "pointer",
         }}
       >
-        ⎋
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+          <polyline points="16 17 21 12 16 7" />
+          <line x1="21" y1="12" x2="9" y2="12" />
+        </svg>
       </button>
     )}
     {/* Teaching panel availability — admin runtime switch (PI_WEB_LAB_TRAINING

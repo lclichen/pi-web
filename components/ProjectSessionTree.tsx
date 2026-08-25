@@ -6,6 +6,7 @@ import type { ProjectRecord } from "@/lib/projects";
 import { formatRelativeTime } from "@/lib/subagent-shared";
 import { ProjectSettingsDialog } from "./ProjectSettingsDialog";
 import { ProjectImportDialog } from "./ProjectImportDialog";
+import { NewProjectDialog } from "./NewProjectDialog";
 
 interface Props {
   sessions: SessionInfo[];
@@ -61,7 +62,9 @@ export function ProjectSessionTree({
   const [menu, setMenu] = useState<{ project: ProjectRecord; x: number; y: number } | null>(null);
   const [settingsId, setSettingsId] = useState<string | null>(null);
   const [importId, setImportId] = useState<string | null>(null);
-  const [containers, setContainers] = useState<Array<{ id: number; name: string }>>([]);
+  const [containers, setContainers] = useState<Array<{ id: number; name: string; status: string; imageName: string }>>([]);
+  const [newDialog, setNewDialog] = useState<"sandbox" | "local-machine" | null>(null);
+  const [myWorkspaceId, setMyWorkspaceId] = useState<number | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
   const loadProjects = useCallback(() => {
@@ -72,14 +75,23 @@ export function ProjectSessionTree({
   }, []);
   useEffect(() => { loadProjects(); }, [loadProjects, projectsRefreshKey]);
 
-  // Running-container list for the sandbox container picker (admin/user alike).
-  useEffect(() => {
-    if (menu?.project.mode !== "sandbox") return;
+  // Container list: status dots on project nodes + the container picker.
+  const loadContainers = useCallback(() => {
     fetch("/api/sandbox/containers")
       .then((r) => (r.ok ? r.json() : { containers: [] }))
-      .then((d: { containers?: Array<{ id: number; name: string }> }) => setContainers(d.containers ?? []))
+      .then((d: { containers?: Array<{ id: number; name: string; status: string; imageName: string }> }) => setContainers(d.containers ?? []))
       .catch(() => setContainers([]));
-  }, [menu]);
+  }, []);
+  useEffect(() => { loadContainers(); }, [loadContainers, projectsRefreshKey]);
+  useEffect(() => { if (menu?.project.mode === "sandbox") loadContainers(); }, [menu, loadContainers]);
+
+  // My cloud workspace (for export-to-workspace); lazily ensured server-side.
+  useEffect(() => {
+    fetch("/api/workspaces")
+      .then((r) => (r.ok ? r.json() : { workspaces: [] }))
+      .then((d: { workspaces?: Array<{ id: number }> }) => setMyWorkspaceId(d.workspaces?.[0]?.id ?? null))
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (!menu) return;
@@ -135,25 +147,40 @@ export function ProjectSessionTree({
   };
 
   // 建项目期间禁用入口（沙盒项目要同步创建容器，耗时数秒；连点会
-  // 一次性创建多个容器）。
+  // 一次性创建多个容器）。名称/镜像/工作区初始化在 NewProjectDialog 里选。
   const [creating, setCreating] = useState(false);
 
-  const createProject = async (mode: "sandbox" | "local-machine") => {
+  const createProject = async (mode: "sandbox" | "local-machine", input: { name: string; imageId?: number; workspaceInit?: boolean }) => {
     if (creating) return;
-    const name = window.prompt(mode === "sandbox" ? "新沙箱项目名称：" : "新本机项目名称：");
-    if (!name?.trim()) return;
     setCreating(true);
     try {
+      // 工作区初始化：把默认工作区的文件 seed 进新容器的 /workspace。
+      let workspaceId: number | undefined;
+      if (mode === "sandbox" && input.workspaceInit) {
+        if (myWorkspaceId == null) {
+          const res = await fetch("/api/workspaces");
+          const d = (await res.json().catch(() => ({}))) as { workspaces?: Array<{ id: number }> };
+          workspaceId = d.workspaces?.[0]?.id;
+        } else {
+          workspaceId = myWorkspaceId;
+        }
+      }
       const res = await fetch("/api/projects", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), mode }),
+        body: JSON.stringify({
+          name: input.name,
+          mode,
+          ...(input.imageId != null ? { imageId: input.imageId } : {}),
+          ...(workspaceId != null ? { workspaceId } : {}),
+        }),
       });
       const data = await res.json().catch(() => ({})) as { error?: string };
       if (!res.ok) {
         window.alert(data?.error ?? `创建失败：HTTP ${res.status}`);
         return;
       }
+      setNewDialog(null);
     } catch (e) {
       window.alert(e instanceof Error ? e.message : String(e));
       return;
@@ -161,6 +188,59 @@ export function ProjectSessionTree({
       setCreating(false);
     }
     loadProjects();
+    loadContainers();
+  };
+
+  // 项目快照槽（游戏存档制：保存/恢复/删除，服务端做 FIFO 淘汰）。
+  const [menuBusy, setMenuBusy] = useState(false);
+  const projectSnapshot = async (project: ProjectRecord, action: "save" | "restore" | "delete", snapshotId?: number) => {
+    if (menuBusy) return;
+    if (action === "restore" && !window.confirm("恢复存档？容器 /workspace 将回到存档时间点，之后的改动会丢失。")) return;
+    setMenuBusy(true);
+    try {
+      const res = await fetch(`/api/projects/${encodeURIComponent(project.id)}/snapshots`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, ...(snapshotId != null ? { snapshotId } : {}) }),
+      });
+      const d = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        window.alert(d?.error ?? `操作失败：HTTP ${res.status}`);
+        return;
+      }
+      if (action === "save") window.alert("已保存存档（保留最近 2 个）。");
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : String(e));
+    } finally {
+      setMenuBusy(false);
+    }
+    loadProjects();
+    loadContainers();
+  };
+
+  // 把项目容器的 /workspace 打包导出到我的工作区（tar.gz，单向留存）。
+  const exportWorkspace = async (project: ProjectRecord) => {
+    if (menuBusy) return;
+    if (project.containerId == null) { window.alert("项目没有绑定容器"); return; }
+    if (myWorkspaceId == null) { window.alert("工作区不可用"); return; }
+    setMenuBusy(true);
+    try {
+      const res = await fetch(`/api/sandbox/containers`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "export-workspace", containerId: project.containerId, workspaceId: myWorkspaceId }),
+      });
+      const d = (await res.json().catch(() => ({}))) as { error?: string; fileName?: string };
+      if (!res.ok) {
+        window.alert(d?.error ?? `导出失败：HTTP ${res.status}`);
+        return;
+      }
+      window.alert(`已导出到我的工作区：${d.fileName ?? "*.tar.gz"}（仅文件；完整环境请用存档）`);
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : String(e));
+    } finally {
+      setMenuBusy(false);
+    }
   };
 
   // Group sessions by project; ungrouped (host-mode/CLI) by projectRoot.
@@ -285,10 +365,10 @@ export function ProjectSessionTree({
           （三个长按钮挤一行会在窄侧栏下把文字折成两行）。 */}
       <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "0 4px 8px" }}>
         <div style={{ display: "flex", gap: 6 }}>
-          <button type="button" onClick={() => void createProject("sandbox")} disabled={creating} style={{ ...createBtn, cursor: creating ? "default" : "pointer", opacity: creating ? 0.6 : 1 }}>
+          <button type="button" onClick={() => setNewDialog("sandbox")} disabled={creating} style={{ ...createBtn, cursor: creating ? "default" : "pointer", opacity: creating ? 0.6 : 1 }}>
             {creating ? "创建中…" : "+ 沙箱项目"}
           </button>
-          <button type="button" onClick={() => void createProject("local-machine")} disabled={creating} style={{ ...createBtn, cursor: creating ? "default" : "pointer", opacity: creating ? 0.6 : 1 }}>
+          <button type="button" onClick={() => setNewDialog("local-machine")} disabled={creating} style={{ ...createBtn, cursor: creating ? "default" : "pointer", opacity: creating ? 0.6 : 1 }}>
             {creating ? "创建中…" : "+ 本机项目"}
           </button>
         </div>
@@ -296,6 +376,15 @@ export function ProjectSessionTree({
           <button type="button" onClick={onOpenServerDirectory} style={createBtn}>打开服务器目录</button>
         )}
       </div>
+
+      {newDialog && (
+        <NewProjectDialog
+          mode={newDialog}
+          busy={creating}
+          onCancel={() => setNewDialog(null)}
+          onCreate={(input) => void createProject(newDialog, input)}
+        />
+      )}
 
       {/* 全局会话搜索 */}
       <div style={{ padding: "0 4px 8px" }}>
@@ -338,6 +427,12 @@ export function ProjectSessionTree({
         // 焦点会话所属项目高亮 + 左侧模式色条，一眼定位当前所在项目。
         const projectHoldsFocus = Boolean(selectedSessionId && byProject.map.get(project.id)?.some((s) => s.id === selectedSessionId));
         const modeColor = project.mode === "sandbox" ? "#38bdf8" : "#a78bfa";
+        // 容器状态点（沙箱项目绑定容器的前台可见性）。
+        const bound = project.containerId != null ? containers.find((c) => c.id === project.containerId) : undefined;
+        const containerState = bound?.status === "running" ? { color: "#22c55e", label: "运行中" }
+          : bound?.status === "stopped" ? { color: "#9ca3af", label: "已停止" }
+          : bound ? { color: "#f59e0b", label: bound.status }
+          : { color: "#ef4444", label: "无容器" };
         return (
           <div key={project.id} style={{ marginBottom: 2 }}>
             <div
@@ -353,6 +448,14 @@ export function ProjectSessionTree({
               onMouseLeave={(e) => { e.currentTarget.style.background = projectHoldsFocus ? "var(--bg-selected)" : "var(--bg-panel)"; }}
             >
               <span style={{ fontSize: 9, color: "var(--text-dim)", width: 10 }}>{isCollapsed ? "▸" : "▾"}</span>
+              {project.mode === "sandbox" ? (
+                <span
+                  title={`容器：${bound ? `#${bound.id} ${bound.name} · ${containerState.label}${bound.imageName ? ` · ${bound.imageName}` : ""}` : containerState.label}`}
+                  style={{ width: 8, height: 8, borderRadius: "50%", background: containerState.color, flexShrink: 0, boxShadow: containerState.label === "运行中" ? `0 0 5px ${containerState.color}` : "none" }}
+                />
+              ) : (
+                <span style={{ width: 8, height: 8, flexShrink: 0 }} />
+              )}
               <span style={{
                 flexShrink: 0, padding: "0 5px", borderRadius: 3, fontSize: 9, fontWeight: 700,
                 color: modeColor, background: project.mode === "sandbox" ? "rgba(56,189,248,0.12)" : "rgba(167,139,250,0.12)",
@@ -455,6 +558,38 @@ export function ProjectSessionTree({
           <MenuItem label="复制为新项目" onClick={() => { void duplicate(menu.project); setMenu(null); }} />
           <MenuItem label="设置（模型凭证等）" onClick={() => { setSettingsId(menu.project.id); setMenu(null); }} />
           <MenuItem label="导入项目配置…" onClick={() => { setImportId(menu.project.id); setMenu(null); }} />
+          {menu.project.mode === "sandbox" && (() => {
+            // 绑定信息：项目 → 容器 → 镜像 三位一体（debug 友好）。
+            const boundInfo = menu.project.containerId != null
+              ? containers.find((c) => c.id === menu.project.containerId)
+              : undefined;
+            return (
+              <div style={{ borderTop: "1px solid var(--border)", padding: "6px 10px", color: "var(--text-dim)", fontSize: 10.5, lineHeight: 1.6 }}>
+                容器 {boundInfo ? `#${boundInfo.id} · ${boundInfo.status === "running" ? "运行中" : boundInfo.status}` : "未绑定"}
+                {boundInfo?.imageName ? ` · ${boundInfo.imageName}` : ""}
+                <br />存档 {menu.project.snapshotSlots?.length ?? 0}/2（游戏存档制，保留最近 2 个）
+              </div>
+            );
+          })()}
+          {menu.project.mode === "sandbox" && (
+            <div style={{ borderTop: "1px solid var(--border)", padding: "4px 10px", color: "var(--text-dim)", fontSize: 10 }}>存档（含环境与文件）</div>
+          )}
+          {menu.project.mode === "sandbox" && (
+            <MenuItem label="保存存档（快照当前容器）" onClick={() => { void projectSnapshot(menu.project, "save"); setMenu(null); }} />
+          )}
+          {menu.project.mode === "sandbox" && (menu.project.snapshotSlots ?? []).map((slot) => (
+            <MenuItem
+              key={slot.id}
+              label={`↩ 恢复存档 · ${new Date(slot.createdAt).toLocaleString()}`}
+              onClick={() => { void projectSnapshot(menu.project, "restore", slot.id); setMenu(null); }}
+            />
+          ))}
+          {menu.project.mode === "sandbox" && (
+            <div style={{ borderTop: "1px solid var(--border)", padding: "4px 10px", color: "var(--text-dim)", fontSize: 10 }}>文件留存（仅文件）</div>
+          )}
+          {menu.project.mode === "sandbox" && (
+            <MenuItem label="导出到我的工作区（tar.gz）" onClick={() => { void exportWorkspace(menu.project); setMenu(null); }} />
+          )}
           {menu.project.mode === "sandbox" && (
             <div style={{ borderTop: "1px solid var(--border)", padding: "4px 10px", color: "var(--text-dim)", fontSize: 10 }}>沙箱容器</div>
           )}

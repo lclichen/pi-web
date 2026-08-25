@@ -25,6 +25,7 @@ interface PlatformContainer {
   id: number;
   name: string;
   status: string;
+  image_id: number;
 }
 
 interface PlatformImage {
@@ -46,6 +47,7 @@ export async function provisionContainerForProject(
   apiKey: string,
   projectName: string,
   excludedContainerIds: number[],
+  opts?: { imageId?: number; workspaceId?: number },
 ): Promise<ProvisionResult> {
   const excluded = new Set(excludedContainerIds);
   const list = await platformGet<{ containers: PlatformContainer[] }>(
@@ -53,7 +55,12 @@ export async function provisionContainerForProject(
     apiKey,
     { filter: "all" },
   );
-  const free = (list.containers ?? []).filter((c) => !excluded.has(c.id));
+  let free = (list.containers ?? []).filter((c) => !excluded.has(c.id));
+  // A chosen image constrains reuse: a free container built from a DIFFERENT
+  // image must not be silently bound (the user picked the environment).
+  if (opts?.imageId) {
+    free = free.filter((c) => c.image_id === opts.imageId);
+  }
 
   // 1. Reuse a running container (e.g. restored from a previous session).
   const running = free.find((c) => c.status === "running");
@@ -69,15 +76,20 @@ export async function provisionContainerForProject(
     return { containerId: started.id, status: "restored" };
   }
 
-  // 3. Create a fresh container from the first public image.
+  // 3. Create a fresh container — image chosen in the new-project dialog
+  //    (falls back to the first public image), optionally seeding /workspace
+  //    from the user's cloud workspace.
   const images = await platformGet<{ images: PlatformImage[] }>("/api/v1/images", apiKey);
-  const image = (images.images ?? [])[0];
+  const image = opts?.imageId
+    ? (images.images ?? []).find((i) => i.id === opts.imageId)
+    : (images.images ?? [])[0];
   if (!image) {
     throw new Error("平台没有可用的镜像：请先在容器平台的 Admin 后台添加一个镜像（SIF），再重试创建沙箱项目");
   }
   const created = await platformPost<{ id: number }>("/api/v1/containers", apiKey, {
     imageId: image.id,
     name: sanitizeContainerName(projectName),
+    ...(opts?.workspaceId ? { workspaceId: opts.workspaceId } : {}),
   });
   return { containerId: created.id, status: "created" };
 }

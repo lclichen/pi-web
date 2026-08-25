@@ -80,7 +80,11 @@ export async function GET(req: Request) {
           name: c.name,
           status: c.status,
           imageId: c.image_id,
-          imageName: c.image_name ?? "",
+          // Platform's list carries image_id only — join the display name from
+          // the images list fetched below (the manager dialog shows 环境).
+          imageName: (imagesRes.images ?? []).find((i) => i.id === c.image_id)?.display_name
+            ?? (imagesRes.images ?? []).find((i) => i.id === c.image_id)?.name
+            ?? "",
           cpu: c.cpu ?? null,
           memoryMb: c.memory_mb ?? null,
           diskGb: c.disk_gb ?? null,
@@ -124,6 +128,7 @@ export async function POST(req: Request) {
     memoryMb?: unknown;
     diskGb?: unknown;
     snapshotId?: unknown;
+    workspaceId?: unknown;
   };
   try {
     body = (await req.json()) as typeof body;
@@ -200,6 +205,19 @@ export async function POST(req: Request) {
         await platformDelete(`/api/v1/containers/${body.containerId}/snapshots/${body.snapshotId}`, guard.apiKey);
       }
       return NextResponse.json({ success: true });
+    }
+    // Archive the container's /workspace into one of the user's cloud
+    // workspaces (tar.gz; single-box local executor).
+    if (action === "export-workspace") {
+      if (typeof body.containerId !== "number" || typeof body.workspaceId !== "number") {
+        return NextResponse.json({ error: "containerId and workspaceId must be numbers" }, { status: 400 });
+      }
+      const result = await platformPost<{ fileName: string; sizeBytes: number }>(
+        `/api/v1/containers/${body.containerId}/export-workspace`,
+        guard.apiKey,
+        { workspaceId: body.workspaceId },
+      );
+      return NextResponse.json({ success: true, ...result });
     }
     return NextResponse.json({ error: `不支持的操作: ${String(action)}` }, { status: 400 });
   } catch (err) {

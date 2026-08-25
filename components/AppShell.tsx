@@ -17,6 +17,7 @@ import { McpServersConfig } from "./McpServersConfig";
 import { ProjectTrustDialog } from "./ProjectTrustDialog";
 import { ConnectLocalMachine } from "./relay/ConnectLocalMachine";
 import { SandboxManagerDialog } from "./SandboxManagerDialog";
+import { MyWorkspaceDialog } from "./MyWorkspaceDialog";
 import { WorkspaceTerminal } from "./WorkspaceTerminal";
 import { SubagentDirectoryPanel } from "./SubagentDirectoryPanel";
 import { PlanPanel } from "./PlanPanel";
@@ -85,6 +86,7 @@ export function AppShell() {
   // Admin-only link to the sandbox platform ops console (from /api/webauth/me).
   const [platformConsoleUrl, setPlatformConsoleUrl] = useState<string | null>(null);
   // Sandbox manager dialog: null = closed; bind = project context (optional).
+  const [myWorkspaceOpen, setMyWorkspaceOpen] = useState(false);
   const [sandboxManager, setSandboxManager] = useState<
     { projectId?: string; projectName?: string; containerId?: number } | null
   >(null);
@@ -1144,6 +1146,25 @@ export function AppShell() {
           {webUser && webUser !== "loading" && (
             <button
               type="button"
+              onClick={() => setMyWorkspaceOpen(true)}
+              title="我的工作区：云端文件留存（建项目时可初始化 /workspace）"
+              style={{
+                display: "flex", alignItems: "center", gap: 6, height: "100%",
+                padding: "0 8px", background: "transparent", border: "none",
+                color: "var(--text-muted)", cursor: "pointer", fontSize: 11,
+              }}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
+                <path d="M20 16.58A5 5 0 0 0 18 7h-1.26A8 8 0 1 0 4 15.25" />
+                <polyline points="8 16 12 12 16 16" />
+                <line x1="12" y1="12" x2="12" y2="21" />
+              </svg>
+              <span>我的工作区</span>
+            </button>
+          )}
+          {webUser && webUser !== "loading" && (
+            <button
+              type="button"
               onClick={() => setSandboxManager({})}
               title="沙箱容器管理（新建/启停/删除/快照/绑定项目）"
               style={{
@@ -2119,6 +2140,7 @@ export function AppShell() {
       </svg>
     </button>
     {modelsConfigOpen && <ModelsConfig onClose={() => { setModelsConfigOpen(false); setModelsRefreshKey((k) => k + 1); }} />}
+    {myWorkspaceOpen && <MyWorkspaceDialog onClose={() => setMyWorkspaceOpen(false)} />}
     {sandboxManager !== null && (
       <SandboxManagerDialog
         bind={sandboxManager.projectId ? { projectId: sandboxManager.projectId, projectName: sandboxManager.projectName ?? "", containerId: sandboxManager.containerId } : null}

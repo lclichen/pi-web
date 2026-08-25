@@ -25,6 +25,10 @@ export interface ProjectRecord {
   pinnedSessions: string[];
   /** Sandbox: pinned container id for this project's sessions. */
   containerId?: number;
+  /** Sandbox: image chosen at creation (duplicates carry it; environment identity). */
+  imageId?: number;
+  /** Game-save slots (sandbox): snapshot save points, newest first, ≤2. */
+  snapshotSlots?: Array<{ id: number; name: string; createdAt: number }>;
 }
 
 interface ProjectFile {
@@ -119,6 +123,7 @@ export function createProject(input: {
   ownerName?: string;
   mode: string;
   containerId?: number;
+  imageId?: number;
   seedFromProjectId?: string;
 }): { ok: true; project: ProjectRecord } | { ok: false; error: string } {
   const name = input.name.trim();
@@ -141,6 +146,7 @@ export function createProject(input: {
     createdAt: Date.now(),
     pinnedSessions: [],
     ...(input.mode === "sandbox" && input.containerId !== undefined ? { containerId: input.containerId } : {}),
+    ...(input.mode === "sandbox" && input.imageId !== undefined ? { imageId: input.imageId } : {}),
   };
 
   const home = ensureProjectHome(project);
@@ -190,7 +196,7 @@ export function createProject(input: {
 
 export function updateProject(
   projectId: string,
-  patch: { name?: string; containerId?: number | null; pinSessionId?: string; unpinSessionId?: string },
+  patch: { name?: string; containerId?: number | null; pinSessionId?: string; unpinSessionId?: string; snapshotSlots?: Array<{ id: number; name: string; createdAt: number }> },
 ): { ok: true; project: ProjectRecord } | { ok: false; error: string } {
   const project = store().data.projects[projectId];
   if (!project) return { ok: false, error: "项目不存在" };
@@ -214,6 +220,9 @@ export function updateProject(
       patch.pinSessionId,
       ...project.pinnedSessions.filter((id) => id !== patch.pinSessionId),
     ].slice(0, 20);
+  }
+  if (patch.snapshotSlots !== undefined) {
+    project.snapshotSlots = patch.snapshotSlots;
   }
   if (patch.unpinSessionId) {
     project.pinnedSessions = project.pinnedSessions.filter((id) => id !== patch.unpinSessionId);
@@ -258,6 +267,8 @@ export function duplicateProject(
     ownerId: source.ownerId,
     ownerName: source.ownerName,
     mode: source.mode,
+    // The copy keeps the source environment identity (same image).
+    ...(source.imageId !== undefined ? { imageId: source.imageId } : {}),
     seedFromProjectId: source.id,
   });
 }

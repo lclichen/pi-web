@@ -29,7 +29,7 @@ export async function POST(req: Request) {
   if (identity.session.user.role !== "admin" && identity.session.user.role !== "user") {
     return NextResponse.json({ error: "无权创建项目" }, { status: 403 });
   }
-  let body: { name?: unknown; mode?: unknown; containerId?: unknown; seedFromProjectId?: unknown };
+  let body: { name?: unknown; mode?: unknown; containerId?: unknown; seedFromProjectId?: unknown; imageId?: unknown; workspaceId?: unknown };
   try {
     body = (await req.json()) as typeof body;
   } catch {
@@ -41,6 +41,7 @@ export async function POST(req: Request) {
     ownerName: identity.session.user.username,
     mode: typeof body.mode === "string" ? body.mode : "",
     ...(typeof body.containerId === "number" ? { containerId: body.containerId } : {}),
+    ...(typeof body.imageId === "number" ? { imageId: body.imageId } : {}),
     ...(typeof body.seedFromProjectId === "string" ? { seedFromProjectId: body.seedFromProjectId } : {}),
   });
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
@@ -63,6 +64,12 @@ export async function POST(req: Request) {
         identity.session.apiKey,
         result.project.name,
         excluded,
+        {
+          // 环境与云盘初始化来自创建对话框的选择（imageId 必须与项目一致；
+          // workspaceId 只在创建新容器时生效，一次性 seed）。
+          ...(typeof body.imageId === "number" ? { imageId: body.imageId } : {}),
+          ...(typeof body.workspaceId === "number" ? { workspaceId: body.workspaceId } : {}),
+        },
       );
       const updated = updateProject(result.project.id, { containerId: provisioned.containerId });
       if (!updated.ok) throw new Error(updated.error);

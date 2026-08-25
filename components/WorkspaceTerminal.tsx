@@ -188,6 +188,18 @@ export function WorkspaceTerminal({ cwd, visible, remote = null }: Props) {
             ))}
           </select>
         )}
+        {/* Transport badge — makes it unambiguous WHERE this shell lives
+            (container / user machine / pi-web server). */}
+        <span
+          title={remote ? (remote.label === "沙箱容器" ? "此终端运行在项目的沙箱容器内" : "此终端运行在你配对的本地机器上") : "此终端运行在 pi-web 服务器上（Host 模式）"}
+          style={{
+            fontSize: 10, fontWeight: 700, padding: "1px 7px", borderRadius: 4, flexShrink: 0,
+            color: remote?.label === "沙箱容器" ? "#38bdf8" : remote ? "#a78bfa" : "var(--text-dim)",
+            background: remote?.label === "沙箱容器" ? "rgba(56,189,248,0.12)" : remote ? "rgba(167,139,250,0.12)" : "rgba(128,128,128,0.14)",
+          }}
+        >
+          {remote?.label === "沙箱容器" ? "容器" : remote ? "本机" : "服务器"}
+        </span>
         <span
           title={remote ? remote.label : cwd}
           style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "var(--font-mono)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}

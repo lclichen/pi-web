@@ -108,6 +108,9 @@ interface Props {
   /** Project name for the pending remote session's header badge (e.g.
    *  "[沙盒] 项目名 · /workspace"); null for host mode. */
   pendingProjectLabel?: string | null;
+  /** SINGLE-SOURCE remote-session context (from AppShell; same object the
+   *  terminal and file viewer consume). Null for host / no session. */
+  remoteSessionProp?: { sessionId: string; label: string } | null;
 }
 
 interface WorktreeEntry {
@@ -402,15 +405,14 @@ function PiWebTitle() {
   );
 }
 
-export function SessionSidebar({ authInfo = null, sessionSpace = "mine", onSessionSpaceChange, selectedSessionId, onSelectSession, onNewSession, initialSessionId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onOpenFile, onFileDeleted, onFileRenamed, explorerRefreshKey, onExplorerRefresh, onAtMention, onAtMentions, onManageSandbox, projectsRefreshKey, pendingRemoteMode, pendingProjectLabel }: Props) {
+export function SessionSidebar({ authInfo = null, sessionSpace = "mine", onSessionSpaceChange, selectedSessionId, onSelectSession, onNewSession, initialSessionId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onOpenFile, onFileDeleted, onFileRenamed, explorerRefreshKey, onExplorerRefresh, onAtMention, onAtMentions, onManageSandbox, projectsRefreshKey, pendingRemoteMode, pendingProjectLabel, remoteSessionProp }: Props) {
   const { t } = useI18n();
   const [allSessions, setAllSessions] = useState<SessionInfo[]>([]);
-  // Remote-mode scoping for the file explorer (sandbox / local-machine).
-  const remoteSession = (() => {
-    const selected = allSessions.find((s) => s.id === selectedSessionId);
-    if (!selected?.mode || selected.mode === "host") return null;
-    return { sessionId: selected.id, label: selected.mode === "sandbox" ? "沙箱容器" : "本机" };
-  })();
+  // Remote-session context comes from AppShell as the SINGLE source of truth
+  // (the same object feeds the terminal and file viewer). The sidebar used to
+  // compute its own copy — transient disagreement between the two was the
+  // root of the "host content shown in remote sessions" bug family.
+  const remoteSession = remoteSessionProp ?? null;
   // 选中远程会话时，CWD 按钮同样用模式徽标呈现（不显示服务器路径）。
   const selectedRemoteMode = remoteSession
     ? (allSessions.find((s) => s.id === selectedSessionId)?.mode as "sandbox" | "local-machine")
@@ -613,14 +615,16 @@ export function SessionSidebar({ authInfo = null, sessionSpace = "mine", onSessi
     return match?.projectRoot ?? cwd;
   }, [worktreeState, allSessions]);
 
-  // Notify parent only when the effective cwd actually changes (not when
-  // projectRootFor identity changes due to session/worktree refreshes).
-  const lastNotifiedCwdRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (lastNotifiedCwdRef.current === selectedCwd) return;
-    lastNotifiedCwdRef.current = selectedCwd;
-    onCwdChange?.(selectedCwd, projectRootFor(selectedCwd));
-  }, [selectedCwd, onCwdChange, projectRootFor]);
+  // ── Unidirectional host-directory switching ─────────────────────────────
+  // The parent is notified ONLY at the six genuine switch sites (dropdown,
+  // custom path, default cwd, worktree create/remove/switch). Session
+  // clicks / prop syncs / initial restore intentionally do NOT notify —
+  // that echo used to race AppShell's project-switch logic (three separate
+  // guard refs were needed; all deleted).
+  const switchHostDir = useCallback((cwd: string) => {
+    setSelectedCwd(cwd);
+    onCwdChange?.(cwd, projectRootFor(cwd));
+  }, [onCwdChange, projectRootFor]);
 
   // Sync the worktree switcher to the selected session's cwd. Sessions of all
   // worktrees in a project share one list, so clicking a session from another
@@ -709,7 +713,7 @@ export function SessionSidebar({ authInfo = null, sessionSpace = "mine", onSessi
         setCustomPathError(data.error ?? `HTTP ${res.status}`);
         return;
       }
-      setSelectedCwd(data.cwd ?? path);
+      switchHostDir(data.cwd ?? path);
       setCustomPathOpen(false);
       setCustomPathValue("");
       setDropdownOpen(false);
@@ -730,7 +734,7 @@ export function SessionSidebar({ authInfo = null, sessionSpace = "mine", onSessi
       const res = await fetch("/api/default-cwd", { method: "POST" });
       const data = await res.json() as { cwd?: string; error?: string };
       if (data.cwd) {
-        setSelectedCwd(data.cwd);
+        switchHostDir(data.cwd);
         setCustomPathOpen(false);
         setCustomPathValue("");
         setCustomPathError(null);
@@ -768,7 +772,7 @@ export function SessionSidebar({ authInfo = null, sessionSpace = "mine", onSessi
         forCwd: data.path!,
         worktrees: [...prev.worktrees, { path: data.path!, branch, isMain: false }],
       } : prev);
-      setSelectedCwd(data.path);
+      switchHostDir(data.path);
       setWtRefreshKey((k) => k + 1);
     } catch (e) {
       setWtError(e instanceof Error ? e.message : String(e));
@@ -798,7 +802,7 @@ export function SessionSidebar({ authInfo = null, sessionSpace = "mine", onSessi
         return;
       }
       setWtConfirmRemove(null);
-      if (selectedCwd === path) setSelectedCwd(worktreeState.projectRoot);
+      if (selectedCwd === path) switchHostDir(worktreeState.projectRoot);
       setWtRefreshKey((k) => k + 1);
     } catch (e) {
       setWtError(e instanceof Error ? e.message : String(e));
@@ -1129,7 +1133,7 @@ export function SessionSidebar({ authInfo = null, sessionSpace = "mine", onSessi
                   <button
                     key={project}
                     onClick={() => {
-                      setSelectedCwd(project);
+                      switchHostDir(project);
                       setProjectFilter("");
                       setCustomPathOpen(false);
                       setCustomPathValue("");
@@ -1363,7 +1367,7 @@ export function SessionSidebar({ authInfo = null, sessionSpace = "mine", onSessi
                         >
                           <button
                             onClick={() => {
-                              setSelectedCwd(wt.path);
+                              switchHostDir(wt.path);
                               setWtDropdownOpen(false);
                               setWtError(null);
                               setWtFilter("");

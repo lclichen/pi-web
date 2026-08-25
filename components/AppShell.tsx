@@ -392,8 +392,6 @@ export function AppShell() {
   const activeProjectRootRef = useRef<string | null>(null);
   // True once the initial ?session= URL param has been resolved (or confirmed absent)
   const [initialSessionRestored, setInitialSessionRestored] = useState<boolean>(() => !initialSessionId);
-  // Suppresses sessionKey bump in handleCwdChange during the initial URL restore
-  const suppressCwdBumpRef = useRef(false);
 
   useEffect(() => {
     const requestedCwd = initialNavigation.requestedCwd;
@@ -417,7 +415,6 @@ export function AppShell() {
 
         // The sidebar will notify us when it adopts this cwd. Avoid remounting
         // the just-created empty chat during that initial synchronization.
-        suppressCwdBumpRef.current = true;
         setNewSessionCwd(data.cwd);
         setInitialCwdStatus("ready");
       })
@@ -430,39 +427,22 @@ export function AppShell() {
     return () => controller.abort();
   }, [initialNavigation]);
 
+  // Unidirectional host-directory switch: the sidebar calls this ONLY at its
+  // six genuine switch sites (dropdown / custom path / default cwd / worktree
+  // create/remove/switch). Session selection and new-session flows never come
+  // through here, so no echo guards are needed anymore.
   const handleCwdChange = useCallback((cwd: string | null, projectRoot?: string | null) => {
     setActiveCwd(cwd);
     // Skip if cwd is null (initial mount).
     if (!cwd) return;
-    // Echo of the cwd a new remote-mode session was just started with — the
-    // same flow, not a directory switch. Clear the marker and keep the
-    // sandbox/local mode + projectId intact.
-    if (newSessionOwnedCwdRef.current === cwd) {
-      newSessionOwnedCwdRef.current = null;
-      activeProjectRootRef.current = projectRoot ?? cwd;
-      return;
-    }
-    // Echo of the clicked session's own cwd (session selection from another
-    // project): keep the selection, adopt its project identity.
-    if (selectEchoCwdRef.current === cwd) {
-      selectEchoCwdRef.current = null;
-      activeProjectRootRef.current = projectRoot ?? cwd;
-      return;
-    }
     const newProject = projectRoot ?? cwd;
     const currentProject = activeProjectRootRef.current
       ?? (selectedSession ? (selectedSession.projectRoot ?? selectedSession.cwd) : null);
     activeProjectRootRef.current = newProject;
 
-    // Keep the project identity in sync during the initial URL restore without
-    // remounting the just-created or restored chat.
-    if (suppressCwdBumpRef.current) {
-      suppressCwdBumpRef.current = false;
-      return;
-    }
     // Worktrees of one repo share a project root. Moving the effective cwd
-    // within the same project (e.g. switching worktree, or clicking a session
-    // that lives in another worktree) must not close the open session.
+    // within the same project (e.g. switching worktree) must not close the
+    // open session.
     if (currentProject === newProject) {
       return;
     }
@@ -501,19 +481,8 @@ export function AppShell() {
     setSessionKey((k) => k + 1);
     setSystemPrompt(null);
     setInitialSessionRestored(true);
-    // The sidebar echoes the clicked session's cwd back through onCwdChange.
-    // That echo belongs to THIS selection — without the guard, handleCwdChange
-    // treats it as a project switch when coming from a different project and
-    // nulls the just-selected session (user had to click twice; remote panels
-    // then showed host/project content instead of the container).
-    selectEchoCwdRef.current = session.cwd ?? null;
     // On mobile, collapse the overlay drawer so the chat is revealed after pick.
     if (isMobile && !isRestore) setSidebarOpen(false);
-    if (isRestore) {
-      // Suppress the redundant sessionKey bump that would come from the
-      // onCwdChange effect firing after setSelectedCwd in the sidebar
-      suppressCwdBumpRef.current = true;
-    }
     // Skip router.replace when restoring from URL — the param is already correct
     // and calling replace in production Next.js triggers a Suspense remount loop
     if (!isRestore) {
@@ -521,23 +490,11 @@ export function AppShell() {
     }
   }, [router, isMobile]);
 
-  // Records the cwd a new remote-mode (sandbox/local) session was started
-  // with. The sidebar echoes that cwd back through onCwdChange; that echo is
-  // part of the SAME new-session flow, not a directory switch — without this
-  // guard handleCwdChange would reset newSessionMode/projectId back to host
-  // and the first message would silently open a host session.
-  const newSessionOwnedCwdRef = useRef<string | null>(null);
-  // Same idea for session SELECTION: the sidebar echoes the clicked session's
-  // cwd back through onCwdChange; that echo belongs to this selection, not a
-  // project switch — without the guard the just-selected session gets nulled.
-  const selectEchoCwdRef = useRef<string | null>(null);
-
   const handleNewSession = useCallback((_sessionId: string, cwd: string, mode?: "host" | "sandbox" | "local-machine", projectId?: string, projectLabel?: string) => {
     setSelectedSession(null);
     setNewSessionCwd(cwd);
     if (mode) setNewSessionMode(mode);
     setNewSessionProjectId(projectId ?? null);
-    newSessionOwnedCwdRef.current = mode && mode !== "host" ? cwd : null;
     setSessionKey((k) => k + 1);
     setBranchTree([]);
     setBranchActiveLeafId(null);
@@ -838,6 +795,7 @@ export function AppShell() {
         }
         projectsRefreshKey={projectsRefreshKey}
         pendingRemoteMode={pendingRemoteSession}
+        remoteSessionProp={remoteSessionCtx}
         pendingProjectLabel={
           pendingRemoteSession
             ? newSessionProjectLabel ?? "新会话"

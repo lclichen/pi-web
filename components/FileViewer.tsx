@@ -560,6 +560,14 @@ function TextFileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onMentionL
 
   const fetchGitDiff = useCallback(async (targetPath: string) => {
     const requestId = ++gitDiffRequestRef.current;
+    // Container Git integration isn't wired yet: the server-side git API
+    // would read the PROJECT HOME's repository (wrong content for sandbox/
+    // local sessions). Fail closed with a notice instead of wrong data.
+    if (remote) {
+      setGitDiff({ supported: false, remoteUnsupported: true });
+      setGitDiffLoading(false);
+      return;
+    }
     setGitDiffLoading(true);
     if (!cwd) {
       setGitDiff(null);
@@ -578,7 +586,7 @@ function TextFileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onMentionL
     } finally {
       if (requestId === gitDiffRequestRef.current) setGitDiffLoading(false);
     }
-  }, [cwd]);
+  }, [cwd, remote]);
 
   // HEAD blob for the Monaco DiffEditor's original side. Untracked files
   // return content: null → the whole file renders as added.
@@ -730,8 +738,10 @@ function TextFileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onMentionL
   }, [data?.language, initialDisplayMode]);
 
   useEffect(() => {
-    if (!hasGitDiff && displayMode === "diff") setDisplayMode("source");
-  }, [displayMode, hasGitDiff]);
+    // Genuine no-diff falls back to source view; the remote-unsupported
+    // marker KEEPS the diff tab so the notice below renders.
+    if (!hasGitDiff && displayMode === "diff" && !gitDiff?.remoteUnsupported) setDisplayMode("source");
+  }, [displayMode, hasGitDiff, gitDiff]);
 
   useEffect(() => {
     if (!isDeletedDiff || !esRef.current) return;
@@ -964,6 +974,12 @@ function TextFileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onMentionL
             onSave={() => { if (dirty && !saving) void handleSave(); }}
             onLineClick={(line) => mentionLineRange({ startLine: line, endLine: line })}
           />
+        ) : effectiveDisplayMode === "diff" && gitDiff?.remoteUnsupported ? (
+          <div style={{ padding: "24px 32px", color: "var(--text-dim)", fontSize: 12, lineHeight: 1.8 }}>
+            容器/本机会话的 Git 对比视图暂未接入：diff 需要读取
+            {remote?.label === "沙箱容器" ? "容器内" : "本机工作区"}的 Git 仓库，
+            当前的 Git API 只能访问服务器目录。此文件内容可直接用「源码」模式查看与编辑。
+          </div>
         ) : effectiveDisplayMode === "diff" && hasGitDiff ? (
           <MonacoDiffEditor
             original={headContent?.path === filePath ? (headContent.content ?? "") : ""}

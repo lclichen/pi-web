@@ -442,6 +442,13 @@ export function AppShell() {
       activeProjectRootRef.current = projectRoot ?? cwd;
       return;
     }
+    // Echo of the clicked session's own cwd (session selection from another
+    // project): keep the selection, adopt its project identity.
+    if (selectEchoCwdRef.current === cwd) {
+      selectEchoCwdRef.current = null;
+      activeProjectRootRef.current = projectRoot ?? cwd;
+      return;
+    }
     const newProject = projectRoot ?? cwd;
     const currentProject = activeProjectRootRef.current
       ?? (selectedSession ? (selectedSession.projectRoot ?? selectedSession.cwd) : null);
@@ -494,6 +501,12 @@ export function AppShell() {
     setSessionKey((k) => k + 1);
     setSystemPrompt(null);
     setInitialSessionRestored(true);
+    // The sidebar echoes the clicked session's cwd back through onCwdChange.
+    // That echo belongs to THIS selection — without the guard, handleCwdChange
+    // treats it as a project switch when coming from a different project and
+    // nulls the just-selected session (user had to click twice; remote panels
+    // then showed host/project content instead of the container).
+    selectEchoCwdRef.current = session.cwd ?? null;
     // On mobile, collapse the overlay drawer so the chat is revealed after pick.
     if (isMobile && !isRestore) setSidebarOpen(false);
     if (isRestore) {
@@ -514,6 +527,10 @@ export function AppShell() {
   // guard handleCwdChange would reset newSessionMode/projectId back to host
   // and the first message would silently open a host session.
   const newSessionOwnedCwdRef = useRef<string | null>(null);
+  // Same idea for session SELECTION: the sidebar echoes the clicked session's
+  // cwd back through onCwdChange; that echo belongs to this selection, not a
+  // project switch — without the guard the just-selected session gets nulled.
+  const selectEchoCwdRef = useRef<string | null>(null);
 
   const handleNewSession = useCallback((_sessionId: string, cwd: string, mode?: "host" | "sandbox" | "local-machine", projectId?: string, projectLabel?: string) => {
     setSelectedSession(null);

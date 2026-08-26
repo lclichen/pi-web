@@ -73,13 +73,18 @@ export async function POST(req: Request) {
     const body = await req.json() as { cwd?: string; mode?: unknown; [key: string]: unknown };
     const { cwd, ...command } = body;
     const rawMode = body.mode;
-    const mode = rawMode === undefined ? "host" : (isSessionMode(rawMode) ? rawMode : null);
-    if (!mode) {
+    if (rawMode !== undefined && !isSessionMode(rawMode)) {
       return NextResponse.json({ error: `Invalid mode: ${String(rawMode)}` }, { status: 400 });
     }
-    const effectiveMode = typeof body.projectId === "string" && body.projectId
-      ? (getOwnedProject(body.projectId, user.id, user.role === "admin")?.mode ?? mode)
-      : mode;
+    // The PROJECT decides the runtime mode for project-scoped sessions — an
+    // absent client mode must not register the live session as "host": the
+    // ownership registry outranks sidecar metas in the remote file/terminal
+    // APIs, so a host-registered sandbox session breaks remotefs/remoteterminal.
+    const projectForMode = typeof body.projectId === "string" && body.projectId
+      ? getOwnedProject(body.projectId, user.id, user.role === "admin")
+      : undefined;
+    const mode = projectForMode?.mode ?? (rawMode as "host" | "sandbox" | "local-machine" | undefined) ?? "host";
+    const effectiveMode = mode;
     const permission = modeAllowedForUser(effectiveMode, { id: user.id, role: user.role });
     if (!permission.ok) {
       return NextResponse.json({ error: permission.reason }, { status: 403 });

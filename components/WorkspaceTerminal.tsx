@@ -55,11 +55,13 @@ export function WorkspaceTerminal({ cwd, visible, remote = null }: Props) {
   }, []);
 
   // Terminal lifecycle: one PTY per (cwd, shell, reconnect) combination.
+  // Remote sessions don't need a shell picker (backend decides), so shellId
+  // stays empty — the guard must not block terminal creation for them.
   const fitRef = useRef<FitAddon | null>(null);
   const termRef = useRef<XTerm | null>(null);
   useEffect(() => {
     const el = containerRef.current;
-    if (!el || !shellId) return;
+    if (!el || (!shellId && !remote)) return;
     setExited(null);
 
     const term = new XTerm({

@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "fs";
 import { join, resolve } from "path";
 import { randomUUID } from "crypto";
 import { dataDir } from "./mode-homes";
@@ -39,7 +39,7 @@ interface ProjectFile {
 }
 
 declare global {
-  var __piProjectsStore: { path: string; data: ProjectFile } | undefined;
+  var __piProjectsStore: { path: string; data: ProjectFile; mtime: number } | undefined;
 }
 
 const PROJECT_MODES = new Set(["sandbox", "local-machine"]);
@@ -48,18 +48,31 @@ function storePath(): string {
   return join(dataDir(), "projects.json");
 }
 
+// Reloads when the file's mtime moves — route modules can hold separate
+// module instances, so a write through one instance must be visible to
+// reads through another (same pattern as lib/session-metas.ts).
 function store(): { path: string; data: ProjectFile } {
-  if (!globalThis.__piProjectsStore || globalThis.__piProjectsStore.path !== storePath()) {
+  const path = storePath();
+  let mtime = 0;
+  try {
+    mtime = statSync(path).mtimeMs;
+  } catch {
+    // missing file → mtime 0
+  }
+  const cached = globalThis.__piProjectsStore;
+  if (!cached || cached.path !== path || cached.mtime !== mtime) {
     let data: ProjectFile = { version: 1, projects: {} };
     try {
-      const parsed = JSON.parse(readFileSync(storePath(), "utf8")) as ProjectFile;
+      const parsed = JSON.parse(readFileSync(path, "utf8")) as ProjectFile;
       if (parsed && parsed.projects) data = parsed;
     } catch {
       // fresh store
     }
-    globalThis.__piProjectsStore = { path: storePath(), data };
+    const next = { path, data, mtime };
+    globalThis.__piProjectsStore = next;
+    return next;
   }
-  return globalThis.__piProjectsStore;
+  return cached;
 }
 
 function persist(): void {

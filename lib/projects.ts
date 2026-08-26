@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import { join, resolve } from "path";
 import { randomUUID } from "crypto";
 import { dataDir } from "./mode-homes";
@@ -157,6 +157,12 @@ export function createProject(input: {
       ...(project.containerId !== undefined ? { containerId: project.containerId } : {}),
       disableLocalFallback: true,
     });
+    // Symlink the sandbox extension into the project's .pi/extensions/ so the
+    // SDK's normal extension discovery loads it for ANY session created with
+    // this cwd — including subagents, restored sessions, plan mode, hooks.
+    // This replaces the per-session additionalExtensionPaths injection, which
+    // only covered /api/agent/new and was silently missing everywhere else.
+    ensureSandboxExtensionLink(home);
   }
 
   // Optionally seed from another project: copy its ENTIRE home — `.pi/` config
@@ -322,4 +328,28 @@ function safePlatformUrl(): string | undefined {
  *  caller must have already verified ownership. */
 export function projectConfigCwd(project: ProjectRecord): string {
   return resolve(ensureProjectHome(project));
+}
+
+/** Symlink the sandbox extension into the project home's .pi/extensions/.
+ *  The SDK's normal extension discovery scans this directory for ANY session
+ *  created with this cwd — including subagents, restored sessions, plan mode.
+ *  Uses a symlink so extension code updates propagate automatically; falls
+ *  back to a copy on systems where symlinks need elevated privileges. */
+export function ensureSandboxExtensionLink(home: string): void {
+  const extPath = process.env.PI_WEB_SANDBOX_EXTENSION_PATH;
+  if (!extPath || !existsSync(extPath)) return;
+  const extDir = join(home, ".pi", "extensions");
+  const linkPath = join(extDir, "pi-sandbox-extension");
+  if (existsSync(linkPath)) return;
+  try {
+    mkdirSync(extDir, { recursive: true });
+    symlinkSync(extPath, linkPath, "junction");
+  } catch {
+    try {
+      cpSync(extPath, linkPath, { recursive: true });
+    } catch {
+      // Extension won't auto-discover; session-level additionalExtensionPaths
+      // injection in /api/agent/new remains as a fallback for this project.
+    }
+  }
 }

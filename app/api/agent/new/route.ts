@@ -14,7 +14,7 @@ import { recordSessionMeta } from "@/lib/session-metas";
 import { makeRelayToolsExtension } from "@/lib/extensions/relay-tools";
 import { makeRemoteVerifyExtension } from "@/lib/extensions/remote-verify";
 import { makeEnvironmentInfoExtension } from "@/lib/extensions/environment-info";
-import { ensureProjectHome, getOwnedProject, writeSandboxConfig, type ProjectRecord } from "@/lib/projects";
+import { ensureProjectHome, ensureSandboxExtensionLink, getOwnedProject, writeSandboxConfig, type ProjectRecord } from "@/lib/projects";
 import { getAgentForUser } from "@/lib/relay/registry";
 import { isApiRequestAllowed } from "@/lib/request-security";
 import { platformGet } from "@/lib/platform/client";
@@ -86,7 +86,6 @@ export async function POST(req: Request) {
     }
 
     let effectiveCwd: string | undefined = typeof cwd === "string" ? cwd : undefined;
-    let additionalExtensionPaths: string[] | undefined;
     let extensionFactories: InlineExtension[] | undefined;
     let sessionDir: string | undefined;
 
@@ -114,6 +113,10 @@ export async function POST(req: Request) {
         }
         // Project's own .pi/sandbox-platform.json carries url/container; refresh credentials.
         writeSandboxConfig(home, { apiKey: identity.session.apiKey });
+        // Ensure the sandbox extension symlink exists (created at project
+        // creation, but re-check as a safety net — .pi/extensions/ discovery
+        // handles loading, no additionalExtensionPaths needed).
+        ensureSandboxExtensionLink(home);
         if (project.containerId) {
           writeSandboxConfig(home, { containerId: project.containerId });
         } else {
@@ -129,7 +132,6 @@ export async function POST(req: Request) {
           }
           if (containerId) writeSandboxConfig(home, { containerId });
         }
-        additionalExtensionPaths = [extPath];
         extensionFactories = [
           makeRemoteVerifyExtension("sandbox", user.id),
           makeEnvironmentInfoExtension({
@@ -174,10 +176,10 @@ export async function POST(req: Request) {
         const auto = await resolveAutoContainer(identity.session.apiKey);
         if (auto.conflict) {
           return NextResponse.json({ error: auto.conflict }, { status: 409 });
-        }
-        if (auto.containerId) setSandboxContainer(user.id, auto.containerId);
       }
-      additionalExtensionPaths = [extPath];
+      if (auto.containerId) setSandboxContainer(user.id, auto.containerId);
+      }
+      ensureSandboxExtensionLink(effectiveCwd!);
       extensionFactories = [
         makeRemoteVerifyExtension("sandbox", user.id),
         makeEnvironmentInfoExtension({ mode: "sandbox", username: user.username }),
@@ -231,7 +233,6 @@ export async function POST(req: Request) {
       ...(sessionDir ? { sessionDir } : {}),
       ownerId: user.id,
       mode,
-      ...(additionalExtensionPaths ? { additionalExtensionPaths } : {}),
       ...(extensionFactories ? { extensionFactories } : {}),
       ...(projectRef ? { projectCredentialDir: effectiveCwd } : {}),
     });

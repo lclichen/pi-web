@@ -638,10 +638,12 @@ export function SessionSidebar({ authInfo = null, sessionSpace = "mine", onSessi
     }
   }, [selectedCwdProp]);
 
-  // Load worktrees for the current effective cwd
+  // Load worktrees for the current effective cwd — host sessions only.
+  // Sandbox/local sessions' cwds are server-internal project homes with no
+  // git worktrees; fetching would just 403.
   const [wtRefreshKey, setWtRefreshKey] = useState(0);
   useLayoutEffect(() => {
-    if (!selectedCwd) {
+    if (!selectedCwd || remoteSessionProp) {
       setWorktreeState(null);
       setWorktreeLoadingCwd(null);
       return;

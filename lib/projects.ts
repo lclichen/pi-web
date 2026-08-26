@@ -2,7 +2,9 @@ import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, symli
 import { join, resolve } from "path";
 import { randomUUID } from "crypto";
 import { dataDir } from "./mode-homes";
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { platformUrl } from "./platform/client";
+import { trustProject } from "./project-trust";
 import type { SessionMode } from "./session-modes";
 
 /**
@@ -163,6 +165,9 @@ export function createProject(input: {
     // This replaces the per-session additionalExtensionPaths injection, which
     // only covered /api/agent/new and was silently missing everywhere else.
     ensureSandboxExtensionLink(home);
+    // Auto-trust: sandbox project homes are pi-web-managed (not user repos),
+    // so the SDK's project-trust gate must not block the extension.
+    trustProject(home, getAgentDir());
   }
 
   // Optionally seed from another project: copy its ENTIRE home — `.pi/` config

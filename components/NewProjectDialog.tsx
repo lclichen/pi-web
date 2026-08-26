@@ -6,7 +6,7 @@ interface Props {
   mode: "sandbox" | "local-machine";
   busy: boolean;
   onCancel: () => void;
-  onCreate: (input: { name: string; imageId?: number; workspaceInit: boolean }) => void;
+  onCreate: (input: { name: string; imageId?: number; workspaceInit: boolean; existingContainerId?: number }) => void;
 }
 
 interface ImageEntry {
@@ -20,9 +20,17 @@ interface WorkspaceEntry {
   name: string;
 }
 
+interface ContainerEntry {
+  id: number;
+  name: string;
+  status: string;
+  imageName?: string;
+}
+
 /**
- * 新建项目对话框 — 名称必填；沙箱模式额外选择运行环境（公开镜像）与
- * “从我的工作区初始化 /workspace”（云盘单向 seed）。本机模式只有名称。
+ * 新建项目对话框 — 名称必填；沙箱模式额外选择运行环境（公开镜像）、
+ * 复用已有容器或新建容器，以及“从我的工作区初始化 /workspace”（云盘单向
+ * seed，仅新建容器时生效）。本机模式只有名称。
  */
 export function NewProjectDialog({ mode, busy, onCancel, onCreate }: Props) {
   const [name, setName] = useState("");
@@ -31,24 +39,36 @@ export function NewProjectDialog({ mode, busy, onCancel, onCreate }: Props) {
   const [workspaces, setWorkspaces] = useState<WorkspaceEntry[]>([]);
   const [workspaceInit, setWorkspaceInit] = useState(false);
   const [loading, setLoading] = useState(mode === "sandbox");
+  const [containers, setContainers] = useState<ContainerEntry[]>([]);
+  const [boundIds, setBoundIds] = useState<number[]>([]);
+  const [reuseContainer, setReuseContainer] = useState(false);
+  const [existingContainerId, setExistingContainerId] = useState<number | null>(null);
 
   useEffect(() => {
     if (mode !== "sandbox") return;
     let stopped = false;
     (async () => {
       try {
-        // 镜像列表来自沙箱容器 BFF（同一响应里已含公共镜像与默认供给）。
+        // 镜像/容器列表来自沙箱容器 BFF（同一响应里已含公共镜像与默认供给）。
         const res = await fetch("/api/sandbox/containers");
-        const d = (await res.json()) as { images?: ImageEntry[] };
+        const d = (await res.json()) as { images?: ImageEntry[]; containers?: ContainerEntry[] };
         if (stopped) return;
         setImages(d.images ?? []);
         setImageId(d.images?.[0]?.id ?? null);
+        setContainers((d.containers ?? []).filter((c) => c.status === "running" || c.status === "stopped" || c.status === "created"));
       } catch {
         // 镜像列表失败不阻塞创建（服务端会用平台默认镜像）。
       } finally {
         if (!stopped) setLoading(false);
       }
     })();
+    // 已绑定到其他项目的容器不可复用（两个项目共享一个容器会互相覆盖）。
+    fetch("/api/projects")
+      .then((r) => (r.ok ? r.json() : { projects: [] }))
+      .then((d: { projects?: Array<{ containerId?: number | null }> }) => {
+        if (!stopped) setBoundIds((d.projects ?? []).map((p) => Number(p.containerId)).filter((n) => Number.isFinite(n) && n > 0));
+      })
+      .catch(() => {});
     return () => { stopped = true; };
   }, [mode]);
 
@@ -70,11 +90,13 @@ export function NewProjectDialog({ mode, busy, onCancel, onCreate }: Props) {
     onCreate({
       name: trimmed,
       ...(mode === "sandbox" && imageId != null ? { imageId } : {}),
-      workspaceInit: mode === "sandbox" && workspaceInit && workspaces.length > 0,
+      workspaceInit: mode === "sandbox" && !reuseContainer && workspaceInit && workspaces.length > 0,
+      ...(mode === "sandbox" && reuseContainer && existingContainerId != null ? { existingContainerId } : {}),
     });
-  }, [name, busy, onCreate, mode, imageId, workspaceInit, workspaces.length]);
+  }, [name, busy, onCreate, mode, imageId, workspaceInit, workspaces.length, reuseContainer, existingContainerId]);
 
   const hasWorkspace = workspaces.length > 0;
+  const reusableContainers = containers.filter((c) => !boundIds.includes(c.id));
 
   return (
     <div
@@ -134,25 +156,71 @@ export function NewProjectDialog({ mode, busy, onCancel, onCreate }: Props) {
         )}
 
         {mode === "sandbox" && (
-          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "var(--text-muted)", cursor: hasWorkspace ? "pointer" : "default", opacity: hasWorkspace ? 1 : 0.5 }}>
-            <input
-              type="checkbox"
-              checked={workspaceInit}
-              disabled={busy || !hasWorkspace}
-              onChange={(e) => setWorkspaceInit(e.target.checked)}
-            />
-            <span>
-              从我的工作区初始化 /workspace
-              <span style={{ display: "block", fontSize: 10.5, color: "var(--text-dim)" }}>
-                {hasWorkspace ? "把云端文件拷入新容器（仅创建时，容器内改动不回写）" : "（暂无工作区，创建后可在「我的工作区」上传）"}
+          <>
+            {/* 容器来源：新建（默认）或复用已有容器（保留环境，便于继续实验） */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "var(--text-muted)" }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+                <input
+                  type="radio"
+                  checked={!reuseContainer}
+                  onChange={() => setReuseContainer(false)}
+                  disabled={busy}
+                />
+                新建容器{!reuseContainer && imageId != null ? `（${images.find((i) => i.id === imageId)?.name ?? ""}）` : ""}
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: reusableContainers.length > 0 ? "pointer" : "default", opacity: reusableContainers.length > 0 ? 1 : 0.5 }}>
+                <input
+                  type="radio"
+                  checked={reuseContainer}
+                  disabled={busy || reusableContainers.length === 0}
+                  onChange={() => setReuseContainer(true)}
+                />
+                使用已有容器
+                {reusableContainers.length === 0 && (
+                  <span style={{ fontSize: 10.5, color: "var(--text-dim)" }}>（暂无可复用的容器）</span>
+                )}
+              </label>
+              {reuseContainer && (
+                <select
+                  value={existingContainerId ?? ""}
+                  onChange={(e) => setExistingContainerId(Number(e.target.value))}
+                  disabled={busy || reusableContainers.length === 0}
+                  style={{ ...inputStyle, marginLeft: 22 }}
+                >
+                  {!existingContainerId && <option value="">选择容器…</option>}
+                  {reusableContainers.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      #{c.id} {c.name}{c.imageName ? ` · ${c.imageName}` : ""} · {c.status === "running" ? "运行中" : c.status === "stopped" ? "已停止" : c.status}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+
+            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "var(--text-muted)", cursor: hasWorkspace && !reuseContainer ? "pointer" : "default", opacity: hasWorkspace && !reuseContainer ? 1 : 0.5 }}>
+              <input
+                type="checkbox"
+                checked={workspaceInit}
+                disabled={busy || !hasWorkspace || reuseContainer}
+                onChange={(e) => setWorkspaceInit(e.target.checked)}
+              />
+              <span>
+                从我的工作区初始化 /workspace
+                <span style={{ display: "block", fontSize: 10.5, color: "var(--text-dim)" }}>
+                  {reuseContainer
+                    ? "（复用已有容器时不做初始化，保留容器内现有环境）"
+                    : hasWorkspace ? "把云端文件拷入新容器（仅创建时，容器内改动不回写）" : "（暂无工作区，创建后可在「我的工作区」上传）"}
+                </span>
               </span>
-            </span>
-          </label>
+            </label>
+          </>
         )}
 
         <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
           {mode === "sandbox"
-            ? "创建时自动准备容器（约数秒），会话在容器 /workspace 内执行。"
+            ? (reuseContainer
+                ? "复用已有容器：会话在该容器 /workspace 内执行，环境与文件保持原样。"
+                : "创建时自动准备容器（约数秒），会话在容器 /workspace 内执行。")
             : "项目会话通过本机 Agent 在你配对的工作区内执行。"}
         </div>
 
@@ -161,7 +229,7 @@ export function NewProjectDialog({ mode, busy, onCancel, onCreate }: Props) {
           <button
             type="button"
             onClick={submit}
-            disabled={busy || !name.trim()}
+            disabled={busy || !name.trim() || (mode === "sandbox" && reuseContainer && existingContainerId == null)}
             style={{ ...secondaryBtn, background: "var(--accent)", color: "#fff", borderColor: "var(--accent)", fontWeight: 600 }}
           >
             {busy ? "创建中…" : "创建"}

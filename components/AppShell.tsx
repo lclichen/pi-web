@@ -1,13 +1,13 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useGlobalKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { SessionSidebar } from "./SessionSidebar";
 import { ChatWindow } from "./ChatWindow";
 import { FileViewer } from "./FileViewer";
 import { GitPanel } from "./GitPanel";
-import { LabTrainingSidePanel } from "./LabTrainingSidePanel";
+import { LabTrainingSidePanel, type WidgetState as LabWidgetState } from "./LabTrainingSidePanel";
 import { TabBar, type Tab } from "./TabBar";
 import { ModelsConfig } from "./ModelsConfig";
 import { SkillsConfig } from "./SkillsConfig";
@@ -42,9 +42,6 @@ import {
   SIDEBAR_DEFAULT_WIDTH,
   SIDEBAR_MAX_WIDTH,
   SIDEBAR_MIN_WIDTH,
-  LAB_PANEL_DEFAULT_WIDTH,
-  LAB_PANEL_MIN_WIDTH,
-  LAB_PANEL_MAX_WIDTH,
 } from "@/lib/panel-layout";
 import type { SessionInfo, SessionTreeNode } from "@/lib/types";
 import type { ProjectTrustStatus } from "@/lib/api-types";
@@ -140,7 +137,6 @@ export function AppShell() {
   const [mobileSidebarReady, setMobileSidebarReady] = useState(false);
   const sidebarWidthRef = useRef(SIDEBAR_DEFAULT_WIDTH);
   const rightPanelWidthRef = useRef(RIGHT_PANEL_FALLBACK_WIDTH);
-  const labPanelWidthRef = useRef(LAB_PANEL_DEFAULT_WIDTH);
   const getResponsiveRightPanelWidth = useCallback(
     () => typeof window === "undefined"
       ? RIGHT_PANEL_FALLBACK_WIDTH
@@ -189,17 +185,6 @@ export function AppShell() {
     minWidth: RIGHT_PANEL_MIN_WIDTH,
     storageKey: "pi-right-panel-width",
     widthRef: rightPanelWidthRef,
-  });
-  const labPanelResizer = useResizablePanel({
-    ariaLabel: "Resize Lab Training panel",
-    cssVariable: "--lab-panel-width",
-    defaultWidth: LAB_PANEL_DEFAULT_WIDTH,
-    growthDirection: "left",
-    maxWidth: LAB_PANEL_MAX_WIDTH,
-    minWidth: LAB_PANEL_MIN_WIDTH,
-    storageKey: "pi-lab-panel-width",
-    widthRef: labPanelWidthRef,
-    getMaxWidth: () => LAB_PANEL_MAX_WIDTH,
   });
   const reclampSidebarWidth = sidebarResizer.reclampWidth;
   const reclampRightPanelWidth = rightPanelResizer.reclampWidth;
@@ -319,12 +304,24 @@ export function AppShell() {
   // Right panel — file tabs only
   const [fileTabs, setFileTabs] = useState<Tab[]>([]);
   const [activeFileTabId, setActiveFileTabId] = useState<string | null>(null);
-  const [rightPanelMode, setRightPanelMode] = useState<"files" | "git" | "terminal" | "agents" | "plan">("files");
+  const [rightPanelMode, setRightPanelMode] = useState<"files" | "git" | "agents" | "plan">("files");
+  // Terminal bottom drawer: mounts on first open per terminal key (session /
+  // cwd), then toggles via height so the PTY survives collapse. Resizable by
+  // dragging the handle above it.
+  const [terminalDrawerOpen, setTerminalDrawerOpen] = useState(false);
+  const [terminalDrawerMounted, setTerminalDrawerMounted] = useState(false);
+  const [terminalDrawerHeight, setTerminalDrawerHeight] = useState(280);
   // 活动会话的执行模式：选中会话带 mode；新建会话用 newSessionMode。
   const activeSessionMode = selectedSession?.mode ?? (selectedSession === null && newSessionCwd !== null ? newSessionMode : undefined);
-  const remoteSessionCtx = activeSessionMode && activeSessionMode !== "host" && selectedSession
-    ? { sessionId: selectedSession.id, label: activeSessionMode === "sandbox" ? "沙箱容器" : "本机" }
-    : null;
+  // Memoized identity: consumers (WorkspaceTerminal effect deps, FileExplorer)
+  // treat this object as "the remote context" — a fresh object per render would
+  // tear down and recreate the container PTY on every stats update.
+  const remoteSessionCtx = useMemo(
+    () => (activeSessionMode && activeSessionMode !== "host" && selectedSession
+      ? { sessionId: selectedSession.id, label: activeSessionMode === "sandbox" ? "沙箱容器" : "本机" }
+      : null),
+    [activeSessionMode, selectedSession],
+  );
   // A remote-mode session that has not materialized yet (no first message):
   // file/terminal panels must wait instead of hitting the local APIs. Binds to
   // the explicit new-session intent (mode + projectId), never to a cwd value —
@@ -338,18 +335,9 @@ export function AppShell() {
   // Live subagent calls lifted from the active ChatWindow (useAgentSession).
   const [subagentCalls, setSubagentCalls] = useState<SubagentCall[]>([]);
 
-  // Lab Training side panel (independent from file viewer)
+  // Lab Training panel — merged into the left sidebar (section node passed down)
   const [labWidget, setLabWidget] = useState<{ metadata?: unknown } | null>(null);
   const [hasLabTraining, setHasLabTraining] = useState(false);
-  const [labPanelOpen, setLabPanelOpen] = useState(true);
-  // Reclamp BOTH when the lab panel opens AND when it closes — previously the
-  // early return on close left the sidebar/right panel at their narrower
-  // widths, producing a blank strip where the lab panel used to be.
-  useEffect(() => {
-    reclampSidebarWidth();
-    rightPanelResizer.reclampWidth();
-    if (labPanelOpen) labPanelResizer.reclampWidth();
-  }, [reclampSidebarWidth, rightPanelResizer.reclampWidth, labPanelResizer.reclampWidth, labPanelOpen]);
   const sendCommandRef = useRef<((cmd: string) => void) | null>(null);
 
   const handleSendCommand = useCallback((cmd: string) => {
@@ -393,6 +381,43 @@ export function AppShell() {
   const initialSessionId = initialNavigation.sessionId;
   const [activeCwd, setActiveCwd] = useState<string | null>(null);
   const activeProjectRootRef = useRef<string | null>(null);
+
+  // Terminal bottom drawer — keys to the session/cwd exactly like the old
+  // right-panel terminal did: switching key unmounts (and closes) the drawer.
+  const terminalDrawerKey = remoteSessionCtx
+    ? remoteSessionCtx.sessionId
+    : (activeCwd ?? selectedSession?.cwd ?? newSessionCwd) ?? null;
+  useEffect(() => {
+    setTerminalDrawerMounted(false);
+    setTerminalDrawerOpen(false);
+  }, [terminalDrawerKey]);
+  const openTerminalDrawer = useCallback(() => {
+    setTerminalDrawerMounted(true);
+    setTerminalDrawerOpen(true);
+  }, []);
+  // Drag the top edge to resize the drawer (min 140px, max 75% of the chat column).
+  const terminalDrawerRef = useRef<HTMLDivElement | null>(null);
+  const startTerminalDrawerResize = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startHeight = terminalDrawerHeight;
+    const maxHeight = Math.max(200, (terminalDrawerRef.current?.parentElement?.clientHeight ?? 600) * 0.75);
+    const onMove = (ev: MouseEvent) => {
+      const next = startHeight + (startY - ev.clientY);
+      setTerminalDrawerHeight(Math.min(maxHeight, Math.max(140, next)));
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    document.body.style.cursor = "row-resize";
+    document.body.style.userSelect = "none";
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, [terminalDrawerHeight]);
+
   // True once the initial ?session= URL param has been resolved (or confirmed absent)
   const [initialSessionRestored, setInitialSessionRestored] = useState<boolean>(() => !initialSessionId);
 
@@ -804,6 +829,15 @@ export function AppShell() {
             ? newSessionProjectLabel ?? "新会话"
             : (selectedSession?.mode && selectedSession.mode !== "host" ? (selectedSession.name ? `会话：${selectedSession.name}` : "远程会话") : null)
         }
+        labPanelNode={labTrainingEnabled ? (
+          <LabTrainingSidePanel
+            hideHeader
+            widgetState={(labWidget?.metadata as LabWidgetState | undefined) ?? null}
+            hasLabTraining={hasLabTraining}
+            onSendCommand={handleSendCommand}
+            onStartLabTraining={handleStartLabTraining}
+          />
+        ) : undefined}
       />
       <div style={{ padding: "6px 8px", flexShrink: 0, display: "flex", flexWrap: "wrap", gap: 3 }}>
         {([
@@ -1509,7 +1543,6 @@ export function AppShell() {
               onClick={() => {
                 const next = !labTrainingEnabled;
                 setLabTrainingEnabled(next);
-                if (!next) setLabPanelOpen(false);
                 fetch("/api/server-settings", {
                   method: "PATCH",
                   headers: { "Content-Type": "application/json" },
@@ -1533,28 +1566,6 @@ export function AppShell() {
                 <path d="M22 10v6M2 10l10-5 10 5-10 5z" /><path d="M6 12v5c3 3 9 3 12 0v-5" />
               </svg>
               {!isMobile && <span>教学</span>}
-            </button>
-          )}
-          {labTrainingEnabled && (
-            <button
-              type="button"
-              onClick={() => setLabPanelOpen((v) => !v)}
-              title={labPanelOpen ? "收起教学面板" : "展开教学面板"}
-              aria-label={labPanelOpen ? "收起教学面板" : "展开教学面板"}
-              aria-pressed={labPanelOpen}
-              style={{
-                display: "flex", alignItems: "center", justifyContent: "center",
-                height: "100%", padding: "0 10px", background: "none",
-                border: "none", borderLeft: "1px solid var(--border)",
-                color: labPanelOpen ? "var(--accent)" : "var(--text-muted)",
-                cursor: "pointer", flexShrink: 0, transition: "color 0.12s",
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text)"; e.currentTarget.style.background = "var(--bg-hover)"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.color = labPanelOpen ? "var(--accent)" : "var(--text-muted)"; e.currentTarget.style.background = "none"; }}
-            >
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M22 10v6M2 10l10-5 10 5-10 5z" /><path d="M6 12v5c3 3 9 3 12 0v-5" />
-              </svg>
             </button>
           )}
           {webUser && webUser !== "loading" && (
@@ -1843,8 +1854,9 @@ export function AppShell() {
 
         </div>
 
-        {/* Chat content */}
-        <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
+        {/* Chat content + terminal bottom drawer */}
+        <div style={{ flex: 1, overflow: "hidden", position: "relative", display: "flex", flexDirection: "column" }}>
+          <div style={{ flex: 1, overflow: "hidden", position: "relative", minHeight: 0 }}>
           {showChat ? (
             <ChatWindow
               key={sessionKey}
@@ -1867,6 +1879,12 @@ export function AppShell() {
               onOpenAgentsPanel={() => { setRightPanelMode("agents"); setRightPanelOpen(true); }}
               onOpenPlanPanel={() => { setRightPanelMode("plan"); setRightPanelOpen(true); }}
               planPanelActive={rightPanelMode === "plan"}
+              onToggleTerminalPanel={() => {
+                if (terminalDrawerMounted) setTerminalDrawerOpen((v) => !v);
+                else openTerminalDrawer();
+              }}
+              terminalPanelActive={terminalDrawerOpen}
+              remoteSession={remoteSessionCtx}
               onSubagentCallsChange={setSubagentCalls}
               sendCommandRef={sendCommandRef}
             />
@@ -1911,6 +1929,48 @@ export function AppShell() {
               </div>
             )
           ) : null}
+          </div>
+
+          {/* Terminal bottom drawer — mounts on first open for the current
+              session/cwd, then collapses to height 0 (PTY survives). */}
+          {terminalDrawerMounted && terminalDrawerKey && (
+            <div
+              ref={terminalDrawerRef}
+              style={{
+                height: terminalDrawerOpen ? terminalDrawerHeight : 0,
+                flexShrink: 0,
+                overflow: "hidden",
+                borderTop: terminalDrawerOpen ? "1px solid var(--border)" : "none",
+                background: "#000",
+                transition: "height 0.18s ease",
+              }}
+            >
+              <div
+                onMouseDown={startTerminalDrawerResize}
+                onDoubleClick={() => setTerminalDrawerHeight(280)}
+                title="拖动调整高度（双击复位）"
+                style={{
+                  height: 5, cursor: "row-resize", background: "var(--bg-panel)",
+                  borderBottom: "1px solid var(--border)", flexShrink: 0,
+                }}
+              />
+              <div style={{ height: terminalDrawerOpen ? `calc(100% - 6px)` : 0 }}>
+                {pendingRemoteSession ? (
+                  <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-dim)", fontSize: 12, padding: 20, textAlign: "center", background: "var(--bg)" }}>
+                    {pendingRemoteSession === "sandbox" ? "沙箱" : "本机"}会话创建后（发送第一条消息）即可使用远程终端
+                  </div>
+                ) : (
+                  <WorkspaceTerminal
+                    key={terminalDrawerKey}
+                    cwd={terminalDrawerKey}
+                    visible={terminalDrawerOpen}
+                    remote={remoteSessionCtx}
+                    onClose={() => setTerminalDrawerOpen(false)}
+                  />
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -1983,21 +2043,6 @@ export function AppShell() {
             </svg>Git
           </button>
           <button
-            onClick={() => { setRightPanelMode("terminal"); setRightPanelOpen(true); }}
-            title="终端"
-            style={{
-              height: "100%", padding: "0 10px", border: "none",
-              background: "transparent",
-              color: rightPanelMode === "terminal" ? "var(--accent)" : "var(--text-dim)",
-              fontSize: 11, fontWeight: 600, cursor: "pointer",
-              borderBottom: rightPanelMode === "terminal" ? "2px solid var(--accent)" : "2px solid transparent",
-            }}
-          >
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: "text-bottom", marginRight: 3 }}>
-              <polyline points="4 17 10 11 4 5" /><line x1="12" y1="19" x2="20" y2="19" />
-            </svg>终端
-          </button>
-          <button
             onClick={() => { setRightPanelMode("agents"); setRightPanelOpen(true); }}
             title="子智能体目录"
             style={{
@@ -2041,24 +2086,6 @@ export function AppShell() {
 
         {/* Panel content */}
         <div style={{ flex: 1, overflow: "hidden", paddingBottom: "env(safe-area-inset-bottom)" }}>
-          {/* Workspace terminal: keyed by cwd — switching sessions within one
-              workspace keeps the shell, switching cwd destroys it. Stays
-              mounted while the panel is open so hopping to Files/Git and back
-              doesn't kill the process (hidden via display:none). */}
-          {pendingRemoteSession ? (
-            <div style={{ display: rightPanelMode === "terminal" ? "flex" : "none", height: "100%", alignItems: "center", justifyContent: "center", color: "var(--text-dim)", fontSize: 12, padding: 20, textAlign: "center" }}>
-              {pendingRemoteSession === "sandbox" ? "沙箱" : "本机"}会话创建后（发送第一条消息）即可使用远程文件与终端
-            </div>
-          ) : (activeCwd ?? selectedSession?.cwd ?? newSessionCwd) ? (
-            <div style={{ display: rightPanelMode === "terminal" ? "flex" : "none", height: "100%", flexDirection: "column" }}>
-              <WorkspaceTerminal
-                key={remoteSessionCtx ? remoteSessionCtx.sessionId : (activeCwd ?? selectedSession?.cwd ?? newSessionCwd)}
-                cwd={activeCwd ?? selectedSession?.cwd ?? newSessionCwd ?? ""}
-                visible={rightPanelMode === "terminal"}
-                remote={remoteSessionCtx}
-              />
-            </div>
-          ) : null}
           {/* Subagent directory: stays mounted while the panel is open so its
               5s record polling keeps the finished list fresh for the widget;
               keyed by session, hidden via display:none. */}
@@ -2072,11 +2099,7 @@ export function AppShell() {
             </div>
           ) : null}
           {rightPanelMode === "plan" ? (
-            <PlanPanel cwd={(activeCwd ?? selectedSession?.cwd ?? newSessionCwd) ?? undefined} />
-          ) : rightPanelMode === "terminal" && !(activeCwd ?? selectedSession?.cwd ?? newSessionCwd) ? (
-            <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-dim)", fontSize: 12 }}>
-              选择或创建一个会话后即可在此打开工作区终端
-            </div>
+            <PlanPanel cwd={(activeCwd ?? selectedSession?.cwd ?? newSessionCwd) ?? undefined} remote={remoteSessionCtx} />
           ) : rightPanelMode === "agents" && !selectedSession?.id ? (
             <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-dim)", fontSize: 12 }}>
               选择或创建一个会话后可查看子智能体调用记录
@@ -2110,38 +2133,6 @@ export function AppShell() {
           ) : null}
         </div>
       </div>
-
-      {/* Lab Training panel — far right, independent from file viewer */}
-      {labTrainingEnabled && labPanelOpen && (
-        <>
-          <div
-            {...labPanelResizer.separatorProps}
-            aria-controls="lab-training-panel"
-            className={`panel-resize-handle lab-panel-resize-handle${labPanelResizer.isResizing ? " is-resizing" : ""}`}
-            data-resize-handle="lab-panel"
-            title="Resize Lab Training panel: Drag to resize, double-click to reset"
-          />
-          <div
-            ref={labPanelResizer.panelRef}
-            id="lab-training-panel"
-            className={`lab-panel-container lab-panel-open${labPanelResizer.isResizing ? " lab-panel-resizing" : ""}`}
-            style={{
-              "--lab-panel-width": `${labPanelResizer.width}px`,
-              display: "flex",
-              flexDirection: "column",
-              borderLeft: "1px solid var(--border)",
-              background: "var(--bg)",
-            } as React.CSSProperties}
-          >
-            <LabTrainingSidePanel
-              widgetState={(labWidget?.metadata as any) ?? null}
-              hasLabTraining={hasLabTraining}
-              onSendCommand={handleSendCommand}
-              onStartLabTraining={handleStartLabTraining}
-            />
-          </div>
-        </>
-      )}
     </div>
 
     {modelsConfigOpen && <ModelsConfig onClose={() => { setModelsConfigOpen(false); setModelsRefreshKey((k) => k + 1); }} />}

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createProject, deleteProject, listProjects, updateProject, allProjects } from "@/lib/projects";
+import { platformGet } from "@/lib/platform/client";
 import { requireUserIdentity } from "@/lib/web-session";
 import { isApiRequestAllowed, hasJsonContentType } from "@/lib/request-security";
 import { provisionContainerForProject } from "@/lib/platform/provision";
@@ -45,6 +46,32 @@ export async function POST(req: Request) {
     ...(typeof body.seedFromProjectId === "string" ? { seedFromProjectId: body.seedFromProjectId } : {}),
   });
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
+
+  // 沙箱项目：显式传入 containerId = 复用已有容器（保留环境）。校验归属
+  // （平台按凭证过滤，只能看到自己的容器）与排他性（不得绑到其他项目）。
+  if (result.project.mode === "sandbox" && typeof body.containerId === "number" && body.containerId > 0) {
+    try {
+      if (!identity.session.apiKey) throw new Error("沙箱模式需要平台凭证，请重新登录");
+      const list = await platformGet<{ containers: Array<{ id: number; status: string }> }>(
+        "/api/v1/containers",
+        identity.session.apiKey,
+        { filter: "all" },
+      );
+      const target = (list.containers ?? []).find((c) => c.id === body.containerId);
+      if (!target) throw new Error("容器不存在或不属于你");
+      if (target.status === "destroyed") throw new Error("该容器已销毁，无法绑定");
+      const taken = allProjects().find(
+        (p) => p.mode === "sandbox" && p.id !== result.project.id && Number(p.containerId) === body.containerId,
+      );
+      if (taken) throw new Error(`该容器已绑定到项目「${taken.name}」`);
+      const updated = updateProject(result.project.id, { containerId: body.containerId });
+      if (!updated.ok) throw new Error(updated.error);
+      return NextResponse.json({ project: updated.project }, { status: 201 });
+    } catch (error) {
+      deleteProject(result.project.id);
+      return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 400 });
+    }
+  }
 
   // 沙箱项目：没有指定容器时自动创建/恢复一个并绑定（"跟随平台默认" 不再
   // 留下空项目——容器供给失败会立即报错并回滚，避免会话阶段静默失败）。

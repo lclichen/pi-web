@@ -18,6 +18,8 @@ interface Props {
   remote?: { sessionId: string; label: string } | null;
   /** Whether the terminal tab is active — re-fit when shown again. */
   visible: boolean;
+  /** Bottom-drawer mode: renders a collapse button in the header. */
+  onClose?: () => void;
 }
 
 /**
@@ -30,17 +32,23 @@ interface Props {
  * Mirrors components/relay/Terminal.tsx (the Go-agent terminal) but talks to
  * /api/terminal/* and adds a shell picker, clear and reconnect.
  */
-export function WorkspaceTerminal({ cwd, visible, remote = null }: Props) {
+export function WorkspaceTerminal({ cwd, visible, remote = null, onClose }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [shells, setShells] = useState<ShellOption[]>([]);
   const [shellId, setShellId] = useState<string>("");
   const [reconnectNonce, setReconnectNonce] = useState(0);
   const [exited, setExited] = useState<number | null>(null);
+  // The lifecycle effect keys on remote identity primitives (session id), not
+  // object identity — a fresh `{sessionId}` object per parent render must not
+  // tear down and recreate the container PTY.
+  const remoteKey = remote ? `${remote.sessionId}` : "";
+  const remoteRef = useRef(remote);
+  remoteRef.current = remote;
 
   // Shell list for the dropdown (default = first detected entry).
   useEffect(() => {
     let cancelled = false;
-    if (remote) return;
+    if (remoteKey) return;
     fetch("/api/terminal/shells")
       .then((r) => r.json())
       .then((body: { data?: { shells?: ShellOption[] } }) => {
@@ -52,7 +60,7 @@ export function WorkspaceTerminal({ cwd, visible, remote = null }: Props) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [remoteKey]);
 
   // Terminal lifecycle: one PTY per (cwd, shell, reconnect) combination.
   // Remote sessions don't need a shell picker (backend decides), so shellId
@@ -60,6 +68,7 @@ export function WorkspaceTerminal({ cwd, visible, remote = null }: Props) {
   const fitRef = useRef<FitAddon | null>(null);
   const termRef = useRef<XTerm | null>(null);
   useEffect(() => {
+    const remote = remoteRef.current;
     const el = containerRef.current;
     if (!el || (!shellId && !remote)) return;
     setExited(null);
@@ -121,7 +130,13 @@ export function WorkspaceTerminal({ cwd, visible, remote = null }: Props) {
           error?: string;
         };
         if (!res.ok || !body.success || !body.data?.sessionId) {
-          term.writeln(`\x1b[31m无法启动终端：${body.error ?? `HTTP ${res.status}`}\x1b[0m`);
+          // The platform caps concurrent PTYs per container and rejects the
+          // WebSocket upgrade with HTTP 429 (ws surfaces it verbatim).
+          const raw = body.error ?? `HTTP ${res.status}`;
+          const msg = /429|PTY_LIMIT/.test(raw)
+            ? "容器终端数量已达上限，旧连接将在约 1 分钟内自动释放，请稍后重试"
+            : raw;
+          term.writeln(`\x1b[31m无法启动终端：${msg}\x1b[0m`);
           return;
         }
         sessionId = body.data.sessionId;
@@ -157,7 +172,7 @@ export function WorkspaceTerminal({ cwd, visible, remote = null }: Props) {
       fitRef.current = null;
       termRef.current = null;
     };
-  }, [cwd, shellId, reconnectNonce, remote]);
+  }, [cwd, shellId, reconnectNonce, remoteKey]);
 
   // Re-showing the tab (display:none → block) needs an explicit refit.
   useEffect(() => {
@@ -218,10 +233,20 @@ export function WorkspaceTerminal({ cwd, visible, remote = null }: Props) {
         <button
           onClick={() => setReconnectNonce((n) => n + 1)}
           title={exited === null ? "关闭当前 shell 并重新启动" : "重新启动 shell"}
-          style={{ background: "transparent", border: "1px solid var(--border)", borderRadius: 4, color: exited === null ? "var(--text-muted)" : "var(--accent)", cursor: "pointer", fontSize: 11, padding: "1px 8px" }}
+          style={{ background: "transparent", border: "1px solid var(--border)", borderRadius: 4, color: exited === null ? "var(--text-muted)" : "var(--accent)", cursor: "pointer", fontSize: 11, padding: "1px 8px", flexShrink: 0 }}
         >
           {exited === null ? "重启" : "重连"}
         </button>
+        {onClose && (
+          <button
+            onClick={onClose}
+            title="收起终端"
+            aria-label="收起终端"
+            style={{ background: "transparent", border: "1px solid var(--border)", borderRadius: 4, color: "var(--text-muted)", cursor: "pointer", fontSize: 11, padding: "1px 8px", flexShrink: 0 }}
+          >
+            收起
+          </button>
+        )}
       </div>
       <div ref={containerRef} style={{ flex: 1, minHeight: 0, padding: 4, background: "#000" }} data-shell={shellLabel} />
     </div>

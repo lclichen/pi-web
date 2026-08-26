@@ -50,7 +50,7 @@ interface QAExchange {
   timestamp: string;
 }
 
-interface WidgetState {
+export interface WidgetState {
   mode: "training" | "qa" | "idle";
   labTitle: string | null;
   sectionTitle: string | null;
@@ -74,6 +74,8 @@ interface Props {
   onSendCommand: (command: string) => void;
   onStartLabTraining?: () => void;
   disabled?: boolean;
+  /** Embedded in the left sidebar: the host section renders its own header. */
+  hideHeader?: boolean;
 }
 
 const NOTE_STYLES: Record<string, { icon: string; color: string; bg: string }> = {
@@ -82,7 +84,7 @@ const NOTE_STYLES: Record<string, { icon: string; color: string; bg: string }> =
   info: { icon: "i", color: "var(--text-muted)", bg: "transparent" },
 };
 
-export function LabTrainingSidePanel({ widgetState, hasLabTraining, onSendCommand, onStartLabTraining, disabled }: Props) {
+export function LabTrainingSidePanel({ widgetState, hasLabTraining, onSendCommand, onStartLabTraining, disabled, hideHeader }: Props) {
   const [outlineExpanded, setOutlineExpanded] = useState(false);
   const qaEndRef = useRef<HTMLDivElement | null>(null);
 
@@ -110,7 +112,8 @@ export function LabTrainingSidePanel({ widgetState, hasLabTraining, onSendComman
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
-      {/* Header — height matches the File panel tab bar so the two columns align */}
+      {/* Header — hidden when embedded in the sidebar (host section header replaces it) */}
+      {!hideHeader && (
       <div style={{
         display: "flex", alignItems: "center", gap: 6,
         height: 36, padding: "0 10px", borderBottom: "1px solid var(--border)", flexShrink: 0,
@@ -122,6 +125,7 @@ export function LabTrainingSidePanel({ widgetState, hasLabTraining, onSendComman
         <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text)" }}>Lab Training</span>
         <div style={{ flex: 1 }} />
       </div>
+      )}
 
       {/* QA Mode Banner */}
       {isQA && (
@@ -136,7 +140,7 @@ export function LabTrainingSidePanel({ widgetState, hasLabTraining, onSendComman
           }} />
           <span style={{ fontSize: 11, fontWeight: 700, color: "#a855f7" }}>QA Mode</span>
           <span style={{ fontSize: 10, color: "var(--text-muted)" }}>
-            Ask questions freely. Type "next" to return.
+            Ask questions freely. Type &quot;next&quot; to return.
           </span>
           <div style={{ flex: 1 }} />
           <button

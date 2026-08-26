@@ -45,10 +45,14 @@ interface Props {
   newSessionMode?: "host" | "sandbox" | "local-machine";
   /** Project id for a not-yet-created project-scoped session. */
   newSessionProjectId?: string | null;
-  /** Chat status widget → AppShell right panel. */
+  /** Chat status widget → AppShell right panel / terminal drawer. */
   onOpenAgentsPanel?: () => void;
   onOpenPlanPanel?: () => void;
   planPanelActive?: boolean;
+  onToggleTerminalPanel?: () => void;
+  terminalPanelActive?: boolean;
+  /** Remote session context (sandbox / local machine) for remote-aware widgets. */
+  remoteSession?: { sessionId: string; label: string } | null;
   /** Live subagent calls lifted to AppShell for the directory panel. */
   onSubagentCallsChange?: (calls: SubagentCall[]) => void;
 }
@@ -184,7 +188,7 @@ function ProcessDetailsGroup({ messageCount, toolCallCount, children, t }: { mes
   );
 }
 
-export function ChatWindow({ session, newSessionCwd, newSessionMode, newSessionProjectId, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onLabStateChange, sendCommandRef, onOpenAgentsPanel, onOpenPlanPanel, planPanelActive, onSubagentCallsChange }: Props) {
+export function ChatWindow({ session, newSessionCwd, newSessionMode, newSessionProjectId, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onLabStateChange, sendCommandRef, onOpenAgentsPanel, onOpenPlanPanel, planPanelActive, onToggleTerminalPanel, terminalPanelActive, remoteSession, onSubagentCallsChange }: Props) {
   const { t } = useI18n();
   const { soundEnabled, onSoundToggle, playDoneSound, unlockAudio } = useAudio();
   const isMobile = useIsMobile();
@@ -546,7 +550,10 @@ export function ChatWindow({ session, newSessionCwd, newSessionMode, newSessionP
           subagentCalls={subagentCalls}
           onOpenAgents={() => onOpenAgentsPanel?.()}
           onOpenPlan={() => onOpenPlanPanel?.()}
+          onToggleTerminal={onToggleTerminalPanel}
           planActive={planPanelActive}
+          terminalActive={terminalPanelActive}
+          remote={remoteSession ?? null}
         />
         <div
           style={{

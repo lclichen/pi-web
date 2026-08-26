@@ -1059,8 +1059,7 @@ span.linenumber {
     min-width: 0;
   }
   .panel-resize-handle,
-  .right-panel-overlay-backdrop,
-  .lab-panel-resize-handle {
+  .right-panel-overlay-backdrop {
     display: none;
   }
   .directory-picker-back,

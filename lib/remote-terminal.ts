@@ -31,6 +31,8 @@ interface RemoteTerminal {
   detach?: () => void;
   /** relay: the agent-side pty session id. */
   relayAgentSid?: string;
+  /** Pending last-viewer-gone cleanup (see subscribeRemoteTerminal). */
+  orphanTimer?: ReturnType<typeof setTimeout>;
 }
 
 interface Registry {
@@ -177,6 +179,10 @@ export function closeRemoteTerminal(sid: string): void {
   const t = reg.terminals.get(sid);
   if (!t) return;
   reg.terminals.delete(sid);
+  if (t.orphanTimer) {
+    clearTimeout(t.orphanTimer);
+    t.orphanTimer = undefined;
+  }
   if (t.kind === "platform") {
     try {
       t.ws?.close();
@@ -189,6 +195,9 @@ export function closeRemoteTerminal(sid: string): void {
   }
 }
 
+/** Close a terminal this quickly after its last subscriber disappears. */
+const ORPHAN_CLOSE_MS = 60_000;
+
 export function subscribeRemoteTerminal(
   sid: string,
   cb: (frame: RemoteTerminalFrame) => void,
@@ -197,6 +206,11 @@ export function subscribeRemoteTerminal(
   const t = reg.terminals.get(sid);
   if (!t) return () => {};
   t.subscribers.add(cb);
+  // Cancel any pending orphan cleanup — the browser is (re)subscribed.
+  if (t.orphanTimer) {
+    clearTimeout(t.orphanTimer);
+    t.orphanTimer = undefined;
+  }
   if (t.exited !== undefined) {
     try {
       cb({ type: "exit", code: t.exited });
@@ -206,6 +220,19 @@ export function subscribeRemoteTerminal(
   }
   return () => {
     t.subscribers.delete(cb);
+    // Last viewer gone (tab closed/refreshed): don't hold the platform PTY
+    // slot until the 30-min reaper — the platform caps concurrent terminals
+    // per container and rejects further upgrades with 429 once leaked
+    // sessions pile up. Short grace covers brief SSE reconnects.
+    if (t.subscribers.size === 0 && t.exited === undefined && !t.orphanTimer) {
+      t.orphanTimer = setTimeout(() => {
+        t.orphanTimer = undefined;
+        if (getRegistry().terminals.get(sid) === t && t.subscribers.size === 0) {
+          closeRemoteTerminal(sid);
+        }
+      }, ORPHAN_CLOSE_MS);
+      t.orphanTimer.unref?.();
+    }
   };
 }
 

@@ -150,7 +150,7 @@ export function ProjectSessionTree({
   // 一次性创建多个容器）。名称/镜像/工作区初始化在 NewProjectDialog 里选。
   const [creating, setCreating] = useState(false);
 
-  const createProject = async (mode: "sandbox" | "local-machine", input: { name: string; imageId?: number; workspaceInit?: boolean }) => {
+  const createProject = async (mode: "sandbox" | "local-machine", input: { name: string; imageId?: number; workspaceInit?: boolean; existingContainerId?: number }) => {
     if (creating) return;
     setCreating(true);
     try {
@@ -173,6 +173,7 @@ export function ProjectSessionTree({
           mode,
           ...(input.imageId != null ? { imageId: input.imageId } : {}),
           ...(workspaceId != null ? { workspaceId } : {}),
+          ...(input.existingContainerId != null ? { containerId: input.existingContainerId } : {}),
         }),
       });
       const data = await res.json().catch(() => ({})) as { error?: string };

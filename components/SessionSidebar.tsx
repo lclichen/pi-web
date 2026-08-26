@@ -111,6 +111,10 @@ interface Props {
   /** SINGLE-SOURCE remote-session context (from AppShell; same object the
    *  terminal and file viewer consume). Null for host / no session. */
   remoteSessionProp?: { sessionId: string; label: string } | null;
+  /** Lab Training panel content — rendered as a collapsible section at the
+   *  bottom of the sidebar (merged in from the former far-right panel).
+   *  Undefined = feature disabled server-side. */
+  labPanelNode?: React.ReactNode;
 }
 
 interface WorktreeEntry {
@@ -405,7 +409,7 @@ function PiWebTitle() {
   );
 }
 
-export function SessionSidebar({ authInfo = null, sessionSpace = "mine", onSessionSpaceChange, selectedSessionId, onSelectSession, onNewSession, initialSessionId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onOpenFile, onFileDeleted, onFileRenamed, explorerRefreshKey, onExplorerRefresh, onAtMention, onAtMentions, onManageSandbox, projectsRefreshKey, pendingRemoteMode, pendingProjectLabel, remoteSessionProp }: Props) {
+export function SessionSidebar({ authInfo = null, sessionSpace = "mine", onSessionSpaceChange, selectedSessionId, onSelectSession, onNewSession, initialSessionId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onOpenFile, onFileDeleted, onFileRenamed, explorerRefreshKey, onExplorerRefresh, onAtMention, onAtMentions, onManageSandbox, projectsRefreshKey, pendingRemoteMode, pendingProjectLabel, remoteSessionProp, labPanelNode }: Props) {
   const { t } = useI18n();
   const [allSessions, setAllSessions] = useState<SessionInfo[]>([]);
   // Remote-session context comes from AppShell as the SINGLE source of truth
@@ -441,6 +445,15 @@ export function SessionSidebar({ authInfo = null, sessionSpace = "mine", onSessi
   const wtDropdownRef = useRef<HTMLDivElement>(null);
   const wtNewInputRef = useRef<HTMLInputElement>(null);
   const [explorerOpen, setExplorerOpen] = useState(true);
+  const [labSectionOpen, setLabSectionOpen] = useState(() =>
+    typeof window !== "undefined" ? localStorage.getItem("pi-lab-section-open") !== "0" : true,
+  );
+  const toggleLabSection = () => {
+    setLabSectionOpen((v) => {
+      localStorage.setItem("pi-lab-section-open", v ? "0" : "1");
+      return !v;
+    });
+  };
   const [explorerKey, setExplorerKey] = useState(0);
   const [explorerUploadBusy, setExplorerUploadBusy] = useState(false);
   const [changesCount, setChangesCount] = useState(0);
@@ -1766,6 +1779,50 @@ export function SessionSidebar({ authInfo = null, sessionSpace = "mine", onSessi
                 onChangesCountChange={setChangesCount}
               />
             </div>
+          )}
+        </div>
+      )}
+
+      {/* Lab Training section — merged in from the former far-right panel */}
+      {labPanelNode && (
+        <div
+          style={{
+            borderTop: "1px solid var(--border)",
+            display: "flex",
+            flexDirection: "column",
+            flex: labSectionOpen ? "1 1 42%" : "0 0 auto",
+            minHeight: labSectionOpen ? 140 : 0,
+            overflow: "hidden",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", flexShrink: 0 }}>
+            <button
+              onClick={toggleLabSection}
+              title={labSectionOpen ? "收起教学训练" : "展开教学训练"}
+              aria-pressed={labSectionOpen}
+              style={{
+                display: "flex", alignItems: "center", gap: 6, flex: 1,
+                padding: "6px 10px", background: "none", border: "none",
+                color: "var(--text-muted)", cursor: "pointer", fontSize: 11,
+                fontWeight: 600, letterSpacing: "0.05em", textTransform: "uppercase",
+                textAlign: "left",
+              }}
+            >
+              <svg
+                width="9" height="9" viewBox="0 0 10 10" fill="none"
+                stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
+                style={{ transform: labSectionOpen ? "rotate(90deg)" : "none", transition: "transform 0.15s", flexShrink: 0 }}
+              >
+                <polyline points="3 2 7 5 3 8" />
+              </svg>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                <path d="M22 10v6M2 10l10-5 10 5-10 5z" /><path d="M6 12v5c3 3 9 3 12 0v-5" />
+              </svg>
+              教学训练
+            </button>
+          </div>
+          {labSectionOpen && (
+            <div style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>{labPanelNode}</div>
           )}
         </div>
       )}

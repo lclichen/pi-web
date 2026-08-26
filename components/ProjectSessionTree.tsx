@@ -285,49 +285,18 @@ export function ProjectSessionTree({
     const running = runningSessionIds.has(s.id);
     const pinned = project?.pinnedSessions.includes(s.id) ?? false;
     return (
-      <div
+      <ProjectSessionRow
         key={s.id}
-        onClick={() => onSelectSession(s)}
-        onDoubleClick={() => {
-          const name = window.prompt("重命名会话：", s.name ?? "");
-          if (name?.trim()) void onRenameSession(s.id, name.trim());
-        }}
-        style={{
-          display: "flex", alignItems: "center", gap: 7,
-          height: 34, padding: "0 6px 0 26px", borderRadius: 5, cursor: "pointer",
-          background: selected ? "var(--bg-selected)" : "transparent",
-        }}
-        onMouseEnter={(e) => { if (!selected) e.currentTarget.style.background = "var(--bg-hover)"; }}
-        onMouseLeave={(e) => { if (!selected) e.currentTarget.style.background = "transparent"; }}
-      >
-        {running && <span style={{ width: 6, height: 6, borderRadius: 999, background: "#4ade80", flexShrink: 0 }} />}
-        <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12, color: "var(--text)" }}>
-          {s.name || s.firstMessage.slice(0, 40) || s.id.slice(0, 8)}
-        </span>
-        {s.mode && s.mode !== "host" && (
-          <span style={{ fontSize: 9, color: s.mode === "sandbox" ? "#38bdf8" : "#a78bfa", flexShrink: 0 }}>{s.mode === "sandbox" ? "沙箱" : "本机"}</span>
-        )}
-        <span style={{ fontSize: 10, color: "var(--text-dim)", flexShrink: 0 }}>{formatRelativeTime(new Date(s.modified).getTime())}</span>
-        <button
-          type="button"
-          title={pinned ? "取消置顶" : "置顶"}
-          onClick={(e) => { e.stopPropagation(); if (project) void pin(project, s.id, pinned); }}
-          style={{ background: "transparent", border: "none", cursor: "pointer", padding: "0 2px", color: pinned ? "#f59e0b" : "var(--text-dim)", fontSize: 11, flexShrink: 0, visibility: project ? "visible" : "hidden" }}
-        >
-          {pinned ? "★" : "☆"}
-        </button>
-        <button
-          type="button"
-          title="删除会话"
-          onClick={(e) => {
-            e.stopPropagation();
-            if (window.confirm("删除此会话？")) void onDeleteSession(s.id);
-          }}
-          style={{ background: "transparent", border: "none", cursor: "pointer", padding: "0 2px", color: "var(--text-dim)", fontSize: 11, flexShrink: 0 }}
-        >
-          ×
-        </button>
-      </div>
+        session={s}
+        selected={selected}
+        running={running}
+        pinned={pinned}
+        canPin={Boolean(project)}
+        onSelect={() => onSelectSession(s)}
+        onRename={(name) => void onRenameSession(s.id, name)}
+        onDelete={() => void onDeleteSession(s.id)}
+        onTogglePin={() => { if (project) void pin(project, s.id, pinned); }}
+      />
     );
   };
 
@@ -648,6 +617,185 @@ function MenuItem({ label, onClick, danger }: { label: string; onClick: () => vo
     >
       {label}
     </button>
+  );
+}
+
+/**
+ * 项目内会话行 — 与 SessionSidebar 的 SessionItem 相同的交互模式：
+ * hover 显示 重命名/删除 按钮；重命名原位输入框（Enter 提交 / Esc 取消）；
+ * 删除先在行内显示 红色确认/取消（Shift+点击跳过确认）。
+ */
+function ProjectSessionRow({
+  session, selected, running, pinned, canPin, onSelect, onRename, onDelete, onTogglePin,
+}: {
+  session: SessionInfo;
+  selected: boolean;
+  running: boolean;
+  pinned: boolean;
+  canPin: boolean;
+  onSelect: () => void;
+  onRename: (name: string) => void;
+  onDelete: () => void;
+  onTogglePin: () => void;
+}) {
+  const [hovered, setHovered] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const title = session.name || session.firstMessage.slice(0, 40) || session.id.slice(0, 8);
+  const busyRow = renaming || confirmDelete;
+
+  const startRename = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setRenameValue(session.name ?? "");
+    setRenaming(true);
+    setTimeout(() => inputRef.current?.select(), 0);
+  };
+  const commitRename = () => {
+    setRenaming(false);
+    const name = renameValue.trim();
+    if (name && name !== (session.name ?? "")) onRename(name);
+  };
+
+  if (confirmDelete) {
+    return (
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          display: "flex", alignItems: "center", gap: 7,
+          height: 34, padding: "0 6px 0 26px", borderRadius: 5, cursor: "default",
+          background: "rgba(239,68,68,0.06)", borderLeft: "2px solid #ef4444",
+        }}
+      >
+        <div style={{ flex: 1, minWidth: 0, fontSize: 12, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          删除 <span style={{ fontWeight: 600 }}>“{title.slice(0, 20)}{title.length > 20 ? "…" : ""}”</span>？
+        </div>
+        <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+          <button
+            type="button"
+            onClick={() => setConfirmDelete(false)}
+            style={{
+              height: 22, padding: "0 9px", borderRadius: 5, border: "none",
+              background: "#ef4444", color: "#fff", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap",
+            }}
+          >
+            删除
+          </button>
+          <button
+            type="button"
+            onClick={() => setConfirmDelete(false)}
+            style={{
+              height: 22, padding: "0 9px", borderRadius: 5,
+              border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-muted)", fontSize: 11, cursor: "pointer", whiteSpace: "nowrap",
+            }}
+          >
+            取消
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      onClick={busyRow ? undefined : onSelect}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        display: "flex", alignItems: "center", gap: 7,
+        height: 34, padding: "0 6px 0 26px", borderRadius: 5,
+        cursor: busyRow ? "default" : "pointer",
+        background: selected ? "var(--bg-selected)" : hovered ? "var(--bg-hover)" : "transparent",
+        transition: "background 0.1s",
+      }}
+    >
+      {renaming ? (
+        <input
+          ref={inputRef}
+          value={renameValue}
+          onChange={(e) => setRenameValue(e.target.value)}
+          onBlur={commitRename}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") commitRename();
+            if (e.key === "Escape") setRenaming(false);
+          }}
+          autoFocus
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            flex: 1, minWidth: 0, height: 24, fontSize: 12, padding: "2px 7px",
+            border: "1px solid var(--accent)", borderRadius: 5, outline: "none",
+            background: "var(--bg)", color: "var(--text)",
+          }}
+        />
+      ) : (
+        <>
+          {running && <span style={{ width: 6, height: 6, borderRadius: 999, background: "#4ade80", flexShrink: 0 }} />}
+          <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12, color: "var(--text)" }} title={title}>
+            {title}
+          </span>
+          {session.mode && session.mode !== "host" && (
+            <span style={{ fontSize: 9, color: session.mode === "sandbox" ? "#38bdf8" : "#a78bfa", flexShrink: 0 }}>{session.mode === "sandbox" ? "沙箱" : "本机"}</span>
+          )}
+          <span style={{ fontSize: 10, color: "var(--text-dim)", flexShrink: 0 }}>{formatRelativeTime(new Date(session.modified).getTime())}</span>
+          {canPin && hovered && (
+            <button
+              type="button"
+              title={pinned ? "取消置顶" : "置顶"}
+              onClick={(e) => { e.stopPropagation(); onTogglePin(); }}
+              style={{ background: "transparent", border: "none", cursor: "pointer", padding: "0 2px", color: pinned ? "#f59e0b" : "var(--text-dim)", fontSize: 11, flexShrink: 0 }}
+            >
+              {pinned ? "★" : "☆"}
+            </button>
+          )}
+          {!canPin && pinned && (
+            <span style={{ color: "#f59e0b", fontSize: 11, flexShrink: 0 }}>★</span>
+          )}
+          {hovered && (
+            <>
+              <button
+                type="button"
+                title="重命名"
+                onClick={startRename}
+                style={{
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  width: 22, height: 22, padding: 0, background: "transparent",
+                  border: "none", borderRadius: 5, color: "var(--text-muted)",
+                  cursor: "pointer", flexShrink: 0,
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.color = "var(--accent)"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-muted)"; }}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                title="删除会话"
+                onClick={(e) => { e.stopPropagation(); if (e.shiftKey) onDelete(); else setConfirmDelete(true); }}
+                style={{
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  width: 22, height: 22, padding: 0, background: "transparent",
+                  border: "none", borderRadius: 5, color: "var(--text-dim)",
+                  cursor: "pointer", flexShrink: 0,
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.color = "#ef4444"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-dim)"; }}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="3 6 5 6 21 6" />
+                  <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                  <path d="M10 11v6M14 11v6" />
+                  <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                </svg>
+              </button>
+            </>
+          )}
+        </>
+      )}
+    </div>
   );
 }
 

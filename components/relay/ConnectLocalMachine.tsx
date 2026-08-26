@@ -59,9 +59,14 @@ export function ConnectLocalMachine() {
         title={online ? `已连接：${info?.hostname} (${info?.os}/${info?.arch})` : "连接本地机器"}
         style={{
           display: "flex", alignItems: "center", gap: 6, height: "100%",
-          padding: "0 8px", background: "transparent", border: "none",
+          padding: "0 12px", background: "none",
+          border: "none", borderTop: "2px solid transparent", borderRight: "1px solid var(--border)",
           color: online ? "var(--text)" : "var(--text-muted)", cursor: "pointer", fontSize: 11,
+          whiteSpace: "nowrap", flexShrink: 0,
+          transition: "color 0.1s, background 0.1s",
         }}
+        onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text)"; e.currentTarget.style.background = "var(--bg-hover)"; }}
+        onMouseLeave={(e) => { e.currentTarget.style.color = online ? "var(--text)" : "var(--text-muted)"; e.currentTarget.style.background = "none"; }}
       >
         <span style={{
           width: 8, height: 8, borderRadius: "50%",

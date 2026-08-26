@@ -342,11 +342,14 @@ export function AppShell() {
   const [labWidget, setLabWidget] = useState<{ metadata?: unknown } | null>(null);
   const [hasLabTraining, setHasLabTraining] = useState(false);
   const [labPanelOpen, setLabPanelOpen] = useState(true);
+  // Reclamp BOTH when the lab panel opens AND when it closes — previously the
+  // early return on close left the sidebar/right panel at their narrower
+  // widths, producing a blank strip where the lab panel used to be.
   useEffect(() => {
-    if (!labPanelOpen) return;
     reclampSidebarWidth();
-    labPanelResizer.reclampWidth();
-  }, [labPanelResizer.reclampWidth, reclampSidebarWidth, labPanelOpen]);
+    rightPanelResizer.reclampWidth();
+    if (labPanelOpen) labPanelResizer.reclampWidth();
+  }, [reclampSidebarWidth, rightPanelResizer.reclampWidth, labPanelResizer.reclampWidth, labPanelOpen]);
   const sendCommandRef = useRef<((cmd: string) => void) | null>(null);
 
   const handleSendCommand = useCallback((cmd: string) => {
@@ -1125,9 +1128,14 @@ export function AppShell() {
               title="我的工作区：云端文件留存（建项目时可初始化 /workspace）"
               style={{
                 display: "flex", alignItems: "center", gap: 6, height: "100%",
-                padding: "0 8px", background: "transparent", border: "none",
+                padding: "0 12px", background: "none",
+                border: "none", borderTop: "2px solid transparent", borderRight: "1px solid var(--border)",
                 color: "var(--text-muted)", cursor: "pointer", fontSize: 11,
+                whiteSpace: "nowrap", flexShrink: 0,
+                transition: "color 0.1s, background 0.1s",
               }}
+              onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text)"; e.currentTarget.style.background = "var(--bg-hover)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-muted)"; e.currentTarget.style.background = "none"; }}
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
                 <path d="M20 16.58A5 5 0 0 0 18 7h-1.26A8 8 0 1 0 4 15.25" />
@@ -1144,9 +1152,14 @@ export function AppShell() {
               title="沙箱容器管理（新建/启停/删除/快照/绑定项目）"
               style={{
                 display: "flex", alignItems: "center", gap: 6, height: "100%",
-                padding: "0 8px", background: "transparent", border: "none",
+                padding: "0 12px", background: "none",
+                border: "none", borderTop: "2px solid transparent", borderRight: "1px solid var(--border)",
                 color: "var(--text-muted)", cursor: "pointer", fontSize: 11,
+                whiteSpace: "nowrap", flexShrink: 0,
+                transition: "color 0.1s, background 0.1s",
               }}
+              onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text)"; e.currentTarget.style.background = "var(--bg-hover)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-muted)"; e.currentTarget.style.background = "none"; }}
             >
               <span style={{ width: 8, height: 8, borderRadius: 2, border: "1.5px solid currentColor", flexShrink: 0 }} />
               <span>沙箱容器</span>
@@ -1159,9 +1172,14 @@ export function AppShell() {
               title={`沙盒平台管理台（镜像/用户/配额/LLM）：${platformConsoleUrl}`}
               style={{
                 display: "flex", alignItems: "center", gap: 6, height: "100%",
-                padding: "0 8px", background: "transparent", border: "none",
+                padding: "0 12px", background: "none",
+                border: "none", borderTop: "2px solid transparent", borderRight: "1px solid var(--border)",
                 color: "var(--text-muted)", cursor: "pointer", fontSize: 11,
+                whiteSpace: "nowrap", flexShrink: 0,
+                transition: "color 0.1s, background 0.1s",
               }}
+              onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text)"; e.currentTarget.style.background = "var(--bg-hover)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-muted)"; e.currentTarget.style.background = "none"; }}
             >
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
                 <rect x="2" y="3" width="20" height="14" rx="2" />
@@ -1424,10 +1442,9 @@ export function AppShell() {
                   display: "flex", alignItems: "center", gap: 10,
                   paddingLeft: 12,
                   paddingRight: 8,
-                  // Keep the session-stats box itself clear of the two fixed
-                  // top-right panel toggles (File + Lab Training, 72px total)
-                  // so neither the box nor its text is overlapped.
-                  marginRight: 72,
+                  // The toggles that used to be fixed overlays (lab/logout/
+                  // file-panel) are inlined AFTER this box in the flow.
+                  marginRight: 0,
                   height: "100%",
                   background: activeTopPanel === "session" ? "var(--bg-selected)" : "none",
                   border: "none",
@@ -1485,6 +1502,105 @@ export function AppShell() {
               </button>
             );
           })()}
+          {/* ── 顶栏尾部内联开关（原 fixed 角落按钮，不再遮挡会话统计）── */}
+          {webUser && webUser !== "loading" && webUser.role === "admin" && (
+            <button
+              type="button"
+              onClick={() => {
+                const next = !labTrainingEnabled;
+                setLabTrainingEnabled(next);
+                if (!next) setLabPanelOpen(false);
+                fetch("/api/server-settings", {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ labTraining: next }),
+                }).then((r) => { if (!r.ok) setLabTrainingEnabled(!next); }).catch(() => setLabTrainingEnabled(!next));
+              }}
+              title={labTrainingEnabled ? "教学面板：已开启（点击对全员关闭）" : "教学面板：已关闭（点击对全员开启）"}
+              aria-pressed={labTrainingEnabled}
+              style={{
+                display: "flex", alignItems: "center", gap: 6, height: "100%",
+                padding: "0 10px", background: "none",
+                border: "none", borderLeft: "1px solid var(--border)",
+                color: labTrainingEnabled ? "var(--accent)" : "var(--text-muted)",
+                cursor: "pointer", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", flexShrink: 0,
+                transition: "color 0.1s, background 0.1s",
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-hover)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = "none"; }}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
+                <path d="M22 10v6M2 10l10-5 10 5-10 5z" /><path d="M6 12v5c3 3 9 3 12 0v-5" />
+              </svg>
+              {!isMobile && <span>教学</span>}
+            </button>
+          )}
+          {labTrainingEnabled && (
+            <button
+              type="button"
+              onClick={() => setLabPanelOpen((v) => !v)}
+              title={labPanelOpen ? "收起教学面板" : "展开教学面板"}
+              aria-label={labPanelOpen ? "收起教学面板" : "展开教学面板"}
+              aria-pressed={labPanelOpen}
+              style={{
+                display: "flex", alignItems: "center", justifyContent: "center",
+                height: "100%", padding: "0 10px", background: "none",
+                border: "none", borderLeft: "1px solid var(--border)",
+                color: labPanelOpen ? "var(--accent)" : "var(--text-muted)",
+                cursor: "pointer", flexShrink: 0, transition: "color 0.12s",
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text)"; e.currentTarget.style.background = "var(--bg-hover)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = labPanelOpen ? "var(--accent)" : "var(--text-muted)"; e.currentTarget.style.background = "none"; }}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M22 10v6M2 10l10-5 10 5-10 5z" /><path d="M6 12v5c3 3 9 3 12 0v-5" />
+              </svg>
+            </button>
+          )}
+          {webUser && webUser !== "loading" && (
+            <button
+              type="button"
+              onClick={async () => { await fetch("/api/webauth/logout", { method: "POST" }).catch(() => {}); window.location.href = "/login"; }}
+              title={`登出（${webUser.username}）`}
+              aria-label={`登出（${webUser.username}）`}
+              style={{
+                display: "flex", alignItems: "center", gap: 6, height: "100%",
+                padding: "0 10px", background: "none",
+                border: "none", borderLeft: "1px solid var(--border)",
+                color: "var(--text-muted)", cursor: "pointer", fontSize: 11, whiteSpace: "nowrap", flexShrink: 0,
+                transition: "color 0.1s, background 0.1s",
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text)"; e.currentTarget.style.background = "var(--bg-hover)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-muted)"; e.currentTarget.style.background = "none"; }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                <polyline points="16 17 21 12 16 7" />
+                <line x1="21" y1="12" x2="9" y2="12" />
+              </svg>
+              {!isMobile && <span>登出</span>}
+            </button>
+          )}
+          <button
+            onClick={() => setRightPanelOpen((v) => !v)}
+            aria-controls="file-panel"
+            aria-expanded={rightPanelOpen}
+            title={rightPanelOpen ? translate("files.hidePanel") : translate("files.showPanel")}
+            aria-label={rightPanelOpen ? translate("files.hidePanel") : translate("files.showPanel")}
+            style={{
+              display: "flex", alignItems: "center", justifyContent: "center",
+              height: "100%", padding: "0 10px", background: "none",
+              border: "none", borderLeft: "1px solid var(--border)",
+              color: rightPanelOpen ? "var(--text)" : "var(--text-muted)",
+              cursor: "pointer", flexShrink: 0, transition: "color 0.12s",
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text)"; e.currentTarget.style.background = "var(--bg-hover)"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.color = rightPanelOpen ? "var(--text)" : "var(--text-muted)"; e.currentTarget.style.background = "none"; }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="2" /><line x1="15" y1="3" x2="15" y2="21" />
+            </svg>
+          </button>
           {/* Top panel dropdown — shared, only one active at a time */}
           {activeTopPanel && topPanelPos && (
             <div style={{
@@ -2026,99 +2142,8 @@ export function AppShell() {
           </div>
         </>
       )}
-
-      {/* Lab Training panel toggle — graduation cap icon (only when the
-          deployment offers the teaching panel) */}
-      {labTrainingEnabled && (
-      <button
-        onClick={() => setLabPanelOpen((v) => !v)}
-        title={labPanelOpen ? "Hide Lab Training panel" : "Show Lab Training panel"}
-        aria-label={labPanelOpen ? "Hide Lab Training panel" : "Show Lab Training panel"}
-          style={{
-            position: "fixed", top: "env(safe-area-inset-top)", right: "env(safe-area-inset-right)", zIndex: 300,
-            display: "flex", alignItems: "center", justifyContent: "center",
-            width: 36, height: "calc(36px + env(safe-area-inset-top))", padding: 0, paddingTop: "env(safe-area-inset-top)",
-            background: "var(--bg-panel)", border: "none", borderLeft: "1px solid var(--border)", borderBottom: "1px solid var(--border)",
-            color: labPanelOpen ? "var(--accent)" : "var(--text-muted)",
-            cursor: "pointer", transition: "color 0.12s",
-          }}
-        >
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M22 10v6M2 10l10-5 10 5-10 5z" /><path d="M6 12v5c3 3 9 3 12 0v-5" />
-          </svg>
-        </button>
-      )}
     </div>
-    {/* Logout — auth mode only, sits left of the file-panel toggle */}
-    {webUser && webUser !== "loading" && (
-      <button
-        onClick={async () => { await fetch("/api/webauth/logout", { method: "POST" }).catch(() => {}); window.location.href = "/login"; }}
-        title={`登出（${webUser.username}）`}
-        aria-label={`登出（${webUser.username}）`}
-        style={{
-          position: "fixed", top: "env(safe-area-inset-top)", right: "calc(76px + env(safe-area-inset-right))", zIndex: 300,
-          display: "flex", alignItems: "center", justifyContent: "center",
-          width: 36, height: 36, padding: 0,
-          background: "var(--bg-panel)", border: "none", borderLeft: "1px solid var(--border)", borderBottom: "1px solid var(--border)",
-          color: "var(--text-muted)", cursor: "pointer",
-        }}
-      >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-          <polyline points="16 17 21 12 16 7" />
-          <line x1="21" y1="12" x2="9" y2="12" />
-        </svg>
-      </button>
-    )}
-    {/* Teaching panel availability — admin runtime switch (PI_WEB_LAB_TRAINING
-        seeds the default; flipping affects every user on next page load) */}
-    {webUser && webUser !== "loading" && webUser.role === "admin" && (
-      <button
-        onClick={() => {
-          const next = !labTrainingEnabled;
-          setLabTrainingEnabled(next);
-          if (!next) setLabPanelOpen(false);
-          fetch("/api/server-settings", {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ labTraining: next }),
-          }).then((r) => { if (!r.ok) setLabTrainingEnabled(!next); }).catch(() => setLabTrainingEnabled(!next));
-        }}
-        title={labTrainingEnabled ? "教学面板：已开启（点击对全员关闭）" : "教学面板：已关闭（点击对全员开启）"}
-        style={{
-          position: "fixed", top: "env(safe-area-inset-top)", right: "calc(112px + env(safe-area-inset-right))", zIndex: 300,
-          display: "flex", alignItems: "center", justifyContent: "center",
-          width: 36, height: 36, padding: 0,
-          background: "var(--bg-panel)", border: "none", borderLeft: "1px solid var(--border)", borderBottom: "1px solid var(--border)",
-          color: labTrainingEnabled ? "var(--accent)" : "var(--text-muted)",
-          cursor: "pointer", fontSize: 12, fontWeight: 600,
-        }}
-      >
-        教
-      </button>
-    )}
-    {/* File panel toggle — always visible at top-right */}
-    <button
-      onClick={() => setRightPanelOpen((v) => !v)}
-       aria-controls="file-panel"
-       aria-expanded={rightPanelOpen}
-       title={rightPanelOpen ? translate("files.hidePanel") : translate("files.showPanel")}
-       aria-label={rightPanelOpen ? translate("files.hidePanel") : translate("files.showPanel")}
-      style={{
-        position: "fixed", top: "env(safe-area-inset-top)", right: "calc(36px + env(safe-area-inset-right))", zIndex: 300,
-        display: "flex", alignItems: "center", justifyContent: "center",
-        width: 36, height: 36, padding: 0,
-        background: "var(--bg-panel)", border: "none", borderLeft: "1px solid var(--border)", borderBottom: "1px solid var(--border)",
-        color: rightPanelOpen ? "var(--text)" : "var(--text-muted)",
-        cursor: "pointer", transition: "color 0.12s",
-      }}
-      onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text)"; }}
-      onMouseLeave={(e) => { e.currentTarget.style.color = rightPanelOpen ? "var(--text)" : "var(--text-muted)"; }}
-    >
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="3" y="3" width="18" height="18" rx="2" /><line x1="15" y1="3" x2="15" y2="21" />
-      </svg>
-    </button>
+
     {modelsConfigOpen && <ModelsConfig onClose={() => { setModelsConfigOpen(false); setModelsRefreshKey((k) => k + 1); }} />}
     {myWorkspaceOpen && <MyWorkspaceDialog onClose={() => setMyWorkspaceOpen(false)} />}
     {sandboxManager !== null && (

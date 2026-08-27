@@ -79,12 +79,12 @@ cd amedac.ai-pi-linux-x64
 
 首次运行会自动完成：
 
-1. 生成 `sandbox/platform.env`（sqlite 数据库落在 `data/platform/`、随机 JWT 密钥、管理员 `admin/changeme123`）；
+1. 生成 `sandbox/platform.env`（sqlite 数据库落在 `data/platform/`、64 位随机 JWT 密钥、随机强密码的种子管理员——初始密码写入 `sandbox/admin-password.txt`，仅属主可读）；
 2. 启动沙盒平台（端口 `3000`，`/health` 就绪才继续）；
 3. 生成 `sandbox/piweb.env`（指向平台、开启登录、数据落 `data/piweb/`、扩展指到包内 `sandbox/extension/`）；
 4. 启动 WebUI（端口 `30141`）。
 
-浏览器访问 `http://<主机IP>:30141/`，用 `admin/changeme123` 登录后**立即改密**。
+浏览器访问 `http://<主机IP>:30141/`，用 **admin** 和 **`sandbox/admin-password.txt` 里的初始密码**登录（WebUI 与沙盒平台共用同一套账号），**登录后立即改密并可删除该密码文件**。
 
 其他命令：
 
@@ -109,7 +109,7 @@ tail -f logs/platform.log # 跟踪平台日志
 | `PORT` / `HOST` | 监听地址（默认仅本机回环，WebUI 反向代理访问） |
 | `DB_DIALECT` / `SQLITE_PATH` | sqlite 零依赖；大规模可换 `postgresql` + `DATABASE_URL` |
 | `JWT_SECRET` | 登录令牌签名密钥（首次自动随机生成） |
-| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | 种子管理员（仅空库首次启动时创建） |
+| `SEED_ADMIN_USERNAME` / `SEED_ADMIN_PASSWORD` | 种子管理员（仅空库首次启动时创建；生产模式拒绝默认弱密码） |
 | `EXECUTOR_KIND` | `apptainer-cli`（同机 Apptainer）/ `ssh`（远程节点）/ `mock` |
 | `REGISTER_MODE` | 注册开关：`off` / `open` / `approval` |
 | `RATE_LIMIT_*` | 登录/注册等接口限流阈值（生产默认开启） |

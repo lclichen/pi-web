@@ -511,17 +511,20 @@ if [ "$SMOKE_TEST" != "0" ]; then
     exit 1
   fi
 
-  # 沙盒平台（若打包）：mock 执行器 + 内存型 sqlite 起服，/health 必须应答
+  # 沙盒平台（若打包）：mock 执行器 + sqlite 起服，/health 必须应答。
+  # 生产模式拒绝弱密钥——用随机强密钥模拟真实首次启动。
   if [ "${WITH_SANDBOX:-0}" = "1" ]; then
     rm -f "$WORK/platform.log" "$WORK/platform.pid"
     SMOKE_SBX_HOME="$WORK/smoke-platform-data"
     mkdir -p "$SMOKE_SBX_HOME"
+    SMOKE_JWT="$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+    SMOKE_ADMIN_PW="Smoke-$(head -c 9 /dev/urandom | base64 | tr -d '=+/')9x"
     (
       cd "$PKG/sandbox/platform"
       env -i HOME="$SMOKE_SBX_HOME" PATH="$PATH" \
         NODE_ENV=production HOST=127.0.0.1 PORT=31090 \
         DB_DIALECT=sqlite SQLITE_PATH="$SMOKE_SBX_HOME/sbx.db" \
-        JWT_SECRET=smoke-test-secret ADMIN_USERNAME=admin ADMIN_PASSWORD=changeme123 \
+        JWT_SECRET="$SMOKE_JWT" SEED_ADMIN_USERNAME=admin SEED_ADMIN_PASSWORD="$SMOKE_ADMIN_PW" \
         EXECUTOR_KIND=mock REGISTER_MODE=off \
         "$PKG/runtime/bin/node" --experimental-transform-types --no-warnings=ExperimentalWarning src/index.ts \
         >"$WORK/platform.log" 2>&1 &

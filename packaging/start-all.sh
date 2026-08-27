@@ -104,7 +104,11 @@ start_platform() {
   if [ ! -f "$PLATFORM_ENV_FILE" ]; then
     log "生成默认平台配置: $PLATFORM_ENV_FILE"
     mkdir -p "$(dirname "$PLATFORM_ENV_FILE")"
-    JWT="$(head -c 48 /dev/urandom | base64 | tr -d '=+/' | head -c 48)"
+    # 生产模式强制强密钥：JWT ≥32 字符、管理员密码不能是默认弱值。
+    # 管理员密码随机生成并落盘 sandbox/admin-password.txt（仅属主可读），
+    # 登录后可在 WebUI 内修改，改完可删掉该文件。
+    JWT="$(head -c 64 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+    ADMIN_PW="ame-$(head -c 12 /dev/urandom | base64 | tr -d '=+/')A7"
     cat > "$PLATFORM_ENV_FILE" <<EOF
 # sandbox-platform 配置（本文件由 start-all.sh 首次运行生成，可自由编辑）
 NODE_ENV=production
@@ -113,13 +117,16 @@ PORT=$PLATFORM_PORT
 DB_DIALECT=sqlite
 SQLITE_PATH=$DATA_DIR/platform/sandbox.db
 JWT_SECRET=$JWT
-ADMIN_USERNAME=admin
-ADMIN_PASSWORD=changeme123
+SEED_ADMIN_USERNAME=admin
+SEED_ADMIN_PASSWORD=$ADMIN_PW
 REGISTER_MODE=off
 EXECUTOR_KIND=${SANDBOX_EXECUTOR_KIND:-apptainer-cli}
 TRUST_PROXY=0
 EOF
-    warn "平台管理员账号: admin / changeme123 —— 首次登录后请立即修改！"
+    printf '%s\n' "$ADMIN_PW" > "$PKG/sandbox/admin-password.txt"
+    chmod 600 "$PLATFORM_ENV_FILE" "$PKG/sandbox/admin-password.txt"
+    warn "管理员账号（平台与 WebUI 共用）: admin / 初始密码见 sandbox/admin-password.txt"
+    warn "首次登录后请立即修改密码，并可删除 sandbox/admin-password.txt。"
   fi
 
   mkdir -p "$DATA_DIR/platform"
@@ -169,7 +176,9 @@ PI_WEB_DATA_DIR=$DATA_DIR/piweb
 PI_WEB_SANDBOX_EXTENSION_PATH=$EXTENSION_DIR
 PI_WEB_LAB_TRAINING=on
 EOF
-    warn "WebUI 账号: admin / changeme123 —— 首次登录后请立即修改！"
+    chmod 600 "$WEB_ENV_FILE"
+    warn "WebUI 与沙盒平台共用同一套账号（WebUI 登录即平台登录）。"
+    warn "首次登录用 admin 和 sandbox/admin-password.txt 里的初始密码，登录后请修改。"
   fi
 
   mkdir -p "$DATA_DIR/piweb"

@@ -30,6 +30,7 @@ interface PlatformImage {
   name: string;
   display_name: string;
   default_resources?: { cpu: number; memoryMb: number; diskGb: number } | null;
+  max_per_user?: number | null;
 }
 
 interface ProvisionDefaults {
@@ -94,6 +95,7 @@ export async function GET(req: Request) {
         id: i.id,
         name: i.display_name || i.name,
         defaultResources: i.default_resources ?? null,
+        maxPerUser: Number(i.max_per_user ?? 0) > 0 ? Number(i.max_per_user) : null,
       })),
       defaults,
       ...(snapshotsRes ? { snapshots: snapshotsRes.snapshots ?? [] } : {}),

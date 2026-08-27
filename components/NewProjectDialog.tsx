@@ -13,6 +13,7 @@ interface ImageEntry {
   id: number;
   name: string;
   defaultResources: { cpu: number; memoryMb: number; diskGb: number } | null;
+  maxPerUser?: number | null;
 }
 
 interface WorkspaceEntry {
@@ -148,6 +149,7 @@ export function NewProjectDialog({ mode, busy, onCancel, onCreate }: Props) {
               {images.map((i) => (
                 <option key={i.id} value={i.id}>
                   {i.name}
+                  {i.maxPerUser ? `（每人限 ${i.maxPerUser} 个实例）` : ""}
                   {i.defaultResources ? ` · ${i.defaultResources.cpu}C/${i.defaultResources.memoryMb}M/${i.defaultResources.diskGb}G` : ""}
                 </option>
               ))}

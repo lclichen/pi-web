@@ -171,6 +171,11 @@ fi
 log "完成:"
 ls -lh "$OUT"
 (cd "$OUT_DIR" && sha256sum "$OUT_NAME" > SHA256SUMS)
+# AppDir 暂存（≈1GB）默认清掉；要调试包内容时 AMEDAC_KEEP_STAGING=1
+if [ "${AMEDAC_KEEP_STAGING:-0}" != "1" ]; then
+  rm -rf "$APPDIR"
+  log "已清理 AppDir 暂存（AMEDAC_KEEP_STAGING=1 可保留）"
+fi
 echo
 echo "  使用方式（目标 Linux 机，双击或命令行均可）:"
 echo "    ./Amedac.ai-$ARCH.AppImage           启动服务并打开浏览器（幂等）"

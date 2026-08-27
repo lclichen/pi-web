@@ -72,13 +72,13 @@ ln -sfn "usr/share/icons/hicolor/256x256/apps/amedac.png" "$APPDIR/.DirIcon"
 TOOLS="$ROOT/build/tools"
 mkdir -p "$TOOLS"
 TOOL="$TOOLS/appimagetool-$ARCH.AppImage"
+case "$ARCH" in
+  x86_64|x64) TOOL_ARCH="x86_64" ;;
+  aarch64|arm64) TOOL_ARCH="aarch64" ;;
+  *) die "不支持的架构: $ARCH" ;;
+esac
 if [ ! -x "${APPIMAGETOOL:-}" ]; then
   if [ ! -f "$TOOL" ]; then
-    case "$ARCH" in
-      x86_64|x64) TOOL_ARCH="x86_64" ;;
-      aarch64|arm64) TOOL_ARCH="aarch64" ;;
-      *) die "不支持的架构: $ARCH" ;;
-    esac
     URL="https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-$TOOL_ARCH.AppImage"
     log "下载 appimagetool ($TOOL_ARCH) …"
     if command -v curl >/dev/null 2>&1; then
@@ -96,12 +96,13 @@ fi
 [ -x "$APPIMAGETOOL" ] || die "appimagetool 不可执行: $APPIMAGETOOL"
 
 run_tool() {
-  # 无 FUSE 的构建机用自解压模式跑工具本身
+  # 包内同时存在多种架构的 elf（node 预编译模块等）会让自动探测失败，
+  # 显式指定目标架构；无 FUSE 的构建机用自解压模式跑工具本身。
   if "$APPIMAGETOOL" --version >/dev/null 2>&1; then
-    "$APPIMAGETOOL" "$@"
+    ARCH="$TOOL_ARCH" "$APPIMAGETOOL" "$@"
   else
     log "构建机缺 FUSE，使用 --appimage-extract-and-run 运行 appimagetool"
-    "$APPIMAGETOOL" --appimage-extract-and-run "$@"
+    ARCH="$TOOL_ARCH" "$APPIMAGETOOL" --appimage-extract-and-run "$@"
   fi
 }
 

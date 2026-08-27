@@ -6,6 +6,6 @@ Comment=一键启动 pi WebUI 与沙盒容器平台
 Exec=amedac %u
 Icon=amedac
 Terminal=false
-Categories=Development;Education;IDE;
+Categories=Development;
 Keywords=pi;agent;sandbox;lab;教学;
 StartupWMClass=amedac.ai

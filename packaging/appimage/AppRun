@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 #
-# AppRun — Amedac.ai AppImage 入口。
+# AppRun — amedac.ai AppImage 入口。
 #
 # 双击 / 命令行直接运行：确保服务已启动（幂等），然后打开浏览器。
-#   ./Amedac.ai_*.AppImage            启动（已在运行则只开浏览器）
-#   ./Amedac.ai_*.AppImage --no-open  启动但不开浏览器
-#   ./Amedac.ai_*.AppImage status     服务状态
-#   ./Amedac.ai_*.AppImage stop       停止全部服务
-#   ./Amedac.ai_*.AppImage logs       跟踪日志
+#   ./amedac.ai_*.AppImage            启动（已在运行则只开浏览器）
+#   ./amedac.ai_*.AppImage --no-open  启动但不开浏览器
+#   ./amedac.ai_*.AppImage status     服务状态
+#   ./amedac.ai_*.AppImage stop       停止全部服务
+#   ./amedac.ai_*.AppImage logs       跟踪日志
 #
 # 运行布局（AppImage 本体是只读挂载，可写内容全部落在本地目录）:
 #   AMEDAC_HOME 默认 ~/.local/share/amedac

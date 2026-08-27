@@ -88,15 +88,15 @@ bash scripts/package-linux.sh
 
 ```bash
 bash scripts/package-appimage.sh       # 构建机；复用 package-linux.sh 产物再打镜像
-# → dist/Amedac.ai-x64.AppImage (约 215MB)
+# → dist/amedac.ai-x64.AppImage (约 215MB)
 ```
 
 目标机上直接执行即可（无 FUSE 的机器用 `--appimage-extract-and-run` 后缀）：
 
 ```bash
-./Amedac.ai-x64.AppImage            # 启动服务并打开浏览器（幂等）
-./Amedac.ai-x64.AppImage status     # 服务状态
-./Amedac.ai-x64.AppImage stop       # 停止全部
+./amedac.ai-x64.AppImage            # 启动服务并打开浏览器（幂等）
+./amedac.ai-x64.AppImage status     # 服务状态
+./amedac.ai-x64.AppImage stop       # 停止全部
 ```
 
 原理与数据位置：AppImage 本体只读，首启时自动展开完整分发包到

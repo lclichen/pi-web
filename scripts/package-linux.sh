@@ -101,6 +101,9 @@ PI_CONFIG_DIR="${PI_CONFIG_DIR:-$ROOT/pi-config}"
 
 log() { printf '\033[1;32m>>\033[0m %s\n' "$*"; }
 die() { printf '\033[1;31mERROR:\033[0m %s\n' "$*" >&2; exit 1; }
+# 构建计时（SECONDS 是 bash 内建的秒计数器）
+BUILD_START=$SECONDS
+fmt_dur() { local t=$1; printf '%dm%02ds' $((t / 60)) $((t % 60)); }
 
 # ---------------------------------------------------------------------------
 # 0. 构建机前置检查
@@ -329,8 +332,10 @@ if [ "$WITH_SANDBOX" = "1" ]; then
   #   BCRYPT_BINDING_LOCAL=/data/bcrypt_lib.node
   # 更通用的形式（=前是包内相对路径，可多条，空格分隔）：
   #   NATIVE_BINDING_FIX="node_modules/bcrypt/lib/binding/napi-v3/bcrypt_lib.node=/data/bcrypt_lib.node ..."
+  # 追加条目时注意两点：脚本跑在 set -u 下，未定义变量必须带 :- 兜底；
+  # 已有内容时补一个空格分隔符，没有时不留前导空格。
   if [ -n "${BCRYPT_BINDING_LOCAL:-}" ]; then
-    NATIVE_BINDING_FIX="$NATIVE_BINDING_FIX node_modules/bcrypt/lib/binding/napi-v3/bcrypt_lib.node=$BCRYPT_BINDING_LOCAL"
+    NATIVE_BINDING_FIX="${NATIVE_BINDING_FIX:-}${NATIVE_BINDING_FIX:+ }node_modules/bcrypt/lib/binding/napi-v3/bcrypt_lib.node=$BCRYPT_BINDING_LOCAL"
   fi
   if [ -n "${NATIVE_BINDING_FIX:-}" ]; then
     for pair in $NATIVE_BINDING_FIX; do
@@ -601,8 +606,11 @@ OUT="$OUT_DIR/amedac.ai-pi-linux-$ARCH-$VERSION.tar.gz"
 log "打包 $OUT"
 (cd "$WORK" && tar -czf "$OUT" "amedac.ai-pi-linux-$ARCH")
 (cd "$OUT_DIR" && sha256sum "amedac.ai-pi-linux-$ARCH-$VERSION.tar.gz" > SHA256SUMS)
-log "完成，产物："
-ls -lh "$OUT" "$OUT_DIR/SHA256SUMS"
+BUILD_TAKEN=$((SECONDS - BUILD_START))
+log "完成（用时 $(fmt_dur "$BUILD_TAKEN")），产物："
+printf '  %10s  %s\n' "$(du -h "$OUT" | cut -f1)" "$OUT"
+printf '  %10s  %s\n' "$(du -h "$OUT_DIR/SHA256SUMS" | cut -f1)" "$OUT_DIR/SHA256SUMS"
+printf '  %10s  %s（未压缩目录）\n' "$(du -sh "$PKG" | cut -f1)" "$PKG"
 echo
 echo "  将 amedac.ai-pi-linux-$ARCH/ 拷到目标 Linux 机器后："
 if [ "$WITH_SANDBOX" = "1" ]; then

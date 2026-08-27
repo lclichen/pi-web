@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
-# package-appimage.sh — 在 package-linux.sh 产物之上构建 Amedac.ai AppImage。
+# package-appimage.sh — 在 package-linux.sh 产物之上构建 amedac.ai AppImage。
 #
-#   dist/Amedac.ai-<arch>.AppImage   (+ SHA256SUMS)
+#   dist/amedac.ai-<arch>.AppImage   (+ SHA256SUMS)
 #
 # 双击/命令行一键启动：首次运行把分发包展开到 ~/.local/share/amedac/app，
 # 数据与配置在 ../data 与升级时自动还原的 sandbox/*.env（见 AppRun）。
@@ -13,10 +13,12 @@
 # 环境变量（全部可选）:
 #   SKIP_LINUX_PACKAGE=1   直接复用 build/package-linux/ 现有产物
 #   APPIMAGETOOL           appimagetool 路径（默认下载到 build/tools/ 缓存）
+#   APP_ICON_SVG           自有平台 logo（矢量），装进 hicolor/scalable
+#   APP_ICON_PNG           自有 logo 位图（建议 ≥256×256），替换占位图标
 #   VERSION / ARCH / OUT_DIR / SMOKE_TEST  同 package-linux.sh
 #
 # 目标机要求: Linux x64/arm64；直接执行需 FUSE(fuse2/3)，无 FUSE 时用
-#   ./Amedac.ai-x86_64.AppImage --appimage-extract-and-run
+#   ./amedac.ai-x86_64.AppImage --appimage-extract-and-run
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -27,6 +29,8 @@ SKIP_LINUX_PACKAGE="${SKIP_LINUX_PACKAGE:-0}"
 
 log() { printf '\033[1;32m>>\033[0m %s\n' "$*"; }
 die() { printf '\033[1;31mERROR:\033[0m %s\n' "$*" >&2; exit 1; }
+BUILD_START=$SECONDS
+fmt_dur() { local t=$1; printf '%dm%02ds' $((t / 60)) $((t % 60)); }
 
 command -v node >/dev/null 2>&1 || die "PATH 中没有 node"
 command -v bash >/dev/null 2>&1 || die "需要 bash"
@@ -48,7 +52,7 @@ VERSION="$(node -p "require('$ROOT/package.json').version")"
 #    ├── .DirIcon -> usr/share/icons/hicolor/256x256/apps/amedac.png
 #    └── usr/share/amedac/      ← 整个 linux 分发包内容
 # ---------------------------------------------------------------------------
-APPDIR="$WORK/Amedac.ai"
+APPDIR="$WORK/amedac.ai"
 rm -rf "$APPDIR"
 mkdir -p "$APPDIR/usr/share" "$APPDIR/usr/share/icons/hicolor/256x256/apps"
 log "组装 $APPDIR"
@@ -61,7 +65,24 @@ cp -a "$ROOT/packaging/appimage/AppRun" "$APPDIR/AppRun"
 chmod +x "$APPDIR/AppRun"
 cp -a "$ROOT/packaging/appimage/amedac.ai.desktop" "$APPDIR/amedac.ai.desktop"
 
-node "$ROOT/packaging/gen-icon.mjs" 256 "$APPDIR/usr/share/icons/hicolor/256x256/apps/amedac.png"
+# ---- 图标 -----------------------------------------------------------------
+# 默认用 gen-icon.mjs 现生成的占位图标；提供了自己的 logo 时优先使用：
+#   APP_ICON_SVG=/path/logo.svg   矢量图标，装进 hicolor/scalable（缩放最佳）
+#   APP_ICON_PNG=/path/logo.png   位图图标（建议 ≥256×256），替换 256 槽位
+ICON_PNG="$APPDIR/usr/share/icons/hicolor/256x256/apps/amedac.png"
+if [ -n "${APP_ICON_PNG:-}" ]; then
+  [ -f "$APP_ICON_PNG" ] || die "APP_ICON_PNG 不存在: $APP_ICON_PNG"
+  cp -f "$APP_ICON_PNG" "$ICON_PNG"
+  log "使用自定义 PNG 图标: $APP_ICON_PNG"
+else
+  node "$ROOT/packaging/gen-icon.mjs" 256 "$ICON_PNG"
+fi
+if [ -n "${APP_ICON_SVG:-}" ]; then
+  [ -f "$APP_ICON_SVG" ] || die "APP_ICON_SVG 不存在: $APP_ICON_SVG"
+  mkdir -p "$APPDIR/usr/share/icons/hicolor/scalable/apps"
+  cp -f "$APP_ICON_SVG" "$APPDIR/usr/share/icons/hicolor/scalable/apps/amedac.svg"
+  log "使用自定义 SVG 图标: $APP_ICON_SVG"
+fi
 ln -sfn "usr/share/icons/hicolor/256x256/apps/amedac.png" "$APPDIR/.DirIcon"
 # appimagetool 按 desktop 的 Icon=<名字> 在 AppDir 根 / usr/share/pixmaps 找同名图标
 ln -sfn "usr/share/icons/hicolor/256x256/apps/amedac.png" "$APPDIR/amedac.png"
@@ -113,7 +134,7 @@ run_tool() {
 # ---------------------------------------------------------------------------
 # 3. 生成 AppImage
 # ---------------------------------------------------------------------------
-OUT_NAME="Amedac.ai-$ARCH.AppImage"
+OUT_NAME="amedac.ai-$ARCH.AppImage"
 OUT="$OUT_DIR/$OUT_NAME"
 mkdir -p "$OUT_DIR"
 log "生成 $OUT"
@@ -193,14 +214,15 @@ else
   fi
 fi
 
-log "完成:"
-ls -lh "$OUT"
+BUILD_TAKEN=$((SECONDS - BUILD_START))
+log "完成（用时 $(fmt_dur "$BUILD_TAKEN")），产物："
+printf '  %10s  %s\n' "$(du -h "$OUT" | cut -f1)" "$OUT"
 (cd "$OUT_DIR" && sha256sum "$OUT_NAME" > SHA256SUMS)
 echo
 echo "  使用方式（目标 Linux 机，双击或命令行均可）:"
-echo "    ./Amedac.ai-$ARCH.AppImage           启动服务并打开浏览器（幂等）"
-echo "    ./Amedac.ai-$ARCH.AppImage status    服务状态"
-echo "    ./Amedac.ai-$ARCH.AppImage stop      停止全部"
-echo "    ./Amedac.ai-$ARCH.AppImage logs      日志位置提示"
-echo "  无 FUSE 的机器: ./Amedac.ai-$ARCH.AppImage --appimage-extract-and-run"
+echo "    ./amedac.ai-$ARCH.AppImage           启动服务并打开浏览器（幂等）"
+echo "    ./amedac.ai-$ARCH.AppImage status    服务状态"
+echo "    ./amedac.ai-$ARCH.AppImage stop      停止全部"
+echo "    ./amedac.ai-$ARCH.AppImage logs      日志位置提示"
+echo "  无 FUSE 的机器: ./amedac.ai-$ARCH.AppImage --appimage-extract-and-run"
 echo "  数据/配置位置: \${XDG_DATA_HOME:-~/.local/share}/amedac/{data,app/sandbox/*.env}"

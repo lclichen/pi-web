@@ -294,7 +294,7 @@ pi-web 建项目对话框会在镜像名上显示"（每人限 N 个实例）"�
 flowchart TB
     subgraph BuildMachine["构建机"]
         PKG["scripts/package-linux.sh<br/>探测兄弟目录三仓 → 自包含目录 + tar.gz<br/>冒烟：CLI 存活 / WebUI HTTP / 平台 /health(mock)"]
-        AI["scripts/package-appimage.sh<br/>→ Amedac.ai-x64.AppImage (≈215MB)"]
+        AI["scripts/package-appimage.sh<br/>→ amedac.ai-x64.AppImage (≈215MB)"]
         PKG --> AI
     end
     subgraph Target["目标机"]

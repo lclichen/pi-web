@@ -89,6 +89,7 @@ fi
 # 1. 沙盒平台（sandbox-platform）
 # ---------------------------------------------------------------------------
 start_platform() {
+  local generated=0
   if alive "$RUN_DIR/platform.pid"; then
     log "沙盒平台已在运行 (pid $(cat "$RUN_DIR/platform.pid"))"
     return 0
@@ -102,6 +103,7 @@ start_platform() {
   fi
 
   if [ ! -f "$PLATFORM_ENV_FILE" ]; then
+    generated=1
     log "生成默认平台配置: $PLATFORM_ENV_FILE"
     mkdir -p "$(dirname "$PLATFORM_ENV_FILE")"
     # 生产模式强制强密钥：JWT ≥32 字符、管理员密码不能是默认弱值。
@@ -115,12 +117,13 @@ NODE_ENV=production
 HOST=127.0.0.1
 PORT=$PLATFORM_PORT
 DB_DIALECT=sqlite
-SQLITE_PATH=$DATA_DIR/platform/sandbox.db
+DB_SQLITE_PATH=$DATA_DIR/platform/sandbox.db
 JWT_SECRET=$JWT
 SEED_ADMIN_USERNAME=admin
 SEED_ADMIN_PASSWORD=$ADMIN_PW
 REGISTER_MODE=off
 EXECUTOR_KIND=${SANDBOX_EXECUTOR_KIND:-apptainer-cli}
+OVERLAY_BASE_DIR=$DATA_DIR/platform/overlays
 TRUST_PROXY=0
 EOF
     printf '%s\n' "$ADMIN_PW" > "$PKG/sandbox/admin-password.txt"
@@ -129,7 +132,15 @@ EOF
     warn "首次登录后请立即修改密码，并可删除 sandbox/admin-password.txt。"
   fi
 
+  [ -f "$PLATFORM_DIR/.env" ] && \
+    warn "检测到 sandbox/platform/.env：平台的 dotenv 会加载它（已导出的环境变量优先）。确认这是你有意保留的配置。"
+
   mkdir -p "$DATA_DIR/platform"
+  grep -q "^SEED_ADMIN_PASSWORD=" "$PLATFORM_ENV_FILE" && grep -q "^DB_SQLITE_PATH=" "$PLATFORM_ENV_FILE" || {
+    warn "platform.env 缺少关键字段（旧版生成物？），请删除该文件后重跑以重新生成"
+    return 1
+  }
+
   log "启动沙盒平台 (port $PLATFORM_PORT) …"
   (
     cd "$PLATFORM_DIR"
@@ -145,6 +156,19 @@ EOF
     warn "沙盒平台 30s 内未通过 /health 就绪，日志见 logs/platform.log"
     tail -n 10 "$LOG_DIR/platform.log" 2>/dev/null | sed 's/^/     /'
     return 1
+  fi
+
+  if [ "$generated" = "1" ] && command -v curl >/dev/null 2>&1; then
+    local pw probe=""
+    pw="$(head -n 1 "$PKG/sandbox/admin-password.txt" 2>/dev/null || true)"
+    probe="$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://127.0.0.1:$PLATFORM_PORT/api/v1/auth/login" \
+      -H 'Content-Type: application/json' \
+      -d "{\"username\":\"admin\",\"password\":\"$pw\"}" 2>/dev/null || echo 000)"
+    if [ "$probe" = "200" ]; then
+      log "管理员登录自检通过（admin / sandbox/admin-password.txt）"
+    else
+      warn "管理员登录自检失败（HTTP $probe）：若这不是全新数据目录，说明 db 里是旧凭证；新库则检查 .env 冲突。"
+    fi
   fi
 }
 start_platform || exit 1

@@ -302,10 +302,16 @@ if [ "$WITH_SANDBOX" = "1" ]; then
   # 平台：整树拷贝（.ts 直接以 Node 类型剥离运行，无构建步骤），装生产依赖
   log "打包 sandbox-platform: $SANDBOX_PLATFORM_SRC -> sandbox/platform"
   mkdir -p "$SBX/platform"
+  # 注意排除 .env*：源码目录里的部署密钥绝不能进分发包（运行时由
+  # start-all.sh 首次生成独立配置；dotenv 会加载包内残留的 .env 造成
+  # “配置像生效了实际没生效”的事故）。
   (cd "$SANDBOX_PLATFORM_SRC" && tar \
     --exclude='./.git' --exclude='./node_modules' --exclude='./data' \
     --exclude='./logs' --exclude='*.log' --exclude='./web' --exclude='./dist' \
+    --exclude='.env' --exclude='.env.*' \
     -cf - .) | (cd "$SBX/platform" && tar -xf -)
+  [ ! -e "$SBX/platform/.env" ] || die "打包后仍存在 .env（排除规则失效），中止"
+  rm -f "$SBX/platform/.env.example"
   (cd "$SBX/platform" && npm ci --no-audit --no-fund)
   # 运行入口是 node --experimental-transform-types src/index.ts，只吃运行时依赖
   (cd "$SBX/platform" && npm prune --omit=dev --no-audit --no-fund)

@@ -69,6 +69,29 @@ PI_BINARIES="/data/fd /data/rg" bash scripts/package-linux.sh
 
 ## 二、目标机一键部署
 
+### 方式 A：AppImage（桌面双击 / 单文件分发）
+
+```bash
+bash scripts/package-appimage.sh       # 构建机；复用 package-linux.sh 产物再打镜像
+# → dist/Amedac.ai-x64.AppImage (约 215MB)
+```
+
+目标机上直接执行即可（无 FUSE 的机器用 `--appimage-extract-and-run` 后缀）：
+
+```bash
+./Amedac.ai-x64.AppImage            # 启动服务并打开浏览器（幂等）
+./Amedac.ai-x64.AppImage status     # 服务状态
+./Amedac.ai-x64.AppImage stop       # 停止全部
+```
+
+原理与数据位置：AppImage 本体只读，首启时自动展开完整分发包到
+`${XDG_DATA_HOME:-~/.local/share}/amedac/app`，数据库/配置在旁边的 `data/` 与
+`app/sandbox/*.env`——升级（换新版本 AppImage 重跑）会自动重展开新包并还原用户配置。
+可用环境变量 `AMEDAC_HOME` 改这个家目录，`PLATFORM_PORT/WEB_PORT` 改端口。
+注意磁盘占用：展开后约 1GB。
+
+### 方式 B：tar.gz 目录部署
+
 要求：Linux x64/arm64、bash；如需真实沙箱容器还要安装 [Apptainer](https://apptainer.org/docs/admin/latest/installation.html)（未装也能跑 WebUI 与本机模式，只是无法建容器——`start-all.sh` 会检测并提示）。
 
 ```bash
@@ -125,6 +148,11 @@ tail -f logs/platform.log # 跟踪平台日志
 | `PI_WEB_LAB_TRAINING` | 教学面板功能开关 |
 
 ## 四、升级
+
+**AppImage**：下发新版本文件，直接重新运行即可——AppRun 检测到版本变化会自动重展开新包，
+并原样还原 `sandbox/platform.env`、`sandbox/piweb.env` 与整个 `data/`（数据库迁移幂等）。
+
+**tar.gz 目录部署**：
 
 ```bash
 cd amedac.ai-pi-linux-x64

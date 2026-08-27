@@ -76,6 +76,12 @@
 #   SANDBOX_PLATFORM_DIR     sandbox-platform 仓库路径。默认依次探测:
 #                            ../sandbox-platform、../../AgentSandbox/sandbox-platform
 #   SANDBOX_EXTENSION_DIR    pi-sandbox-extension 仓库路径。默认探测: ../pi-sandbox-extension
+#   PLATFORM_WEB_DIST        管理控制台静态页（web/dist）来源；默认取源码仓内
+#                            已构建的 web/dist，缺失时控制台不随包（有警告）。
+#   BCRYPT_BINDING_LOCAL     离线构建机兜底：bcrypt 的 napi-v3 预编译 .node 文件
+#                            路径，打包时拷入平台 node_modules 对应位置。
+#   NATIVE_BINDING_FIX       通用原生绑定补拷，"包内相对路径=来源文件" 空格分隔
+#                            （BCRYPT_BINDING_LOCAL 是它的便捷别名）。
 #
 # 构建机要求: Linux（或 WSL）、bash、curl（或 wget）、tar、Node.js >= 22
 #            （用于安装依赖和执行 next build；产物本身不需要）。
@@ -315,6 +321,42 @@ if [ "$WITH_SANDBOX" = "1" ]; then
   (cd "$SBX/platform" && npm ci --no-audit --no-fund)
   # 运行入口是 node --experimental-transform-types src/index.ts，只吃运行时依赖
   (cd "$SBX/platform" && npm prune --omit=dev --no-audit --no-fund)
+
+  # ---- 离线构建机的原生绑定兜底 -----------------------------------------
+  # npm 在离线机（或 ignore-scripts=true）上装不出 .node 原生绑定，典型如
+  # bcrypt: Cannot find module .../bcrypt/lib/binding/napi-v3/bcrypt_lib.node
+  # 手动拿到文件后用环境变量指给打包脚本，产物即完整：
+  #   BCRYPT_BINDING_LOCAL=/data/bcrypt_lib.node
+  # 更通用的形式（=前是包内相对路径，可多条，空格分隔）：
+  #   NATIVE_BINDING_FIX="node_modules/bcrypt/lib/binding/napi-v3/bcrypt_lib.node=/data/bcrypt_lib.node ..."
+  if [ -n "${BCRYPT_BINDING_LOCAL:-}" ]; then
+    NATIVE_BINDING_FIX="$NATIVE_BINDING_FIX node_modules/bcrypt/lib/binding/napi-v3/bcrypt_lib.node=$BCRYPT_BINDING_LOCAL"
+  fi
+  if [ -n "${NATIVE_BINDING_FIX:-}" ]; then
+    for pair in $NATIVE_BINDING_FIX; do
+      case "$pair" in *=*) ;; *) die "NATIVE_BINDING_FIX 条目格式应为 包内相对路径=来源文件: $pair" ;; esac
+      dest_rel="${pair%%=*}"; src_abs="${pair#*=}"
+      [ -f "$src_abs" ] || die "NATIVE_BINDING_FIX 来源不存在: $src_abs"
+      mkdir -p "$SBX/platform/$(dirname "$dest_rel")"
+      cp -f "$src_abs" "$SBX/platform/$dest_rel"
+      log "原生绑定补拷: $src_abs -> sandbox/platform/$dest_rel"
+    done
+  fi
+
+  # ---- 管理控制台静态页（web/dist）--------------------------------------
+  # 平台在 APP_ROOT/web/dist 服务管理员 SPA（镜像/用户/配额/LLM 控制台），
+  # WebUI 顶栏管理员的「沙盒平台管理台」按钮跳转的就是它。默认取源码仓里
+  # 已构建的产物；构建机上没有时用 PLATFORM_WEB_DIST 显式指定一份。
+  WEB_DIST_SRC="${PLATFORM_WEB_DIST:-$SANDBOX_PLATFORM_SRC/web/dist}"
+  if [ -d "$WEB_DIST_SRC" ] && [ -f "$WEB_DIST_SRC/index.html" ]; then
+    mkdir -p "$SBX/platform/web"
+    cp -a "$WEB_DIST_SRC" "$SBX/platform/web/dist"
+    log "已打包管理控制台静态页 (web/dist)"
+  else
+    warn "未找到管理控制台静态页（web/dist）——打包产物的控制台将不可用。"
+    warn "在源码仓构建一次 web/ 或用 PLATFORM_WEB_DIST=/已构建目录 指定后再打包。"
+  fi
+
   PLATFORM_VERSION="$(node -p "require('$SBX/platform/package.json').version")"
   echo "$PLATFORM_VERSION" > "$SBX/platform/.shipped-version"
   log "sandbox-platform 版本: $PLATFORM_VERSION"

@@ -65,7 +65,22 @@ PI_CODING_AGENT_LOCAL=/data/pi-coding-agent-0.83.x.tgz bash scripts/package-linu
 
 # 附带 fd/rg 等 CLI 工具进包（目标机 PATH 自动生效）
 PI_BINARIES="/data/fd /data/rg" bash scripts/package-linux.sh
+
+# 离线构建机：手动补原生绑定（bcrypt 预编译）与管理控制台静态页
+BCRYPT_BINDING_LOCAL=/data/bcrypt_lib.node \
+PLATFORM_WEB_DIST=/data/web-dist \
+bash scripts/package-linux.sh
 ```
+
+两个离线机常见坑：
+
+- **bcrypt .node 绑定缺失**（运行时报 `Cannot find module .../napi-v3/bcrypt_lib.node`）：
+  离线 npm 拿不到 node-pre-gyp 预编译（`ignore-scripts=true` 时甚至不会尝试）。手动把对应
+  平台的 `bcrypt_lib.node` 拷到构建机后用 `BCRYPT_BINDING_LOCAL` 指给脚本；其他原生模块同理走
+  `NATIVE_BINDING_FIX="包内相对路径=来源文件 …"`。
+- **管理控制台**：管理员在 WebUI 顶栏点「沙盒平台管理台」新标签页打开平台 SPA（镜像/用户/
+  配额/LLM 控制台）。打包时默认嵌入源码仓的 `web/dist`；构建机上没有就绪产物时用
+  `PLATFORM_WEB_DIST` 指定，否则该页 404（其余功能不受影响）。
 
 ## 二、目标机一键部署
 

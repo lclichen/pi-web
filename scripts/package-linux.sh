@@ -62,6 +62,21 @@
 #   SKIP_RUNTIME_DOWNLOAD 设为 "1" 复用包内已有的 runtime/，不再下载 Node
 #                         （构建机完全离线时使用；NODE_RUNTIME_LOCAL 优先级更高）
 #
+# 沙盒教学平台（可选组件）:
+#   WITH_SANDBOX          "1"=打包沙盒平台全家桶，"0"=不打包；
+#                         默认自动：找得到 sandbox-platform 源码就打包。
+#                         打包内容（包内 sandbox/ 目录 + 一键脚本）:
+#                           sandbox/platform/    容器管理 API（sqlite 零依赖部署，
+#                                                启动自动迁移，端口默认 3000）
+#                           sandbox/extension/   pi-sandbox-extension 桥接扩展
+#                           scripts/start-all.sh 一键启动 平台+WebUI（首次运行自动
+#                                                生成 env、数据落在 data/）
+#                           scripts/stop-all.sh / status-all.sh
+#                         目标机还要求安装 Apptainer（容器执行器），脚本会检测并提示。
+#   SANDBOX_PLATFORM_DIR     sandbox-platform 仓库路径。默认依次探测:
+#                            ../sandbox-platform、../../AgentSandbox/sandbox-platform
+#   SANDBOX_EXTENSION_DIR    pi-sandbox-extension 仓库路径。默认探测: ../pi-sandbox-extension
+#
 # 构建机要求: Linux（或 WSL）、bash、curl（或 wget）、tar、Node.js >= 22
 #            （用于安装依赖和执行 next build；产物本身不需要）。
 set -euo pipefail
@@ -244,6 +259,98 @@ if [ -n "${PI_UPDATE_BASE_URL:-}" ]; then
 fi
 
 # ---------------------------------------------------------------------------
+# 7d. 沙盒教学平台组件（可选）：sandbox-platform + pi-sandbox-extension
+#     打进 sandbox/，配套 scripts/start-all.sh 一键启动平台+WebUI。
+# ---------------------------------------------------------------------------
+find_repo_dir() { # <说明> <默认候选...> -> 打印第一个存在的目录
+  local desc="$1"; shift
+  for c in "$@"; do
+    if [ -d "$c" ] && [ -f "$c/package.json" ]; then
+      (cd "$c" && pwd)
+      return 0
+    fi
+  done
+  return 1
+}
+
+SANDOX_WANTED="${WITH_SANDBOX:-}"
+SANDBOX_PLATFORM_SRC="${SANDBOX_PLATFORM_DIR:-}"
+SANDBOX_EXTENSION_SRC="${SANDBOX_EXTENSION_DIR:-}"
+
+AUTO_PLATFORM="$(find_repo_dir sandbox-platform "$ROOT/../sandbox-platform" "$ROOT/../../AgentSandbox/sandbox-platform" || true)"
+AUTO_EXTENSION="$(find_repo_dir pi-sandbox-extension "$ROOT/../pi-sandbox-extension" "$ROOT/../../LabTrainingProject/pi-sandbox-extension" || true)"
+
+if [ -z "$SANDOX_WANTED" ]; then
+  # 自动模式：两个源都找齐才打包
+  [ -n "$SANDBOX_PLATFORM_SRC" ] || SANDBOX_PLATFORM_SRC="$AUTO_PLATFORM"
+  [ -n "$SANDBOX_EXTENSION_SRC" ] || SANDBOX_EXTENSION_SRC="$AUTO_EXTENSION"
+  WITH_SANDBOX=1
+  [ -d "$SANDBOX_PLATFORM_SRC" ] && [ -d "$SANDBOX_EXTENSION_SRC" ] || WITH_SANDBOX=0
+elif [ "$SANDOX_WANTED" = "1" ]; then
+  [ -d "$SANDBOX_PLATFORM_SRC" ] || SANDBOX_PLATFORM_SRC="$AUTO_PLATFORM"
+  [ -d "$SANDBOX_EXTENSION_SRC" ] || SANDBOX_EXTENSION_SRC="$AUTO_EXTENSION"
+  [ -d "$SANDBOX_PLATFORM_SRC" ] || die "WITH_SANDBOX=1 但找不到 sandbox-platform（设 SANDBOX_PLATFORM_DIR=/路径）"
+  [ -d "$SANDBOX_EXTENSION_SRC" ] || die "WITH_SANDBOX=1 但找不到 pi-sandbox-extension（设 SANDBOX_EXTENSION_DIR=/路径）"
+else
+  WITH_SANDBOX=0
+fi
+
+if [ "$WITH_SANDBOX" = "1" ]; then
+  log "沙盒教学平台组件: 打包"
+  SBX="$PKG/sandbox"
+
+  # 平台：整树拷贝（.ts 直接以 Node 类型剥离运行，无构建步骤），装生产依赖
+  log "打包 sandbox-platform: $SANDBOX_PLATFORM_SRC -> sandbox/platform"
+  mkdir -p "$SBX/platform"
+  (cd "$SANDBOX_PLATFORM_SRC" && tar \
+    --exclude='./.git' --exclude='./node_modules' --exclude='./data' \
+    --exclude='./logs' --exclude='*.log' --exclude='./web' --exclude='./dist' \
+    -cf - .) | (cd "$SBX/platform" && tar -xf -)
+  (cd "$SBX/platform" && npm ci --no-audit --no-fund)
+  # 运行入口是 node --experimental-transform-types src/index.ts，只吃运行时依赖
+  (cd "$SBX/platform" && npm prune --omit=dev --no-audit --no-fund)
+  PLATFORM_VERSION="$(node -p "require('$SBX/platform/package.json').version")"
+  echo "$PLATFORM_VERSION" > "$SBX/platform/.shipped-version"
+  log "sandbox-platform 版本: $PLATFORM_VERSION"
+
+  # 扩展：pi-sandbox-extension（自带 node_modules 离线可用）
+  log "打包 pi-sandbox-extension: $SANDBOX_EXTENSION_SRC -> sandbox/extension"
+  mkdir -p "$SBX/extension"
+  (cd "$SANDBOX_EXTENSION_SRC" && tar \
+    --exclude='./.git' --exclude='./node_modules' --exclude='./data' \
+    --exclude='*.log' -cf - .) | (cd "$SBX/extension" && tar -xf -)
+  (cd "$SBX/extension" && npm install --omit=dev --legacy-peer-deps --no-audit --no-fund)
+
+  # 首次部署说明落在包内
+  cat > "$SBX/README.txt" <<'EOF'
+沙盒教学平台组件
+================
+sandbox/platform/   容器管理 API —— sqlite 存储、启动自动迁移、默认
+                    监听 127.0.0.1:3000（管理控制台静态页未随包分发）。
+sandbox/extension/  pi 的沙盒桥接扩展（bash/read/write 工具走容器 API）。
+                    pi-web 通过 PI_WEB_SANDBOX_EXTENSION_PATH 加载它。
+
+一键使用（在包根目录）:
+  ./scripts/start-all.sh    启动 沙盒平台 + WebUI（幂等；首次运行自动生成
+                            sandbox/platform.env、sandbox/piweb.env，
+                            数据与数据库写入 data/）
+  ./scripts/status-all.sh   服务状态 / 日志位置 / apptainer 检测
+  ./scripts/stop-all.sh     停止全部
+
+目标机要求: 安装 Apptainer（https://apptainer.org）—— 容器执行器；
+未安装时 WebUI 可用，但无法创建/启动沙箱容器。
+
+配置文件（可在 start-all.sh 生成的默认值上修改）:
+  sandbox/platform.env   平台端口 / sqlite 路径 / JWT 密钥 / 管理员账号 /
+                         EXECUTOR_KIND（apptainer-cli | ssh | mock）
+  sandbox/piweb.env      WebUI 认证开关 / 平台地址 / 数据目录 / 扩展路径
+EOF
+  log "已写入 sandbox/README.txt"
+else
+  log "沙盒教学平台组件: 不打包（WITH_SANDBOX=$WITH_SANDBOX）"
+fi
+
+# ---------------------------------------------------------------------------
 # 8. 内置 Node.js 运行时
 #    优先级: NODE_RUNTIME_LOCAL（本地包/目录/URL）> SKIP_RUNTIME_DOWNLOAD 复用
 #           已有 runtime/ > 从 nodejs.org 下载
@@ -403,6 +510,37 @@ if [ "$SMOKE_TEST" != "0" ]; then
     sed 's/^/     /' "$WORK/piweb.log" | tail -n 30
     exit 1
   fi
+
+  # 沙盒平台（若打包）：mock 执行器 + 内存型 sqlite 起服，/health 必须应答
+  if [ "${WITH_SANDBOX:-0}" = "1" ]; then
+    rm -f "$WORK/platform.log" "$WORK/platform.pid"
+    SMOKE_SBX_HOME="$WORK/smoke-platform-data"
+    mkdir -p "$SMOKE_SBX_HOME"
+    (
+      cd "$PKG/sandbox/platform"
+      env -i HOME="$SMOKE_SBX_HOME" PATH="$PATH" \
+        NODE_ENV=production HOST=127.0.0.1 PORT=31090 \
+        DB_DIALECT=sqlite SQLITE_PATH="$SMOKE_SBX_HOME/sbx.db" \
+        JWT_SECRET=smoke-test-secret ADMIN_USERNAME=admin ADMIN_PASSWORD=changeme123 \
+        EXECUTOR_KIND=mock REGISTER_MODE=off \
+        "$PKG/runtime/bin/node" --experimental-transform-types --no-warnings=ExperimentalWarning src/index.ts \
+        >"$WORK/platform.log" 2>&1 &
+      echo $! > "$WORK/platform.pid"
+    )
+    SBX_OK=0
+    for _ in $(seq 1 30); do
+      if curl -fsS -o /dev/null http://127.0.0.1:31090/health 2>/dev/null; then SBX_OK=1; break; fi
+      sleep 1
+    done
+    kill "$(cat "$WORK/platform.pid")" 2>/dev/null || true
+    if [ "$SBX_OK" = "1" ]; then
+      echo "   sandbox-platform: OK（mock 执行器 /health 应答正常）"
+    else
+      echo "   sandbox-platform: 启动失败，日志如下："
+      sed 's/^/     /' "$WORK/platform.log" | tail -n 30
+      exit 1
+    fi
+  fi
 fi
 
 # ---------------------------------------------------------------------------
@@ -416,6 +554,14 @@ log "完成，产物："
 ls -lh "$OUT" "$OUT_DIR/SHA256SUMS"
 echo
 echo "  将 amedac.ai-pi-linux-$ARCH/ 拷到目标 Linux 机器后："
+if [ "$WITH_SANDBOX" = "1" ]; then
+  echo "  【沙盒教学平台（一键部署）】"
+  echo "    ./scripts/start-all.sh   启动沙盒平台 + WebUI（首次运行自动生成配置，"
+  echo "                             数据落 data/；需目标机装有 Apptainer）"
+  echo "    ./scripts/status-all.sh  服务状态与日志位置"
+  echo "    ./scripts/stop-all.sh    停止全部服务"
+  echo "  【组件单独用】"
+fi
 echo "    ./pi          启动 CLI Agent（用法同官方 pi 命令）"
 echo "    ./pi-web.sh   启动 WebUI（浏览器访问 http://127.0.0.1:30141）"
 echo "    ./scripts/start.sh    菜单入口（含安装到 PATH / 检查更新）"

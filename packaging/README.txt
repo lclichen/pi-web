@@ -10,13 +10,21 @@
     * runtime/ —— 内置的 Node.js 运行时
 
 【快速开始】
-  方式一（推荐）: 在终端运行  ./scripts/start.sh   菜单选择
-  方式二（直接）:
-    ./pi              —— 终端里启动 CLI Agent，用法同官方 pi 命令
-    ./pi-web.sh       —— 启动 WebUI，浏览器访问 http://127.0.0.1:30141
-  桌面环境:
-    双击 scripts/open-pi-terminal.sh —— 自动开一个终端窗口进入 pi
-    双击 scripts/start.sh            —— 打开菜单
+  本包若含沙盒教学平台组件（存在 sandbox/ 目录）:
+    ./scripts/start-all.sh   —— 一键启动 沙盒平台 + WebUI（首次运行自动生成配置）
+    ./scripts/status-all.sh  —— 服务状态与日志位置
+    ./scripts/stop-all.sh    —— 停止全部
+    浏览器访问 http://<本机IP>:30141 ，默认账号 admin/changeme123（登录后请改密）。
+    创建沙箱容器需要目标机已安装 Apptainer（https://apptainer.org）。
+
+  纯 pi / pi-web（无沙盒组件）:
+    方式一（推荐）: 在终端运行  ./scripts/start.sh   菜单选择
+    方式二（直接）:
+      ./pi              —— 终端里启动 CLI Agent，用法同官方 pi 命令
+      ./pi-web.sh       —— 启动 WebUI，浏览器访问 http://127.0.0.1:30141
+    桌面环境:
+      双击 scripts/open-pi-terminal.sh —— 自动开一个终端窗口进入 pi
+      双击 scripts/start.sh            —— 打开菜单
 
 【让 pi / pi-web 全局可用】
   运行一次 ./scripts/install-to-path.sh

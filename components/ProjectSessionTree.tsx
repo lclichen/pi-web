@@ -675,7 +675,7 @@ function ProjectSessionRow({
         <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
           <button
             type="button"
-            onClick={() => setConfirmDelete(false)}
+            onClick={() => { setConfirmDelete(false); onDelete(); }}
             style={{
               height: 22, padding: "0 9px", borderRadius: 5, border: "none",
               background: "#ef4444", color: "#fff", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap",

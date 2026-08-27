@@ -112,9 +112,9 @@ OUT_NAME="Amedac.ai-$ARCH.AppImage"
 OUT="$OUT_DIR/$OUT_NAME"
 mkdir -p "$OUT_DIR"
 log "生成 $OUT"
-VERSION="$VERSION" run_tool --comp zstd \
-  --update-information "gh-releases-zsync|lclichen|pi-web|latest|Amedac.ai-*-$ARCH.AppImage.zsync" \
-  "$APPDIR" "$OUT" 2> >(grep -vi '^md5.block\|^squashfs\|^parallel' >&2 || true)
+# 注：不带 --update-information（zsync 自更新对这种“首启即展开”的分发方式
+# 意义不大，且部分 continuous 版工具不认该参数）；升级靠重新下发新 AppImage。
+VERSION="$VERSION" run_tool --comp zstd "$APPDIR" "$OUT"
 
 # 冒烟：--appimage-extract-and-run 应能展开分发包（status 可走通）
 if command -v curl >/dev/null 2>&1 && [ "${SMOKE_TEST:-1}" = "1" ]; then

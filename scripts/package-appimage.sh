@@ -150,32 +150,52 @@ fi
 
 VERSION="$VERSION" run_tool "${TOOL_ARGS[@]}" "$APPDIR" "$OUT"
 
-# 冒烟：--appimage-extract-and-run 应能展开分发包（status 可走通）
-if command -v curl >/dev/null 2>&1 && [ "${SMOKE_TEST:-1}" = "1" ]; then
-  log "冒烟测试（AppImage 自解压模式，AMEDAC_HOME 指向临时目录）…"
-  THOME="$WORK/smoke-home"
-  rm -rf "$THOME"; mkdir -p "$THOME/home"
+# 镜像已生成；立即释放 ≈1GB 的 AppDir 暂存（后续冒烟可能很吃磁盘）。
+# 要调试包内容时 AMEDAC_KEEP_STAGING=1。
+if [ "${AMEDAC_KEEP_STAGING:-0}" != "1" ]; then
+  rm -rf "$APPDIR"
+  log "已清理 AppDir 暂存（AMEDAC_KEEP_STAGING=1 可保留）"
+fi
+
+# ---------------------------------------------------------------------------
+# 4. 冒烟
+#    ①零开销：--appimage-offset 能读出 squashfs 偏移 = ELF/魔数/嵌入完整；
+#    ②完整：--appimage-extract-and-run 真跑一次 stop 子命令（需约 3GB 余量，
+#      自解压 + AppRun 首启展开各占一份）。磁盘紧张时跳过②。
+# ---------------------------------------------------------------------------
+if [ "${SMOKE_TEST:-1}" != "1" ]; then
+  log "冒烟测试已跳过（SMOKE_TEST=0）"
+else
   OUT_ABS="$(cd "$OUT_DIR" && pwd)/$OUT_NAME"
-  if ( cd "$THOME" \
-       && AMEDAC_HOME="$THOME/home" HOME="$THOME/home" PLATFORM_PORT=31190 WEB_PORT=31191 \
-          "$OUT_ABS" --appimage-extract-and-run stop >/dev/null 2>&1; \
-       [ -d "$THOME/home/app/scripts" ] ); then
-    echo "   AppImage: OK（可运行、能展开、子命令可用）"
-    rm -rf "$THOME"
+  OFFSET="$("$OUT_ABS" --appimage-offset 2>/dev/null || true)"
+  case "$OFFSET" in
+    ''|*[!0-9]*) die "AppImage 完整性校验失败（--appimage-offset 无输出）" ;;
+    *) echo "   AppImage 结构校验: OK（squashfs offset=${OFFSET}B）" ;;
+  esac
+
+  AVAIL_KB="$(df -Pk "$(dirname "$OUT")" | awk 'NR==2{print $4}')"
+  if [ "${AVAIL_KB:-0}" -lt 3000000 ]; then
+    log "磁盘可用不足 3GB，跳过自解压运行冒烟（目标机首启时自会验证）"
   else
-    echo "   AppImage: 自解压冒烟失败"
-    exit 1
+    log "冒烟测试（AppImage 自解压模式）…"
+    THOME="$WORK/smoke-home"
+    rm -rf "$THOME"; mkdir -p "$THOME/home"
+    if ( cd "$THOME" \
+         && AMEDAC_HOME="$THOME/home" HOME="$THOME/home" PLATFORM_PORT=31190 WEB_PORT=31191 \
+            "$OUT_ABS" --appimage-extract-and-run stop >/dev/null 2>&1; \
+         [ -d "$THOME/home/app/scripts" ] ); then
+      echo "   AppImage: OK（可运行、能展开、子命令可用）"
+    else
+      echo "   AppImage: 自解压冒烟失败"
+      exit 1
+    fi
+    rm -rf "$THOME"
   fi
 fi
 
 log "完成:"
 ls -lh "$OUT"
 (cd "$OUT_DIR" && sha256sum "$OUT_NAME" > SHA256SUMS)
-# AppDir 暂存（≈1GB）默认清掉；要调试包内容时 AMEDAC_KEEP_STAGING=1
-if [ "${AMEDAC_KEEP_STAGING:-0}" != "1" ]; then
-  rm -rf "$APPDIR"
-  log "已清理 AppDir 暂存（AMEDAC_KEEP_STAGING=1 可保留）"
-fi
 echo
 echo "  使用方式（目标 Linux 机，双击或命令行均可）:"
 echo "    ./Amedac.ai-$ARCH.AppImage           启动服务并打开浏览器（幂等）"

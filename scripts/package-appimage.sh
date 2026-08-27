@@ -119,7 +119,36 @@ mkdir -p "$OUT_DIR"
 log "生成 $OUT"
 # 注：不带 --update-information（zsync 自更新对这种“首启即展开”的分发方式
 # 意义不大，且部分 continuous 版工具不认该参数）；升级靠重新下发新 AppImage。
-VERSION="$VERSION" run_tool --comp zstd "$APPDIR" "$OUT"
+
+# type2 runtime：优先用缓存的本地文件（构建机网络不稳时常下载失败），
+# 缺失时让 appimagetool 自行下载。手动更新缓存:
+#   curl -L -o build/tools/runtime-$TOOL_ARCH \
+#     https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-$TOOL_ARCH
+RUNTIME_FILE="$TOOLS/runtime-$TOOL_ARCH"
+TOOL_ARGS=(--comp zstd)
+if [ ! -s "$RUNTIME_FILE" ]; then
+  log "缓存 type2 runtime ($TOOL_ARCH) …"
+  URLS=(
+    "https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-$TOOL_ARCH"
+    "https://mirror.ghproxy.com/https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-$TOOL_ARCH"
+  )
+  for u in "${URLS[@]}"; do
+    if command -v curl >/dev/null 2>&1; then
+      curl -fsSL --retry 3 --connect-timeout 15 "$u" -o "$RUNTIME_FILE.downloading" && mv "$RUNTIME_FILE.downloading" "$RUNTIME_FILE" && break
+    else
+      wget -q -O "$RUNTIME_FILE.downloading" "$u" && mv "$RUNTIME_FILE.downloading" "$RUNTIME_FILE" && break
+    fi
+  done
+fi
+# runtime 是 ELF，AppImage 魔数 AI\x02 在偏移 8 处
+if [ -s "$RUNTIME_FILE" ] && [ "$(dd if="$RUNTIME_FILE" bs=1 skip=8 count=4 2>/dev/null | od -An -tx1 | tr -d ' \n')" = "41490200" ]; then
+  TOOL_ARGS+=(--runtime-file "$RUNTIME_FILE")
+else
+  rm -f "$RUNTIME_FILE"
+  log "未取得本地 runtime 缓存，交由 appimagetool 下载"
+fi
+
+VERSION="$VERSION" run_tool "${TOOL_ARGS[@]}" "$APPDIR" "$OUT"
 
 # 冒烟：--appimage-extract-and-run 应能展开分发包（status 可走通）
 if command -v curl >/dev/null 2>&1 && [ "${SMOKE_TEST:-1}" = "1" ]; then

@@ -63,6 +63,10 @@ cp -a "$ROOT/packaging/appimage/amedac.ai.desktop" "$APPDIR/amedac.ai.desktop"
 
 node "$ROOT/packaging/gen-icon.mjs" 256 "$APPDIR/usr/share/icons/hicolor/256x256/apps/amedac.png"
 ln -sfn "usr/share/icons/hicolor/256x256/apps/amedac.png" "$APPDIR/.DirIcon"
+# appimagetool 按 desktop 的 Icon=<名字> 在 AppDir 根 / usr/share/pixmaps 找同名图标
+ln -sfn "usr/share/icons/hicolor/256x256/apps/amedac.png" "$APPDIR/amedac.png"
+mkdir -p "$APPDIR/usr/share/pixmaps"
+ln -sfn "../icons/hicolor/256x256/apps/amedac.png" "$APPDIR/usr/share/pixmaps/amedac.png"
 
 # desktop 里 Exec 用 %u 占位；appimagetool 会把它改成绝对路径引用
 

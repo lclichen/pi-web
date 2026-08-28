@@ -913,6 +913,8 @@ export function SessionSidebar({ authInfo = null, sessionSpace = "mine", onSessi
         <RemoteConnectWizard
           onClose={() => setShowProjectWizard(false)}
           onCreated={() => onProjectsChanged?.()}
+          isAdmin={authInfo?.user?.role === "admin"}
+          onOpenServerDirectory={() => setCustomPathOpen(true)}
         />
       )}
 

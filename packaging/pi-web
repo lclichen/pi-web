@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 #
-# pi-web.sh — pi-web WebUI 启动器（离线分发包内嵌版）。
+# pi-web — pi-web WebUI 启动器（离线分发包内嵌版，与 pi-web.sh 等价）。
 # 参数与官方 pi-web 一致，例如:
-#   ./pi-web.sh                          # 默认 127.0.0.1:30141，自动开浏览器
-#   ./pi-web.sh --port 8080 --no-open
-#   PI_WEB_PASSWORD='长密码' ./pi-web.sh # 启用 Basic Auth（用户名 pi）
+#   ./pi-web                           # 默认 127.0.0.1:30141，自动开浏览器
+#   ./pi-web --port 8080 --no-open
+#   PI_WEB_PASSWORD='长密码' ./ pi-web # 启用 Basic Auth（用户名 pi）
 set -euo pipefail
 
 # 解析脚本真实路径（支持通过软链调用，如 install-to-path.sh 装的
-# ~/.local/bin/pi-web -> <包目录>/pi-web.sh）
+# ~/.local/bin/pi-web -> <包目录>/ pi-web）
 SOURCE="${BASH_SOURCE[0]}"
 while [ -L "$SOURCE" ]; do
   TARGET="$(readlink "$SOURCE")"

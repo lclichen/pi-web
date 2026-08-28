@@ -13,6 +13,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { NewProjectDialog } from "./NewProjectDialog";
+import { ConnectLocalMachine } from "./relay/ConnectLocalMachine";
 
 type Mode = "sandbox" | "local-machine";
 type Step = 1 | 2 | 3 | 4;
@@ -45,22 +46,30 @@ export function RemoteConnectWizard({ onClose, onCreated }: Props) {
   // 本地 agent 配对状态
   const [relayInfo, setRelayInfo] = useState<{ online: boolean; hostname?: string } | null>(null);
 
-  // ③ 连接中（本地）：校验 agent 配对状态
+  // ③ 连接中（本地）：轮询 agent 配对状态；未配对时内嵌「连接本地机器」
+  // 面板让用户就地完成配对，配对成功自动进入下一步。
   useEffect(() => {
     if (step !== 3 || method !== "local") return;
     let cancelled = false;
-    (async () => {
+    const check = async () => {
       try {
         const res = await fetch("/api/agent-relay/status");
-        const d = (await res.json()) as { paired?: boolean; info?: { hostname?: string; online?: boolean } | null };
+        const d = (await res.json()) as { paired?: boolean; info?: { hostname?: string } | null };
         if (cancelled) return;
-        setRelayInfo({ online: Boolean(d.paired && d.info?.online !== false), hostname: d.info?.hostname });
-        if (!d.paired) setError(t("本机尚未配对：请先在侧栏「本机机器」面板完成配对，再回到本步骤。"));
+        setRelayInfo({ online: Boolean(d.paired), hostname: d.info?.hostname });
+        if (d.paired) {
+          setError(null);
+          setStep(4);
+        } else {
+          setError(t("本机尚未配对：在下方完成配对后将自动继续。"));
+        }
       } catch {
         if (!cancelled) setError(t("无法获取本机连接状态"));
       }
-    })();
-    return () => { cancelled = true; };
+    };
+    void check();
+    const timer = setInterval(check, 2000);
+    return () => { cancelled = true; clearInterval(timer); };
   }, [step, method, t]);
 
   // 沙盒：NewProjectDialog 的 onCreate → 在③执行创建/供给，完成后进④
@@ -175,7 +184,7 @@ export function RemoteConnectWizard({ onClose, onCreated }: Props) {
             return (
               <div key={s.n} style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 18px", color: active ? "var(--accent)" : done ? "var(--text)" : "var(--text-dim)", fontWeight: active ? 600 : 400 }}>
                 <span style={{ width: 18, height: 18, borderRadius: 999, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 10, border: `1px solid ${active ? "var(--accent)" : done ? "var(--success)" : "var(--border)"}`, background: done ? "var(--success)" : "transparent", color: done ? "#fff" : "inherit" }}>
-                  {done ? "✓" : s.n}
+                  {s.n}
                 </span>
                 {t(s.label)}
               </div>
@@ -279,9 +288,11 @@ export function RemoteConnectWizard({ onClose, onCreated }: Props) {
                     <button className="primary" onClick={() => setStep(4)}>{t("下一步")}</button>
                   </div>
                 </>
+              ) : relayInfo?.online ? (
+                <div className="info-banner">{t("本机 Agent 已连接")}{relayInfo.hostname ? `：${relayInfo.hostname}` : ""}</div>
               ) : (
-                <div style={{ display: "flex", alignItems: "center", gap: 10, color: "var(--text-dim)", fontSize: 13 }}>
-                  <span className="spinner" /> {t("正在校验本机 Agent 连接…")}
+                <div style={{ flex: 1, minHeight: 0, overflow: "auto", border: "1px solid var(--border)", borderRadius: 10, padding: 6 }}>
+                  <ConnectLocalMachine />
                 </div>
               )}
             </>

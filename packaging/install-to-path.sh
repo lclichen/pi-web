@@ -13,11 +13,11 @@ INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
 
 mkdir -p "$INSTALL_DIR"
 ln -sf "$ROOT/pi"        "$INSTALL_DIR/pi"
-ln -sf "$ROOT/pi-web.sh" "$INSTALL_DIR/pi-web"
+if [ -e "$ROOT/pi-web" ]; then ln -sf "$ROOT/pi-web" "$INSTALL_DIR/pi-web"; else ln -sf "$ROOT/pi-web.sh" "$INSTALL_DIR/pi-web"; fi
 
 echo "已安装:"
 echo "  $INSTALL_DIR/pi      -> $ROOT/pi"
-echo "  $INSTALL_DIR/pi-web  -> $ROOT/pi-web.sh"
+echo "  $INSTALL_DIR/pi-web  -> $ROOT/pi-web"
 echo
 echo "请确认 $INSTALL_DIR 在 PATH 中（通常 ~/.local/bin 默认就在）。"
 echo "卸载: 删除上面两个软链即可，离线包目录本身可随时删除。"

@@ -129,8 +129,60 @@ applied=0
 
 # 1) 目录类资源：只补缺失文件，绝不覆盖用户已有文件
 #    npm/ 整树（离线插件与依赖）；extensions/ 下可含本地扩展包（含各自 node_modules）
+#
+#    大目录加速（npm/ 动辄数千文件，首次拷贝最慢）：设置 PI_CONFIG_LINK_ROOT
+#    指向一份稳定的模板根（tar.gz 部署 = 包目录本身；AppImage = 启动器维护的
+#    AMEDAC_HOME/current 软链，每次启动自动刷新指向新包）后，npm/ 整树与
+#    extensions/ 下的各扩展包改用 **符号链接** 指向模板目录，零拷贝、随包升级。
+#    已存在的真实目录不会被替换（不破坏既有安装）；PI_CONFIG_LINK_FORCE=1 可强制重建。
+LINK_ROOT="${PI_CONFIG_LINK_ROOT:-}"
+LINK_FORCE="${PI_CONFIG_LINK_FORCE:-0}"
+
+link_dir() { # link_dir <模板子目录> <目标路径>
+  local src="$BUNDLED/$1" dst="$2"
+  [ -d "$src" ] || return 0
+  if [ -L "$dst" ]; then
+    # 已是链接：目标一致则无事可做；否则刷新指向（升级后 current 已更新）
+    local cur; cur="$(readlink "$dst")"
+    [ "$cur" = "$src" ] || ln -sfn "$src" "$dst"
+    return 0
+  fi
+  if [ -e "$dst" ] && [ "$LINK_FORCE" != "1" ]; then
+    echo "  $1: 已存在真实目录，保持拷贝不走链接（PI_CONFIG_LINK_FORCE=1 可强制改为链接）"
+    return 0
+  fi
+  if [ "$DRY" = "1" ]; then
+    echo "  [dry] $1 -> 链接到 $src"
+    return 0
+  fi
+  rm -rf "$dst"
+  ln -s "$src" "$dst"
+  echo "  $1: 使用符号链接（零拷贝）"
+}
+
 for d in extensions skills prompts themes tools npm; do
   [ -d "$BUNDLED/$d" ] || continue
+  # 链接模式仅用于「内容固定、整树分发」的两类大目录：npm/ 与 extensions/
+  if [ -n "$LINK_ROOT" ] && { [ "$d" = "npm" ] || [ "$d" = "extensions" ]; }; then
+    if [ "$DRY" = "1" ]; then
+      echo "  [dry] $d/ 将以符号链接接入（零拷贝）"
+      applied=1
+      continue
+    fi
+    if [ "$d" = "npm" ]; then
+      link_dir "npm" "$AGENT_DIR/npm"
+      applied=1
+      continue
+    fi
+    # extensions/：逐个扩展包建链接，保留用户自装扩展的空间
+    mkdir -p "$AGENT_DIR/extensions"
+    for ext in "$BUNDLED/extensions"/*; do
+      [ -d "$ext" ] || continue
+      link_dir "extensions/$(basename "$ext")" "$AGENT_DIR/extensions/$(basename "$ext")"
+    done
+    applied=1
+    continue
+  fi
   if [ "$DRY" = "1" ]; then
     echo "  合并 $d/（仅新增缺失文件）"
   else

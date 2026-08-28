@@ -6,6 +6,7 @@ import type { ProjectRecord } from "@/lib/projects";
 import type { SessionInfo } from "@/lib/types";
 import { useI18n } from "@/hooks/useI18n";
 import { DirectoryPicker } from "./DirectoryPicker";
+import { RemoteConnectWizard } from "./RemoteConnectWizard";
 import { FileExplorer, type FileExplorerHandle } from "./FileExplorer";
 
 declare global {
@@ -108,6 +109,8 @@ interface Props {
   /** Project name for the pending remote session's header badge (e.g.
    *  "[沙盒] 项目名 · /workspace"); null for host mode. */
   pendingProjectLabel?: string | null;
+  /** 项目创建/删除后由侧栏回调，让 AppShell 刷新项目树。 */
+  onProjectsChanged?: () => void;
   /** SINGLE-SOURCE remote-session context (from AppShell; same object the
    *  terminal and file viewer consume). Null for host / no session. */
   remoteSessionProp?: { sessionId: string; label: string } | null;
@@ -409,7 +412,7 @@ function PiWebTitle() {
   );
 }
 
-export function SessionSidebar({ authInfo = null, sessionSpace = "mine", onSessionSpaceChange, selectedSessionId, onSelectSession, onNewSession, initialSessionId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onOpenFile, onFileDeleted, onFileRenamed, explorerRefreshKey, onExplorerRefresh, onAtMention, onAtMentions, onManageSandbox, projectsRefreshKey, pendingRemoteMode, pendingProjectLabel, remoteSessionProp, labPanelNode }: Props) {
+export function SessionSidebar({ authInfo = null, sessionSpace = "mine", onSessionSpaceChange, selectedSessionId, onSelectSession, onNewSession, initialSessionId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onOpenFile, onFileDeleted, onFileRenamed, explorerRefreshKey, onExplorerRefresh, onAtMention, onAtMentions, onManageSandbox, projectsRefreshKey, pendingRemoteMode, pendingProjectLabel, remoteSessionProp, labPanelNode, onProjectsChanged }: Props) {
   const { t } = useI18n();
   const [allSessions, setAllSessions] = useState<SessionInfo[]>([]);
   // Remote-session context comes from AppShell as the SINGLE source of truth
@@ -428,6 +431,7 @@ export function SessionSidebar({ authInfo = null, sessionSpace = "mine", onSessi
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [projectFilter, setProjectFilter] = useState("");
   const [wtFilter, setWtFilter] = useState("");
+  const [showProjectWizard, setShowProjectWizard] = useState(false);
   const [customPathOpen, setCustomPathOpen] = useState(false);
   const [customPathValue, setCustomPathValue] = useState("");
   const [customPathError, setCustomPathError] = useState<string | null>(null);
@@ -856,16 +860,6 @@ export function SessionSidebar({ authInfo = null, sessionSpace = "mine", onSessi
   }, [onSelectSession]);
 
   const [newSessionMode, setNewSessionMode] = useState<"host" | "sandbox" | "local-machine">("host");
-  const handleNewSession = useCallback(() => {
-    if (!selectedCwd && newSessionMode === "host") return;
-    // Generate a temporary UUID client-side — no backend call needed.
-    // Pi will be spawned lazily when the user sends the first message.
-    const tempId = typeof crypto.randomUUID === "function"
-      ? crypto.randomUUID()
-      : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
-    // 沙箱/本机模式不依赖本地 cwd（服务器端使用 stub home）。
-    onNewSession?.(tempId, selectedCwd ?? "/", newSessionMode);
-  }, [selectedCwd, newSessionMode, onNewSession]);
 
   const recentProjects = getRecentProjects(allSessions);
   const showProjectFilter = recentProjects.length > 8;
@@ -915,6 +909,13 @@ export function SessionSidebar({ authInfo = null, sessionSpace = "mine", onSessi
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
+      {showProjectWizard && (
+        <RemoteConnectWizard
+          onClose={() => setShowProjectWizard(false)}
+          onCreated={() => onProjectsChanged?.()}
+        />
+      )}
+
       {customPathOpen && (
         <DirectoryPicker
           busy={customPathValidating}
@@ -939,8 +940,7 @@ export function SessionSidebar({ authInfo = null, sessionSpace = "mine", onSessi
           <div style={{ display: "flex", gap: 6 }}>
             {showTopNewButton && (
             <button
-              onClick={handleNewSession}
-              disabled={!selectedCwd}
+              onClick={() => setShowProjectWizard(true)}
               style={{
                 display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
                 background: "var(--bg-hover)",
@@ -957,7 +957,7 @@ export function SessionSidebar({ authInfo = null, sessionSpace = "mine", onSessi
                 flexShrink: 0,
                 transition: "background 0.12s, color 0.12s, border-color 0.12s",
               }}
-             title={selectedCwd ? t("sidebar.newSessionTitle", { path: selectedCwd }) : t("sidebar.selectProject")}
+             title={t("新建项目")}
               onMouseEnter={(e) => {
                 if (!selectedCwd) return;
                 e.currentTarget.style.background = "var(--bg-selected)";
@@ -974,7 +974,7 @@ export function SessionSidebar({ authInfo = null, sessionSpace = "mine", onSessi
                 <line x1="6" y1="1" x2="6" y2="11" />
                 <line x1="1" y1="6" x2="11" y2="6" />
               </svg>
-              {t("sidebar.new")}
+              {t("新建项目")}
             </button>
             )}
             <button

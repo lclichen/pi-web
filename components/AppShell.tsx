@@ -822,6 +822,7 @@ export function AppShell() {
           setSandboxManager({ projectId: project.id, projectName: project.name, containerId: project.containerId })
         }
         projectsRefreshKey={projectsRefreshKey}
+              onProjectsChanged={() => setProjectsRefreshKey((k) => k + 1)}
         pendingRemoteMode={pendingRemoteSession}
         remoteSessionProp={remoteSessionCtx}
         pendingProjectLabel={

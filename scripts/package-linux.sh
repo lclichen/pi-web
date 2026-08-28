@@ -192,12 +192,12 @@ VERSION="$(node -p "require('$SRC/package.json').version")"
 mkdir -p "$PKG/scripts"
 for f in "$ROOT"/packaging/*; do
   case "$(basename "$f")" in
-    pi|pi-web.sh) cp -a "$f" "$PKG/" ;;
+    pi|pi-web|pi-web.sh) cp -a "$f" "$PKG/" ;;
     *)            cp -a "$f" "$PKG/scripts/" ;;
   esac
 done
 echo "$VERSION" > "$PKG/scripts/VERSION.txt"
-chmod +x "$PKG/pi" "$PKG/pi-web.sh" "$PKG/scripts/"*.sh
+chmod +x "$PKG/pi" "$PKG/pi-web" "$PKG/pi-web.sh" "$PKG/scripts/"*.sh
 
 # ---------------------------------------------------------------------------
 # 7b. 打包 pi 配置模板（扩展/模型接口等配置的规范分发）

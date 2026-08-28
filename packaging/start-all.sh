@@ -260,7 +260,7 @@ start_web() {
 PI_WEB_AUTH=on
 PI_WEB_DATA_DIR=$DATA_DIR/piweb
 PI_WEB_SANDBOX_EXTENSION_PATH=$EXTENSION_DIR
-PI_WEB_LAB_TRAINING=on
+PI_WEB_LAB_TRAINING=off
 EOF
     chmod 600 "$WEB_ENV_FILE"
     warn "WebUI 与沙盒平台共用同一套账号（WebUI 登录即平台登录）。"

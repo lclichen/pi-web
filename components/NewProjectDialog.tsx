@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useI18n } from "@/hooks/useI18n";
 
 interface Props {
   mode: "sandbox" | "local-machine";
@@ -30,10 +31,11 @@ interface ContainerEntry {
 
 /**
  * 新建项目对话框 — 名称必填；沙箱模式额外选择运行环境（公开镜像）、
- * 复用已有容器或新建容器，以及“从我的工作区初始化 /workspace”（云盘单向
+ * 复用已有容器或新建容器，以及“{t("从我的工作区初始化 /workspace")}”（云盘单向
  * seed，仅新建容器时生效）。本机模式只有名称。
  */
 export function NewProjectDialog({ mode, busy, onCancel, onCreate }: Props) {
+  const { t } = useI18n();
   const [name, setName] = useState("");
   const [images, setImages] = useState<ImageEntry[]>([]);
   const [imageId, setImageId] = useState<number | null>(null);
@@ -118,18 +120,18 @@ export function NewProjectDialog({ mode, busy, onCancel, onCreate }: Props) {
       >
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <span style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>
-            {mode === "sandbox" ? "新建沙箱项目" : "新建本机项目"}
+            {mode === "sandbox" ? t("新建沙箱项目") : t("新建本机项目")}
           </span>
           <button type="button" onClick={onCancel} disabled={busy} style={closeBtnStyle}>×</button>
         </div>
 
         <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12, color: "var(--text-muted)" }}>
-          项目名称
+          {t("项目名称")}
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
-            placeholder="如：lab1-hello"
+            placeholder={t("如：lab1-hello")}
             autoFocus
             disabled={busy}
             style={inputStyle}
@@ -138,18 +140,18 @@ export function NewProjectDialog({ mode, busy, onCancel, onCreate }: Props) {
 
         {mode === "sandbox" && (
           <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12, color: "var(--text-muted)" }}>
-            运行环境{loading ? "（加载中…）" : ""}
+            {t("运行环境")}{loading ? t("（加载中…）") : ""}
             <select
               value={imageId ?? ""}
               onChange={(e) => setImageId(Number(e.target.value))}
               disabled={busy || loading || images.length === 0}
               style={inputStyle}
             >
-              {images.length === 0 && <option value="">（平台默认）</option>}
+              {images.length === 0 && <option value="">{t("（平台默认）")}</option>}
               {images.map((i) => (
                 <option key={i.id} value={i.id}>
                   {i.name}
-                  {i.maxPerUser ? `（每人限 ${i.maxPerUser} 个实例）` : ""}
+                  {i.maxPerUser ? t("（每人限 {n} 个实例）", { n: i.maxPerUser }) : ""}
                   {i.defaultResources ? ` · ${i.defaultResources.cpu}C/${i.defaultResources.memoryMb}M/${i.defaultResources.diskGb}G` : ""}
                 </option>
               ))}
@@ -168,7 +170,7 @@ export function NewProjectDialog({ mode, busy, onCancel, onCreate }: Props) {
                   onChange={() => setReuseContainer(false)}
                   disabled={busy}
                 />
-                新建容器{!reuseContainer && imageId != null ? `（${images.find((i) => i.id === imageId)?.name ?? ""}）` : ""}
+                {t("新建容器")}{!reuseContainer && imageId != null ? `（${images.find((i) => i.id === imageId)?.name ?? ""}）` : ""}
               </label>
               <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: reusableContainers.length > 0 ? "pointer" : "default", opacity: reusableContainers.length > 0 ? 1 : 0.5 }}>
                 <input
@@ -177,9 +179,9 @@ export function NewProjectDialog({ mode, busy, onCancel, onCreate }: Props) {
                   disabled={busy || reusableContainers.length === 0}
                   onChange={() => setReuseContainer(true)}
                 />
-                使用已有容器
+                {t("使用已有容器")}
                 {reusableContainers.length === 0 && (
-                  <span style={{ fontSize: 10.5, color: "var(--text-dim)" }}>（暂无可复用的容器）</span>
+                  <span style={{ fontSize: 10.5, color: "var(--text-dim)" }}>{t("（暂无可复用的容器）")}</span>
                 )}
               </label>
               {reuseContainer && (
@@ -189,10 +191,10 @@ export function NewProjectDialog({ mode, busy, onCancel, onCreate }: Props) {
                   disabled={busy || reusableContainers.length === 0}
                   style={{ ...inputStyle, marginLeft: 22 }}
                 >
-                  {!existingContainerId && <option value="">选择容器…</option>}
+                  {!existingContainerId && <option value="">{t("选择容器…")}</option>}
                   {reusableContainers.map((c) => (
                     <option key={c.id} value={c.id}>
-                      #{c.id} {c.name}{c.imageName ? ` · ${c.imageName}` : ""} · {c.status === "running" ? "运行中" : c.status === "stopped" ? "已停止" : c.status}
+                      #{c.id} {c.name}{c.imageName ? ` · ${c.imageName}` : ""} · {c.status === "running" ? t("运行中") : c.status === "stopped" ? t("已停止") : c.status}
                     </option>
                   ))}
                 </select>
@@ -207,11 +209,11 @@ export function NewProjectDialog({ mode, busy, onCancel, onCreate }: Props) {
                 onChange={(e) => setWorkspaceInit(e.target.checked)}
               />
               <span>
-                从我的工作区初始化 /workspace
+                {t("从我的工作区初始化 /workspace")}
                 <span style={{ display: "block", fontSize: 10.5, color: "var(--text-dim)" }}>
                   {reuseContainer
-                    ? "（复用已有容器时不做初始化，保留容器内现有环境）"
-                    : hasWorkspace ? "把云端文件拷入新容器（仅创建时，容器内改动不回写）" : "（暂无工作区，创建后可在「我的工作区」上传）"}
+                    ? t("（复用已有容器时不做初始化，保留容器内现有环境）")
+                    : hasWorkspace ? t("把云端文件拷入新容器（仅创建时，容器内改动不回写）") : t("（暂无工作区，创建后可在「我的工作区」上传）")}
                 </span>
               </span>
             </label>
@@ -221,20 +223,20 @@ export function NewProjectDialog({ mode, busy, onCancel, onCreate }: Props) {
         <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
           {mode === "sandbox"
             ? (reuseContainer
-                ? "复用已有容器：会话在该容器 /workspace 内执行，环境与文件保持原样。"
-                : "创建时自动准备容器（约数秒），会话在容器 /workspace 内执行。")
-            : "项目会话通过本机 Agent 在你配对的工作区内执行。"}
+                ? t("复用已有容器：会话在该容器 /workspace 内执行，环境与文件保持原样。")
+                : t("创建时自动准备容器（约数秒），会话在容器 /workspace 内执行。"))
+            : t("项目会话通过本机 Agent 在你配对的工作区内执行。")}
         </div>
 
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-          <button type="button" onClick={onCancel} disabled={busy} style={secondaryBtn}>取消</button>
+          <button type="button" onClick={onCancel} disabled={busy} style={secondaryBtn}>{t("取消")}</button>
           <button
             type="button"
             onClick={submit}
             disabled={busy || !name.trim() || (mode === "sandbox" && reuseContainer && existingContainerId == null)}
             style={{ ...secondaryBtn, background: "var(--accent)", color: "#fff", borderColor: "var(--accent)", fontWeight: 600 }}
           >
-            {busy ? "创建中…" : "创建"}
+            {busy ? t("创建中…") : t("创建")}
           </button>
         </div>
       </div>

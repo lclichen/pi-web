@@ -1048,7 +1048,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
           <div style={{ display: "flex", gap: 4, padding: "2px 4px 4px", borderBottom: "1px solid var(--border)" }}>
             <button
               onClick={() => { setCreating({ type: "file", dir: cwd }); setCreatingName(""); }}
-              title="新建文件"
+              title={t("新建文件")}
               style={{ flex: 1, height: 22, border: "1px solid var(--border)", borderRadius: 4, background: "var(--bg-panel)", color: "var(--text-muted)", cursor: "pointer", fontSize: 11, display: "flex", alignItems: "center", justifyContent: "center", gap: 3, whiteSpace: "nowrap" }}
             >
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
@@ -1056,7 +1056,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
             </button>
             <button
               onClick={() => { setCreating({ type: "dir", dir: cwd }); setCreatingName(""); }}
-              title="新建文件夹"
+              title={t("新建文件夹")}
               style={{ flex: 1, height: 22, border: "1px solid var(--border)", borderRadius: 4, background: "var(--bg-panel)", color: "var(--text-muted)", cursor: "pointer", fontSize: 11, display: "flex", alignItems: "center", justifyContent: "center", gap: 3, whiteSpace: "nowrap" }}
             >
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>

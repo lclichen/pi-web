@@ -318,7 +318,7 @@ export function AppShell() {
   // tear down and recreate the container PTY on every stats update.
   const remoteSessionCtx = useMemo(
     () => (activeSessionMode && activeSessionMode !== "host" && selectedSession
-      ? { sessionId: selectedSession.id, label: activeSessionMode === "sandbox" ? "沙箱容器" : "本机" }
+      ? { sessionId: selectedSession.id, label: activeSessionMode === "sandbox" ? translate("沙箱容器") : translate("本机") }
       : null),
     [activeSessionMode, selectedSession],
   );
@@ -685,7 +685,7 @@ export function AppShell() {
 
   const handleCloseFileTab = useCallback((tabId: string) => {
     if (tabId === activeFileTabId && activeFileDirty) {
-      const discard = window.confirm("此文件有未保存的修改，关闭将丢弃。确定关闭吗？");
+      const discard = window.confirm(translate("此文件有未保存的修改，关闭将丢弃。确定关闭吗？"));
       if (!discard) return;
       setActiveFileDirty(false);
     }
@@ -826,8 +826,8 @@ export function AppShell() {
         remoteSessionProp={remoteSessionCtx}
         pendingProjectLabel={
           pendingRemoteSession
-            ? newSessionProjectLabel ?? "新会话"
-            : (selectedSession?.mode && selectedSession.mode !== "host" ? (selectedSession.name ? `会话：${selectedSession.name}` : "远程会话") : null)
+            ? newSessionProjectLabel ?? translate("新会话")
+            : (selectedSession?.mode && selectedSession.mode !== "host" ? (selectedSession.name ? translate("会话：{name}", { name: selectedSession.name }) : translate("远程会话")) : null)
         }
         labPanelNode={labTrainingEnabled ? (
           <LabTrainingSidePanel
@@ -1159,7 +1159,7 @@ export function AppShell() {
             <button
               type="button"
               onClick={() => setMyWorkspaceOpen(true)}
-              title="我的工作区：云端文件留存（建项目时可初始化 /workspace）"
+              title={translate("我的工作区：云端文件留存（建项目时可初始化 /workspace）")}
               style={{
                 display: "flex", alignItems: "center", gap: 6, height: "100%",
                 padding: "0 12px", background: "none",
@@ -1176,14 +1176,14 @@ export function AppShell() {
                 <polyline points="8 16 12 12 16 16" />
                 <line x1="12" y1="12" x2="12" y2="21" />
               </svg>
-              <span>我的工作区</span>
+              <span>{translate("我的工作区")}</span>
             </button>
           )}
           {webUser && webUser !== "loading" && (
             <button
               type="button"
               onClick={() => setSandboxManager({})}
-              title="沙箱容器管理（新建/启停/删除/快照/绑定项目）"
+              title={translate("沙箱容器管理（新建/启停/删除/快照/绑定项目）")}
               style={{
                 display: "flex", alignItems: "center", gap: 6, height: "100%",
                 padding: "0 12px", background: "none",
@@ -1196,14 +1196,14 @@ export function AppShell() {
               onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-muted)"; e.currentTarget.style.background = "none"; }}
             >
               <span style={{ width: 8, height: 8, borderRadius: 2, border: "1.5px solid currentColor", flexShrink: 0 }} />
-              <span>沙箱容器</span>
+              <span>{translate("沙箱容器")}</span>
             </button>
           )}
           {platformConsoleUrl && webUser && webUser !== "loading" && webUser.role === "admin" && (
             <button
               type="button"
               onClick={() => window.open(platformConsoleUrl, "_blank", "noopener")}
-              title={`沙盒平台管理台（镜像/用户/配额/LLM）：${platformConsoleUrl}`}
+              title={translate("沙盒平台管理台（镜像/用户/配额/LLM）：{url}", { url: platformConsoleUrl })}
               style={{
                 display: "flex", alignItems: "center", gap: 6, height: "100%",
                 padding: "0 12px", background: "none",
@@ -1220,7 +1220,7 @@ export function AppShell() {
                 <line x1="8" y1="21" x2="16" y2="21" />
                 <line x1="12" y1="17" x2="12" y2="21" />
               </svg>
-              <span>平台管理</span>
+              <span>{translate("平台管理")}</span>
             </button>
           )}
           {showChat && projectTrust?.requiresTrust && !projectTrust.trusted && (
@@ -1549,7 +1549,7 @@ export function AppShell() {
                   body: JSON.stringify({ labTraining: next }),
                 }).then((r) => { if (!r.ok) setLabTrainingEnabled(!next); }).catch(() => setLabTrainingEnabled(!next));
               }}
-              title={labTrainingEnabled ? "教学面板：已开启（点击对全员关闭）" : "教学面板：已关闭（点击对全员开启）"}
+              title={labTrainingEnabled ? translate("教学面板：已开启（点击对全员关闭）") : translate("教学面板：已关闭（点击对全员开启）")}
               aria-pressed={labTrainingEnabled}
               style={{
                 display: "flex", alignItems: "center", gap: 6, height: "100%",
@@ -1565,15 +1565,15 @@ export function AppShell() {
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
                 <path d="M22 10v6M2 10l10-5 10 5-10 5z" /><path d="M6 12v5c3 3 9 3 12 0v-5" />
               </svg>
-              {!isMobile && <span>教学</span>}
+              {!isMobile && <span>{translate("教学")}</span>}
             </button>
           )}
           {webUser && webUser !== "loading" && (
             <button
               type="button"
               onClick={async () => { await fetch("/api/webauth/logout", { method: "POST" }).catch(() => {}); window.location.href = "/login"; }}
-              title={`登出（${webUser.username}）`}
-              aria-label={`登出（${webUser.username}）`}
+              title={translate("登出（{name}）", { name: webUser.username })}
+              aria-label={translate("登出（{name}）", { name: webUser.username })}
               style={{
                 display: "flex", alignItems: "center", gap: 6, height: "100%",
                 padding: "0 10px", background: "none",
@@ -1589,7 +1589,7 @@ export function AppShell() {
                 <polyline points="16 17 21 12 16 7" />
                 <line x1="21" y1="12" x2="9" y2="12" />
               </svg>
-              {!isMobile && <span>登出</span>}
+              {!isMobile && <span>{translate("登出")}</span>}
             </button>
           )}
           <button
@@ -1948,7 +1948,7 @@ export function AppShell() {
               <div
                 onMouseDown={startTerminalDrawerResize}
                 onDoubleClick={() => setTerminalDrawerHeight(280)}
-                title="拖动调整高度（双击复位）"
+                title={translate("拖动调整高度（双击复位）")}
                 style={{
                   height: 5, cursor: "row-resize", background: "var(--bg-panel)",
                   borderBottom: "1px solid var(--border)", flexShrink: 0,
@@ -1957,7 +1957,7 @@ export function AppShell() {
               <div style={{ height: terminalDrawerOpen ? `calc(100% - 6px)` : 0 }}>
                 {pendingRemoteSession ? (
                   <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-dim)", fontSize: 12, padding: 20, textAlign: "center", background: "var(--bg)" }}>
-                    {pendingRemoteSession === "sandbox" ? "沙箱" : "本机"}会话创建后（发送第一条消息）即可使用远程终端
+                    {translate("{kind}会话创建后（发送第一条消息）即可使用远程终端", { kind: pendingRemoteSession === "sandbox" ? translate("沙箱") : translate("本机") })}
                   </div>
                 ) : (
                   <WorkspaceTerminal
@@ -2014,7 +2014,7 @@ export function AppShell() {
         }}>
           <button
             onClick={() => setRightPanelMode("files")}
-            title="文件"
+            title={translate("文件")}
             style={{
               height: "100%", padding: "0 10px", border: "none",
               background: "transparent",
@@ -2025,7 +2025,7 @@ export function AppShell() {
           >
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: "text-bottom", marginRight: 3 }}>
               <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><polyline points="13 2 13 9 20 9" />
-            </svg>文件
+            </svg>{translate("文件")}
           </button>
           <button
             onClick={() => { setRightPanelMode("git"); setRightPanelOpen(true); }}
@@ -2044,7 +2044,7 @@ export function AppShell() {
           </button>
           <button
             onClick={() => { setRightPanelMode("agents"); setRightPanelOpen(true); }}
-            title="子智能体目录"
+            title={translate("子智能体目录")}
             style={{
               height: "100%", padding: "0 10px", border: "none",
               background: "transparent",
@@ -2055,11 +2055,11 @@ export function AppShell() {
           >
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: "text-bottom", marginRight: 3 }}>
               <rect x="4" y="8" width="16" height="12" rx="2" /><path d="M12 8V4" /><circle cx="9" cy="14" r="0.5" /><circle cx="15" cy="14" r="0.5" />
-            </svg>智能体
+            </svg>{translate("智能体")}
           </button>
           <button
             onClick={() => { setRightPanelMode("plan"); setRightPanelOpen(true); }}
-            title="计划"
+            title={translate("计划")}
             style={{
               height: "100%", padding: "0 10px", border: "none",
               background: "transparent",
@@ -2070,7 +2070,7 @@ export function AppShell() {
           >
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: "text-bottom", marginRight: 3 }}>
               <path d="M9 4h6a2 2 0 0 1 2 2v14H7V6a2 2 0 0 1 2-2Z" /><path d="M7 20h10" /><path d="M10 8h4" />
-            </svg>计划
+            </svg>{translate("计划")}
           </button>
           <div style={{ flex: 1, overflow: "hidden" }}>
             {rightPanelMode === "files" && (
@@ -2102,7 +2102,7 @@ export function AppShell() {
             <PlanPanel cwd={(activeCwd ?? selectedSession?.cwd ?? newSessionCwd) ?? undefined} remote={remoteSessionCtx} />
           ) : rightPanelMode === "agents" && !selectedSession?.id ? (
             <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-dim)", fontSize: 12 }}>
-              选择或创建一个会话后可查看子智能体调用记录
+              {translate("选择或创建一个会话后可查看子智能体调用记录")}
             </div>
           ) : rightPanelMode === "git" ? (
             <GitPanel

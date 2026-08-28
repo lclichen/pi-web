@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useI18n } from "@/hooks/useI18n";
 import type { SubagentCall } from "@/hooks/useAgentSession";
 import { encodeFilePathForApi } from "@/lib/file-paths";
 
@@ -29,6 +30,7 @@ interface Props {
 export function ChatStatusWidget({
   cwd, subagentCalls, onOpenAgents, onOpenPlan, onToggleTerminal, planActive, terminalActive, remote = null,
 }: Props) {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const [plan, setPlan] = useState<{ path: string; summary: string } | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -68,7 +70,7 @@ export function ChatStatusWidget({
         ? `/api/remotefs/${encodeFilePathForApi(path.replace(/^\//, ""))}${src}&type=read`
         : `/api/files/${encodeFilePathForApi(path)}?type=read`;
 
-    const apply = (path: string, content: string) => setPlan({ path, summary: planSummary(content) });
+    const apply = (path: string, content: string) => setPlan({ path, summary: planSummary(content, t("计划")) });
 
     const readCandidate = async (index: number): Promise<void> => {
       if (cancelled || index >= candidates.length) {
@@ -123,7 +125,7 @@ export function ChatStatusWidget({
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         aria-haspopup="menu"
-        title="会话状态：计划 / 智能体 / 终端"
+        title={t("会话状态：计划 / 智能体 / 终端")}
         style={{
           display: "flex", alignItems: "center", gap: 6,
           maxWidth: 320, overflow: "hidden",
@@ -144,7 +146,7 @@ export function ChatStatusWidget({
         {plan ? (
           <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{plan.summary}</span>
         ) : (
-          <span>状态</span>
+          <span>{t("状态")}</span>
         )}
         {runningCount > 0 && <span style={{ color: "var(--accent)", fontWeight: 700, flexShrink: 0 }}>{runningCount}</span>}
         <svg
@@ -178,30 +180,30 @@ export function ChatStatusWidget({
           ) : null}
           <Row
             onClick={() => { onOpenAgents(); setOpen(false); }}
-            title="子智能体目录"
+            title={t("子智能体目录")}
             active={false}
             icon={runningCount > 0
               ? <span className="chat-status-pulse" style={{ width: 8, height: 8, borderRadius: 999, background: "var(--accent)" }} />
               : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="4" y="8" width="16" height="12" rx="2" /><path d="M12 8V4" /><circle cx="9" cy="14" r="0.6" /><circle cx="15" cy="14" r="0.6" /></svg>}
-            label="智能体"
-            trailing={runningCount > 0 ? <span style={{ color: "var(--accent)", fontWeight: 700 }}>{runningCount} 运行中</span> : undefined}
+            label={t("智能体")}
+            trailing={runningCount > 0 ? <span style={{ color: "var(--accent)", fontWeight: 700 }}>{t("{n} 运行中", { n: runningCount })}</span> : undefined}
           />
           {onToggleTerminal && (
             <Row
               onClick={() => { onToggleTerminal(); setOpen(false); }}
-              title="底部终端（工作区 shell）"
+              title={t("底部终端（工作区 shell）")}
               active={terminalActive}
               icon={<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="4 17 10 11 4 5" /><line x1="12" y1="19" x2="20" y2="19" /></svg>}
-              label="终端"
-              trailing={terminalActive ? <span style={{ color: "var(--accent)", fontWeight: 600 }}>已打开</span> : undefined}
+              label={t("终端")}
+              trailing={terminalActive ? <span style={{ color: "var(--accent)", fontWeight: 600 }}>{t("已打开")}</span> : undefined}
             />
           )}
           <Row
             disabled
-            title="等待 TODO 工具接入"
+            title={t("等待 TODO 工具接入")}
             icon={<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 6h16M4 12h10M4 18h7" /></svg>}
-            label="进程"
-            trailing={<span style={{ fontSize: 10 }}>待接入</span>}
+            label={t("进程")}
+            trailing={<span style={{ fontSize: 10 }}>{t("待接入")}</span>}
           />
         </div>
       )}
@@ -244,7 +246,7 @@ function Row({ onClick, title, icon, label, trailing, active, disabled }: {
 }
 
 /** First meaningful line of the plan file, trimmed for the chip. */
-function planSummary(content: string): string {
+function planSummary(content: string, fallback: string): string {
   for (const rawLine of content.split("\n")) {
     const line = rawLine.trim();
     if (!line || line.startsWith("#") || line.startsWith("---")) continue;
@@ -255,5 +257,5 @@ function planSummary(content: string): string {
     const text = firstHeading.replace(/^#+\s*/, "").trim();
     return text.length > 60 ? text.slice(0, 60) + "…" : text;
   }
-  return "计划";
+  return fallback;
 }

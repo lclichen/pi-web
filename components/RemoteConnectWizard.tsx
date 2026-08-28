@@ -21,6 +21,9 @@ type Method = "sandbox" | "local" | "ssh";
 
 interface Props {
   onClose: () => void;
+  /** 管理员：① 里追加「打开服务器目录」入口（Host 模式）。 */
+  isAdmin?: boolean;
+  onOpenServerDirectory?: () => void;
   /** 项目创建成功（沙盒在③完成创建；本地在④完成创建）后回调，参数为项目名。 */
   onCreated: (mode: Mode, name: string) => void;
 }
@@ -32,7 +35,7 @@ const STEPS: Array<{ n: Step; label: string }> = [
   { n: 4, label: "选择目录" },
 ];
 
-export function RemoteConnectWizard({ onClose, onCreated }: Props) {
+export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerDirectory }: Props) {
   const { t } = useI18n();
   const [step, setStep] = useState<Step>(1);
   const [method, setMethod] = useState<Method | null>(null);
@@ -137,7 +140,7 @@ export function RemoteConnectWizard({ onClose, onCreated }: Props) {
     }
   }, [localName, localDir, onCreated, onClose]);
 
-  const methodCards: Array<{ id: Method; title: string; sub: string; icon: React.ReactNode; disabled?: boolean; soon?: boolean }> = [
+  const methodCards: Array<{ id: string; title: string; sub: string; icon: React.ReactNode; disabled?: boolean; soon?: boolean }> = [
     {
       id: "sandbox", title: t("连接沙盒"), sub: t("平台容器 · 镜像可选"),
       icon: (
@@ -152,6 +155,14 @@ export function RemoteConnectWizard({ onClose, onCreated }: Props) {
       icon: (
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
           <rect x="2" y="4" width="20" height="12" rx="2" /><path d="M8 20h8M12 16v4" />
+        </svg>
+      ),
+    },
+    {
+      id: "server", title: t("打开服务器目录"), sub: t("pi-web 服务器上的目录（Host 模式）"),
+      icon: (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
         </svg>
       ),
     },
@@ -203,11 +214,11 @@ export function RemoteConnectWizard({ onClose, onCreated }: Props) {
               <h2 style={{ margin: "0 0 4px", fontSize: 17, color: "var(--text)" }}>{t("选择连接方式")}</h2>
               <p style={{ margin: "0 0 18px", fontSize: 12.5, color: "var(--text-dim)" }}>{t("选择进入当前工作区的连接方式，然后继续填写对应的连接配置。")}</p>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 14 }}>
-                {methodCards.map((c) => (
+                {methodCards.filter((c) => (c as { id: string }).id !== "server" || isAdmin).map((c) => (
                   <button
                     key={c.id}
                     disabled={c.disabled}
-                    onClick={() => { setMethod(c.id as Method); setStep(2); }}
+                    onClick={() => { if (c.id === "server") { onOpenServerDirectory?.(); onClose(); } else { setMethod(c.id as Method); setStep(2); } }}
                     style={{
                       textAlign: "left", padding: "18px 16px", borderRadius: 10,
                       border: `1px solid ${c.disabled ? "var(--border)" : "var(--accent)"}`,

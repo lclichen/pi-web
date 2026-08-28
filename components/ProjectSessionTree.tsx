@@ -7,7 +7,6 @@ import type { ProjectRecord } from "@/lib/projects";
 import { formatRelativeTime } from "@/lib/subagent-shared";
 import { ProjectSettingsDialog } from "./ProjectSettingsDialog";
 import { ProjectImportDialog } from "./ProjectImportDialog";
-import { RemoteConnectWizard } from "./RemoteConnectWizard";
 
 interface Props {
   sessions: SessionInfo[];
@@ -150,19 +149,6 @@ export function ProjectSessionTree({
     setMenu(null);
   };
 
-  // 新建项目胶囊菜单与远程连接向导（创建逻辑在 RemoteConnectWizard 内）。
-  const [showCreateMenu, setShowCreateMenu] = useState(false);
-  const [showWizard, setShowWizard] = useState(false);
-  const createMenuRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    if (!showCreateMenu) return;
-    const onDown = (e: MouseEvent) => {
-      if (createMenuRef.current && !createMenuRef.current.contains(e.target as Node)) setShowCreateMenu(false);
-    };
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [showCreateMenu]);
-
   // 项目快照槽（游戏存档制：保存/恢复/删除，服务端做 FIFO 淘汰）。
   const [menuBusy, setMenuBusy] = useState(false);
   const projectSnapshot = async (project: ProjectRecord, action: "save" | "restore" | "delete", snapshotId?: number) => {
@@ -302,42 +288,6 @@ export function ProjectSessionTree({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 2, padding: "6px 4px" }}>
-      {/* 新建项目入口：单按钮弹胶囊菜单（远程连接向导 / 打开服务器目录） */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "0 4px 8px", position: "relative" }}>
-        <div style={{ position: "relative" }} ref={createMenuRef}>
-          <button type="button" onClick={() => setShowCreateMenu((v) => !v)} style={{ ...createBtn, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-            {t("+ 新建项目")}
-            <svg width="8" height="8" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ transform: showCreateMenu ? "rotate(180deg)" : "none", transition: "transform 0.15s" }}>
-              <polyline points="2 3.5 5 6.5 8 3.5" />
-            </svg>
-          </button>
-          {showCreateMenu && (
-            <div
-              role="menu"
-              style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, zIndex: 60, background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: 8, boxShadow: "0 8px 24px rgba(0,0,0,0.18)", overflow: "hidden", padding: 3 }}
-            >
-              <button type="button" role="menuitem" onClick={() => { setShowCreateMenu(false); setShowWizard(true); }} style={menuItemStyle}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="12" rx="2" /><path d="M8 20h8M12 16v4" /></svg>
-                {t("远程连接")}
-              </button>
-              {isAdmin && onOpenServerDirectory && (
-                <button type="button" role="menuitem" onClick={() => { setShowCreateMenu(false); onOpenServerDirectory(); }} style={menuItemStyle}>
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg>
-                  {t("打开服务器目录")}
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {showWizard && (
-        <RemoteConnectWizard
-          onClose={() => setShowWizard(false)}
-          onCreated={() => loadProjects()}
-        />
-      )}
-
       {/* 全局会话搜索 */}
       <div style={{ padding: "0 4px 8px" }}>
         <input
@@ -782,14 +732,3 @@ function ProjectSessionRow({
   );
 }
 
-const menuItemStyle = {
-  display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "8px 10px",
-  background: "transparent", border: "none", borderRadius: 6, color: "var(--text)",
-  fontSize: 12.5, cursor: "pointer", textAlign: "left",
-} as const;
-
-const createBtn = {
-  flex: 1, height: 28, borderRadius: 7, fontSize: 11, cursor: "pointer",
-  background: "var(--bg)", color: "var(--text-muted)", border: "1px solid var(--border)",
-  whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-} as const;

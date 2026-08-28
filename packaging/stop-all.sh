@@ -14,7 +14,11 @@ while [ -L "$SOURCE" ]; do
 done
 SCRIPTS="$(cd "$(dirname "$SOURCE")" && pwd)"
 PKG="$(cd "$SCRIPTS/.." && pwd)"
-RUN_DIR="$PKG/run"
+RUN_DIR="${AMEDAC_RUN_DIR:-$PKG/run}"
+# 端口兜底顺序：环境变量 > run/ports.env（自动探测的记录）> 默认值
+PORTS_FILE="$RUN_DIR/ports.env"
+PLATFORM_PORT="${PLATFORM_PORT:-$(grep -E '^PLATFORM_PORT=' "$PORTS_FILE" 2>/dev/null | cut -d= -f2 | tr -d '[:space:]')}"
+WEB_PORT="${WEB_PORT:-$(grep -E '^WEB_PORT=' "$PORTS_FILE" 2>/dev/null | cut -d= -f2 | tr -d '[:space:]')}"
 PLATFORM_PORT="${PLATFORM_PORT:-3000}"
 WEB_PORT="${WEB_PORT:-30141}"
 

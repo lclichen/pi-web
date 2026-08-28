@@ -91,19 +91,32 @@ bash scripts/package-appimage.sh       # 构建机；复用 package-linux.sh 产
 # → dist/amedac.ai-x64.AppImage (约 215MB)
 ```
 
-目标机上直接执行即可（无 FUSE 的机器用 `--appimage-extract-and-run` 后缀）：
+代码与运行时**留在只读挂载内就地执行**（标准 AppImage 方式，不再整包释放到家目录）；
+可写内容收敛到 `${XDG_DATA_HOME:-~/.local/share}/amedac/`（可用 `AMEDAC_HOME` 指到任意
+外部数据目录，如 NAS 数据盘）：
 
-```bash
-./amedac.ai-x64.AppImage            # 启动服务并打开浏览器（幂等）
-./amedac.ai-x64.AppImage status     # 服务状态
-./amedac.ai-x64.AppImage stop       # 停止全部
+```
+amedac/
+├── config/   platform.env、piweb.env（首启生成，可手改；含 admin-password.txt）
+├── data/     平台 sqlite、容器 overlay、WebUI 数据
+├── run/      pid 与 ports.env（自动选中的端口）
+└── logs/     服务日志
 ```
 
-原理与数据位置：AppImage 本体只读，首启时自动展开完整分发包到
-`${XDG_DATA_HOME:-~/.local/share}/amedac/app`，数据库/配置在旁边的 `data/` 与
-`app/sandbox/*.env`——升级（换新版本 AppImage 重跑）会自动重展开新包并还原用户配置。
-可用环境变量 `AMEDAC_HOME` 改这个家目录，`PLATFORM_PORT/WEB_PORT` 改端口。
-注意磁盘占用：展开后约 1GB。
+命令面（无 FUSE 的机器整体加 `--appimage-extract-and-run` 后缀，行为一致）：
+
+```bash
+./amedac.ai-x64.AppImage              # 启动 pi CLI（参数透传给 pi；不拉起后台服务）
+./amedac.ai-x64.AppImage --web        # 启动平台+WebUI（自动端口）并打开浏览器
+./amedac.ai-x64.AppImage status       # 服务状态
+./amedac.ai-x64.AppImage stop         # 停止全部
+```
+
+端口全自动：默认从 3000/30141 起，被占用就向上探测空闲端口，结果记忆在
+`run/ports.env`（下次优先复用）。要固定端口，在 `config/platform.env` 加 `PORT=xxxx`
+或 `config/piweb.env` 加 `PI_WEB_PLATFORM_URL=http://…`，显式配置优先于自动探测；
+WebUI 的平台地址默认跟随探测到的平台端口。桌面双击图标 = `--web`（起服务 + 开浏览器）。
+旧版（v1，曾整包展开约 1GB 到家目录）首次运行 v2 时自动迁移配置并清理旧目录，数据不丢。
 
 ### 方式 B：tar.gz 目录部署
 

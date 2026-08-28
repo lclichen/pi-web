@@ -64,14 +64,14 @@ warn() { printf '\033[1;33m!!\033[0m %s\n' "$*"; }
 port_free() { # port -> 0/1（用打包内置 node 探测，跨发行版可靠）
   "$NODE_BIN" -e 'const n=require("net").createServer();n.once("error",()=>process.exit(1));n.listen(Number(process.argv[1]),"0.0.0.0",()=>n.close(()=>process.exit(0)))' "$1" >/dev/null 2>&1
 }
-env_file_has_port() { # file varname -> 打印固定值或空（仅认用户手写的行）
-  [ -f "$1" ] && grep -E "^$2=" "$1" 2>/dev/null | head -n 1 | cut -d= -f2 | tr -d '[:space:]'
+env_file_has_port() { # file namesRegex -> 打印固定值或空（仅认用户手写的行）
+  [ -f "$1" ] && grep -E "^($2)=" "$1" 2>/dev/null | head -n 1 | cut -d= -f2 | tr -d '[:space:]'
 }
-resolve_port() { # <名字 PLATFORM_PORT|WEB_PORT> <偏好端口> <env文件> -> 打印端口
-  local name="$1" prefer="$2" envfile="$3" p
+resolve_port() { # <名字> <偏好端口> <env文件> <env文件里的别名正则> -> 打印端口
+  local name="$1" prefer="$2" envfile="$3" aliasre="$4" p
   p="${!name:-}"
   if [ -n "$p" ]; then printf '%s' "$p"; return 0; fi                      # ① 环境变量
-  p="$(env_file_has_port "$envfile" "$name")"
+  p="$(env_file_has_port "$envfile" "$aliasre")"
   if [ -n "$p" ]; then printf '%s' "$p"; return 0; fi                      # ② env 文件显式固定
   local recfile="$RUN_DIR/ports.env"
   p="$(env_file_has_port "$recfile" "$name")"
@@ -117,9 +117,9 @@ pid_on_port() { # port -> pid 或空
 # 从偏好端口向上探测。解析完成后立即落盘 ports.env，供 AppRun 开浏览器、
 # stop/status 兜底使用。
 mkdir -p "$RUN_DIR"
-PLATFORM_PORT="$(resolve_port PLATFORM_PORT 3000 "$PLATFORM_ENV_FILE")"
+PLATFORM_PORT="$(resolve_port PLATFORM_PORT 3000 "$PLATFORM_ENV_FILE" 'PORT|PLATFORM_PORT')"
 if [ "$START_WEB" = "1" ]; then
-  WEB_PORT="$(resolve_port WEB_PORT 30141 "$WEB_ENV_FILE")"
+  WEB_PORT="$(resolve_port WEB_PORT 30141 "$WEB_ENV_FILE" 'PORT|WEB_PORT')"
 fi
 printf 'PLATFORM_PORT=%s\nWEB_PORT=%s\n' "$PLATFORM_PORT" "${WEB_PORT:-}" > "$RUN_DIR/ports.env"
 

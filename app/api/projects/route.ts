@@ -30,7 +30,7 @@ export async function POST(req: Request) {
   if (identity.session.user.role !== "admin" && identity.session.user.role !== "user") {
     return NextResponse.json({ error: "无权创建项目" }, { status: 403 });
   }
-  let body: { name?: unknown; mode?: unknown; containerId?: unknown; seedFromProjectId?: unknown; imageId?: unknown; workspaceId?: unknown };
+  let body: { name?: unknown; mode?: unknown; containerId?: unknown; seedFromProjectId?: unknown; imageId?: unknown; workspaceId?: unknown; workdir?: unknown };
   try {
     body = (await req.json()) as typeof body;
   } catch {
@@ -44,6 +44,7 @@ export async function POST(req: Request) {
     ...(typeof body.containerId === "number" ? { containerId: body.containerId } : {}),
     ...(typeof body.imageId === "number" ? { imageId: body.imageId } : {}),
     ...(typeof body.seedFromProjectId === "string" ? { seedFromProjectId: body.seedFromProjectId } : {}),
+    ...(typeof body.workdir === "string" && body.workdir ? { workdir: body.workdir } : {}),
   });
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
 

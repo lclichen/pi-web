@@ -5,6 +5,8 @@ import { useI18n } from "@/hooks/useI18n";
 
 interface Props {
   mode: "sandbox" | "local-machine";
+  /** 向导内嵌模式：去掉固定遮罩，直接渲染卡片内容。 */
+  embedded?: boolean;
   busy: boolean;
   onCancel: () => void;
   onCreate: (input: { name: string; imageId?: number; workspaceInit: boolean; existingContainerId?: number }) => void;
@@ -34,7 +36,7 @@ interface ContainerEntry {
  * 复用已有容器或新建容器，以及“{t("从我的工作区初始化 /workspace")}”（云盘单向
  * seed，仅新建容器时生效）。本机模式只有名称。
  */
-export function NewProjectDialog({ mode, busy, onCancel, onCreate }: Props) {
+export function NewProjectDialog({ mode, busy, onCancel, onCreate, embedded }: Props) {
   const { t } = useI18n();
   const [name, setName] = useState("");
   const [images, setImages] = useState<ImageEntry[]>([]);
@@ -103,19 +105,19 @@ export function NewProjectDialog({ mode, busy, onCancel, onCreate }: Props) {
 
   return (
     <div
-      onClick={(e) => { if (e.target === e.currentTarget) onCancel(); }}
-      style={{
+      onClick={embedded ? undefined : (e) => { if (e.target === e.currentTarget) onCancel(); }}
+      style={embedded ? { display: "flex", flexDirection: "column", gap: 12 } : {
         position: "fixed", inset: 0, zIndex: 1180, display: "flex",
         alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.4)",
       }}
     >
       <div
         role="dialog"
-        aria-modal="true"
+        aria-modal={embedded ? undefined : true}
         style={{
-          width: "min(440px, 92vw)", display: "flex", flexDirection: "column", gap: 12,
-          padding: "20px 22px", borderRadius: 12,
-          background: "var(--bg-panel)", border: "1px solid var(--border)",
+          width: embedded ? "100%" : "min(440px, 92vw)", display: "flex", flexDirection: "column", gap: 12,
+          padding: embedded ? 0 : "20px 22px", borderRadius: 12,
+          background: "var(--bg-panel)", border: embedded ? "none" : "1px solid var(--border)",
         }}
       >
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>

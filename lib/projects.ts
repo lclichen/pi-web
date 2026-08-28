@@ -29,6 +29,8 @@ export interface ProjectRecord {
   containerId?: number;
   /** Sandbox: image chosen at creation (duplicates carry it; environment identity). */
   imageId?: number;
+  /** Local-machine: the project working directory on the user's machine (relay-side path). */
+  workdir?: string;
   /** Game-save slots (sandbox): snapshot save points, newest first, ≤2. */
   snapshotSlots?: Array<{ id: number; name: string; createdAt: number }>;
 }
@@ -140,6 +142,8 @@ export function createProject(input: {
   containerId?: number;
   imageId?: number;
   seedFromProjectId?: string;
+  /** Local-machine mode: the project's working directory on the user's machine. */
+  workdir?: string;
 }): { ok: true; project: ProjectRecord } | { ok: false; error: string } {
   const name = input.name.trim();
   if (!name || name.length > 64) return { ok: false, error: "项目名不能为空且不超过 64 字符" };
@@ -162,6 +166,7 @@ export function createProject(input: {
     pinnedSessions: [],
     ...(input.mode === "sandbox" && input.containerId !== undefined ? { containerId: input.containerId } : {}),
     ...(input.mode === "sandbox" && input.imageId !== undefined ? { imageId: input.imageId } : {}),
+    ...(input.mode === "local-machine" && input.workdir ? { workdir: input.workdir } : {}),
   };
 
   const home = ensureProjectHome(project);
@@ -220,7 +225,7 @@ export function createProject(input: {
 
 export function updateProject(
   projectId: string,
-  patch: { name?: string; containerId?: number | null; pinSessionId?: string; unpinSessionId?: string; snapshotSlots?: Array<{ id: number; name: string; createdAt: number }> },
+  patch: { name?: string; containerId?: number | null; workdir?: string; pinSessionId?: string; unpinSessionId?: string; snapshotSlots?: Array<{ id: number; name: string; createdAt: number }> },
 ): { ok: true; project: ProjectRecord } | { ok: false; error: string } {
   const project = store().data.projects[projectId];
   if (!project) return { ok: false, error: "项目不存在" };
@@ -228,6 +233,11 @@ export function updateProject(
     const name = patch.name.trim();
     if (!name || name.length > 64) return { ok: false, error: "项目名不能为空且不超过 64 字符" };
     project.name = name;
+  }
+  if (patch.workdir !== undefined && project.mode === "local-machine") {
+    const dir = patch.workdir.trim();
+    if (dir) project.workdir = dir;
+    else delete project.workdir;
   }
   if (patch.containerId !== undefined && project.mode === "sandbox") {
     if (patch.containerId === null) delete project.containerId;

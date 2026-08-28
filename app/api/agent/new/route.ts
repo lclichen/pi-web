@@ -156,7 +156,11 @@ export async function POST(req: Request) {
           makeEnvironmentInfoExtension({ mode: "local-machine", username: user.username, projectName: project.name }),
         ];
       }
-      effectiveCwd = home;
+      // 本机项目：向导"选择目录"步骤绑定的本机工作目录优先。该路径在用户
+      // 机器上（relay 端），服务端不做存在性校验；未绑定时回落到默认本机
+      // 工作区（relay 端懒创建）。
+      const boundWorkdir = project.mode === "local-machine" ? project.workdir : undefined;
+      effectiveCwd = boundWorkdir || home;
     } else if (mode === "sandbox") {
       if (!process.env.PI_WEB_PLATFORM_URL) {
         return NextResponse.json({ error: "沙箱模式未配置（缺少 PI_WEB_PLATFORM_URL）" }, { status: 400 });

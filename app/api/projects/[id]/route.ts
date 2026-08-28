@@ -113,6 +113,7 @@ export async function PATCH(req: Request, ctx: RouteCtx) {
     ...(body.containerId !== undefined && (body.containerId === null || typeof body.containerId === "number")
       ? { containerId: body.containerId as number | null }
       : {}),
+    ...(typeof body.workdir === "string" ? { workdir: body.workdir } : {}),
     ...(typeof body.pinSessionId === "string" ? { pinSessionId: body.pinSessionId } : {}),
     ...(typeof body.unpinSessionId === "string" ? { unpinSessionId: body.unpinSessionId } : {}),
   });

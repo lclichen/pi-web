@@ -7,7 +7,7 @@ import type { ProjectRecord } from "@/lib/projects";
 import { formatRelativeTime } from "@/lib/subagent-shared";
 import { ProjectSettingsDialog } from "./ProjectSettingsDialog";
 import { ProjectImportDialog } from "./ProjectImportDialog";
-import { NewProjectDialog } from "./NewProjectDialog";
+import { RemoteConnectWizard } from "./RemoteConnectWizard";
 
 interface Props {
   sessions: SessionInfo[];
@@ -150,51 +150,18 @@ export function ProjectSessionTree({
     setMenu(null);
   };
 
-  // 建项目期间禁用入口（沙盒项目要同步创建容器，耗时数秒；连点会
-  // 一次性创建多个容器）。名称/镜像/工作区初始化在 NewProjectDialog 里选。
-  const [creating, setCreating] = useState(false);
-
-  const createProject = async (mode: "sandbox" | "local-machine", input: { name: string; imageId?: number; workspaceInit?: boolean; existingContainerId?: number }) => {
-    if (creating) return;
-    setCreating(true);
-    try {
-      // 工作区初始化：把默认工作区的文件 seed 进新容器的 /workspace。
-      let workspaceId: number | undefined;
-      if (mode === "sandbox" && input.workspaceInit) {
-        if (myWorkspaceId == null) {
-          const res = await fetch("/api/workspaces");
-          const d = (await res.json().catch(() => ({}))) as { workspaces?: Array<{ id: number }> };
-          workspaceId = d.workspaces?.[0]?.id;
-        } else {
-          workspaceId = myWorkspaceId;
-        }
-      }
-      const res = await fetch("/api/projects", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: input.name,
-          mode,
-          ...(input.imageId != null ? { imageId: input.imageId } : {}),
-          ...(workspaceId != null ? { workspaceId } : {}),
-          ...(input.existingContainerId != null ? { containerId: input.existingContainerId } : {}),
-        }),
-      });
-      const data = await res.json().catch(() => ({})) as { error?: string };
-      if (!res.ok) {
-        window.alert(data?.error ?? t("创建失败：HTTP {code}", { code: res.status }));
-        return;
-      }
-      setNewDialog(null);
-    } catch (e) {
-      window.alert(e instanceof Error ? e.message : String(e));
-      return;
-    } finally {
-      setCreating(false);
-    }
-    loadProjects();
-    loadContainers();
-  };
+  // 新建项目胶囊菜单与远程连接向导（创建逻辑在 RemoteConnectWizard 内）。
+  const [showCreateMenu, setShowCreateMenu] = useState(false);
+  const [showWizard, setShowWizard] = useState(false);
+  const createMenuRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!showCreateMenu) return;
+    const onDown = (e: MouseEvent) => {
+      if (createMenuRef.current && !createMenuRef.current.contains(e.target as Node)) setShowCreateMenu(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [showCreateMenu]);
 
   // 项目快照槽（游戏存档制：保存/恢复/删除，服务端做 FIFO 淘汰）。
   const [menuBusy, setMenuBusy] = useState(false);
@@ -335,28 +302,39 @@ export function ProjectSessionTree({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 2, padding: "6px 4px" }}>
-      {/* 新建项目入口：沙箱/本机一行，admin 的"打开服务器目录"独占下一行
-          （三个长按钮挤一行会在窄侧栏下把文字折成两行）。 */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "0 4px 8px" }}>
-        <div style={{ display: "flex", gap: 6 }}>
-          <button type="button" onClick={() => setNewDialog("sandbox")} disabled={creating} style={{ ...createBtn, cursor: creating ? "default" : "pointer", opacity: creating ? 0.6 : 1 }}>
-            {creating ? t("创建中…") : t("+ 沙箱项目")}
+      {/* 新建项目入口：单按钮弹胶囊菜单（远程连接向导 / 打开服务器目录） */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "0 4px 8px", position: "relative" }}>
+        <div style={{ position: "relative" }} ref={createMenuRef}>
+          <button type="button" onClick={() => setShowCreateMenu((v) => !v)} style={{ ...createBtn, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+            {t("+ 新建项目")}
+            <svg width="8" height="8" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ transform: showCreateMenu ? "rotate(180deg)" : "none", transition: "transform 0.15s" }}>
+              <polyline points="2 3.5 5 6.5 8 3.5" />
+            </svg>
           </button>
-          <button type="button" onClick={() => setNewDialog("local-machine")} disabled={creating} style={{ ...createBtn, cursor: creating ? "default" : "pointer", opacity: creating ? 0.6 : 1 }}>
-            {creating ? t("创建中…") : t("+ 本机项目")}
-          </button>
+          {showCreateMenu && (
+            <div
+              role="menu"
+              style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, zIndex: 60, background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: 8, boxShadow: "0 8px 24px rgba(0,0,0,0.18)", overflow: "hidden", padding: 3 }}
+            >
+              <button type="button" role="menuitem" onClick={() => { setShowCreateMenu(false); setShowWizard(true); }} style={menuItemStyle}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="12" rx="2" /><path d="M8 20h8M12 16v4" /></svg>
+                {t("远程连接")}
+              </button>
+              {isAdmin && onOpenServerDirectory && (
+                <button type="button" role="menuitem" onClick={() => { setShowCreateMenu(false); onOpenServerDirectory(); }} style={menuItemStyle}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg>
+                  {t("打开服务器目录")}
+                </button>
+              )}
+            </div>
+          )}
         </div>
-        {isAdmin && onOpenServerDirectory && (
-          <button type="button" onClick={onOpenServerDirectory} style={createBtn}>{t("打开服务器目录")}</button>
-        )}
       </div>
 
-      {newDialog && (
-        <NewProjectDialog
-          mode={newDialog}
-          busy={creating}
-          onCancel={() => setNewDialog(null)}
-          onCreate={(input) => void createProject(newDialog, input)}
+      {showWizard && (
+        <RemoteConnectWizard
+          onClose={() => setShowWizard(false)}
+          onCreated={() => loadProjects()}
         />
       )}
 
@@ -803,6 +781,12 @@ function ProjectSessionRow({
     </div>
   );
 }
+
+const menuItemStyle = {
+  display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "8px 10px",
+  background: "transparent", border: "none", borderRadius: 6, color: "var(--text)",
+  fontSize: 12.5, cursor: "pointer", textAlign: "left",
+} as const;
 
 const createBtn = {
   flex: 1, height: 28, borderRadius: 7, fontSize: 11, cursor: "pointer",

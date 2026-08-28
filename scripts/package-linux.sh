@@ -379,24 +379,28 @@ if [ "$WITH_SANDBOX" = "1" ]; then
 沙盒教学平台组件
 ================
 sandbox/platform/   容器管理 API —— sqlite 存储、启动自动迁移、默认
-                    监听 127.0.0.1:3000（管理控制台静态页未随包分发）。
+                    监听 127.0.0.1:3000。
 sandbox/extension/  pi 的沙盒桥接扩展（bash/read/write 工具走容器 API）。
                     pi-web 通过 PI_WEB_SANDBOX_EXTENSION_PATH 加载它。
 
 一键使用（在包根目录）:
   ./scripts/start-all.sh    启动 沙盒平台 + WebUI（幂等；首次运行自动生成
-                            sandbox/platform.env、sandbox/piweb.env，
+                            config/platform.env、config/piweb.env，
                             数据与数据库写入 data/）
   ./scripts/status-all.sh   服务状态 / 日志位置 / apptainer 检测
   ./scripts/stop-all.sh     停止全部
+  ./scripts/upgrade-bundle.sh <新版本tar.gz>
+                            安全原地升级（自动排除 config/data，升级前备份）
 
 目标机要求: 安装 Apptainer（https://apptainer.org）—— 容器执行器；
 未安装时 WebUI 可用，但无法创建/启动沙箱容器。
 
 配置文件（可在 start-all.sh 生成的默认值上修改）:
-  sandbox/platform.env   平台端口 / sqlite 路径 / JWT 密钥 / 管理员账号 /
+  config/platform.env    平台端口（PORT=，不设则自动探测）/ sqlite 路径 /
+                         JWT 密钥 / 管理员账号 /
                          EXECUTOR_KIND（apptainer-cli | ssh | mock）
-  sandbox/piweb.env      WebUI 认证开关 / 平台地址 / 数据目录 / 扩展路径
+  config/piweb.env       WebUI 认证开关 / 数据目录 / 扩展路径
+                         （平台地址默认自动跟随；固定则加 PI_WEB_PLATFORM_URL=）
 EOF
   log "已写入 sandbox/README.txt"
 else

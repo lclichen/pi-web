@@ -130,12 +130,12 @@ cd amedac.ai-pi-linux-x64
 
 首次运行会自动完成：
 
-1. 生成 `sandbox/platform.env`（sqlite 数据库落在 `data/platform/`、64 位随机 JWT 密钥、随机强密码的种子管理员——初始密码写入 `sandbox/admin-password.txt`，仅属主可读）；
+1. 生成 `config/platform.env`（sqlite 数据库落在 `data/platform/`、64 位随机 JWT 密钥、随机强密码的种子管理员——初始密码写入 `config/admin-password.txt`，仅属主可读）；
 2. 启动沙盒平台（端口 `3000`，`/health` 就绪才继续）；
-3. 生成 `sandbox/piweb.env`（指向平台、开启登录、数据落 `data/piweb/`、扩展指到包内 `sandbox/extension/`）；
+3. 生成 `config/piweb.env`（指向平台、开启登录、数据落 `data/piweb/`、扩展指到包内 `sandbox/extension/`）；
 4. 启动 WebUI（端口 `30141`）。
 
-浏览器访问 `http://<主机IP>:30141/`，用 **admin** 和 **`sandbox/admin-password.txt` 里的初始密码**登录（WebUI 与沙盒平台共用同一套账号），**登录后立即改密并可删除该密码文件**。
+浏览器访问 `http://<主机IP>:30141/`，用 **admin** 和 **`config/admin-password.txt` 里的初始密码**登录（WebUI 与沙盒平台共用同一套账号），**登录后立即改密并可删除该密码文件**。
 
 其他命令：
 
@@ -153,7 +153,7 @@ tail -f logs/platform.log # 跟踪平台日志
 
 `start-all.sh` 生成的两个 env 即完整配置面，改完重启对应服务即可：
 
-**sandbox/platform.env**
+**config/platform.env**
 
 | 变量 | 说明 |
 | --- | --- |
@@ -177,22 +177,36 @@ tail -f logs/platform.log # 跟踪平台日志
 
 ## 四、升级
 
-**AppImage**：下发新版本文件，直接重新运行即可——AppRun 检测到版本变化会自动重展开新包，
-并原样还原 `sandbox/platform.env`、`sandbox/piweb.env` 与整个 `data/`（数据库迁移幂等）。
+用户配置（`config/*.env`）、数据库与所有学生数据都存放在包目录的 `config/` 与 `data/`
+下，所有升级路径都把这两处排除在覆盖范围之外；老版本（配置曾放在 `sandbox/`）首次用新版
+`start-all.sh` 启动时会自动搬迁到 `config/`（原件留 `*.v1-backup`）。
 
-**tar.gz 目录部署**：
+**AppImage**：下发新版本文件，直接重新运行即可。代码在只读挂载内就地执行，
+`AMEDAC_HOME` 下的 config/data 与新版本无关，天然不被触碰（数据库迁移幂等）。
+
+**tar.gz 目录部署（推荐用安全升级脚本）**：
+
+```bash
+cd amedac.ai-pi-linux-x64
+./scripts/upgrade-bundle.sh /path/to/amedac.ai-pi-linux-x64-<新版本>.tar.gz
+```
+
+脚本自动完成：停服 → 备份 config/data 到 `.upgrade-backup-<时间戳>/` → 解压新包
+（排除 config/ data/ run/ logs/）→ 旧布局配置搬迁 → 重启。
+
+手动等价操作（不脚本化时）：
 
 ```bash
 cd amedac.ai-pi-linux-x64
 ./scripts/stop-all.sh
-# 解压新包覆盖（保留 data/、sandbox/*.env、logs/）
 tar -xzf ../amedac.ai-pi-linux-x64-<新版本>.tar.gz --strip-components=1 -C . \
-    --exclude='data' --exclude='run' --exclude='logs'
+    --exclude='config' --exclude='data' --exclude='run' --exclude='logs' \
+    --exclude='sandbox/platform.env' --exclude='sandbox/piweb.env' --exclude='sandbox/admin-password.txt'
 ./scripts/start-all.sh
 ```
 
 - 平台数据库 schema 由启动时的幂等迁移自动升级；
-- sqlite 数据库、平台/WebUI 配置都在 `data/` 与 `sandbox/*.env`，不在覆盖范围；
+- 平台/WebUI 配置在 `config/`，数据库在 `data/`，均不在覆盖范围（手动 tar 时务必带上排除参数）；
 - 学生容器的 overlay（Apptainer 数据目录，见下）与包目录无关，升级不动它们。
 
 ## 五、生产加固建议

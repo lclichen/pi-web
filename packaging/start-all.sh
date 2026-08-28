@@ -44,8 +44,20 @@ NODE_BIN="$PKG/runtime/bin/node"
 RUN_DIR="${AMEDAC_RUN_DIR:-$PKG/run}"
 LOG_DIR="${AMEDAC_LOG_DIR:-$PKG/logs}"
 DATA_DIR="${DATA_DIR:-$PKG/data}"
-CONFIG_DIR="${AMEDAC_CONFIG_DIR:-$PKG/sandbox}"
-mkdir -p "$RUN_DIR" "$LOG_DIR" "$DATA_DIR"
+# 配置独立成 config/ 目录（与 data/run/logs 平级）：tar 原地升级时排除
+# config data run logs 即可保住全部用户配置；旧部署的 sandbox/*.env 会
+# 自动搬迁过来（原件留 .v1 备份）。
+CONFIG_DIR="${AMEDAC_CONFIG_DIR:-$PKG/config}"
+if [ ! -f "$CONFIG_DIR/platform.env" ] && [ -f "$PKG/sandbox/platform.env" ]; then
+  mkdir -p "$CONFIG_DIR"
+  for f in platform.env piweb.env admin-password.txt; do
+    if [ -f "$PKG/sandbox/$f" ]; then
+      cp -a "$PKG/sandbox/$f" "$CONFIG_DIR/$f"
+      mv "$PKG/sandbox/$f" "$PKG/sandbox/$f.v1-backup"
+    fi
+  done
+fi
+mkdir -p "$RUN_DIR" "$LOG_DIR" "$DATA_DIR" "$CONFIG_DIR"
 
 PLATFORM_DIR="$PKG/sandbox/platform"
 EXTENSION_DIR="$PKG/sandbox/extension"
@@ -183,7 +195,9 @@ EOF
 
   mkdir -p "$DATA_DIR/platform"
   grep -q "^SEED_ADMIN_PASSWORD=" "$PLATFORM_ENV_FILE" && grep -q "^DB_SQLITE_PATH=" "$PLATFORM_ENV_FILE" || {
-    warn "platform.env 缺少关键字段（旧版生成物？），请删除该文件后重跑以重新生成"
+    warn "platform.env 缺少关键字段（旧版生成物或不完整的手写文件）。"
+    warn "修复：删除 $PLATFORM_ENV_FILE 后重跑可重新生成（新密钥+新管理员密码）；"
+    warn "升级前的旧配置如有备份，在同级 *.v1-backup 文件里。"
     return 1
   }
 

@@ -1,8 +1,8 @@
 import { existsSync, readFileSync, readdirSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { parseFrontmatter, getAgentDir } from "@earendil-works/pi-coding-agent";
-import { atomicWriteFile } from "@/lib/atomic-write";
-import type { AgentInfo, AgentDetail, ConfigScope } from "@/lib/api-types";
+import { atomicWriteFile }  from "./atomic-write";
+import type { AgentInfo, AgentDetail, ConfigScope }  from "./api-types";
 
 const NAME_RE = /^[A-Za-z0-9_.-]+$/;
 

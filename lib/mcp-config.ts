@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import { atomicWriteFile } from "@/lib/atomic-write";
+import { atomicWriteFile }  from "./atomic-write";
 import type {
   ConfigScope,
   McpConfigDiagnostic,
@@ -11,7 +11,7 @@ import type {
   McpSettings,
   McpTransport,
   ServerEntry,
-} from "@/lib/api-types";
+}  from "./api-types";
 
 export function mcpConfigPath(cwd: string, scope: ConfigScope): string {
   return scope === "project" ? join(cwd, ".pi", "mcp.json") : join(getAgentDir(), "mcp.json");

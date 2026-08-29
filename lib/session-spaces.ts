@@ -1,6 +1,6 @@
 import { join, resolve, sep } from "path";
-import { getAgentDir } from "@/lib/session-reader";
-import type { WebSession } from "@/lib/web-session";
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import type { WebSession }  from "./web-session";
 
 /**
  * Session spaces (design doc §4.1): the platform CLI keeps writing to the

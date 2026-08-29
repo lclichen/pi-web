@@ -1,6 +1,6 @@
 // Client-side helper for POST /api/agent-relay/rpc. Mirrors lib/agent-client.ts:
 // same { success, data } / { error } envelope and error convention.
-import type { FsEntry, FsReadResult, FsStatResult, ExecResult, AgentInfo, GrepMatch } from "@/lib/relay/protocol";
+import type { FsEntry, FsReadResult, FsStatResult, ExecResult, AgentInfo, GrepMatch }  from "./relay/protocol";
 
 export async function relayRpc<T = unknown>(
   method: string,

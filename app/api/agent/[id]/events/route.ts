@@ -1,22 +1,10 @@
 import { NextResponse } from "next/server";
+import { createAgentEventStream } from "@/lib/agent-event-stream";
 import { resolveSessionAccess } from "@/lib/session-access";
-import { getRpcSession, startRpcSession, type AgentEvent } from "@/lib/rpc-manager";
+import { getRpcSession, startRpcSession, type AgentSessionWrapper } from "@/lib/rpc-manager";
 import { restoreSessionOptions } from "@/lib/session-restore-options";
 
 export const dynamic = "force-dynamic";
-
-const OMITTED_EVENT_TYPES = new Set(["turn_start", "turn_end", "tool_execution_update"]);
-
-function toClientEvent(event: AgentEvent): AgentEvent | null {
-  if (OMITTED_EVENT_TYPES.has(event.type)) return null;
-  if (event.type === "message_update") {
-    const clientEvent = { ...event };
-    delete clientEvent.assistantMessageEvent;
-    return clientEvent;
-  }
-  if (event.type === "agent_end") return { type: "agent_end" };
-  return event;
-}
 
 // GET /api/agent/[id]/events - SSE stream of agent events
 export async function GET(
@@ -24,67 +12,35 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+  if (req.signal.aborted) return new Response(null, { status: 204 });
 
   // Fast path: already-running session
-  let session = getRpcSession(id);
-  if (!session || !session.isAlive()) {
+  const existing = getRpcSession(id);
+  let sessionPromise: Promise<AgentSessionWrapper>;
+  if (existing?.isAlive()) {
+    sessionPromise = Promise.resolve(existing);
+  } else {
     const access = await resolveSessionAccess(req, id);
     if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
     const filePath = access.path;
     if (!filePath) {
       return new Response("Session not found", { status: 404 });
     }
-    try {
-      // Same mode-extension injections as new sessions (sandbox bridge etc.).
-      const options = await restoreSessionOptions(req, id);
-      ({ session } = await startRpcSession(id, filePath, undefined, options));
-    } catch (error) {
-      return new Response(`Failed to start agent: ${error}`, { status: 500 });
-    }
+    if (req.signal.aborted) return new Response(null, { status: 204 });
+    // Same mode-extension injections as new sessions (sandbox bridge etc.).
+    sessionPromise = restoreSessionOptions(req, id)
+      .then((options) => startRpcSession(id, filePath, undefined, options))
+      .then((result) => result.session);
   }
 
-  const stream = new ReadableStream({
-    start(controller) {
-      const encoder = new TextEncoder();
-      const encode = (data: unknown) => {
-        const text = `data: ${JSON.stringify(data)}\n\n`;
-        controller.enqueue(encoder.encode(text));
-      };
-
-      // Send initial connected event
-      encode({ type: "connected", sessionId: id });
-
-      const unsubscribe = session.onEvent((event) => {
-        const clientEvent = toClientEvent(event);
-        if (clientEvent) encode(clientEvent);
-      });
-
-      // Heartbeat every 30s to prevent server/proxy timeout (Next.js default ~120-150s)
-      const heartbeat = setInterval(() => {
-        try {
-          controller.enqueue(encoder.encode(":\n\n"));
-        } catch {
-          // controller already closed
-        }
-      }, 30_000);
-
-      // Cleanup when client disconnects
-      const cleanup = () => {
-        clearInterval(heartbeat);
-        unsubscribe();
-        controller.close();
-      };
-
-      // Detect client disconnect via abort signal
-      req.signal?.addEventListener("abort", cleanup);
-    },
-  });
+  const stream = createAgentEventStream(req, id, sessionPromise);
 
   return new Response(stream, {
     headers: {
       "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
+      "Cache-Control": "no-cache, no-transform",
       Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
     },
   });
 }

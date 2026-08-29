@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { atomicWriteFile } from "@/lib/atomic-write";
-import { DEFAULT_PREFERENCES, type WebPreferences } from "@/lib/api-types";
+import { atomicWriteFile }  from "./atomic-write";
+import { DEFAULT_PREFERENCES, type WebPreferences }  from "./api-types";
 
 const PREFS_FILE = "web-preferences.json";
 

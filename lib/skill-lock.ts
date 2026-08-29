@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "fs";
 import { homedir } from "os";
 import { isAbsolute, join, relative, resolve, sep } from "path";
-import type { SkillInfo, SkillInstallInfo, SkillInstallScope } from "@/lib/api-types";
+import type { SkillInfo, SkillInstallInfo, SkillInstallScope }  from "./api-types";
 
 interface SkillLockEntry {
   source?: unknown;

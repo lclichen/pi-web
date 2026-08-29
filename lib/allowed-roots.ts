@@ -1,12 +1,21 @@
+import { toSlashPath } from "./paths";
+
 // In-memory roots that should be browsable in addition to roots derived from
 // persisted sessions. Stored on globalThis so Next.js hot-reload keeps them.
 declare global {
   var __piAllowedRootsCache: { roots: Set<string>; expiresAt: number } | undefined;
   var __piAdditionalAllowedRoots: Set<string> | undefined;
+  /** Space-keyed cache store used by file-access.ts (host + user shards). */
+  var __piAllowedRootsCacheStore: Map<string, { roots: Set<string>; expiresAt: number }> | undefined;
 }
 
+/**
+ * Allowed roots are internal bookkeeping keys that are never displayed, so they
+ * are stored slash-normalized for consistent Set membership. Correctness does
+ * not depend on it — isPathWithinRoots() re-normalizes whatever it is given.
+ */
 export function normalizeSlashes(filePath: string): string {
-  return filePath.replace(/\\/g, "/");
+  return toSlashPath(filePath);
 }
 
 export function getAdditionalAllowedRoots(): Set<string> {
@@ -21,4 +30,7 @@ export function allowFileRoot(root: string): void {
   const normalizedRoot = normalizeSlashes(root);
   getAdditionalAllowedRoots().add(normalizedRoot);
   globalThis.__piAllowedRootsCache?.roots.add(normalizedRoot);
+  // Patch the space-keyed live cache too, otherwise a fresh TTL entry would
+  // keep missing this root until it expires.
+  globalThis.__piAllowedRootsCacheStore?.forEach((entry) => entry.roots.add(normalizedRoot));
 }

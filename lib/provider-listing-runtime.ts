@@ -1,5 +1,5 @@
 import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
-import type { ProviderCredentialType, ProviderListingInput } from "@/lib/provider-listing";
+import type { ProviderCredentialType, ProviderListingInput }  from "./provider-listing";
 
 /**
  * Adapter between `ModelRuntime` and the pure listing helpers in

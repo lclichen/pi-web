@@ -69,9 +69,12 @@ export async function POST(req: Request) {
   if (!identity.ok) return NextResponse.json({ error: "登录已失效" }, { status: 401 });
   const { user } = identity.session;
 
+  let commandType: string | undefined;
+  let promptAccepted = false;
   try {
     const body = await req.json() as { cwd?: string; mode?: unknown; [key: string]: unknown };
     const { cwd, ...command } = body;
+    commandType = typeof command.type === "string" ? command.type : undefined;
     const rawMode = body.mode;
     if (rawMode !== undefined && !isSessionMode(rawMode)) {
       return NextResponse.json({ error: `Invalid mode: ${String(rawMode)}` }, { status: 400 });
@@ -206,13 +209,23 @@ export async function POST(req: Request) {
     } else {
       // Host mode keeps the caller-supplied server directory.
       if (!effectiveCwd || !existsSync(effectiveCwd)) {
-        return NextResponse.json({ error: `Directory does not exist: ${String(effectiveCwd)}` }, { status: 400 });
+        return NextResponse.json({
+          error: `Directory does not exist: ${String(effectiveCwd)}`,
+          ...(commandType === "prompt"
+            ? { code: "prompt_rejected", accepted: false }
+            : {}),
+        }, { status: 400 });
       }
       extensionFactories = [makeEnvironmentInfoExtension({ mode: "host", username: user.username, hostDir: effectiveCwd })];
     }
 
     if (!effectiveCwd) {
-      return NextResponse.json({ error: "cwd is required" }, { status: 400 });
+      return NextResponse.json({
+        error: "cwd is required",
+        ...(commandType === "prompt"
+          ? { code: "prompt_rejected", accepted: false }
+          : {}),
+      }, { status: 400 });
     }
 
     // User sessions live in the caller's shard; host sessions in the global dir.
@@ -275,6 +288,7 @@ export async function POST(req: Request) {
     }
 
     const result = await session.send(promptCommand);
+    promptAccepted = promptCommand.type === "prompt";
 
     return NextResponse.json({
       success: true,
@@ -287,6 +301,11 @@ export async function POST(req: Request) {
       thinkingLevel: state.thinkingLevel,
     });
   } catch (error) {
-    return NextResponse.json({ error: String(error) }, { status: 500 });
+    return NextResponse.json({
+      error: error instanceof Error ? error.message : String(error),
+      ...(commandType === "prompt" && !promptAccepted
+        ? { code: "prompt_rejected", accepted: false }
+        : {}),
+    }, { status: 500 });
   }
 }

@@ -30,6 +30,7 @@ import {
   validateUploadFileNames,
 } from "@/lib/file-upload";
 import { parseFormDataWithinLimit, RequestBodyTooLargeError } from "@/lib/bounded-form-data";
+import { samePath } from "@/lib/paths";
 
 const IGNORED_NAMES = new Set([
   "node_modules", ".git", ".next", "dist", "build", "__pycache__",
@@ -299,12 +300,23 @@ function getContentDisposition(filePath: string, asDownload = false): string {
 }
 
 function streamFile(filePath: string, stat: fs.Stats, contentType: string, rangeHeader: string | null, asDownload = false): Response {
-  const headers = {
+  const headers: Record<string, string> = {
     "Content-Type": contentType,
     "Cache-Control": "no-cache",
     "Accept-Ranges": "bytes",
     "Content-Disposition": getContentDisposition(filePath, asDownload),
+    "X-Content-Type-Options": "nosniff",
   };
+  // SVG is the only preview type a browser executes as a document. A
+  // repo-controlled SVG navigated to directly (for example through a link in
+  // a transcript) would otherwise run script in the Pi Web origin, where it
+  // can call any /api route. These headers only affect document rendering;
+  // <img> preview embedding ignores them.
+  if (contentType === "image/svg+xml") {
+    headers["Content-Security-Policy"] =
+      "default-src 'none'; img-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'";
+    headers["Referrer-Policy"] = "no-referrer";
+  }
 
   if (!rangeHeader) {
     return new Response(createFileBodyStream(filePath), {
@@ -438,19 +450,25 @@ export async function GET(
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
 
-    let stat: fs.Stats;
+    let stat: fs.Stats | undefined;
     try {
       stat = fs.statSync(filePath);
     } catch {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      if (type !== "watch") {
+        return NextResponse.json({ error: "Not found" }, { status: 404 });
+      }
     }
 
-    if (!allowedBySessionReference && !isExistingFilePathAllowed(filePath, allowedRoots)) {
+    const existingAuthorizationPath = stat ? filePath : path.dirname(filePath);
+    if (
+      !allowedBySessionReference
+      && !isExistingFilePathAllowed(existingAuthorizationPath, allowedRoots)
+    ) {
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
 
     if (type === "read") {
-      if (!stat.isFile()) {
+      if (!stat?.isFile()) {
         return NextResponse.json({ error: "Not a file" }, { status: 400 });
       }
       const imageMime = getImageMime(filePath);
@@ -477,7 +495,7 @@ export async function GET(
     }
 
     if (type === "download") {
-      if (!stat.isFile()) {
+      if (!stat?.isFile()) {
         return NextResponse.json({ error: "Not a file" }, { status: 400 });
       }
       const mime = getImageMime(filePath) || getAudioMime(filePath) || getDocumentMime(filePath) || "application/octet-stream";
@@ -485,7 +503,7 @@ export async function GET(
     }
 
     if (type === "meta") {
-      if (!stat.isFile()) {
+      if (!stat?.isFile()) {
         return NextResponse.json({ error: "Not a file" }, { status: 400 });
       }
       const imageMime = getImageMime(filePath);
@@ -500,7 +518,7 @@ export async function GET(
     }
 
     if (type === "preview") {
-      if (!stat.isFile()) {
+      if (!stat?.isFile()) {
         return NextResponse.json({ error: "Not a file" }, { status: 400 });
       }
       if (getFileExt(filePath) !== "docx") {
@@ -531,12 +549,15 @@ export async function GET(
     }
 
     if (type === "watch") {
-      if (!stat.isFile()) {
+      if (stat && !stat.isFile()) {
         return NextResponse.json({ error: "Not a file" }, { status: 400 });
       }
       let watcher: fs.FSWatcher | null = null;
-      let lastMtimeMs = stat.mtimeMs;
-      let lastSize = stat.size;
+      let lastMtimeMs = stat?.mtimeMs ?? 0;
+      let lastCtimeMs = stat?.ctimeMs ?? 0;
+      let lastIno = stat?.ino ?? 0;
+      let lastSize = stat?.size ?? 0;
+      let lastExists = stat !== undefined;
       const stream = new ReadableStream({
         start(controller) {
           const send = (eventName: string, data: Record<string, unknown>) => {
@@ -547,25 +568,44 @@ export async function GET(
               // client disconnected
             }
           };
-          // Send initial ping so client knows connection is live
-          send("connected", { filePath });
           try {
-            watcher = fs.watch(filePath, () => {
+            const watchedDirectory = path.dirname(filePath);
+            watcher = fs.watch(watchedDirectory, (_eventType, changedName) => {
+              if (
+                changedName != null
+                && !samePath(path.join(watchedDirectory, changedName.toString()), filePath)
+              ) return;
               try {
                 const s = fs.statSync(filePath);
                 // Some platforms emit watch events for file reads/attribute
                 // access. Ignore those or the client's refresh read loops.
-                if (s.mtimeMs === lastMtimeMs && s.size === lastSize) return;
+                if (
+                  lastExists
+                  && s.mtimeMs === lastMtimeMs
+                  && s.ctimeMs === lastCtimeMs
+                  && s.ino === lastIno
+                  && s.size === lastSize
+                ) return;
+                lastExists = true;
                 lastMtimeMs = s.mtimeMs;
+                lastCtimeMs = s.ctimeMs;
+                lastIno = s.ino;
                 lastSize = s.size;
                 send("change", { mtime: s.mtime.toISOString(), size: s.size });
               } catch {
+                if (!lastExists) return;
+                lastExists = false;
                 send("change", { mtime: new Date().toISOString(), size: 0 });
               }
             });
             watcher.on("error", () => {
+              try { watcher?.close(); } catch { /* ignore */ }
+              watcher = null;
               try { controller.close(); } catch { /* ignore */ }
             });
+            // The client snapshots only after this event, so emit it after the
+            // watcher exists to avoid dropping changes between those steps.
+            send("connected", { filePath });
           } catch {
             send("error", { message: "Failed to watch file" });
             controller.close();
@@ -586,7 +626,7 @@ export async function GET(
     }
 
     // type === "list"
-    if (!stat.isDirectory()) {
+    if (!stat?.isDirectory()) {
       return NextResponse.json({ error: "Not a directory" }, { status: 400 });
     }
 

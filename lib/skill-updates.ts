@@ -6,7 +6,7 @@ import { promisify } from "util";
 import type {
   SkillInstallInfo,
   SkillUpdateResult,
-} from "@/lib/api-types";
+}  from "./api-types";
 
 const CHECK_TIMEOUT_MS = 15_000;
 const GIT_CHECK_TIMEOUT_MS = 30_000;

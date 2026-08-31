@@ -2,6 +2,7 @@ import { existsSync, readFileSync, readdirSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { parseFrontmatter, getAgentDir } from "@earendil-works/pi-coding-agent";
 import { atomicWriteFile }  from "./atomic-write";
+import { BUILTIN_PROFILES } from "./subagents";
 import type { AgentInfo, AgentDetail, ConfigScope }  from "./api-types";
 
 const NAME_RE = /^[A-Za-z0-9_.-]+$/;
@@ -85,16 +86,20 @@ export function listAgents(cwd: string, scope: ConfigScope): AgentInfo[] {
 
   // Include built-in default agents that don't have a .md override in this scope.
   // They appear in the project scope (defaults are global but shown under project for UX).
+  // Descriptions come from the canonical builtin profiles (lib/subagents) so the
+  // listing matches what the read-only detail view serves.
   if (scope === "project") {
     for (const defaultName of DEFAULT_AGENT_NAMES) {
       if (!seenNames.has(defaultName)) {
+        const profile = BUILTIN_PROFILES.find((p) => p.name === defaultName.toLowerCase());
         out.push({
           name: defaultName,
           scope: "project",
           filePath: "",
           enabled: true,
           isDefault: true,
-          description: DEFAULT_AGENT_DESCRIPTIONS[defaultName],
+          description: profile?.description ?? DEFAULT_AGENT_DESCRIPTIONS[defaultName],
+          ...(profile ? { tools: [...profile.tools] } : {}),
         });
       }
     }

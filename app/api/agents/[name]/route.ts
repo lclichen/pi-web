@@ -25,13 +25,15 @@ export async function GET(
   const { name } = await params;
   const scopeParam = searchParams.get("scope");
   // Built-in subagents have no file behind them; serve their definition
-  // read-only instead of hitting the filesystem.
-  if (scopeParam === "builtin") {
+  // read-only instead of hitting the filesystem. Also the fallback for the
+  // listing shape (agents-service appends them with scope "project"), where
+  // the file lookup legitimately 404s.
+  const builtinDetail = () => {
     const profile = BUILTIN_PROFILES.find((p) => p.name.toLowerCase() === name.trim().toLowerCase());
-    if (!profile) return NextResponse.json({ error: "Agent not found" }, { status: 404 });
-    return NextResponse.json({
+    if (!profile) return null;
+    return {
       name: profile.name,
-      scope: "builtin",
+      scope: "builtin" as const,
       filePath: "(builtin)",
       description: profile.description,
       tools: profile.tools,
@@ -45,12 +47,23 @@ export async function GET(
       loadExtensions: profile.loadExtensions,
       inheritContext: profile.inheritContext,
       runInBackground: profile.runInBackground,
-    });
+    };
+  };
+  if (scopeParam === "builtin") {
+    const builtin = builtinDetail();
+    if (!builtin) return NextResponse.json({ error: "Agent not found" }, { status: 404 });
+    return NextResponse.json(builtin);
   }
   const scope = readScope(scopeParam);
   try {
     const detail = getAgentDetail(cwd, scope, name);
-    if (!detail) return NextResponse.json({ error: "Agent not found" }, { status: 404 });
+    if (!detail) {
+      // The built-in listing entries carry scope "project" but no file; a
+      // missing file for one of those names is the built-in definition.
+      const builtin = builtinDetail();
+      if (builtin) return NextResponse.json(builtin);
+      return NextResponse.json({ error: "Agent not found" }, { status: 404 });
+    }
     return NextResponse.json(detail);
   } catch (e) {
     return NextResponse.json(

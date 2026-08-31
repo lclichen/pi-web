@@ -6,7 +6,6 @@ import {
   listAllAgents,
   validateAgentName,
 } from "@/lib/agents-service";
-import { BUILTIN_PROFILES } from "@/lib/subagents";
 import type { ConfigScope } from "@/lib/api-types";
 
 export const dynamic = "force-dynamic";
@@ -24,27 +23,6 @@ export async function GET(req: Request) {
   const scope = readScope(searchParams.get("scope"));
   try {
     const agents = scope ? listAgents(cwd, scope) : listAllAgents(cwd);
-    // Append the built-in subagents (read-only) unless a same-named file-based
-    // agent already overrides one — the spawn path gives files precedence, so
-    // the listing must not show a shadowed builtin twice.
-    if (!scope) {
-      const overridden = new Set(agents.map((a) => a.name.toLowerCase()));
-      for (const profile of BUILTIN_PROFILES) {
-        if (overridden.has(profile.name.toLowerCase())) continue;
-        agents.push({
-          name: profile.name,
-          scope: "builtin",
-          filePath: "(builtin)",
-          description: profile.description,
-          tools: profile.tools,
-          ...(profile.model ? { model: profile.model } : {}),
-          ...(profile.thinking ? { thinking: profile.thinking } : {}),
-          ...(profile.maxTurns !== undefined ? { maxTurns: profile.maxTurns } : {}),
-          enabled: profile.enabled,
-          isDefault: true,
-        });
-      }
-    }
     return NextResponse.json({ agents });
   } catch (e) {
     return NextResponse.json(

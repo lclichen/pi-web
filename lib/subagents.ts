@@ -92,7 +92,7 @@ const BUILTIN_TOOLS = new Set(DEFAULT_TOOLS);
 const SUBAGENT_CONTROL_TOOLS = new Set<string>(SUBAGENT_CONTROL_TOOL_NAMES);
 const THINKING_LEVELS = new Set<ThinkingLevel>(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
 
-const BUILTIN_PROFILES: SubagentProfile[] = [
+export const BUILTIN_PROFILES: SubagentProfile[] = [
   {
     name: "general-purpose",
     displayName: "General purpose",

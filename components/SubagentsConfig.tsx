@@ -97,7 +97,8 @@ function detailToForm(detail: AgentDetail): AgentForm {
   }
   return {
     name: detail.name,
-    scope: detail.scope,
+    // Built-ins have no writable scope; the field is disabled anyway.
+    scope: detail.scope === "builtin" ? "project" : detail.scope,
     description: detail.description ?? "",
     model: detail.model ?? "",
     thinking: detail.thinking ?? "off",
@@ -198,10 +199,14 @@ export function SubagentsConfig({ cwd, onClose }: { cwd: string; onClose: () => 
   const [prefs, setPrefs] = useState<WebPreferences>({ mcpEnabled: true, subagentsEnabled: true, labVerifyEnabled: true });
 
   const grouped = useMemo(() => {
-    return (["project", "global"] as ConfigScope[])
+    return (["builtin", "project", "global"] as const)
       .map((scope) => ({ scope, agents: agents.filter((a) => a.scope === scope) }))
       .filter((g) => g.agents.length > 0);
   }, [agents]);
+
+  // Built-in subagents are served by the API read-only: their definition ships
+  // with pi itself (no .md file to edit), so the form renders disabled.
+  const readOnly = !creating && detail?.scope === "builtin";
 
   const loadList = useCallback(async () => {
     setLoading(true);
@@ -249,7 +254,7 @@ export function SubagentsConfig({ cwd, onClose }: { cwd: string; onClose: () => 
   };
 
   const loadDetail = useCallback(
-    async (name: string, scope: ConfigScope) => {
+    async (name: string, scope: ConfigScope | "builtin") => {
       setFormError(null);
       try {
         const res = await fetch(
@@ -418,7 +423,7 @@ export function SubagentsConfig({ cwd, onClose }: { cwd: string; onClose: () => 
               : agents.length === 0 ? <div style={{ padding: "8px", fontSize: 11, color: "var(--text-dim)" }}>No agents defined.</div>
               : grouped.map((group) => (
                 <div key={group.scope} style={{ marginBottom: 4 }}>
-                  <div style={{ padding: "3px 6px 2px", fontSize: 9, fontWeight: 600, color: "var(--text-dim)", textTransform: "uppercase" }}>{group.scope}</div>
+                  <div style={{ padding: "3px 6px 2px", fontSize: 9, fontWeight: 600, color: "var(--text-dim)", textTransform: "uppercase" }}>{group.scope === "builtin" ? "built-in" : group.scope}</div>
                   {group.agents.map((agent) => {
                     const key = `${agent.scope}\0${agent.name}`;
                     const isSelected = !creating && selectedKey === key;
@@ -444,12 +449,12 @@ export function SubagentsConfig({ cwd, onClose }: { cwd: string; onClose: () => 
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                   <div style={{ flex: "1 1 140px" }}>
                     <Field label="Name">
-                      <input style={inputStyle} value={form.name} disabled={!creating} onChange={(e) => set("name", e.target.value)} placeholder="security-auditor" />
+                      <input style={inputStyle} value={form.name} disabled={!creating || readOnly} onChange={(e) => set("name", e.target.value)} placeholder="security-auditor" />
                     </Field>
                   </div>
                   <div style={{ width: 110 }}>
                     <Field label="Scope">
-                      <select style={inputStyle} value={form.scope} disabled={!creating} onChange={(e) => set("scope", e.target.value as ConfigScope)}>
+                      <select style={inputStyle} value={form.scope} disabled={!creating || readOnly} onChange={(e) => set("scope", e.target.value as ConfigScope)}>
                         <option value="project">project</option>
                         <option value="global">global</option>
                       </select>
@@ -457,7 +462,7 @@ export function SubagentsConfig({ cwd, onClose }: { cwd: string; onClose: () => 
                   </div>
                   <div style={{ flex: "1 1 160px" }}>
                     <Field label="Description">
-                      <input style={inputStyle} value={form.description} onChange={(e) => set("description", e.target.value)} placeholder="Security code reviewer" />
+                      <input style={inputStyle} value={form.description} disabled={readOnly} onChange={(e) => set("description", e.target.value)} placeholder="Security code reviewer" />
                     </Field>
                   </div>
                 </div>
@@ -465,19 +470,19 @@ export function SubagentsConfig({ cwd, onClose }: { cwd: string; onClose: () => 
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                   <div style={{ flex: "1 1 160px" }}>
                     <Field label="Model (empty = session default)">
-                      <input style={inputStyle} value={form.model} onChange={(e) => set("model", e.target.value)} placeholder="session default" />
+                      <input style={inputStyle} value={form.model} disabled={readOnly} onChange={(e) => set("model", e.target.value)} placeholder="session default" />
                     </Field>
                   </div>
                   <div style={{ width: 100 }}>
                     <Field label="Thinking">
-                      <select style={inputStyle} value={form.thinking} onChange={(e) => set("thinking", e.target.value)}>
+                      <select style={inputStyle} value={form.thinking} disabled={readOnly} onChange={(e) => set("thinking", e.target.value)}>
                         {THINKING_OPTIONS.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
                       </select>
                     </Field>
                   </div>
                   <div style={{ width: 100 }}>
                     <Field label="Max turns (0 = unlimited)">
-                      <input style={inputStyle} value={form.maxTurns} onChange={(e) => set("maxTurns", e.target.value)} placeholder="10" />
+                      <input style={inputStyle} value={form.maxTurns} disabled={readOnly} onChange={(e) => set("maxTurns", e.target.value)} placeholder="10" />
                     </Field>
                   </div>
                 </div>
@@ -515,7 +520,7 @@ export function SubagentsConfig({ cwd, onClose }: { cwd: string; onClose: () => 
                               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4, marginTop: 4 }}>
                                 <span style={{ fontSize: 10, fontWeight: 600, color: "var(--text-dim)", textTransform: "uppercase" }}>MCP Tools</span>
                                 <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10, cursor: "pointer" }}>
-                                  <input type="checkbox" checked={form.mcpAll} onChange={(e) => set("mcpAll", e.target.checked)} style={{ margin: 0 }} />
+                                  <input type="checkbox" checked={form.mcpAll} disabled={readOnly} onChange={(e) => set("mcpAll", e.target.checked)} style={{ margin: 0 }} />
                                   <span style={{ color: "var(--text-muted)" }}>All (ext:pi-mcp-adapter)</span>
                                 </label>
                               </div>
@@ -542,6 +547,7 @@ export function SubagentsConfig({ cwd, onClose }: { cwd: string; onClose: () => 
                   <textarea
                     style={{ ...inputStyle, flex: 1, minHeight: 160, height: "auto", resize: "none", padding: 8, lineHeight: 1.5 }}
                     value={form.systemPrompt}
+                    disabled={readOnly}
                     onChange={(e) => set("systemPrompt", e.target.value)}
                     placeholder="Instructions defining the agent's behavior and constraints..."
                   />
@@ -551,9 +557,15 @@ export function SubagentsConfig({ cwd, onClose }: { cwd: string; onClose: () => 
                 {formError && <div style={{ fontSize: 11, color: "#ef4444" }}>{formError}</div>}
                 {formMsg && !formError && <div style={{ fontSize: 11, color: "var(--accent)" }}>{formMsg}</div>}
 
-                <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
-                  <button onClick={save} disabled={saving} style={buttonStyle(true)}>{saving ? "Saving..." : creating ? "Create" : "Save"}</button>
-                  {!creating && detail && <button onClick={remove} disabled={saving} style={buttonStyle(false)}>Delete</button>}
+                <div style={{ display: "flex", gap: 8, flexShrink: 0, alignItems: "center" }}>
+                  {readOnly ? (
+                    <div style={{ fontSize: 11, color: "var(--text-dim)" }}>Built-in agent — read-only. Create a same-named project agent to override it.</div>
+                  ) : (
+                    <>
+                      <button onClick={save} disabled={saving} style={buttonStyle(true)}>{saving ? "Saving..." : creating ? "Create" : "Save"}</button>
+                      {!creating && detail && <button onClick={remove} disabled={saving} style={buttonStyle(false)}>Delete</button>}
+                    </>
+                  )}
                 </div>
               </div>
             )}

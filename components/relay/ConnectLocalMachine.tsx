@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useI18n } from "@/hooks/useI18n";
 import { useRelayAgent } from "@/hooks/useRelayAgent";
 import { LocalMachinePanel } from "./LocalMachinePanel";
 
@@ -14,6 +15,7 @@ interface Pairing {
 // when clicked, a pairing modal. Once an agent connects, offers an end-to-end
 // file/command panel. Mirrors the Style A modal pattern (ProjectTrustDialog).
 export function ConnectLocalMachine() {
+  const { t } = useI18n();
   const { online, info, relayPort, advertiseUrl, ready, refresh } = useRelayAgent();
   const [open, setOpen] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
@@ -56,7 +58,7 @@ export function ConnectLocalMachine() {
     <>
       <button
         onClick={() => setOpen(true)}
-        title={online ? `已连接：${info?.hostname} (${info?.os}/${info?.arch})` : "连接本地机器"}
+        title={online ? t("已连接：{host} ({os}/{arch})", { host: info?.hostname ?? "", os: info?.os ?? "", arch: info?.arch ?? "" }) : t("连接本地机器")}
         style={{
           display: "flex", alignItems: "center", gap: 6, height: "100%",
           padding: "0 12px", background: "none",
@@ -73,7 +75,7 @@ export function ConnectLocalMachine() {
           background: ready ? (online ? "#22c55e" : "#9ca3af") : "#6b7280",
           boxShadow: online ? "0 0 6px #22c55e" : "none",
         }} />
-        <span>{online ? "本地机器" : "连接本地机器"}</span>
+        <span>{online ? t("本地机器") : t("连接本地机器")}</span>
       </button>
 
       {open && (
@@ -86,32 +88,32 @@ export function ConnectLocalMachine() {
         >
           <div role="dialog" aria-modal="true" style={dialogStyle}>
             <div style={headerStyle}>
-              <span style={{ fontWeight: 600 }}>连接本地机器</span>
+              <span style={{ fontWeight: 600 }}>{t("连接本地机器")}</span>
               <button onClick={() => setOpen(false)} style={closeBtnStyle}>×</button>
             </div>
 
             {online && info ? (
               <div style={{ padding: 16 }}>
-                <div style={{ color: "#22c55e", fontSize: 13, marginBottom: 12 }}>✓ 已连接</div>
-                <Row label="主机名" value={info.hostname} />
-                <Row label="系统" value={`${info.os} / ${info.arch}`} />
-                <Row label="工作目录" value={info.workspaceRoot} />
-                <Row label="Agent 版本" value={info.agentVersion} />
+                <div style={{ color: "#22c55e", fontSize: 13, marginBottom: 12 }}>{t("✓ 已连接")}</div>
+                <Row label={t("主机名")} value={info.hostname} />
+                <Row label={t("系统")} value={`${info.os} / ${info.arch}`} />
+                <Row label={t("工作目录")} value={info.workspaceRoot} />
+                <Row label={t("Agent 版本")} value={info.agentVersion} />
                 <WorkspaceRootEditor current={info.workspaceRoot} onSaved={() => setWsRefresh((k) => k + 1)} />
                 <div style={{ marginTop: 16, display: "flex", gap: 8 }}>
                   <button onClick={() => { setOpen(false); setPanelOpen(true); }} style={primaryBtnStyle}>
-                    打开本地机器面板
+                    {t("打开本地机器面板")}
                   </button>
-                  <button onClick={() => setOpen(false)} style={secondaryBtnStyle}>关闭</button>
+                  <button onClick={() => setOpen(false)} style={secondaryBtnStyle}>{t("关闭")}</button>
                 </div>
               </div>
             ) : (
               <div style={{ padding: 16 }}>
                 <p style={{ ...muted, marginTop: 0 }}>
-                  在你的本地机器（如 CentOS 7）上运行以下命令，把 pi-web 连接到该机器的文件系统与命令行。
+                  {t("在你的本地机器（如 CentOS 7）上运行以下命令，把 pi-web 连接到该机器的文件系统与命令行。")}
                 </p>
 
-                <Step n={1} title="下载 Agent">
+                <Step n={1} title={t("下载 Agent")}>
                   <CodeBlock code={`curl -fsSL -o pi-agent ${downloadUrl}\nchmod +x pi-agent`} />
                   <div style={{ ...muted, fontSize: 11, marginTop: 4 }}>
                     检测到 {asset.label}；其它架构请在 URL 里替换文件名（linux-arm64 / windows-amd64.exe）。

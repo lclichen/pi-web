@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { resolveConfigCwdSync } from "@/lib/config-cwd";
 import { deleteAgent, getAgentDetail, setAgentEnabled, updateAgent } from "@/lib/agents-service";
 import type { AgentFields } from "@/lib/agents-service";
+import { BUILTIN_PROFILES } from "@/lib/subagents";
 import type { ConfigScope } from "@/lib/api-types";
 
 export const dynamic = "force-dynamic";
@@ -22,7 +23,31 @@ export async function GET(
   if (!dir.ok) return NextResponse.json({ error: dir.error }, { status: dir.status });
   const cwd = dir.cwd;
   const { name } = await params;
-  const scope = readScope(searchParams.get("scope"));
+  const scopeParam = searchParams.get("scope");
+  // Built-in subagents have no file behind them; serve their definition
+  // read-only instead of hitting the filesystem.
+  if (scopeParam === "builtin") {
+    const profile = BUILTIN_PROFILES.find((p) => p.name.toLowerCase() === name.trim().toLowerCase());
+    if (!profile) return NextResponse.json({ error: "Agent not found" }, { status: 404 });
+    return NextResponse.json({
+      name: profile.name,
+      scope: "builtin",
+      filePath: "(builtin)",
+      description: profile.description,
+      tools: profile.tools,
+      ...(profile.model ? { model: profile.model } : {}),
+      ...(profile.thinking ? { thinking: profile.thinking } : {}),
+      ...(profile.maxTurns !== undefined ? { maxTurns: profile.maxTurns } : {}),
+      enabled: profile.enabled,
+      isDefault: true,
+      systemPrompt: profile.systemPrompt,
+      loadSkills: profile.loadSkills,
+      loadExtensions: profile.loadExtensions,
+      inheritContext: profile.inheritContext,
+      runInBackground: profile.runInBackground,
+    });
+  }
+  const scope = readScope(scopeParam);
   try {
     const detail = getAgentDetail(cwd, scope, name);
     if (!detail) return NextResponse.json({ error: "Agent not found" }, { status: 404 });

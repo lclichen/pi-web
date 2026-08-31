@@ -140,7 +140,8 @@ export type ConfigScope = "project" | "global";
 
 export interface AgentInfo {
   name: string;
-  scope: ConfigScope;
+  /** "builtin" marks the read-only built-in subagents appended by the API. */
+  scope: ConfigScope | "builtin";
   filePath: string;
   description?: string;
   tools?: string[];

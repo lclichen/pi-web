@@ -132,6 +132,28 @@ export function ProjectSessionTree({
     loadProjects();
   };
 
+  // 导出配置包：拉 zip blob 触发浏览器下载（.pi/ 配置 + labs/，凭证已剥离）。
+  const exportConfig = async (project: ProjectRecord) => {
+    try {
+      const res = await fetch(`/api/projects/${encodeURIComponent(project.id)}/config-export`);
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        window.alert(data.error ?? `导出失败（HTTP ${res.status}）`);
+        return;
+      }
+      const blob = await res.blob();
+      const safeName = project.name.replace(/[\\/:*?"<>|]/g, "_").trim() || "project";
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${safeName}-config.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      window.alert(t("导出失败，请重试"));
+    }
+  };
+
   const remove = async (project: ProjectRecord) => {
     if (!window.confirm(t("删除项目「{name}」及其配置目录？（会话记录保留）", { name: project.name }))) return;
     await fetch(`/api/projects/${encodeURIComponent(project.id)}`, { method: "DELETE" }).catch(() => {});
@@ -463,6 +485,7 @@ export function ProjectSessionTree({
           <MenuItem label={t("复制为新项目")} onClick={() => { void duplicate(menu.project); setMenu(null); }} />
           <MenuItem label={t("设置（模型凭证等）")} onClick={() => { setSettingsId(menu.project.id); setMenu(null); }} />
           <MenuItem label={t("导入项目配置…")} onClick={() => { setImportId(menu.project.id); setMenu(null); }} />
+          <MenuItem label={t("导出配置包…")} onClick={() => { void exportConfig(menu.project); setMenu(null); }} />
           {menu.project.mode === "sandbox" && (() => {
             // 绑定信息：项目 → 容器 → 镜像 三位一体（debug 友好）。
             const boundInfo = menu.project.containerId != null
@@ -526,8 +549,10 @@ export function ProjectSessionTree({
 
       {importId && (
         <ProjectImportDialog
+          projectId={importId}
           projectName={projects.find((p) => p.id === importId)?.name ?? importId}
           onClose={() => setImportId(null)}
+          onImported={() => { loadProjects(); refreshSessions(); }}
         />
       )}
     </div>

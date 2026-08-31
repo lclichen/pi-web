@@ -200,17 +200,34 @@ else
   else
     log "冒烟测试（AppImage 自解压模式）…"
     THOME="$WORK/smoke-home"
+    SMOKE_LOG="$WORK/smoke-appimage.log"
     rm -rf "$THOME"; mkdir -p "$THOME/home"
     if ( cd "$THOME" \
          && AMEDAC_HOME="$THOME/home" HOME="$THOME/home" PLATFORM_PORT=31190 WEB_PORT=31191 \
-            "$OUT_ABS" --appimage-extract-and-run stop >/dev/null 2>&1; \
+            "$OUT_ABS" --appimage-extract-and-run stop >"$SMOKE_LOG" 2>&1; \
          [ -d "$THOME/home/app/scripts" ] ); then
       echo "   AppImage: OK（可运行、能展开、子命令可用）"
     else
-      echo "   AppImage: 自解压冒烟失败"
+      echo "   AppImage: 自解压冒烟失败，输出尾部（完整日志: $SMOKE_LOG，服务日志: $THOME/home/logs/）："
+      tail -n 30 "$SMOKE_LOG" 2>/dev/null | sed 's/^/     /'
+      [ -d "$THOME/home/logs" ] && for f in "$THOME/home/logs"/*.log; do
+        [ -f "$f" ] || continue
+        echo "   --- $(basename "$f") 尾部 ---"
+        tail -n 15 "$f" 2>/dev/null | sed 's/^/     /'
+      done
       exit 1
     fi
-    rm -rf "$THOME"
+    # NFS 上服务句柄释放是异步的：rm 立刻执行可能撞上 .nfs* busy。重试
+    # 几次，仍失败降级为警告（幽灵文件会在句柄释放后由 NFS 服务器删除）。
+    rm_ok=0
+    for _ in 1 2 3 4 5; do
+      if rm -rf "$THOME" 2>/dev/null; then rm_ok=1; break; fi
+      sleep 2
+    done
+    if [ "$rm_ok" != "1" ]; then
+      echo "   警告: smoke-home 清理失败（NFS 句柄延迟）——残留的 .nfs* 文件稍后会自动消失，不影响产物"
+      rm -rf "$THOME" 2>/dev/null || true
+    fi
   fi
 fi
 

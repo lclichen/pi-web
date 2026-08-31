@@ -202,11 +202,16 @@ else
     THOME="$WORK/smoke-home"
     SMOKE_LOG="$WORK/smoke-appimage.log"
     rm -rf "$THOME"; mkdir -p "$THOME/home"
+    # 真实启停一轮：--web 启动平台+WebUI（start-all 自带健康等待，成功返回
+    # 即服务已就绪），再 stop 收尾。判定证据用 v2 的真实落盘痕迹
+    # run/ports.env（start-all 选定端口后写入；v1 的 app/ 整包复制已不存在）。
     if ( cd "$THOME" \
          && AMEDAC_HOME="$THOME/home" HOME="$THOME/home" PLATFORM_PORT=31190 WEB_PORT=31191 \
-            "$OUT_ABS" --appimage-extract-and-run stop >"$SMOKE_LOG" 2>&1; \
-         [ -d "$THOME/home/app/scripts" ] ); then
-      echo "   AppImage: OK（可运行、能展开、子命令可用）"
+            "$OUT_ABS" --appimage-extract-and-run --web >"$SMOKE_LOG" 2>&1 \
+         && AMEDAC_HOME="$THOME/home" HOME="$THOME/home" PLATFORM_PORT=31190 WEB_PORT=31191 \
+            "$OUT_ABS" --appimage-extract-and-run stop >>"$SMOKE_LOG" 2>&1; \
+         [ -f "$THOME/home/run/ports.env" ] ); then
+      echo "   AppImage: OK（自解压启动平台+WebUI，健康检查通过后停止）"
     else
       echo "   AppImage: 自解压冒烟失败，输出尾部（完整日志: $SMOKE_LOG，服务日志: $THOME/home/logs/）："
       tail -n 30 "$SMOKE_LOG" 2>/dev/null | sed 's/^/     /'

@@ -11,7 +11,10 @@ import { useI18n } from "@/hooks/useI18n";
  * 项目」同语义，来源是上传的压缩包而已。
  */
 interface Props {
-  projectId: string;
+  /** 项目导入：项目 id（上传到 /api/projects/:id/config-import）。 */
+  projectId?: string;
+  /** Host 模式导入：服务器目录（上传到 /api/host/config-import?cwd=…）。 */
+  hostDir?: string;
   projectName: string;
   onClose: () => void;
   /** 导入成功后通知属主刷新项目数据。 */
@@ -24,7 +27,7 @@ interface ImportResult {
   files: string[];
 }
 
-export function ProjectImportDialog({ projectId, projectName, onClose, onImported }: Props) {
+export function ProjectImportDialog({ projectId, hostDir, projectName, onClose, onImported }: Props) {
   const { t } = useI18n();
   const inputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -55,7 +58,10 @@ export function ProjectImportDialog({ projectId, projectName, onClose, onImporte
     try {
       const body = new FormData();
       body.append("file", file);
-      const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/config-import`, {
+      const url = hostDir
+        ? `/api/host/config-import?cwd=${encodeURIComponent(hostDir)}`
+        : `/api/projects/${encodeURIComponent(projectId ?? "")}/config-import`;
+      const res = await fetch(url, {
         method: "POST",
         body,
       });

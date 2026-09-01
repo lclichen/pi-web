@@ -71,6 +71,7 @@ export function ProjectSessionTree({
   const [menu, setMenu] = useState<{ project?: ProjectRecord; directory?: string; x: number; y: number } | null>(null);
   const [settingsId, setSettingsId] = useState<string | null>(null);
   const [importId, setImportId] = useState<string | null>(null);
+  const [hostImportDir, setHostImportDir] = useState<string | null>(null);
   const [containers, setContainers] = useState<Array<{ id: number; name: string; status: string; imageName: string }>>([]);
   const [newDialog, setNewDialog] = useState<"sandbox" | "local-machine" | null>(null);
   const [myWorkspaceId, setMyWorkspaceId] = useState<number | null>(null);
@@ -160,6 +161,27 @@ export function ProjectSessionTree({
     }
   };
 
+  // Host 目录配置包导出：cwd 走查询串，服务端按 host 根栅栏校验（admin）。
+  const exportHostConfig = async (dir: string) => {
+    try {
+      const res = await fetch(`/api/host/config-export?cwd=${encodeURIComponent(dir)}`);
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        window.alert(data.error ?? `导出失败（HTTP ${res.status}）`);
+        return;
+      }
+      const blob = await res.blob();
+      const base = dir.replace(/\/+$/g, "").split("/").filter(Boolean).pop() || "directory";
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${base}-config.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      window.alert(t("导出失败，请重试"));
+    }
+  };
   const remove = async (project: ProjectRecord) => {
     if (!window.confirm(t("删除项目「{name}」及其配置目录？（会话记录保留）", { name: project.name }))) return;
     await fetch(`/api/projects/${encodeURIComponent(project.id)}`, { method: "DELETE" }).catch(() => {});
@@ -524,6 +546,8 @@ export function ProjectSessionTree({
           }}
         >
           <MenuItem label={t("新建会话")} onClick={() => { onNewSessionInDirectory(menu.directory!); setMenu(null); }} />
+          <MenuItem label={t("导入项目配置…")} onClick={() => { setHostImportDir(menu.directory!); setMenu(null); }} />
+          <MenuItem label={t("导出配置包…")} onClick={() => { void exportHostConfig(menu.directory!); setMenu(null); }} />
           <MenuItem label={t("复制路径")} onClick={() => {
             void navigator.clipboard?.writeText(menu.directory!).catch(() => {});
             setMenu(null);
@@ -626,6 +650,14 @@ export function ProjectSessionTree({
         />
       )}
 
+      {hostImportDir && (
+        <ProjectImportDialog
+          hostDir={hostImportDir}
+          projectName={hostImportDir.split("/").filter(Boolean).pop() ?? hostImportDir}
+          onClose={() => setHostImportDir(null)}
+          onImported={() => refreshSessions()}
+        />
+      )}
       {importId && (
         <ProjectImportDialog
           projectId={importId}

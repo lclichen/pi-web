@@ -14,6 +14,8 @@ interface Props {
   selectedSessionId: string | null;
   onSelectSession: (session: SessionInfo) => void;
   onNewSessionInProject: (project: ProjectRecord) => void;
+  /** Host 空间：在指定服务器目录创建/打开会话。 */
+  onNewSessionInDirectory?: (directory: string) => void;
   onDeleteSession: (sessionId: string) => void | Promise<void>;
   onRenameSession: (sessionId: string, name: string) => void | Promise<void>;
   refreshSessions: () => void;
@@ -44,11 +46,11 @@ export function ProjectSessionTree({
   selectedSessionId,
   onSelectSession,
   onNewSessionInProject,
-  onDeleteSession,
+  onNewSessionInDirectory,  onDeleteSession,
   onRenameSession,
   refreshSessions,
   isAdmin,
-  sessionSpace = "mine",
+  sessionSpace,
   onSessionSpaceChange,
   onOpenServerDirectory,
   onManageSandbox,
@@ -65,7 +67,8 @@ export function ProjectSessionTree({
   });
   const [showAll, setShowAll] = useState<Set<string>>(new Set());
   const [query, setQuery] = useState("");
-  const [menu, setMenu] = useState<{ project: ProjectRecord; x: number; y: number } | null>(null);
+  // Host 目录组不是持久化的 ProjectRecord，菜单按 directory 分发。
+  const [menu, setMenu] = useState<{ project?: ProjectRecord; directory?: string; x: number; y: number } | null>(null);
   const [settingsId, setSettingsId] = useState<string | null>(null);
   const [importId, setImportId] = useState<string | null>(null);
   const [containers, setContainers] = useState<Array<{ id: number; name: string; status: string; imageName: string }>>([]);
@@ -89,7 +92,7 @@ export function ProjectSessionTree({
       .catch(() => setContainers([]));
   }, []);
   useEffect(() => { loadContainers(); }, [loadContainers, projectsRefreshKey]);
-  useEffect(() => { if (menu?.project.mode === "sandbox") loadContainers(); }, [menu, loadContainers]);
+  useEffect(() => { if (menu?.project?.mode === "sandbox") loadContainers(); }, [menu, loadContainers]);
 
   // My cloud workspace (for export-to-workspace); lazily ensured server-side.
   useEffect(() => {
@@ -373,6 +376,8 @@ export function ProjectSessionTree({
       )}
 
       {!searching && (<>
+      {/* 项目列表在两个空间都显示：host 空间下项目会话不在当前列表里，
+          项目显示为空态（暂无会话）——这正是快速建会话的入口，不能隐藏。 */}
       {projects.map((project) => {
         const { visible, total } = projectSessions(project);
         const isCollapsed = collapsed.has(project.id);
@@ -481,6 +486,20 @@ export function ProjectSessionTree({
                 {root.split("/").filter(Boolean).pop() ?? root}
               </span>
               <span style={{ fontSize: 10, color: "var(--text-dim)" }}>{list.length}</span>
+              {onNewSessionInDirectory && (
+                <button
+                  type="button"
+                  title={t("新建会话")}
+                  onClick={(e) => { e.stopPropagation(); onNewSessionInDirectory(root); }}
+                  style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--text-dim)", fontSize: 13, padding: "0 3px" }}
+                >＋</button>
+              )}
+              <button
+                type="button"
+                title={t("目录菜单")}
+                onClick={(e) => { e.stopPropagation(); setMenu({ directory: root, x: e.currentTarget.getBoundingClientRect().right, y: e.currentTarget.getBoundingClientRect().bottom }); }}
+                style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--text-dim)", fontSize: 12, padding: "0 3px" }}
+              >⋮</button>
             </div>
             {visible.map((s) => renderItem(s, null))}
             {!isCollapsed && list.length > RECENT_COUNT && (
@@ -493,8 +512,8 @@ export function ProjectSessionTree({
       })}
       </>)}
 
-      {/* 项目菜单 */}
-      {menu && (
+      {/* 目录菜单（Host 空间的动态目录组） */}
+      {menu?.directory && onNewSessionInDirectory && (
         <div
           ref={menuRef}
           style={{
@@ -504,72 +523,100 @@ export function ProjectSessionTree({
             boxShadow: "0 8px 24px rgba(0,0,0,0.3)", overflow: "hidden", fontSize: 12,
           }}
         >
-          <MenuItem label={t("新建会话")} onClick={() => { onNewSessionInProject(menu.project); setMenu(null); }} />
+          <MenuItem label={t("新建会话")} onClick={() => { onNewSessionInDirectory(menu.directory!); setMenu(null); }} />
+          <MenuItem label={t("复制路径")} onClick={() => {
+            void navigator.clipboard?.writeText(menu.directory!).catch(() => {});
+            setMenu(null);
+          }} />
+          <MenuItem label={t("在文件管理器中浏览")} onClick={() => {
+            // 与项目会话同一套文件面板：把该目录设为当前工作目录并建一个会话。
+            onNewSessionInDirectory(menu.directory!);
+            setMenu(null);
+          }} />
+        </div>
+      )}
+
+      {/* 项目菜单 */}
+      {(() => {
+      const menuProject = menu?.project;
+      if (!menuProject) return null;
+      return (
+        <div
+          ref={menuRef}
+          style={{
+            position: "fixed", top: menu.y, left: Math.max(8, menu.x - 160), zIndex: 1200,
+            display: "flex", flexDirection: "column", minWidth: 160,
+            background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: 8,
+            boxShadow: "0 8px 24px rgba(0,0,0,0.3)", overflow: "hidden", fontSize: 12,
+          }}
+        >
+          <MenuItem label={t("新建会话")} onClick={() => { onNewSessionInProject(menuProject); setMenu(null); }} />
           <MenuItem label={t("重命名")} onClick={() => {
-            const name = window.prompt(t("项目新名称："), menu.project.name);
+            const name = window.prompt(t("项目新名称："), menuProject.name);
             if (name?.trim()) {
-              void fetch(`/api/projects/${encodeURIComponent(menu.project.id)}`, {
+              void fetch(`/api/projects/${encodeURIComponent(menuProject.id)}`, {
                 method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: name.trim() }),
               }).then(() => loadProjects());
             }
             setMenu(null);
           }} />
-          <MenuItem label={t("复制为新项目")} onClick={() => { void duplicate(menu.project); setMenu(null); }} />
-          <MenuItem label={t("设置（模型凭证等）")} onClick={() => { setSettingsId(menu.project.id); setMenu(null); }} />
-          <MenuItem label={t("导入项目配置…")} onClick={() => { setImportId(menu.project.id); setMenu(null); }} />
-          <MenuItem label={t("导出配置包…")} onClick={() => { void exportConfig(menu.project); setMenu(null); }} />
-          {menu.project.mode === "sandbox" && (() => {
+          <MenuItem label={t("复制为新项目")} onClick={() => { void duplicate(menuProject); setMenu(null); }} />
+          <MenuItem label={t("设置（模型凭证等）")} onClick={() => { setSettingsId(menuProject.id); setMenu(null); }} />
+          <MenuItem label={t("导入项目配置…")} onClick={() => { setImportId(menuProject.id); setMenu(null); }} />
+          <MenuItem label={t("导出配置包…")} onClick={() => { void exportConfig(menuProject); setMenu(null); }} />
+          {menuProject.mode === "sandbox" && (() => {
             // 绑定信息：项目 → 容器 → 镜像 三位一体（debug 友好）。
-            const boundInfo = menu.project.containerId != null
-              ? containers.find((c) => c.id === menu.project.containerId)
+            const boundInfo = menuProject.containerId != null
+              ? containers.find((c) => c.id === menuProject.containerId)
               : undefined;
             return (
               <div style={{ borderTop: "1px solid var(--border)", padding: "6px 10px", color: "var(--text-dim)", fontSize: 10.5, lineHeight: 1.6 }}>
                 {t("容器：{info}", { info: boundInfo ? `#${boundInfo.id} · ${boundInfo.status === "running" ? t("运行中") : boundInfo.status}` : "未绑定" })}
                 {boundInfo?.imageName ? ` · ${boundInfo.imageName}` : ""}
-                {t("存档 {n}/2（游戏存档制，保留最近 2 个）", { n: menu.project.snapshotSlots?.length ?? 0 })}
+                {t("存档 {n}/2（游戏存档制，保留最近 2 个）", { n: menuProject.snapshotSlots?.length ?? 0 })}
               </div>
             );
           })()}
-          {menu.project.mode === "sandbox" && (
+          {menuProject.mode === "sandbox" && (
             <div style={{ borderTop: "1px solid var(--border)", padding: "4px 10px", color: "var(--text-dim)", fontSize: 10 }}>存档（含环境与文件）</div>
           )}
-          {menu.project.mode === "sandbox" && (
-            <MenuItem label={t("保存存档（快照当前容器）")} onClick={() => { void projectSnapshot(menu.project, "save"); setMenu(null); }} />
+          {menuProject.mode === "sandbox" && (
+            <MenuItem label={t("保存存档（快照当前容器）")} onClick={() => { void projectSnapshot(menuProject, "save"); setMenu(null); }} />
           )}
-          {menu.project.mode === "sandbox" && (menu.project.snapshotSlots ?? []).map((slot) => (
+          {menuProject.mode === "sandbox" && (menuProject.snapshotSlots ?? []).map((slot) => (
             <MenuItem
               key={slot.id}
               label={t("↩ 恢复存档 · {time}", { time: new Date(slot.createdAt).toLocaleString() })}
-              onClick={() => { void projectSnapshot(menu.project, "restore", slot.id); setMenu(null); }}
+              onClick={() => { void projectSnapshot(menuProject, "restore", slot.id); setMenu(null); }}
             />
           ))}
-          {menu.project.mode === "sandbox" && (
+          {menuProject.mode === "sandbox" && (
             <div style={{ borderTop: "1px solid var(--border)", padding: "4px 10px", color: "var(--text-dim)", fontSize: 10 }}>文件留存（仅文件）</div>
           )}
-          {menu.project.mode === "sandbox" && (
-            <MenuItem label={t("导出到我的工作区（tar.gz）")} onClick={() => { void exportWorkspace(menu.project); setMenu(null); }} />
+          {menuProject.mode === "sandbox" && (
+            <MenuItem label={t("导出到我的工作区（tar.gz）")} onClick={() => { void exportWorkspace(menuProject); setMenu(null); }} />
           )}
-          {menu.project.mode === "sandbox" && (
+          {menuProject.mode === "sandbox" && (
             <div style={{ borderTop: "1px solid var(--border)", padding: "4px 10px", color: "var(--text-dim)", fontSize: 10 }}>沙箱容器</div>
           )}
-          {menu.project.mode === "sandbox" && containers.map((c) => (
+          {menuProject.mode === "sandbox" && containers.map((c) => (
             <MenuItem
               key={c.id}
-              label={`${menu.project.containerId === c.id ? "● " : "○ "}${c.name} (#${c.id})`}
-              onClick={() => void setContainer(menu.project, c.id)}
+              label={`${menuProject.containerId === c.id ? "● " : "○ "}${c.name} (#${c.id})`}
+              onClick={() => void setContainer(menuProject, c.id)}
             />
           ))}
-          {menu.project.mode === "sandbox" && (
-            <MenuItem label={t("跟随平台默认容器")} onClick={() => void setContainer(menu.project, null)} />
+          {menuProject.mode === "sandbox" && (
+            <MenuItem label={t("跟随平台默认容器")} onClick={() => void setContainer(menuProject, null)} />
           )}
-          {menu.project.mode === "sandbox" && onManageSandbox && (
-            <MenuItem label={t("管理沙箱容器（新建/启停/删除）…")} onClick={() => { onManageSandbox(menu.project); setMenu(null); }} />
+          {menuProject.mode === "sandbox" && onManageSandbox && (
+            <MenuItem label={t("管理沙箱容器（新建/启停/删除）…")} onClick={() => { onManageSandbox(menuProject); setMenu(null); }} />
           )}
           <div style={{ borderTop: "1px solid var(--border)" }} />
-          <MenuItem label={t("删除项目")} danger onClick={() => { void remove(menu.project); setMenu(null); }} />
+          <MenuItem label={t("删除项目")} danger onClick={() => { void remove(menuProject); setMenu(null); }} />
         </div>
-      )}
+      );
+      })()}
 
       {settingsId && (
         <ProjectSettingsDialog

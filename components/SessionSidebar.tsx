@@ -496,7 +496,9 @@ export function SessionSidebar({ authInfo = null, sessionSpace = "mine", onSessi
     } finally {
       if (showLoading) setLoading(false);
     }
-  }, []);
+    // sessionSpace/authInfo must be deps: the closure builds the query
+    // (?space=host), and a stale closure kept the admin toggle dead.
+  }, [authInfo, sessionSpace]);
 
   const initialLoadDone = useRef(false);
   useEffect(() => {
@@ -1747,6 +1749,13 @@ export function SessionSidebar({ authInfo = null, sessionSpace = "mine", onSessi
             onNewSessionInProject={(project: ProjectRecord) => {
               const tempId = typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now()}`;
               onNewSession?.(tempId, "/", project.mode, project.id, project.name);
+            }}
+            onNewSessionInDirectory={(dir: string) => {
+              // Host 空间：目录组没有 ProjectRecord，走 host 模式 + 真实路径
+              // （等价于"自定义路径"流程，但跳过选择器直接落目录）。
+              const tempId = typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now()}`;
+              switchHostDir(dir);
+              onNewSession?.(tempId, dir, "host", undefined, dir.split("/").filter(Boolean).pop() ?? dir);
             }}
             onDeleteSession={async (id) => {
               await fetch(`/api/sessions/${encodeURIComponent(id)}`, { method: "DELETE" }).catch(() => {});

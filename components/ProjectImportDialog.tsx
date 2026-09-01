@@ -41,7 +41,7 @@ export function ProjectImportDialog({ projectId, projectName, onClose, onImporte
       setError(t("仅支持 .zip 配置包"));
       return;
     }
-    if (f.size > 30 * 1024 * 1024) {
+    if (f.size > 200 * 1024 * 1024) {
       setError(t("配置包过大（>30MB）"));
       return;
     }

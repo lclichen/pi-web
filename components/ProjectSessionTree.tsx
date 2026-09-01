@@ -19,6 +19,7 @@ interface Props {
   refreshSessions: () => void;
   isAdmin: boolean;
   sessionSpace: "mine" | "host";
+  onSessionSpaceChange?: (space: "mine" | "host") => void;
   onOpenServerDirectory?: () => void;
   /** Open the sandbox manager dialog bound to a project (sandbox mode). */
   onManageSandbox?: (project: ProjectRecord) => void;
@@ -47,6 +48,8 @@ export function ProjectSessionTree({
   onRenameSession,
   refreshSessions,
   isAdmin,
+  sessionSpace = "mine",
+  onSessionSpaceChange,
   onOpenServerDirectory,
   onManageSandbox,
   projectsRefreshKey,
@@ -310,6 +313,31 @@ export function ProjectSessionTree({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 2, padding: "6px 4px" }}>
+      {/* Admin 空间切换：我的项目会话 ↔ Host 空间（CLI / 服务器目录会话）。 */}
+      {isAdmin && onSessionSpaceChange && !searching && (
+        <div style={{ display: "flex", gap: 0, padding: "0 4px 8px", borderRadius: 6, border: "1px solid var(--border)", overflow: "hidden", fontSize: 11 }}>
+          {(["mine", "host"] as const).map((space) => {
+            const active = sessionSpace === space;
+            return (
+              <button
+                key={space}
+                type="button"
+                onClick={() => onSessionSpaceChange(space)}
+                title={space === "host" ? t("Host 会话：CLI 与服务器目录产生的会话（全局 sessions 目录）") : t("我的项目会话")}
+                style={{
+                  flex: 1, padding: "4px 0", border: "none", cursor: "pointer",
+                  background: active ? "var(--bg-selected)" : "transparent",
+                  color: active ? "var(--text)" : "var(--text-dim)",
+                  fontWeight: active ? 600 : 400,
+                }}
+              >
+                {space === "mine" ? t("我的会话") : "Host (CLI)"}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {/* 全局会话搜索 */}
       <div style={{ padding: "0 4px 8px" }}>
         <input
@@ -424,8 +452,12 @@ export function ProjectSessionTree({
           </div>
         );
       })}
-      {projects.length === 0 && hostGroups.length === 0 && (
+      {sessionSpace === "mine" && projects.length === 0 && hostGroups.length === 0 && (
         <div style={{ padding: "8px 6px", fontSize: 11, color: "var(--text-dim)" }}>{t("还没有项目——点上方按钮创建第一个。")}</div>
+      )}
+
+      {sessionSpace === "host" && hostGroups.length === 0 && (
+        <div style={{ padding: "8px 6px", fontSize: 11, color: "var(--text-dim)" }}>{t("Host 空间暂无会话——在服务器上用 pi CLI 打开的会话会出现在这里")}</div>
       )}
 
       {/* Host 空间动态分组（admin） */}

@@ -252,6 +252,10 @@ function AddSkillPanel({
   );
   const [scope, setScope] = useState<"global" | "project">("global");
   const inputRef = useRef<HTMLInputElement>(null);
+  const uploadRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadMsg, setUploadMsg] = useState<string | null>(null);
+
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -313,6 +317,26 @@ function AddSkillPanel({
     [onInstalled, scope, cwd],
   );
 
+  const uploadZip = async (f: File | null) => {
+    if (!f || uploading) return;
+    setUploading(true);
+    setUploadMsg(null);
+    setInstallError(null);
+    try {
+      const body = new FormData();
+      body.append("file", f);
+      const res = await fetch(`/api/skills/import?cwd=${encodeURIComponent(cwd)}`, { method: "POST", body });
+      const d = (await res.json()) as { ok?: boolean; skill?: string; files?: number; error?: string };
+      if (!res.ok || d.error) throw new Error(d.error ?? `HTTP ${res.status}`);
+      setUploadMsg(t("已导入技能 {skill}（{n} 个文件）", { skill: d.skill ?? "?", n: String(d.files ?? 0) }));
+      onInstalled();
+    } catch (e) {
+      setInstallError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setUploading(false);
+      if (uploadRef.current) uploadRef.current.value = "";
+    }
+  };
   const installPath =
     scope === "global"
       ? "~/.pi/agent/skills/"
@@ -360,6 +384,22 @@ function AddSkillPanel({
              {searching ? t("i18n.searching") : t("i18n.search")}
           </ConfigButton>
         </div>
+
+        {/* Offline import: unpack a skills zip into the project */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <input
+            ref={uploadRef}
+            type="file"
+            accept=".zip,application/zip"
+            style={{ display: "none" }}
+            onChange={(e) => void uploadZip(e.target.files?.[0] ?? null)}
+          />
+          <ConfigButton onClick={() => uploadRef.current?.click()} disabled={uploading || !projectResourcesLoaded}>
+            {uploading ? t("导入中…") : t("上传技能包 (.zip)")}
+          </ConfigButton>
+          <span style={{ fontSize: 11, color: "var(--text-dim)" }}>{t("离线分发：解压到项目 .pi/skills/（每个技能目录含 SKILL.md）")}</span>
+        </div>
+        {uploadMsg && <div style={{ fontSize: 12, color: "#22c55e" }}>{uploadMsg}</div>}
 
         {/* Scope + install path row */}
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>

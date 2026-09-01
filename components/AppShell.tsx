@@ -189,8 +189,6 @@ export function AppShell() {
   const [explorerRefreshKey, setExplorerRefreshKey] = useState(0);
   const [settingsSection, setSettingsSection] = useState<SettingsSection | null>(null);
   const [modelsRefreshKey, setModelsRefreshKey] = useState(0);
-  const [agentsConfigOpen, setAgentsConfigOpen] = useState(false);
-  const [mcpConfigOpen, setMcpConfigOpen] = useState(false);
   const [projectTrust, setProjectTrust] = useState<ProjectTrustStatus | null>(null);
   const [projectTrustDialogOpen, setProjectTrustDialogOpen] = useState(false);
   const [projectTrustBusy, setProjectTrustBusy] = useState(false);
@@ -1278,7 +1276,7 @@ export function AppShell() {
             features not covered by the upstream settings sections. */}
         <button
           type="button"
-          onClick={() => setAgentsConfigOpen(true)}
+          onClick={() => setSettingsSection("agents")}
           disabled={!activeCwd && !selectedSession?.cwd && !newSessionCwd}
           title="Agents"
           aria-label="Agents"
@@ -1301,7 +1299,7 @@ export function AppShell() {
         </button>
         <button
           type="button"
-          onClick={() => setMcpConfigOpen(true)}
+          onClick={() => setSettingsSection("mcp")}
           disabled={!activeCwd && !selectedSession?.cwd && !newSessionCwd}
           title="MCP"
           aria-label="MCP"
@@ -3038,13 +3036,8 @@ export function AppShell() {
         onConfirm={() => void handleTrustProject()}
       />
     )}
-    {/* Skills/plugins config moved into the upstream SettingsPanel sections. */}
-    {agentsConfigOpen && (activeCwd ?? selectedSession?.cwd ?? newSessionCwd) && (
-      <SubagentsConfig cwd={(activeCwd ?? selectedSession?.cwd ?? newSessionCwd)!} onClose={() => setAgentsConfigOpen(false)} />
-    )}
-    {mcpConfigOpen && (activeCwd ?? selectedSession?.cwd ?? newSessionCwd) && (
-      <McpServersConfig cwd={(activeCwd ?? selectedSession?.cwd ?? newSessionCwd)!} onClose={() => setMcpConfigOpen(false)} />
-    )}
+    {/* Skills/plugins/agents/mcp config all live in the upstream
+        SettingsPanel sections now; the top-bar Agents/MCP buttons open it. */}
     </>
   );
 }

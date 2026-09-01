@@ -25,13 +25,17 @@ test("opens one settings panel from direct sidebar shortcuts", () => {
 });
 
 test("keeps enabled configuration surfaces inside the settings panel", () => {
-  for (const section of ["general", "models", "skills", "plugins"]) {
+  for (const section of ["general", "models", "skills", "agents", "mcp", "plugins"]) {
     assert.match(panelSource, new RegExp(`id: "${section}"`));
   }
   for (const component of ["ModelsConfig", "SkillsConfig", "PluginsConfig"]) {
     assert.match(panelSource, new RegExp(`<${component} embedded`));
   }
-  assert.doesNotMatch(panelSource, /id: "agents"|<AgentsConfig embedded/);
+  // This fork surfaces the tintinweb subagents config and the MCP servers
+  // config as settings sections (upstream's built-in AgentsConfig stays out).
+  assert.match(panelSource, /<SubagentsConfig embedded/);
+  assert.match(panelSource, /<McpServersConfig embedded/);
+  assert.doesNotMatch(panelSource, /<AgentsConfig embedded/);
 });
 
 test("restores the settings section and each list detail selection", async () => {

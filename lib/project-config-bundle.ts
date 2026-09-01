@@ -18,21 +18,25 @@
  * either direction.
  */
 import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { Readable } from "node:stream";
 import JSZip from "jszip";
 
 export const BUNDLE_FORMAT = "amedac-project-config";
 export const BUNDLE_VERSION = 1;
 
-export const MAX_IMPORT_BYTES = 30 * 1024 * 1024;
-const MAX_ENTRIES = 2_000;
-const MAX_UNCOMPRESSED_BYTES = 120 * 1024 * 1024;
+export const MAX_IMPORT_BYTES = 200 * 1024 * 1024;
+const MAX_ENTRIES = 20_000;
+const MAX_UNCOMPRESSED_BYTES = 600 * 1024 * 1024;
 
 /** Never exported, never imported — credentials and machine/user state. */
 const DENIED_BASENAMES = new Set(["auth.json"]);
-/** Path segments (at any depth) excluded from bundles both ways. */
-const DENIED_SEGMENTS = new Set(["node_modules", "sessions", "tmp", "bin", "cache", ".git"]);
+/**
+ * Path segments (at any depth) excluded from bundles both ways. Note
+ * node_modules is deliberately NOT here: bundles target offline deployment,
+ * so extension dependencies must travel with the archive.
+ */
+const DENIED_SEGMENTS = new Set(["sessions", "tmp", "bin", "cache", ".git"]);
 /** Top-level prefixes an import may write into the project home. */
 const ALLOWED_PREFIXES = [".pi/", "labs/"];
 const ALLOWED_ROOT_FILES = new Set(["manifest.json", "readme.md"]);
@@ -208,4 +212,99 @@ export function bundleDownloadResponse(bytes: Buffer, filename: string): Respons
       "Cache-Control": "no-store",
     },
   });
+}
+
+// ---- Skills bundle import -------------------------------------------------
+//
+// A skills zip holds skill folders at its root (each containing a SKILL.md),
+// or a single skill's contents directly at the root. It unpacks into
+// <cwd>/.pi/skills/ — the same offline-share story as project config bundles,
+// scoped to skills only.
+
+const SKILL_ALLOWED_EXT = new Set([
+  ".md", ".json", ".yaml", ".yml", ".txt", ".js", ".mjs", ".ts", ".tsx",
+  ".py", ".sh", ".css", ".html", ".svg", ".png", ".jpg", ".jpeg", ".gif",
+  ".webp", ".toml", ".ini", ".csv", ".xml",
+]);
+const SKILL_MAX_ENTRIES = 4_000;
+const SKILL_MAX_BYTES = 200 * 1024 * 1024;
+
+function skillEntryAllowed(rel: string): boolean {
+  const lower = rel.toLowerCase();
+  const dot = lower.lastIndexOf(".");
+  if (dot === -1) return false;
+  return SKILL_ALLOWED_EXT.has(lower.slice(dot));
+}
+
+export interface SkillsImportStats {
+  skill: string;          // folder name created under .pi/skills/
+  files: number;
+}
+
+/**
+ * Unpack a skills zip into <cwd>/.pi/skills/.
+ *
+ * Layout rules:
+ *  - single root folder        → unpack as .pi/skills/<folder>/…
+ *  - SKILL.md at the zip root  → unpack as .pi/skills/<zip name>/…
+ *  - multiple root folders     → each becomes .pi/skills/<folder>/…
+ */
+export async function importSkillsZip(
+  cwd: string,
+  data: Buffer,
+  zipName: string,
+): Promise<SkillsImportStats> {
+  let archive: JSZip;
+  try {
+    archive = await JSZip.loadAsync(data);
+  } catch {
+    throw new Error("无法解析压缩包（需要 zip 格式的技能包）");
+  }
+  const entries = Object.values(archive.files).filter((e) => !e.dir);
+  if (entries.length === 0) throw new Error("压缩包为空");
+  if (entries.length > SKILL_MAX_ENTRIES) throw new Error(`压缩包条目过多（>${SKILL_MAX_ENTRIES}）`);
+
+  const cleaned: Array<{ rel: string; content: Buffer }> = [];
+  let total = 0;
+  for (const entry of entries) {
+    const rel = sanitizeEntryPath(entry.name);
+    if (!skillEntryAllowed(rel)) continue; // skip unsupported files (e.g. binaries)
+    const content = await entry.async("nodebuffer");
+    total += content.length;
+    if (total > SKILL_MAX_BYTES) throw new Error("解压后内容过大（>200MB）");
+    cleaned.push({ rel, content });
+  }
+  if (cleaned.length === 0) throw new Error("包内没有可识别的技能文件（需要 SKILL.md）");
+
+  // Layout: every entry at the zip root (no folders) means one skill shipped
+  // bare — give it the zip's name. Anything else (skill folders at the root,
+  // or a bare skill mixed with folders) unpacks as-is; each root folder is a
+  // skill in its own right.
+  const allAtRoot = cleaned.every((f) => !f.rel.includes("/"));
+  const zipBase = zipName.replace(/\.zip$/i, "").replace(/[^\w.-]+/g, "-").replace(/^-+|-+$/g, "") || "skill";
+  const targetPrefix = allAtRoot ? zipBase : "";
+
+  // A skills bundle must yield at least one SKILL.md somewhere.
+  const hasSkillMd = cleaned.some((f) => {
+    const rel = f.rel.toLowerCase();
+    if (rel === "skill.md") return true;
+    const segs = rel.split("/");
+    return segs.length >= 2 && segs[1] === "skill.md";
+  });
+  if (!hasSkillMd) throw new Error("包内没有 SKILL.md（每个技能目录需包含一个）");
+
+  const skillsRoot = join(resolve(cwd), ".pi", "skills");
+  await mkdir(skillsRoot, { recursive: true });
+
+  let files = 0;
+  for (const file of cleaned) {
+    const rel = targetPrefix ? `${targetPrefix}/${file.rel}` : file.rel;
+    const target = join(skillsRoot, rel);
+    await mkdir(dirname(target), { recursive: true });
+    await writeFile(target, file.content);
+    files += 1;
+  }
+
+  const skillName = targetPrefix || "(多个技能)";
+  return { skill: skillName, files };
 }

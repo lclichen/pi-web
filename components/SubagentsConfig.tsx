@@ -181,7 +181,7 @@ function ToolCheckbox({
   );
 }
 
-export function SubagentsConfig({ cwd, onClose }: { cwd: string; onClose: () => void }) {
+export function SubagentsConfig({ cwd, onClose, embedded = false }: { cwd: string; onClose: () => void; embedded?: boolean }) {
   const isMobile = useIsMobile();
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -382,21 +382,10 @@ export function SubagentsConfig({ cwd, onClose }: { cwd: string; onClose: () => 
   const showForm = creating || detail !== null;
 
   return (
-    <div
-      style={{
-        position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.35)",
-        display: "flex", alignItems: "center", justifyContent: "center",
-      }}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    <div style={embedded ? { display: "flex", flexDirection: "column", height: "100%" } : { position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.35)", display: "flex", alignItems: "center", justifyContent: "center" }}
+      onClick={(e) => { if (!embedded && e.target === e.currentTarget) onClose(); }}
     >
-      <div
-        style={{
-          width: isMobile ? "calc(100vw - 16px)" : 920, maxWidth: "calc(100vw - 16px)",
-          height: isMobile ? "calc(100dvh - 16px)" : "82vh", maxHeight: "calc(100dvh - 16px)",
-          background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 8,
-          display: "flex", flexDirection: "column", boxShadow: "0 8px 32px rgba(0,0,0,0.18)", overflow: "hidden",
-        }}
-      >
+      <div style={embedded ? { flex: 1, minHeight: 0, background: "var(--bg)", border: "none", borderRadius: 0, display: "flex", flexDirection: "column", overflow: "hidden" } : { width: isMobile ? "calc(100vw - 16px)" : 920, maxWidth: "calc(100vw - 16px)", height: isMobile ? "calc(100dvh - 16px)" : "82vh", maxHeight: "calc(100dvh - 16px)", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 8, display: "flex", flexDirection: "column", boxShadow: "0 8px 32px rgba(0,0,0,0.18)", overflow: "hidden" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 8, minWidth: 0 }}>
             <span style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>Subagents</span>
@@ -407,7 +396,7 @@ export function SubagentsConfig({ cwd, onClose }: { cwd: string; onClose: () => 
               <input type="checkbox" checked={prefs.subagentsEnabled} onChange={(e) => void togglePref("subagentsEnabled", e.target.checked)} style={{ margin: 0 }} />
               active
             </label>
-            <button onClick={onClose} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 20, lineHeight: 1, padding: "2px 6px" }}>×</button>
+            {!embedded && <button onClick={onClose} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 20, lineHeight: 1, padding: "2px 6px" }}>×</button>}
           </div>
         </div>
 

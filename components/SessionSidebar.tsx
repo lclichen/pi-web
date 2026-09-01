@@ -948,9 +948,12 @@ export function SessionSidebar({ authInfo = null, sessionSpace = "mine", onSessi
 
   const recentProjects = getRecentProjects(allSessions);
   const showProjectFilter = recentProjects.length > 8;
-  // 顶部 New 是"服务器目录会话"入口（admin 专用）：普通用户在 auth-on 下
-  // 只能通过项目节点"＋"建会话，避免出现无意义的 host 入口。
-  const showTopNewButton = !(authInfo?.enabled && authInfo.user && authInfo.user.role !== "admin");
+  // 新建项目入口对所有人开放（user/admin 均可建项目，auth-off 单用户同）。
+  const showTopNewButton = true;
+  // "选择项目…"（默认目录/自定义路径）是 host 语义的服务器目录入口：
+  // auth-on 下仅 admin 可见；auth-off（单用户）保持原有自定义路径用法。
+  const isAdminUser = !(authInfo?.enabled && authInfo.user && authInfo.user.role !== "admin");
+  const showCwdPicker = isAdminUser;
   const visibleProjects = projectFilter.trim()
     ? recentProjects.filter((project) => project.root.toLowerCase().includes(projectFilter.trim().toLowerCase()))
     : recentProjects;
@@ -1124,7 +1127,8 @@ export function SessionSidebar({ authInfo = null, sessionSpace = "mine", onSessi
           </div>
         </div>
 
-        {/* CWD picker */}
+        {/* CWD picker — host-directory entry (admin-only under auth) */}
+        {showCwdPicker && (
         <div ref={dropdownRef} style={{ position: "relative" }}>
           <button
             onClick={() => setDropdownOpen((v) => !v)}
@@ -1362,6 +1366,7 @@ export function SessionSidebar({ authInfo = null, sessionSpace = "mine", onSessi
               </button>
           </AnimatedDropdown>
         </div>
+        )}
 
         {/* Worktree switcher — shown only for git projects at a checkout top
             level (repo subdirs keep their own project identity, so switching
@@ -1757,6 +1762,7 @@ export function SessionSidebar({ authInfo = null, sessionSpace = "mine", onSessi
             refreshSessions={loadSessions}
             isAdmin={authInfo.user?.role === "admin"}
             sessionSpace={sessionSpace}
+            onSessionSpaceChange={onSessionSpaceChange}
             onOpenServerDirectory={() => setCustomPathOpen(true)}
             onManageSandbox={onManageSandbox}
             projectsRefreshKey={projectsRefreshKey}

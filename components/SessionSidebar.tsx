@@ -91,7 +91,7 @@ interface Props {
   onSessionSpaceChange?: (space: "mine" | "host") => void;
   selectedSessionId: string | null;
   onSelectSession: (session: SessionInfo, isRestore?: boolean) => void;
-  onNewSession?: (sessionId: string, cwd: string, mode?: "host" | "sandbox" | "local-machine", projectId?: string, projectLabel?: string) => void;
+  onNewSession?: (sessionId: string, cwd: string, mode?: "host" | "sandbox" | "local-machine" | "ssh", projectId?: string, projectLabel?: string) => void;
   initialSessionId?: string | null;
   skipInitialProjectSelection?: boolean;
   onInitialRestoreDone?: () => void;
@@ -116,7 +116,7 @@ interface Props {
   projectsRefreshKey?: number;
   /** Remote mode of a not-yet-materialized session: explorer waits with a
    *  hint instead of falling back to the server-local /api/files. */
-  pendingRemoteMode?: "host" | "sandbox" | "local-machine" | null;
+  pendingRemoteMode?: "host" | "sandbox" | "local-machine" | "ssh" | null;
   /** Project name for the pending remote session's header badge (e.g.
    *  "[沙盒] 项目名 · /workspace"); null for host mode. */
   pendingProjectLabel?: string | null;
@@ -955,7 +955,7 @@ export function SessionSidebar({ authInfo = null, sessionSpace = "mine", onSessi
     onSelectSession(s);
   }, [onSelectSession]);
 
-  const [newSessionMode, setNewSessionMode] = useState<"host" | "sandbox" | "local-machine">("host");
+  const [newSessionMode, setNewSessionMode] = useState<"host" | "sandbox" | "local-machine" | "ssh">("host");
 
   const recentProjects = getRecentProjects(allSessions);
   const showProjectFilter = recentProjects.length > 8;

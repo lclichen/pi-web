@@ -30,13 +30,18 @@ export async function POST(req: Request) {
   if (identity.session.user.role !== "admin" && identity.session.user.role !== "user") {
     return NextResponse.json({ error: "无权创建项目" }, { status: 403 });
   }
-  let body: { name?: unknown; mode?: unknown; containerId?: unknown; seedFromProjectId?: unknown; imageId?: unknown; workspaceId?: unknown; workdir?: unknown };
+  let body: {
+    name?: unknown; mode?: unknown; containerId?: unknown; seedFromProjectId?: unknown;
+    imageId?: unknown; workspaceId?: unknown; workdir?: unknown;
+    ssh?: { host?: unknown; port?: unknown; username?: unknown; authType?: unknown; password?: unknown; privateKey?: unknown; passphrase?: unknown };
+    presetBundle?: unknown;
+  };
   try {
     body = (await req.json()) as typeof body;
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
-  const result = createProject({
+  const result = await createProject({
     name: typeof body.name === "string" ? body.name : "",
     ownerId: identity.session.user.id,
     ownerName: identity.session.user.username,
@@ -45,6 +50,18 @@ export async function POST(req: Request) {
     ...(typeof body.imageId === "number" ? { imageId: body.imageId } : {}),
     ...(typeof body.seedFromProjectId === "string" ? { seedFromProjectId: body.seedFromProjectId } : {}),
     ...(typeof body.workdir === "string" && body.workdir ? { workdir: body.workdir } : {}),
+    ...(body.mode === "ssh" && body.ssh && typeof body.ssh === "object" ? {
+      ssh: {
+        host: typeof body.ssh.host === "string" ? body.ssh.host : "",
+        port: typeof body.ssh.port === "number" ? body.ssh.port : undefined,
+        username: typeof body.ssh.username === "string" ? body.ssh.username : "",
+        authType: body.ssh.authType === "password" ? "password" as const : "key" as const,
+        password: typeof body.ssh.password === "string" ? body.ssh.password : undefined,
+        privateKey: typeof body.ssh.privateKey === "string" ? body.ssh.privateKey : undefined,
+        passphrase: typeof body.ssh.passphrase === "string" ? body.ssh.passphrase : undefined,
+      },
+    } : {}),
+    ...(typeof body.presetBundle === "string" && body.presetBundle ? { presetBundle: body.presetBundle } : {}),
   });
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
 

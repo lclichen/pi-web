@@ -336,7 +336,7 @@ export interface SessionInfo {
    *  SessionInfo objects before the first refresh. Fall back to cwd. */
   projectRoot?: string;
   /** pi-web execution mode (multi-user deployments); absent = host/legacy. */
-  mode?: "host" | "sandbox" | "local-machine";
+  mode?: "host" | "sandbox" | "local-machine" | "ssh";
   /** Owning project id (project-scoped sessions). */
   projectId?: string;
   /** Stable server-computed project identity for grouping and comparison.

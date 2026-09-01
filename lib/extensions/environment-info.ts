@@ -15,7 +15,7 @@ import type { ExtensionAPI, InlineExtension } from "@earendil-works/pi-coding-ag
  */
 
 export interface EnvironmentInfo {
-  mode: "host" | "sandbox" | "local-machine";
+  mode: "host" | "sandbox" | "local-machine" | "ssh";
   username: string;
   projectName?: string;
   /** Host mode: the server directory the session works in. */
@@ -41,6 +41,11 @@ function modeDescription(info: EnvironmentInfo): string {
         "用户本机（local-machine 模式）：你的工具经用户自己电脑上配对的 Agent 执行，",
         "路径以其本机共享工作区为根（相对路径），文件不在服务器上。",
         "向用户说明文件位置时请说「你的电脑上」。",
+      ].join("");
+    case "ssh":
+      return [
+        "远程主机（ssh 模式）：你的 bash/read/write 等工具通过 SSH 在远程主机的项目工作目录内执行，",
+        "文件不在 pi-web 服务器上；向用户说明文件位置时请说「远程主机上」。",
       ].join("");
     case "host":
       return [

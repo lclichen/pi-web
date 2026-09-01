@@ -2,6 +2,8 @@ import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statS
 import { join, resolve } from "path";
 import { randomUUID } from "crypto";
 import { dataDir } from "./mode-homes";
+import { writeSshConfig, type SshConfigInput } from "./ssh";
+import { applyBundleToDirectory, bundleExists, isValidBundleName } from "./config-bundles-store";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { platformUrl } from "./platform/client";
 import { trustProject } from "./project-trust";
@@ -21,7 +23,7 @@ export interface ProjectRecord {
   name: string;
   ownerId: number;
   ownerName?: string;
-  mode: Extract<SessionMode, "sandbox" | "local-machine">;
+  mode: Extract<SessionMode, "sandbox" | "local-machine" | "ssh">;
   createdAt: number;
   /** Session ids pinned inside this project, in pin order. */
   pinnedSessions: string[];
@@ -31,6 +33,10 @@ export interface ProjectRecord {
   imageId?: number;
   /** Local-machine: the project working directory on the user's machine (relay-side path). */
   workdir?: string;
+  /** SSH mode: connection for the remote host (stored 0600 in the project home). */
+  ssh?: SshConfigInput;
+  /** Optional preset config bundle applied to the fresh home. */
+  presetBundle?: string;
   /** Game-save slots (sandbox): snapshot save points, newest first, ≤2. */
   snapshotSlots?: Array<{ id: number; name: string; createdAt: number }>;
 }
@@ -134,7 +140,7 @@ export function ensureProjectHome(project: ProjectRecord): string {
   return home;
 }
 
-export function createProject(input: {
+export async function createProject(input: {
   name: string;
   ownerId: number;
   ownerName?: string;
@@ -144,7 +150,11 @@ export function createProject(input: {
   seedFromProjectId?: string;
   /** Local-machine mode: the project's working directory on the user's machine. */
   workdir?: string;
-}): { ok: true; project: ProjectRecord } | { ok: false; error: string } {
+  /** SSH mode: connection for the remote host (stored 0600 in the project home). */
+  ssh?: SshConfigInput;
+  /** Optional preset config bundle applied to the fresh home. */
+  presetBundle?: string;
+}): Promise<{ ok: true; project: ProjectRecord } | { ok: false; error: string }> {
   const name = input.name.trim();
   if (!name || name.length > 64) return { ok: false, error: "项目名不能为空且不超过 64 字符" };
   if (!PROJECT_MODES.has(input.mode)) return { ok: false, error: `不支持的模式：${input.mode}` };
@@ -166,7 +176,7 @@ export function createProject(input: {
     pinnedSessions: [],
     ...(input.mode === "sandbox" && input.containerId !== undefined ? { containerId: input.containerId } : {}),
     ...(input.mode === "sandbox" && input.imageId !== undefined ? { imageId: input.imageId } : {}),
-    ...(input.mode === "local-machine" && input.workdir ? { workdir: input.workdir } : {}),
+    ...((input.mode === "local-machine" || input.mode === "ssh") && input.workdir ? { workdir: input.workdir } : {}),
   };
 
   const home = ensureProjectHome(project);
@@ -186,6 +196,20 @@ export function createProject(input: {
     // Auto-trust: sandbox project homes are pi-web-managed (not user repos),
     // so the SDK's project-trust gate must not block the extension.
     trustProject(home, getAgentDir());
+  }
+  if (project.mode === "ssh") {
+    if (!input.ssh) return { ok: false, error: "SSH 项目需要连接配置（host/username）" };
+    // SSH 凭据写入项目 home（0600），会话创建时按项目读取；不进配置包。
+    writeSshConfig(home, input.ssh);
+    trustProject(home, getAgentDir());
+  }
+
+  // 预置配置模板：在 seed 之前应用（seed 的整包复制应优先级更高）。
+  if (input.presetBundle) {
+    if (!isValidBundleName(input.presetBundle) || !bundleExists(input.presetBundle)) {
+      return { ok: false, error: `配置模板不存在：${input.presetBundle}` };
+    }
+    await applyBundleToDirectory(input.presetBundle, home);
   }
 
   // Optionally seed from another project: copy its ENTIRE home — `.pi/` config
@@ -284,10 +308,10 @@ export function deleteProject(projectId: string): boolean {
  * container would overwrite each other's synced /workspace. The copy starts
  * unbound; session-start resolution picks/creates its own container.
  */
-export function duplicateProject(
+export async function duplicateProject(
   projectId: string,
   newName: string,
-): { ok: true; project: ProjectRecord } | { ok: false; error: string } {
+): Promise<{ ok: true; project: ProjectRecord } | { ok: false; error: string }> {
   const source = getProject(projectId);
   if (!source) return { ok: false, error: "项目不存在" };
   // 复制的目标名若已占用，自动加序号后缀（用户的意图是"再来一份"）。
@@ -296,7 +320,7 @@ export function duplicateProject(
   while (Object.values(store().data.projects).some((p) => p.ownerId === source.ownerId && p.name === candidate)) {
     candidate = `${newName} (${n++})`;
   }
-  return createProject({
+  return await createProject({
     name: candidate,
     ownerId: source.ownerId,
     ownerName: source.ownerName,

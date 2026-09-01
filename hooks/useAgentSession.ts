@@ -207,7 +207,7 @@ export interface UseAgentSessionOptions {
   sessionRunning?: boolean;
   newSessionCwd: string | null;
   /** Execution mode for the not-yet-created session (multi-user). */
-  newSessionMode?: "host" | "sandbox" | "local-machine";
+  newSessionMode?: "host" | "sandbox" | "local-machine" | "ssh";
   newSessionProjectId?: string | null;
   newSessionDraftKey: string | null;
   onAgentEnd?: () => void;

@@ -3,7 +3,7 @@
  * The agent process always lives in pi-web; only the tool layer differs.
  */
 
-export type SessionMode = "host" | "sandbox" | "local-machine";
+export type SessionMode = "host" | "sandbox" | "local-machine" | "ssh";
 
 export function isSessionMode(value: unknown): value is SessionMode {
   return value === "host" || value === "sandbox" || value === "local-machine";
@@ -36,4 +36,5 @@ export const MODE_LABELS: Record<SessionMode, string> = {
   host: "Host",
   sandbox: "沙箱",
   "local-machine": "本机",
+  ssh: "SSH",
 };

@@ -27,7 +27,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
   const fallback = `${project.name} 副本`;
-  const result = duplicateProject(id, typeof body.name === "string" && body.name.trim() ? body.name : fallback);
+  const result = await duplicateProject(id, typeof body.name === "string" && body.name.trim() ? body.name : fallback);
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
   return NextResponse.json({ project: result.project }, { status: 201 });
 }

@@ -132,7 +132,7 @@ export function AppShell() {
   }, []);
   // The temporary id distinguishes consecutive fresh composers in one cwd.
   const [newSessionCwd, setNewSessionCwd] = useState<string | null>(null);
-  const [newSessionMode, setNewSessionMode] = useState<"host" | "sandbox" | "local-machine">("host");
+  const [newSessionMode, setNewSessionMode] = useState<"host" | "sandbox" | "local-machine" | "ssh">("host");
   const [newSessionProjectId, setNewSessionProjectId] = useState<string | null>(null);
   // Display name of the pending remote session's project (header badge).
   const [newSessionProjectLabel, setNewSessionProjectLabel] = useState<string | null>(null);
@@ -809,7 +809,7 @@ export function AppShell() {
     }
   }, [invalidateWorkspaceRestore, router, isMobile, selectedSession]);
 
-  const handleNewSession = useCallback((sessionId: string, cwd: string, mode?: "host" | "sandbox" | "local-machine", projectId?: string, projectLabel?: string) => {
+  const handleNewSession = useCallback((sessionId: string, cwd: string, mode?: "host" | "sandbox" | "local-machine" | "ssh", projectId?: string, projectLabel?: string) => {
     invalidateWorkspaceRestore();
     const draftKey = `new:${sessionId}:${cwd}`;
     activeNewSessionDraftKeyRef.current = draftKey;

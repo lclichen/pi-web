@@ -10,7 +10,7 @@ import { encodeFilePathForApi } from "./file-paths";
  * session id as ?src=.
  */
 
-export type RemoteMode = "host" | "sandbox" | "local-machine";
+export type RemoteMode = "host" | "sandbox" | "local-machine" | "ssh";
 
 export function isRemoteMode(mode: RemoteMode | undefined): boolean {
   return mode === "sandbox" || mode === "local-machine";

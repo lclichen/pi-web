@@ -8,6 +8,8 @@ import { spaceDir } from "./session-spaces";
 import { makeRelayToolsExtension } from "./extensions/relay-tools";
 import { makeRemoteVerifyExtension } from "./extensions/remote-verify";
 import { makeEnvironmentInfoExtension } from "./extensions/environment-info";
+import { makeSshToolsExtension } from "./extensions/ssh-tools";
+import { readSshConfig } from "./ssh";
 import { requireUserIdentity } from "./web-session";
 import { getAgentForUser } from "./relay/registry";
 
@@ -81,6 +83,24 @@ export async function restoreSessionOptions(req: Request, sessionId: string): Pr
           ...(project ? { projectName: project.name } : {}),
         }),
       ];
+    }
+  } else if (mode === "ssh") {
+    // SSH mode: the SDK session runs server-side in the project home; the
+    // ssh-tools extension routes the seven coding tools to the remote host.
+    // Requires the SSH config the project was created with.
+    if (project && project.mode === "ssh") {
+      effectiveCwd = ensureProjectHome(project);
+      const sshConfig = readSshConfig(effectiveCwd);
+      if (sshConfig) {
+        extensionFactories = [
+          makeSshToolsExtension({ projectId: project.id, sshConfig, workdir: project.workdir ?? "/" }),
+          makeEnvironmentInfoExtension({
+            mode: "ssh",
+            username: identity.session.user.username,
+            ...(project ? { projectName: project.name } : {}),
+          }),
+        ];
+      }
     }
   } else {
     extensionFactories = [makeEnvironmentInfoExtension({ mode: "host", username: identity.session.user.username })];

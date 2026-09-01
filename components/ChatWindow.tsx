@@ -51,7 +51,7 @@ interface Props {
   onLabStateChange?: (labWidget: { metadata?: unknown } | null, hasLabTraining: boolean) => void;
   sendCommandRef?: React.MutableRefObject<((cmd: string) => void) | null>;
   /** Execution mode for a not-yet-created session (multi-user). */
-  newSessionMode?: "host" | "sandbox" | "local-machine";
+  newSessionMode?: "host" | "sandbox" | "local-machine" | "ssh";
   /** Project id for a not-yet-created project-scoped session. */
   newSessionProjectId?: string | null;
   /** Chat status widget → AppShell right panel / terminal drawer. */

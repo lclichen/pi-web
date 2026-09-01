@@ -150,7 +150,7 @@ export interface RpcSessionStartOptions {
   /** Owning web user id (0 = implicit host identity when auth is off). */
   ownerId?: number;
   /** Execution mode for this session's tool layer. */
-  mode?: "host" | "sandbox" | "local-machine";
+  mode?: "host" | "sandbox" | "local-machine" | "ssh";
   /** Extra extension entry-point directories injected for this session only. */
   additionalExtensionPaths?: string[];
   /** Inline extension factories injected for this session only. */
@@ -291,7 +291,7 @@ export class AgentSessionWrapper {
   /** Owning web user id (0 = implicit host identity when auth is off). */
   ownerId = 0;
   /** Execution mode of this session's tool layer. */
-  mode: "host" | "sandbox" | "local-machine" = "host";
+  mode: "host" | "sandbox" | "local-machine" | "ssh" = "host";
 
   get sessionId(): string {
     return this.inner.sessionId;
@@ -1785,7 +1785,7 @@ export function getRpcSession(sessionId: string): AgentSessionWrapper | undefine
 }
 
 /** Ownership/mode info for a live session (registry is authoritative). */
-export function getRpcSessionOwner(sessionId: string): { ownerId: number; mode: "host" | "sandbox" | "local-machine" } | undefined {
+export function getRpcSessionOwner(sessionId: string): { ownerId: number; mode: "host" | "sandbox" | "local-machine" | "ssh" } | undefined {
   const session = getRegistry().get(sessionId);
   if (!session) return undefined;
   return { ownerId: session.ownerId, mode: session.mode };

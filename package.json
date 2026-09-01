@@ -48,6 +48,7 @@
     "@homebridge/node-pty-prebuilt-multiarch": "^0.14.1",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@monaco-editor/react": "^4.7.0",
+    "@types/ssh2": "^1.15.5",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
     "ansi_up": "^6.0.6",
@@ -59,6 +60,7 @@
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "remark-frontmatter": "^5.0.0",
+    "ssh2": "^1.17.0",
     "undici": "8.10.0",
     "web-push": "^3.6.7",
     "ws": "^8.21.3"

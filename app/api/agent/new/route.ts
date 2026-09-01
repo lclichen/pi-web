@@ -4,6 +4,8 @@ import type { InlineExtension } from "@earendil-works/pi-coding-agent";
 import { existsSync } from "fs";
 import { randomUUID } from "crypto";
 import { allowFileRoot } from "@/lib/file-access";
+import { makeSshToolsExtension } from "@/lib/extensions/ssh-tools";
+import { readSshConfig } from "@/lib/ssh";
 import { invalidateSessionListCache } from "@/lib/session-reader";
 import { startRpcSession } from "@/lib/rpc-manager";
 import { requireUserIdentity } from "@/lib/web-session";
@@ -86,7 +88,7 @@ export async function POST(req: Request) {
     const projectForMode = typeof body.projectId === "string" && body.projectId
       ? getOwnedProject(body.projectId, user.id, user.role === "admin")
       : undefined;
-    const mode = projectForMode?.mode ?? (rawMode as "host" | "sandbox" | "local-machine" | undefined) ?? "host";
+    const mode = projectForMode?.mode ?? (rawMode as "host" | "sandbox" | "local-machine" | "ssh" | undefined) ?? "host";
     const effectiveMode = mode;
     const permission = modeAllowedForUser(effectiveMode, { id: user.id, role: user.role });
     if (!permission.ok) {
@@ -149,6 +151,19 @@ export async function POST(req: Request) {
             ...(project.containerId !== undefined && project.containerId !== null ? { containerId: Number(project.containerId) } : {}),
           }),
         ];
+      } else if (project.mode === "ssh") {
+        // SSH mode: the SDK session runs in the project home; the ssh-tools
+        // extension routes the seven coding tools to the remote host. The
+        // config was written at project creation — missing config = broken
+        // project, surfaced honestly instead of silently running locally.
+        const sshConfig = readSshConfig(home);
+        if (!sshConfig) {
+          return NextResponse.json({ error: "SSH 项目缺少连接配置（.pi/ssh.json 缺失）" }, { status: 400 });
+        }
+        extensionFactories = [
+          makeSshToolsExtension({ projectId: project.id, sshConfig, workdir: project.workdir ?? "/" }),
+          makeEnvironmentInfoExtension({ mode: "ssh", username: user.username, projectName: project.name }),
+        ];
       } else {
         if (!getAgentForUser(user.id)?.info) {
           return NextResponse.json({ error: "本机模式需要先配对你的电脑（本机面板 → 连接本机）" }, { status: 400 });
@@ -162,7 +177,7 @@ export async function POST(req: Request) {
       // 本机项目：向导"选择目录"步骤绑定的本机工作目录优先。该路径在用户
       // 机器上（relay 端），服务端不做存在性校验；未绑定时回落到默认本机
       // 工作区（relay 端懒创建）。
-      const boundWorkdir = project.mode === "local-machine" ? project.workdir : undefined;
+      const boundWorkdir = project.mode !== "sandbox" ? project.workdir : undefined;
       effectiveCwd = boundWorkdir || home;
     } else if (mode === "sandbox") {
       if (!process.env.PI_WEB_PLATFORM_URL) {

@@ -50,7 +50,7 @@ declare global {
   var __piProjectsStore: { path: string; data: ProjectFile; mtime: number } | undefined;
 }
 
-const PROJECT_MODES = new Set(["sandbox", "local-machine"]);
+const PROJECT_MODES = new Set(["sandbox", "local-machine", "ssh"]);
 
 function storePath(): string {
   return join(dataDir(), "projects.json");

@@ -1,40 +1,64 @@
-import { getStatus, subscribeStatus } from "@/lib/relay/registry";
+import { subscribeStatus, getStatusForUser } from "@/lib/relay/registry";
 import type { RelayStatus } from "@/lib/relay/protocol";
+import { requireUserIdentity } from "@/lib/web-session";
 
 export const dynamic = "force-dynamic";
 
 // GET /api/agent-relay/status/events — SSE stream of agent online/offline
-// changes. Mirrors app/api/agent/running/events/route.ts: subscribe before the
-// initial snapshot, push a frame on every status change, heartbeat every 30s,
-// and tear down on client disconnect.
+// changes, **per calling user**: an agent paired by user A must never surface
+// in user B's status (the top-bar button and the local-machine panel must
+// agree). Mirrors app/api/agent/running/events/route.ts: subscribe before the
+// initial snapshot, push a frame when THIS user's status changes, heartbeat
+// every 30s, tear down on client disconnect.
 export async function GET(req: Request) {
+  const identity = requireUserIdentity(req);
+  if (!identity.ok) {
+    return new Response("登录已失效", { status: 401 });
+  }
+  const userId = identity.session.user.id;
+
   const stream = new ReadableStream({
     start(controller) {
       const encoder = new TextEncoder();
+      let closed = false;
       const encode = (data: unknown) => {
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+        if (!closed) controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+      };
+      const fail = (e: unknown) => {
+        try { controller.close(); } catch { /* already closed */ }
+        closed = true;
+        if (e) console.error("[relay-status-sse]", e);
       };
 
-      const unsubscribe = subscribeStatus((status: RelayStatus) => {
+      let lastSnapshot = "";
+      const push = () => {
         try {
-          encode(status);
-        } catch {
-          // controller already closed
+          const status: RelayStatus = getStatusForUser(userId);
+          const snapshot = JSON.stringify(status);
+          if (snapshot !== lastSnapshot) {
+            lastSnapshot = snapshot;
+            encode(status);
+          }
+        } catch (e) {
+          fail(e);
         }
-      });
+      };
+
+      const unsubscribe = subscribeStatus(push);
 
       // Initial snapshot so the UI renders correctly without waiting for a change.
-      encode(getStatus());
+      push();
 
       const heartbeat = setInterval(() => {
         try {
-          controller.enqueue(encoder.encode(":\n\n"));
-        } catch {
-          // controller already closed
+          if (!closed) controller.enqueue(encoder.encode(":\n\n"));
+        } catch (e) {
+          fail(e);
         }
       }, 30_000);
 
       const cleanup = () => {
+        closed = true;
         clearInterval(heartbeat);
         unsubscribe();
         try {

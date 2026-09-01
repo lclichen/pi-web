@@ -437,6 +437,8 @@ export function SessionSidebar({ authInfo = null, sessionSpace = "mine", onSessi
   const [runningSessionIds, setRunningSessionIds] = useState<Set<string>>(() => new Set());
   const [unreadSessionIds, setUnreadSessionIds] = useState<Set<string>>(() => loadUnreadSessionIds());
   const previousRunningSessionIdsRef = useRef<Set<string>>(new Set());
+  // Last "running but unlisted" id-set we already force-refreshed for.
+  const unlistedKeyRef = useRef<string>("");
   const currentSuppressedCompletionSessionIdsRef = useRef<Set<string>>(new Set());
   const previousSuppressedCompletionSessionIdsRef = useRef<Set<string>>(new Set());
   // Once polling has delivered a snapshot it is the source of truth for
@@ -613,10 +615,17 @@ export function SessionSidebar({ authInfo = null, sessionSpace = "mine", onSessi
         return next;
       });
     }
-    const hasUnlistedRunningSession = newlyRunning.some(
+    // "运行中但不在当前列表"的会话只在其集合**变化**时触发一次强制刷新：
+    // 该条件是状态型的（比如 Host 空间下运行中的 mine 会话、被列表过滤的
+    // 子代理会话，永远不在 allSessions 里），按状态触发会让 force=1 跟着
+    // 2.5s 轮询每个 tick 打一次并绕过服务端缓存。
+    const unlistedRunning = newlyRunning.filter(
       (id) => !allSessions.some((session) => session.id === id),
     );
-    if (completedInBackground.length > 0 || hasUnlistedRunningSession) {
+    const unlistedKey = unlistedRunning.slice().sort().join(",");
+    const unlistedChanged = unlistedRunning.length > 0 && unlistedKeyRef.current !== unlistedKey;
+    if (unlistedChanged) unlistedKeyRef.current = unlistedKey;
+    if (completedInBackground.length > 0 || unlistedChanged) {
       loadSessions(false, true);
     }
     if (completedWithNotifications.length > 0) {

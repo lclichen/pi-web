@@ -56,11 +56,13 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
     let cancelled = false;
     const check = async () => {
       try {
+        // /api/agent-relay/status reports `online` (agent WS connected) —
+        // there is no separate `paired` state.
         const res = await fetch("/api/agent-relay/status");
-        const d = (await res.json()) as { paired?: boolean; info?: { hostname?: string } | null };
+        const d = (await res.json()) as { online?: boolean; info?: { hostname?: string } | null };
         if (cancelled) return;
-        setRelayInfo({ online: Boolean(d.paired), hostname: d.info?.hostname });
-        if (d.paired) {
+        setRelayInfo({ online: Boolean(d.online), hostname: d.info?.hostname });
+        if (d.online) {
           setError(null);
           setStep(4);
         } else {
@@ -194,7 +196,7 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
             const done = s.n < step;
             return (
               <div key={s.n} style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 18px", color: active ? "var(--accent)" : done ? "var(--text)" : "var(--text-dim)", fontWeight: active ? 600 : 400 }}>
-                <span style={{ width: 18, height: 18, borderRadius: 999, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 10, border: `1px solid ${active ? "var(--accent)" : done ? "var(--success)" : "var(--border)"}`, background: done ? "var(--success)" : "transparent", color: done ? "#fff" : "inherit" }}>
+                <span style={{ width: 18, height: 18, borderRadius: 999, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 10, border: `1px solid ${active ? "var(--accent)" : done ? "var(--success)" : "var(--text-muted)"}`, background: done ? "var(--success)" : "var(--bg)", color: done ? "#fff" : active ? "var(--accent)" : "var(--text-muted)" }}>
                   {s.n}
                 </span>
                 {t(s.label)}
@@ -270,7 +272,7 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
                 <label>{t("项目名称")}</label>
                 <input value={localName} onChange={(e) => setLocalName(e.target.value)} placeholder={t("如：my-local-lab")} autoFocus />
               </div>
-              <div className="info-banner">{t("下一步会校验本机 Agent 的配对状态；尚未配对时请先在侧栏「本机机器」面板完成连接。")}</div>
+              <div className="info-banner">{t("下一步将在向导内完成本机配对（已配对则直接进入目录选择）。")}</div>
               <div style={{ flex: 1 }} />
               <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
                 <button onClick={() => setStep(1)}>{t("上一步")}</button>
@@ -295,7 +297,7 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
                 </>
               ) : (
                 <div style={{ flex: 1, minHeight: 0, overflow: "auto", border: "1px solid var(--border)", borderRadius: 10, padding: 6 }}>
-                  <ConnectLocalMachine />
+                  <ConnectLocalMachine embedded />
                 </div>
               )}
             </>

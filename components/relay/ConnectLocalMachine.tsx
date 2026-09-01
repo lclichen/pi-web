@@ -14,7 +14,11 @@ interface Pairing {
 // Renders the top-bar "Connect Local Machine" button (with an online dot) and,
 // when clicked, a pairing modal. Once an agent connects, offers an end-to-end
 // file/command panel. Mirrors the Style A modal pattern (ProjectTrustDialog).
-export function ConnectLocalMachine() {
+//
+// `embedded` renders the pairing content INLINE (no top-bar button, no fixed
+// overlay) — used by the remote-connect wizard's pairing step, which needs
+// the actual pairing instructions inside the wizard body.
+export function ConnectLocalMachine({ embedded = false }: { embedded?: boolean } = {}) {
   const { t } = useI18n();
   const { online, info, relayPort, advertiseUrl, ready, refresh } = useRelayAgent();
   const [open, setOpen] = useState(false);
@@ -26,7 +30,7 @@ export function ConnectLocalMachine() {
 
   // Mint a fresh pairing code when the modal opens and no agent is connected.
   useEffect(() => {
-    if (!open || online) {
+    if ((!open && !embedded) || online) {
       setPairing(null);
       return;
     }
@@ -53,6 +57,60 @@ export function ConnectLocalMachine() {
   const serverUrl = advertiseUrl ?? (hasWindow ? `${window.location.protocol}//${window.location.hostname}:${port}` : "");
   const asset = detectAgentAsset();
   const downloadUrl = hasWindow ? `${window.location.origin}/api/agent-relay/download/${asset.file}` : "";
+
+  if (embedded) {
+    return (
+      <div style={{ padding: 14, height: "100%", overflowY: "auto", boxSizing: "border-box" }}>
+        {online && info ? (
+          <div style={{ padding: 0 }}>
+            <div style={{ color: "#22c55e", fontSize: 13, marginBottom: 12 }}>{t("✓ 已连接")}</div>
+            <Row label={t("主机名")} value={info.hostname} />
+            <Row label={t("系统")} value={`${info.os} / ${info.arch}`} />
+            <Row label={t("工作目录")} value={info.workspaceRoot} />
+            <Row label={t("Agent 版本")} value={info.agentVersion} />
+          </div>
+        ) : (
+          <div style={{ padding: 0 }}>
+            <p style={{ ...muted, marginTop: 0 }}>
+              {t("在你的本地机器（如 CentOS 7）上运行以下命令，把 pi-web 连接到该机器的文件系统与命令行。")}
+            </p>
+            <Step n={1} title={t("下载 Agent")}>
+              <CodeBlock code={`curl -fsSL -o pi-agent ${downloadUrl}
+chmod +x pi-agent`} />
+              <div style={{ ...muted, fontSize: 11, marginTop: 4 }}>
+                检测到 {asset.label}；其它架构请在 URL 里替换文件名（linux-arm64 / windows-amd64.exe）。
+              </div>
+            </Step>
+            <Step n={2} title="配对">
+              {pairingLoading && <div style={muted}>生成配对码…</div>}
+              {!pairingLoading && !pairing && <div style={{ ...muted, color: "#ef4444" }}>无法生成配对码，请稍后重试。</div>}
+              {pairing && (
+                <>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
+                    <span style={codeStyle}>{pairing.code}</span>
+                    <span style={{ ...muted, fontSize: 11 }}>有效期 5 分钟</span>
+                  </div>
+                  <CodeBlock code={`./pi-agent pair --code ${pairing.code} --server ${serverUrl}`} />
+                </>
+              )}
+            </Step>
+            <Step n={3} title="（可选）后台常驻">
+              <CodeBlock code={"nohup ./pi-agent run >pi-agent.log 2>&1 &\n# 或 systemd: 见 agent/contrib/pi-agent.service"} />
+            </Step>
+
+            <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={spinStyle} />
+              <span style={muted}>等待 Agent 连接…（连接成功后自动继续）</span>
+            </div>
+            <p style={{ ...muted, fontSize: 11, marginTop: 12 }}>
+              提示：若 Agent 与浏览器不在同一台机器，请用 pi-web 服务器的实际地址，
+              或在服务端设置环境变量 <code>PI_RELAY_ADVERTISE_URL</code>。
+            </p>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <>

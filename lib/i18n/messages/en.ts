@@ -48,7 +48,7 @@ export const enLocale: LocalePlugin = {
     "配置沙盒项目的运行环境，创建后项目会话将在容器 /workspace 内执行。": "Configure the sandbox project's environment; sessions will run inside the container /workspace.",
     "正在创建容器并准备项目环境…": "Creating the container and preparing the project environment…",
     "本机模式按用户配对：一个 Agent 连接可以承载多个项目，各项目使用不同的工作目录。": "Local-machine mode is paired per user: one agent connection serves multiple projects, each with its own working directory.",
-    "下一步会校验本机 Agent 的配对状态；尚未配对时请先在侧栏「本机机器」面板完成连接。": "The next step verifies the local agent pairing; if not paired yet, connect via the Local machine panel in the sidebar first.",
+    "下一步将在向导内完成本机配对（已配对则直接进入目录选择）。": "The next step completes pairing inside this wizard (already-paired machines skip to directory choice).",
     "本机尚未配对：请先在侧栏「本机机器」面板完成配对，再回到本步骤。": "Local machine not paired yet: pair it via the Local machine panel in the sidebar, then return to this step.",
     "无法获取本机连接状态": "Unable to fetch local-machine connection status",
     "本机 Agent 已连接": "Local agent connected",

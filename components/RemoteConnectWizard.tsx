@@ -282,15 +282,9 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
           {step === 3 && method === "local" && (
             <>
               <h2 style={{ margin: "0 0 4px", fontSize: 17, color: "var(--text)" }}>{t("连接中")}</h2>
-              {error ? (
-                <>
-                  <div className="error-banner">{error}</div>
-                  <div style={{ flex: 1 }} />
-                  <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-                    <button onClick={() => setStep(2)}>{t("上一步")}</button>
-                  </div>
-                </>
-              ) : relayInfo?.online ? (
+              {/* 未配对：提示横幅 + 下方内嵌配对面板；配对成功由轮询自动进入下一步。 */}
+              {error && <div className="error-banner" style={{ marginBottom: 10 }}>{error}</div>}
+              {relayInfo?.online ? (
                 <>
                   <div className="info-banner">{t("本机 Agent 已连接")}{relayInfo.hostname ? `：${relayInfo.hostname}` : ""}</div>
                   <div style={{ flex: 1 }} />
@@ -299,8 +293,6 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
                     <button className="primary" onClick={() => setStep(4)}>{t("下一步")}</button>
                   </div>
                 </>
-              ) : relayInfo?.online ? (
-                <div className="info-banner">{t("本机 Agent 已连接")}{relayInfo.hostname ? `：${relayInfo.hostname}` : ""}</div>
               ) : (
                 <div style={{ flex: 1, minHeight: 0, overflow: "auto", border: "1px solid var(--border)", borderRadius: 10, padding: 6 }}>
                   <ConnectLocalMachine />

@@ -82,7 +82,9 @@ export function ConnectLocalMachine() {
         <div
           onClick={(e) => { if (e.target === e.currentTarget) setOpen(false); }}
           style={{
-            position: "fixed", inset: 0, zIndex: 1000, display: "flex",
+            // Above the remote-connect wizard (1180) — this component is
+            // embedded in its pairing step and the dialog must cover it.
+            position: "fixed", inset: 0, zIndex: 1200, display: "flex",
             alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.4)",
           }}
         >

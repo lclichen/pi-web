@@ -8,8 +8,8 @@
  *    ③ 创建并供给容器，④ 展示容器 /workspace 摘要（目录固定，无需选择）。
  *  - 连接本地：② 项目名 + 配对状态说明（agent 按用户配对，多项目共用一条
  *    连接），③ 校验 agent 在线，④ 绑定本机工作目录（保存到项目 workdir）。
- *  - SSH：② 连接配置（主机/端口/用户名/认证方式，可测试连接），③ 创建，
- *    ④ 远程工作目录。
+ *  - SSH：② 连接配置（主机/端口/用户名/认证方式，可测试连接），③ 自动测试
+ *    连接（成功进④，失败给上一步/重试），④ 远程工作目录（完成时创建项目）。
  * 表单控件样式与 NewProjectDialog（沙盒配置页）保持一致：label 字段栈 +
  * 32px 输入框 + 右下角 secondary/primary 按钮。
  */
@@ -59,6 +59,9 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
   const [localPickerOpen, setLocalPickerOpen] = useState(false);
   const [sshTesting, setSshTesting] = useState(false);
   const [sshTestMsg, setSshTestMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  // ③ 的自动连接测试：busy 驱动 spinner，retry 计数触发 effect 重跑
+  const [sshStep3Busy, setSshStep3Busy] = useState(true);
+  const [sshStep3Retry, setSshStep3Retry] = useState(0);
   // 配置模板：平台预置包（可选，创建时初始化 .pi/ 与 labs/）
   const [presets, setPresets] = useState<Array<{ name: string; description: string }>>([]);
   const [presetBundle, setPresetBundle] = useState("");
@@ -184,33 +187,63 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
       setBusy(false);
     }
   }, [sshName, localDir, sshForm, presetBundle, onCreated, onClose]);
-  // 测试 SSH 连接（不落盘；成功返回远端 whoami）。
+  // 测试 SSH 连接（不落盘；成功返回远端 whoami）。② 的手动按钮与 ③ 的
+  // 自动测试共用同一份请求体。
+  const sshTestPayload = useCallback(() => ({
+    host: sshForm.host.trim(),
+    port: Number(sshForm.port) || 22,
+    username: sshForm.username.trim(),
+    authType: sshForm.authType,
+    password: sshForm.password || undefined,
+    privateKey: sshForm.privateKey || undefined,
+    passphrase: sshForm.passphrase || undefined,
+  }), [sshForm]);
+
+  const runSshTest = useCallback(async (): Promise<{ whoami?: string }> => {
+    const res = await fetch("/api/host/ssh-test", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(sshTestPayload()),
+    });
+    const d = (await res.json()) as { ok?: boolean; whoami?: string; error?: string };
+    if (!res.ok || d.error) throw new Error(d.error ?? `HTTP ${res.status}`);
+    return { whoami: d.whoami };
+  }, [sshTestPayload]);
+
   const testSsh = async () => {
     setSshTesting(true);
     setSshTestMsg(null);
     try {
-      const res = await fetch("/api/host/ssh-test", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          host: sshForm.host.trim(),
-          port: Number(sshForm.port) || 22,
-          username: sshForm.username.trim(),
-          authType: sshForm.authType,
-          password: sshForm.password || undefined,
-          privateKey: sshForm.privateKey || undefined,
-          passphrase: sshForm.passphrase || undefined,
-        }),
-      });
-      const d = (await res.json()) as { ok?: boolean; whoami?: string; error?: string };
-      if (!res.ok || d.error) throw new Error(d.error ?? `HTTP ${res.status}`);
-      setSshTestMsg({ ok: true, text: t("连接成功：{user}", { user: d.whoami ?? "?" }) });
+      const { whoami } = await runSshTest();
+      setSshTestMsg({ ok: true, text: t("连接成功：{user}", { user: whoami ?? "?" }) });
     } catch (e) {
       setSshTestMsg({ ok: false, text: e instanceof Error ? e.message : String(e) });
     } finally {
       setSshTesting(false);
     }
   };
+  // SSH：③ 进入即自动测试连接（服务端 readyTimeout 15s）。成功进入④选
+  // 目录；失败展示错误并提供「上一步 / 重试」。此前这一步只渲染了 spinner
+  // 文案、没有任何逻辑在跑，用户会永远停在「正在创建项目并测试连接…」。
+  // 注意必须定义在 runSshTest 之后：deps 数组在渲染期求值，提前引用会踩 TDZ。
+  useEffect(() => {
+    if (step !== 3 || method !== "ssh") return;
+    let cancelled = false;
+    setSshStep3Busy(true);
+    setError(null);
+    void runSshTest()
+      .then(() => {
+        if (!cancelled) setStep(4);
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
+      })
+      .finally(() => {
+        if (!cancelled) setSshStep3Busy(false);
+      });
+    return () => { cancelled = true; };
+  }, [step, method, sshStep3Retry, runSshTest]);
+
   const handleSandboxCreated = useCallback((input: NonNullable<typeof sandboxInput>) => {
     setSandboxInput(input);
     setStep(3);
@@ -417,11 +450,23 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
           {step === 3 && method === "ssh" && (
             <>
               <h2 style={{ margin: "0 0 4px", fontSize: 17, color: "var(--text)" }}>{t("连接中")}</h2>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, color: "var(--text-dim)", fontSize: 13 }}>
-                <span className="spinner" /> {t("正在创建项目并测试 SSH 连接…")}
-              </div>
-              {error && <div className="error-banner">{error}</div>}
+              {sshStep3Busy ? (
+                <div style={{ display: "flex", alignItems: "center", gap: 10, color: "var(--text-dim)", fontSize: 13 }}>
+                  <span className="spinner" /> {t("正在测试 SSH 连接…")}
+                </div>
+              ) : error ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: 12, maxWidth: 460 }}>
+                  <div className="error-banner">{error}</div>
+                  <div className="info-banner">{t("请返回上一步检查主机地址、端口与认证信息，或重试。")}</div>
+                </div>
+              ) : null}
               <div style={{ flex: 1 }} />
+              {!sshStep3Busy && error && (
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4 }}>
+                  <button onClick={() => { setError(null); setStep(2); }} style={secondaryBtn}>{t("上一步")}</button>
+                  <button className="primary" onClick={() => setSshStep3Retry((n) => n + 1)} style={primaryBtn}>{t("重试")}</button>
+                </div>
+              )}
             </>
           )}
 

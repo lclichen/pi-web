@@ -5,7 +5,7 @@
  * /api/host/ssh-list（一次性连接，不落盘、不入池）浏览远程主机目录。
  * 初始路径为远端账号的 home；供「SSH 连接」向导第 ④ 步选择远程工作目录。
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
 
 interface Entry {
@@ -43,6 +43,11 @@ export function SshDirectoryPicker({ config, onPick, onClose }: Props) {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 父组件（向导）每次渲染都会传入新的 config 对象；若 load 依赖它，任何
+  // 父级重渲染（运行状态轮询等）都会把 effect 重新触发并重置回 home。
+  // 冻结在 ref 里：凭据在向导第②步后不会再变。
+  const configRef = useRef(config);
+  configRef.current = config;
 
   const load = useCallback(async (target: string | undefined) => {
     setLoading(true);
@@ -51,7 +56,7 @@ export function SshDirectoryPicker({ config, onPick, onClose }: Props) {
       const res = await fetch("/api/host/ssh-list", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...config, ...(target ? { path: target } : {}) }),
+        body: JSON.stringify({ ...configRef.current, ...(target ? { path: target } : {}) }),
       });
       const d = (await res.json()) as { path?: string; entries?: Entry[]; error?: string };
       if (!res.ok || d.error) throw new Error(d.error ?? `HTTP ${res.status}`);
@@ -62,7 +67,7 @@ export function SshDirectoryPicker({ config, onPick, onClose }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [config]);
+  }, []);
 
   useEffect(() => {
     void load(undefined);

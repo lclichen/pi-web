@@ -255,7 +255,9 @@ export function makeSshToolsExtension(opts: {
           exec: (command: string, _cwd: string, options: { onData?: (data: Buffer) => void; signal?: AbortSignal; timeout?: number }) =>
             new Promise<{ exitCode: number | null }>((resolve, reject) => {
               void client().then((c) => {
-                c.exec(`cd ${quotedWorkdir} 2>/dev/null || cd /; { ${command}\n; }`, (err: Error | undefined, stream: {
+                // `{ ${command}; }` 单行收尾：换行落在 command 与 `;` 之间会让
+                // `;` 成为空语句（bash syntax error near `;`）。
+                c.exec(`cd ${quotedWorkdir} 2>/dev/null || cd /; { ${command}; }`, (err: Error | undefined, stream: {
                   on(ev: "data", cb: (d: Buffer) => void): unknown;
                   on(ev: "close", cb: (code: number) => void): unknown;
                   stderr: { on(ev: "data", cb: (d: Buffer) => void): unknown };

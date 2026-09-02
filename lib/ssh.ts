@@ -221,7 +221,9 @@ export function sshExec(
 ): Promise<SshExecResult> {
   return new Promise((resolve, reject) => {
     const quotedCwd = `'${cwd.replace(/'/g, `'\\''`)}'`;
-    client.exec(`cd ${quotedCwd} 2>/dev/null || cd /; { ${command}\n; }`, (err, stream) => {
+    // 注意 `{ ${command}; }` 必须单行收尾：`command\n; }` 里的 `;` 会成为
+    // 空语句（newline 已终结 command），bash 报 syntax error near `;`。
+    client.exec(`cd ${quotedCwd} 2>/dev/null || cd /; { ${command}; }`, (err, stream) => {
       if (err) return reject(err);
       let stdout = "";
       let stderr = "";

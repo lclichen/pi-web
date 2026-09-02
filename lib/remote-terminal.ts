@@ -3,25 +3,38 @@ import WebSocket from "ws";
 import { platformUrl } from "./platform/client";
 import { relayRpc } from "./relay/forward";
 import { subscribePtyOutput } from "./relay/registry";
+import { getSshClient } from "./ssh";
 import type { RemoteSessionContext } from "./remote-session";
 
 /**
- * Remote terminals for sandbox / local-machine sessions — same registry and
- * SSE fan-out shape as lib/local-terminal.ts, two transports:
+ * Remote terminals for sandbox / local-machine / ssh sessions — same registry
+ * and SSE fan-out shape as lib/local-terminal.ts, three transports:
  *
  *  - sandbox: a server-side WebSocket bridge to the platform's
  *    GET /containers/:id/pty?token= (JSON frames ready/output/exit/input/
  *    resize). Browsers never see the platform token (BFF, design doc §3).
  *  - local-machine: the Go relay's pty.create/input/resize/close RPCs plus
  *    its pty.output push fan-out.
+ *  - ssh: an interactive `shell()` channel on the project's pooled ssh2
+ *    connection (xterm-compatible PTY, cwd = remote workdir).
  */
 
 export type RemoteTerminalFrame =
   | { type: "output"; data: string }
   | { type: "exit"; code: number };
 
+/** Minimal ssh2 ClientChannel surface used here. */
+interface SshShellStream {
+  write(data: string): boolean;
+  end(): void;
+  close(): void;
+  setWindow(rows: number, cols: number, height: number, width: number): void;
+  on(event: "data", cb: (d: Buffer) => void): unknown;
+  on(event: "close", cb: () => void): unknown;
+}
+
 interface RemoteTerminal {
-  kind: "platform" | "relay";
+  kind: "platform" | "relay" | "ssh";
   ctx: RemoteSessionContext;
   subscribers: Set<(frame: RemoteTerminalFrame) => void>;
   exited: number | undefined;
@@ -31,6 +44,8 @@ interface RemoteTerminal {
   detach?: () => void;
   /** relay: the agent-side pty session id. */
   relayAgentSid?: string;
+  /** ssh: the interactive shell channel. */
+  sshStream?: SshShellStream;
   /** Pending last-viewer-gone cleanup (see subscribeRemoteTerminal). */
   orphanTimer?: ReturnType<typeof setTimeout>;
 }
@@ -90,7 +105,7 @@ export async function createRemoteTerminal(
 
   const sid = randomUUID();
   const entry: RemoteTerminal = {
-    kind: ctx.mode === "sandbox" ? "platform" : "relay",
+    kind: ctx.mode === "sandbox" ? "platform" : ctx.mode === "ssh" ? "ssh" : "relay",
     ctx,
     subscribers: new Set(),
     exited: undefined,
@@ -133,6 +148,33 @@ export async function createRemoteTerminal(
       reg.terminals.delete(sid);
       throw err;
     });
+  } else if (entry.kind === "ssh") {
+    // ssh: interactive shell() channel on the project's pooled connection.
+    // cwd: the channel starts at the account home; cd into the project's
+    // remote workdir (echoed once — same as typing it).
+    if (!ctx.projectId || !ctx.sshConfig) throw new Error("SSH 会话缺少连接配置");
+    const client = await getSshClient(ctx.projectId, ctx.sshConfig);
+    const stream = await new Promise<SshShellStream>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("连接 SSH 终端超时")), 10_000);
+      client.shell({ term: "xterm-256color", cols: opts.cols, rows: opts.rows }, (err: Error | undefined, s: unknown) => {
+        clearTimeout(timer);
+        if (err) return reject(err);
+        resolve(s as SshShellStream);
+      });
+    }).catch((err) => {
+      reg.terminals.delete(sid);
+      throw err;
+    });
+    entry.sshStream = stream;
+    stream.on("data", (d: Buffer) => notify(entry, { type: "output", data: d.toString("utf8") }));
+    stream.on("close", () => {
+      if (entry.exited === undefined) {
+        entry.exited = 0;
+        notify(entry, { type: "exit", code: 0 });
+      }
+    });
+    const wd = (ctx.workdir ?? "").trim();
+    if (wd && wd !== "/") stream.write(`cd '${wd.replace(/'/g, `'\\''`)}'\n`);
   } else {
     // relay: pty.create returns the agent-side session id; output arrives as
     // unsolicited pty.output pushes fanned out by subscribePtyOutput.
@@ -157,6 +199,12 @@ export function writeRemoteTerminal(sid: string, data: string): void {
   if (!t || t.exited !== undefined) return;
   if (t.kind === "platform") {
     if (t.ws?.readyState === WebSocket.OPEN) t.ws.send(JSON.stringify({ type: "input", data }));
+  } else if (t.kind === "ssh") {
+    try {
+      t.sshStream?.write(data);
+    } catch {
+      // channel already dead; close frame arrives via the close handler
+    }
   } else {
     // relay input is keyed by our sid → agent sid mapping via ctx; re-discover
     // is overkill: the relay input method needs the agent-side id, so store it.
@@ -169,6 +217,12 @@ export function resizeRemoteTerminal(sid: string, cols: number, rows: number): v
   if (!t || t.exited !== undefined) return;
   if (t.kind === "platform") {
     if (t.ws?.readyState === WebSocket.OPEN) t.ws.send(JSON.stringify({ type: "resize", cols, rows }));
+  } else if (t.kind === "ssh") {
+    try {
+      t.sshStream?.setWindow(rows, cols, rows * 16, cols * 8);
+    } catch {
+      // ignore
+    }
   } else {
     void relayRpc("pty.resize", { sessionId: t.relayAgentSid, cols, rows }, { userId: t.ctx.userId }).catch(() => {});
   }
@@ -186,6 +240,13 @@ export function closeRemoteTerminal(sid: string): void {
   if (t.kind === "platform") {
     try {
       t.ws?.close();
+    } catch {
+      // ignore
+    }
+  } else if (t.kind === "ssh") {
+    try {
+      t.sshStream?.end();
+      t.sshStream?.close();
     } catch {
       // ignore
     }

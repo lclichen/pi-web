@@ -1027,6 +1027,48 @@ export class AgentSessionWrapper {
         if (this.pendingPromptCount > 0 || this.inner.isStreaming || this.inner.isCompacting || this.inner.isBashRunning) {
           throw new Error("Cannot run a shell command while the session is busy");
         }
+        const bashCommand = command.command as string;
+        const excludeFromContext = command.excludeFromContext as boolean | undefined;
+        // pi CLI's rpc-mode gives extensions first claim on user `!`/`!!`
+        // commands; pi-web must do the same or the mode extensions (sandbox
+        // container / SSH / relay) never see them — and they would execute on
+        // the pi-web server itself, outside the session's backend and outside
+        // every isolation fence (container escape for sandbox users).
+        const eventResult = await this.inner.extensionRunner.emitUserBash?.({
+          type: "user_bash",
+          command: bashCommand,
+          excludeFromContext: Boolean(excludeFromContext),
+          cwd: this.cwd,
+        });
+        if (eventResult?.result) {
+          this.inner.recordBashResult?.(bashCommand, eventResult.result, { excludeFromContext });
+          try {
+            this.persistBashOnlySession();
+            return eventResult.result;
+          } finally {
+            this.resetIdleTimer();
+            invalidateSessionListCache();
+          }
+        }
+        if (eventResult?.operations) {
+          try {
+            const result = await this.inner.executeBash(bashCommand, undefined, {
+              excludeFromContext,
+              operations: eventResult.operations,
+            });
+            this.persistBashOnlySession();
+            return result;
+          } finally {
+            this.resetIdleTimer();
+            invalidateSessionListCache();
+          }
+        }
+        if (this.mode !== "host") {
+          // No extension claimed the command (container offline, relay
+          // offline, SSH unreachable). Never fall back to server-local
+          // execution for remote modes — block with an actionable error.
+          throw new Error("! / !! 指令需由会话的后端执行：当前后端未接管（沙盒容器未就绪 / 本机未连接 / SSH 不可达），已拒绝在服务器本机执行");
+        }
         const execution = this.inner.executeBash(
           command.command as string,
           undefined,

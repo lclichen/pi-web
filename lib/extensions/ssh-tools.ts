@@ -7,6 +7,7 @@
  * connection + remote workdir captured in the closure.
  */
 import { defineTool, type ExtensionAPI, type InlineExtension } from "@earendil-works/pi-coding-agent";
+import type { BashOperations } from "@earendil-works/pi-coding-agent";
 import { Type } from "@earendil-works/pi-ai";
 import type { Client, SFTPWrapper } from "ssh2";
 import { getSshClient, sshExec, type SshConfig } from "../ssh";
@@ -244,6 +245,44 @@ export function makeSshToolsExtension(opts: {
         }
       },
     }));
+    // ---- user `!`/`!!` commands: execute on the remote host ----
+    // pi hands the LOCAL session cwd (the server-side project home); pin it
+    // to the remote workdir instead, matching the tools' path semantics.
+    pi.on("user_bash", async (): Promise<{ operations: BashOperations }> => {
+      const quotedWorkdir = `'${workdir.replace(/'/g, `'\\''`)}'`;
+      return {
+        operations: {
+          exec: (command: string, _cwd: string, options: { onData?: (data: Buffer) => void; signal?: AbortSignal; timeout?: number }) =>
+            new Promise<{ exitCode: number | null }>((resolve, reject) => {
+              void client().then((c) => {
+                c.exec(`cd ${quotedWorkdir} 2>/dev/null || cd /; { ${command}\n; }`, (err: Error | undefined, stream: {
+                  on(ev: "data", cb: (d: Buffer) => void): unknown;
+                  on(ev: "close", cb: (code: number) => void): unknown;
+                  stderr: { on(ev: "data", cb: (d: Buffer) => void): unknown };
+                  close(): void;
+                }) => {
+                  if (err) return reject(err);
+                  stream.on("data", (d: Buffer) => options.onData?.(d));
+                  stream.stderr.on("data", (d: Buffer) => options.onData?.(d));
+                  const timer = setTimeout(() => {
+                    stream.close();
+                    resolve({ exitCode: null });
+                  }, options.timeout ?? 120_000);
+                  options.signal?.addEventListener("abort", () => {
+                    clearTimeout(timer);
+                    stream.close();
+                    resolve({ exitCode: null });
+                  }, { once: true });
+                  stream.on("close", (code: number) => {
+                    clearTimeout(timer);
+                    resolve({ exitCode: code });
+                  });
+                });
+              }).catch(reject);
+            }),
+        },
+      };
+    });
   };
 
   return factory;

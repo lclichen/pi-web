@@ -488,9 +488,9 @@ export function AppShell() {
   // tear down and recreate the container PTY on every stats update.
   const remoteSessionCtx = useMemo(
     () => (activeSessionMode && activeSessionMode !== "host" && selectedSession
-      ? { sessionId: selectedSession.id, label: activeSessionMode === "sandbox" ? translate("沙箱容器") : translate("本机") }
+      ? { sessionId: selectedSession.id, label: activeSessionMode === "sandbox" ? translate("沙箱容器") : activeSessionMode === "ssh" ? translate("SSH 远程主机") : translate("本机") }
       : null),
-    [activeSessionMode, selectedSession],
+    [activeSessionMode, selectedSession, translate],
   );
   // A remote-mode session that has not materialized yet (no first message):
   // file/terminal panels must wait instead of hitting the local APIs. Binds to
@@ -2813,7 +2813,7 @@ export function AppShell() {
               <div style={{ height: terminalDrawerOpen ? `calc(100% - 6px)` : 0 }}>
                 {pendingRemoteSession ? (
                   <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-dim)", fontSize: 12, padding: 20, textAlign: "center", background: "var(--bg)" }}>
-                    {translate("{kind}会话创建后（发送第一条消息）即可使用远程终端", { kind: pendingRemoteSession === "sandbox" ? translate("沙箱") : translate("本机") })}
+                    {translate("{kind}会话创建后（发送第一条消息）即可使用远程终端", { kind: pendingRemoteSession === "sandbox" ? translate("沙箱") : pendingRemoteSession === "ssh" ? translate("SSH") : translate("本机") })}
                   </div>
                 ) : (
                   <WorkspaceTerminal

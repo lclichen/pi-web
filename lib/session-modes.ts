@@ -6,7 +6,7 @@
 export type SessionMode = "host" | "sandbox" | "local-machine" | "ssh";
 
 export function isSessionMode(value: unknown): value is SessionMode {
-  return value === "host" || value === "sandbox" || value === "local-machine";
+  return value === "host" || value === "sandbox" || value === "local-machine" || value === "ssh";
 }
 
 export interface ModeActor {
@@ -19,6 +19,7 @@ export interface ModeActor {
  *  - host: admin only (full server-local access)
  *  - sandbox: any logged-in user (requires PI_WEB_PLATFORM_URL)
  *  - local-machine: any logged-in user (requires a relay bound to them)
+ *  - ssh: any logged-in user (credentials live in their own project config)
  */
 export function modeAllowedForUser(mode: SessionMode, actor: ModeActor): { ok: true } | { ok: false; reason: string } {
   if (actor.id === 0) {

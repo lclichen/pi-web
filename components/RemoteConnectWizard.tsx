@@ -18,6 +18,7 @@ import { useI18n } from "@/hooks/useI18n";
 import { NewProjectDialog } from "./NewProjectDialog";
 import { ConnectLocalMachine } from "./relay/ConnectLocalMachine";
 import { LocalDirectoryPicker } from "./relay/LocalDirectoryPicker";
+import { SshDirectoryPicker } from "./relay/SshDirectoryPicker";
 
 type Mode = "sandbox" | "local-machine" | "ssh";
 type Step = 1 | 2 | 3 | 4;
@@ -57,6 +58,8 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
   const [relayInfo, setRelayInfo] = useState<{ online: boolean; hostname?: string } | null>(null);
   // 本机目录可视化选择器（④ 打开）
   const [localPickerOpen, setLocalPickerOpen] = useState(false);
+  // SSH 远程目录可视化选择器（④ 打开；一次性连接，不落盘）
+  const [sshPickerOpen, setSshPickerOpen] = useState(false);
   const [sshTesting, setSshTesting] = useState(false);
   const [sshTestMsg, setSshTestMsg] = useState<{ ok: boolean; text: string } | null>(null);
   // ③ 的自动连接测试：busy 驱动 spinner，retry 计数触发 effect 重跑
@@ -550,11 +553,14 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
           {step === 4 && method === "ssh" && (
             <>
               <h2 style={{ margin: "0 0 4px", fontSize: 17, color: "var(--text)" }}>{t("选择目录")}</h2>
-              <p style={{ margin: "0 0 14px", fontSize: 12.5, color: "var(--text-dim)" }}>{t("填写远程主机上该项目的工作目录（Agent 侧路径，例如 /root/projects/demo；留空则使用远程 home）。")}</p>
+              <p style={{ margin: "0 0 14px", fontSize: 12.5, color: "var(--text-dim)" }}>{t("选择或填写远程主机上该项目的工作目录（例如 /root/projects/demo；留空则使用远程 home）。")}</p>
               <div style={{ display: "flex", flexDirection: "column", gap: 12, maxWidth: 460 }}>
                 <label style={fieldStyle}>
                   {t("远程工作目录（可选）")}
-                  <input value={localDir} onChange={(e) => setLocalDir(e.target.value)} placeholder="/root/projects/demo" style={inputStyle} />
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <input value={localDir} onChange={(e) => setLocalDir(e.target.value)} placeholder="/root/projects/demo" style={{ ...inputStyle, flex: 1 }} />
+                    <button type="button" onClick={() => setSshPickerOpen(true)} title={t("打开远程目录浏览器")} style={{ ...secondaryBtn, flexShrink: 0 }}>{t("浏览…")}</button>
+                  </div>
                 </label>
                 {error && <div className="error-banner">{error}</div>}
               </div>
@@ -586,6 +592,18 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
               <LocalDirectoryPicker
                 onPick={(abs) => { setLocalDir(abs); setLocalPickerOpen(false); }}
                 onClose={() => setLocalPickerOpen(false)}
+              />
+            </div>
+          </div>
+        )}
+        {sshPickerOpen && (
+          <div onClick={(e) => { if (e.target === e.currentTarget) setSshPickerOpen(false); }} style={{ position: "fixed", inset: 0, zIndex: 1300, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.45)", padding: 20 }}>
+            <div style={{ width: "min(560px, 94vw)", background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: 10, padding: 14 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>{t("浏览远程目录")}</div>
+              <SshDirectoryPicker
+                config={sshTestPayload()}
+                onPick={(abs) => { setLocalDir(abs); setSshPickerOpen(false); }}
+                onClose={() => setSshPickerOpen(false)}
               />
             </div>
           </div>

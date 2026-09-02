@@ -5,6 +5,7 @@ import type {
   SettingsManager,
   SlashCommandInfo,
   Theme,
+  UserBashEventResult,
 } from "@earendil-works/pi-coding-agent";
 import type {
   AgentLoopTurnUpdate,
@@ -84,6 +85,10 @@ interface ExtensionRunnerLike {
     sourceInfo: SlashCommandInfo["sourceInfo"];
   }>;
   emit?(event: { type: "session_shutdown"; reason: "quit" }): Promise<unknown>;
+  /** Gives mode extensions (sandbox / ssh / relay) first claim on `!`/`!!`
+   *  commands, mirroring pi CLI rpc-mode. Returns operations/result or
+   *  undefined when no handler wants the command. */
+  emitUserBash?(event: { type: "user_bash"; command: string; excludeFromContext: boolean; cwd: string }): Promise<UserBashEventResult | undefined>;
   setUIContext?(uiContext?: unknown, mode?: "tui" | "rpc" | "json" | "print"): void;
 }
 
@@ -181,6 +186,9 @@ export interface AgentSessionLike {
     excludeFromContext?: boolean;
     operations?: BashOperations;
   }): Promise<{ output: string; exitCode?: number; cancelled?: boolean; truncated?: boolean; fullOutputPath?: string }>;
+  /** Records an externally executed bash result into session history
+   *  (the pre-executed path of the user_bash extension event). */
+  recordBashResult?(command: string, result: { output: string; exitCode?: number; cancelled?: boolean; truncated?: boolean; fullOutputPath?: string }, options?: { excludeFromContext?: boolean }): void;
   abortBash(): void;
   readonly isBashRunning: boolean;
   setModel(model: ModelLike): Promise<void>;

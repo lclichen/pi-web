@@ -1,4 +1,4 @@
-import { defineTool, type ExtensionAPI, type InlineExtension } from "@earendil-works/pi-coding-agent";
+import { defineTool, type BashOperations, type ExtensionAPI, type InlineExtension } from "@earendil-works/pi-coding-agent";
 import { Type } from "@earendil-works/pi-ai";
 import { join } from "node:path";
 import { relayRpc } from "@/lib/relay/forward";
@@ -207,6 +207,25 @@ export function makeRelayToolsExtension(userId: number): InlineExtension {
         } catch (err) {
           return fail(err instanceof Error ? err.message : String(err));
         }
+      },
+    }));
+
+    // ---- user `!`/`!!` commands: execute on the user's own machine ----
+    // pi hands the LOCAL session cwd (server-side project home), which has no
+    // meaning on the user's machine — run at the relay workspace root instead.
+    // relay exec.run is argv-based (no shell), so wrap with bash -c.
+    pi.on("user_bash", async (): Promise<{ operations: BashOperations }> => ({
+      operations: {
+        exec: async (command: string, _cwd: string, options: { onData?: (data: Buffer) => void; signal?: AbortSignal; timeout?: number }) => {
+          const r = await call<ExecResult>("exec.run", {
+            argv: ["bash", "-c", command],
+            cwd: ".",
+            ...(options.timeout ? { timeout: options.timeout } : {}),
+          });
+          if (r.stdout) options.onData?.(Buffer.from(r.stdout, "utf8"));
+          if (r.stderr) options.onData?.(Buffer.from(`[stderr]\n${r.stderr}`, "utf8"));
+          return { exitCode: r.exitCode };
+        },
       },
     }));
   };

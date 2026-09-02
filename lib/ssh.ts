@@ -163,6 +163,49 @@ export async function sshTestConnection(config: SshConfig): Promise<{ whoami: st
   }
 }
 
+export interface SshListEntry {
+  name: string;
+  isDir: boolean;
+  size: number;
+}
+
+/**
+ * One-shot remote directory listing for the wizard's remote-directory picker.
+ * With no path, starts at the account's home (`echo $HOME`). Like
+ * sshTestConnection this is a fresh, unpooled connection with the submitted
+ * credentials. Keyed connections are not reused, so the picker costs one
+ * connect per browse call — acceptable for a wizard used before the project
+ * (and its pooled client) exists.
+ */
+export async function sshListDirectory(config: SshConfig, path?: string): Promise<{ path: string; entries: SshListEntry[] }> {
+  const client = await connectClient(config);
+  try {
+    let target = (path ?? "").trim();
+    if (!target) {
+      target = await new Promise<string>((resolve, reject) => {
+        client.exec("echo $HOME", (err, stream) => {
+          if (err) return reject(err);
+          let out = "";
+          stream.on("data", (d: Buffer) => { out += d.toString(); });
+          stream.on("close", () => resolve(out.trim() || "/"));
+        });
+      });
+    }
+    const sftp = await new Promise<{ readdir(p: string, cb: (e: Error | undefined, l: Array<{ filename: string; attrs: { isDirectory(): boolean; size: number } }> | undefined) => void): void }>((resolve, reject) => {
+      client.sftp((e: Error | undefined, s: unknown) => (e ? reject(e) : resolve(s as Parameters<typeof resolve>[0])));
+    });
+    const list = await new Promise<Array<{ filename: string; attrs: { isDirectory(): boolean; size: number } }>>((resolve, reject) => {
+      sftp.readdir(target, (e, l) => (e ? reject(e) : resolve(l ?? [])));
+    });
+    const entries = list
+      .map((e) => ({ name: e.filename, isDir: e.attrs.isDirectory(), size: e.attrs.size }))
+      .sort((a, b) => (a.isDir === b.isDir ? a.name.localeCompare(b.name) : a.isDir ? -1 : 1));
+    return { path: target.replace(/\/+$/, "") || "/", entries };
+  } finally {
+    try { client.end(); } catch { /* already dead */ }
+  }
+}
+
 export interface SshExecResult {
   code: number;
   stdout: string;

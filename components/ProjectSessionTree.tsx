@@ -405,7 +405,7 @@ export function ProjectSessionTree({
         const isCollapsed = collapsed.has(project.id);
         // 焦点会话所属项目高亮 + 左侧模式色条，一眼定位当前所在项目。
         const projectHoldsFocus = Boolean(selectedSessionId && byProject.map.get(project.id)?.some((s) => s.id === selectedSessionId));
-        const modeColor = project.mode === "sandbox" ? "#38bdf8" : "#a78bfa";
+        const modeColor = project.mode === "sandbox" ? "#38bdf8" : project.mode === "ssh" ? "#34d399" : "#a78bfa";
         // 容器状态点（沙箱项目绑定容器的前台可见性）。
         const bound = project.containerId != null ? containers.find((c) => c.id === project.containerId) : undefined;
         const containerState = bound?.status === "running" ? { color: "#22c55e", label: t("运行中") }
@@ -437,9 +437,10 @@ export function ProjectSessionTree({
               )}
               <span style={{
                 flexShrink: 0, padding: "0 5px", borderRadius: 3, fontSize: 9, fontWeight: 700,
-                color: modeColor, background: project.mode === "sandbox" ? "rgba(56,189,248,0.12)" : "rgba(167,139,250,0.12)",
+                color: modeColor,
+                background: project.mode === "sandbox" ? "rgba(56,189,248,0.12)" : project.mode === "ssh" ? "rgba(52,211,153,0.14)" : "rgba(167,139,250,0.12)",
               }}>
-                {project.mode === "sandbox" ? t("沙盒") : t("本地")}
+                {project.mode === "sandbox" ? t("沙盒") : project.mode === "ssh" ? t("SSH") : t("本地")}
               </span>
               <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{project.name}</span>
               {project.mode === "sandbox" && (

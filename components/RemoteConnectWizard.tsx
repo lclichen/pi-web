@@ -8,7 +8,10 @@
  *    ③ 创建并供给容器，④ 展示容器 /workspace 摘要（目录固定，无需选择）。
  *  - 连接本地：② 项目名 + 配对状态说明（agent 按用户配对，多项目共用一条
  *    连接），③ 校验 agent 在线，④ 绑定本机工作目录（保存到项目 workdir）。
- *  - SSH：仅预留入口（卡片禁用）。
+ *  - SSH：② 连接配置（主机/端口/用户名/认证方式，可测试连接），③ 创建，
+ *    ④ 远程工作目录。
+ * 表单控件样式与 NewProjectDialog（沙盒配置页）保持一致：label 字段栈 +
+ * 32px 输入框 + 右下角 secondary/primary 按钮。
  */
 import { useCallback, useEffect, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
@@ -61,15 +64,15 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
   const [presetBundle, setPresetBundle] = useState("");
 
   const presetRow = (
-    <div className="form-field">
-      <label>{t("配置模板（可选）")}</label>
-      <select value={presetBundle} onChange={(e) => setPresetBundle(e.target.value)} style={{ width: "100%", height: 32, padding: "0 8px", background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text)", fontSize: 12 }}>
+    <label style={fieldStyle}>
+      {t("配置模板（可选）")}
+      <select value={presetBundle} onChange={(e) => setPresetBundle(e.target.value)} style={inputStyle}>
         <option value="">{t("不使用模板")}</option>
         {presets.map((p) => (
           <option key={p.name} value={p.name}>{p.name}{p.description ? ` — ${p.description}` : ""}</option>
         ))}
       </select>
-    </div>
+    </label>
   );
 
   useEffect(() => {
@@ -112,6 +115,7 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
 
   const createSandbox = useCallback(async (input: NonNullable<typeof sandboxInput>) => {
     setBusy(true);
+    setSandboxBusy(true);
     setError(null);
     try {
       // 工作区初始化：把默认工作区的文件 seed 进新容器的 /workspace。
@@ -141,6 +145,7 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
       setStep(2); // 回到配置步并复位对话框按钮
     } finally {
       setBusy(false);
+      setSandboxBusy(false);
     }
   }, []);
 
@@ -178,7 +183,7 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
     } finally {
       setBusy(false);
     }
-  }, [sshName, localDir, sshForm, localDir, onCreated, onClose]);
+  }, [sshName, localDir, sshForm, presetBundle, onCreated, onClose]);
   // 测试 SSH 连接（不落盘；成功返回远端 whoami）。
   const testSsh = async () => {
     setSshTesting(true);
@@ -231,7 +236,7 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
     } finally {
       setBusy(false);
     }
-  }, [localName, localDir, onCreated, onClose]);
+  }, [localName, localDir, presetBundle, onCreated, onClose]);
 
   const methodCards: Array<{ id: string; title: string; sub: string; icon: React.ReactNode; disabled?: boolean; soon?: boolean }> = [
     {
@@ -287,7 +292,7 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
             const done = s.n < step;
             return (
               <div key={s.n} style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 18px", color: active ? "var(--accent)" : done ? "var(--text)" : "var(--text-dim)", fontWeight: active ? 600 : 400 }}>
-                <span style={{ width: 18, height: 18, borderRadius: 999, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 10, border: `1px solid ${active ? "var(--accent)" : done ? "var(--success)" : "var(--text-muted)"}`, background: done ? "var(--success)" : "var(--bg)", color: done ? "#fff" : active ? "var(--accent)" : "var(--text-muted)" }}>
+                <span style={{ width: 18, height: 18, borderRadius: 999, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 10, flexShrink: 0, border: `1px solid ${active ? "var(--accent)" : done ? "var(--success)" : "var(--text-muted)"}`, background: done ? "var(--success)" : "var(--bg)", color: done ? "var(--bg)" : active ? "var(--accent)" : "var(--text-muted)" }}>
                   {s.n}
                 </span>
                 {t(s.label)}
@@ -349,46 +354,62 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
             <>
               <h2 style={{ margin: "0 0 4px", fontSize: 17, color: "var(--text)" }}>{t("SSH 连接配置")}</h2>
               <p style={{ margin: "0 0 14px", fontSize: 12.5, color: "var(--text-dim)" }}>{t("会话在 pi-web 服务器上运行，但 bash / 文件读写等工具通过 SSH 在远程主机的工作目录内执行。")}</p>
-              <div className="form-field"><label>{t("项目名称")}</label>
-                <input value={sshName} onChange={(e) => setSshName(e.target.value)} placeholder="my-ssh-lab" autoFocus /></div>
-              <div style={{ display: "flex", gap: 10 }}>
-                <div className="form-field" style={{ flex: 1 }}><label>{t("主机地址")}</label>
-                  <input value={sshForm.host} onChange={(e) => setSshForm({ ...sshForm, host: e.target.value })} placeholder="192.168.1.100" /></div>
-                <div className="form-field" style={{ width: 100 }}><label>{t("端口")}</label>
-                  <input value={sshForm.port} onChange={(e) => setSshForm({ ...sshForm, port: e.target.value.replace(/[^0-9]/g, "") })} placeholder="22" /></div>
-              </div>
-              <div className="form-field"><label>{t("用户名")}</label>
-                <input value={sshForm.username} onChange={(e) => setSshForm({ ...sshForm, username: e.target.value })} placeholder="root" /></div>
-              <div className="form-field"><label>{t("认证方式")}</label>
-                <div style={{ display: "flex", maxWidth: 260, borderRadius: 6, border: "1px solid var(--border)", overflow: "hidden", fontSize: 12 }}>
-                  {(["password", "key"] as const).map((m) => (
-                    <button key={m} type="button" onClick={() => setSshForm({ ...sshForm, authType: m })}
-                      style={{ flex: 1, padding: "6px 0", border: "none", cursor: "pointer", background: sshForm.authType === m ? "var(--bg-selected)" : "transparent", color: sshForm.authType === m ? "var(--text)" : "var(--text-dim)", fontWeight: sshForm.authType === m ? 600 : 400 }}>
-                      {m === "password" ? t("密码") : t("私钥")}
-                    </button>
-                  ))}
+              {error && <div className="error-banner" style={{ marginBottom: 10 }}>{error}</div>}
+              <div style={{ display: "flex", flexDirection: "column", gap: 12, maxWidth: 460 }}>
+                <label style={fieldStyle}>
+                  {t("项目名称")}
+                  <input value={sshName} onChange={(e) => setSshName(e.target.value)} placeholder="my-ssh-lab" autoFocus style={inputStyle} />
+                </label>
+                <div style={{ display: "flex", gap: 10 }}>
+                  <label style={{ ...fieldStyle, flex: 1 }}>
+                    {t("主机地址")}
+                    <input value={sshForm.host} onChange={(e) => setSshForm({ ...sshForm, host: e.target.value })} placeholder="192.168.1.100" style={inputStyle} />
+                  </label>
+                  <label style={{ ...fieldStyle, width: 96 }}>
+                    {t("端口")}
+                    <input value={sshForm.port} onChange={(e) => setSshForm({ ...sshForm, port: e.target.value.replace(/[^0-9]/g, "") })} placeholder="22" style={inputStyle} />
+                  </label>
                 </div>
+                <label style={fieldStyle}>
+                  {t("用户名")}
+                  <input value={sshForm.username} onChange={(e) => setSshForm({ ...sshForm, username: e.target.value })} placeholder="root" style={inputStyle} />
+                </label>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "var(--text-muted)" }}>
+                  <span>{t("认证方式")}</span>
+                  <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+                    <input type="radio" checked={sshForm.authType === "password"} onChange={() => setSshForm({ ...sshForm, authType: "password" })} />
+                    {t("密码")}
+                  </label>
+                  {sshForm.authType === "password" ? (
+                    <input type="password" value={sshForm.password} onChange={(e) => setSshForm({ ...sshForm, password: e.target.value })} style={{ ...inputStyle, marginLeft: 22, width: "calc(100% - 22px)" }} />
+                  ) : null}
+                  <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+                    <input type="radio" checked={sshForm.authType === "key"} onChange={() => setSshForm({ ...sshForm, authType: "key" })} />
+                    {t("私钥")}
+                    <span style={{ fontSize: 10.5, color: "var(--text-dim)" }}>{t("（留空使用服务器默认密钥）")}</span>
+                  </label>
+                  {sshForm.authType === "key" ? (
+                    <textarea value={sshForm.privateKey} onChange={(e) => setSshForm({ ...sshForm, privateKey: e.target.value })} rows={3} placeholder="-----BEGIN OPENSSH PRIVATE KEY-----" style={{ ...inputStyle, marginLeft: 22, width: "calc(100% - 22px)", height: "auto", padding: 8, fontFamily: "var(--font-mono)", fontSize: 11, resize: "vertical" }} />
+                  ) : null}
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, minHeight: 30 }}>
+                  <button
+                    type="button"
+                    onClick={() => void testSsh()}
+                    disabled={sshTesting || !sshForm.host.trim() || !sshForm.username.trim()}
+                    style={{ ...secondaryBtn, opacity: sshTesting || !sshForm.host.trim() || !sshForm.username.trim() ? 0.5 : 1, cursor: sshTesting || !sshForm.host.trim() || !sshForm.username.trim() ? "not-allowed" : "pointer" }}
+                  >
+                    {sshTesting ? t("测试中…") : t("测试连接")}
+                  </button>
+                  {sshTestMsg && <span style={{ fontSize: 12, color: sshTestMsg.ok ? "var(--success)" : "#ef4444" }}>{sshTestMsg.text}</span>}
+                </div>
+                {presetRow}
+                <div className="info-banner">{t("SSH 凭据保存在项目配置中（0600 权限），不会随配置包导出。")}</div>
               </div>
-              {sshForm.authType === "password" ? (
-                <div className="form-field"><label>{t("密码")}</label>
-                  <input type="password" value={sshForm.password} onChange={(e) => setSshForm({ ...sshForm, password: e.target.value })} /></div>
-              ) : (
-                <div className="form-field"><label>{t("私钥（PEM 内容，留空使用服务器默认密钥）")}</label>
-                  <textarea value={sshForm.privateKey} onChange={(e) => setSshForm({ ...sshForm, privateKey: e.target.value })} rows={3} style={{ fontFamily: "var(--font-mono)", fontSize: 11 }} /></div>
-              )}
-              {presetRow}
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <button type="button" onClick={() => void testSsh()} disabled={sshTesting || !sshForm.host.trim() || !sshForm.username.trim()}
-                  style={{ height: 30, padding: "0 14px", borderRadius: 6, border: "1px solid var(--border)", background: "transparent", color: "var(--text)", fontSize: 12, cursor: "pointer", opacity: sshTesting || !sshForm.host.trim() || !sshForm.username.trim() ? 0.5 : 1 }}>
-                  {sshTesting ? t("测试中…") : t("测试连接")}
-                </button>
-                {sshTestMsg && <span style={{ fontSize: 12, color: sshTestMsg.ok ? "#22c55e" : "#ef4444" }}>{sshTestMsg.text}</span>}
-              </div>
-              <div className="info-banner">{t("SSH 凭据保存在项目配置中（0600 权限），不会随配置包导出。")}</div>
               <div style={{ flex: 1 }} />
-              <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-                <button onClick={() => setStep(1)}>{t("上一步")}</button>
-                <button className="primary" disabled={!sshForm.host.trim() || !sshForm.username.trim() || !sshName.trim()} onClick={() => setStep(3)} title={!sshName.trim() ? t("请先填写项目名称") : undefined}>{t("下一步")}</button>
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4 }}>
+                <button onClick={() => setStep(1)} style={secondaryBtn}>{t("上一步")}</button>
+                <button className="primary" disabled={!sshForm.host.trim() || !sshForm.username.trim() || !sshName.trim()} onClick={() => setStep(3)} title={!sshName.trim() ? t("请先填写项目名称") : undefined} style={{ ...primaryBtn, opacity: !sshForm.host.trim() || !sshForm.username.trim() || !sshName.trim() ? 0.5 : 1 }}>{t("下一步")}</button>
               </div>
             </>
           )}
@@ -417,17 +438,20 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
           {step === 2 && method === "local" && (
             <>
               <h2 style={{ margin: "0 0 4px", fontSize: 17, color: "var(--text)" }}>{t("填写连接配置")}</h2>
-              <p style={{ margin: "0 0 16px", fontSize: 12.5, color: "var(--text-dim)" }}>{t("本机模式按用户配对：一个 Agent 连接可以承载多个项目，各项目使用不同的工作目录。")}</p>
-              <div className="form-field">
-                <label>{t("项目名称")}</label>
-                <input value={localName} onChange={(e) => setLocalName(e.target.value)} placeholder={t("如：my-local-lab")} autoFocus />
+              <p style={{ margin: "0 0 14px", fontSize: 12.5, color: "var(--text-dim)" }}>{t("本机模式按用户配对：一个 Agent 连接可以承载多个项目，各项目使用不同的工作目录。")}</p>
+              {error && <div className="error-banner" style={{ marginBottom: 10 }}>{error}</div>}
+              <div style={{ display: "flex", flexDirection: "column", gap: 12, maxWidth: 460 }}>
+                <label style={fieldStyle}>
+                  {t("项目名称")}
+                  <input value={localName} onChange={(e) => setLocalName(e.target.value)} placeholder={t("如：my-local-lab")} autoFocus style={inputStyle} />
+                </label>
+                <div className="info-banner">{t("下一步将在向导内完成本机配对（已配对则直接进入目录选择）。")}</div>
+                {presetRow}
               </div>
-              <div className="info-banner">{t("下一步将在向导内完成本机配对（已配对则直接进入目录选择）。")}</div>
-              {presetRow}
               <div style={{ flex: 1 }} />
-              <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-                <button onClick={() => setStep(1)}>{t("上一步")}</button>
-                <button className="primary" disabled={!localName.trim()} onClick={() => setStep(3)}>{t("下一步")}</button>
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4 }}>
+                <button onClick={() => setStep(1)} style={secondaryBtn}>{t("上一步")}</button>
+                <button className="primary" disabled={!localName.trim()} onClick={() => setStep(3)} style={{ ...primaryBtn, opacity: !localName.trim() ? 0.5 : 1 }}>{t("下一步")}</button>
               </div>
             </>
           )}
@@ -457,16 +481,21 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
           {step === 4 && method === "local" && (
             <>
               <h2 style={{ margin: "0 0 4px", fontSize: 17, color: "var(--text)" }}>{t("选择目录")}</h2>
-              <p style={{ margin: "0 0 16px", fontSize: 12.5, color: "var(--text-dim)" }}>{t("填写本机上该项目的工作目录（Agent 侧路径，例如 /home/me/projects/demo；留空则使用默认工作区）。")}</p>
-              <div className="form-field">
-                <label>{t("本机工作目录（可选）")}</label>
-                <input value={localDir} onChange={(e) => setLocalDir(e.target.value)} placeholder="/home/me/projects/demo" />
+              <p style={{ margin: "0 0 14px", fontSize: 12.5, color: "var(--text-dim)" }}>{t("填写本机上该项目的工作目录（Agent 侧路径，例如 /home/me/projects/demo；留空则使用默认工作区）。")}</p>
+              <div style={{ display: "flex", flexDirection: "column", gap: 12, maxWidth: 460 }}>
+                <label style={fieldStyle}>
+                  {t("本机工作目录（可选）")}
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <input value={localDir} onChange={(e) => setLocalDir(e.target.value)} placeholder="/home/me/projects/demo" style={{ ...inputStyle, flex: 1 }} />
+                    <button type="button" onClick={() => setLocalPickerOpen(true)} title={t("打开本机目录浏览器")} style={{ ...secondaryBtn, flexShrink: 0 }}>{t("浏览…")}</button>
+                  </div>
+                </label>
+                {error && <div className="error-banner">{error}</div>}
               </div>
-              {error && <div className="error-banner">{error}</div>}
               <div style={{ flex: 1 }} />
-              <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-                <button onClick={() => setStep(3)}>{t("上一步")}</button>
-                <button className="primary" disabled={busy || !localName.trim()} onClick={finishLocal}>
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4 }}>
+                <button onClick={() => setStep(3)} style={secondaryBtn}>{t("上一步")}</button>
+                <button className="primary" disabled={busy || !localName.trim()} onClick={finishLocal} style={{ ...primaryBtn, opacity: busy || !localName.trim() ? 0.5 : 1 }}>
                   {busy ? t("创建中…") : t("完成")}
                 </button>
               </div>
@@ -476,16 +505,18 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
           {step === 4 && method === "ssh" && (
             <>
               <h2 style={{ margin: "0 0 4px", fontSize: 17, color: "var(--text)" }}>{t("选择目录")}</h2>
-              <p style={{ margin: "0 0 16px", fontSize: 12.5, color: "var(--text-dim)" }}>{t("填写远程主机上该项目的工作目录（Agent 侧路径，例如 /root/projects/demo；留空则使用远程 home）。")}</p>
-              <div className="form-field">
-                <label>{t("远程工作目录（可选）")}</label>
-                <input value={localDir} onChange={(e) => setLocalDir(e.target.value)} placeholder="/root/projects/demo" />
+              <p style={{ margin: "0 0 14px", fontSize: 12.5, color: "var(--text-dim)" }}>{t("填写远程主机上该项目的工作目录（Agent 侧路径，例如 /root/projects/demo；留空则使用远程 home）。")}</p>
+              <div style={{ display: "flex", flexDirection: "column", gap: 12, maxWidth: 460 }}>
+                <label style={fieldStyle}>
+                  {t("远程工作目录（可选）")}
+                  <input value={localDir} onChange={(e) => setLocalDir(e.target.value)} placeholder="/root/projects/demo" style={inputStyle} />
+                </label>
+                {error && <div className="error-banner">{error}</div>}
               </div>
-              {error && <div className="error-banner">{error}</div>}
               <div style={{ flex: 1 }} />
-              <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-                <button onClick={() => setStep(3)}>{t("上一步")}</button>
-                <button className="primary" disabled={busy || !sshName.trim()} onClick={() => void finishSsh()}>
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4 }}>
+                <button onClick={() => setStep(3)} style={secondaryBtn}>{t("上一步")}</button>
+                <button className="primary" disabled={busy || !sshName.trim()} onClick={() => void finishSsh()} style={{ ...primaryBtn, opacity: busy || !sshName.trim() ? 0.5 : 1 }}>
                   {busy ? t("创建中…") : t("完成")}
                 </button>
               </div>
@@ -518,3 +549,23 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
     </div>
   );
 }
+
+// 与 NewProjectDialog（沙盒配置页）一致的表单控件样式：label 字段栈、32px
+// 输入框、右下角 secondary/primary 按钮。
+const fieldStyle = {
+  display: "flex", flexDirection: "column", gap: 4, fontSize: 12, color: "var(--text-muted)",
+} as const;
+
+const inputStyle = {
+  height: 32, padding: "0 8px", borderRadius: 6, border: "1px solid var(--border)",
+  background: "var(--bg)", color: "var(--text)", fontSize: 12, outline: "none",
+} as const;
+
+const secondaryBtn = {
+  height: 30, padding: "0 14px", borderRadius: 6, border: "1px solid var(--border)",
+  background: "var(--bg)", color: "var(--text)", fontSize: 12, cursor: "pointer",
+} as const;
+
+const primaryBtn = {
+  ...secondaryBtn, background: "var(--accent)", color: "#fff", borderColor: "var(--accent)", fontWeight: 600,
+} as const;

@@ -498,9 +498,11 @@ export function SessionSidebar({ authInfo = null, sessionSpace = "mine", onSessi
     } finally {
       if (showLoading) setLoading(false);
     }
-    // sessionSpace/authInfo must be deps: the closure builds the query
-    // (?space=host), and a stale closure kept the admin toggle dead.
-  }, [authInfo, sessionSpace]);
+    // Deps must be primitives: the closure only reads the role, and depending
+    // on the authInfo *object* made this callback (and the list effect below)
+    // re-run on every parent render that passed a fresh object — a fetch →
+    // onSessionsChange → parent re-render → fetch loop.
+  }, [authInfo?.user?.role, sessionSpace]);
 
   const initialLoadDone = useRef(false);
   useEffect(() => {
@@ -1172,16 +1174,16 @@ export function SessionSidebar({ authInfo = null, sessionSpace = "mine", onSessi
                   return (
                     <span
                       style={{ flex: 1, display: "flex", alignItems: "center", gap: 6, minWidth: 0, fontSize: 11 }}
-                      title={mode === "sandbox" ? "任务在容器 /workspace 内执行" : "任务在本机配对的工作区内执行"}
+                      title={mode === "sandbox" ? "任务在容器 /workspace 内执行" : mode === "ssh" ? "任务通过 SSH 在远程主机的工作目录内执行" : "任务在本机配对的工作区内执行"}
                     >
                       <span
                         style={{
                           flexShrink: 0, padding: "1px 6px", borderRadius: 4, fontSize: 10, fontWeight: 700,
-                          color: mode === "sandbox" ? "#38bdf8" : "#a78bfa",
-                          background: mode === "sandbox" ? "rgba(56,189,248,0.12)" : "rgba(167,139,250,0.12)",
+                          color: mode === "sandbox" ? "#38bdf8" : mode === "ssh" ? "#34d399" : "#a78bfa",
+                          background: mode === "sandbox" ? "rgba(56,189,248,0.12)" : mode === "ssh" ? "rgba(52,211,153,0.14)" : "rgba(167,139,250,0.12)",
                         }}
                       >
-                        {mode === "sandbox" ? "沙盒" : "本地"}
+                        {mode === "sandbox" ? "沙盒" : mode === "ssh" ? "SSH" : "本地"}
                       </span>
                       <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text)" }}>
                         {pendingProjectLabel ?? ""}
@@ -1934,7 +1936,7 @@ export function SessionSidebar({ authInfo = null, sessionSpace = "mine", onSessi
           </div>
           {explorerOpen && pendingRemoteMode && pendingRemoteMode !== "host" && !remoteSession ? (
             <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-dim)", fontSize: 12, padding: 16, textAlign: "center" }}>
-              {pendingRemoteMode === "sandbox" ? "沙箱" : "本机"}会话创建后（发送第一条消息）即可浏览远端文件
+              {pendingRemoteMode === "sandbox" ? "沙盒" : pendingRemoteMode === "ssh" ? "SSH" : "本机"}会话创建后（发送第一条消息）即可浏览远端文件
             </div>
           ) : explorerOpen && (
             <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden" }}>

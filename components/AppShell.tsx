@@ -1163,10 +1163,24 @@ export function AppShell() {
     return () => observer.disconnect();
   }, [windowTitle]);
 
+  // Stable identity across re-renders: SessionSidebar's session-list effect
+  // depends on this object, so an inline literal here (new identity per render)
+  // retriggered the list fetch on every AppShell render — including the renders
+  // caused by the fetch's own onSessionsChange → setSessionCatalog, i.e. an
+  // unbounded /api/sessions request loop.
+  const sidebarAuthInfo = useMemo(
+    () => webUser === "loading"
+      ? { enabled: false, user: null }
+      : webUser
+        ? { enabled: true, user: webUser }
+        : { enabled: true, user: null },
+    [webUser],
+  );
+
   const sidebarContent = (
     <>
       <SessionSidebar
-        authInfo={webUser === "loading" ? { enabled: false, user: null } : (webUser ? { enabled: true, user: webUser } : { enabled: true, user: null })}
+        authInfo={sidebarAuthInfo}
         sessionSpace={sessionSpace}
         onSessionSpaceChange={setSessionSpace}
         selectedSessionId={selectedSession?.id ?? null}

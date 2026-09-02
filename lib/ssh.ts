@@ -49,6 +49,7 @@ export function readSshConfig(home: string): SshConfig | null {
 }
 
 function mkdirSyncMode(dir: string): void {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { mkdirSync } = require("node:fs") as typeof import("node:fs");
   mkdirSync(dir, { recursive: true, mode: 0o700 });
 }
@@ -102,7 +103,7 @@ function connectClient(config: SshConfig): Promise<Client> {
 
 /** Get (or re-establish) the pooled SSH connection for a project. */
 export async function getSshClient(projectId: string, config: SshConfig): Promise<Client> {
-  let entry = pool.get(projectId);
+  const entry = pool.get(projectId);
   if (entry?.connecting) return entry.connecting;
   if (entry) {
     const alive = await new Promise<boolean>((resolve) => {

@@ -506,7 +506,11 @@ export function SessionSidebar({ authInfo = null, sessionSpace = "mine", onSessi
   useEffect(() => {
     const isFirst = !initialLoadDone.current;
     initialLoadDone.current = true;
-    loadSessions(isFirst, !isFirst);
+    // 依赖（authInfo/sessionSpace/refreshKey）重触发时不强制：force 会绕过
+    // 服务端 30s 缓存全量扫描——AppShell 的运行轮询每 2.5s 触发重渲染，
+    // authInfo 内联对象身份变化会连锁触发本 effect，形成 force=1 风暴。
+    // 需要强刷的场景（手动刷新按钮、后台任务完成）各自显式传 force。
+    loadSessions(isFirst, false);
   }, [loadSessions, refreshKey]);
 
   // Browser storage is unavailable during server rendering. Restore the panel

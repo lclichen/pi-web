@@ -54,6 +54,8 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
   const [relayInfo, setRelayInfo] = useState<{ online: boolean; hostname?: string } | null>(null);
   // 本机目录可视化选择器（④ 打开）
   const [localPickerOpen, setLocalPickerOpen] = useState(false);
+  const [sshTesting, setSshTesting] = useState(false);
+  const [sshTestMsg, setSshTestMsg] = useState<{ ok: boolean; text: string } | null>(null);
   // 配置模板：平台预置包（可选，创建时初始化 .pi/ 与 labs/）
   const [presets, setPresets] = useState<Array<{ name: string; description: string }>>([]);
   const [presetBundle, setPresetBundle] = useState("");
@@ -177,6 +179,33 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
       setBusy(false);
     }
   }, [sshName, localDir, sshForm, localDir, onCreated, onClose]);
+  // 测试 SSH 连接（不落盘；成功返回远端 whoami）。
+  const testSsh = async () => {
+    setSshTesting(true);
+    setSshTestMsg(null);
+    try {
+      const res = await fetch("/api/host/ssh-test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          host: sshForm.host.trim(),
+          port: Number(sshForm.port) || 22,
+          username: sshForm.username.trim(),
+          authType: sshForm.authType,
+          password: sshForm.password || undefined,
+          privateKey: sshForm.privateKey || undefined,
+          passphrase: sshForm.passphrase || undefined,
+        }),
+      });
+      const d = (await res.json()) as { ok?: boolean; whoami?: string; error?: string };
+      if (!res.ok || d.error) throw new Error(d.error ?? `HTTP ${res.status}`);
+      setSshTestMsg({ ok: true, text: t("连接成功：{user}", { user: d.whoami ?? "?" }) });
+    } catch (e) {
+      setSshTestMsg({ ok: false, text: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setSshTesting(false);
+    }
+  };
   const handleSandboxCreated = useCallback((input: NonNullable<typeof sandboxInput>) => {
     setSandboxInput(input);
     setStep(3);
@@ -320,19 +349,21 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
             <>
               <h2 style={{ margin: "0 0 4px", fontSize: 17, color: "var(--text)" }}>{t("SSH 连接配置")}</h2>
               <p style={{ margin: "0 0 14px", fontSize: 12.5, color: "var(--text-dim)" }}>{t("会话在 pi-web 服务器上运行，但 bash / 文件读写等工具通过 SSH 在远程主机的工作目录内执行。")}</p>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 110px", gap: 10 }}>
-                <div className="form-field"><label>{t("主机地址")}</label>
-                  <input value={sshForm.host} onChange={(e) => setSshForm({ ...sshForm, host: e.target.value })} placeholder="192.168.1.100" autoFocus /></div>
-                <div className="form-field"><label>{t("端口")}</label>
+              <div className="form-field"><label>{t("项目名称")}</label>
+                <input value={sshName} onChange={(e) => setSshName(e.target.value)} placeholder="my-ssh-lab" autoFocus /></div>
+              <div style={{ display: "flex", gap: 10 }}>
+                <div className="form-field" style={{ flex: 1 }}><label>{t("主机地址")}</label>
+                  <input value={sshForm.host} onChange={(e) => setSshForm({ ...sshForm, host: e.target.value })} placeholder="192.168.1.100" /></div>
+                <div className="form-field" style={{ width: 100 }}><label>{t("端口")}</label>
                   <input value={sshForm.port} onChange={(e) => setSshForm({ ...sshForm, port: e.target.value.replace(/[^0-9]/g, "") })} placeholder="22" /></div>
               </div>
               <div className="form-field"><label>{t("用户名")}</label>
                 <input value={sshForm.username} onChange={(e) => setSshForm({ ...sshForm, username: e.target.value })} placeholder="root" /></div>
               <div className="form-field"><label>{t("认证方式")}</label>
-                <div style={{ display: "flex", gap: 0, borderRadius: 6, border: "1px solid var(--border)", overflow: "hidden", fontSize: 12 }}>
+                <div style={{ display: "flex", maxWidth: 260, borderRadius: 6, border: "1px solid var(--border)", overflow: "hidden", fontSize: 12 }}>
                   {(["password", "key"] as const).map((m) => (
                     <button key={m} type="button" onClick={() => setSshForm({ ...sshForm, authType: m })}
-                      style={{ flex: 1, padding: "5px 0", border: "none", cursor: "pointer", background: sshForm.authType === m ? "var(--bg-selected)" : "transparent", color: sshForm.authType === m ? "var(--text)" : "var(--text-dim)" }}>
+                      style={{ flex: 1, padding: "6px 0", border: "none", cursor: "pointer", background: sshForm.authType === m ? "var(--bg-selected)" : "transparent", color: sshForm.authType === m ? "var(--text)" : "var(--text-dim)", fontWeight: sshForm.authType === m ? 600 : 400 }}>
                       {m === "password" ? t("密码") : t("私钥")}
                     </button>
                   ))}
@@ -346,11 +377,18 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
                   <textarea value={sshForm.privateKey} onChange={(e) => setSshForm({ ...sshForm, privateKey: e.target.value })} rows={3} style={{ fontFamily: "var(--font-mono)", fontSize: 11 }} /></div>
               )}
               {presetRow}
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <button type="button" onClick={() => void testSsh()} disabled={sshTesting || !sshForm.host.trim() || !sshForm.username.trim()}
+                  style={{ height: 30, padding: "0 14px", borderRadius: 6, border: "1px solid var(--border)", background: "transparent", color: "var(--text)", fontSize: 12, cursor: "pointer", opacity: sshTesting || !sshForm.host.trim() || !sshForm.username.trim() ? 0.5 : 1 }}>
+                  {sshTesting ? t("测试中…") : t("测试连接")}
+                </button>
+                {sshTestMsg && <span style={{ fontSize: 12, color: sshTestMsg.ok ? "#22c55e" : "#ef4444" }}>{sshTestMsg.text}</span>}
+              </div>
               <div className="info-banner">{t("SSH 凭据保存在项目配置中（0600 权限），不会随配置包导出。")}</div>
               <div style={{ flex: 1 }} />
               <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
                 <button onClick={() => setStep(1)}>{t("上一步")}</button>
-                <button className="primary" disabled={!sshForm.host.trim() || !sshForm.username.trim() || !sshName.trim()} onClick={() => setStep(3)}>{t("下一步")}</button>
+                <button className="primary" disabled={!sshForm.host.trim() || !sshForm.username.trim() || !sshName.trim()} onClick={() => setStep(3)} title={!sshName.trim() ? t("请先填写项目名称") : undefined}>{t("下一步")}</button>
               </div>
             </>
           )}

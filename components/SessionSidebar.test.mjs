@@ -87,7 +87,8 @@ test("manual and lifecycle refreshes bypass the server session-list cache", () =
   assert.match(source, /if \(force\) params\.set\("force", "1"\)/);
   assert.match(source, /\/api\/sessions\$\{spaceQuery\}/);
   assert.match(source, /cache: "no-store"/);
-  assert.match(source, /loadSessions\(isFirst, !isFirst\)/);
+  // 依赖重触发不再强制（force=1 曾随 2.5s 轮询形成风暴）；首载不强制。
+  assert.match(source, /loadSessions\(isFirst, false\)/);
   assert.match(source, /onClick=\{\(\) => loadSessions\(false, true\)\}/);
   assert.match(source, /loadSessions\(false, true\);[\s\S]*?onBackgroundTaskDone/);
 });

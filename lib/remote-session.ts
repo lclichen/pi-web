@@ -4,7 +4,8 @@ import { requireUserIdentity } from "./web-session";
 import { getAgentForUser } from "./relay/registry";
 import { platformGet, platformPost } from "./platform/client";
 import { readSandboxHomeConfig } from "./mode-homes";
-import { getOwnedProject, readProjectSandboxConfig } from "./projects";
+import { ensureProjectHome, getOwnedProject, readProjectSandboxConfig } from "./projects";
+import { getSshClient, readSshConfig, type SshConfig } from "./ssh";
 import { relayRpc } from "./relay/forward";
 import type { SessionMode } from "./session-modes";
 
@@ -21,6 +22,12 @@ export interface RemoteSessionContext {
   /** Sandbox mode: the container tools should target. */
   containerId: number;
   isAdmin: boolean;
+  /** SSH mode: owning project + remote workdir base. */
+  projectId?: string;
+  workdir?: string;
+  sshConfig?: import("./ssh").SshConfig;
+  /** Server-side project home — absolute UI paths under it map to the workdir. */
+  homePrefix?: string;
 }
 
 interface PlatformContainer { id: number; status: string }
@@ -43,6 +50,20 @@ export async function resolveRemoteSession(
   const ownerId = owner?.ownerId ?? meta?.ownerId ?? 0;
   if (user.id !== 0 && ownerId !== user.id && user.role !== "admin") {
     return { ok: false, status: 404, error: "会话不存在" };
+  }
+
+  if (mode === "ssh") {
+    // SSH 会话必然绑定项目：meta.projectId 提供凭据与远程工作目录。
+    const project = meta?.projectId && (user.role === "admin" || meta.ownerId === user.id || user.id === 0)
+      ? getOwnedProject(meta.projectId, meta.ownerId ?? user.id, user.role === "admin")
+      : undefined;
+    if (!project || project.mode !== "ssh") {
+      return { ok: false, status: 400, error: "SSH 会话缺少项目绑定" };
+    }
+    const home = ensureProjectHome(project);
+    const sshConfig = readSshConfig(home);
+    if (!sshConfig) return { ok: false, status: 400, error: "SSH 项目缺少连接配置" };
+    return { ok: true, ctx: { mode: "ssh", userId: user.id, apiKey: "", containerId: 0, isAdmin: user.role === "admin", projectId: project.id, workdir: project.workdir ?? "/", homePrefix: home, sshConfig } };
   }
 
   if (mode === "local-machine") {
@@ -97,7 +118,58 @@ export interface RemoteEntry {
   modified: string;
 }
 
+// ---- SSH (ssh 模式)：虚拟根 = 远程工作目录 ----
+
+function sshPath(ctx: RemoteSessionContext, path: string): string {
+  const wd = (ctx.workdir ?? "/").replace(/\/+$/, "");
+  let p = path.startsWith("/") ? path : "/" + path;
+  // 项目 home 前缀（服务器侧绝对路径，如 plan 文件）映射到远程工作目录，
+  // 与 Agent 工具的相对路径语义保持一致。
+  const home = ctx.homePrefix?.replace(/\/+$/, "");
+  if (home && (p === home || p.startsWith(home + "/"))) p = p.slice(home.length) || "/";
+  return wd + p;
+}
+
+async function sshClientFor(ctx: RemoteSessionContext) {
+  if (!ctx.projectId || !ctx.sshConfig) throw new Error("SSH 会话缺少连接配置");
+  return getSshClient(ctx.projectId, ctx.sshConfig);
+}
+
+interface SftpListEntry { filename: string; attrs: { isDirectory(): boolean; size: number } }
+
+function sftpOf(client: unknown): Promise<{
+  readdir(p: string, cb: (e: Error | undefined, l: SftpListEntry[]) => void): void;
+  readFile(p: string, cb: (e: Error | undefined, d: Buffer) => void): void;
+  writeFile(p: string, c: string, cb: (e: Error | undefined) => void): void;
+  mkdir(p: string, o: { recursive: true }, cb: (e: Error | undefined) => void): void;
+}> {
+  return new Promise((resolve, reject) => {
+    (client as { sftp(cb: (e: Error | undefined, s: unknown) => void): void }).sftp((e, s) =>
+      e ? reject(e) : resolve(s as Parameters<typeof resolve>[0]));
+  });
+}
+
+async function sshRun(ctx: RemoteSessionContext, command: string): Promise<void> {
+  const client = await sshClientFor(ctx);
+  await new Promise<void>((resolve, reject) => {
+    client.exec(command, (err: Error | undefined, stream: { on(ev: "close", cb: (c: number) => void): void; stderr: { on(ev: "data", cb: (d: Buffer) => void): void } }) => {
+      if (err) return reject(err);
+      let stderr = "";
+      stream.stderr.on("data", (d) => { stderr += d.toString(); });
+      stream.on("close", (code) => {
+        if (code !== 0) reject(new Error(`远程命令失败（exit ${code}）：${stderr.trim().slice(0, 200)}`));
+        else resolve();
+      });
+    });
+  });
+}
 export async function remoteList(ctx: RemoteSessionContext, path: string): Promise<RemoteEntry[]> {
+  if (ctx.mode === "ssh") {
+    const client = await sshClientFor(ctx);
+    const s = await sftpOf(client);
+    const list = await new Promise<SftpListEntry[]>((resolve, reject) => s.readdir(sshPath(ctx, path), (e, l) => e ? reject(e) : resolve(l)));
+    return list.map((e) => ({ name: e.filename, isDir: e.attrs.isDirectory(), size: e.attrs.size, modified: "" }));
+  }
   if (ctx.mode === "local-machine") {
     const entries = await relayRpc("fs.list", { path: stripSlash(path) }, { userId: ctx.userId }) as Array<{
       name: string; isDir: boolean; size: number; mtime: number;
@@ -118,6 +190,12 @@ export async function remoteList(ctx: RemoteSessionContext, path: string): Promi
 }
 
 export async function remoteRead(ctx: RemoteSessionContext, path: string): Promise<{ content: string; size: number }> {
+  if (ctx.mode === "ssh") {
+    const client = await sshClientFor(ctx);
+    const s = await sftpOf(client);
+    const buf = await new Promise<Buffer>((resolve, reject) => s.readFile(sshPath(ctx, path), (e, d) => e ? reject(e) : resolve(d)));
+    return { content: buf.toString("utf8"), size: buf.length };
+  }
   if (ctx.mode === "local-machine") {
     const r = await relayRpc("fs.read", { path: stripSlash(path) }, { userId: ctx.userId }) as { content: string; size: number };
     return { content: r.content, size: r.size };
@@ -131,6 +209,12 @@ export async function remoteRead(ctx: RemoteSessionContext, path: string): Promi
 }
 
 export async function remoteWrite(ctx: RemoteSessionContext, path: string, content: string): Promise<void> {
+  if (ctx.mode === "ssh") {
+    const client = await sshClientFor(ctx);
+    const s = await sftpOf(client);
+    await new Promise<void>((resolve, reject) => s.writeFile(sshPath(ctx, path), content, (e) => e ? reject(e) : resolve()));
+    return;
+  }
   if (ctx.mode === "local-machine") {
     await relayRpc("fs.write", { path: stripSlash(path), content }, { userId: ctx.userId });
     return;
@@ -145,6 +229,13 @@ export async function remoteWrite(ctx: RemoteSessionContext, path: string, conte
 /** Create an EMPTY file or a directory (the platform write schema rejects
  *  zero-length content, so empty files go through `touch`). */
 export async function remoteCreateEmpty(ctx: RemoteSessionContext, path: string, kind: "file" | "dir"): Promise<void> {
+  if (ctx.mode === "ssh") {
+    const target = sshPath(ctx, path);
+    const q = (t: string) => t.replace(/'/g, "'\\''");
+    if (kind === "dir") await sshRun(ctx, `mkdir -p -- '${q(target)}'`);
+    else await sshRun(ctx, `mkdir -p -- $(dirname '${q(target)}') && touch -- '${q(target)}'`);
+    return;
+  }
   const target = ctx.mode === "local-machine" ? stripSlash(path) : containerPath(path);
   if (ctx.mode === "local-machine") {
     if (kind === "dir") {
@@ -163,6 +254,11 @@ export async function remoteCreateEmpty(ctx: RemoteSessionContext, path: string,
 }
 
 export async function remoteDelete(ctx: RemoteSessionContext, path: string): Promise<void> {
+  if (ctx.mode === "ssh") {
+    const q = (t: string) => t.replace(/'/g, "'\\''");
+    await sshRun(ctx, `rm -rf -- '${q(sshPath(ctx, path))}'`);
+    return;
+  }
   if (ctx.mode === "local-machine") {
     await relayRpc("fs.delete", { path: stripSlash(path) }, { userId: ctx.userId });
     return;
@@ -175,6 +271,11 @@ export async function remoteDelete(ctx: RemoteSessionContext, path: string): Pro
 }
 
 export async function remoteRename(ctx: RemoteSessionContext, path: string, newPath: string): Promise<void> {
+  if (ctx.mode === "ssh") {
+    const q = (t: string) => t.replace(/'/g, "'\\''");
+    await sshRun(ctx, `mkdir -p -- $(dirname '${q(sshPath(ctx, newPath))}') && mv -- '${q(sshPath(ctx, path))}' '${q(sshPath(ctx, newPath))}'`);
+    return;
+  }
   if (ctx.mode === "local-machine") {
     await relayRpc("fs.rename", { from: stripSlash(path), to: stripSlash(newPath) }, { userId: ctx.userId });
     return;

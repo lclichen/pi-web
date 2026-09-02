@@ -774,5 +774,9 @@ export const enLocale: LocalePlugin = {
     "本机 Agent 未连接，无法浏览目录": "Local agent not connected — cannot browse directories",
     "配置模板（可选）": "Config template (optional)",
     "不使用模板": "No template",
+    "测试中…": "Testing…",
+    "测试连接": "Test connection",
+    "连接成功：{user}": "Connected: {user}",
+    "请先填写项目名称": "Enter a project name first",
   },
 };

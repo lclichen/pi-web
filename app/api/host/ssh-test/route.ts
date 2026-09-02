@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireUserIdentity } from "@/lib/web-session";
 import { isApiRequestAllowed } from "@/lib/request-security";
-import { getSshClient, type SshConfigInput } from "@/lib/ssh";
+import { sshTestConnection, type SshConfigInput } from "@/lib/ssh";
 
 export const dynamic = "force-dynamic";
 
@@ -36,15 +36,9 @@ export async function POST(req: Request) {
   }
 
   try {
-    const client = await getSshClient(`ssh-test:${identity.session.user.id}:${fullConfig.host}:${fullConfig.username}:${fullConfig.port}`, fullConfig);
-    const whoami = await new Promise<string>((resolve, reject) => {
-      client.exec("whoami", (err, stream) => {
-        if (err) return reject(err);
-        let out = "";
-        stream.on("data", (d: Buffer) => { out += d.toString(); });
-        stream.on("close", () => resolve(out.trim()));
-      });
-    });
+    // One-shot connection: pooling this would reuse a previously
+    // authenticated client and accept credentials that were never tried.
+    const { whoami } = await sshTestConnection(fullConfig as import("@/lib/ssh").SshConfig);
     return NextResponse.json({ ok: true, whoami });
   } catch (e) {
     return NextResponse.json(

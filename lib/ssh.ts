@@ -139,6 +139,29 @@ export function dropSshClient(projectId: string): void {
   }
 }
 
+/**
+ * One-shot connection check for the wizard's 「测试连接」 button: opens a fresh
+ * client with the *given* credentials and closes it. Deliberately not pooled —
+ * a pooled key of user/host/port would hand back an already-authenticated
+ * connection and "validate" credentials that were never tried.
+ */
+export async function sshTestConnection(config: SshConfig): Promise<{ whoami: string }> {
+  const client = await connectClient(config);
+  try {
+    const whoami = await new Promise<string>((resolve, reject) => {
+      client.exec("whoami", (err, stream) => {
+        if (err) return reject(err);
+        let out = "";
+        stream.on("data", (d: Buffer) => { out += d.toString(); });
+        stream.on("close", () => resolve(out.trim()));
+      });
+    });
+    return { whoami };
+  } finally {
+    try { client.end(); } catch { /* already dead */ }
+  }
+}
+
 export interface SshExecResult {
   code: number;
   stdout: string;

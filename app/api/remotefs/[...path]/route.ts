@@ -59,7 +59,8 @@ export async function GET(
     }
     return NextResponse.json({ error: `Unsupported type: ${type}` }, { status: 400 });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 502 });
+    const msg = err instanceof Error ? err.message : String(err);
+    return NextResponse.json({ error: msg }, { status: /No such file|ENOENT|not exist/i.test(msg) ? 404 : 502 });
   }
 }
 
@@ -98,7 +99,8 @@ export async function PUT(
         await remoteCreateEmpty(remote.ctx, filePath, body.type);
         return NextResponse.json({ success: true, path: filePath });
       } catch (err) {
-        return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 502 });
+        const msg = err instanceof Error ? err.message : String(err);
+    return NextResponse.json({ error: msg }, { status: /No such file|ENOENT|not exist/i.test(msg) ? 404 : 502 });
       }
     }
     return NextResponse.json({ error: "content required" }, { status: 400 });
@@ -110,7 +112,8 @@ export async function PUT(
     await remoteWrite(remote.ctx, filePath, body.content);
     return NextResponse.json({ success: true, path: filePath });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 502 });
+    const msg = err instanceof Error ? err.message : String(err);
+    return NextResponse.json({ error: msg }, { status: /No such file|ENOENT|not exist/i.test(msg) ? 404 : 502 });
   }
 }
 
@@ -134,7 +137,8 @@ export async function DELETE(
     await remoteDelete(remote.ctx, filePath);
     return NextResponse.json({ success: true });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 502 });
+    const msg = err instanceof Error ? err.message : String(err);
+    return NextResponse.json({ error: msg }, { status: /No such file|ENOENT|not exist/i.test(msg) ? 404 : 502 });
   }
 }
 
@@ -170,6 +174,7 @@ export async function PATCH(
     await remoteRename(remote.ctx, filePath, body.newPath);
     return NextResponse.json({ success: true, oldPath: filePath, newPath: body.newPath });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 502 });
+    const msg = err instanceof Error ? err.message : String(err);
+    return NextResponse.json({ error: msg }, { status: /No such file|ENOENT|not exist/i.test(msg) ? 404 : 502 });
   }
 }

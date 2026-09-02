@@ -17,7 +17,7 @@
 #                          设置后，它会在 `next build` 之前替换掉 registry 版本，
 #                          并随包进入最终产物，运行时使用本地编译的 SDK。
 #                          示例:
-#                            PI_CODING_AGENT_LOCAL=/data/pi-coding-agent-0.83.1.tgz
+#                            PI_CODING_AGENT_LOCAL=/data/pi-coding-agent-0.84.4.tgz
 #                            PI_CODING_AGENT_LOCAL=/data/pi-coding-agent-src
 #                            PI_CODING_AGENT_LOCAL=https://intranet/pi-coding-agent.tgz
 #   NODE_RUNTIME_LOCAL    内置 Node.js 运行时的本地来源，用于不访问 nodejs.org 的
@@ -163,7 +163,7 @@ log "npm prune --omit=dev"
 (cd "$SRC" && npm prune --omit=dev --no-audit --no-fund)
 if [ -n "$LOCAL" ]; then
   # 把 shipped package.json 里的 file: 说明符还原成具体版本号，保持整洁
-  LOCAL_VER="0.83.0"
+  LOCAL_VER="0.84.4"
   # "$(cd "$SRC" && node -p 'require("@earendil-works/pi-coding-agent/package.json").version')"
   (cd "$SRC" && npm pkg set "dependencies.@earendil-works/pi-coding-agent=$LOCAL_VER")
 fi
@@ -405,6 +405,13 @@ EOF
   log "已写入 sandbox/README.txt"
 else
   log "沙盒教学平台组件: 不打包（WITH_SANDBOX=$WITH_SANDBOX）"
+fi
+
+# 7e. 附带agent-relay 本地桥接二进制(/api/agent-relay/download 用)
+if [ -f "$SRC/agent/dist/pi-agent-linux-amd64" ]; then
+  mkdir -p "$PKG/app/agent"
+  cp -a "$SRC/agent/dist" "$PKG/app/agent/dist"
+  log "附带 pi-agent 二进制: agent/dist/"
 fi
 
 # ---------------------------------------------------------------------------

@@ -1,6 +1,3 @@
-# Built binaries — regenerate with scripts/build.sh
-dist/
-
 # Go workspace artifacts
 *.exe
 *.test

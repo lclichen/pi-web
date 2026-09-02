@@ -56,13 +56,13 @@ if [ -d "$AMEDAC_HOME/app/sandbox" ]; then
 fi
 
 
-// ---- 稳定入口：amedac/current -> 本次挂载的包目录 ----
-// ~/.pi 里的 npm/、extensions/ 大目录以符号链接接入 current/config/pi/…，
-// 零拷贝；每次启动刷新 current 指向（升级/挂载路径变化自动跟随）。
+# ---- 稳定入口：amedac/current -> 本次挂载的包目录 ----
+# ~/.pi 里的 npm/、extensions/ 大目录以符号链接接入 current/config/pi/…，
+# 零拷贝；每次启动刷新 current 指向（升级/挂载路径变化自动跟随）。
 ln -sfn "$PAYLOAD" "$AMEDAC_HOME/current"
 export PI_CONFIG_LINK_ROOT="$AMEDAC_HOME/current"
 
-// ---- 统一配置模板合并（幂等；CLI 与 WebUI 共用，失败不阻塞）----
+# ---- 统一配置模板合并（幂等；CLI 与 WebUI 共用，失败不阻塞）----
 [ -x "$PAYLOAD/scripts/install-pi-config.sh" ] && bash "$PAYLOAD/scripts/install-pi-config.sh" >/dev/null 2>&1 || true
 
 log()  { printf '[1;32m[amedac][0m %s

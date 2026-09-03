@@ -2,6 +2,7 @@ import {
   DELETE as deleteWithSegments,
   GET as getWithSegments,
   PATCH as patchWithSegments,
+  POST as postWithSegments,
   PUT as putWithSegments,
 } from "./[...path]/route";
 
@@ -29,4 +30,10 @@ export function DELETE(req: Request): Promise<Response> {
 
 export function PATCH(req: Request): Promise<Response> {
   return patchWithSegments(req, rootCtx);
+}
+
+// POST（上传 upload-check / multipart upload）同样委托——根路由别名漏了它时，
+// 远程会话在根目录（"/" 编码为空路径）上传会得到无 body 的 405。
+export function POST(req: Request): Promise<Response> {
+  return postWithSegments(req, rootCtx);
 }

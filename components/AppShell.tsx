@@ -1240,7 +1240,7 @@ export function AppShell() {
         onRunningSessionIdsChange={handleRunningSessionIdsChange}
         onSessionsChange={handleSessionsChange}
       />
-      <div style={{ padding: "6px 8px", flexShrink: 0, display: "flex", flexWrap: "wrap", gap: 3 }}>
+      <div style={{ padding: "6px 8px", flexShrink: 0, display: "flex", flexWrap: "wrap", gap: 3, whiteSpace: "nowrap" }}>
         {([
           ["models", translate("common.models")],
           ["skills", translate("common.skills")],
@@ -1255,7 +1255,7 @@ export function AppShell() {
               title={disabled ? translate("settings.projectRequired") : label}
               aria-label={label}
               style={{
-                flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
                 height: 32, padding: 0, background: "none", border: "none",
                 borderRadius: 9, color: "var(--text-muted)", cursor: disabled ? "default" : "pointer",
                 fontSize: 12, opacity: disabled ? 0.35 : 1,
@@ -1275,7 +1275,7 @@ export function AppShell() {
           title={translate("common.settings")}
           aria-label={translate("common.settings")}
           style={{
-            flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+            flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
             height: 32, padding: 0, background: "none", border: "none",
             borderRadius: 9, color: "var(--text-muted)", cursor: "pointer",
             fontSize: 12, transition: "background 0.12s, color 0.12s",
@@ -1295,7 +1295,7 @@ export function AppShell() {
           title="Agents"
           aria-label="Agents"
           style={{
-            flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+            flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
             height: 32, padding: 0, background: "none", border: "none",
             borderRadius: 9, color: "var(--text-muted)",
             cursor: (!activeCwd && !selectedSession?.cwd && !newSessionCwd) ? "default" : "pointer",
@@ -1318,7 +1318,7 @@ export function AppShell() {
           title="MCP"
           aria-label="MCP"
           style={{
-            flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+            flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
             height: 32, padding: 0, background: "none", border: "none",
             borderRadius: 9, color: "var(--text-muted)",
             cursor: (!activeCwd && !selectedSession?.cwd && !newSessionCwd) ? "default" : "pointer",

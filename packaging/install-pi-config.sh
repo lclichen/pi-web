@@ -420,22 +420,24 @@ if [ -d "$BUNDLED/extensions" ]; then
     applied=1
     install_ext "$ext" "$AGENT_DIR/extensions/$(basename "$ext")"
   done
-  # 陈旧的受管扩展（有标记但本模板中已不存在，如升级后改名/移除）→ 删除
-  if [ -d "$AGENT_DIR/extensions" ]; then
-    for dir in "$AGENT_DIR/extensions"/*/; do
-      [ -d "$dir" ] || continue
-      name="$(basename "${dir%/}")"
-      [ -f "${dir}$EXT_MARKER" ] || continue   # 非本工具分发的目录 → 不碰
-      if [ ! -d "$BUNDLED/extensions/$name" ]; then
-        if [ "$DRY" = "1" ]; then
-          note "[dry] 删除陈旧受管扩展 $name（当前模板中已不包含）"
-        else
-          rm -rf "${dir%/}"
-          note "删除陈旧受管扩展 $name（当前模板中已不包含）"
-        fi
+fi
+# 陈旧的受管扩展（有标记但本模板中已不存在，如升级后改名/移除）→ 删除。
+# 注意：无论模板当前是否还有 extensions/ 目录都要执行——模板完全去掉
+# extensions 时恰恰是最需要清理的场景。
+if [ -d "$AGENT_DIR/extensions" ]; then
+  for dir in "$AGENT_DIR/extensions"/*/; do
+    [ -d "$dir" ] || continue
+    name="$(basename "${dir%/}")"
+    [ -f "${dir}$EXT_MARKER" ] || continue   # 非本工具分发的目录 → 不碰
+    if [ ! -d "$BUNDLED/extensions/$name" ]; then
+      if [ "$DRY" = "1" ]; then
+        note "[dry] 删除陈旧受管扩展 $name（当前模板中已不包含）"
+      else
+        rm -rf "${dir%/}"
+        note "删除陈旧受管扩展 $name（当前模板中已不包含）"
       fi
-    done
-  fi
+    fi
+  done
 fi
 
 fi   # ---- 拷贝模式结束（软链模式跳过整个本节）----

@@ -45,6 +45,16 @@ NODE_BIN="$PKG/runtime/bin/node"
 [ -x "$NODE_BIN" ] || NODE_BIN="$(command -v node || true)"
 [ -n "$NODE_BIN" ] || { echo "ERROR: 未找到 Node.js（runtime/bin/node 与 PATH 均不可用）" >&2; exit 1; }
 
+# 合并 pi 配置模板（幂等）。AppImage 下 AppRun 已运行过并设置了
+# PI_CONFIG_LINK_ROOT（本次挂载点），这里不覆盖；tar.gz 下本脚本往往是
+# 用户的第一个入口（README 快速开始），必须补跑——否则 ~/.pi/agent 的
+# npm/ 与随包扩展软链不会建立，pi-web 沙盒会话缺扩展。
+if [ -x "$PKG/scripts/install-pi-config.sh" ] && [ -d "$PKG/config/pi" ]; then
+  export PI_CONFIG_LINK_ROOT="${PI_CONFIG_LINK_ROOT:-$PKG}"
+  bash "$PKG/scripts/install-pi-config.sh" >/dev/null 2>&1 \
+    || echo -e '\033[1;33m!!\033[0m pi 配置模板合并失败（不影响服务启动；可手动执行 scripts/install-pi-config.sh 排查）'
+fi
+
 RUN_DIR="${AMEDAC_RUN_DIR:-$PKG/run}"
 LOG_DIR="${AMEDAC_LOG_DIR:-$PKG/logs}"
 DATA_DIR="${DATA_DIR:-$PKG/data}"

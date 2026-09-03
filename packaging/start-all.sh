@@ -182,6 +182,8 @@ SEED_ADMIN_PASSWORD=$ADMIN_PW
 REGISTER_MODE=off
 EXECUTOR_KIND=${SANDBOX_EXECUTOR_KIND:-apptainer-cli}
 OVERLAY_BASE_DIR=$DATA_DIR/platform/overlays
+IMAGE_BASE_DIR=$DATA_DIR/platform/images
+WORKSPACE_BASE_DIR=$DATA_DIR/platform/workspaces
 TRUST_PROXY=0
 EOF
     printf '%s\n' "$ADMIN_PW" > "$ADMIN_PW_FILE"
@@ -196,6 +198,35 @@ EOF
 
   [ -f "$PLATFORM_DIR/.env" ] && \
     warn "检测到 sandbox/platform/.env：平台的 dotenv 会加载它（已导出的环境变量优先）。确认这是你有意保留的配置。"
+
+  # 旧版生成的 platform.env 缺少镜像/工作区目录变量——回落到包内默认路径时，
+  # AppImage（只读挂载）下工作区上传/镜像导入会 EROFS，tar.gz 下则随更新丢失。
+  # 给已存在的 env 文件补写这两个变量（用户手写过的不会被覆盖）。
+  if [ -f "$PLATFORM_ENV_FILE" ]; then
+    for kv in "IMAGE_BASE_DIR=$DATA_DIR/platform/images" "WORKSPACE_BASE_DIR=$DATA_DIR/platform/workspaces"; do
+      k="${kv%%=*}"
+      if ! grep -q "^$k=" "$PLATFORM_ENV_FILE" 2>/dev/null; then
+        printf '# （旧版生成的配置缺少此变量，已自动补写指向可写数据目录）\n%s\n' "$kv" >> "$PLATFORM_ENV_FILE"
+        log "platform.env 已补写 $k → $DATA_DIR/platform/（旧版缺失）"
+      fi
+    done
+  fi
+
+  # 包内旧默认目录的一次性迁移：早期部署把 workspaces/images 写进了包目录
+  # （sandbox/platform/data/），搬到 AMEDAC 数据目录后原目录改名 .v2-backup。
+  OLD_DATA="$PKG/sandbox/platform/data"
+  for d in workspaces images; do
+    if [ -d "$OLD_DATA/$d" ] && [ ! -e "$DATA_DIR/platform/$d" ]; then
+      mkdir -p "$DATA_DIR/platform"
+      if cp -a "$OLD_DATA/$d" "$DATA_DIR/platform/$d"; then
+        mv "$OLD_DATA/$d" "$OLD_DATA/$d.v2-backup"
+        log "已迁移包内 $d → $DATA_DIR/platform/$d（原目录留 .v2-backup）"
+      else
+        warn "迁移 $d 到 $DATA_DIR/platform/ 失败，保留原目录不动（请手动迁移）"
+      fi
+    fi
+  done
+  mkdir -p "$DATA_DIR/platform/overlays" "$DATA_DIR/platform/images" "$DATA_DIR/platform/workspaces"
 
   mkdir -p "$DATA_DIR/platform"
   grep -q "^SEED_ADMIN_PASSWORD=" "$PLATFORM_ENV_FILE" && grep -q "^DB_SQLITE_PATH=" "$PLATFORM_ENV_FILE" || {

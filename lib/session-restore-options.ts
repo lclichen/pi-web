@@ -75,7 +75,7 @@ export async function restoreSessionOptions(req: Request, sessionId: string): Pr
         effectiveCwd = ensureLocalHome(user.id);
       }
       extensionFactories = [
-        makeRelayToolsExtension(meta?.ownerId ?? user.id),
+        makeRelayToolsExtension(meta?.ownerId ?? user.id, project ? effectiveCwd : undefined),
         makeRemoteVerifyExtension("local-machine", meta?.ownerId ?? user.id),
         makeEnvironmentInfoExtension({
           mode: "local-machine",
@@ -93,7 +93,7 @@ export async function restoreSessionOptions(req: Request, sessionId: string): Pr
       const sshConfig = readSshConfig(effectiveCwd);
       if (sshConfig) {
         extensionFactories = [
-          makeSshToolsExtension({ projectId: project.id, sshConfig, workdir: project.workdir ?? "/" }),
+          makeSshToolsExtension({ projectId: project.id, sshConfig, workdir: project.workdir ?? "/", projectHome: effectiveCwd }),
           makeEnvironmentInfoExtension({
             mode: "ssh",
             username: identity.session.user.username,

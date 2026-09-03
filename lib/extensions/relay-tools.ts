@@ -48,9 +48,34 @@ async function mirrorInstructionsFile(workspaceRel: string, content: string, ses
   }
 }
 
-export function makeRelayToolsExtension(userId: number): InlineExtension {
+export function makeRelayToolsExtension(userId: number, projectHome?: string): InlineExtension {
   const call = <T>(method: Parameters<typeof relayRpc>[0], params?: Record<string, unknown>) =>
     relayRpc(method, params, { userId }) as Promise<T>;
+
+  /** Local .pi/skills bridge: skills are discovered from the server-side
+   *  project home and do NOT exist on the user's machine — read calls that
+   *  resolve under <home>/.pi/skills are served from the pi-web server. */
+  const localSkillsPath = (p: string): string | null => {
+    if (!projectHome) return null;
+    const cleaned = p.replace(/^@/, "").trim();
+    if (!cleaned) return null;
+    const abs = cleaned.startsWith("/") ? cleaned : `${projectHome.replace(/\/+$/, "")}/${cleaned.replace(/^\/+/, "")}`;
+    const rel = abs.startsWith(`${projectHome}/`) ? abs.slice(projectHome.length + 1) : null;
+    if (rel === ".pi/skills" || rel?.startsWith(".pi/skills/")) return abs;
+    return null;
+  };
+
+  const readLocalFile = async (absPath: string): Promise<ToolResult> => {
+    const { readFile } = await import("node:fs/promises");
+    try {
+      const buf = await readFile(absPath);
+      const lines = buf.toString("utf8").split("\n");
+      const numbered = lines.map((line, i) => `${i + 1}→${line}`).join("\n");
+      return ok(`${numbered}\n\n(${absPath}, ${lines.length} lines)`);
+    } catch (err) {
+      return fail(err instanceof Error ? err.message : String(err));
+    }
+  };
 
   const factory = (pi: ExtensionAPI): void => {
     pi.registerTool(defineTool({
@@ -61,6 +86,9 @@ export function makeRelayToolsExtension(userId: number): InlineExtension {
         path: Type.String({ description: "Workspace-relative file path" }),
       }),
       execute: async (_id, params) => {
+        // Skills bridge: .pi/skills/** lives in the server-side project home.
+        const bridged = localSkillsPath(params.path);
+        if (bridged) return readLocalFile(bridged);
         try {
           const r = await call<FsReadResult>("fs.read", { path: rel(params.path) });
           const lines = r.content.split("\n");

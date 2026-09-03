@@ -161,7 +161,7 @@ export async function POST(req: Request) {
           return NextResponse.json({ error: "SSH 项目缺少连接配置（.pi/ssh.json 缺失）" }, { status: 400 });
         }
         extensionFactories = [
-          makeSshToolsExtension({ projectId: project.id, sshConfig, workdir: project.workdir ?? "/" }),
+          makeSshToolsExtension({ projectId: project.id, sshConfig, workdir: project.workdir ?? "/", projectHome: home }),
           makeEnvironmentInfoExtension({ mode: "ssh", username: user.username, projectName: project.name }),
         ];
       } else {
@@ -169,7 +169,7 @@ export async function POST(req: Request) {
           return NextResponse.json({ error: "本机模式需要先配对你的电脑（本机面板 → 连接本机）" }, { status: 400 });
         }
         extensionFactories = [
-          makeRelayToolsExtension(user.id),
+          makeRelayToolsExtension(user.id, home),
           makeRemoteVerifyExtension("local-machine", user.id),
           makeEnvironmentInfoExtension({ mode: "local-machine", username: user.username, projectName: project.name }),
         ];

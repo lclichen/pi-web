@@ -65,14 +65,42 @@ function sftpList(s: SFTPWrapper, path: string): Promise<SftpEntry[]> {
  * @param projectId owner of the pooled connection
  * @param sshConfig connection credentials (from the project home's ssh.json)
  * @param workdir default remote working directory for relative paths
+ * @param projectHome server-side project home — skills under <home>/.pi/skills
+ *   are discovered/loaded locally and do NOT exist on the remote host; read
+ *   calls mapped there are bridged to the local side instead of SFTP.
  */
 export function makeSshToolsExtension(opts: {
   projectId: string;
   sshConfig: SshConfig;
   workdir: string;
+  projectHome?: string;
 }): InlineExtension {
-  const { projectId, sshConfig, workdir } = opts;
+  const { projectId, sshConfig, workdir, projectHome } = opts;
   const client = () => getSshClient(projectId, sshConfig);
+
+  /** Local .pi/skills bridge target for a tool path, or null. */
+  const localSkillsPath = (p: string): string | null => {
+    if (!projectHome) return null;
+    const cleaned = p.replace(/^@/, "").trim();
+    if (!cleaned) return null;
+    const abs = cleaned.startsWith("/") ? cleaned : `${projectHome.replace(/\/+$/, "")}/${cleaned.replace(/^\/+/, "")}`;
+    const rel = abs.startsWith(`${projectHome}/`) ? abs.slice(projectHome.length + 1) : null;
+    if (rel === ".pi/skills" || rel?.startsWith(".pi/skills/")) return abs;
+    return null;
+  };
+
+  /** Read a file on the pi-web server (skills bridge), formatted like the tool. */
+  const readLocalFile = async (absPath: string): Promise<ToolResult> => {
+    const { readFile } = await import("node:fs/promises");
+    try {
+      const buf = await readFile(absPath);
+      const lines = buf.toString("utf8").split("\n");
+      const numbered = lines.map((line, i) => `${i + 1}→${line}`).join("\n");
+      return ok(`${numbered}\n\n(${absPath}, ${lines.length} lines)`);
+    } catch (err) {
+      return fail(err instanceof Error ? err.message : String(err));
+    }
+  };
 
   const factory = (pi: ExtensionAPI): void => {
     // ---- bash ----
@@ -106,6 +134,10 @@ export function makeSshToolsExtension(opts: {
         path: Type.String({ description: "File path (absolute, or relative to the project workdir)" }),
       }),
       execute: async (_id, params) => {
+        // Skills bridge: .pi/skills/** lives in the server-side project home,
+        // not on the remote host — serve it locally.
+        const bridged = localSkillsPath(params.path);
+        if (bridged) return readLocalFile(bridged);
         try {
           const c = await client();
           const s = await sftp(c);

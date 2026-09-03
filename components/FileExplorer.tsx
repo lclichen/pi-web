@@ -54,12 +54,12 @@ export interface FileExplorerHandle {
   openUploadPicker: () => void;
 }
 
-function ContextMenuButton({ label, color, onClick }: { label: string; color: string; onClick: () => void }) {
+function ContextMenuButton({ label, color, onClick, disabled }: { label: string; color: string; onClick: () => void; disabled?: boolean }) {
   return (
     <div
-      onClick={onClick}
-      style={{ padding: "4px 10px", cursor: "pointer", fontSize: 11, borderRadius: 3, color }}
-      onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-hover)"; }}
+      onClick={disabled ? undefined : onClick}
+      style={{ padding: "4px 10px", cursor: disabled ? "default" : "pointer", fontSize: 11, borderRadius: 3, color: disabled ? "var(--text-dim)" : color, opacity: disabled ? 0.6 : 1 }}
+      onMouseEnter={(e) => { if (!disabled) e.currentTarget.style.background = "var(--bg-hover)"; }}
       onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
     >
       {label}
@@ -94,6 +94,8 @@ interface PendingConflict {
   files: File[];
   conflicts: string[];
   nonReplaceable: string[];
+  /** Upload destination directory (defaults to the explorer cwd). */
+  targetDir?: string;
 }
 
 async function fetchEntries(dirPath: string, remote?: { sessionId: string } | null): Promise<FileNode[]> {
@@ -177,16 +179,17 @@ function uploadFiles(
   files: File[],
   strategy: UploadConflictStrategy,
   onProgress: (progress: number) => void,
+  remote?: { sessionId: string } | null,
 ): Promise<{ status: number; data: UploadResponse }> {
   return new Promise((resolve, reject) => {
     const formData = new FormData();
     files.forEach((file) => formData.append("files", file, file.name));
 
     const xhr = new XMLHttpRequest();
-    xhr.open(
-      "POST",
-      `/api/files/${encodeFilePathForApi(targetDirectory)}?type=upload&conflict=${strategy}`,
-    );
+    const url = remote
+      ? `/api/remotefs/${encodeFilePathForApi(targetDirectory)}?src=${encodeURIComponent(remote.sessionId)}&type=upload&conflict=${strategy}`
+      : `/api/files/${encodeFilePathForApi(targetDirectory)}?type=upload&conflict=${strategy}`;
+    xhr.open("POST", url);
     xhr.upload.onprogress = (event) => {
       if (event.lengthComputable && event.total > 0) {
         onProgress(Math.round((event.loaded / event.total) * 100));
@@ -757,14 +760,22 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
     });
   }, []);
 
-  const applyUploadResult = useCallback((data: UploadResponse) => {
+  const applyUploadResult = useCallback((data: UploadResponse, targetDir: string) => {
     const uploaded = data.uploaded ?? [];
     const skipped = data.skipped ?? [];
     const errors = data.errors ?? [];
     setUploadSummary({ uploaded, skipped, errors });
 
     if (uploaded.length > 0) {
-      setHighlightedPaths(new Set(uploaded.map((name) => joinFilePath(cwd, name))));
+      setHighlightedPaths(new Set(uploaded.map((name) => joinFilePath(targetDir, name))));
+      // 上传到子文件夹时自动展开它，用户能立刻看到结果
+      if (targetDir !== cwd) {
+        setExpandedPaths((prev) => {
+          const next = new Set(prev);
+          next.add(targetDir);
+          return next;
+        });
+      }
       setTreeRefreshKey((key) => key + 1);
     }
   }, [cwd]);
@@ -772,6 +783,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
   const performUpload = useCallback(async (
     files: File[],
     strategy: UploadConflictStrategy,
+    targetDir: string,
   ) => {
     setPendingConflict(null);
     setUploadError(null);
@@ -779,12 +791,13 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
     setUploadPhase("uploading");
 
     try {
-      const { status, data } = await uploadFiles(cwd, files, strategy, setUploadProgress);
+      const { status, data } = await uploadFiles(targetDir, files, strategy, setUploadProgress, remote);
       if (status === 409 && data.conflicts?.length) {
         setPendingConflict({
           files,
           conflicts: data.conflicts,
           nonReplaceable: data.nonReplaceable ?? [],
+          targetDir,
         });
         return;
       }
@@ -792,15 +805,15 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
         throw new Error(data.error ?? `Upload failed (HTTP ${status})`);
       }
       setUploadProgress(100);
-      applyUploadResult(data);
+      applyUploadResult(data, targetDir);
     } catch (uploadFailure) {
       setUploadError(uploadFailure instanceof Error ? uploadFailure.message : String(uploadFailure));
     } finally {
       setUploadPhase("idle");
     }
-  }, [applyUploadResult, cwd]);
+  }, [applyUploadResult, remote]);
 
-  const prepareUpload = useCallback(async (files: File[]) => {
+  const prepareUpload = useCallback(async (files: File[], targetDir: string) => {
     if (files.length === 0 || uploadBusy) return;
     setUploadSummary(null);
     setHighlightedPaths(new Set());
@@ -810,14 +823,14 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
     setUploadPhase("checking");
 
     try {
-      const res = await fetch(
-        `/api/files/${encodeFilePathForApi(cwd)}?type=upload-check`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ fileNames: files.map((file) => file.name) }),
-        },
-      );
+      const checkUrl = remote
+        ? `/api/remotefs/${encodeFilePathForApi(targetDir)}?src=${encodeURIComponent(remote.sessionId)}&type=upload-check`
+        : `/api/files/${encodeFilePathForApi(targetDir)}?type=upload-check`;
+      const res = await fetch(checkUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileNames: files.map((file) => file.name) }),
+      });
       const data = await res.json().catch(() => ({})) as UploadResponse;
       if (!res.ok) throw new Error(data.error ?? `Upload check failed (HTTP ${res.status})`);
 
@@ -826,23 +839,29 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
           files,
           conflicts: data.conflicts,
           nonReplaceable: data.nonReplaceable ?? [],
+          targetDir,
         });
         return;
       }
 
-      await performUpload(files, "error");
+      await performUpload(files, "error", targetDir);
     } catch (uploadFailure) {
       setUploadError(uploadFailure instanceof Error ? uploadFailure.message : String(uploadFailure));
     } finally {
       setUploadPhase("idle");
     }
-  }, [cwd, performUpload, uploadBusy]);
+  }, [performUpload, remote, uploadBusy]);
+
+  // 本次上传的目标目录（文件夹右键「上传到此文件夹」设定；工具栏按钮 = cwd）
+  const uploadTargetRef = useRef<string | null>(null);
 
   const handleUploadInput = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files ?? []);
     event.target.value = "";
-    void prepareUpload(files);
-  }, [prepareUpload]);
+    const targetDir = uploadTargetRef.current ?? cwd;
+    uploadTargetRef.current = null;
+    void prepareUpload(files, targetDir);
+  }, [prepareUpload, cwd]);
 
   useImperativeHandle(ref, () => ({
     openUploadPicker() {
@@ -1021,10 +1040,10 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
               </div>
             )}
             <div style={{ display: "flex", gap: 5, marginTop: 7 }}>
-              <button type="button" onClick={() => void performUpload(pendingConflict.files, "overwrite")} style={{ height: 22, padding: "0 7px", border: "1px solid #ef4444", borderRadius: 4, background: "transparent", color: "#ef4444", cursor: "pointer", fontSize: 10 }}>
+              <button type="button" onClick={() => void performUpload(pendingConflict.files, "overwrite", pendingConflict.targetDir ?? cwd)} style={{ height: 22, padding: "0 7px", border: "1px solid #ef4444", borderRadius: 4, background: "transparent", color: "#ef4444", cursor: "pointer", fontSize: 10 }}>
                 {t("files.replace")}
               </button>
-              <button type="button" onClick={() => void performUpload(pendingConflict.files, "skip")} style={{ height: 22, padding: "0 7px", border: "1px solid var(--border)", borderRadius: 4, background: "var(--bg-panel)", color: "var(--text)", cursor: "pointer", fontSize: 10 }}>
+              <button type="button" onClick={() => void performUpload(pendingConflict.files, "skip", pendingConflict.targetDir ?? cwd)} style={{ height: 22, padding: "0 7px", border: "1px solid var(--border)", borderRadius: 4, background: "var(--bg-panel)", color: "var(--text)", cursor: "pointer", fontSize: 10 }}>
                 {t("files.skipExisting")}
               </button>
               <button type="button" onClick={() => setPendingConflict(null)} style={{ height: 22, padding: "0 7px", border: "none", borderRadius: 4, background: "transparent", color: "var(--text-muted)", cursor: "pointer", fontSize: 10 }}>
@@ -1219,6 +1238,16 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
             >
               {contextMenu.node.isDir && (
                 <>
+                  <ContextMenuButton
+                    label={t("上传文件到此文件夹")}
+                    color="var(--text)"
+                    disabled={uploadBusy}
+                    onClick={() => {
+                      uploadTargetRef.current = contextMenu.node.fullPath;
+                      setContextMenu(null);
+                      if (!uploadBusy) uploadInputRef.current?.click();
+                    }}
+                  />
                   <ContextMenuButton label={t("新建文件")} color="var(--text)" onClick={() => { setCreating({ type: "file", dir: contextMenu.node.fullPath }); setCreatingName(""); setContextMenu(null); }} />
                   <ContextMenuButton label={t("新建文件夹")} color="var(--text)" onClick={() => { setCreating({ type: "dir", dir: contextMenu.node.fullPath }); setCreatingName(""); setContextMenu(null); }} />
                   <div style={{ height: 1, background: "var(--border)", margin: "2px 0" }} />

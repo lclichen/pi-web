@@ -109,6 +109,28 @@
   A: 在终端里运行 ./scripts/start.sh 或 ./pi 查看报错信息。
   Q: 端口被占用？
   A: ./pi-web.sh --port 8080
+  Q: 创建沙箱容器报 apptainer "instance start 失败 (exit 255)" /
+     "while executing starter ... exit status 255"？
+  A: 这是目标机的 apptainer 无法获得特权执行环境，与平台代码无关。
+     "requires cgroups v2" 的 INFO 行只是提示统计不可用（RHEL/CentOS 8
+     的 cgroup v1 上正常），真正的失败在 starter。按顺序检查：
+     1) starter 的 setuid 位是否在:
+          ls -l <apptainer根>/libexec/apptainer/bin/starter
+        应为 -rwsr-xr-x（属主 x 位是 s）。没有 s 说明安装时未
+        --with-suid，只能依赖用户命名空间（见 3）。
+     2) apptainer 所在文件系统是否 nosuid（NFS/Lustre 常见）:
+          findmnt -no OPTIONS /ai_data
+        含 nosuid 时 setuid 位被内核忽略 → 把 apptainer 重装到本地
+        磁盘路径（如 /opt/apptainer），或让管理员为该挂载去掉 nosuid。
+     3) 未启用 setuid 时，需要内核允许非特权用户命名空间:
+          sysctl user.max_user_namespaces
+        为 0（RHEL 8 早期默认）时让管理员执行
+          sudo sysctl -w user.max_user_namespaces=15076
+        并写入 /etc/sysctl.d/99-userns.conf 持久化。
+     4) 最小复现（绕过平台直接验证 apptainer 本身）:
+          apptainer instance start docker://alpine t1
+          apptainer instance list && apptainer instance stop t1
+        该命令失败即环境问题，与平台无关；成功则把输出发给平台维护者。
   Q: 怎么卸载？
   A: 直接删除整个目录。若执行过 install-to-path.sh，再删除
      ~/.local/bin/pi 与 ~/.local/bin/pi-web 两个软链即可。

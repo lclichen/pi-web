@@ -30,8 +30,11 @@ export const MAX_IMPORT_BYTES = 200 * 1024 * 1024;
 const MAX_ENTRIES = 20_000;
 const MAX_UNCOMPRESSED_BYTES = 600 * 1024 * 1024;
 
-/** Never exported, never imported — credentials and machine/user state. */
-const DENIED_BASENAMES = new Set(["auth.json"]);
+/** Never exported, never imported — credentials and machine/user state.
+ *  ssh.json carries the SSH project's password/private key; sandbox-platform.json
+ *  carries the platform API key. Both are per-machine secrets that must never
+ *  travel in shared bundles (the target reconnects with its own credentials). */
+const DENIED_BASENAMES = new Set(["auth.json", "ssh.json", "sandbox-platform.json"]);
 /**
  * Path segments (at any depth) excluded from bundles both ways. Note
  * node_modules is deliberately NOT here: bundles target offline deployment,

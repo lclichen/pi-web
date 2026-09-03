@@ -13,6 +13,10 @@
 #   ./scripts/start-all.sh            # 启动全部
 #   ./scripts/start-all.sh --no-web   # 只启动沙盒平台
 #
+# 首次运行前可用环境变量定制初始管理员密码：
+#   ADMIN_PASSWORD='你的强密码' ./scripts/start-all.sh
+# （不设则随机生成并展示/落盘 admin-password.txt；平台要求至少 8 字符）
+#
 # 端口自动管理：无显式指定时从偏好端口（3000/30141）开始探测空闲端口，
 # 选中的端口写入 run/ports.env 供下次优先复用；以下途径可固定端口（优先级
 # 从高到低）：环境变量 PLATFORM_PORT/WEB_PORT > env 文件里的 PORT= 行 >
@@ -168,12 +172,22 @@ start_platform() {
     # 注意：端口不在本文件里——由 start-all 自动探测并记忆在 run/ports.env；
     # 要固定端口就在此文件加一行 PORT=xxxx（优先级高于自动探测）。
     JWT="$(head -c 64 /dev/urandom | od -An -tx1 | tr -d ' \n')"
-    ADMIN_PW="ame-$(head -c 12 /dev/urandom | base64 | tr -d '=+/')A7"
+    # 管理员初始密码：默认随机生成；启动前手动指定：环境变量 ADMIN_PASSWORD=xxx
+    # （平台生产模式会拒绝弱密码——至少 8 字符，且不能是 changeme123 等默认值，
+    # 不满足时平台启动自检会直接报错退出）。
+    if [ -n "${ADMIN_PASSWORD:-}" ]; then
+      ADMIN_PW="$ADMIN_PASSWORD"
+      warn "使用 ADMIN_PASSWORD 指定的管理员初始密码（不会随机生成）"
+    else
+      ADMIN_PW="ame-$(head -c 12 /dev/urandom | base64 | tr -d '=+/')A7"
+    fi
     cat > "$PLATFORM_ENV_FILE" <<EOF
 # sandbox-platform 配置（本文件由 start-all.sh 首次运行生成，可自由编辑）
 # 固定端口：加一行 PORT=xxxx（不设则每次自动探测空闲端口）
 NODE_ENV=production
-HOST=127.0.0.1
+# 监听地址 0.0.0.0 = 局域网可直连平台 API/控制台（仍需登录鉴权）；
+# 只想本机访问可改回 HOST=127.0.0.1
+HOST=0.0.0.0
 DB_DIALECT=sqlite
 DB_SQLITE_PATH=$DATA_DIR/platform/sandbox.db
 JWT_SECRET=$JWT
@@ -210,6 +224,12 @@ EOF
         log "platform.env 已补写 $k → $DATA_DIR/platform/（旧版缺失）"
       fi
     done
+    # 旧版生成的 HOST=127.0.0.1 只监听本机——按新默认开放局域网访问
+    # （仅当该行仍是生成器写下的原值；用户手改过其它值则不动）。
+    if grep -q "^HOST=127\\.0\\.0\\.1$" "$PLATFORM_ENV_FILE" 2>/dev/null; then
+      sed -i 's/^HOST=127\.0\.0\.1$/# （start-all 升级：默认开放局域网访问；只想本机访问改回 127.0.0.1）\nHOST=0.0.0.0/' "$PLATFORM_ENV_FILE"
+      log "platform.env 的 HOST 已从 127.0.0.1 改为 0.0.0.0（局域网可直连平台）"
+    fi
   fi
 
   # 包内旧默认目录的一次性迁移：早期部署把 workspaces/images 写进了包目录

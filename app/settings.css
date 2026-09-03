@@ -1149,3 +1149,86 @@
     }
   }
 }
+
+/* 设置 → 用户（账号信息 + 修改密码） */
+.account-info-list {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 0;
+}
+
+.account-info-row {
+  display: grid;
+  grid-template-columns: 88px 1fr;
+  align-items: baseline;
+  gap: 12px;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.account-info-row dt {
+  color: var(--text-muted);
+}
+
+.account-info-row dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.account-warn {
+  color: var(--warning, #d97706);
+}
+
+.account-password-form {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+  max-width: 360px;
+}
+
+.account-password-form label {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.account-password-form input {
+  height: 32px;
+  padding: 0 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+  outline: none;
+}
+
+.account-password-form small {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.account-success {
+  margin: 0;
+  color: var(--success);
+  font-size: 13px;
+}
+
+.account-submit {
+  justify-self: start;
+  height: 30px;
+  padding: 0 14px;
+  border-radius: 6px;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.account-submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

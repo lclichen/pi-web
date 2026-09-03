@@ -1104,10 +1104,10 @@ export function AppShell() {
     setProjectTrust(null);
     setProjectTrustDialogOpen(false);
     setProjectTrustError(null);
-    // Trust is a host-space concept (server directories opened via the CLI /
-    // directory picker). Sandbox/local project homes are pi-web-managed and
-    // outside the file-access roots — querying them would 403 noisily.
-    if (!projectTrustCwd || (activeSessionMode && activeSessionMode !== "host")) return;
+    // 信任提示覆盖 host 目录与项目空间：项目（沙盒/SSH/本机）的会话 cwd
+    // 就是项目 home（存量项目与导入配置包带进的 .pi/skills 同样需要能
+    // 查询/解除信任——路由按项目归属放行）。新建项目在创建时已自动信任。
+    if (!projectTrustCwd) return;
 
     const controller = new AbortController();
     fetch(`/api/project-trust?cwd=${encodeURIComponent(projectTrustCwd)}`, {

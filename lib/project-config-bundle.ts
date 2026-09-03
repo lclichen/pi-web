@@ -4,6 +4,7 @@
  *
  * Bundle layout (zip root):
  *   manifest.json        export metadata (name, exportedAt, format version)
+ *   AGENTS.md            project instructions (optional, exported when present)
  *   .pi/…                agent config: agents/, extensions/, skills/,
  *                        subagents.json, models.json, … (credentials excluded)
  *   labs/…               lab handbook YAML
@@ -39,7 +40,10 @@ const DENIED_BASENAMES = new Set(["auth.json"]);
 const DENIED_SEGMENTS = new Set(["sessions", "tmp", "bin", "cache", ".git"]);
 /** Top-level prefixes an import may write into the project home. */
 const ALLOWED_PREFIXES = [".pi/", "labs/"];
-const ALLOWED_ROOT_FILES = new Set(["manifest.json", "readme.md"]);
+/** Root files a bundle may carry: archive metadata + shared project files. */
+const ALLOWED_ROOT_FILES = new Set(["manifest.json", "readme.md", "agents.md"]);
+/** ALLOWED_ROOT_FILES entries that are archive metadata only — never written. */
+const METADATA_ROOT_FILES = new Set(["manifest.json", "readme.md"]);
 
 export interface ExportStats {
   files: number;
@@ -101,6 +105,17 @@ export async function exportProjectConfigBundle(
       stats.bytes += content.length;
     }
     if (sectionFiles === 0) stats.skipped.push(section);
+  }
+
+  // 根级 AGENTS.md（项目指令，会话系统提示词的来源之一）随包共享；
+  // 缺失时静默跳过，不进 skipped 列表（非目录 section）。
+  try {
+    const agents = await readFile(join(home, "AGENTS.md"));
+    zip.file("AGENTS.md", agents);
+    stats.files += 1;
+    stats.bytes += agents.length;
+  } catch {
+    // no AGENTS.md — nothing to add
   }
 
   zip.file("manifest.json", JSON.stringify({
@@ -166,7 +181,7 @@ export async function importProjectConfigBundle(
     const rel = sanitizeEntryPath(entry.name);
     assertAllowed(rel);
     if (isDeniedPath(rel)) continue; // silently skip denied files (auth.json etc.)
-    if (ALLOWED_ROOT_FILES.has(rel.toLowerCase())) continue; // metadata only, never written
+    if (METADATA_ROOT_FILES.has(rel.toLowerCase())) continue; // archive metadata, never written
     if (seen.has(rel)) continue;
     seen.add(rel);
     const content = await entry.async("nodebuffer");

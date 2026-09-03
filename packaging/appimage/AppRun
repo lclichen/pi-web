@@ -1,23 +1,31 @@
 #!/usr/bin/env bash
 #
-# AppRun — amedac.ai AppImage 入口（v2）。
+# AppRun — amedac.ai AppImage 入口（v4，前台监护）。
 #
-# 设计：代码/运行时留在 squashfs 只读挂载内就地执行（标准 AppImage 方式），
-# 可写内容全部收敛到 AMEDAC_HOME（默认 ~/.local/share/amedac）：
-#   config/  platform.env、piweb.env（首启生成，可手改；端口不在其中，见下）
-#   data/    平台 sqlite、容器 overlay、WebUI 数据
+# 设计：代码/运行时留在 squashfs 只读挂载内就地执行（标准 AppImage 方式，
+# 不向包外释放任何只读内容），可写内容全部收敛到 AMEDAC_HOME（默认
+# ~/.local/share/amedac）：
+#   config/  platform.env、piweb.env、admin-password.txt（首启生成，可手改）
+#   data/    平台 sqlite、容器 overlay、WebUI 数据（更新/升级不丢失）
 #   run/     pid 与 ports.env（自动探测选中的端口，下次优先复用）
 #   logs/    服务日志
 #
 # 命令：
-#   ./amedac.ai-*.AppImage              启动 pi CLI（参数透传给 pi）
-#   ./amedac.ai-*.AppImage --web        启动平台+WebUI（自动端口；默认不开浏览器）
+#   ./amedac.ai-*.AppImage              启动 pi CLI（前台，参数透传给 pi）
+#   ./amedac.ai-*.AppImage --web        启动平台+WebUI（前台监护：进程驻留，
+#                                        服务随本进程退出/Ctrl+C/stop 而停止）
 #   ./amedac.ai-*.AppImage --web --open 启动并自动打开浏览器
-#   ./amedac.ai-*.AppImage stop/status  停止 / 查看服务
-#   ./amedac.ai-*.AppImage --web --open 启动并自动打开浏览器
+#   ./amedac.ai-*.AppImage stop         停止全部（可在另开的终端执行）
+#   ./amedac.ai-*.AppImage status       服务状态
+#   ./amedac.ai-*.AppImage logs         日志位置提示
 #
-# 无 FUSE 的机器：整体加 --appimage-extract-and-run 后缀，行为一致
-#（代码解压到 /tmp 临时目录执行，可写内容仍在 AMEDAC_HOME）。
+# 为什么 --web 是前台监护：AppImage 挂载点（FUSE 挂载或 --appimage-extract-and-run
+# 的自解压目录）随本进程退出而消失。服务与 ~/.pi/agent 里的包内软链
+# （npm/、随包扩展）都引用挂载点内的文件，只有"服务作为 AppImage 的
+# 子进程、与其同生命周期"才能保证引用始终有效——关闭 AppImage 即干净
+# 停止，不会留下指向已消失目录的悬空链接（下次启动会自动重建链接）。
+#
+# 无 FUSE 的机器：整体加 --appimage-extract-and-run 后缀，行为一致。
 set -uo pipefail
 
 # ---- 解析真实路径（AppImage 环境下 APPDIR 由运行时注入）----
@@ -43,7 +51,8 @@ export AMEDAC_LOG_DIR="$AMEDAC_HOME/logs"
 export DATA_DIR="$AMEDAC_HOME/data"
 mkdir -p "$AMEDAC_CONFIG_DIR" "$AMEDAC_RUN_DIR" "$AMEDAC_LOG_DIR" "$DATA_DIR"
 
-# ---- v1 迁移：旧版曾整包复制到 app/，配置搬出后清理（省 ~1GB）----
+# ---- 旧版本残留清理 ----
+# v1 曾整包复制到 app/：配置搬出后清理（省 ~1GB）。
 if [ -d "$AMEDAC_HOME/app/sandbox" ]; then
   for f in platform.env piweb.env admin-password.txt; do
     if [ -f "$AMEDAC_HOME/app/sandbox/$f" ] && [ ! -f "$AMEDAC_CONFIG_DIR/$f" ]; then
@@ -54,19 +63,26 @@ if [ -d "$AMEDAC_HOME/app/sandbox" ]; then
   rm -rf "$AMEDAC_HOME/app"
   printf '\033[1;32m[amedac]\033[0m 已迁移 v1 配置并清理旧的整包展开目录（数据不受影响）\n'
 fi
+# v2/v3 曾在 AMEDAC_HOME/current 维护指向挂载点的稳定间接软链——挂载点
+# 每次启动都变、进程退出即消失，间接层反而留下永久悬空链。v4 起软链由
+# install-pi-config.sh 每次启动直连当前挂载点，current 一律清除。
+if [ -L "$AMEDAC_HOME/current" ]; then
+  rm -f "$AMEDAC_HOME/current"
+  printf '\033[1;32m[amedac]\033[0m 已清理旧版 current 间接软链残留\n'
+elif [ -e "$AMEDAC_HOME/current" ]; then
+  rm -rf "$AMEDAC_HOME/current"
+fi
 
-
-# ---- 稳定入口：amedac/current -> 本次挂载的包目录 ----
-# ~/.pi 里的 npm/、extensions/ 大目录以符号链接接入 current/config/pi/…，
-# 零拷贝；每次启动刷新 current 指向（升级/挂载路径变化自动跟随）。
-ln -sfn "$PAYLOAD" "$AMEDAC_HOME/current"
-export PI_CONFIG_LINK_ROOT="$AMEDAC_HOME/current"
+# ---- 软链模式包根 = 本次挂载点 ----
+# ~/.pi/agent 的 npm/ 与随包扩展软链直接引用挂载点内的只读树（零拷贝、
+# 不向包外落地）。路径每次启动都不同，install-pi-config.sh 每次启动
+# 无条件刷新链接；--web 前台监护保证服务存活期间挂载点必然有效。
+export PI_CONFIG_LINK_ROOT="$PAYLOAD"
 
 # ---- 统一配置模板合并（幂等；CLI 与 WebUI 共用，失败不阻塞）----
 [ -x "$PAYLOAD/scripts/install-pi-config.sh" ] && bash "$PAYLOAD/scripts/install-pi-config.sh" >/dev/null 2>&1 || true
 
-log()  { printf '[1;32m[amedac][0m %s
-' "$*"; }
+log()  { printf '\033[1;32m[amedac]\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m[amedac]\033[0m %s\n' "$*"; }
 
 open_browser() {
@@ -86,18 +102,48 @@ case "$CMD" in
   --web|web|start)
     bash "$PAYLOAD/scripts/start-all.sh"
     RC=$?
-    if [ $RC -eq 0 ] && [ -f "$AMEDAC_RUN_DIR/ports.env" ]; then
-      # shellcheck disable=SC1091
-      . "$AMEDAC_RUN_DIR/ports.env"
-      if [ "${2:-}" = "--open" ]; then
-        open_browser "http://127.0.0.1:${WEB_PORT:-30141}/"
-      else
-        log "WebUI: http://127.0.0.1:${WEB_PORT:-30141}/ （追加 --open 可自动打开浏览器）"
-      fi
-    elif [ $RC -ne 0 ]; then
+    if [ $RC -ne 0 ]; then
       warn "启动未完成：常见原因是磁盘空间不足或配置错误，见 $AMEDAC_LOG_DIR/"
+      exit $RC
     fi
-    exit $RC
+    if [ ! -f "$AMEDAC_RUN_DIR/ports.env" ]; then
+      warn "缺少 $AMEDAC_RUN_DIR/ports.env，退出"
+      exit 1
+    fi
+    # shellcheck disable=SC1091
+    . "$AMEDAC_RUN_DIR/ports.env"
+    if [ "${2:-}" = "--open" ]; then
+      open_browser "http://127.0.0.1:${WEB_PORT:-30141}/"
+    else
+      log "WebUI: http://127.0.0.1:${WEB_PORT:-30141}/ （追加 --open 可自动打开浏览器）"
+    fi
+    # ---- 前台监护：服务 pid 全部消失或收到退出信号时结束 ----
+    # 服务通过 setsid 守护，但它们的代码与软链内容都在本 AppImage 的挂载
+    # 点内——本进程退出挂载点即消失。因此驻留监护：Ctrl+C / 关闭终端
+    # （HUP）/ 另一终端执行 stop 都会先停服务、再随之下线。
+    shutdown_and_exit() {
+      printf '\n'
+      log "正在停止全部服务…"
+      bash "$PAYLOAD/scripts/stop-all.sh" >/dev/null 2>&1 || true
+      log "已停止，再见。"
+      exit 0
+    }
+    trap shutdown_and_exit INT TERM HUP
+    log "前台监护中：Ctrl+C 停止全部（或另开终端执行 $0 stop）"
+    while :; do
+      alive_n=0
+      for pf in "$AMEDAC_RUN_DIR"/*.pid; do
+        [ -f "$pf" ] || continue
+        # shellcheck disable=SC1090
+        kill -0 "$(cat "$pf" 2>/dev/null)" 2>/dev/null && alive_n=$((alive_n + 1))
+      done
+      if [ "$alive_n" = "0" ]; then
+        log "全部服务已停止，退出。"
+        break
+      fi
+      sleep 2
+    done
+    exit 0
     ;;
   stop)
     exec bash "$PAYLOAD/scripts/stop-all.sh"
@@ -112,12 +158,12 @@ case "$CMD" in
     exit 0
     ;;
   -h|--help|help)
-    sed -n '3,19p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '3,29p' "$0" | sed 's/^# \{0,1\}//'
     exit 0
     ;;
 esac
 
-# ---- 默认：pi CLI（不拉起任何后台服务）----
+# ---- 默认：pi CLI（前台运行，不拉起任何后台服务）----
 if [ -d "$PAYLOAD/bin" ]; then
   export PATH="$PAYLOAD/bin:$PATH"
 fi

@@ -4,8 +4,9 @@
 #
 #   dist/amedac.ai-<arch>.AppImage   (+ SHA256SUMS)
 #
-# 双击/命令行一键启动：首次运行把分发包展开到 ~/.local/share/amedac/app，
-# 数据与配置在 ../data 与升级时自动还原的 sandbox/*.env（见 AppRun）。
+# 双击/命令行一键启动：代码留在 squashfs 只读挂载内就地执行（不向包外
+# 释放只读内容），可写内容收敛到 ~/.local/share/amedac（见 AppRun v4）：
+#   --web 前台监护运行（服务随 AppImage 退出而停止），数据/配置跨升级保留。
 #
 # 用法:
 #   bash scripts/package-appimage.sh              # 复用/重建 linux 包再打包
@@ -198,28 +199,60 @@ else
   if [ "${AVAIL_KB:-0}" -lt 3000000 ]; then
     log "磁盘可用不足 3GB，跳过自解压运行冒烟（目标机首启时自会验证）"
   else
-    log "冒烟测试（AppImage 自解压模式）…"
+    log "冒烟测试（AppImage 自解压模式，v4 前台监护）…"
     THOME="$WORK/smoke-home"
     SMOKE_LOG="$WORK/smoke-appimage.log"
     rm -rf "$THOME"; mkdir -p "$THOME/home"
-    # 真实启停一轮：--web 启动平台+WebUI（start-all 自带健康等待，成功返回
-    # 即服务已就绪），再 stop 收尾。判定证据用 v2 的真实落盘痕迹
-    # run/ports.env（start-all 选定端口后写入；v1 的 app/ 整包复制已不存在）。
-    if ( cd "$THOME" \
-         && AMEDAC_HOME="$THOME/home" HOME="$THOME/home" PLATFORM_PORT=31190 WEB_PORT=31191 \
-            "$OUT_ABS" --appimage-extract-and-run --web >"$SMOKE_LOG" 2>&1 \
-         && AMEDAC_HOME="$THOME/home" HOME="$THOME/home" PLATFORM_PORT=31190 WEB_PORT=31191 \
-            "$OUT_ABS" --appimage-extract-and-run stop >>"$SMOKE_LOG" 2>&1; \
-         [ -f "$THOME/home/run/ports.env" ] ); then
-      echo "   AppImage: OK（自解压启动平台+WebUI，健康检查通过后停止）"
+    # v4 语义下 --web 是前台监护（阻塞直至服务停止），不能同步调用：
+    # 后台拉起 --web，轮询健康证据（平台 /health + WebUI HTTP + ports.env），
+    # 再从独立进程执行 stop，最后断言 --web 监护进程随之退出（服务随
+    # AppImage 生命周期收敛——这正是 v4 要验证的行为）。
+    probe_url() { # url
+      if command -v curl >/dev/null 2>&1; then
+        curl -fsS -o /dev/null --max-time 2 "$1" 2>/dev/null
+      elif command -v wget >/dev/null 2>&1; then
+        wget -q -O /dev/null --timeout=2 "$1" 2>/dev/null
+      else
+        return 1
+      fi
+    }
+    ( cd "$THOME" \
+        && AMEDAC_HOME="$THOME/home" HOME="$THOME/home" PLATFORM_PORT=31190 WEB_PORT=31191 \
+            "$OUT_ABS" --appimage-extract-and-run --web >"$SMOKE_LOG" 2>&1 &
+          echo $! > "$THOME/web.pid" )
+    WEB_PID="$(cat "$THOME/web.pid" 2>/dev/null || true)"
+    SMOKE_OK=0
+    for _ in $(seq 1 120); do
+      kill -0 "$WEB_PID" 2>/dev/null || break   # --web 提前退出
+      if [ -f "$THOME/home/run/ports.env" ] \
+         && probe_url "http://127.0.0.1:31190/health" \
+         && probe_url "http://127.0.0.1:31191/" ]; then
+        SMOKE_OK=1; break
+      fi
+      sleep 1
+    done
+    # 从独立进程停止（模拟用户另开终端执行 stop）
+    ( cd "$THOME" \
+        && AMEDAC_HOME="$THOME/home" HOME="$THOME/home" PLATFORM_PORT=31190 WEB_PORT=31191 \
+            "$OUT_ABS" --appimage-extract-and-run stop >>"$SMOKE_LOG" 2>&1 ) || true
+    # stop 之后，--web 监护循环应在几秒内检测到服务死亡并退出
+    WEB_EXITED=0
+    for _ in $(seq 1 30); do
+      kill -0 "$WEB_PID" 2>/dev/null || { WEB_EXITED=1; break; }
+      sleep 1
+    done
+    if [ "$SMOKE_OK" = "1" ] && [ "$WEB_EXITED" = "1" ]; then
+      echo "   AppImage: OK（自解压前台监护启动平台+WebUI，健康检查通过，stop 后监护进程退出）"
     else
-      echo "   AppImage: 自解压冒烟失败，输出尾部（完整日志: $SMOKE_LOG，服务日志: $THOME/home/logs/）："
+      echo "   AppImage: 自解压冒烟失败（health=$SMOKE_OK, --web退出=$WEB_EXITED），输出尾部（完整日志: $SMOKE_LOG，服务日志: $THOME/home/logs/）："
       tail -n 30 "$SMOKE_LOG" 2>/dev/null | sed 's/^/     /'
       [ -d "$THOME/home/logs" ] && for f in "$THOME/home/logs"/*.log; do
         [ -f "$f" ] || continue
         echo "   --- $(basename "$f") 尾部 ---"
         tail -n 15 "$f" 2>/dev/null | sed 's/^/     /'
       done
+      # 兜底清理：若 --web 仍驻留（异常路径），显式 kill 以免遗留进程
+      kill "$WEB_PID" 2>/dev/null || true
       exit 1
     fi
     # NFS 上服务句柄释放是异步的：rm 立刻执行可能撞上 .nfs* busy。重试
@@ -242,9 +275,14 @@ printf '  %10s  %s\n' "$(du -h "$OUT" | cut -f1)" "$OUT"
 (cd "$OUT_DIR" && sha256sum "$OUT_NAME" > SHA256SUMS)
 echo
 echo "  使用方式（目标 Linux 机，双击或命令行均可）:"
-echo "    ./amedac.ai-$ARCH.AppImage           启动服务并打开浏览器（幂等）"
-echo "    ./amedac.ai-$ARCH.AppImage status    服务状态"
-echo "    ./amedac.ai-$ARCH.AppImage stop      停止全部"
-echo "    ./amedac.ai-$ARCH.AppImage logs      日志位置提示"
+echo "    ./amedac.ai-$ARCH.AppImage              启动 pi CLI（前台，参数透传）"
+echo "    ./amedac.ai-$ARCH.AppImage --web        启动平台+WebUI（前台监护，驻留直至停止）"
+echo "    ./amedac.ai-$ARCH.AppImage --web --open 启动并自动打开浏览器"
+echo "    ./amedac.ai-$ARCH.AppImage stop         停止全部（可另开终端并行执行）"
+echo "    ./amedac.ai-$ARCH.AppImage status       服务状态"
+echo "    ./amedac.ai-$ARCH.AppImage logs         日志位置提示"
+echo "  说明: --web 运行期间 AppImage 进程常驻前台；按 Ctrl+C 或执行 stop"
+echo "  后服务随之停止（随包的只读内容以软链引用挂载点内文件，不落盘、"
+echo "  AppImage 关闭后不残留）。"
 echo "  无 FUSE 的机器: ./amedac.ai-$ARCH.AppImage --appimage-extract-and-run"
-echo "  数据/配置位置: \${XDG_DATA_HOME:-~/.local/share}/amedac/{data,app/sandbox/*.env}"
+echo "  数据/配置位置: \${XDG_DATA_HOME:-~/.local/share}/amedac/{config,data,run,logs}"

@@ -164,7 +164,7 @@ start_platform() {
     mkdir -p "$(dirname "$PLATFORM_ENV_FILE")"
     # 生产模式强制强密钥：JWT ≥32 字符、管理员密码不能是默认弱值。
     # 管理员密码随机生成并落盘 admin-password.txt（仅属主可读），
-    # 登录后可在 WebUI 内修改，改完可删掉该文件。
+    # 登录后可在 WebUI 内修改，改完可删掉该文件（密码展示也会随之消失）。
     # 注意：端口不在本文件里——由 start-all 自动探测并记忆在 run/ports.env；
     # 要固定端口就在此文件加一行 PORT=xxxx（优先级高于自动探测）。
     JWT="$(head -c 64 /dev/urandom | od -An -tx1 | tr -d ' \n')"
@@ -186,8 +186,12 @@ TRUST_PROXY=0
 EOF
     printf '%s\n' "$ADMIN_PW" > "$ADMIN_PW_FILE"
     chmod 600 "$PLATFORM_ENV_FILE" "$ADMIN_PW_FILE"
-    warn "管理员账号（平台与 WebUI 共用）: admin / 初始密码见 $(basename "$CONFIG_DIR")/admin-password.txt"
-    warn "首次登录后请立即修改密码，并可删除该密码文件。"
+    # 初始密码直接展示在启动输出里（而不是只给一个文件路径）；登录后
+    # 修改密码并删除 admin-password.txt，之后的启动不再展示。
+    warn "管理员账号（平台与 WebUI 共用）: admin"
+    warn "初始密码: $ADMIN_PW"
+    warn "（已同时保存到 $(basename "$CONFIG_DIR")/admin-password.txt；登录后请立即修改密码，"
+    warn " 修改后删除该文件，启动时就不会再展示。）"
   fi
 
   [ -f "$PLATFORM_DIR/.env" ] && \
@@ -254,17 +258,20 @@ start_web() {
     mkdir -p "$(dirname "$WEB_ENV_FILE")"
     # 平台地址也不写死在文件里——每次按实际探测到的平台端口注入；
     # 要固定就加一行 PI_WEB_PLATFORM_URL=http://…（优先级高于自动注入）。
+    # 扩展桥接路径同样不写死：AppImage 每次启动的挂载/解压临时目录都不同，
+    # 写死绝对路径会在重启后指向已卸载的目录、扩展软链全成死链（见启动注入）。
     cat > "$WEB_ENV_FILE" <<EOF
 # pi-web 配置（本文件由 start-all.sh 首次运行生成，可自由编辑）
 # 平台地址默认自动跟随探测到的平台端口；固定：加一行 PI_WEB_PLATFORM_URL=http://…
 PI_WEB_AUTH=on
 PI_WEB_DATA_DIR=$DATA_DIR/piweb
-PI_WEB_SANDBOX_EXTENSION_PATH=$EXTENSION_DIR
+# PI_WEB_SANDBOX_EXTENSION_PATH 默认每次启动按当前包目录注入（AppImage 挂载点
+# 每次启动都会变化）；如需指向自建扩展目录，取消注释并改为你的绝对路径。
+# PI_WEB_SANDBOX_EXTENSION_PATH=/abs/path/to/pi-sandbox-extension
 PI_WEB_LAB_TRAINING=off
 EOF
     chmod 600 "$WEB_ENV_FILE"
     warn "WebUI 与沙盒平台共用同一套账号（WebUI 登录即平台登录）。"
-    warn "首次登录用 admin 和 admin-password.txt 里的初始密码，登录后请修改。"
   fi
 
   mkdir -p "$DATA_DIR/piweb"
@@ -275,6 +282,15 @@ EOF
     export PORT="$WEB_PORT"
     # 平台地址跟随本次探测结果（env 文件里显式写了则以文件为准）
     export PI_WEB_PLATFORM_URL="${PI_WEB_PLATFORM_URL:-http://127.0.0.1:$PLATFORM_PORT}"
+    # 扩展桥接路径每次按“当前包目录”注入：文件里自定义的有效值优先；指向已
+    # 不存在目录的陈旧值（旧版写死过 AppImage 临时挂载点）会被识别并回落到
+    # 本次包内扩展，避免扩展软链指向已卸载目录。
+    export PI_WEB_SANDBOX_EXTENSION_PATH="${PI_WEB_SANDBOX_EXTENSION_PATH:-$EXTENSION_DIR}"
+    if [ "${PI_WEB_SANDBOX_EXTENSION_PATH:-}" != "$EXTENSION_DIR" ] \
+       && [ ! -d "${PI_WEB_SANDBOX_EXTENSION_PATH:-/nonexistent}" ]; then
+      warn "piweb.env 的 PI_WEB_SANDBOX_EXTENSION_PATH 指向不存在的目录，已回落当前包内扩展: $EXTENSION_DIR"
+      export PI_WEB_SANDBOX_EXTENSION_PATH="$EXTENSION_DIR"
+    fi
     setsid nohup "$NODE_BIN" ./node_modules/next/dist/bin/next start -H 0.0.0.0 -p "$WEB_PORT" \
       > "$LOG_DIR/web.log" 2>&1 < /dev/null &
     echo $! > "$RUN_DIR/web.pid"
@@ -293,6 +309,12 @@ if [ "$START_WEB" = "1" ]; then
   log "全部服务已启动:"
   log "  沙盒平台  http://127.0.0.1:$PLATFORM_PORT  (logs/platform.log)"
   log "  WebUI     http://0.0.0.0:$WEB_PORT        (logs/web.log)"
+  # 初始密码仍在（未修改/未删文件）时，每次启动都直接展示出来——用户
+  # 不需要去翻文件路径；改密并删除 admin-password.txt 后不再展示。
+  if [ -f "$ADMIN_PW_FILE" ]; then
+    warn "管理员初始密码仍是生成值: admin / $(head -n 1 "$ADMIN_PW_FILE" 2>/dev/null || echo '?')"
+    warn "（登录 WebUI 修改密码后删除 $ADMIN_PW_FILE，启动时就不会再展示）"
+  fi
   log "停止: ./scripts/stop-all.sh   状态: ./scripts/status-all.sh"
 else
   log "仅沙盒平台已启动（--no-web）"

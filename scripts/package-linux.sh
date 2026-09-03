@@ -35,8 +35,12 @@
 #                         packaging/install-pi-config.sh 合并到 ~/.pi/agent。
 #                         打包时会排除 sessions/、auth.json、bin/、tmp/ 等
 #                         用户数据与敏感文件。默认: <仓库>/pi-config（不存在则跳过）。
-#   PI_CONFIG_VERSION     配置模板版本号 (默认: 1)。发布新版包时递增，目标机
+#   PI_CONFIG_VERSION     配置模板版本号 (默认: 3)。发布新版包时递增，目标机
 #                         据此做配置的增量更新（见 packaging/install-pi-config.sh）。
+#                         v3: npm/ 与随包扩展默认改为软链直连包内（AMEDAC_PKG_MODE=copy
+#                         可回退真实拷贝）；递增版本号用于触发存量机器重新合并，
+#                         旧版（v2 及以前）留下的失效/残留软链会被自动清理
+#                         （软链模式下重指当前包，拷贝模式下以真实拷贝接管）。
 #   PI_EXTENSIONS         空格分隔的本地扩展目录列表（每个必须是含 package.json
 #                         的扩展包）。打包时在构建机执行 npm install --omit=dev
 #                         预装依赖，把整个目录（含 node_modules）拷进包内
@@ -218,7 +222,10 @@ if [ -d "$PI_CONFIG_DIR" ]; then
     --exclude='./bin' --exclude='./tmp' --exclude='./pi-debug.log' \
     --exclude='./.bundle-version' --exclude='./.bundle-backup' --exclude='./.gitkeep' \
     -cf - .) | (cd "$PKG/config/pi" && tar -xf -)
-  PI_CONFIG_VERSION="${PI_CONFIG_VERSION:-1}"
+  # v3：npm/ 与随包扩展改为“默认软链直连包内 + AMEDAC_PKG_MODE=copy 真实拷贝
+  # 回退”的双模式分发。递增版本号用于触发存量机器重新合并：旧版留下的
+  # 失效/残留软链会被自动清理（见 packaging/install-pi-config.sh 头部说明）。
+  PI_CONFIG_VERSION="${PI_CONFIG_VERSION:-3}"
   echo "$PI_CONFIG_VERSION" > "$PKG/config/pi/.bundle-version"
   log "配置模板版本: $PI_CONFIG_VERSION"
 elif [ -n "$PI_CONFIG_DIR_EXPLICIT" ] && [ -n "$PI_CONFIG_DIR" ] && [ ! -e "$PI_CONFIG_DIR" ]; then
@@ -259,7 +266,7 @@ if [ -n "${PI_EXTENSIONS:-}" ]; then
   done
   # 仅扩展而配置模板未打包时，补一个配置模板版本标记
   [ -f "$PKG/config/pi/.bundle-version" ] \
-    || echo "${PI_CONFIG_VERSION:-1}" > "$PKG/config/pi/.bundle-version"
+    || echo "${PI_CONFIG_VERSION:-3}" > "$PKG/config/pi/.bundle-version"
 fi
 if [ -n "${PI_UPDATE_BASE_URL:-}" ]; then
   mkdir -p "$PKG/config"

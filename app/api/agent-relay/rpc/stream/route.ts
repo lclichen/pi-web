@@ -10,9 +10,9 @@ export const dynamic = "force-dynamic";
 // streamed frame and a terminal `data: {type:"end",ok,...}`. MVP methods don't
 // stream, so this returns a single `end` frame today.
 export async function POST(req: Request) {
-  let body: { method?: unknown; params?: unknown };
+  let body: { method?: unknown; params?: unknown; machineId?: unknown };
   try {
-    body = (await req.json()) as { method?: unknown; params?: unknown };
+    body = (await req.json()) as { method?: unknown; params?: unknown; machineId?: unknown };
   } catch {
     return new Response(JSON.stringify({ error: "invalid JSON body" }), {
       status: 400,
@@ -67,8 +67,12 @@ export async function POST(req: Request) {
 
       req.signal?.addEventListener("abort", close);
 
+      const machineId =
+        typeof body.machineId === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(body.machineId)
+          ? body.machineId
+          : undefined;
       try {
-        const result = await relayStream(method, params, (data) => send({ type: "chunk", data }), { userId: identity.session.user.id });
+        const result = await relayStream(method, params, (data) => send({ type: "chunk", data }), { userId: identity.session.user.id, machineId });
         send({ type: "end", ok: true, result });
       } catch (err) {
         if (err instanceof AgentUnavailableError) {

@@ -11,8 +11,15 @@ export const dynamic = "force-dynamic";
 export async function POST(req: Request) {
   const identity = requireUserIdentity(req);
   if (!identity.ok) return NextResponse.json({ error: "登录已失效" }, { status: identity.status });
+  let label: string | undefined;
+  try {
+    const body = (await req.json()) as { label?: unknown };
+    if (typeof body.label === "string" && body.label.trim()) label = body.label.trim().slice(0, 50);
+  } catch {
+    // no body / not JSON — pairing without a pre-chosen label is fine
+  }
   // The pairing code binds the connecting agent to the minting user.
-  const pc = createPairingCode(identity.session.user.id);
+  const pc = createPairingCode(identity.session.user.id, label);
   const relay = getRelayInfo();
   return NextResponse.json(
     {

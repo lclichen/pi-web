@@ -32,7 +32,7 @@ export async function POST(req: Request) {
   }
   let body: {
     name?: unknown; mode?: unknown; containerId?: unknown; seedFromProjectId?: unknown;
-    imageId?: unknown; workspaceId?: unknown; workdir?: unknown;
+    imageId?: unknown; workspaceId?: unknown; workdir?: unknown; machineId?: unknown;
     ssh?: { host?: unknown; port?: unknown; username?: unknown; authType?: unknown; password?: unknown; privateKey?: unknown; passphrase?: unknown };
     presetBundle?: unknown;
   };
@@ -50,6 +50,7 @@ export async function POST(req: Request) {
     ...(typeof body.imageId === "number" ? { imageId: body.imageId } : {}),
     ...(typeof body.seedFromProjectId === "string" ? { seedFromProjectId: body.seedFromProjectId } : {}),
     ...(typeof body.workdir === "string" && body.workdir ? { workdir: body.workdir } : {}),
+    ...(typeof body.machineId === "string" && body.machineId ? { machineId: body.machineId } : {}),
     ...(body.mode === "ssh" && body.ssh && typeof body.ssh === "object" ? {
       ssh: {
         host: typeof body.ssh.host === "string" ? body.ssh.host : "",

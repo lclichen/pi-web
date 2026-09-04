@@ -78,6 +78,11 @@ export interface AgentInfo {
   arch: string; // e.g. "amd64", "arm64"
   workspaceRoot: string; // absolute path the agent restricts all fs.* calls to
   agentVersion: string;
+  /** Stable per-install machine id (multi-machine support; older agents omit
+   *  it — the relay then treats the connection as the user's "default"). */
+  machineId?: string;
+  /** User-facing label, persisted server-side and echoed in hello. */
+  label?: string;
 }
 
 /** Result rows for fs.list. */
@@ -124,6 +129,19 @@ export interface GrepMatch {
 export interface RelayStatus {
   online: boolean;
   info?: AgentInfo;
+  /** All of the user's paired machines (multi-machine support). `info` stays
+   *  the DEFAULT machine's info for single-machine UI compatibility. */
+  machines?: MachineStatus[];
+}
+
+/** One paired machine in a RelayStatus snapshot. */
+export interface MachineStatus {
+  machineId: string;
+  label: string;
+  online: boolean;
+  info?: AgentInfo;
+  lastSeenAt?: string;
+  hostname?: string;
 }
 
 /** Pairing code descriptor held in memory until consumed or expired. */
@@ -134,4 +152,6 @@ export interface PairingCode {
   createdAt: number;
   expiresAt: number;
   consumed: boolean;
+  /** Optional label the minting user chose for the machine being paired. */
+  label?: string;
 }

@@ -1,8 +1,8 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { URL } from "node:url";
 import { WebSocketServer, type WebSocket } from "ws";
-import { attachAgentSocket, consumePairingCode, isKnownAgentToken } from "./registry";
-import { issueAgentToken, lookupTokenOwner } from "./relay-store";
+import { attachAgentSocket, consumePairingCode, DEFAULT_MACHINE_ID, isKnownAgentToken } from "./registry";
+import { issueAgentToken, lookupTokenRecord, touchAgentToken } from "./relay-store";
 import { clientIpOf, consumeRateLimit } from "../rate-limit";
 
 // The agent-facing endpoint: a plain http.Server on its own port (default
@@ -63,8 +63,17 @@ export async function startRelayServer(): Promise<void> {
       socket.destroy();
       return;
     }
+    const record = lookupTokenRecord(token);
+    if (!record) {
+      socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
+      socket.destroy();
+      return;
+    }
     wss.handleUpgrade(req, socket, head, (ws: WebSocket) => {
-      attachAgentSocket(ws, lookupTokenOwner(token));
+      attachAgentSocket(ws, record.userId, record.machineId);
+      // Rolling token expiry: an actively-used machine never expires; an
+      // abandoned pairing dies after 90 days.
+      void touchAgentToken(token, record.machineId).catch(() => {});
     });
   });
 
@@ -108,7 +117,7 @@ async function handleHttp(req: IncomingMessage, res: ServerResponse): Promise<vo
       res.end(JSON.stringify({ error: `too many attempts; retry in ${retry}s` }));
       return;
     }
-    const body = (await readJson(req)) as { code?: unknown };
+    const body = (await readJson(req)) as { code?: unknown; machineId?: unknown; hostname?: unknown; label?: unknown };
     const code = typeof body.code === "string" ? body.code : "";
     // consumePairingCode returns the minting user's id — the agent token MUST
     // bind to it, otherwise every later per-user lookup (status/panel/RPC)
@@ -120,9 +129,22 @@ async function handleHttp(req: IncomingMessage, res: ServerResponse): Promise<vo
       res.end(JSON.stringify({ error: "invalid or expired pairing code" }));
       return;
     }
-    const token = await issueAgentToken(ownerUserId);
+    // Machine identity: the agent sends its persisted machineId (stable across
+    // restarts) so a re-pair replaces the SAME machine's token instead of
+    // piling up one token per pairing.
+    const machineId =
+      typeof body.machineId === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(body.machineId)
+        ? body.machineId
+        : DEFAULT_MACHINE_ID;
+    const hostname = typeof body.hostname === "string" ? body.hostname.slice(0, 100) : undefined;
+    // Label precedence: the agent's own --label flag, else the label the user
+    // chose when minting the code in the pairing dialog.
+    const label =
+      (typeof body.label === "string" && body.label.trim() ? body.label.trim().slice(0, 50) : undefined)
+      ?? ownerUserId.label;
+    const token = await issueAgentToken({ userId: ownerUserId.userId, machineId, hostname, label });
     res.writeHead(200, { "content-type": "application/json" });
-    res.end(JSON.stringify({ token, wsPath: "/ws" }));
+    res.end(JSON.stringify({ token, wsPath: "/ws", machineId }));
     return;
   }
 

@@ -3,6 +3,8 @@
 package config
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -14,8 +16,33 @@ type Config struct {
 	Server        string `json:"server"`
 	Token         string `json:"token"`
 	WorkspaceRoot string `json:"workspaceRoot,omitempty"`
+	// MachineID is a stable per-install identity (generated on first use) so
+	// the relay can distinguish this machine from the user's OTHER machines.
+	MachineID string `json:"machineId,omitempty"`
+	// Label is the user-chosen display name sent at pairing time.
+	Label string `json:"label,omitempty"`
 
 	file string `json:"-"`
+}
+
+// EnsureMachineID returns the config's machine id, generating + persisting a
+// fresh random one when absent. Called before pairing and before connecting so
+// the identity is stable across restarts and re-pairings.
+func (c *Config) EnsureMachineID() (string, error) {
+	if c.MachineID != "" {
+		return c.MachineID, nil
+	}
+	raw := make([]byte, 16)
+	if _, err := rand.Read(raw); err != nil {
+		return "", fmt.Errorf("generate machine id: %w", err)
+	}
+	c.MachineID = hex.EncodeToString(raw)
+	if err := c.Save(); err != nil {
+		// Non-fatal for the current run: the id is still returned, it just may
+		// not survive a restart.
+		return c.MachineID, nil
+	}
+	return c.MachineID, nil
 }
 
 // DefaultDir returns ~/.pi-agent.

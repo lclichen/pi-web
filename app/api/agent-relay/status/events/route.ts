@@ -1,4 +1,4 @@
-import { subscribeStatus, getStatusForUser } from "@/lib/relay/registry";
+import { subscribeStatus, getStatusForUser, type StatusUpdate } from "@/lib/relay/registry";
 import type { RelayStatus } from "@/lib/relay/protocol";
 import { requireUserIdentity } from "@/lib/web-session";
 
@@ -31,20 +31,23 @@ export async function GET(req: Request) {
       };
 
       let lastSnapshot = "";
-      const push = () => {
+      const push = (status?: RelayStatus) => {
         try {
-          const status: RelayStatus = getStatusForUser(userId);
-          const snapshot = JSON.stringify(status);
+          const snapshotStatus = status ?? getStatusForUser(userId);
+          const snapshot = JSON.stringify(snapshotStatus);
           if (snapshot !== lastSnapshot) {
             lastSnapshot = snapshot;
-            encode(status);
+            encode(snapshotStatus);
           }
         } catch (e) {
           fail(e);
         }
       };
 
-      const unsubscribe = subscribeStatus(push);
+      // Registry updates are user-scoped; only THIS user's changes re-render.
+      const unsubscribe = subscribeStatus((update: StatusUpdate) => {
+        if (update.userId === userId) push(update.status);
+      });
 
       // Initial snapshot so the UI renders correctly without waiting for a change.
       push();

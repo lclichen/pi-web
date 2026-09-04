@@ -1,11 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { AgentInfo } from "@/lib/relay/protocol";
+import type { AgentInfo, MachineStatus } from "@/lib/relay/protocol";
 
 export interface RelayStatusResponse {
   online: boolean;
   info?: AgentInfo;
+  /** All paired machines (multi-machine); info = the default machine's. */
+  machines?: MachineStatus[];
   relayPort: number;
   advertiseUrl: string | null;
 }

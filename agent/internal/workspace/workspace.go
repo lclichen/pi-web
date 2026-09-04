@@ -50,14 +50,28 @@ func (w *Workspace) resolve(p string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if real, err := filepath.EvalSymlinks(abs); err == nil {
-		abs = real
-	}
+	abs = resolveReal(abs)
 	realRoot := w.realRoot(root)
 	if !isWithin(abs, realRoot) {
 		return "", fmt.Errorf("path outside workspace root: %s", p)
 	}
 	return abs, nil
+}
+
+// resolveReal resolves symlinks on the longest EXISTING ancestor of abs and
+// re-joins the non-existent tail. Evaluating only the full path (the old
+// behavior) silently skipped the check when the final segment was a NEW file
+// — an intermediate symlink like root/link -> /etc then allowed
+// fs.write("link/cron.d/x") to land outside the root.
+func resolveReal(abs string) string {
+	if real, err := filepath.EvalSymlinks(abs); err == nil {
+		return real
+	}
+	dir := filepath.Dir(abs)
+	if dir == abs || dir == string(filepath.Separator) || dir == "." {
+		return abs
+	}
+	return filepath.Join(resolveReal(dir), filepath.Base(abs))
 }
 
 // realRoot returns the given root with symlinks resolved.

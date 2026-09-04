@@ -19,6 +19,8 @@ interface Props {
   /** 选择目录后回调（绝对路径 = workspaceRoot + "/" + rel）。 */
   onPick: (absPath: string) => void;
   onClose: () => void;
+  /** 浏览哪台已配对机器（多机）；缺省 = 默认机器。 */
+  machineId?: string;
 }
 
 function joinAbs(root: string, rel: string): string {
@@ -26,10 +28,13 @@ function joinAbs(root: string, rel: string): string {
   return `${root.replace(/\/+$/, "")}/${rel}`;
 }
 
-export function LocalDirectoryPicker({ onPick, onClose }: Props) {
+export function LocalDirectoryPicker({ onPick, onClose, machineId }: Props) {
   const { t } = useI18n();
-  const { info, online } = useRelayAgent();
-  const root = info?.workspaceRoot ?? "";
+  const { info, machines, online } = useRelayAgent();
+  const selected = machineId ? machines?.find((m) => m.machineId === machineId) : undefined;
+  const effectiveInfo = selected?.info ?? info;
+  const machineOnline = selected ? selected.online : online;
+  const root = effectiveInfo?.workspaceRoot ?? "";
   const [rel, setRel] = useState("");
   const [entries, setEntries] = useState<Entry[]>([]);
   const [loading, setLoading] = useState(false);
@@ -42,7 +47,7 @@ export function LocalDirectoryPicker({ onPick, onClose }: Props) {
       const res = await fetch("/api/agent-relay/rpc", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ method: "fs.list", params: { path } }),
+        body: JSON.stringify({ method: "fs.list", params: { path }, ...(machineId ? { machineId } : {}) }),
       });
       const d = (await res.json()) as { success?: boolean; data?: Entry[]; error?: string };
       if (!res.ok || d.error) throw new Error(d.error ?? `HTTP ${res.status}`);
@@ -52,7 +57,7 @@ export function LocalDirectoryPicker({ onPick, onClose }: Props) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [machineId]);
 
   useEffect(() => {
     if (root) void load(rel);
@@ -60,7 +65,7 @@ export function LocalDirectoryPicker({ onPick, onClose }: Props) {
 
   const selectedAbs = joinAbs(root, rel);
 
-  if (!online) {
+  if (!machineOnline) {
     return (
       <div style={{ padding: 16, fontSize: 12, color: "var(--text-dim)" }}>
         {t("本机 Agent 未连接，无法浏览目录")}

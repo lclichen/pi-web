@@ -28,6 +28,9 @@ export interface RemoteSessionContext {
   sshConfig?: import("./ssh").SshConfig;
   /** Server-side project home — absolute UI paths under it map to the workdir. */
   homePrefix?: string;
+  /** Local-machine mode: the paired machine this session's project targets
+   *  (absent = the user's default machine). */
+  machineId?: string;
 }
 
 interface PlatformContainer { id: number; status: string }
@@ -67,10 +70,23 @@ export async function resolveRemoteSession(
   }
 
   if (mode === "local-machine") {
-    if (user.id !== 0 && !getAgentForUser(user.id)?.info) {
-      return { ok: false, status: 503, error: "本机未连接（relay 离线）" };
+    // Project binding wins: a local-machine project may pin one specific
+    // machine (multi-machine support). Sessions without a project binding use
+    // the user's default (most recent) machine.
+    let machineId: string | undefined;
+    if (meta?.projectId && (user.role === "admin" || meta.ownerId === user.id || user.id === 0)) {
+      const project = getOwnedProject(meta.projectId, meta.ownerId ?? user.id, user.role === "admin");
+      if (project && project.mode === "local-machine" && project.machineId) {
+        machineId = project.machineId;
+      }
     }
-    return { ok: true, ctx: { mode, userId: user.id, apiKey: "", containerId: 0, isAdmin: user.role === "admin" } };
+    if (user.id !== 0) {
+      const agent = getAgentForUser(user.id, machineId);
+      if (!agent?.info) {
+        return { ok: false, status: 503, error: machineId ? "项目绑定的机器不在线" : "本机未连接（relay 离线）" };
+      }
+    }
+    return { ok: true, ctx: { mode, userId: user.id, apiKey: "", containerId: 0, isAdmin: user.role === "admin", ...(machineId ? { machineId } : {}) } };
   }
 
   // Sandbox: platform credentials + target container. Prefer the container
@@ -171,7 +187,7 @@ export async function remoteList(ctx: RemoteSessionContext, path: string): Promi
     return list.map((e) => ({ name: e.filename, isDir: e.attrs.isDirectory(), size: e.attrs.size, modified: "" }));
   }
   if (ctx.mode === "local-machine") {
-    const entries = await relayRpc("fs.list", { path: stripSlash(path) }, { userId: ctx.userId }) as Array<{
+    const entries = await relayRpc("fs.list", { path: stripSlash(path) }, { userId: ctx.userId, machineId: ctx.machineId }) as Array<{
       name: string; isDir: boolean; size: number; mtime: number;
     }>;
     return entries.map((e) => ({ name: e.name, isDir: e.isDir, size: e.size, modified: new Date(e.mtime).toISOString() }));
@@ -197,7 +213,7 @@ export async function remoteRead(ctx: RemoteSessionContext, path: string): Promi
     return { content: buf.toString("utf8"), size: buf.length };
   }
   if (ctx.mode === "local-machine") {
-    const r = await relayRpc("fs.read", { path: stripSlash(path) }, { userId: ctx.userId }) as { content: string; size: number };
+    const r = await relayRpc("fs.read", { path: stripSlash(path) }, { userId: ctx.userId, machineId: ctx.machineId }) as { content: string; size: number };
     return { content: r.content, size: r.size };
   }
   const r = await platformPost<{ contentBase64: string; size: number }>(
@@ -216,7 +232,7 @@ export async function remoteWrite(ctx: RemoteSessionContext, path: string, conte
     return;
   }
   if (ctx.mode === "local-machine") {
-    await relayRpc("fs.write", { path: stripSlash(path), content }, { userId: ctx.userId });
+    await relayRpc("fs.write", { path: stripSlash(path), content }, { userId: ctx.userId, machineId: ctx.machineId });
     return;
   }
   await platformPost(
@@ -239,9 +255,9 @@ export async function remoteCreateEmpty(ctx: RemoteSessionContext, path: string,
   const target = ctx.mode === "local-machine" ? stripSlash(path) : containerPath(path);
   if (ctx.mode === "local-machine") {
     if (kind === "dir") {
-      await relayRpc("fs.mkdir", { path: target }, { userId: ctx.userId });
+      await relayRpc("fs.mkdir", { path: target }, { userId: ctx.userId, machineId: ctx.machineId });
     } else {
-      await relayRpc("fs.write", { path: target, content: "" }, { userId: ctx.userId });
+      await relayRpc("fs.write", { path: target, content: "" }, { userId: ctx.userId, machineId: ctx.machineId });
     }
     return;
   }
@@ -260,7 +276,7 @@ export async function remoteDelete(ctx: RemoteSessionContext, path: string): Pro
     return;
   }
   if (ctx.mode === "local-machine") {
-    await relayRpc("fs.delete", { path: stripSlash(path) }, { userId: ctx.userId });
+    await relayRpc("fs.delete", { path: stripSlash(path) }, { userId: ctx.userId, machineId: ctx.machineId });
     return;
   }
   await platformPost(
@@ -277,7 +293,7 @@ export async function remoteRename(ctx: RemoteSessionContext, path: string, newP
     return;
   }
   if (ctx.mode === "local-machine") {
-    await relayRpc("fs.rename", { from: stripSlash(path), to: stripSlash(newPath) }, { userId: ctx.userId });
+    await relayRpc("fs.rename", { from: stripSlash(path), to: stripSlash(newPath) }, { userId: ctx.userId, machineId: ctx.machineId });
     return;
   }
   await platformPost(

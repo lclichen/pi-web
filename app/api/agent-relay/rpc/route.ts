@@ -10,9 +10,9 @@ export const dynamic = "force-dynamic";
 // same { success, data } / { error } envelope used by /api/agent/[id] so the
 // browser's existing error handling (lib/relay-client.ts) applies unchanged.
 export async function POST(req: Request) {
-  let body: { method?: unknown; params?: unknown };
+  let body: { method?: unknown; params?: unknown; machineId?: unknown };
   try {
-    body = (await req.json()) as { method?: unknown; params?: unknown };
+    body = (await req.json()) as { method?: unknown; params?: unknown; machineId?: unknown };
   } catch {
     return NextResponse.json({ error: "invalid JSON body" }, { status: 400 });
   }
@@ -28,9 +28,13 @@ export async function POST(req: Request) {
     body.params && typeof body.params === "object" && !Array.isArray(body.params)
       ? (body.params as Record<string, unknown>)
       : undefined;
+  const machineId =
+    typeof body.machineId === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(body.machineId)
+      ? body.machineId
+      : undefined;
 
   try {
-    const data = await relayRpc(method, params, { userId: identity.session.user.id });
+    const data = await relayRpc(method, params, { userId: identity.session.user.id, machineId });
     return NextResponse.json({ success: true, data });
   } catch (err) {
     if (err instanceof AgentUnavailableError) {

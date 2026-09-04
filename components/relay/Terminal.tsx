@@ -8,15 +8,19 @@ import "@xterm/xterm/css/xterm.css";
 interface Props {
   cwd: string;
   onClose: () => void;
+  /** Target machine (multi-machine); omit = the user's default machine. */
+  machineId?: string;
 }
 
 // Interactive web terminal backed by the agent's PTY (creack/pty on Linux).
 // Lifecycle: POST /terminal/create -> attach xterm; SSE for output; POST input
 // on keystrokes; POST resize on container resize; POST close on unmount.
+// Input/resize/events address the created sid — the server remembers which
+// machine hosts it — so only `create` carries the machine selection.
 //
 // PTY is Linux/macOS only — on a Windows agent, create returns an error which
 // is written into the terminal surface.
-export function Terminal({ cwd, onClose }: Props) {
+export function Terminal({ cwd, onClose, machineId }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -73,7 +77,7 @@ export function Terminal({ cwd, onClose }: Props) {
         const res = await fetch("/api/agent-relay/terminal/create", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ cwd, cols: term.cols, rows: term.rows }),
+          body: JSON.stringify({ cwd, cols: term.cols, rows: term.rows, ...(machineId ? { machineId } : {}) }),
         });
         const body = (await res.json()) as {
           success?: boolean;

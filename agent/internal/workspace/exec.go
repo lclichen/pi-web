@@ -10,8 +10,10 @@ import (
 
 const (
 	defaultExecTimeout = 30 * time.Second
-	maxExecTimeout     = 120 * time.Second
-	maxExecOutput      = 1024 * 1024 // 1 MB per stream
+	// Upper clamp for caller-supplied timeouts. Long builds/tests legitimately
+	// run minutes; nothing plausible needs more than ten.
+	maxExecTimeout = 10 * time.Minute
+	maxExecOutput  = 1024 * 1024 // 1 MB per stream
 )
 
 // Exec runs argv[0] argv[1:] in cwd with a timeout. Never uses a shell, so
@@ -30,8 +32,12 @@ func (w *Workspace) Exec(params map[string]interface{}) (interface{}, error) {
 
 	timeout := defaultExecTimeout
 	if v, ok := toFloat(params["timeout"]); ok {
-		d := time.Duration(v) * time.Second
-		if d > 0 && d < maxExecTimeout {
+		// The wire contract is MILLISECONDS (lib/extensions/relay-tools.ts).
+		// The agent used to interpret the value as seconds, so every ms-style
+		// caller (30000ms → "30000s") blew the clamp and silently fell back
+		// to the 30s default.
+		d := time.Duration(v) * time.Millisecond
+		if d > 0 && d <= maxExecTimeout {
 			timeout = d
 		}
 	}
@@ -140,8 +146,9 @@ func (w *Workspace) ExecStream(params map[string]interface{}, emit func(stream, 
 
 	timeout := defaultExecTimeout
 	if v, ok := toFloat(params["timeout"]); ok {
-		d := time.Duration(v) * time.Second
-		if d > 0 && d < maxExecTimeout {
+		// Milliseconds on the wire — see Exec.
+		d := time.Duration(v) * time.Millisecond
+		if d > 0 && d <= maxExecTimeout {
 			timeout = d
 		}
 	}

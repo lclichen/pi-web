@@ -26,9 +26,54 @@ import (
 	"piagent/internal/workspace"
 )
 
-// ptyMgr owns the live PTY sessions for the web terminal. Tied to a single
-// relay connection: cleared on disconnect/reconnect.
+// ptyMgr owns the live PTY sessions for the web terminal. Sessions OUTLIVE a
+// brief relay disconnect: a NAT timeout used to kill every remote terminal.
+// currentConn lets PTY goroutines emit on whichever connection is live.
 var ptyMgr = pty.NewManager()
+
+var currentConn atomic.Value // *safeConn
+
+// emitEvent sends an unsolicited event frame on the CURRENT connection.
+func emitEvent(event string, payload map[string]interface{}) {
+	frame := map[string]interface{}{"type": "event", "event": event}
+	for k, v := range payload {
+		frame[k] = v
+	}
+	out, err := json.Marshal(frame)
+	if err != nil {
+		return
+	}
+	if sc, ok := currentConn.Load().(*safeConn); ok && sc != nil {
+		_ = sc.writeText(out)
+	}
+}
+
+// PTY sessions survive reconnects for up to this long before being reaped.
+const ptyReapDelay = 5 * time.Minute
+
+var (
+	ptyReapMu    sync.Mutex
+	ptyReapTimer *time.Timer
+)
+
+func schedulePtyReap() {
+	ptyReapMu.Lock()
+	defer ptyReapMu.Unlock()
+	if ptyReapTimer != nil {
+		ptyReapTimer.Stop()
+	}
+	ptyReapTimer = time.AfterFunc(ptyReapDelay, func() { ptyMgr.CloseAll() })
+}
+
+func cancelPtyReap() {
+	ptyReapMu.Lock()
+	defer ptyReapMu.Unlock()
+	if ptyReapTimer != nil {
+		ptyReapTimer.Stop()
+		ptyReapTimer = nil
+	}
+}
+
 func Run(args []string, version string) int {
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
 	configPath := fs.String("config", "", "path to config.json (default ~/.pi-agent/config.json)")
@@ -44,6 +89,11 @@ func Run(args []string, version string) int {
 	if cfg.Server == "" || cfg.Token == "" {
 		fmt.Fprintln(os.Stderr, "pi-agent: config missing server/token; pair first.")
 		return 2
+	}
+	// Stable machine identity for multi-machine relays; generates + persists on
+	// first run. Failure is non-fatal (identity regenerates next start).
+	if _, err := cfg.EnsureMachineID(); err != nil {
+		log.Printf("warning: %v", err)
 	}
 
 	root := *rootOverride
@@ -64,7 +114,7 @@ func Run(args []string, version string) int {
 	}
 
 	ws := &workspace.Workspace{Root: absRoot}
-	info := buildInfo(version, ws.GetRoot())
+	info := buildInfo(version, ws.GetRoot(), cfg)
 	log.Printf("pi-agent %s starting; server=%s root=%s os=%s/%s",
 		version, cfg.Server, absRoot, runtime.GOOS, runtime.GOARCH)
 
@@ -72,7 +122,7 @@ func Run(args []string, version string) int {
 	return 0
 }
 
-func buildInfo(version, root string) protocol.AgentInfo {
+func buildInfo(version, root string, cfg *config.Config) protocol.AgentInfo {
 	host, _ := os.Hostname()
 	return protocol.AgentInfo{
 		Hostname:      host,
@@ -80,6 +130,8 @@ func buildInfo(version, root string) protocol.AgentInfo {
 		Arch:          runtime.GOARCH,
 		WorkspaceRoot: root,
 		AgentVersion:  version,
+		MachineID:     cfg.MachineID,
+		Label:         cfg.Label,
 	}
 }
 
@@ -107,9 +159,17 @@ func toWSURL(server, token string) string {
 func connectLoop(wsURL string, info protocol.AgentInfo, ws *workspace.Workspace, cfg *config.Config, version string) {
 	backoff := time.Second
 	const maxBackoff = 30 * time.Second
+	// A connection that stayed up for a while is a healthy link: the next drop
+	// is a fresh incident, not a continuing outage — reset the backoff instead
+	// of making the user wait 30s after every network blip.
+	const healthyConn = 30 * time.Second
 	for {
+		start := time.Now()
 		if err := serveOnce(wsURL, info, ws, cfg, version); err != nil {
 			log.Printf("disconnected: %v", err)
+		}
+		if time.Since(start) >= healthyConn {
+			backoff = time.Second
 		}
 		log.Printf("reconnecting in %s ...", backoff)
 		time.Sleep(backoff)
@@ -151,9 +211,12 @@ func serveOnce(wsURL string, info protocol.AgentInfo, ws *workspace.Workspace, c
 	defer conn.Close()
 
 	sc := &safeConn{c: conn}
-	// PTY sessions are bound to this connection; tear them down on disconnect so
-	// they don't leak (and don't write to a dead socket after reconnect).
-	defer ptyMgr.CloseAll()
+	// PTY sessions live across reconnects (see schedulePtyReap): point the
+	// emitters at THIS connection and cancel any pending reap from the
+	// previous disconnect; on exit, schedule one.
+	currentConn.Store(sc)
+	cancelPtyReap()
+	defer schedulePtyReap()
 
 	// Idle connections get silently cut by NATs/firewalls; without a heartbeat
 	// the agent only notices on the next write. Ping every 25s and drop the
@@ -192,7 +255,7 @@ func serveOnce(wsURL string, info protocol.AgentInfo, ws *workspace.Workspace, c
 				if resp.OK {
 					// Re-announce so the relay's registry info reflects the new
 					// root immediately (the web UI reads it from the hello).
-					hello, _ := json.Marshal(protocol.Hello{Type: "hello", Info: buildInfo(version, ws.GetRoot())})
+					hello, _ := json.Marshal(protocol.Hello{Type: "hello", Info: buildInfo(version, ws.GetRoot(), cfg)})
 					_ = sc.writeText(hello)
 					log.Printf("workspace root changed to %s", ws.GetRoot())
 				}
@@ -310,18 +373,11 @@ func handleStreamRequest(sc *safeConn, req protocol.Request, ws *workspace.Works
 	_ = sc.writeText(out)
 }
 
-// handlePtyRequest serves pty.create/input/resize/close. PTY output is pushed
-// asynchronously as unsolicited {type:"event", event:"pty.output", ...} frames
+// handlePtyRequest serves pty.create/input/resize/close. PTY output and exit
+// events are pushed asynchronously as unsolicited {type:"event", ...} frames
 // (no request id) — the relay routes these to the per-session SSE subscriber.
 func handlePtyRequest(sc *safeConn, req protocol.Request, ws *workspace.Workspace) {
-	emit := func(event string, payload map[string]interface{}) {
-		frame := map[string]interface{}{"type": "event", "event": event}
-		for k, v := range payload {
-			frame[k] = v
-		}
-		out, _ := json.Marshal(frame)
-		_ = sc.writeText(out)
-	}
+	_ = sc // responses go through the caller; events go via emitEvent/currentConn
 
 	var result interface{}
 	var perr error
@@ -335,9 +391,14 @@ func handlePtyRequest(sc *safeConn, req protocol.Request, ws *workspace.Workspac
 		}
 		cols := paramInt(req.Params, "cols", 80)
 		rows := paramInt(req.Params, "rows", 24)
-		sess, e := ptyMgr.Create(shell, absCwd, cols, rows, func(sessionID, data string) {
-			emit("pty.output", map[string]interface{}{"sessionId": sessionID, "data": data})
-		})
+		sess, e := ptyMgr.Create(shell, absCwd, cols, rows,
+			func(sessionID, data string) {
+				emitEvent("pty.output", map[string]interface{}{"sessionId": sessionID, "data": data})
+			},
+			func(sessionID string, code int) {
+				emitEvent("pty.exit", map[string]interface{}{"sessionId": sessionID, "code": code})
+			},
+		)
 		if e != nil {
 			perr = e
 			break

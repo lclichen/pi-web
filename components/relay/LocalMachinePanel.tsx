@@ -6,14 +6,18 @@ import { relayFs, relaySearch, relayStreamExec } from "@/lib/relay-client";
 import { Terminal } from "./Terminal";
 
 interface Props {
-  info: AgentInfo;
+  /** The machine this panel operates on. */
+  machineId: string;
+  /** All paired machines (for the header selector). */
+  machines: Array<{ machineId: string; label: string; online: boolean; info?: AgentInfo }>;
+  onSelectMachine: (m: { machineId: string }) => void;
   onClose: () => void;
 }
 
 // End-to-end panel: browse the agent's workspace, read/edit/save a file, run a
 // command, and search contents (grep) or file names (fd). Deliberately
 // self-contained; Phase 2d will integrate this into the main FileExplorer.
-export function LocalMachinePanel({ info, onClose }: Props) {
+export function LocalMachinePanel({ machineId, machines, onSelectMachine, onClose }: Props) {
   const [path, setPath] = useState<string>("");
   const [entries, setEntries] = useState<FsEntry[]>([]);
   const [loading, setLoading] = useState(false);
@@ -40,7 +44,7 @@ export function LocalMachinePanel({ info, onClose }: Props) {
     setLoading(true);
     setError(null);
     try {
-      setEntries(await relayFs.list(p || "."));
+      setEntries(await relayFs.list(p || ".", { machineId }));
       setPath(p);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -48,11 +52,16 @@ export function LocalMachinePanel({ info, onClose }: Props) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [machineId]);
 
+  // Switching machines resets the view — paths are per-machine.
   useEffect(() => {
+    setFile(null);
+    setPath("");
     void refresh("");
-  }, [refresh]);
+  }, [refresh, machineId]);
+
+  const current = machines.find((m) => m.machineId === machineId);
 
   const clearSearch = () => {
     setGrepResults(null);
@@ -69,10 +78,10 @@ export function LocalMachinePanel({ info, onClose }: Props) {
     try {
       if (mode === "grep") {
         setFdResults(null);
-        setGrepResults(await relaySearch.grep(q, { path: path || ".", maxResults: 200 }));
+        setGrepResults(await relaySearch.grep(q, { path: path || ".", maxResults: 200 }, { machineId }));
       } else {
         setGrepResults(null);
-        setFdResults(await relaySearch.fd(q, { path: path || ".", maxResults: 500 }));
+        setFdResults(await relaySearch.fd(q, { path: path || ".", maxResults: 500 }, { machineId }));
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -83,7 +92,7 @@ export function LocalMachinePanel({ info, onClose }: Props) {
 
   const openPath = async (rel: string) => {
     try {
-      const st = await relayFs.stat(rel);
+      const st = await relayFs.stat(rel, { machineId });
       if (!st.exists) {
         setError("路径不存在");
         return;
@@ -93,7 +102,7 @@ export function LocalMachinePanel({ info, onClose }: Props) {
         clearSearch();
         await refresh(rel);
       } else {
-        const r = await relayFs.read(rel);
+        const r = await relayFs.read(rel, { machineId });
         setFile({ path: rel, content: r.content, dirty: false });
       }
     } catch (err) {
@@ -113,7 +122,7 @@ export function LocalMachinePanel({ info, onClose }: Props) {
     setSaving(true);
     setError(null);
     try {
-      await relayFs.write(file.path, file.content);
+      await relayFs.write(file.path, file.content, { machineId });
       setFile((f) => (f ? { ...f, dirty: false } : f));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -126,7 +135,7 @@ export function LocalMachinePanel({ info, onClose }: Props) {
     const name = window.prompt("新建文件夹名称（相对当前目录）");
     if (!name) return;
     try {
-      await relayFs.mkdir(path ? `${path}/${name}` : name);
+      await relayFs.mkdir(path ? `${path}/${name}` : name, { machineId });
       await refresh(path);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -138,7 +147,7 @@ export function LocalMachinePanel({ info, onClose }: Props) {
     const name = typeof e === "string" ? e : e.name;
     if (!window.confirm(`删除 ${name}?`)) return;
     try {
-      await relayFs.delete(rel);
+      await relayFs.delete(rel, { machineId });
       if (file?.path === rel) setFile(null);
       if (grepResults) setGrepResults((r) => (r ? r.filter((m) => m.file !== rel) : r));
       if (fdResults) setFdResults((r) => (r ? r.filter((p) => p !== rel) : r));
@@ -153,7 +162,7 @@ export function LocalMachinePanel({ info, onClose }: Props) {
     if (!next || next === e.name) return;
     const dir = e.path.includes("/") ? e.path.slice(0, e.path.lastIndexOf("/")) : "";
     try {
-      await relayFs.rename(e.path, dir ? `${dir}/${next}` : next);
+      await relayFs.rename(e.path, dir ? `${dir}/${next}` : next, { machineId });
       await refresh(path);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -179,6 +188,7 @@ export function LocalMachinePanel({ info, onClose }: Props) {
           });
         },
         60,
+        { machineId },
       );
       setResult((r) => (r ? { ...r, exitCode } : { exitCode, stdout: "", stderr: "" }));
     } catch (err) {
@@ -203,9 +213,29 @@ export function LocalMachinePanel({ info, onClose }: Props) {
         {/* header */}
         <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderBottom: "1px solid var(--border)" }}>
           <span style={{ fontSize: 13, fontWeight: 600 }}>本地机器</span>
-          <span style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>{info.hostname} · {info.os}/{info.arch}</span>
-          <span style={{ fontSize: 11, color: "var(--text-muted)" }}>|</span>
-          <span style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>{info.workspaceRoot}</span>
+          {machines.length > 1 ? (
+            <select
+              value={machineId}
+              onChange={(e) => onSelectMachine({ machineId: e.target.value })}
+              aria-label="切换机器"
+              style={{ padding: "2px 6px", background: "var(--bg)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 12 }}
+            >
+              {machines.map((m) => (
+                <option key={m.machineId} value={m.machineId}>
+                  {m.label}{m.online ? "" : "（离线）"}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <span style={{ fontSize: 12 }}>{current?.label}</span>
+          )}
+          {current?.info && (
+            <>
+              <span style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>{current.info.hostname} · {current.info.os}/{current.info.arch}</span>
+              <span style={{ fontSize: 11, color: "var(--text-muted)" }}>|</span>
+              <span style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>{current.info.workspaceRoot}</span>
+            </>
+          )}
           <span style={{ flex: 1 }} />
           <button onClick={onClose} style={btnStyle}>关闭</button>
         </div>
@@ -327,7 +357,7 @@ export function LocalMachinePanel({ info, onClose }: Props) {
       </div>
 
       {termOpen && (
-        <Terminal cwd={path || "."} onClose={() => setTermOpen(false)} />
+        <Terminal cwd={path || "."} machineId={machineId} onClose={() => setTermOpen(false)} />
       )}
     </div>
   );

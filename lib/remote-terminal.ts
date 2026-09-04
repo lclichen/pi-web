@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import WebSocket from "ws";
 import { platformPost, platformUrl } from "./platform/client";
 import { relayRpc } from "./relay/forward";
-import { subscribePtyOutput } from "./relay/registry";
+import { subscribePtyExit, subscribePtyOutput } from "./relay/registry";
 import { getSshClient } from "./ssh";
 import { requireUserIdentity } from "./web-session";
 import type { RemoteSessionContext } from "./remote-session";
@@ -43,6 +43,8 @@ interface RemoteTerminal {
   /** platform: the bridge socket; relay: unsubscribe + close call. */
   ws?: WebSocket;
   detach?: () => void;
+  /** relay: unsubscribe the pty.exit feed. */
+  detachExit?: () => void;
   /** relay: the agent-side pty session id. */
   relayAgentSid?: string;
   /** ssh: the interactive shell channel. */
@@ -205,18 +207,27 @@ export async function createRemoteTerminal(
     if (wd && wd !== "/") stream.write(`cd '${wd.replace(/'/g, `'\\''`)}'\n`);
   } else {
     // relay: pty.create returns the agent-side session id; output arrives as
-    // unsolicited pty.output pushes fanned out by subscribePtyOutput.
+    // unsolicited pty.output pushes fanned out by subscribePtyOutput (keyed by
+    // machine + sid so two machines' terminals never cross wires).
     const created = await relayRpc(
       "pty.create",
       { cwd: opts.cwd ?? ".", cols: opts.cols, rows: opts.rows },
-      { userId: ctx.userId },
+      { userId: ctx.userId, machineId: ctx.machineId },
     ) as { sessionId?: string };
     const agentSid = created?.sessionId;
     if (!agentSid) throw new Error("本机 agent 未返回终端会话");
     entry.relayAgentSid = agentSid;
+    const machineId = ctx.machineId ?? "default";
     entry.detach = subscribePtyOutput(agentSid, (data) => {
       notify(entry, { type: "output", data });
-    });
+    }, machineId);
+    // pty.exit (agent ≥ this version) turns the frozen-terminal case into a
+    // proper exit frame the UI can render.
+    entry.detachExit = subscribePtyExit(agentSid, (code) => {
+      if (entry.exited !== undefined) return;
+      entry.exited = code;
+      notify(entry, { type: "exit", code });
+    }, machineId);
   }
 
   return { sessionId: sid };
@@ -236,7 +247,7 @@ export function writeRemoteTerminal(sid: string, data: string): void {
   } else {
     // relay input is keyed by our sid → agent sid mapping via ctx; re-discover
     // is overkill: the relay input method needs the agent-side id, so store it.
-    if (t.detach) void relayRpc("pty.input", { sessionId: t.relayAgentSid, data }, { userId: t.ctx.userId }).catch(() => {});
+    if (t.detach) void relayRpc("pty.input", { sessionId: t.relayAgentSid, data }, { userId: t.ctx.userId, machineId: t.ctx.machineId }).catch(() => {});
   }
 }
 
@@ -252,7 +263,7 @@ export function resizeRemoteTerminal(sid: string, cols: number, rows: number): v
       // ignore
     }
   } else {
-    void relayRpc("pty.resize", { sessionId: t.relayAgentSid, cols, rows }, { userId: t.ctx.userId }).catch(() => {});
+    void relayRpc("pty.resize", { sessionId: t.relayAgentSid, cols, rows }, { userId: t.ctx.userId, machineId: t.ctx.machineId }).catch(() => {});
   }
 }
 
@@ -280,7 +291,8 @@ export function closeRemoteTerminal(sid: string): void {
     }
   } else {
     t.detach?.();
-    void relayRpc("pty.close", { sessionId: t.relayAgentSid }, { userId: t.ctx.userId }).catch(() => {});
+    t.detachExit?.();
+    void relayRpc("pty.close", { sessionId: t.relayAgentSid }, { userId: t.ctx.userId, machineId: t.ctx.machineId }).catch(() => {});
   }
 }
 

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { AgentUnavailableError, relayRpc } from "@/lib/relay/forward";
-import { authorizePtySession } from "@/lib/relay/registry";
+import { authorizePtySession, machineForPty } from "@/lib/relay/registry";
 import { requireUserIdentity } from "@/lib/web-session";
 
 export const dynamic = "force-dynamic";
@@ -27,7 +27,7 @@ export async function POST(
       sessionId: sid,
       cols: Number(body.cols ?? 80),
       rows: Number(body.rows ?? 24),
-    }, { userId: identity.session.user.id });
+    }, { userId: identity.session.user.id, machineId: machineForPty(sid) });
     return NextResponse.json({ success: true });
   } catch (err) {
     if (err instanceof AgentUnavailableError) {

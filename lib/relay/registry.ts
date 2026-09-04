@@ -3,15 +3,21 @@ import type {
   AgentHello,
   AgentInfo,
   AgentToRelayMessage,
+  MachineStatus,
   PairingCode,
   RelayStatus,
 } from "./protocol";
 import { generatePairingCode, normalizeCode, PAIRING_TTL_MS } from "./pairing";
-import { isKnownToken } from "./relay-store";
+import { isKnownToken, listAgentTokens } from "./relay-store";
 
 // In-memory relay state, stored on globalThis so it survives Next.js
-// hot-reload (same pattern as __piSessions in lib/rpc-manager.ts). MVP holds a
-// single connected agent slot; Phase 3 generalizes to multiple devices.
+// hot-reload (same pattern as __piSessions in lib/rpc-manager.ts).
+//
+// Multi-machine (2026-09): one user may pair SEVERAL machines; the registry
+// holds a live connection per (userId, machineId). A reconnect of the SAME
+// machine evicts only that machine's previous connection. The legacy single
+// `agent` slot remains the auth-off / userId-0 view and points at the most
+// recent connection overall.
 
 interface PendingRequest {
   resolve: (value: unknown) => void;
@@ -28,20 +34,34 @@ export interface AgentConn {
   nextId: number;
   /** Owning web user id (0 = unbound/auth-off). */
   ownerUserId: number;
+  /** Stable machine identity ("default" for pre-machineId agents). */
+  machineId: string;
+}
+
+/** Machine id used when an agent predates machine identity. */
+export const DEFAULT_MACHINE_ID = "default";
+
+export interface StatusUpdate {
+  userId: number;
+  status: RelayStatus;
 }
 
 interface RelayRegistry {
   pairCodes: Map<string, PairingCode>;
   /** Latest connection (single-slot compat; see agentsByUser). */
   agent: AgentConn | null;
-  /** Multi-slot: one live agent per bound web user. */
-  agentsByUser: Map<number, AgentConn>;
-  statusSubscribers: Set<(status: RelayStatus) => void>;
-  // PTY output subscribers, keyed by agent-side session id. The agent pushes
+  /** Multi-slot: live agents per (user, machine). */
+  agentsByUser: Map<number, Map<string, AgentConn>>;
+  statusSubscribers: Set<(update: StatusUpdate) => void>;
+  // PTY output subscribers, keyed `${machineId}:${agentSid}`. The agent pushes
   // unsolicited pty.output "event" frames; these fan out to the SSE streams.
   ptySubscribers: Map<string, Set<(data: string) => void>>;
+  /** PTY exit subscribers, same keying as ptySubscribers. */
+  ptyExitSubscribers: Map<string, Set<(code: number) => void>>;
   /** agent-side pty session id → web user that created it (ownership gate). */
   ptyOwners: Map<string, number>;
+  /** agent-side pty session id → machine that hosts it (routing key). */
+  ptySids: Map<string, string>;
 }
 
 declare global {
@@ -55,7 +75,9 @@ function newRegistry(): RelayRegistry {
     agentsByUser: new Map(),
     statusSubscribers: new Set(),
     ptySubscribers: new Map(),
+    ptyExitSubscribers: new Map(),
     ptyOwners: new Map(),
+    ptySids: new Map(),
   };
 }
 
@@ -70,7 +92,7 @@ export function getRegistry(): RelayRegistry {
 // Pairing codes
 // ---------------------------------------------------------------------------
 
-export function createPairingCode(ownerUserId = 0): PairingCode {
+export function createPairingCode(ownerUserId = 0, label?: string): PairingCode {
   const reg = getRegistry();
   const now = Date.now();
   // sweep expired/consumed codes so the map can't grow unbounded
@@ -78,13 +100,21 @@ export function createPairingCode(ownerUserId = 0): PairingCode {
     if (value.consumed || value.expiresAt <= now) reg.pairCodes.delete(key);
   }
   const code = generatePairingCode();
-  const pc: PairingCode = { ownerUserId, code, createdAt: now, expiresAt: now + PAIRING_TTL_MS, consumed: false };
+  const pc: PairingCode = {
+    ownerUserId,
+    code,
+    createdAt: now,
+    expiresAt: now + PAIRING_TTL_MS,
+    consumed: false,
+    ...(label ? { label } : {}),
+  };
   reg.pairCodes.set(code, pc);
   return pc;
 }
 
-/** Validate + atomically consume a pairing code. Returns the owning user id, or null if invalid/expired. */
-export function consumePairingCode(rawCode: string): number | null {
+/** Validate + atomically consume a pairing code. Returns the owning user id
+ *  and optional pre-chosen label, or null if invalid/expired. */
+export function consumePairingCode(rawCode: string): { userId: number; label?: string } | null {
   const reg = getRegistry();
   const code = normalizeCode(rawCode);
   const pc = reg.pairCodes.get(code);
@@ -95,11 +125,11 @@ export function consumePairingCode(rawCode: string): number | null {
   }
   pc.consumed = true;
   reg.pairCodes.delete(code);
-  return pc.ownerUserId;
+  return { userId: pc.ownerUserId, ...(pc.label ? { label: pc.label } : {}) };
 }
 
 // ---------------------------------------------------------------------------
-// Agent connection
+// Agent connections
 // ---------------------------------------------------------------------------
 
 export function isKnownAgentToken(token: string): boolean {
@@ -110,26 +140,49 @@ export function getAgent(): AgentConn | null {
   return getRegistry().agent;
 }
 
-/** The agent bound to a web user (0/unknown = the latest connection, auth-off compat). */
-export function getAgentForUser(userId: number): AgentConn | null {
+/**
+ * The agent bound to a web user. `machineId` selects a specific machine;
+ * without it the user's MOST RECENT connection wins (single-machine
+ * behavior). userId 0 / unknown falls back to the global slot (auth-off).
+ */
+export function getAgentForUser(userId: number, machineId?: string): AgentConn | null {
   const reg = getRegistry();
-  return reg.agentsByUser.get(userId) ?? (userId === 0 ? reg.agent : null);
+  if (machineId) {
+    const byMachine = reg.agentsByUser.get(userId);
+    const conn = byMachine?.get(machineId);
+    if (conn) return conn;
+    if (userId !== 0) return null; // explicit machine requested but offline
+  }
+  if (userId === 0) return reg.agent;
+  const byMachine = reg.agentsByUser.get(userId);
+  if (!byMachine || byMachine.size === 0) return null;
+  let newest: AgentConn | null = null;
+  for (const conn of byMachine.values()) {
+    if (!newest || conn.connectedAt > newest.connectedAt) newest = conn;
+  }
+  return newest;
+}
+
+/** machineId of the user's default (most recent) agent, for keying PTYs. */
+export function defaultMachineForUser(userId: number): string {
+  return getAgentForUser(userId)?.machineId ?? DEFAULT_MACHINE_ID;
 }
 
 /**
  * Wire a freshly-upgraded WebSocket into the registry. The agent must send an
- * initial `{type:"hello", info}` frame; until then `getAgent()` reports the
- * connection as not-yet-ready. All subsequent frames are RPC responses/chunks
- * dispatched by request id to the matching pending promise.
+ * initial `{type:"hello", info}` frame; until then the connection carries
+ * placeholder info (older agents never send hello — keep them usable).
  */
-export function attachAgentSocket(ws: WebSocket, ownerUserId = 0): void {
+export function attachAgentSocket(ws: WebSocket, ownerUserId = 0, machineId = DEFAULT_MACHINE_ID): void {
   const reg = getRegistry();
 
-  // One live agent per user: evict that user's previous connection. The
-  // legacy single-slot field keeps pointing at the most recent conn.
-  const prev = reg.agentsByUser.get(ownerUserId) ?? null;
+  // One live agent per (user, machine): evict that machine's previous
+  // connection ONLY. The legacy single-slot field keeps pointing at the most
+  // recent conn overall.
+  const byMachine = reg.agentsByUser.get(ownerUserId) ?? new Map<string, AgentConn>();
+  const prev = byMachine.get(machineId) ?? null;
   if (prev) {
-    reg.agentsByUser.delete(ownerUserId);
+    byMachine.delete(machineId);
     rejectAllPending(prev, new Error("agent replaced by a newer connection"));
     try {
       prev.ws.close();
@@ -140,10 +193,9 @@ export function attachAgentSocket(ws: WebSocket, ownerUserId = 0): void {
 
   const conn: AgentConn = {
     ws,
-    // hello is OPTIONAL (older agents, e.g. pi-agent 0.1.0, never send it —
-    // the server used to drop them after a 10s grace, reconnect-looping
-    // forever). Placeholder info keeps the connection usable; a later hello
-    // upgrades it.
+    // hello is OPTIONAL (older agents never send it — the server used to drop
+    // them after a 10s grace, reconnect-looping forever). Placeholder info
+    // keeps the connection usable; a later hello upgrades it.
     info: {
       hostname: "agent",
       os: "unknown",
@@ -155,8 +207,10 @@ export function attachAgentSocket(ws: WebSocket, ownerUserId = 0): void {
     pending: new Map(),
     nextId: 1,
     ownerUserId,
+    machineId,
   };
-  reg.agentsByUser.set(ownerUserId, conn);
+  byMachine.set(machineId, conn);
+  reg.agentsByUser.set(ownerUserId, byMachine);
   reg.agent = conn;
 
   const onMessage = (raw: unknown): void => {
@@ -169,9 +223,9 @@ export function attachAgentSocket(ws: WebSocket, ownerUserId = 0): void {
     }
 
     if ((msg as { type?: string }).type === "hello") {
-      conn.info = (msg as AgentHello).info;
+      conn.info = { ...(msg as AgentHello).info };
       if (reg.agent !== conn) reg.agent = conn;
-      notifyStatus();
+      notifyStatusFor(ownerUserId);
       return;
     }
 
@@ -182,7 +236,13 @@ export function attachAgentSocket(ws: WebSocket, ownerUserId = 0): void {
         const sessionId = (msg as { sessionId?: string }).sessionId;
         const data = (msg as { data?: string }).data;
         if (typeof sessionId === "string" && typeof data === "string") {
-          notifyPtyOutput(sessionId, data);
+          notifyPtyOutput(ptyKey(conn.machineId, sessionId), data);
+        }
+      } else if (event === "pty.exit") {
+        const sessionId = (msg as { sessionId?: string }).sessionId;
+        const code = (msg as { code?: number }).code;
+        if (typeof sessionId === "string") {
+          notifyPtyExit(ptyKey(conn.machineId, sessionId), typeof code === "number" ? code : 0);
         }
       }
       return;
@@ -212,18 +272,21 @@ export function attachAgentSocket(ws: WebSocket, ownerUserId = 0): void {
   const cleanup = (): void => {
     ws.off("message", onMessage);
     rejectAllPending(conn, new Error("agent disconnected"));
-    if (reg.agentsByUser.get(conn.ownerUserId) === conn) {
-      reg.agentsByUser.delete(conn.ownerUserId);
+    const current = reg.agentsByUser.get(conn.ownerUserId);
+    if (current?.get(conn.machineId) === conn) {
+      current.delete(conn.machineId);
+      if (current.size === 0) reg.agentsByUser.delete(conn.ownerUserId);
     }
     if (reg.agent === conn) {
       reg.agent = null;
-      notifyStatus();
     }
+    notifyStatusFor(conn.ownerUserId);
   };
 
   ws.on("message", onMessage);
   ws.once("close", cleanup);
   ws.once("error", cleanup);
+  notifyStatusFor(ownerUserId);
 }
 
 function rejectAllPending(conn: AgentConn, err: Error): void {
@@ -232,6 +295,54 @@ function rejectAllPending(conn: AgentConn, err: Error): void {
     pending.reject(err);
   }
   conn.pending.clear();
+}
+
+/** Force-disconnect one of the user's machines (unpair). The socket's close
+ *  handler runs the normal cleanup + status notification. */
+export function disconnectMachine(userId: number, machineId: string): boolean {
+  const conn = getRegistry().agentsByUser.get(userId)?.get(machineId);
+  if (!conn) return false;
+  try {
+    conn.ws.close(4001, "unpaired");
+  } catch {
+    // already closing
+  }
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// Machine directory (paired machines, online or not)
+// ---------------------------------------------------------------------------
+
+/** All machines paired by a user: live connections merged with the persisted
+ *  token store (offline machines keep their label + lastSeenAt). */
+export function getMachinesForUser(userId: number): MachineStatus[] {
+  const reg = getRegistry();
+  const live = reg.agentsByUser.get(userId) ?? new Map<string, AgentConn>();
+  const byId = new Map<string, MachineStatus>();
+  for (const { record } of listAgentTokens()) {
+    if (record.userId !== userId) continue;
+    const machineId = record.machineId ?? DEFAULT_MACHINE_ID;
+    byId.set(machineId, {
+      machineId,
+      label: record.label ?? record.hostname ?? machineId.slice(0, 8),
+      online: false,
+      ...(record.lastSeenAt ? { lastSeenAt: record.lastSeenAt } : {}),
+      ...(record.hostname ? { hostname: record.hostname } : {}),
+    });
+  }
+  for (const [machineId, conn] of live) {
+    const existing = byId.get(machineId);
+    byId.set(machineId, {
+      machineId,
+      label: existing?.label ?? conn.info?.hostname ?? machineId.slice(0, 8),
+      online: true,
+      info: conn.info ?? undefined,
+      ...(existing?.lastSeenAt ? { lastSeenAt: existing.lastSeenAt } : {}),
+      ...(existing?.hostname ? { hostname: existing.hostname } : {}),
+    });
+  }
+  return [...byId.values()];
 }
 
 // ---------------------------------------------------------------------------
@@ -243,14 +354,16 @@ export function getStatus(): RelayStatus {
   return agent?.info ? { online: true, info: agent.info } : { online: false };
 }
 
-/** Status of the agent bound to a web user. */
+/** Status snapshot for a web user: default machine compat + machines list. */
 export function getStatusForUser(userId: number): RelayStatus {
   if (userId === 0) return getStatus();
-  const agent = getRegistry().agentsByUser.get(userId);
-  return agent?.info ? { online: true, info: agent.info } : { online: false };
+  const machines = getMachinesForUser(userId);
+  const agent = getAgentForUser(userId);
+  if (!agent?.info) return { online: false, machines };
+  return { online: true, info: agent.info, machines };
 }
 
-export function subscribeStatus(cb: (status: RelayStatus) => void): () => void {
+export function subscribeStatus(cb: (update: StatusUpdate) => void): () => void {
   const reg = getRegistry();
   reg.statusSubscribers.add(cb);
   return () => {
@@ -258,11 +371,12 @@ export function subscribeStatus(cb: (status: RelayStatus) => void): () => void {
   };
 }
 
-function notifyStatus(): void {
-  const status = getStatus();
-  for (const cb of getRegistry().statusSubscribers) {
+function notifyStatusFor(userId: number): void {
+  const reg = getRegistry();
+  const status = getStatusForUser(userId);
+  for (const cb of reg.statusSubscribers) {
     try {
-      cb(status);
+      cb({ userId, status });
     } catch {
       // ignore subscriber errors
     }
@@ -271,15 +385,29 @@ function notifyStatus(): void {
 
 // --- PTY output pub/sub (web terminal) ---
 
+/** Subscriber key for a machine-scoped agent PTY session. */
+export function ptyKey(machineId: string, agentSid: string): string {
+  return `${machineId}:${agentSid}`;
+}
+
 /** Remember which web user created an agent-side PTY (see /terminal/create). */
-export function recordPtyOwner(sessionId: string, ownerUserId: number): void {
+export function recordPtyOwner(sessionId: string, ownerUserId: number, machineId = DEFAULT_MACHINE_ID): void {
   if (!sessionId) return;
-  getRegistry().ptyOwners.set(sessionId, ownerUserId);
+  const reg = getRegistry();
+  reg.ptyOwners.set(sessionId, ownerUserId);
+  reg.ptySids.set(sessionId, machineId);
 }
 
 /** Forget a PTY ownership entry once the session is closed. */
 export function dropPtyOwner(sessionId: string): void {
-  getRegistry().ptyOwners.delete(sessionId);
+  const reg = getRegistry();
+  reg.ptyOwners.delete(sessionId);
+  reg.ptySids.delete(sessionId);
+}
+
+/** Machine hosting an agent-side PTY session (for event routing). */
+export function machineForPty(sessionId: string): string {
+  return getRegistry().ptySids.get(sessionId) ?? DEFAULT_MACHINE_ID;
 }
 
 /**
@@ -299,28 +427,64 @@ export function authorizePtySession(
 export function subscribePtyOutput(
   sessionId: string,
   cb: (data: string) => void,
+  machineId = DEFAULT_MACHINE_ID,
 ): () => void {
   const reg = getRegistry();
-  let set = reg.ptySubscribers.get(sessionId);
+  const key = ptyKey(machineId, sessionId);
+  let set = reg.ptySubscribers.get(key);
   if (!set) {
     set = new Set();
-    reg.ptySubscribers.set(sessionId, set);
+    reg.ptySubscribers.set(key, set);
   }
   set.add(cb);
   return () => {
-    const s = reg.ptySubscribers.get(sessionId);
+    const s = reg.ptySubscribers.get(key);
     if (!s) return;
     s.delete(cb);
-    if (s.size === 0) reg.ptySubscribers.delete(sessionId);
+    if (s.size === 0) reg.ptySubscribers.delete(key);
   };
 }
 
-function notifyPtyOutput(sessionId: string, data: string): void {
-  const set = getRegistry().ptySubscribers.get(sessionId);
+function notifyPtyOutput(key: string, data: string): void {
+  const set = getRegistry().ptySubscribers.get(key);
   if (!set) return;
   for (const cb of set) {
     try {
       cb(data);
+    } catch {
+      // ignore subscriber errors
+    }
+  }
+}
+
+/** Subscribe to the agent's pty.exit push for one machine-scoped session. */
+export function subscribePtyExit(
+  sessionId: string,
+  cb: (code: number) => void,
+  machineId = DEFAULT_MACHINE_ID,
+): () => void {
+  const reg = getRegistry();
+  const key = ptyKey(machineId, sessionId);
+  let set = reg.ptyExitSubscribers.get(key);
+  if (!set) {
+    set = new Set();
+    reg.ptyExitSubscribers.set(key, set);
+  }
+  set.add(cb);
+  return () => {
+    const s = reg.ptyExitSubscribers.get(key);
+    if (!s) return;
+    s.delete(cb);
+    if (s.size === 0) reg.ptyExitSubscribers.delete(key);
+  };
+}
+
+function notifyPtyExit(key: string, code: number): void {
+  const set = getRegistry().ptyExitSubscribers.get(key);
+  if (!set) return;
+  for (const cb of set) {
+    try {
+      cb(code);
     } catch {
       // ignore subscriber errors
     }

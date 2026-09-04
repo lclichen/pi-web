@@ -33,6 +33,9 @@ export interface ProjectRecord {
   imageId?: number;
   /** Local-machine: the project working directory on the user's machine (relay-side path). */
   workdir?: string;
+  /** Local-machine: which of the user's paired machines this project runs on
+   *  (multi-machine). Absent = the user's default (most recent) machine. */
+  machineId?: string;
   /** SSH mode: connection for the remote host (stored 0600 in the project home). */
   ssh?: SshConfigInput;
   /** Optional preset config bundle applied to the fresh home. */
@@ -150,6 +153,8 @@ export async function createProject(input: {
   seedFromProjectId?: string;
   /** Local-machine mode: the project's working directory on the user's machine. */
   workdir?: string;
+  /** Local-machine mode: which paired machine this project runs on. */
+  machineId?: string;
   /** SSH mode: connection for the remote host (stored 0600 in the project home). */
   ssh?: SshConfigInput;
   /** Optional preset config bundle applied to the fresh home. */
@@ -177,6 +182,7 @@ export async function createProject(input: {
     ...(input.mode === "sandbox" && input.containerId !== undefined ? { containerId: input.containerId } : {}),
     ...(input.mode === "sandbox" && input.imageId !== undefined ? { imageId: input.imageId } : {}),
     ...((input.mode === "local-machine" || input.mode === "ssh") && input.workdir ? { workdir: input.workdir } : {}),
+    ...(input.mode === "local-machine" && input.machineId ? { machineId: input.machineId } : {}),
   };
 
   const home = ensureProjectHome(project);
@@ -249,7 +255,7 @@ export async function createProject(input: {
 
 export function updateProject(
   projectId: string,
-  patch: { name?: string; containerId?: number | null; workdir?: string; pinSessionId?: string; unpinSessionId?: string; snapshotSlots?: Array<{ id: number; name: string; createdAt: number }> },
+  patch: { name?: string; containerId?: number | null; workdir?: string; machineId?: string | null; pinSessionId?: string; unpinSessionId?: string; snapshotSlots?: Array<{ id: number; name: string; createdAt: number }> },
 ): { ok: true; project: ProjectRecord } | { ok: false; error: string } {
   const project = store().data.projects[projectId];
   if (!project) return { ok: false, error: "项目不存在" };
@@ -262,6 +268,11 @@ export function updateProject(
     const dir = patch.workdir.trim();
     if (dir) project.workdir = dir;
     else delete project.workdir;
+  }
+  if (patch.machineId !== undefined && project.mode === "local-machine") {
+    // null/empty clears the binding → the user's default machine.
+    if (patch.machineId && /^[A-Za-z0-9_-]{1,64}$/.test(patch.machineId)) project.machineId = patch.machineId;
+    else delete project.machineId;
   }
   if (patch.containerId !== undefined && project.mode === "sandbox") {
     if (patch.containerId === null) delete project.containerId;

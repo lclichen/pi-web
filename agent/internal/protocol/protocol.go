@@ -31,6 +31,11 @@ type AgentInfo struct {
 	Arch          string `json:"arch"`
 	WorkspaceRoot string `json:"workspaceRoot"`
 	AgentVersion  string `json:"agentVersion"`
+	// MachineID is a stable per-install identity so the relay can hold SEVERAL
+	// machines per user (multi-machine). Omitted by older agents.
+	MachineID string `json:"machineId,omitempty"`
+	// Label is the user-facing name chosen at pairing (or renamed server-side).
+	Label string `json:"label,omitempty"`
 }
 
 // FsEntry is one row in an fs.list result.

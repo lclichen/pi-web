@@ -114,6 +114,9 @@ export async function PATCH(req: Request, ctx: RouteCtx) {
       ? { containerId: body.containerId as number | null }
       : {}),
     ...(typeof body.workdir === "string" ? { workdir: body.workdir } : {}),
+    ...(body.machineId !== undefined && (body.machineId === null || typeof body.machineId === "string")
+      ? { machineId: body.machineId as string | null }
+      : {}),
     ...(typeof body.pinSessionId === "string" ? { pinSessionId: body.pinSessionId } : {}),
     ...(typeof body.unpinSessionId === "string" ? { unpinSessionId: body.unpinSessionId } : {}),
   });

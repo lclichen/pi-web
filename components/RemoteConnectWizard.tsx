@@ -15,6 +15,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
+import { useRelayAgent } from "@/hooks/useRelayAgent";
 import { NewProjectDialog } from "./NewProjectDialog";
 import { ConnectLocalMachine } from "./relay/ConnectLocalMachine";
 import { LocalDirectoryPicker } from "./relay/LocalDirectoryPicker";
@@ -42,6 +43,8 @@ const STEPS: Array<{ n: Step; label: string }> = [
 
 export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerDirectory }: Props) {
   const { t } = useI18n();
+  // 多机：④ 的机器选择列表（单一机器时不显示选择器）。
+  const { machines: relayMachines } = useRelayAgent();
   const [step, setStep] = useState<Step>(1);
   const [method, setMethod] = useState<Method | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -49,6 +52,8 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
   // 本地模式：② 的项目名 + ④ 的目录
   const [localName, setLocalName] = useState("");
   const [localDir, setLocalDir] = useState("");
+  /** 本地项目绑定的机器（多机；空 = 默认机器）。 */
+  const [localMachineId, setLocalMachineId] = useState("");
   // 沙盒模式：③ 创建出的项目信息
   const [sandboxDone, setSandboxDone] = useState<{ name: string } | null>(null);
   // SSH 模式：② 的连接配置 + 远程工作目录（④）
@@ -253,7 +258,7 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
     void createSandbox(input);
   }, [createSandbox]);
 
-  // 本地：④ 完成 → 创建项目（带 workdir）
+  // 本地：④ 完成 → 创建项目（带 workdir + 绑定机器）
   const finishLocal = useCallback(async () => {
     setBusy(true);
     setError(null);
@@ -261,7 +266,13 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
       const res = await fetch("/api/projects", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: localName.trim(), mode: "local-machine", workdir: localDir.trim() || undefined, presetBundle: presetBundle || undefined }),
+        body: JSON.stringify({
+          name: localName.trim(),
+          mode: "local-machine",
+          workdir: localDir.trim() || undefined,
+          presetBundle: presetBundle || undefined,
+          ...(localMachineId ? { machineId: localMachineId } : {}),
+        }),
       });
       const d = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) throw new Error(d?.error ?? `HTTP ${res.status}`);
@@ -272,7 +283,7 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
     } finally {
       setBusy(false);
     }
-  }, [localName, localDir, presetBundle, onCreated, onClose]);
+  }, [localName, localDir, localMachineId, presetBundle, onCreated, onClose]);
 
   const methodCards: Array<{ id: string; title: string; sub: string; icon: React.ReactNode; disabled?: boolean; soon?: boolean }> = [
     {
@@ -531,6 +542,23 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
               <h2 style={{ margin: "0 0 4px", fontSize: 17, color: "var(--text)" }}>{t("选择目录")}</h2>
               <p style={{ margin: "0 0 14px", fontSize: 12.5, color: "var(--text-dim)" }}>{t("填写本机上该项目的工作目录（Agent 侧路径，例如 /home/me/projects/demo；留空则使用默认工作区）。")}</p>
               <div style={{ display: "flex", flexDirection: "column", gap: 12, maxWidth: 460 }}>
+                {(relayMachines?.length ?? 0) > 1 && (
+                  <label style={fieldStyle}>
+                    {t("使用哪台机器")}
+                    <select
+                      value={localMachineId}
+                      onChange={(e) => { setLocalMachineId(e.target.value); setLocalDir(""); }}
+                      style={inputStyle}
+                    >
+                      <option value="">{t("默认（最近连接的机器）")}</option>
+                      {relayMachines?.map((m) => (
+                        <option key={m.machineId} value={m.machineId} disabled={!m.online}>
+                          {m.label}{m.online ? "" : `（${t("离线")}）`}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
                 <label style={fieldStyle}>
                   {t("本机工作目录（可选）")}
                   <div style={{ display: "flex", gap: 8 }}>
@@ -592,6 +620,7 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
               <LocalDirectoryPicker
                 onPick={(abs) => { setLocalDir(abs); setLocalPickerOpen(false); }}
                 onClose={() => setLocalPickerOpen(false)}
+                {...(localMachineId ? { machineId: localMachineId } : {})}
               />
             </div>
           </div>

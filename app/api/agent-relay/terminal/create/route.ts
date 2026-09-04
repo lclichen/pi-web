@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { AgentUnavailableError, relayRpc } from "@/lib/relay/forward";
-import { recordPtyOwner } from "@/lib/relay/registry";
+import { defaultMachineForUser, recordPtyOwner } from "@/lib/relay/registry";
 import { requireUserIdentity } from "@/lib/web-session";
 
 export const dynamic = "force-dynamic";
@@ -17,11 +17,18 @@ export async function POST(req: Request) {
   } catch {
     // empty body is fine — agent uses defaults
   }
+  // Optional machine selection (multi-machine); validated so a bogus id cannot
+  // be used as a map key.
+  const machineId =
+    typeof body.machineId === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(body.machineId)
+      ? body.machineId
+      : undefined;
+  if (machineId) delete body.machineId;
   try {
-    const data = await relayRpc("pty.create", body, { userId: identity.session.user.id }) as { sessionId?: unknown };
+    const data = await relayRpc("pty.create", body, { userId: identity.session.user.id, machineId }) as { sessionId?: unknown };
     // Track ownership so the per-sid routes can authorize input/output access.
     if (data && typeof data.sessionId === "string") {
-      recordPtyOwner(data.sessionId, identity.session.user.id);
+      recordPtyOwner(data.sessionId, identity.session.user.id, machineId ?? defaultMachineForUser(identity.session.user.id));
     }
     return NextResponse.json({ success: true, data });
   } catch (err) {

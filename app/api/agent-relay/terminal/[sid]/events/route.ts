@@ -1,4 +1,4 @@
-import { authorizePtySession, subscribePtyOutput } from "@/lib/relay/registry";
+import { authorizePtySession, machineForPty, subscribePtyOutput } from "@/lib/relay/registry";
 import { requireUserIdentity } from "@/lib/web-session";
 
 export const dynamic = "force-dynamic";
@@ -42,7 +42,7 @@ export async function GET(
         } catch {
           // controller closed
         }
-      });
+      }, machineForPty(sid));
 
       const heartbeat = setInterval(() => {
         try {

@@ -36,6 +36,9 @@ export interface AgentConn {
   ownerUserId: number;
   /** Stable machine identity ("default" for pre-machineId agents). */
   machineId: string;
+  /** Monotonic attach sequence — the default-machine tie-breaker (clock
+   *  resolution is not enough when two machines connect in the same ms). */
+  seq: number;
 }
 
 /** Machine id used when an agent predates machine identity. */
@@ -66,6 +69,12 @@ interface RelayRegistry {
 
 declare global {
   var __piRelayRegistry: RelayRegistry | undefined;
+  var __piRelayAttachSeq: number | undefined;
+}
+
+function nextAttachSeq(): number {
+  globalThis.__piRelayAttachSeq = (globalThis.__piRelayAttachSeq ?? 0) + 1;
+  return globalThis.__piRelayAttachSeq;
 }
 
 function newRegistry(): RelayRegistry {
@@ -158,7 +167,7 @@ export function getAgentForUser(userId: number, machineId?: string): AgentConn |
   if (!byMachine || byMachine.size === 0) return null;
   let newest: AgentConn | null = null;
   for (const conn of byMachine.values()) {
-    if (!newest || conn.connectedAt > newest.connectedAt) newest = conn;
+    if (!newest || conn.seq > newest.seq) newest = conn;
   }
   return newest;
 }
@@ -208,6 +217,7 @@ export function attachAgentSocket(ws: WebSocket, ownerUserId = 0, machineId = DE
     nextId: 1,
     ownerUserId,
     machineId,
+    seq: nextAttachSeq(),
   };
   byMachine.set(machineId, conn);
   reg.agentsByUser.set(ownerUserId, byMachine);

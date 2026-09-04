@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { AgentUnavailableError, relayRpc } from "@/lib/relay/forward";
+import { authorizePtySession } from "@/lib/relay/registry";
 import { requireUserIdentity } from "@/lib/web-session";
 
 export const dynamic = "force-dynamic";
@@ -13,6 +14,9 @@ export async function POST(
   const identity = requireUserIdentity(req);
   if (!identity.ok) return NextResponse.json({ error: "登录已失效" }, { status: identity.status });
   const { sid } = await ctx.params;
+  if (!authorizePtySession(sid, identity.session.user)) {
+    return NextResponse.json({ error: "终端不存在" }, { status: 404 });
+  }
   let body: { data?: unknown } = {};
   try {
     body = (await req.json()) as { data?: unknown };

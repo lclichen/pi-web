@@ -1,4 +1,4 @@
-import { subscribeRemoteTerminal } from "@/lib/remote-terminal";
+import { authorizeRemoteTerminal, subscribeRemoteTerminal } from "@/lib/remote-terminal";
 
 export const dynamic = "force-dynamic";
 
@@ -9,6 +9,13 @@ export async function GET(
   ctx: { params: Promise<{ sid: string }> },
 ): Promise<Response> {
   const { sid } = await ctx.params;
+  const auth = authorizeRemoteTerminal(req, sid);
+  if (!auth.ok) {
+    return new Response(JSON.stringify({ error: auth.error }), {
+      status: auth.status,
+      headers: { "content-type": "application/json" },
+    });
+  }
   const stream = new ReadableStream({
     start(controller) {
       const encoder = new TextEncoder();

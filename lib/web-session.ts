@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { dataDir } from "./mode-homes";
+import { writePrivateFileAtomicSync } from "./atomic-file";
+import { platformDelete } from "./platform/client";
 
 /**
  * Web login sessions for PI_WEB_AUTH=on (multi-user mode).
@@ -62,7 +64,9 @@ function loadPersisted(): Map<string, WebSession> {
     const now = Date.now();
     const map = new Map<string, WebSession>();
     for (const [sid, session] of Object.entries(parsed)) {
-      if (!sid || !session?.user || now - (session.lastSeenAt ?? 0) > SESSION_TTL_MS) continue;
+      // Absolute TTL from createdAt, matching the cookie's fixed Max-Age —
+      // a sliding server TTL would outlive the cookie and mint orphan keys.
+      if (!sid || !session?.user || now - (session.createdAt ?? 0) > SESSION_TTL_MS) continue;
       map.set(sid, session);
     }
     return map;
@@ -71,18 +75,30 @@ function loadPersisted(): Map<string, WebSession> {
   }
 }
 
-/** Best-effort write (0600): sessions carry platform API keys. */
+/** Best-effort atomic write (0600, tmp+rename): sessions carry platform API keys. */
 function persist(sessions: Map<string, WebSession>): void {
   try {
     const dir = dataDir();
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true, mode: 0o700 });
-    writeFileSync(sessionFilePath(), JSON.stringify(Object.fromEntries(sessions), null, 2), {
-      encoding: "utf8",
-      mode: 0o600,
-    });
+    writePrivateFileAtomicSync(sessionFilePath(), JSON.stringify(Object.fromEntries(sessions), null, 2));
   } catch {
     // best-effort sidecar
   }
+}
+
+/**
+ * Revoke the platform API key minted at login. Fire-and-forget: if the
+ * platform is unreachable the session is still dropped locally; the key then
+ * simply outlives the session (same trade-off as explicit logout).
+ */
+function revokeSessionKey(session: WebSession): void {
+  if (!session.apiKey || !session.apiKeyId) return;
+  void platformDelete(`/api/v1/auth/api-keys/${encodeURIComponent(String(session.apiKeyId))}`, session.apiKey)
+    .catch(() => {});
+}
+
+function isExpired(session: WebSession, now: number): boolean {
+  return now - (session.createdAt ?? 0) > SESSION_TTL_MS;
 }
 
 function store(): Map<string, WebSession> {
@@ -95,8 +111,11 @@ function store(): Map<string, WebSession> {
       const sessions = globalThis.__piWebSessions ?? new Map();
       let changed = false;
       for (const [sid, session] of sessions) {
-        if (now - session.lastSeenAt > SESSION_TTL_MS) {
+        if (isExpired(session, now)) {
           sessions.delete(sid);
+          // The platform key is long-lived; dropping only the local record
+          // would leave a credential no one can ever revoke from the UI.
+          revokeSessionKey(session);
           changed = true;
         }
       }
@@ -135,8 +154,9 @@ export function getWebSession(request: Request): WebSession | null {
   if (!sid) return null;
   const session = store().get(sid);
   if (!session) return null;
-  if (Date.now() - session.lastSeenAt > SESSION_TTL_MS) {
+  if (isExpired(session, Date.now())) {
     store().delete(sid);
+    revokeSessionKey(session);
     persist(store());
     return null;
   }

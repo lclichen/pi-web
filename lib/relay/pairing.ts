@@ -7,16 +7,19 @@ const CODE_LENGTH = 6;
 export const PAIRING_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 /**
- * Generate a human-friendly 6-char pairing code. Not cryptographically the
- * strongest possible, but the code is single-use, short-lived (5 min), and
- * only grants the *ability to register an agent* — it is exchanged for the
- * real secret (the agent token) over an authenticated step.
+ * Generate a human-friendly 6-char pairing code. Single-use, short-lived
+ * (5 min), and exchanged for the real secret (the agent token) over an
+ * authenticated step. Rejection sampling keeps the uniform distribution
+ * (256 % 31 = 8 would otherwise bias the first 8 alphabet characters).
  */
 export function generatePairingCode(): string {
-  const bytes = randomBytes(CODE_LENGTH);
+  const max = 256 - (256 % ALPHABET.length); // first multiple of the base ≤ 256
   let out = "";
-  for (let i = 0; i < CODE_LENGTH; i++) {
-    out += ALPHABET[bytes[i] % ALPHABET.length];
+  while (out.length < CODE_LENGTH) {
+    const bytes = randomBytes(CODE_LENGTH * 2);
+    for (let i = 0; i < bytes.length && out.length < CODE_LENGTH; i++) {
+      if (bytes[i] < max) out += ALPHABET[bytes[i] % ALPHABET.length];
+    }
   }
   return out;
 }

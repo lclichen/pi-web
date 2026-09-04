@@ -7,11 +7,12 @@ import {
   isValidBasicAuthorization,
   isWebPasswordEnabled,
 } from "@/lib/web-auth";
-import { WEB_SESSION_COOKIE } from "@/lib/web-session";
+import { getWebSession } from "@/lib/web-session";
 
-function hasSessionCookie(request: NextRequest): boolean {
-  return request.cookies.get(WEB_SESSION_COOKIE)?.value !== undefined;
-}
+// Next 16 runs the proxy (middleware) on the Node.js runtime, so it can read
+// the real session store — not just cookie presence. This is the central
+// anonymous gate for EVERY /api route; per-route requireUserIdentity calls
+// remain as defense in depth and to resolve per-user ownership.
 
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -32,17 +33,20 @@ export function proxy(request: NextRequest) {
   // allowlist of prebuilt binaries, so they stay public in both auth modes.
   const isRelayDownload = pathname.startsWith("/api/agent-relay/download/");
 
-  // Multi-user mode: API routes carry their own session validation (the
-  // session store lives outside the middleware runtime); here we enforce a
-  // cheap cookie presence check so anonymous traffic never reaches route
-  // handlers, and bounce anonymous page loads to the login screen.
   if (process.env.PI_WEB_AUTH === "on") {
+    // /api/webauth/* validates its own credentials (login/register/config are
+    // inherently pre-session; me/logout/change-password check the cookie
+    // themselves and tolerate change-ticket sessions).
     const isWebAuthRoute = pathname.startsWith("/api/webauth/");
-    if (!isRelayDownload && !isWebAuthRoute && !hasSessionCookie(request)) {
-      if (isApiRequest) {
-        return NextResponse.json({ error: "登录已失效" }, { status: 401 });
+    if (!isRelayDownload && !isWebAuthRoute) {
+      const session = getWebSession(request);
+      const usable = session && !session.changeTicket;
+      if (!usable) {
+        if (isApiRequest) {
+          return NextResponse.json({ error: "登录已失效" }, { status: 401 });
+        }
+        return NextResponse.redirect(new URL("/login", request.url));
       }
-      return NextResponse.redirect(new URL("/login", request.url));
     }
     return NextResponse.next();
   }

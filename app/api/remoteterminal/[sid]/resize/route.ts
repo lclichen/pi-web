@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { resizeRemoteTerminal } from "@/lib/remote-terminal";
+import { authorizeRemoteTerminal, resizeRemoteTerminal } from "@/lib/remote-terminal";
 
 export const dynamic = "force-dynamic";
 
@@ -8,6 +8,8 @@ export async function POST(
   ctx: { params: Promise<{ sid: string }> },
 ): Promise<Response> {
   const { sid } = await ctx.params;
+  const auth = authorizeRemoteTerminal(req, sid);
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
   let body: { cols?: unknown; rows?: unknown };
   try {
     body = (await req.json()) as { cols?: unknown; rows?: unknown };

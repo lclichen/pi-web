@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { AgentUnavailableError, relayRpc } from "@/lib/relay/forward";
+import { recordPtyOwner } from "@/lib/relay/registry";
 import { requireUserIdentity } from "@/lib/web-session";
 
 export const dynamic = "force-dynamic";
@@ -17,7 +18,11 @@ export async function POST(req: Request) {
     // empty body is fine — agent uses defaults
   }
   try {
-    const data = await relayRpc("pty.create", body, { userId: identity.session.user.id });
+    const data = await relayRpc("pty.create", body, { userId: identity.session.user.id }) as { sessionId?: unknown };
+    // Track ownership so the per-sid routes can authorize input/output access.
+    if (data && typeof data.sessionId === "string") {
+      recordPtyOwner(data.sessionId, identity.session.user.id);
+    }
     return NextResponse.json({ success: true, data });
   } catch (err) {
     if (err instanceof AgentUnavailableError) {

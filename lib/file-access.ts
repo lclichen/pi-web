@@ -91,7 +91,14 @@ export function isExistingFilePathAllowed(target: string, allowedRoots: Set<stri
  */
 export async function getAllowedFileRootsForRequest(req: Request | undefined | null): Promise<Set<string>> {
   const identity = req ? requireUserIdentity(req) : { ok: true as const, session: null };
-  if (!identity.ok || !identity.session || identity.session.user.id === 0) {
+  if (!identity.ok) {
+    // Auth is ON and the caller has no valid session. Fail CLOSED: an empty
+    // set denies everything (the route layer also 401s first, but this fence
+    // must never hand host roots to an unauthenticated request).
+    return new Set<string>();
+  }
+  // No request object = trusted in-process caller (auth off / server-side).
+  if (!identity.session || identity.session.user.id === 0) {
     return getAllowedFileRoots({ kind: "host" });
   }
   // Admins run Host-mode sessions against arbitrary server directories — their

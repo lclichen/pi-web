@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { platformAnonPost, platformPostBearer, type PlatformApiKeyCreated, type PlatformLoginResponse } from "@/lib/platform/client";
 import { createWebSession, isWebAuthEnabled, sessionCookieHeader } from "@/lib/web-session";
 import { isApiRequestAllowed, hasJsonContentType } from "@/lib/request-security";
+import { clientIpOf, consumeRateLimit } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +20,17 @@ export async function POST(req: Request) {
   if (!isWebAuthEnabled()) {
     return NextResponse.json({ error: "PI_WEB_AUTH is not enabled" }, { status: 400 });
   }
+  // Local brute-force guard: the platform rate-limits by ITS client (this
+  // BFF), not per browser IP, so without this the BFF would relay unlimited
+  // anonymous guesses. 10 attempts/min per IP and per IP+username.
+  const ip = clientIpOf(req as unknown as Parameters<typeof clientIpOf>[0]);
+  const pre = consumeRateLimit(`login:ip:${ip}`, 10, 60_000);
+  if (!pre.allowed) {
+    return NextResponse.json(
+      { error: `尝试过于频繁，请 ${Math.ceil(pre.retryAfterMs / 1000)} 秒后重试` },
+      { status: 429, headers: { "retry-after": String(Math.ceil(pre.retryAfterMs / 1000)) } },
+    );
+  }
   let body: { username?: unknown; password?: unknown };
   try {
     body = (await req.json()) as { username?: unknown; password?: unknown };
@@ -29,6 +41,13 @@ export async function POST(req: Request) {
   const password = typeof body.password === "string" ? body.password : "";
   if (!username || !password) {
     return NextResponse.json({ error: "用户名和密码不能为空" }, { status: 400 });
+  }
+  const perUser = consumeRateLimit(`login:user:${ip}:${username.toLowerCase()}`, 10, 60_000);
+  if (!perUser.allowed) {
+    return NextResponse.json(
+      { error: `尝试过于频繁，请 ${Math.ceil(perUser.retryAfterMs / 1000)} 秒后重试` },
+      { status: 429, headers: { "retry-after": String(Math.ceil(perUser.retryAfterMs / 1000)) } },
+    );
   }
 
   const login = await platformAnonPost<PlatformLoginResponse>("/api/v1/auth/login", { username, password });

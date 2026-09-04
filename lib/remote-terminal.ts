@@ -4,6 +4,7 @@ import { platformUrl } from "./platform/client";
 import { relayRpc } from "./relay/forward";
 import { subscribePtyOutput } from "./relay/registry";
 import { getSshClient } from "./ssh";
+import { requireUserIdentity } from "./web-session";
 import type { RemoteSessionContext } from "./remote-session";
 
 /**
@@ -93,6 +94,26 @@ function notify(t: RemoteTerminal, frame: RemoteTerminalFrame): void {
       // ignore
     }
   }
+}
+
+/**
+ * Ownership gate for the per-sid routes (input/resize/close/events): the sid
+ * appears in SSE URLs and proxy logs, so possession alone must NOT grant
+ * access. Admins may operate any terminal; everyone else only their own.
+ */
+export function authorizeRemoteTerminal(
+  req: Request,
+  sid: string,
+): { ok: true } | { ok: false; status: number; error: string } {
+  const identity = requireUserIdentity(req);
+  if (!identity.ok) return { ok: false, status: identity.status, error: "登录已失效" };
+  if (identity.session.user.role === "admin") return { ok: true };
+  const t = getRegistry().terminals.get(sid);
+  // Unknown sid answers 404 for non-owners — do not confirm existence.
+  if (!t || t.ctx.userId !== identity.session.user.id) {
+    return { ok: false, status: 404, error: "终端不存在" };
+  }
+  return { ok: true };
 }
 
 export async function createRemoteTerminal(

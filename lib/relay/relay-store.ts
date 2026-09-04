@@ -100,15 +100,21 @@ export async function issueAgentToken(ownerUserId = 0): Promise<string> {
 /** Owning web user for a token (0 = unknown / legacy single-token era). */
 export function lookupTokenOwner(token: string): number {
   if (!token) return 0;
-  const owner = readRelay(relayFilePath()).tokens?.[token];
-  return typeof owner === "number" ? owner : 0;
+  const tokens = readRelay(relayFilePath()).tokens;
+  // hasOwn: `token in tokens` would also match inherited prototype names
+  // ("toString", "constructor", …) — a bypassable auth check.
+  if (tokens && Object.hasOwn(tokens, token)) {
+    const owner = tokens[token];
+    return typeof owner === "number" ? owner : 0;
+  }
+  return 0;
 }
 
 /** Constant-time-ish comparison against the persisted token. */
 export function isKnownToken(token: string): boolean {
   if (!token) return false;
   const file = readRelay(relayFilePath());
-  if (file.tokens && token in file.tokens) return true;
+  if (file.tokens && Object.hasOwn(file.tokens, token)) return true;
   const stored = file.token;
   if (!stored || stored.length !== token.length) return false;
   // avoid early-return timing differences

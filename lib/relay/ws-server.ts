@@ -3,6 +3,7 @@ import { URL } from "node:url";
 import { WebSocketServer, type WebSocket } from "ws";
 import { attachAgentSocket, consumePairingCode, isKnownAgentToken } from "./registry";
 import { issueAgentToken, lookupTokenOwner } from "./relay-store";
+import { clientIpOf, consumeRateLimit } from "../rate-limit";
 
 // The agent-facing endpoint: a plain http.Server on its own port (default
 // 30142), started once from instrumentation.ts. It serves:
@@ -79,11 +80,10 @@ export async function startRelayServer(): Promise<void> {
 async function handleHttp(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const url = new URL(req.url ?? "/", "http://localhost");
 
-  // The agent is a CLI client with no browser origin; still emit permissive CORS
-  // so future browser-tooling / probes work without surprises.
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "content-type");
+  // The agent is a CLI client (curl/Go) and never sends an Origin header; it
+  // does not need CORS at all. Deliberately NO Access-Control-Allow-Origin —
+  // a permissive wildcard would let any web page brute-force pairing codes
+  // from a victim's browser and READ the exchanged token.
   if (req.method === "OPTIONS") {
     res.writeHead(204);
     res.end();
@@ -97,6 +97,17 @@ async function handleHttp(req: IncomingMessage, res: ServerResponse): Promise<vo
   }
 
   if (req.method === "POST" && url.pathname === "/pair/exchange") {
+    // Pairing codes are 6 chars: rate-limit guesses per IP and globally so a
+    // LAN-local (or multi-code) brute force cannot run for the whole 5-min TTL.
+    const ip = clientIpOf(req as unknown as Parameters<typeof clientIpOf>[0]);
+    const perIp = consumeRateLimit(`pair:ip:${ip}`, 10, 60_000);
+    const global = consumeRateLimit("pair:global", 60, 5 * 60_000);
+    if (!perIp.allowed || !global.allowed) {
+      const retry = Math.ceil(Math.max(perIp.retryAfterMs, global.retryAfterMs) / 1000);
+      res.writeHead(429, { "content-type": "application/json", "retry-after": String(retry) });
+      res.end(JSON.stringify({ error: `too many attempts; retry in ${retry}s` }));
+      return;
+    }
     const body = (await readJson(req)) as { code?: unknown };
     const code = typeof body.code === "string" ? body.code : "";
     // consumePairingCode returns the minting user's id — the agent token MUST

@@ -40,6 +40,8 @@ interface RelayRegistry {
   // PTY output subscribers, keyed by agent-side session id. The agent pushes
   // unsolicited pty.output "event" frames; these fan out to the SSE streams.
   ptySubscribers: Map<string, Set<(data: string) => void>>;
+  /** agent-side pty session id → web user that created it (ownership gate). */
+  ptyOwners: Map<string, number>;
 }
 
 declare global {
@@ -53,6 +55,7 @@ function newRegistry(): RelayRegistry {
     agentsByUser: new Map(),
     statusSubscribers: new Set(),
     ptySubscribers: new Map(),
+    ptyOwners: new Map(),
   };
 }
 
@@ -267,6 +270,31 @@ function notifyStatus(): void {
 }
 
 // --- PTY output pub/sub (web terminal) ---
+
+/** Remember which web user created an agent-side PTY (see /terminal/create). */
+export function recordPtyOwner(sessionId: string, ownerUserId: number): void {
+  if (!sessionId) return;
+  getRegistry().ptyOwners.set(sessionId, ownerUserId);
+}
+
+/** Forget a PTY ownership entry once the session is closed. */
+export function dropPtyOwner(sessionId: string): void {
+  getRegistry().ptyOwners.delete(sessionId);
+}
+
+/**
+ * May `user` operate on the agent-side PTY `sessionId`? Host identity (id 0,
+ * auth off) and admins pass; everyone else must have created the PTY. Unknown
+ * sid → deny: these sids travel in URLs, so possession is not authorization.
+ */
+export function authorizePtySession(
+  sessionId: string,
+  user: { id: number; role: string },
+): boolean {
+  if (user.id === 0 || user.role === "admin") return true;
+  const owner = getRegistry().ptyOwners.get(sessionId);
+  return owner !== undefined && owner === user.id;
+}
 
 export function subscribePtyOutput(
   sessionId: string,

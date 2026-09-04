@@ -32,6 +32,17 @@ export async function POST(req: Request) {
       ? (body.params as Record<string, unknown>)
       : undefined;
 
+  // Hard auth gate: never open the SSE stream (and never forward anything to
+  // the agent) for an unauthenticated caller. userId 0 used to fall through to
+  // the global agent slot — a remote-code-execution path in multi-user mode.
+  const identity = requireUserIdentity(req);
+  if (!identity.ok) {
+    return new Response(JSON.stringify({ error: "登录已失效" }), {
+      status: 401,
+      headers: { "content-type": "application/json" },
+    });
+  }
+
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       const encoder = new TextEncoder();
@@ -57,8 +68,7 @@ export async function POST(req: Request) {
       req.signal?.addEventListener("abort", close);
 
       try {
-        const identity = requireUserIdentity(req);
-        const result = await relayStream(method, params, (data) => send({ type: "chunk", data }), { userId: identity.ok ? identity.session.user.id : 0 });
+        const result = await relayStream(method, params, (data) => send({ type: "chunk", data }), { userId: identity.session.user.id });
         send({ type: "end", ok: true, result });
       } catch (err) {
         if (err instanceof AgentUnavailableError) {

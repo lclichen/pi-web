@@ -12,6 +12,7 @@
 pi-config/
 ├─ README.md            # 本说明（不会打进包）
 └─ agent/               # 内容 = ~/.pi/agent 的模板
+   ├─ agents/           # 子智能体定义（.md；含 qa-e2e-tester 全流程测试员）
    ├─ extensions/       # pi 扩展（.ts/.js）
    ├─ skills/           # 技能（SKILL.md）
    ├─ prompts/          # 提示词模板

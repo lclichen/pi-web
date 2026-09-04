@@ -11,7 +11,7 @@ import type { SessionEntry as PiSessionEntry, SessionInfo as PiSessionInfo } fro
 import { normalizeToolCalls } from "./normalize";
 import { projectIdentityKey } from "./project-identity";
 import { sessionPathKey } from "./session-path";
-import { isPathInSpace, spaceDir, spaceKey, type SessionSpace } from "./session-spaces";
+import { isPathInSpace, sessionsRoot as sessionsRootPath, spaceDir, spaceKey, type SessionSpace } from "./session-spaces";
 import { MAX_TOOL_RESULT_IMAGE_BYTES, TOOL_RESULT_IMAGE_MIMES } from "./tool-result-images";
 import { resolveProject, type ProjectInfo } from "./worktree";
 import { readSubagentRun, SUBAGENT_META_TYPE } from "./subagents";
@@ -179,6 +179,34 @@ async function loadAllSessions(space: SessionSpace = { kind: "host" }): Promise<
     };
   });
   return attachSessionProjectInfo(sessions);
+}
+
+/**
+ * cwds of all sessions stored in user shards (host-mode sessions of logged-in
+ * admins live there). The HOST allowed-roots fence derives from session cwds
+ * but the host-space listing never scans shards — this closes that gap so a
+ * restart no longer drops admin host-project directories from the fence.
+ */
+export async function listShardSessionCwds(): Promise<string[]> {
+  const cwds: string[] = [];
+  const usersDir = join(sessionsRootPath(), "users");
+  let shards: string[] = [];
+  try {
+    shards = (await readdir(usersDir, { withFileTypes: true }))
+      .filter((e) => e.isDirectory() && /^u\d+$/.test(e.name))
+      .map((e) => e.name);
+  } catch {
+    return cwds; // no shards at all
+  }
+  for (const shard of shards) {
+    try {
+      const list = await SessionManager.listAll(join(usersDir, shard));
+      for (const s of list) if (s.cwd) cwds.push(s.cwd);
+    } catch {
+      // unreadable/partial shard — skip it
+    }
+  }
+  return cwds;
 }
 
 export async function listAllSessions(

@@ -4,7 +4,7 @@ import { homedir } from "os";
 import path from "path";
 import { getAdditionalAllowedRoots, normalizeSlashes } from "./allowed-roots";
 import { isExistingPathWithinRoots, isPathWithinRoots } from "./path-security";
-import { listAllSessions } from "./session-reader";
+import { listAllSessions, listShardSessionCwds } from "./session-reader";
 export { allowFileRoot, normalizeSlashes } from "./allowed-roots";
 export { isWindowsAbsolutePath } from "./paths";
 
@@ -41,6 +41,16 @@ export async function getAllowedFileRoots(space: { kind: "host" } | { kind: "use
     // The project root (main repo shared by all worktrees) is browsable too —
     // the project dropdown lists it even when only worktrees have sessions.
     if (s.projectRoot) roots.add(normalizeSlashes(s.projectRoot));
+  }
+  // Admin host sessions live in their USER shards (agent/new routes host
+  // sessions of logged-in admins there), which the global host listing above
+  // never scans. Without their cwds here, every pi-web restart dropped those
+  // directories from the fence (skills/files "Access denied") until a NEW
+  // session in the directory re-allowed it in memory. Normal users still
+  // resolve an empty root set — this only widens the admin/host view, which
+  // resolveConfigCwdSync already treats as privileged.
+  for (const cwd of await listShardSessionCwds()) {
+    if (cwd) roots.add(normalizeSlashes(cwd));
   }
 
   // Also allow ~/pi-cwd-* directories created by the default-cwd endpoint

@@ -47,5 +47,5 @@ if command -v apptainer >/dev/null 2>&1; then
   echo "apptainer: $(command -v apptainer) ($(apptainer --version 2>/dev/null | head -n 1))"
 else
   echo ""
-  echo "警告: 未检测到 apptainer —— 沙箱容器功能不可用（安装见 docs/DEPLOYMENT.md）"
+  echo "警告: 未检测到 apptainer —— 沙箱容器功能不可用（安装见 docs/dev/DEPLOYMENT.md）"
 fi

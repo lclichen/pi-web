@@ -442,8 +442,8 @@ fi
 
 fi   # ---- 拷贝模式结束（软链模式跳过整个本节）----
 
-# ---- skills/ prompts/ themes/ tools/：小目录，只补缺失文件（两种模式共用）---------------
-for d in skills prompts themes tools; do
+# ---- agents/ skills/ prompts/ themes/ tools/：小目录，只补缺失文件（两种模式共用）------
+for d in agents skills prompts themes tools; do
   [ -d "$BUNDLED/$d" ] || continue
   if [ "$DRY" = "1" ]; then
     note "合并 $d/（仅新增缺失文件）"

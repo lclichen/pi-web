@@ -398,9 +398,10 @@ export function ProjectSessionTree({
       )}
 
       {!searching && (<>
-      {/* 项目列表在两个空间都显示：host 空间下项目会话不在当前列表里，
-          项目显示为空态（暂无会话）——这正是快速建会话的入口，不能隐藏。 */}
-      {projects.map((project) => {
+      {/* 项目列表只属于“我的会话”空间：Host(CLI) 是 CLI/服务器目录会话的
+          专用视图，混入平台项目组（多为空态）只会稀释真正的 CLI 分组；
+          项目的浏览/管理入口在“我的会话”一侧。 */}
+      {sessionSpace === "mine" && projects.map((project) => {
         const { visible, total } = projectSessions(project);
         const isCollapsed = collapsed.has(project.id);
         // 焦点会话所属项目高亮 + 左侧模式色条，一眼定位当前所在项目。

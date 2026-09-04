@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import WebSocket from "ws";
-import { platformUrl } from "./platform/client";
+import { platformPost, platformUrl } from "./platform/client";
 import { relayRpc } from "./relay/forward";
 import { subscribePtyOutput } from "./relay/registry";
 import { getSshClient } from "./ssh";
@@ -135,7 +135,14 @@ export async function createRemoteTerminal(
   reg.terminals.set(sid, entry);
 
   if (entry.kind === "platform") {
-    const url = `${platformUrl().replace(/^http/, "ws")}/api/v1/containers/${ctx.containerId}/pty?token=${encodeURIComponent(ctx.apiKey)}`;
+    // C3 ticket flow: the long-lived API key never goes into a URL (proxy
+    // logs / browser history). Mint a single-use 60s ticket first, then
+    // upgrade with it.
+    const ticket = await platformPost<{ ticket: string }>(
+      `/api/v1/containers/${ctx.containerId}/pty/ticket`,
+      ctx.apiKey,
+    );
+    const url = `${platformUrl().replace(/^http/, "ws")}/api/v1/containers/${ctx.containerId}/pty?ticket=${encodeURIComponent(ticket.ticket)}`;
     const ws = new WebSocket(url);
     entry.ws = ws;
     ws.on("message", (raw: WebSocket.RawData, isBinary: boolean) => {

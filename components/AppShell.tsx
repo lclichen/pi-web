@@ -2858,76 +2858,97 @@ export function AppShell() {
           background: "var(--bg)",
         } as React.CSSProperties}
       >
-        {/* Right panel tab bar */}
+        {/* Right panel tab bar — single-row tabs: icon + label, hover feedback,
+            active = bold near-white text + accent rounded indicator floating
+            above the container's hairline (no triple emphasis). */}
         <div style={{
           display: "flex",
-          alignItems: "center",
+          alignItems: "stretch",
           flexShrink: 0,
           height: "calc(36px + env(safe-area-inset-top))",
           paddingTop: "env(safe-area-inset-top)",
           background: "var(--bg-panel)",
           borderBottom: "1px solid var(--border)",
         }}>
-          <button
-            onClick={() => setRightPanelMode("files")}
-            title={translate("文件")}
-            style={{
-              height: "100%", padding: "0 10px", border: "none",
-              background: "transparent",
-              color: rightPanelMode === "files" ? "var(--accent)" : "var(--text-dim)",
-              fontSize: 11, fontWeight: 600, cursor: "pointer",
-              borderBottom: rightPanelMode === "files" ? "2px solid var(--accent)" : "2px solid transparent",
-            }}
-          >
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: "text-bottom", marginRight: 3 }}>
-              <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><polyline points="13 2 13 9 20 9" />
-            </svg>{translate("文件")}
-          </button>
-          <button
-            onClick={() => { setRightPanelMode("git"); setRightPanelOpen(true); }}
-            title="Git"
-            style={{
-              height: "100%", padding: "0 10px", border: "none",
-              background: "transparent",
-              color: rightPanelMode === "git" ? "var(--accent)" : "var(--text-dim)",
-              fontSize: 11, fontWeight: 600, cursor: "pointer",
-              borderBottom: rightPanelMode === "git" ? "2px solid var(--accent)" : "2px solid transparent",
-            }}
-          >
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: "text-bottom", marginRight: 3 }}>
-              <circle cx="6" cy="6" r="3" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="6" r="3" /><path d="M18 9v2c0 2-2 3-4 3H9" /><path d="M6 9v6" />
-            </svg>Git
-          </button>
-          <button
-            onClick={() => { setRightPanelMode("agents"); setRightPanelOpen(true); }}
-            title={translate("子智能体目录")}
-            style={{
-              height: "100%", padding: "0 10px", border: "none",
-              background: "transparent",
-              color: rightPanelMode === "agents" ? "var(--accent)" : "var(--text-dim)",
-              fontSize: 11, fontWeight: 600, cursor: "pointer",
-              borderBottom: rightPanelMode === "agents" ? "2px solid var(--accent)" : "2px solid transparent",
-            }}
-          >
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: "text-bottom", marginRight: 3 }}>
-              <rect x="4" y="8" width="16" height="12" rx="2" /><path d="M12 8V4" /><circle cx="9" cy="14" r="0.5" /><circle cx="15" cy="14" r="0.5" />
-            </svg>{translate("智能体")}
-          </button>
-          <button
-            onClick={() => { setRightPanelMode("plan"); setRightPanelOpen(true); }}
-            title={translate("计划")}
-            style={{
-              height: "100%", padding: "0 10px", border: "none",
-              background: "transparent",
-              color: rightPanelMode === "plan" ? "var(--accent)" : "var(--text-dim)",
-              fontSize: 11, fontWeight: 600, cursor: "pointer",
-              borderBottom: rightPanelMode === "plan" ? "2px solid var(--accent)" : "2px solid transparent",
-            }}
-          >
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: "text-bottom", marginRight: 3 }}>
-              <path d="M9 4h6a2 2 0 0 1 2 2v14H7V6a2 2 0 0 1 2-2Z" /><path d="M7 20h10" /><path d="M10 8h4" />
-            </svg>{translate("计划")}
-          </button>
+          {([
+            {
+              id: "files" as const,
+              label: translate("文件"),
+              icon: (
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><polyline points="13 2 13 9 20 9" />
+                </svg>
+              ),
+              activate: () => setRightPanelMode("files"),
+            },
+            {
+              id: "git" as const,
+              label: "Git",
+              icon: (
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <circle cx="6" cy="6" r="3" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="6" r="3" /><path d="M18 9v2c0 2-2 3-4 3H9" /><path d="M6 9v6" />
+                </svg>
+              ),
+              activate: () => { setRightPanelMode("git"); setRightPanelOpen(true); },
+            },
+            {
+              id: "agents" as const,
+              label: translate("智能体"),
+              title: translate("子智能体目录"),
+              icon: (
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <rect x="4" y="8" width="16" height="12" rx="2" /><path d="M12 8V4" /><circle cx="9" cy="14" r="0.5" /><circle cx="15" cy="14" r="0.5" />
+                </svg>
+              ),
+              activate: () => { setRightPanelMode("agents"); setRightPanelOpen(true); },
+            },
+            {
+              id: "plan" as const,
+              label: translate("计划"),
+              icon: (
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M9 4h6a2 2 0 0 1 2 2v14H7V6a2 2 0 0 1 2-2Z" /><path d="M7 20h10" /><path d="M10 8h4" />
+                </svg>
+              ),
+              activate: () => { setRightPanelMode("plan"); setRightPanelOpen(true); },
+            },
+          ]).map(({ id, label, title, icon, activate }) => {
+            const active = rightPanelMode === id;
+            return (
+              <button
+                key={id}
+                onClick={activate}
+                title={title ?? label}
+                style={{
+                  display: "flex", alignItems: "center", gap: 5,
+                  height: "100%", padding: "0 12px", border: "none",
+                  background: "transparent",
+                  color: active ? "var(--text)" : "var(--text-dim)",
+                  fontSize: 11, fontWeight: active ? 700 : 500,
+                  letterSpacing: 0.2,
+                  cursor: "pointer",
+                  borderBottom: `2px solid ${active ? "var(--accent)" : "transparent"}`,
+                  borderRadius: "6px 6px 0 0",
+                  marginBottom: active ? -1 : 0,
+                  transition: "color 0.12s, background 0.12s",
+                  flexShrink: 0,
+                }}
+                onMouseEnter={(event) => {
+                  if (!active) {
+                    event.currentTarget.style.background = "var(--bg-hover)";
+                    event.currentTarget.style.color = "var(--text-muted)";
+                  }
+                }}
+                onMouseLeave={(event) => {
+                  event.currentTarget.style.background = "transparent";
+                  event.currentTarget.style.color = active ? "var(--text)" : "var(--text-dim)";
+                }}
+              >
+                {icon}
+                {label}
+              </button>
+            );
+          })}
           <div style={{ flex: 1, overflow: "hidden" }}>
             {rightPanelMode === "files" && (
               <TabBar
@@ -2983,6 +3004,7 @@ export function AppShell() {
           ) : rightPanelMode === "git" ? (
             <GitPanel
               cwd={(activeCwd ?? selectedSession?.cwd ?? newSessionCwd) ?? ""}
+              sessionId={selectedSession?.id ?? null}
               refreshKey={explorerRefreshKey}
               onClose={() => { setRightPanelMode("files"); }}
             />

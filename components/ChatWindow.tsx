@@ -471,6 +471,30 @@ export function ChatWindow({ session, sessionRunning, newSessionCwd, newSessionD
   const hasLabPanel = !!labWidget && !!labWidget.metadata;
   const hasLabTraining = slashCommands.some((c) => c.name === "lab" || c.name === "/lab");
 
+  // todo extension payload: parse the JSON widget line and keep the raw
+  // "todo-list" key out of the generic widget bar (it would show raw JSON).
+  const capsuleTodos = useMemo(() => {
+    const widget = extensionWidgets.find((w) => w.key === "todo-list");
+    if (!widget || widget.lines.length === 0) return [];
+    try {
+      const parsed = JSON.parse(widget.lines[0]) as { todos?: Array<{ id: number; text: string; done: boolean }> };
+      return Array.isArray(parsed.todos) ? parsed.todos : [];
+    } catch {
+      return [];
+    }
+  }, [extensionWidgets]);
+  // 目标：会话的第一条用户消息（极简描述，单行截断）。
+  const capsuleGoal = useMemo(() => {
+    for (let i = 0; i < messages.length; i++) {
+      const text = getUserInputText(messages[i]);
+      if (!text) continue;
+      const firstLine = text.split("\n", 1)[0]?.trim() ?? "";
+      if (!firstLine) continue;
+      return firstLine.length > 60 ? firstLine.slice(0, 60) + "…" : firstLine;
+    }
+    return null;
+  }, [messages]);
+
   // Expose lab state and command sender to parent (AppShell)
   useEffect(() => {
     onLabStateChange?.(labWidget ?? null, hasLabTraining);
@@ -643,9 +667,14 @@ export function ChatWindow({ session, sessionRunning, newSessionCwd, newSessionD
   );
 
   // Extension widgets split by placement — aboveEditor renders at the top of
-  // the message column, belowEditor above the chat input.
-  const aboveEditorWidgets = extensionWidgets.filter((widget) => widget.placement !== "belowEditor");
-  const belowEditorWidgets = extensionWidgets.filter((widget) => widget.placement === "belowEditor");
+  // the message column, belowEditor above the chat input. The todo-list
+  // widget is consumed by the status capsule instead (raw JSON otherwise).
+  const aboveEditorWidgets = extensionWidgets.filter(
+    (widget) => widget.placement !== "belowEditor" && widget.key !== "todo-list",
+  );
+  const belowEditorWidgets = extensionWidgets.filter(
+    (widget) => widget.placement === "belowEditor" && widget.key !== "todo-list",
+  );
 
   if (loading) {
     return (
@@ -793,6 +822,8 @@ export function ChatWindow({ session, sessionRunning, newSessionCwd, newSessionD
           planActive={planPanelActive}
           terminalActive={terminalPanelActive}
           remote={remoteSession ?? null}
+          todos={capsuleTodos}
+          goal={capsuleGoal}
         />
         <div
           style={{

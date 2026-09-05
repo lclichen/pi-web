@@ -5,6 +5,7 @@ import { existsSync } from "fs";
 import { randomUUID } from "crypto";
 import { allowFileRoot } from "@/lib/file-access";
 import { makeSshToolsExtension } from "@/lib/extensions/ssh-tools";
+import { makeTodoExtension } from "@/lib/extensions/todo";
 import { readSshConfig } from "@/lib/ssh";
 import { invalidateSessionListCache } from "@/lib/session-reader";
 import { startRpcSession } from "@/lib/rpc-manager";
@@ -270,7 +271,8 @@ export async function POST(req: Request) {
       ...(sessionDir ? { sessionDir } : {}),
       ownerId: user.id,
       mode,
-      ...(extensionFactories ? { extensionFactories } : {}),
+      // todo tool is mode-agnostic and present in every session.
+      extensionFactories: [makeTodoExtension(), ...(extensionFactories ?? [])],
       ...(projectRef ? { projectCredentialDir: effectiveCwd } : {}),
     });
 

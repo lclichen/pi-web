@@ -1,0 +1,57 @@
+name: agent-build
+
+# pi-agent（连接本地的 Go 侧 relay agent）交叉编译。
+# 仅当 agent 源码有变更时运行；产物作为 workflow artifact 上传，
+# 需要分发时从 Actions 页面下载或挂到 Release。
+on:
+  push:
+    branches: [dev, main]
+    paths:
+      - "agent/**"
+      - ".github/workflows/agent-build.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: linux-amd64,   goos: linux,   goarch: amd64 }
+          - { target: linux-arm64,   goos: linux,   goarch: arm64 }
+          - { target: windows-amd64, goos: windows, goarch: amd64 }
+    defaults:
+      run:
+        working-directory: agent
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: agent/go.mod
+          cache-dependency-path: agent/go.sum
+
+      # 与 agent/scripts/build.sh 相同的静态编译参数（CGO=0，老发行版可跑）
+      - name: Build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: go build -trimpath -ldflags "-s -w" -o "dist/pi-agent-${{ matrix.target }}" .
+
+      - name: Smoke (host binary only)
+        if: matrix.target == 'linux-amd64'
+        run: ./dist/pi-agent-linux-amd64 version
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pi-agent-${{ matrix.target }}-${{ github.sha }}
+          path: agent/dist/pi-agent-${{ matrix.target }}
+          if-no-files-found: error
+          retention-days: 30

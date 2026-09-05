@@ -18,6 +18,7 @@ import { WorkspaceTerminal } from "./WorkspaceTerminal";
 import { SubagentDirectoryPanel } from "./SubagentDirectoryPanel";
 import { PlanPanel } from "./PlanPanel";
 import type { SubagentCall } from "@/hooks/useAgentSession";
+import { useSessionPlan } from "@/hooks/use-session-plan";
 import { openFileTab, saveFileViewerState } from "./file-tab-state";
 import { SettingsPanel, SettingsSectionIcon } from "./SettingsPanel";
 import { ProjectTrustDialog } from "./ProjectTrustDialog";
@@ -561,6 +562,16 @@ export function AppShell() {
 
   const initialSessionId = initialNavigation.sessionId;
   const [activeCwd, setActiveCwd] = useState<string | null>(null);
+  // Session plan (per-session file first, legacy workspace plans as fallback).
+  // Single probe shared by the 计划 tab (visibility), PlanPanel and the status
+  // capsule — hidden entirely while no plan exists.
+  const { plan: sessionPlan } = useSessionPlan({
+    sessionId: selectedSession?.id ?? null,
+    cwd: (activeCwd ?? selectedSession?.cwd ?? newSessionCwd) ?? undefined,
+    remote: remoteSessionCtx,
+  });
+  // 计划 tab appears only once a plan actually exists (no flash on load).
+  const planTabVisible = sessionPlan !== null;
   // Terminal bottom drawer — keys to the session/cwd exactly like the old
   // right-panel terminal did: switching key unmounts (and closes) the drawer.
   const terminalDrawerKey = remoteSessionCtx
@@ -2730,6 +2741,7 @@ export function AppShell() {
               onOpenAgentsPanel={() => { setRightPanelMode("agents"); setRightPanelOpen(true); }}
               onOpenPlanPanel={() => { setRightPanelMode("plan"); setRightPanelOpen(true); }}
               planPanelActive={rightPanelMode === "plan"}
+              plan={sessionPlan}
               onToggleTerminalPanel={() => {
                 if (terminalDrawerMounted) setTerminalDrawerOpen((v) => !v);
                 else openTerminalDrawer();
@@ -2902,16 +2914,19 @@ export function AppShell() {
               ),
               activate: () => { setRightPanelMode("agents"); setRightPanelOpen(true); },
             },
-            {
-              id: "plan" as const,
-              label: translate("计划"),
-              icon: (
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M9 4h6a2 2 0 0 1 2 2v14H7V6a2 2 0 0 1 2-2Z" /><path d="M7 20h10" /><path d="M10 8h4" />
-                </svg>
-              ),
-              activate: () => { setRightPanelMode("plan"); setRightPanelOpen(true); },
-            },
+            // 计划 tab: only when a plan exists (per-session file or legacy).
+            ...(planTabVisible
+              ? [{
+                  id: "plan" as const,
+                  label: translate("计划"),
+                  icon: (
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M9 4h6a2 2 0 0 1 2 2v14H7V6a2 2 0 0 1 2-2Z" /><path d="M7 20h10" /><path d="M10 8h4" />
+                    </svg>
+                  ),
+                  activate: () => { setRightPanelMode("plan"); setRightPanelOpen(true); },
+                }]
+              : []),
           ]).map(({ id, label, title, icon, activate }) => {
             const active = rightPanelMode === id;
             return (
@@ -2996,7 +3011,7 @@ export function AppShell() {
             </div>
           ) : null}
           {rightPanelMode === "plan" ? (
-            <PlanPanel cwd={(activeCwd ?? selectedSession?.cwd ?? newSessionCwd) ?? undefined} remote={remoteSessionCtx} />
+            <PlanPanel plan={sessionPlan} />
           ) : rightPanelMode === "agents" && !selectedSession?.id ? (
             <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-dim)", fontSize: 12 }}>
               {translate("选择或创建一个会话后可查看子智能体调用记录")}

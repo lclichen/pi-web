@@ -14,6 +14,7 @@ import { ExtensionStatusBar } from "./ExtensionStatusBar";
 import { AnsiText } from "./AnsiText";
 import { useI18n } from "@/hooks/useI18n";
 import { useAgentSession, type AgentPhase, type NoticeItem, type SubagentCall } from "@/hooks/useAgentSession";
+import type { SessionPlan } from "@/hooks/use-session-plan";
 import { ChatStatusWidget } from "./ChatStatusWidget";
 import { useAudio } from "@/hooks/useAudio";
 import { useDragDrop } from "@/hooks/useDragDrop";
@@ -60,6 +61,8 @@ interface Props {
   planPanelActive?: boolean;
   onToggleTerminalPanel?: () => void;
   terminalPanelActive?: boolean;
+  /** Session plan (probed by AppShell via useSessionPlan; feeds the capsule). */
+  plan?: SessionPlan | null;
   /** Remote session context (sandbox / local machine) for remote-aware widgets. */
   remoteSession?: { sessionId: string; label: string } | null;
   /** Live subagent calls lifted to AppShell for the directory panel. */
@@ -273,7 +276,7 @@ function ProcessDetailsGroup({ messageCount, toolCallCount, defaultExpanded = fa
   );
 }
 
-export function ChatWindow({ session, sessionRunning, newSessionCwd, newSessionDraftKey, newSessionMode, newSessionProjectId, onAgentEnd, onAttentionNeeded, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onOpenSession, onLabStateChange, sendCommandRef, soundEnabled = true, onSoundToggle, playDoneSound = () => {}, unlockAudio, onOpenAgentsPanel, onOpenPlanPanel, planPanelActive, onToggleTerminalPanel, terminalPanelActive, remoteSession, onSubagentCallsChange }: Props) {
+export function ChatWindow({ session, sessionRunning, newSessionCwd, newSessionDraftKey, newSessionMode, newSessionProjectId, onAgentEnd, onAttentionNeeded, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onOpenSession, onLabStateChange, sendCommandRef, soundEnabled = true, onSoundToggle, playDoneSound = () => {}, unlockAudio, onOpenAgentsPanel, onOpenPlanPanel, planPanelActive, onToggleTerminalPanel, terminalPanelActive, plan, remoteSession, onSubagentCallsChange }: Props) {
   const { t } = useI18n();
   const isMobile = useIsMobile();
   const completionNotificationsEnabled = session?.relation?.kind !== "subagent";
@@ -814,14 +817,13 @@ export function ChatWindow({ session, sessionRunning, newSessionCwd, newSessionD
       <>
       <div className="relative flex min-w-0 flex-1 overflow-hidden">
         <ChatStatusWidget
-          cwd={session?.cwd ?? newSessionCwd ?? undefined}
           subagentCalls={subagentCalls}
           onOpenAgents={() => onOpenAgentsPanel?.()}
           onOpenPlan={() => onOpenPlanPanel?.()}
           onToggleTerminal={onToggleTerminalPanel}
           planActive={planPanelActive}
           terminalActive={terminalPanelActive}
-          remote={remoteSession ?? null}
+          plan={plan}
           todos={capsuleTodos}
           goal={capsuleGoal}
         />

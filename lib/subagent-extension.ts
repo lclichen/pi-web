@@ -11,11 +11,36 @@ import {
   type SubagentRunInfo,
 } from "./subagents";
 import { MAX_SUBAGENT_INPUT_FILES } from "./subagent-input";
+import { isPlanProfile, saveSessionPlan } from "./extensions/session-plan";
 
 export const HOST_SUBAGENT_EXTENSION_NAME = "pi-web-subagents";
 const HOST_SUBAGENT_EXTENSION_PATH = `<inline:${HOST_SUBAGENT_EXTENSION_NAME}>`;
 const SUBAGENT_TOOL_NAMES = new Set<string>(SUBAGENT_CONTROL_TOOL_NAMES);
 const LEGACY_SUBAGENT_PACKAGE_NAME = "pi-subagents";
+
+/**
+ * Completed plan-profile runs (@plan & friends) are archived to the session
+ * plan file (.pi/plans/plan-sess_<sid>.md) so the 计划 panel and capsule
+ * pick them up. Best-effort: a failed save never fails the tool result.
+ */
+function capturePlanRun(run: SubagentRunInfo, ctx: ExtensionContext): void {
+  try {
+    if (run.status !== "completed" || !isPlanProfile(run.profile)) return;
+    const text = subagentFinalText(run);
+    if (!text.trim()) return;
+    const sessionId = ctx.sessionManager.getSessionId();
+    const result = saveSessionPlan(ctx.cwd, sessionId, [
+      `<!-- plan captured from @${run.profile} subagent ${new Date().toISOString()} -->`,
+      "",
+      text,
+    ].join("\n"));
+    if (!result.ok) {
+      console.error("[pi-web] session plan capture failed:", result.error);
+    }
+  } catch (e) {
+    console.error("[pi-web] session plan capture failed:", e instanceof Error ? e.message : e);
+  }
+}
 
 export interface SubagentToolDetails {
   kind: "pi-web-subagent";
@@ -155,7 +180,10 @@ export function createSubagentExtension(
 
             if (execution.run.runInBackground) {
               void execution.completion
-                .then((run) => runtime.notifyParent(run))
+                .then((run) => {
+                  capturePlanRun(run, ctx);
+                  return runtime.notifyParent(run);
+                })
                 .catch((error) => {
                   console.error(
                     "[pi-web] failed to deliver subagent completion:",
@@ -169,6 +197,7 @@ export function createSubagentExtension(
             }
 
             const run = await execution.completion;
+            capturePlanRun(run, ctx);
             return {
               content: [{ type: "text", text: subagentFinalText(run) }],
               details: subagentToolDetails(run),

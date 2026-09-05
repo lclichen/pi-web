@@ -10,6 +10,7 @@ import { makeRemoteVerifyExtension } from "./extensions/remote-verify";
 import { makeEnvironmentInfoExtension } from "./extensions/environment-info";
 import { makeSshToolsExtension } from "./extensions/ssh-tools";
 import { makeTodoExtension } from "./extensions/todo";
+import { makeSessionPlanExtension } from "./extensions/session-plan";
 import { readSshConfig } from "./ssh";
 import { requireUserIdentity } from "./web-session";
 import { getAgentForUser } from "./relay/registry";
@@ -110,8 +111,9 @@ export async function restoreSessionOptions(req: Request, sessionId: string): Pr
   const ownerId = meta?.ownerId ?? user.id;
   return {
     ...(additionalExtensionPaths ? { additionalExtensionPaths } : {}),
-    // The todo tool is mode-agnostic (state rides session entries server-side).
-    extensionFactories: [makeTodoExtension(), ...(extensionFactories ?? [])],
+    // The todo tool and session plan store are mode-agnostic (state lives in
+    // session entries / the project home on the server side).
+    extensionFactories: [makeTodoExtension(), makeSessionPlanExtension(), ...(extensionFactories ?? [])],
     ...(ownerId !== 0 ? { ownerId } : {}),
     mode,
     // Project-scoped model credentials live in the project home's .pi/.

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import type { SubagentCall } from "@/hooks/useAgentSession";
-import { encodeFilePathForApi } from "@/lib/file-paths";
+import type { SessionPlan } from "@/hooks/use-session-plan";
 
 export interface CapsuleTodo {
   id: number;
@@ -12,7 +12,6 @@ export interface CapsuleTodo {
 }
 
 interface Props {
-  cwd?: string;
   subagentCalls: SubagentCall[];
   onOpenAgents: () => void;
   onOpenPlan: () => void;
@@ -21,9 +20,9 @@ interface Props {
   planActive?: boolean;
   /** Bottom terminal drawer is open — highlight the terminal row. */
   terminalActive?: boolean;
-  /** Remote session (sandbox / local machine): plan file is read through
-   *  /api/remotefs from the container workspace, not the server home. */
-  remote?: { sessionId: string; label: string } | null;
+  /** Session plan (per-session file first, legacy workspace plans as
+   *  fallback) — probed by AppShell via useSessionPlan and passed down. */
+  plan?: SessionPlan | null;
   /** Session TODO items from the todo extension widget ("todo-list"). */
   todos?: CapsuleTodo[];
   /** Minimal goal description (first user message of the session). */
@@ -44,13 +43,11 @@ interface Props {
  *
  * Expanded — a popover with the goal row on top and two collapsible sections
  * (进程 = TODO list, 智能体 = subagent calls), each with a ▸/▾ triangle and a
- * count on the right; a terminal row sits at the bottom. The plan file
- * (.pi/plan.md → PLAN.md) keeps feeding the plan entry point — SSE watch
- * locally, 10s polling for remote sessions.
+ * count on the right; plan and terminal quick rows sit at the bottom.
  */
 export function ChatStatusWidget({
-  cwd, subagentCalls, onOpenAgents, onOpenPlan, onToggleTerminal, planActive, terminalActive, remote = null,
-  todos = [], goal = null,
+  subagentCalls, onOpenAgents, onOpenPlan, onToggleTerminal, planActive, terminalActive,
+  plan = null, todos = [], goal = null,
 }: Props) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
@@ -62,11 +59,13 @@ export function ChatStatusWidget({
   );
   const [agentsOpen, setAgentsOpen] = useState(false);
   useEffect(() => { setAgentsOpen(runningCount > 0); }, [runningCount]);
-  const [plan, setPlan] = useState<{ path: string; summary: string; currentStep: string | null } | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
 
   const todoDone = todos.filter((x) => x.done).length;
   const currentTodo = todos.find((x) => !x.done) ?? null;
+
+  const planSummaryText = plan ? planSummary(plan.content, t("计划")) : null;
+  const planStep = plan ? planCurrentStep(plan.content) : null;
 
   // Close the popover on outside click / Escape.
   useEffect(() => {
@@ -83,67 +82,10 @@ export function ChatStatusWidget({
     };
   }, [open]);
 
-  // Plan file: try .pi/plan.md then PLAN.md; keep it fresh (SSE locally,
-  // polling for remote — remotefs has no watch endpoint).
-  useEffect(() => {
-    if (!cwd && !remote) { setPlan(null); return; }
-    let cancelled = false;
-    let es: EventSource | null = null;
-    let pollTimer: ReturnType<typeof setInterval> | null = null;
-    const root = (cwd ?? "").replace(/[\\/]+$/, "");
-    const candidates = [`${root}/.pi/plan.md`, `${root}/PLAN.md`];
-    const src = remote ? `?src=${encodeURIComponent(remote.sessionId)}` : "";
-    const readUrl = (path: string): string =>
-      remote
-        ? `/api/remotefs/${encodeFilePathForApi(path.replace(/^\//, ""))}${src}&type=read`
-        : `/api/files/${encodeFilePathForApi(path)}?type=read`;
-
-    const apply = (path: string, content: string) =>
-      setPlan({ path, summary: planSummary(content, t("计划")), currentStep: planCurrentStep(content) });
-
-    const readCandidate = async (index: number): Promise<void> => {
-      if (cancelled || index >= candidates.length) {
-        if (!cancelled) setPlan(null);
-        return;
-      }
-      const path = candidates[index];
-      try {
-        const res = await fetch(readUrl(path));
-        if (!res.ok) { await readCandidate(index + 1); return; }
-        const d = (await res.json()) as { content?: string };
-        if (cancelled) return;
-        if (typeof d.content !== "string") { await readCandidate(index + 1); return; }
-        apply(path, d.content);
-        const refresh = async () => {
-          try {
-            const r = await fetch(readUrl(path));
-            if (!r.ok) return;
-            const next = (await r.json()) as { content?: string };
-            if (!cancelled && typeof next.content === "string") apply(path, next.content);
-          } catch { /* keep the old summary */ }
-        };
-        if (remote) pollTimer = setInterval(() => void refresh(), 10000);
-        else {
-          es = new EventSource(`/api/files/${encodeFilePathForApi(path)}?type=watch`);
-          es.addEventListener("change", () => void refresh());
-        }
-      } catch {
-        await readCandidate(index + 1);
-      }
-    };
-    void readCandidate(0);
-
-    return () => {
-      cancelled = true;
-      es?.close();
-      if (pollTimer) clearInterval(pollTimer);
-    };
-  }, [cwd, remote]);
-
   // Pinned capsule text: current TODO step → plan step → goal → 状态.
   const pinnedText = currentTodo
     ? currentTodo.text
-    : (plan?.currentStep ?? plan?.summary ?? goal ?? t("状态"));
+    : (planStep ?? planSummaryText ?? goal ?? t("状态"));
   const pinnedKind: "todo" | "plan" | "goal" | "idle"
     = currentTodo ? "todo"
       : plan ? "plan"
@@ -396,7 +338,7 @@ export function ChatStatusWidget({
                 title={plan.path}
                 active={planActive}
                 icon={<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 4h6a2 2 0 0 1 2 2v14H7V6a2 2 0 0 1 2-2Z" /><path d="M7 20h10" /><path d="M10 8h4" /></svg>}
-                label={plan.summary}
+                label={planSummaryText ?? t("计划")}
               />
             )}
             {onToggleTerminal && (
@@ -489,7 +431,7 @@ function Row({ onClick, title, icon, label, trailing, active, disabled }: {
 function planSummary(content: string, fallback: string): string {
   for (const rawLine of content.split("\n")) {
     const line = rawLine.trim();
-    if (!line || line.startsWith("#") || line.startsWith("---")) continue;
+    if (!line || line.startsWith("#") || line.startsWith("---") || line.startsWith("<!--")) continue;
     return line.length > 60 ? line.slice(0, 60) + "…" : line;
   }
   const firstHeading = content.split("\n").find((l) => l.trim().startsWith("#"));

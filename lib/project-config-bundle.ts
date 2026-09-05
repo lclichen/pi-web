@@ -38,9 +38,10 @@ const DENIED_BASENAMES = new Set(["auth.json", "ssh.json", "sandbox-platform.jso
 /**
  * Path segments (at any depth) excluded from bundles both ways. Note
  * node_modules is deliberately NOT here: bundles target offline deployment,
- * so extension dependencies must travel with the archive.
+ * so extension dependencies must travel with the archive. "plans" is runtime
+ * state (.pi/plans/plan-sess_*.md) — per-session, not portable config.
  */
-const DENIED_SEGMENTS = new Set(["sessions", "tmp", "bin", "cache", ".git"]);
+const DENIED_SEGMENTS = new Set(["sessions", "tmp", "bin", "cache", "plans", ".git"]);
 /** Top-level prefixes an import may write into the project home. */
 const ALLOWED_PREFIXES = [".pi/", "labs/"];
 /** Root files a bundle may carry: archive metadata + shared project files. */

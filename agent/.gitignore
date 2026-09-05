@@ -1,4 +1,5 @@
 # Go workspace artifacts
-*.exe
+# *.exe  — dist 产物随仓库分发（离线部署），Windows 二进制也入库
+
 *.test
 *.out

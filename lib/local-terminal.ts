@@ -140,12 +140,16 @@ export async function createLocalTerminal(opts: CreateTerminalOptions): Promise<
   const rows = Math.max(2, Math.min(300, Math.floor(opts.rows ?? 24)));
 
   const pty = await loadPty();
+  // Windows shells (Git Bash / MSYS2, cmd, PowerShell) otherwise inherit the
+  // system ANSI codepage (e.g. GBK on zh-CN) and mangle non-ASCII filenames.
+  const env: Record<string, string> = { ...process.env, TERM: "xterm-256color" };
+  if (!process.env.LANG && !process.env.LC_ALL && !process.env.LC_CTYPE) env.LANG = "C.UTF-8";
   const proc = pty.spawn(shell.path, [], {
     name: "xterm-256color",
     cols,
     rows,
     cwd: opts.cwd,
-    env: { ...process.env, TERM: "xterm-256color" } as Record<string, string>,
+    env,
   });
 
   const sid = randomUUID();

@@ -4,6 +4,7 @@ import { memo, useState, useRef, useEffect, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import { MarkdownBody } from "./MarkdownBody";
 import { ImagePreview } from "./ImagePreview";
+import { MessageFeedback } from "./MessageFeedback";
 import { ThinkingIcon } from "./ThinkingIcon";
 import { copyText } from "@/lib/clipboard";
 import { useI18n } from "@/hooks/useI18n";
@@ -820,6 +821,7 @@ function AssistantMessageView({
           </div>
         )}
         {textContent && !isStreaming && (
+          <>
           <button
             onClick={copyContent}
              title={t("i18n.copyMessage")}
@@ -851,6 +853,13 @@ function AssistantMessageView({
             )}
              {copied ? t("i18n.copied") : t("i18n.copy")}
           </button>
+          <MessageFeedback
+            sessionId={sessionId}
+            entryId={entryId}
+            snippet={textContent}
+            visible={hovered}
+          />
+          </>
         )}
         {time && !isStreaming && (
           <span style={{ fontSize: 10, color: "var(--text-dim)", marginLeft: "auto" }}>{time}</span>

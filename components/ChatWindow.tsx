@@ -1111,9 +1111,8 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
           subagentCalls={subagentCalls}
           onOpenAgents={() => onOpenAgentsPanel?.()}
           onOpenPlan={() => onOpenPlanPanel?.()}
-          onToggleTerminal={onToggleTerminalPanel}
+          sessionId={session?.id ?? null}
           planActive={planPanelActive}
-          terminalActive={terminalPanelActive}
           plan={plan}
           todos={capsuleTodos}
           goal={capsuleGoal}

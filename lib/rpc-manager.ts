@@ -43,6 +43,7 @@ import {
 import { createSubagentController } from "./subagent-runtime";
 import { isBuiltInSubagentsEnabled } from "./subagent-settings";
 import { resolveShellTools } from "./powershell-settings";
+import { stopSubagentRun } from "./extensions/bg-tasks";
 import { CHAT_ONLY_RESOURCE_LOADER_OPTIONS, contextFilesSystemPrompt } from "./chat-only";
 import {
   appendSessionToolSelection,
@@ -1083,6 +1084,17 @@ export class AgentSessionWrapper {
         return null;
       }
 
+      case "stop_subagent": {
+        // Capsule background-task stop: forward onto the session's extension
+        // event bus (subagents:rpc:stop) via the bg-tasks bridge extension.
+        const agentId = command.agentId as string;
+        if (typeof agentId !== "string" || !agentId) {
+          throw new Error("agentId required");
+        }
+        const outcome = await stopSubagentRun(this.sessionId, agentId);
+        if (!outcome.ok) throw new Error(outcome.error ?? "停止失败");
+        return { success: true };
+      }
       case "bash": {
         if (this.pendingPromptCount > 0 || this.inner.isStreaming || this.inner.isCompacting || this.inner.isBashRunning) {
           throw new Error("Cannot run a shell command while the session is busy");

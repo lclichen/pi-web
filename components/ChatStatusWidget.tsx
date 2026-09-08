@@ -15,11 +15,10 @@ interface Props {
   subagentCalls: SubagentCall[];
   onOpenAgents: () => void;
   onOpenPlan: () => void;
-  onToggleTerminal?: () => void;
+  /** Owning session id — used to stop background subagent runs. */
+  sessionId?: string | null;
   /** Plan tab is active — highlight the plan row. */
   planActive?: boolean;
-  /** Bottom terminal drawer is open — highlight the terminal row. */
-  terminalActive?: boolean;
   /** Session plan (per-session file first, legacy workspace plans as
    *  fallback) — probed by AppShell via useSessionPlan and passed down. */
   plan?: SessionPlan | null;
@@ -41,22 +40,33 @@ interface Props {
  * ↗ expand glyph, signalling "click to open". A running-agent pulse + count is
  * appended whenever subagents are active.
  *
- * Expanded — a popover with the goal row on top and two collapsible sections
- * (进程 = TODO list, 智能体 = subagent calls), each with a ▸/▾ triangle and a
- * count on the right; plan and terminal quick rows sit at the bottom.
+ * Expanded — a popover with the goal row on top, two collapsible sections
+ * (进程 = TODO list, 智能体 = subagent/background-task list with elapsed time
+ * and a stop button per background run), and a plan quick row at the bottom.
+ * (The terminal entry moved to the file explorer toolbar — merge decision 1.)
  */
 export function ChatStatusWidget({
-  subagentCalls, onOpenAgents, onOpenPlan, onToggleTerminal, planActive, terminalActive,
+  subagentCalls, onOpenAgents, onOpenPlan, sessionId,
+  planActive,
   plan = null, todos = [], goal = null,
 }: Props) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const [hovered, setHovered] = useState(false);
   const [processOpen, setProcessOpen] = useState(true);
+  const [now, setNow] = useState(() => Date.now());
+  const [stoppingIds, setStoppingIds] = useState<Set<string>>(new Set());
+  const [stopError, setStopError] = useState<string | null>(null);
   const runningCount = useMemo(
     () => subagentCalls.filter((c) => c.status === "running" || c.status === "background").length,
     [subagentCalls],
   );
+  // Elapsed-time ticker: only live while the popover is open with active runs.
+  useEffect(() => {
+    if (!open || runningCount === 0) return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [open, runningCount]);
   const [agentsOpen, setAgentsOpen] = useState(false);
   useEffect(() => { setAgentsOpen(runningCount > 0); }, [runningCount]);
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -92,7 +102,35 @@ export function ChatStatusWidget({
         : goal ? "goal"
           : "idle";
   const hasProgress = todos.length > 0;
-  const anyActive = planActive || terminalActive;
+  const anyActive = planActive;
+
+  const formatElapsed = (startedAt: number): string => {
+    const s = Math.max(0, Math.floor((now - startedAt) / 1000));
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = s % 60;
+    return h > 0
+      ? `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`
+      : `${m}:${String(sec).padStart(2, "0")}`;
+  };
+
+  const handleStop = async (call: SubagentCall) => {
+    if (!sessionId || !call.agentId) return;
+    setStoppingIds((prev) => new Set(prev).add(call.key));
+    setStopError(null);
+    try {
+      const { sendAgentCommand } = await import("@/lib/agent-client");
+      await sendAgentCommand(sessionId, { type: "stop_subagent", agentId: call.agentId });
+    } catch (e) {
+      setStopError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setStoppingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(call.key);
+        return next;
+      });
+    }
+  };
 
   return (
     <div
@@ -278,39 +316,76 @@ export function ChatStatusWidget({
               <div style={{ padding: "0 8px 8px", display: "flex", flexDirection: "column", gap: 1 }}>
                 {subagentCalls.slice(-8).reverse().map((call) => {
                   const isRunning = call.status === "running" || call.status === "background";
+                  const isBackground = call.status === "background";
+                  const stopping = stoppingIds.has(call.key);
                   return (
-                    <button
+                    <div
                       key={call.key}
-                      type="button"
-                      role="menuitem"
-                      onClick={() => { onOpenAgents(); setOpen(false); }}
-                      title={call.description}
-                      style={{
-                        display: "flex", alignItems: "center", gap: 7, width: "100%",
-                        padding: "4px 6px", border: "none", borderRadius: 5, background: "transparent",
-                        color: "var(--text)", fontSize: 11, textAlign: "left", cursor: "pointer",
-                      }}
-                      onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-hover)"; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+                      style={{ display: "flex", alignItems: "center", gap: 4, width: "100%" }}
                     >
-                      {isRunning ? (
-                        <span className="chat-status-pulse" style={{ flexShrink: 0, width: 7, height: 7, borderRadius: 999, background: "var(--accent)" }} />
-                      ) : (
-                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0, color: call.status === "error" ? "#f87171" : "var(--text-dim)" }}>
-                          {call.status === "error"
-                            ? <><circle cx="12" cy="12" r="9" /><path d="M12 8v4" /><path d="M12 16h.01" /></>
-                            : <><path d="M20 6L9 17l-5-5" /></>}
-                        </svg>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => { onOpenAgents(); setOpen(false); }}
+                        title={call.description}
+                        style={{
+                          display: "flex", alignItems: "center", gap: 7, flex: 1, minWidth: 0,
+                          padding: "4px 6px", border: "none", borderRadius: 5, background: "transparent",
+                          color: "var(--text)", fontSize: 11, textAlign: "left", cursor: "pointer",
+                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-hover)"; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+                      >
+                        {isRunning ? (
+                          <span className="chat-status-pulse" style={{ flexShrink: 0, width: 7, height: 7, borderRadius: 999, background: "var(--accent)" }} />
+                        ) : (
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0, color: call.status === "error" ? "#f87171" : "var(--text-dim)" }}>
+                            {call.status === "error"
+                              ? <><circle cx="12" cy="12" r="9" /><path d="M12 8v4" /><path d="M12 16h.01" /></>
+                              : <><path d="M20 6L9 17l-5-5" /></>}
+                          </svg>
+                        )}
+                        <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {call.agentId || call.type}
+                        </span>
+                      </button>
+                      {isRunning && (
+                        <span style={{ flexShrink: 0, fontSize: 10, color: "var(--text-dim)", fontFamily: "var(--font-mono)", minWidth: 34, textAlign: "right" }} title={t("已运行时长")}>
+                          {formatElapsed(call.startedAt)}
+                        </span>
                       )}
-                      <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {call.agentId || call.type}
-                      </span>
-                      <span style={{ flexShrink: 0, fontSize: 10, color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>
-                        {isRunning ? t("运行中") : call.durationMs != null ? `${Math.round(call.durationMs / 1000)}s` : t("完成")}
-                      </span>
-                    </button>
+                      {!isRunning && call.durationMs != null && (
+                        <span style={{ flexShrink: 0, fontSize: 10, color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>
+                          {Math.round(call.durationMs / 1000)}s
+                        </span>
+                      )}
+                      {isBackground && (
+                        <button
+                          type="button"
+                          onClick={() => { void handleStop(call); }}
+                          disabled={stopping || !sessionId || !call.agentId}
+                          title={t("停止该后台任务")}
+                          aria-label={t("停止该后台任务")}
+                          style={{
+                            flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
+                            width: 18, height: 18, padding: 0, border: "none", borderRadius: 4,
+                            background: "transparent", color: stopping ? "var(--text-dim)" : "#f87171",
+                            cursor: stopping ? "default" : "pointer",
+                          }}
+                          onMouseEnter={(e) => { if (!stopping) e.currentTarget.style.background = "rgba(248,113,113,0.12)"; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+                        >
+                          {stopping
+                            ? <span style={{ fontSize: 9 }}>…</span>
+                            : <svg width="9" height="9" viewBox="0 0 10 10" aria-hidden="true"><rect x="1" y="1" width="8" height="8" rx="1.5" fill="currentColor" /></svg>}
+                        </button>
+                      )}
+                    </div>
                   );
                 })}
+                {stopError && (
+                  <div style={{ padding: "2px 6px", fontSize: 10, color: "#f87171", overflowWrap: "anywhere" }}>{stopError}</div>
+                )}
                 <button
                   type="button"
                   role="menuitem"
@@ -330,7 +405,9 @@ export function ChatStatusWidget({
             )}
           </Section>
 
-          {/* Plan + terminal quick rows */}
+          {/* Plan quick row — the terminal entry lives in the file explorer
+              toolbar (merge decision 1); background tasks got their own stop
+              controls in the 智能体 section above. */}
           <div style={{ borderTop: "1px solid var(--border)", padding: 3, display: "flex", flexDirection: "column" }}>
             {plan && (
               <Row
@@ -339,16 +416,6 @@ export function ChatStatusWidget({
                 active={planActive}
                 icon={<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 4h6a2 2 0 0 1 2 2v14H7V6a2 2 0 0 1 2-2Z" /><path d="M7 20h10" /><path d="M10 8h4" /></svg>}
                 label={planSummaryText ?? t("计划")}
-              />
-            )}
-            {onToggleTerminal && (
-              <Row
-                onClick={() => { onToggleTerminal(); setOpen(false); }}
-                title={t("底部终端（工作区 shell）")}
-                active={terminalActive}
-                icon={<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="4 17 10 11 4 5" /><line x1="12" y1="19" x2="20" y2="19" /></svg>}
-                label={t("终端")}
-                trailing={terminalActive ? <span style={{ fontSize: 10 }}>{t("已打开")}</span> : undefined}
               />
             )}
           </div>

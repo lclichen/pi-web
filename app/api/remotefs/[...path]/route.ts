@@ -3,6 +3,7 @@ import { getFileName } from "@/lib/file-paths";
 import {
   remoteCreateEmpty,
   remoteDelete,
+  remoteFind,
   remoteList,
   remoteRead,
   remoteRename,
@@ -44,6 +45,12 @@ export async function GET(
     if (type === "list") {
       const entries = await remoteList(remote.ctx, filePath);
       return NextResponse.json({ entries, path: filePath });
+    }
+    if (type === "search") {
+      const query = (url.searchParams.get("q") ?? "").trim().slice(0, 200);
+      if (!query) return NextResponse.json({ matches: [] });
+      const matches = await remoteFind(remote.ctx, filePath, query);
+      return NextResponse.json({ matches });
     }
     if (type === "read" || type === "download") {
       const { content, size } = await remoteRead(remote.ctx, filePath);

@@ -653,7 +653,9 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
   const uploadBusy = uploadPhase !== "idle";
   const hasSearchQuery = searchQuery.trim().length > 0;
 
-  // Reuse the cached, bounded file index used by @ mentions.
+  // Reuse the cached, bounded file index used by @ mentions. Remote sessions
+  // (sandbox / local-machine / ssh) run a bounded remote find through
+  // /api/remotefs instead — same result shape (paths relative to the base).
   useEffect(() => {
     if (!fileSearchOpen) return;
     const query = searchQuery.trim();
@@ -667,9 +669,15 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
     setSearchLoading(true);
     setSearchError(false);
     const timer = setTimeout(() => {
-      fetch(`/api/file-index?cwd=${encodeURIComponent(cwd)}&q=${encodeURIComponent(query)}`, { signal: controller.signal })
-        .then((response) => response.ok ? response.json() as Promise<{ matches?: FileIndexEntry[] }> : Promise.reject(new Error("Search failed")))
-        .then((data) => setSearchPaths((data.matches ?? []).filter((entry) => !entry.isDir).map((entry) => entry.path)))
+      const request = remote
+        ? fetch(`/api/remotefs/${encodeFilePathForApi(cwd)}?src=${encodeURIComponent(remote.sessionId)}&type=search&q=${encodeURIComponent(query)}`, { signal: controller.signal })
+            .then((response) => response.ok ? response.json() as Promise<{ matches?: string[] }> : Promise.reject(new Error("Search failed")))
+            .then((data) => data.matches ?? [])
+        : fetch(`/api/file-index?cwd=${encodeURIComponent(cwd)}&q=${encodeURIComponent(query)}`, { signal: controller.signal })
+            .then((response) => response.ok ? response.json() as Promise<{ matches?: FileIndexEntry[] }> : Promise.reject(new Error("Search failed")))
+            .then((data) => (data.matches ?? []).filter((entry) => !entry.isDir).map((entry) => entry.path));
+      request
+        .then((paths) => setSearchPaths(paths))
         .catch(() => {
           if (!controller.signal.aborted) {
             setSearchPaths([]);
@@ -679,7 +687,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
         .finally(() => { if (!controller.signal.aborted) setSearchLoading(false); });
     }, 150);
     return () => { clearTimeout(timer); controller.abort(); };
-  }, [cwd, fileSearchOpen, searchQuery]);
+  }, [cwd, fileSearchOpen, searchQuery, remote]);
 
   // Focus the search input whenever the search panel opens.
   useEffect(() => {

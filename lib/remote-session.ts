@@ -319,3 +319,60 @@ function containerPath(path: string): string {
 function shellQuote(path: string): string {
   return "'" + path.replace(/'/g, "'\\''") + "'";
 }
+
+/** Bounded filename search across all three remote modes — the remotefs
+ *  counterpart of the host /api/file-index. Matches are case-insensitive
+ *  substrings over file basenames, files only, capped at 200 hits, returned
+ *  as paths RELATIVE to the search base (same shape as the host index). */
+export async function remoteFind(ctx: RemoteSessionContext, base: string, query: string): Promise<string[]> {
+  const MAX = 200;
+  // grep pattern is single-quoted; the query itself cannot contain quotes after
+  // escaping, keeping the composed command injection-safe alongside shellQuote.
+  const grepPat = query.replace(/'/g, "");
+  if (!grepPat) return [];
+  const findCmd = (root: string) =>
+    `find ${shellQuote(root)} -type f -not -path '*/node_modules/*' -not -path '*/.git/*' 2>/dev/null | grep -i ${shellQuote(grepPat)} | head -${MAX}`;
+
+  if (ctx.mode === "ssh") {
+    const client = await sshClientFor(ctx);
+    // Run inside the remote workdir with RELATIVE output so the UI gets
+    // workdir-relative paths exactly like the other SSH tools.
+    const wd = (ctx.workdir ?? "/").replace(/\/+$/, "");
+    const q = (t: string) => t.replace(/'/g, "'\\''");
+    const r = await new Promise<string>((resolve, reject) => {
+      client.exec(
+        `cd '${q(wd)}' 2>/dev/null || cd /; { find . -type f -not -path '*/node_modules/*' -not -path '*/.git/*' 2>/dev/null | grep -i '${grepPat}' | head -${MAX}; }`,
+        (err: Error | undefined, stream: { on(ev: "close", cb: (c: number) => void): void; on(ev: "data", cb: (d: Buffer) => void): void; stderr: { on(ev: "data", cb: (d: Buffer) => void): void } }) => {
+          if (err) return reject(err);
+          let out = "";
+          let stderr = "";
+          stream.on("data", (d) => { out += d.toString(); });
+          stream.stderr.on("data", (d) => { stderr += d.toString(); });
+          stream.on("close", (code) => {
+            if (code !== 0 && code !== 1) reject(new Error(`Remote find failed (exit ${code}): ${stderr.trim().slice(0, 200)}`));
+            else resolve(out);
+          });
+        },
+      );
+    });
+    return r.split("\n").map((l) => l.trim()).filter(Boolean).map((p) => p.replace(/^\.\//, ""));
+  }
+
+  if (ctx.mode === "local-machine") {
+    // relay exec.run is argv-based (no shell) — wrap with bash -c like relay-tools.
+    const baseRel = stripSlash(base);
+    const r = await relayRpc("exec.run", {
+      argv: ["bash", "-c", findCmd(baseRel || ".")],
+    }, { userId: ctx.userId, machineId: ctx.machineId }) as { stdout?: string };
+    return (r.stdout ?? "").split("\n").map((l) => l.trim()).filter(Boolean)
+      .map((p) => p.replace(/^\.\//, "").replace(new RegExp(`^${baseRel}/`), ""));
+  }
+
+  const root = containerPath(base);
+  const res = await platformPost<{ stdout?: string; stderr?: string; exitCode?: number }>(
+    `/api/v1/containers/${ctx.containerId}/tools/bash`,
+    ctx.apiKey,
+    { command: `${findCmd(root)} | sed 's|^${root}/||'` },
+  );
+  return (res.stdout ?? "").split("\n").map((l) => l.trim()).filter(Boolean);
+}

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import {
   attachSessionProjectInfo,
+  getSessionListVersion,
   listAllSessions,
   mergeSessionLists,
 } from "@/lib/session-reader";
@@ -46,6 +47,9 @@ export async function GET(req: Request) {
       ...s,
       ...(metas[s.id] ? { mode: metas[s.id].mode, ...(metas[s.id].projectId ? { projectId: metas[s.id].projectId } : {}) } : {}),
     }));
+    // Capture AFTER the scan: mutations during the scan bump the generation,
+    // so the client sees a version it cannot reconcile and refreshes again.
+    const sessionListVersion = getSessionListVersion();
     // Live-sessions are per-user unless the caller is an admin on the host space.
     const runningSessionIds = getRunningRpcSessionInfos()
       .filter((r) => (user.role === "admin" ? true : r.ownerId === user.id))
@@ -58,6 +62,7 @@ export async function GET(req: Request) {
     return NextResponse.json(
       {
         sessions,
+        sessionListVersion,
         runningSessionIds,
         completionNotificationSuppressedSessionIds,
       },

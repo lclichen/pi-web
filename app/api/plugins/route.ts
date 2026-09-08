@@ -12,6 +12,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { hasJsonContentType, isApiRequestAllowed } from "@/lib/request-security";
 import { getProjectTrustStatus } from "@/lib/project-trust";
+import { isPluginSourceCheckable } from "@/lib/plugin-updates";
 import type {
   PluginDiagnostic,
   PluginPackageInfo,
@@ -201,6 +202,7 @@ function collectResource(
         scope,
         filtered: false,
         disabled: false,
+        canCheckForUpdates: isPluginSourceCheckable(classified.source),
         ...(classified.installedPath ? { installedPath: classified.installedPath } : {}),
         counts: emptyCounts(),
         resources: [],
@@ -210,6 +212,7 @@ function collectResource(
       };
       topLevel.set(key, entry);
     }
+    if (!entry) return;
     entry.counts[kind] += 1;
     entry.resources.push(info);
     addCount(totals, kind);
@@ -386,6 +389,7 @@ async function readPlugins(cwd: string): Promise<PluginsResponse> {
     return {
       source: pkg.source,
       scope,
+      canCheckForUpdates: isPluginSourceCheckable(pkg.source),
       filtered: pkg.filtered,
       disabled,
       installedPath: pkg.installedPath,
@@ -562,6 +566,12 @@ export async function POST(req: Request) {
       if (!source) return NextResponse.json({ error: "source required" }, { status: 400 });
       await packageManager.removeAndPersist(source, { local });
     } else if (body.action === "update") {
+      if (!source && !projectTrust.trusted && packageManager.listConfiguredPackages().some((pkg) => pkg.scope === "project")) {
+        return NextResponse.json(
+          { error: "Project resources must be trusted before updating project plugins" },
+          { status: 403 },
+        );
+      }
       await packageManager.update(source);
     } else if (body.action === "disable") {
       if (!source) return NextResponse.json({ error: "source required" }, { status: 400 });

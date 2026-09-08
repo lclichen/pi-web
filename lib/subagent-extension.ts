@@ -269,33 +269,13 @@ export function createSubagentExtension(
   };
 }
 
-/** Keep Pi Web's integrated implementation when the legacy package is loaded. */
+/**
+ * No-op since the 2026-09 merge decision: the @tintinweb/pi-subagents package
+ * is the ONLY subagent provider (CLI + pi-web share it), so it must never be
+ * stripped. The integrated port is hard-locked off (isBuiltInSubagentsEnabled),
+ * meaning the inline extension never registers its Agent tool and no conflict
+ * with the package can arise in the first place.
+ */
 export function preferPiWebSubagentExtension(base: LoadExtensionsResult): LoadExtensionsResult {
-  const host = base.extensions.find((extension) => extension.path === HOST_SUBAGENT_EXTENSION_PATH);
-  if (!host?.tools.has("Agent")) return base;
-  const legacyPaths = new Set(base.extensions
-    .filter((extension) => extension.path !== HOST_SUBAGENT_EXTENSION_PATH)
-    .filter((extension) => {
-      const source = extension.sourceInfo?.source ?? "";
-      const sourcePackage = source.replace(/^npm:/, "").split("@")[0];
-      const pathSegments = extension.path.replaceAll("\\", "/").split("/");
-      return sourcePackage === LEGACY_SUBAGENT_PACKAGE_NAME
-        || pathSegments.some((segment) => segment === LEGACY_SUBAGENT_PACKAGE_NAME);
-    })
-    .filter((extension) => [...SUBAGENT_TOOL_NAMES].some((name) => extension.tools.has(name)))
-    .map((extension) => extension.path));
-  if (legacyPaths.size === 0) return base;
-  return {
-    ...base,
-    extensions: base.extensions.filter((extension) => !legacyPaths.has(extension.path)),
-    errors: base.errors.filter((error) => {
-      if (legacyPaths.has(error.path)) return false;
-      if (error.path !== HOST_SUBAGENT_EXTENSION_PATH) return true;
-      return ![...legacyPaths].some((legacyPath) =>
-        [...SUBAGENT_TOOL_NAMES].some((name) =>
-          error.error === `Tool "${name}" conflicts with ${legacyPath}`
-        )
-      );
-    }),
-  };
+  return base;
 }

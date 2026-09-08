@@ -32,7 +32,16 @@ export function readSubagentSettings(
   return { builtInEnabled: stored.builtInEnabled === true };
 }
 
-export function isBuiltInSubagentsEnabled(): boolean {
+/**
+ * LOCKED OFF (merge decision 2026-09): subagents run exclusively through the
+ * @tintinweb/pi-subagents package (the fork's cwd-fixed build installed under
+ * ~/.pi), which serves both the CLI and pi-web. The built-in port therefore
+ * stays disabled regardless of settings — enabling it would register a
+ * competing Agent tool in every session.
+ */
+export function isBuiltInSubagentsEnabled(
+  _settingsPath = getSubagentSettingsPath(),
+): boolean {
   return false;
 }
 

@@ -14,6 +14,7 @@ try {
 const nextConfig: NextConfig = {
   outputFileTracingRoot: configDir,
   serverExternalPackages: [
+    "node-pty",
     "undici",
     "@homebridge/node-pty-prebuilt-multiarch",
     "web-push",

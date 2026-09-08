@@ -28,7 +28,7 @@ test("keeps enabled configuration surfaces inside the settings panel", () => {
   for (const section of ["general", "models", "skills", "agents", "mcp", "plugins"]) {
     assert.match(panelSource, new RegExp(`id: "${section}"`));
   }
-  for (const component of ["ModelsConfig", "SkillsConfig", "PluginsConfig"]) {
+  for (const component of ["ModelsConfig", "SkillsConfig", "SubagentsConfig", "PluginsConfig"]) {
     assert.match(panelSource, new RegExp(`<${component} embedded`));
   }
   // This fork surfaces the tintinweb subagents config and the MCP servers
@@ -42,7 +42,7 @@ test("restores the settings section and each list detail selection", async () =>
   assert.match(shellSource, /getLastSettingsSection\(projectTrustCwd\)/);
   assert.match(panelSource, /setLastSettingsSection\(initialSection\)/);
   assert.match(panelSource, /setLastSettingsSection\(nextSection\)/);
-  for (const name of ["ModelsConfig", "SkillsConfig", "AgentsConfig", "PluginsConfig"]) {
+  for (const name of ["ModelsConfig", "SkillsConfig", "SubagentsConfig", "PluginsConfig"]) {
     assert.match(
       await readFile(new URL(`./${name}.tsx`, import.meta.url), "utf8"),
       /getLastSettingsSelection/,
@@ -64,6 +64,29 @@ test("offers direct light, dark, and system theme selection", () => {
   }
   assert.match(panelSource, /setThemePreference\(option\.id\)/);
   assert.match(themeSource, /const setThemePreference = useCallback/);
+});
+
+test("groups chat display controls together without row backgrounds", () => {
+  const appearanceSection = panelSource.slice(
+    panelSource.indexOf('{t("settings.appearance")}'),
+    panelSource.indexOf('{t("settings.chat")}'),
+  );
+  const chatSection = panelSource.slice(
+    panelSource.indexOf('{t("settings.chat")}'),
+    panelSource.indexOf("{shellSettings?.isWindows"),
+  );
+
+  assert.doesNotMatch(appearanceSection, /settings-chat-content/);
+  assert.match(chatSection, /className="settings-chat-options"/);
+  assert.equal((chatSection.match(/className="settings-chat-option(?: |")/g) ?? []).length, 4);
+  assert.equal((chatSection.match(/<ConfigSwitch/g) ?? []).length, 2);
+  for (const key of ["thinkingExpandedDefault", "chatContentWidth", "chatContentFontSize", "quoteSelection"]) {
+    assert.match(chatSection, new RegExp(`t\\("settings\\.${key}"\\)`));
+  }
+  assert.doesNotMatch(panelSource, /ThinkingIcon|settings-thinking-/);
+  const chatOptionStyles = cssSource.match(/\.settings-chat-option \{[\s\S]*?\}/)?.[0] ?? "";
+  assert.match(chatOptionStyles, /font-size: 12px/);
+  assert.doesNotMatch(chatOptionStyles, /background/);
 });
 
 test("keeps General free of divider rows", () => {

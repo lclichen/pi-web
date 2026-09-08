@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useIsMobile } from "@/hooks/useIsMobile";
+import { getLastSettingsSelection, setLastSettingsSelection } from "@/lib/settings-navigation";
 import type { AgentDetail, AgentInfo, ConfigScope, McpServerTools, WebPreferences } from "@/lib/api-types";
 
 const THINKING_OPTIONS = ["off", "low", "medium", "high"];
@@ -186,10 +187,13 @@ export function SubagentsConfig({ cwd, onClose, embedded = false }: { cwd: strin
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [selectedKey, setSelectedKey] = useState<string | null>(() => getLastSettingsSelection("agents"));
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState<AgentForm>(emptyForm());
   const [detail, setDetail] = useState<AgentDetail | null>(null);
+  useEffect(() => {
+    if (selectedKey) setLastSettingsSelection("agents", selectedKey);
+  }, [selectedKey]);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [formMsg, setFormMsg] = useState<string | null>(null);

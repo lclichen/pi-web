@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getSessionListVersion } from "@/lib/session-reader";
 import {
   getCompletionNotificationSuppressedRpcSessionIds,
   getRunningRpcSessionInfos,
@@ -25,6 +26,7 @@ export async function GET(req: Request) {
     .filter((sessionId) => visible.has(sessionId));
   return NextResponse.json(
     {
+      sessionListVersion: getSessionListVersion(),
       runningSessionIds,
       completionNotificationSuppressedSessionIds,
     },

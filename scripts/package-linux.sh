@@ -596,7 +596,7 @@ if [ "$SMOKE_TEST" != "0" ]; then
         NODE_ENV=production HOST=127.0.0.1 PORT=31090 \
         DB_DIALECT=sqlite SQLITE_PATH="$SMOKE_SBX_HOME/sbx.db" \
         JWT_SECRET="$SMOKE_JWT" SEED_ADMIN_USERNAME=admin SEED_ADMIN_PASSWORD="$SMOKE_ADMIN_PW" \
-        EXECUTOR_KIND=mock REGISTER_MODE=off \
+        EXECUTOR_KIND=mock ALLOW_MOCK_EXECUTOR_IN_PRODUCTION=1 REGISTER_MODE=off \
         "$PKG/runtime/bin/node" --experimental-transform-types --no-warnings=ExperimentalWarning src/index.ts \
         >"$WORK/platform.log" 2>&1 &
       echo $! > "$WORK/platform.pid"

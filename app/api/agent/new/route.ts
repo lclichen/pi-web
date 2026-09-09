@@ -227,7 +227,7 @@ export async function POST(req: Request) {
       ];
     } else {
       // Host mode keeps the caller-supplied server directory.
-      if (!effectiveCwd || !existsSync(effectiveCwd)) {
+      if (mode !== "quick" && (!effectiveCwd || !existsSync(effectiveCwd))) {
         return NextResponse.json({
           error: `Directory does not exist: ${String(effectiveCwd)}`,
           ...(commandType === "prompt"

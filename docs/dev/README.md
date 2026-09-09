@@ -25,6 +25,7 @@
 | `multi-user-and-modes-design.md` | 多用户隔离与四种执行模式（host/沙盒/本机/SSH）的设计决策与权限矩阵 | 开发 |
 | `DEPLOYMENT.md` | 部署与运维：环境要求、启动、升级、打包（tar/AppImage）、常见故障（含 apptainer starter 255 排障） | 运维 |
 | `CONNECT_LOCAL_MACHINE.md` | 「连接本地」配对协议与 relay 能力边界 | 开发、用户 |
+| `config-sharing.md` | 配置分享三件套：项目配置包导出/导入、预置配置模板（管理员分发）、Host 目录包；权限矩阵与已知不足 | 开发、用户 |
 | `平台功能检查手册.md` | 14 节端到端功能/权限走查手册（admin vs 普通用户） | 测试、验收 |
 | `全流程测试方案.md` | 三层测试方案（L0 静态 / L1 本地 dev+mock / L2 VM 实机）、回归集选择、QA 子智能体接入 | 测试、开发 |
 

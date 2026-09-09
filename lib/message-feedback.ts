@@ -89,6 +89,18 @@ export function setFeedback(
 }
 
 let flushing = false;
+let drainedOnce = false;
+
+/**
+ * Attempt an outbox drain at most once per page load — safe to call from
+ * every message component's mount effect without re-parsing localStorage
+ * for each one. Later attempts still happen on the next verdict.
+ */
+export function drainOutboxOnce(): void {
+  if (drainedOnce) return;
+  drainedOnce = true;
+  void flushFeedback();
+}
 
 /**
  * Try to deliver the outbox. Failures are silent by design: the endpoint may

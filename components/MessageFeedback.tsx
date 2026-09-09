@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
-import { getFeedback, setFeedback, type FeedbackValue } from "@/lib/message-feedback";
+import { getFeedback, setFeedback, drainOutboxOnce, type FeedbackValue } from "@/lib/message-feedback";
 
 /**
  * 👍/👎 verdict control for one assistant message — sits next to the copy
@@ -24,6 +24,9 @@ export function MessageFeedback({ sessionId, entryId, snippet, visible }: {
     if (!sessionId || !entryId) return;
     setValue(getFeedback(sessionId, entryId));
     setLoaded(true);
+    // Drain the outbox on load — verdicts queued while the gateway was down
+    // (503/404 answers keep them) get re-delivered as soon as a page opens.
+    drainOutboxOnce();
   }, [sessionId, entryId]);
 
   if (!sessionId || !entryId || !loaded) return null;

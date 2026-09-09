@@ -305,7 +305,7 @@ export async function POST(req: Request) {
     // Host-mode sessions keep the files-route allowed-roots cache in sync so
     // the cwd is immediately readable via /api/files (sandbox/local sessions
     // don't expose server-local files at all).
-    if (mode === "host") {
+    if (mode === "host" && effectiveCwd) {
       allowFileRoot(effectiveCwd);
     }
 

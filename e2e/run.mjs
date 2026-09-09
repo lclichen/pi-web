@@ -251,7 +251,7 @@ try {
     assert.equal(await thinking.count(), 0, "All thinking stays inside process details");
     const finalMessage = page.locator("[data-entry-id='answer']");
     assert.equal(await finalMessage.getByRole("button", { name: /^Thinking/ }).count(), 0);
-    assert.equal(await finalMessage.getByText("E2E Model", { exact: true }).count(), 1);
+    assert.equal(await finalMessage.getByText("test/E2E Model", { exact: true }).count(), 1);
     assert.equal(thinkingRequests.length, 0);
     await processDetails.click();
     assert.equal(await thinking.count(), 3);

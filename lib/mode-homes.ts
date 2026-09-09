@@ -41,6 +41,18 @@ export function localHomeDir(userId: number): string {
   return join(dataDir(), "local-homes", `u${userId}`);
 }
 
+export function quickHomeDir(userId: number): string {
+  return join(dataDir(), "quick-homes", `u${userId}`);
+}
+
+/** Quick sessions have no workspace; the home only anchors the session file
+ *  layout and the user-scope MCP/config fallback. */
+export function ensureQuickHome(userId: number): string {
+  const home = quickHomeDir(userId);
+  if (!existsSync(home)) mkdirSync(home, { recursive: true });
+  return home;
+}
+
 export function ensureSandboxHome(userId: number, config: SandboxHomeConfig): string {
   const home = sandboxHomeDir(userId);
   const piDir = join(home, ".pi");

@@ -175,7 +175,9 @@ export interface RpcSessionStartOptions {
   /** Owning web user id (0 = implicit host identity when auth is off). */
   ownerId?: number;
   /** Execution mode for this session's tool layer. */
-  mode?: "host" | "sandbox" | "local-machine" | "ssh";
+  mode?: "host" | "sandbox" | "local-machine" | "ssh" | "quick";
+  /** Quick mode: template-pinned system prompt / model / MCP allowlist. */
+  quick?: { systemPrompt?: string; model?: { provider: string; modelId: string }; mcpServers?: string[] };
   /** Extra extension entry-point directories injected for this session only. */
   additionalExtensionPaths?: string[];
   /** Inline extension factories injected for this session only. */
@@ -265,6 +267,31 @@ function withExtensionTools(session: AgentSessionLike, toolNames: string[]): str
   return [...new Set([...selectedToolNames, ...extensionToolNames])];
 }
 
+/**
+ * Quick-mode active tool set: the harmless session extensions (todo, plan_save)
+ * plus MCP tools. Coding built-ins, the subagent Agent tool, and every other
+ * extension tool stay off — a quick session has no workspace to operate on.
+ * An optional server-name allowlist narrows which MCP servers contribute.
+ */
+function quickToolSet(session: AgentSessionLike, mcpAllowlist?: string[]): string[] {
+  const allowed = new Set(["todo", "plan_save"]);
+  const allowlist = mcpAllowlist && mcpAllowlist.length > 0 ? new Set(mcpAllowlist) : null;
+  for (const tool of session.getAllTools()) {
+    const name = tool.name;
+    if (allowed.has(name)) continue;
+    if (SUBAGENT_TOOL_NAMES.has(name)) continue;
+    if (CODING_TOOL_NAMES.includes(name)) continue;
+    // Everything else must look like an MCP tool (`<server>_<tool>`), with the
+    // server part inside the allowlist when one is set.
+    const sep = name.indexOf("_");
+    if (sep <= 0) continue;
+    const server = name.slice(0, sep);
+    if (allowlist && !allowlist.has(server)) continue;
+    allowed.add(name);
+  }
+  return [...allowed];
+}
+
 // ============================================================================
 // AgentSessionWrapper
 // Wraps AgentSession with the same interface the rest of the app expects
@@ -290,7 +317,7 @@ export class AgentSessionWrapper {
   private extensionBindingPromise: Promise<void> | null = null;
   private extensionBindingError: unknown = null;
   private forceEmptySystemPrompt = false;
-  private readonly exactSystemPrompt?: () => string;
+  private exactSystemPrompt?: () => string;
   private readonly chatOnly: boolean;
   private readonly onAgentRunComplete?: AgentRunCompleteListener;
   private readonly suppressCompletionNotifications: boolean;
@@ -317,7 +344,7 @@ export class AgentSessionWrapper {
   /** Owning web user id (0 = implicit host identity when auth is off). */
   ownerId = 0;
   /** Execution mode of this session's tool layer. */
-  mode: "host" | "sandbox" | "local-machine" | "ssh" = "host";
+  mode: "host" | "sandbox" | "local-machine" | "ssh" | "quick" = "host";
 
   get sessionId(): string {
     return this.inner.sessionId;
@@ -532,6 +559,13 @@ export class AgentSessionWrapper {
         },
       };
     };
+  }
+
+  /** Quick mode template switch: re-pin the exact system prompt. */
+  setExactSystemPrompt(prompt: string): void {
+    this.exactSystemPrompt = () => prompt;
+    this.forceEmptySystemPrompt = false;
+    this.installExactSystemPromptContinuation();
   }
 
   setActiveToolSelection(toolNames: string[]): void {
@@ -1026,6 +1060,23 @@ export class AgentSessionWrapper {
         const toolNames = command.toolNames as string[];
         this.setActiveToolSelection(toolNames);
         return null;
+      }
+
+      case "apply_quick_template": {
+        // Quick mode: re-pin the template's system prompt / model / MCP set.
+        const templateId = command.templateId as string;
+        if (typeof templateId !== "string" || !templateId) {
+          throw new Error("templateId required");
+        }
+        const { getQuickTemplate } = await import("./quick-templates");
+        const template = getQuickTemplate(templateId);
+        if (!template) throw new Error(`快速会话模板不存在：${templateId}`);
+        this.setExactSystemPrompt(template.systemPrompt);
+        this.inner.setActiveToolsByName(quickToolSet(this.inner, template.mcpServers));
+        if (template.model) {
+          await this.send({ type: "set_model", provider: template.model.provider, modelId: template.model.modelId });
+        }
+        return { success: true, template: { id: template.id, name: template.name } };
       }
 
       case "apply_preferences": {
@@ -1914,7 +1965,7 @@ export function getRpcSession(sessionId: string): AgentSessionWrapper | undefine
 }
 
 /** Ownership/mode info for a live session (registry is authoritative). */
-export function getRpcSessionOwner(sessionId: string): { ownerId: number; mode: "host" | "sandbox" | "local-machine" | "ssh" } | undefined {
+export function getRpcSessionOwner(sessionId: string): { ownerId: number; mode: "host" | "sandbox" | "local-machine" | "ssh" | "quick" } | undefined {
   const session = getRegistry().get(sessionId);
   if (!session) return undefined;
   return { ownerId: session.ownerId, mode: session.mode };
@@ -2130,6 +2181,7 @@ export async function startRpcSession(
     sessionDir,
     ownerId,
     mode,
+    quick,
     additionalExtensionPaths,
     extensionFactories,
     projectCredentialDir,
@@ -2324,11 +2376,20 @@ export async function startRpcSession(
       inner.setActiveToolsByName(withExtensionTools(inner, selectedToolNames ?? inner.getActiveToolNames()));
     }
 
+    // Quick mode: no workspace — coding tools are hard-off. The active set is
+    // the harmless session extensions (todo / plan_save) plus MCP tools, the
+    // latter optionally narrowed to the template's server allowlist.
+    if (quick && !subagentResources) {
+      inner.setActiveToolsByName(quickToolSet(inner, quick.mcpServers));
+    }
+
     const exactSystemPrompt = chatOnly
       ? subagentResources
         ? () => subagentResources.appendSystemPrompt[0] ?? ""
         : () => contextFilesSystemPrompt(inner.resourceLoader.getAgentsFiles().agentsFiles)
-      : undefined;
+      : quick?.systemPrompt
+        ? () => quick.systemPrompt as string
+        : undefined;
     const wrapper = new AgentSessionWrapper(inner, {
       exactSystemPrompt,
       chatOnly,
@@ -2344,6 +2405,10 @@ export async function startRpcSession(
     // routing queries observe the right owner from the first tick.
     wrapper.ownerId = ownerId ?? 0;
     wrapper.mode = mode ?? "host";
+    // Quick mode keeps its own tool policy — the template allowlist is
+    // authoritative for MCP (user-level mcpEnabled prefs still apply below
+    // only when they DISABLE things globally).
+    if (!quick) wrapper.applyToolPreferences(sessionCwd);
     // When the platform explicitly disables every tool, keep the system prompt
     // empty (pi's buildSystemPrompt is non-empty even with no tools). Forced
     // empty wins over the chat-only context-files prompt.
@@ -2351,7 +2416,6 @@ export async function startRpcSession(
       wrapper.setForceEmptySystemPrompt(true);
     }
     registerRpcWrapper(wrapper);
-    wrapper.applyToolPreferences(sessionCwd);
 
     return { session: wrapper, realSessionId };
   })().finally(() => {

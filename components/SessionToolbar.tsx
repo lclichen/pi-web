@@ -10,6 +10,8 @@ interface Props {
   onSendCommand: (command: string) => void;
   onApplyPreferences: (action?: "reload_agents") => void;
   disabled?: boolean;
+  /** Quick mode: show the template switcher (reads /api/quick-templates). */
+  quickMode?: boolean;
 }
 
 function chipStyle(active: boolean): React.CSSProperties {
@@ -143,12 +145,38 @@ function ToggleRow({
   );
 }
 
-export function SessionToolbar({ cwd, sessionId, hasLabTraining, onSendCommand, onApplyPreferences, disabled }: Props) {
+export function SessionToolbar({ cwd, sessionId, hasLabTraining, onSendCommand, onApplyPreferences, disabled, quickMode = false }: Props) {
   const [prefs, setPrefs] = useState<WebPreferences>({ mcpEnabled: true, subagentsEnabled: true, labVerifyEnabled: true });
   const [mcpOpen, setMcpOpen] = useState(false);
   const [agentsOpen, setAgentsOpen] = useState(false);
   const [mcpServers, setMcpServers] = useState<McpServerInfo[]>([]);
   const [agents, setAgents] = useState<AgentInfo[]>([]);
+  const [quickTemplates, setQuickTemplates] = useState<Array<{ id: string; name: string }>>([]);
+  const [quickOpen, setQuickOpen] = useState(false);
+  const [applyingTemplate, setApplyingTemplate] = useState<string | null>(null);
+
+  // Quick mode: template list for mid-session switching.
+  useEffect(() => {
+    if (!quickMode) return;
+    fetch("/api/quick-templates")
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((d: { templates?: Array<{ id: string; name: string }> }) => setQuickTemplates(d.templates ?? []))
+      .catch(() => {});
+  }, [quickMode]);
+
+  const applyQuickTemplate = useCallback(async (templateId: string) => {
+    if (!sessionId) return;
+    setApplyingTemplate(templateId);
+    try {
+      const { sendAgentCommand } = await import("@/lib/agent-client");
+      await sendAgentCommand(sessionId, { type: "apply_quick_template", templateId });
+      setQuickOpen(false);
+    } catch {
+      // surfaced via the disabled state clearing; template errors arrive as thrown text
+    } finally {
+      setApplyingTemplate(null);
+    }
+  }, [sessionId]);
 
   useEffect(() => {
     fetch(`/api/preferences?cwd=${encodeURIComponent(cwd)}`)
@@ -230,6 +258,50 @@ export function SessionToolbar({ cwd, sessionId, hasLabTraining, onSendCommand, 
   );
 
   const buttons: React.ReactNode[] = [];
+
+  // Quick mode: template switcher chip (mid-session template change).
+  if (quickMode && sessionId) {
+    buttons.push(
+      <div key="quick-template" style={{ position: "relative" }}>
+        <button
+          onClick={() => { setQuickOpen((v) => !v); }}
+          disabled={disabled}
+          style={chipStyle(quickOpen)}
+          title="切换快速会话模板（模型 / 系统提示词 / MCP）"
+        >
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+          </svg>
+          模板
+        </button>
+        {quickOpen && (
+          <Popover onClose={() => setQuickOpen(false)}>
+            {quickTemplates.length === 0 ? (
+              <div style={{ padding: "10px 12px", fontSize: 11, color: "var(--text-dim)" }}>暂无可用模板</div>
+            ) : (
+              quickTemplates.map((tpl) => (
+                <button
+                  key={tpl.id}
+                  type="button"
+                  disabled={applyingTemplate !== null}
+                  onClick={() => { void applyQuickTemplate(tpl.id); }}
+                  style={{
+                    display: "block", width: "100%", padding: "6px 12px", border: "none",
+                    background: "transparent", color: "var(--text)", fontSize: 11.5,
+                    cursor: "pointer", textAlign: "left",
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-hover)"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+                >
+                  {applyingTemplate === tpl.id ? `${tpl.name} · 应用中…` : tpl.name}
+                </button>
+              ))
+            )}
+          </Popover>
+        )}
+      </div>
+    );
+  }
 
   const mcpEnabledCount = mcpServers.filter((s) => !s.disabled).length;
   buttons.push(

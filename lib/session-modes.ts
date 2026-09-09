@@ -3,10 +3,10 @@
  * The agent process always lives in pi-web; only the tool layer differs.
  */
 
-export type SessionMode = "host" | "sandbox" | "local-machine" | "ssh";
+export type SessionMode = "host" | "sandbox" | "local-machine" | "ssh" | "quick";
 
 export function isSessionMode(value: unknown): value is SessionMode {
-  return value === "host" || value === "sandbox" || value === "local-machine" || value === "ssh";
+  return value === "host" || value === "sandbox" || value === "local-machine" || value === "ssh" || value === "quick";
 }
 
 export interface ModeActor {
@@ -20,6 +20,7 @@ export interface ModeActor {
  *  - sandbox: any logged-in user (requires PI_WEB_PLATFORM_URL)
  *  - local-machine: any logged-in user (requires a relay bound to them)
  *  - ssh: any logged-in user (credentials live in their own project config)
+ *  - quick: any logged-in user (no filesystem access at all)
  */
 export function modeAllowedForUser(mode: SessionMode, actor: ModeActor): { ok: true } | { ok: false; reason: string } {
   if (actor.id === 0) {
@@ -38,4 +39,5 @@ export const MODE_LABELS: Record<SessionMode, string> = {
   sandbox: "沙箱",
   "local-machine": "本机",
   ssh: "SSH",
+  quick: "快速",
 };

@@ -7,13 +7,15 @@ import { allowFileRoot } from "@/lib/file-access";
 import { makeSshToolsExtension } from "@/lib/extensions/ssh-tools";
 import { makeTodoExtension } from "@/lib/extensions/todo";
 import { makeSessionPlanExtension } from "@/lib/extensions/session-plan";
+import { makeBgTasksExtension } from "@/lib/extensions/bg-tasks";
+import { getQuickTemplate, DEFAULT_TEMPLATE_ID } from "@/lib/quick-templates";
 import { readSshConfig } from "@/lib/ssh";
 import { invalidateSessionListCache } from "@/lib/session-reader";
 import { startRpcSession } from "@/lib/rpc-manager";
 import { requireUserIdentity } from "@/lib/web-session";
-import { isSessionMode, modeAllowedForUser } from "@/lib/session-modes";
+import { isSessionMode, modeAllowedForUser, type SessionMode } from "@/lib/session-modes";
 import { spaceDir } from "@/lib/session-spaces";
-import { ensureSandboxHome, ensureLocalHome } from "@/lib/mode-homes";
+import { ensureSandboxHome, ensureLocalHome, ensureQuickHome } from "@/lib/mode-homes";
 import { recordSessionMeta } from "@/lib/session-metas";
 import { makeRelayToolsExtension } from "@/lib/extensions/relay-tools";
 import { makeRemoteVerifyExtension } from "@/lib/extensions/remote-verify";
@@ -90,7 +92,7 @@ export async function POST(req: Request) {
     const projectForMode = typeof body.projectId === "string" && body.projectId
       ? getOwnedProject(body.projectId, user.id, user.role === "admin")
       : undefined;
-    const mode = projectForMode?.mode ?? (rawMode as "host" | "sandbox" | "local-machine" | "ssh" | undefined) ?? "host";
+    const mode = projectForMode?.mode ?? (rawMode as SessionMode | undefined) ?? "host";
     const effectiveMode = mode;
     const permission = modeAllowedForUser(effectiveMode, { id: user.id, role: user.role });
     if (!permission.ok) {
@@ -236,13 +238,31 @@ export async function POST(req: Request) {
       extensionFactories = [makeEnvironmentInfoExtension({ mode: "host", username: user.username, hostDir: effectiveCwd })];
     }
 
-    if (!effectiveCwd) {
+    if (!effectiveCwd && mode !== "quick") {
       return NextResponse.json({
         error: "cwd is required",
         ...(commandType === "prompt"
           ? { code: "prompt_rejected", accepted: false }
           : {}),
       }, { status: 400 });
+    }
+
+    // Quick mode: no workspace — a per-user scratch home is only used for the
+    // session file layout and MCP-config fallback. The template pins model /
+    // system prompt / MCP allowlist.
+    let quickOptions: { systemPrompt?: string; model?: { provider: string; modelId: string }; mcpServers?: string[] } | undefined;
+    if (mode === "quick") {
+      const templateId = typeof body.templateId === "string" ? body.templateId : DEFAULT_TEMPLATE_ID;
+      const template = getQuickTemplate(templateId);
+      if (!template) {
+        return NextResponse.json({ error: `快速会话模板不存在：${templateId}` }, { status: 400 });
+      }
+      effectiveCwd = ensureQuickHome(user.id);
+      quickOptions = {
+        systemPrompt: template.systemPrompt,
+        ...(template.model ? { model: template.model } : {}),
+        ...(template.mcpServers && template.mcpServers.length > 0 ? { mcpServers: template.mcpServers } : {}),
+      };
     }
 
     // User sessions live in the caller's shard; host sessions in the global dir.
@@ -267,13 +287,15 @@ export async function POST(req: Request) {
     const tempKey = `__new__${randomUUID()}`;
     const { session, realSessionId } = await startRpcSession(tempKey, "", effectiveCwd, {
       ...(toolNames ? { toolNames } : {}),
-      ...(provider && modelId ? { initialModel: { provider, modelId } } : {}),
+      ...(quickOptions?.model ? { initialModel: quickOptions.model } : {}),
+      ...(provider && modelId && !quickOptions?.model ? { initialModel: { provider, modelId } } : {}),
       ...(explicitThinkingLevel ? { thinkingLevel: explicitThinkingLevel } : {}),
       ...(sessionDir ? { sessionDir } : {}),
       ownerId: user.id,
       mode,
+      ...(quickOptions ? { quick: quickOptions } : {}),
       // todo tool and session plan store are mode-agnostic and present in every session.
-      extensionFactories: [makeTodoExtension(), makeSessionPlanExtension(), ...(extensionFactories ?? [])],
+      extensionFactories: [makeTodoExtension(), makeSessionPlanExtension(), makeBgTasksExtension(), ...(extensionFactories ?? [])],
       ...(projectRef ? { projectCredentialDir: effectiveCwd } : {}),
     });
 

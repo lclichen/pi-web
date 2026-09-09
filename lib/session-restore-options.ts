@@ -3,7 +3,7 @@ import type { InlineExtension } from "@earendil-works/pi-coding-agent";
 import type { RpcSessionStartOptions } from "./rpc-manager";
 import { getSessionMeta } from "./session-metas";
 import { ensureProjectHome, getOwnedProject, projectHome, writeSandboxConfig } from "./projects";
-import { ensureLocalHome, ensureSandboxHome } from "./mode-homes";
+import { ensureLocalHome, ensureSandboxHome, ensureQuickHome } from "./mode-homes";
 import { spaceDir } from "./session-spaces";
 import { makeRelayToolsExtension } from "./extensions/relay-tools";
 import { makeRemoteVerifyExtension } from "./extensions/remote-verify";
@@ -11,6 +11,7 @@ import { makeEnvironmentInfoExtension } from "./extensions/environment-info";
 import { makeSshToolsExtension } from "./extensions/ssh-tools";
 import { makeTodoExtension } from "./extensions/todo";
 import { makeSessionPlanExtension } from "./extensions/session-plan";
+import { makeBgTasksExtension } from "./extensions/bg-tasks";
 import { readSshConfig } from "./ssh";
 import { requireUserIdentity } from "./web-session";
 import { getAgentForUser } from "./relay/registry";
@@ -104,6 +105,11 @@ export async function restoreSessionOptions(req: Request, sessionId: string): Pr
         ];
       }
     }
+  } else if (mode === "quick") {
+    // Quick mode on restore: same scratch home, same tool policy. The system
+    // prompt rides the session file itself (persisted as a model_change-adjacent
+    // context), so only the tool set needs rebuilding.
+    effectiveCwd = ensureQuickHome(user.id);
   } else {
     extensionFactories = [makeEnvironmentInfoExtension({ mode: "host", username: identity.session.user.username })];
   }
@@ -113,9 +119,10 @@ export async function restoreSessionOptions(req: Request, sessionId: string): Pr
     ...(additionalExtensionPaths ? { additionalExtensionPaths } : {}),
     // The todo tool and session plan store are mode-agnostic (state lives in
     // session entries / the project home on the server side).
-    extensionFactories: [makeTodoExtension(), makeSessionPlanExtension(), ...(extensionFactories ?? [])],
+    extensionFactories: [makeTodoExtension(), makeSessionPlanExtension(), makeBgTasksExtension(), ...(extensionFactories ?? [])],
     ...(ownerId !== 0 ? { ownerId } : {}),
     mode,
+    ...(mode === "quick" ? { quick: {} } : {}),
     // Project-scoped model credentials live in the project home's .pi/.
     ...(effectiveCwd && project ? { projectCredentialDir: effectiveCwd } : {}),
   };

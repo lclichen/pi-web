@@ -108,7 +108,7 @@ interface Props {
   onSessionSpaceChange?: (space: "mine" | "host") => void;
   selectedSessionId: string | null;
   onSelectSession: (session: SessionInfo, isRestore?: boolean, entryId?: string, blockIndex?: number) => void;
-  onNewSession?: (sessionId: string, cwd: string, mode?: "host" | "sandbox" | "local-machine" | "ssh", projectId?: string, projectLabel?: string) => void;
+  onNewSession?: (sessionId: string, cwd: string, mode?: "host" | "sandbox" | "local-machine" | "ssh" | "quick", projectId?: string, projectLabel?: string) => void;
   initialSessionId?: string | null;
   skipInitialProjectSelection?: boolean;
   onInitialRestoreDone?: () => void;
@@ -134,7 +134,7 @@ interface Props {
   projectsRefreshKey?: number;
   /** Remote mode of a not-yet-materialized session: explorer waits with a
    *  hint instead of falling back to the server-local /api/files. */
-  pendingRemoteMode?: "host" | "sandbox" | "local-machine" | "ssh" | null;
+  pendingRemoteMode?: "host" | "sandbox" | "local-machine" | "ssh" | "quick" | null;
   /** Project name for the pending remote session's header badge (e.g.
    *  "[沙盒] 项目名 · /workspace"); null for host mode. */
   pendingProjectLabel?: string | null;
@@ -430,6 +430,28 @@ export function SessionSidebar({ authInfo = null, sessionSpace = "mine", onSessi
   // Worktree switcher state
   const [worktreeState, setWorktreeState] = useState<WorktreeState | null>(null);
   const [wtDropdownOpen, setWtDropdownOpen] = useState(false);
+const [quickMenuOpen, setQuickMenuOpen] = useState(false);
+const [quickTemplates, setQuickTemplates] = useState<Array<{ id: string; name: string; description: string }>>([]);
+useEffect(() => {
+  if (!quickMenuOpen || quickTemplates.length > 0) return;
+  let cancelled = false;
+  fetch("/api/quick-templates")
+    .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+    .then((d: { templates?: Array<{ id: string; name: string; description: string }> }) => {
+      if (!cancelled) setQuickTemplates(d.templates ?? []);
+    })
+    .catch(() => {});
+  return () => { cancelled = true; };
+}, [quickMenuOpen, quickTemplates.length]);
+useEffect(() => {
+  if (!quickMenuOpen) return;
+  const onDown = (e: MouseEvent) => {
+    const el = e.target as HTMLElement;
+    if (!el.closest("[data-quick-menu]")) setQuickMenuOpen(false);
+  };
+  document.addEventListener("mousedown", onDown);
+  return () => document.removeEventListener("mousedown", onDown);
+}, [quickMenuOpen]);
   const [wtNewOpen, setWtNewOpen] = useState(false);
   const [wtNewBranch, setWtNewBranch] = useState("");
   const [wtError, setWtError] = useState<string | null>(null);
@@ -1015,7 +1037,7 @@ export function SessionSidebar({ authInfo = null, sessionSpace = "mine", onSessi
     onSelectSession(s, false, entryId, blockIndex);
   }, [onSelectSession]);
 
-  const [newSessionMode, setNewSessionMode] = useState<"host" | "sandbox" | "local-machine" | "ssh">("host");
+  const [newSessionMode, setNewSessionMode] = useState<"host" | "sandbox" | "local-machine" | "ssh" | "quick">("host");
 
   const recentProjects = getRecentProjects(allSessions);
   const showProjectFilter = recentProjects.length > 8;
@@ -1162,6 +1184,102 @@ export function SessionSidebar({ authInfo = null, sessionSpace = "mine", onSessi
               </svg>
               {t("新建项目")}
             </button>
+            )}
+            <button
+              type="button"
+              onClick={() => { setQuickMenuOpen((v) => !v); setWtDropdownOpen(false); }}
+              data-quick-menu
+              title={t("快速会话：无工作区，选择助手模板直接开始")}
+              aria-haspopup="menu"
+              aria-expanded={quickMenuOpen}
+              style={{
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
+                background: "var(--bg-hover)",
+                border: "1px solid var(--border)",
+                color: "var(--text-muted)",
+                cursor: "pointer",
+                height: 32,
+                paddingLeft: 10,
+                paddingRight: 12,
+                borderRadius: 7,
+                fontSize: 12,
+                fontWeight: 500,
+                letterSpacing: "-0.01em",
+                flexShrink: 0,
+                transition: "background 0.12s, color 0.12s, border-color 0.12s",
+                ...(quickMenuOpen
+                  ? { background: "var(--bg-selected)", color: "var(--accent)", borderColor: "rgba(37,99,235,0.35)" }
+                  : {}),
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = "var(--bg-selected)";
+                e.currentTarget.style.color = "var(--accent)";
+                e.currentTarget.style.borderColor = "rgba(37,99,235,0.35)";
+              }}
+              onMouseLeave={(e) => {
+                if (quickMenuOpen) return;
+                e.currentTarget.style.background = "var(--bg-hover)";
+                e.currentTarget.style.color = "var(--text-muted)";
+                e.currentTarget.style.borderColor = "var(--border)";
+              }}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+              </svg>
+              {t("快速会话")}
+            </button>
+            {quickMenuOpen && (
+              <div
+                role="menu"
+                style={{
+                  position: "absolute",
+                  top: "calc(100% + 4px)",
+                  left: 0,
+                  right: 0,
+                  zIndex: 60,
+                  background: "var(--bg-panel)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 8,
+                  boxShadow: "0 8px 24px rgba(0,0,0,0.14)",
+                  padding: 3,
+                  maxHeight: 260,
+                  overflowY: "auto",
+                }}
+              >
+                {quickTemplates.length === 0 && (
+                  <div style={{ padding: "8px 10px", fontSize: 11, color: "var(--text-dim)" }}>
+                    {t("暂无模板（管理员可在 设置 → 快速会话模板 中添加）")}
+                  </div>
+                )}
+                {quickTemplates.map((tpl) => (
+                  <button
+                    key={tpl.id}
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setQuickMenuOpen(false);
+                      const tempId = typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now()}`;
+                      onNewSession?.(tempId, "", "quick", tpl.id, tpl.name);
+                    }}
+                    title={tpl.description || tpl.name}
+                    style={{
+                      display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 1,
+                      width: "100%", padding: "6px 9px", border: "none", borderRadius: 6,
+                      background: "transparent", color: "var(--text)", fontSize: 11.5,
+                      cursor: "pointer", textAlign: "left",
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-hover)"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+                  >
+                    <span style={{ fontWeight: 600 }}>{tpl.name}</span>
+                    {tpl.description && (
+                      <span style={{ fontSize: 10, color: "var(--text-dim)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "100%" }}>
+                        {tpl.description}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
             )}
             <button
               type="button"

@@ -60,13 +60,16 @@ interface Props {
   onLabStateChange?: (labWidget: { metadata?: unknown } | null, hasLabTraining: boolean) => void;
   sendCommandRef?: React.MutableRefObject<((cmd: string) => void) | null>;
   /** Execution mode for a not-yet-created session (multi-user). */
-  newSessionMode?: "host" | "sandbox" | "local-machine" | "ssh";
+  newSessionMode?: "host" | "sandbox" | "local-machine" | "ssh" | "quick";
+  newSessionTemplateId?: string | null;
   /** Project id for a not-yet-created project-scoped session. */
   newSessionProjectId?: string | null;
   /** Chat status widget → AppShell right panel / terminal drawer. */
   onOpenAgentsPanel?: () => void;
   onOpenPlanPanel?: () => void;
   planPanelActive?: boolean;
+  /** The active/new session runs in quick mode (template switcher shows). */
+  quickMode?: boolean;
   onToggleTerminalPanel?: () => void;
   terminalPanelActive?: boolean;
   /** Session plan (probed by AppShell via useSessionPlan; feeds the capsule). */
@@ -261,7 +264,7 @@ function ProcessDetailsGroup({ messageCount, toolCallCount, defaultExpanded = fa
   );
 }
 
-export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initialScrollPosition, onScrollPositionChange, sessionRunning, newSessionCwd, newSessionDraftKey, newSessionMode, newSessionProjectId, onAgentEnd, onAttentionNeeded, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onOpenSession, onLabStateChange, sendCommandRef, onAskInNewChat, quoteSelectionEnabled = false, initialPrompt, onInitialPromptConsumed, soundEnabled = true, onSoundToggle, playDoneSound = () => {}, unlockAudio, onOpenAgentsPanel, onOpenPlanPanel, planPanelActive, onToggleTerminalPanel, terminalPanelActive, plan, remoteSession, onSubagentCallsChange }: Props) {
+export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initialScrollPosition, onScrollPositionChange, sessionRunning, newSessionCwd, newSessionDraftKey, newSessionMode, newSessionTemplateId, newSessionProjectId, onAgentEnd, onAttentionNeeded, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onOpenSession, onLabStateChange, sendCommandRef, onAskInNewChat, quoteSelectionEnabled = false, initialPrompt, onInitialPromptConsumed, soundEnabled = true, onSoundToggle, playDoneSound = () => {}, unlockAudio, onOpenAgentsPanel, onOpenPlanPanel, planPanelActive, quickMode = false, onToggleTerminalPanel, terminalPanelActive, plan, remoteSession, onSubagentCallsChange }: Props) {
   const { t } = useI18n();
   const isMobile = useIsMobile();
   const completionNotificationsEnabled = session?.relation?.kind !== "subagent";
@@ -314,7 +317,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
     handleToolPresetChange, handleThinkingLevelChange, loadSlashCommands, scrollUserMsgToTop,
     loadContext, activeLeafId, scrollToBottom, scrollToMessage,
   } = useAgentSession({
-    session, sessionRunning, newSessionCwd, newSessionDraftKey, newSessionMode, newSessionProjectId, onAgentEnd: wrappedOnAgentEnd, onAttentionNeeded, onSessionCreated, onSessionForked,
+    session, sessionRunning, newSessionCwd, newSessionDraftKey, newSessionMode, newSessionTemplateId, newSessionProjectId, onAgentEnd: wrappedOnAgentEnd, onAttentionNeeded, onSessionCreated, onSessionForked,
     modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onSessionStatsPanelOpen,
     deferInitialScroll: Boolean(pendingScrollRestore),
   });
@@ -1083,6 +1086,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
             </div>
             <SessionToolbar
               cwd={messageCwd ?? ""}
+              quickMode={quickMode || session?.mode === "quick" || (!session && newSessionMode === "quick")}
               sessionId={session?.id ?? null}
               hasLabTraining={hasLabTraining}
               onSendCommand={(cmd) => handleSend(cmd)}
@@ -1494,6 +1498,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
           <div style={{ maxWidth: "var(--chat-content-max-width, 820px)", margin: "0 auto" }}>
             <SessionToolbar
               cwd={messageCwd ?? ""}
+              quickMode={quickMode || session?.mode === "quick" || (!session && newSessionMode === "quick")}
               sessionId={session?.id ?? null}
               hasLabTraining={hasLabTraining}
               onSendCommand={(cmd) => handleSend(cmd)}

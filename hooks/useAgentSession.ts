@@ -207,7 +207,9 @@ export interface UseAgentSessionOptions {
   sessionRunning?: boolean;
   newSessionCwd: string | null;
   /** Execution mode for the not-yet-created session (multi-user). */
-  newSessionMode?: "host" | "sandbox" | "local-machine" | "ssh";
+  newSessionMode?: "host" | "sandbox" | "local-machine" | "ssh" | "quick";
+  /** Quick mode: template id for /api/agent/new. */
+  newSessionTemplateId?: string | null;
   newSessionProjectId?: string | null;
   newSessionDraftKey: string | null;
   onAgentEnd?: () => void;
@@ -341,6 +343,7 @@ type SlashCommandsResponse = {
 export function useAgentSession(opts: UseAgentSessionOptions) {
   const {
     session, sessionRunning, newSessionCwd, newSessionMode, newSessionProjectId, newSessionDraftKey,
+    newSessionTemplateId: optsNewSessionTemplateId,
     onAgentEnd, onAttentionNeeded, onSessionCreated, onSessionForked,
     modelsRefreshKey, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onSessionStatsPanelOpen,
   } = opts;
@@ -348,6 +351,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const isNew = session === null && newSessionCwd !== null;
   const newSessionModeRef = useRef(newSessionMode);
   newSessionModeRef.current = newSessionMode;
+  const newSessionTemplateIdRef = useRef(optsNewSessionTemplateId);
+  newSessionTemplateIdRef.current = optsNewSessionTemplateId;
   const newSessionProjectIdRef = useRef(newSessionProjectId);
   newSessionProjectIdRef.current = newSessionProjectId;
 
@@ -692,7 +697,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
   const ensureNewSession = useCallback(async () => {
     if (sessionIdRef.current) return sessionIdRef.current;
-    if (!isNew || !newSessionCwd) return sessionIdRef.current;
+    if (!isNew || (!newSessionCwd && newSessionModeRef.current !== "quick")) return sessionIdRef.current;
     if (ensuringNewSessionRef.current) return ensuringNewSessionRef.current;
 
     const promise = (async () => {
@@ -706,8 +711,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          cwd: newSessionCwd,
+          cwd: newSessionCwd || (newSessionModeRef.current === "quick" ? "quick" : newSessionCwd),
           ...(newSessionModeRef.current ? { mode: newSessionModeRef.current } : {}),
+          ...(newSessionModeRef.current === "quick" && newSessionTemplateIdRef.current ? { templateId: newSessionTemplateIdRef.current } : {}),
           ...(newSessionProjectIdRef.current ? { projectId: newSessionProjectIdRef.current } : {}),
           type: "ensure_session",
           toolNames,

@@ -6,6 +6,7 @@ export const SETTINGS_SECTION_VALUES = [
   "agents",
   "mcp",
   "plugins",
+  "quick-templates",
 ] as const;
 
 export type SettingsSection = (typeof SETTINGS_SECTION_VALUES)[number];

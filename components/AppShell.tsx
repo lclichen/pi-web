@@ -156,7 +156,9 @@ export function AppShell() {
   }, []);
   // The temporary id distinguishes consecutive fresh composers in one cwd.
   const [newSessionCwd, setNewSessionCwd] = useState<string | null>(null);
-  const [newSessionMode, setNewSessionMode] = useState<"host" | "sandbox" | "local-machine" | "ssh">("host");
+  const [newSessionMode, setNewSessionMode] = useState<"host" | "sandbox" | "local-machine" | "ssh" | "quick">("host");
+  // Quick sessions carry the chosen template id through to /api/agent/new.
+  const [newSessionTemplateId, setNewSessionTemplateId] = useState<string | null>(null);
   const [newSessionProjectId, setNewSessionProjectId] = useState<string | null>(null);
   // Display name of the pending remote session's project (header badge).
   const [newSessionProjectLabel, setNewSessionProjectLabel] = useState<string | null>(null);
@@ -520,7 +522,7 @@ export function AppShell() {
   // treat this object as "the remote context" — a fresh object per render would
   // tear down and recreate the container PTY on every stats update.
   const remoteSessionCtx = useMemo(
-    () => (activeSessionMode && activeSessionMode !== "host" && selectedSession
+    () => (activeSessionMode && activeSessionMode !== "host" && activeSessionMode !== "quick" && selectedSession
       ? { sessionId: selectedSession.id, label: activeSessionMode === "sandbox" ? translate("沙箱容器") : activeSessionMode === "ssh" ? translate("SSH 远程主机") : translate("本机") }
       : null),
     [activeSessionMode, selectedSession, translate],
@@ -884,7 +886,7 @@ export function AppShell() {
     }
   }, [activeCwd, activeFileTabId, invalidateWorkspaceRestore, router, isMobile, newSessionCwd, selectedSession]);
 
-  const handleNewSession = useCallback((sessionId: string, cwd: string, mode?: "host" | "sandbox" | "local-machine" | "ssh", projectId?: string, projectLabel?: string) => {
+  const handleNewSession = useCallback((sessionId: string, cwd: string, mode?: "host" | "sandbox" | "local-machine" | "ssh" | "quick", projectId?: string, projectLabel?: string) => {
     invalidateWorkspaceRestore();
     const draftKey = `new:${sessionId}:${cwd}`;
     rekeyDraft(parkedNewSessionDraftKey(cwd), draftKey);
@@ -2825,6 +2827,7 @@ export function AppShell() {
               onOpenAgentsPanel={() => { setRightPanelMode("agents"); setRightPanelOpen(true); }}
               onOpenPlanPanel={() => { setRightPanelMode("plan"); setRightPanelOpen(true); }}
               planPanelActive={rightPanelMode === "plan"}
+              quickMode={activeSessionMode === "quick"}
               plan={sessionPlan}
               onToggleTerminalPanel={() => {
                 if (terminalDrawerMounted) setTerminalDrawerOpen((v) => !v);

@@ -21,7 +21,7 @@ AGENTS.md）与 `labs/` 打成一个 zip，在项目之间、机器之间转移�
 - `.pi/plans/`、`sessions/` 等运行时状态不进包（DENIED_SEGMENTS）；
 - 包内可以携带 `node_modules`（离线部署场景，extensions 依赖随包恢复）。
 
-## 二、预置配置模板（presetBundle）— 后端已实现，管理 UI 缺失
+## 二、预置配置模板（presetBundle）— 全链路可用
 
 **是什么**：管理员把一组标准配置（.pi/ + labs/）作为 zip 上传到平台
 （`data/config-bundles/<name>.zip`），普通用户新建项目时从下拉框选择，
@@ -36,11 +36,10 @@ AGENTS.md）与 `labs/` 打成一个 zip，在项目之间、机器之间转移�
   创建请求带 `presetBundle`；
 - ✅ 项目创建端：`createProject` 在 seed 之前 `applyBundleToDirectory`
   （整包 seed 优先级更高——"复制项目"语义）。
-- ❌ **缺管理 UI**：上传/删除模板目前只能 curl（见下方命令）；
-- ❌ **缺 DELETE 端点**：`deleteBundle()` 函数存在但 `/api/bundles`
-  没有挂 DELETE 路由；
-- ❌ **模板不可在项目创建后套用**：presetBundle 只在 createProject 生效；
-  已有项目要用"导入项目配置"手动导入。
+- ✅ 管理 UI：设置 → 配置模板（admin）— 列出/上传（multipart zip）/删除；
+- ✅ DELETE 端点：`DELETE /api/bundles?name=`（admin，名字校验 + meta 同步清理）；
+- ✅ 项目创建后套用：项目 ⋮ 菜单「套用配置模板…」→
+  `POST /api/projects/:id/apply-bundle { name }`（叠加语义，同名覆盖）。
 
 **管理员当前操作方式（curl）**：
 
@@ -74,16 +73,13 @@ curl http://<host>:30141/api/bundles -H "Cookie: pi_web_sid=<sid>"
 | 导出配置包 | ✅（目录组菜单） | ✅（项目菜单） |
 | 导入项目配置 | ✅ | ✅ |
 | 创建时选模板 | ❌（Host 目录无向导） | ✅（向导下拉框） |
-| 创建后套用模板 | ❌（只能导入 zip） | ❌（只能导入 zip） |
+| 创建后套用模板 | ✅（目录菜单后续接入） | ✅（「套用配置模板…」） |
 
 建议：给项目 ⋮ 菜单加「套用配置模板…」（列出 bundles，选中即
 applyBundleToDirectory 到该项目 home——后端函数已存在，只差一条 API
 和菜单项）。
 
-### P1 — 模板管理无 UI + 无删除 API
-
-见上文。建议：设置 → 插件 旁边加「配置模板」分区（admin），列出/
-上传/删除 bundles；`/api/bundles` 补 `DELETE ?name=`（admin）。
+### ~~P1 — 模板管理无 UI + 无删除 API~~（已完成：设置分区 + DELETE 端点）
 
 ### P2 — 权限矩阵说明（现状即设计）
 

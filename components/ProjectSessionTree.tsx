@@ -7,6 +7,7 @@ import type { ProjectRecord } from "@/lib/projects";
 import { formatRelativeTime } from "@/lib/subagent-shared";
 import { ProjectSettingsDialog } from "./ProjectSettingsDialog";
 import { ProjectImportDialog } from "./ProjectImportDialog";
+import { ApplyBundleDialog } from "./ApplyBundleDialog";
 
 interface Props {
   sessions: SessionInfo[];
@@ -71,6 +72,7 @@ export function ProjectSessionTree({
   const [menu, setMenu] = useState<{ project?: ProjectRecord; directory?: string; x: number; y: number } | null>(null);
   const [settingsId, setSettingsId] = useState<string | null>(null);
   const [importId, setImportId] = useState<string | null>(null);
+  const [applyBundleId, setApplyBundleId] = useState<string | null>(null);
   const [hostImportDir, setHostImportDir] = useState<string | null>(null);
   const [containers, setContainers] = useState<Array<{ id: number; name: string; status: string; imageName: string }>>([]);
   const [newDialog, setNewDialog] = useState<"sandbox" | "local-machine" | null>(null);
@@ -589,6 +591,7 @@ export function ProjectSessionTree({
           <MenuItem label={t("复制为新项目")} onClick={() => { void duplicate(menuProject); setMenu(null); }} />
           <MenuItem label={t("设置（模型凭证等）")} onClick={() => { setSettingsId(menuProject.id); setMenu(null); }} />
           <MenuItem label={t("导入项目配置…")} onClick={() => { setImportId(menuProject.id); setMenu(null); }} />
+          <MenuItem label={t("套用配置模板…")} onClick={() => { setApplyBundleId(menuProject.id); setMenu(null); }} />
           <MenuItem label={t("导出配置包…")} onClick={() => { void exportConfig(menuProject); setMenu(null); }} />
           {menuProject.mode === "sandbox" && (() => {
             // 绑定信息：项目 → 容器 → 镜像 三位一体（debug 友好）。
@@ -666,6 +669,14 @@ export function ProjectSessionTree({
           projectName={projects.find((p) => p.id === importId)?.name ?? importId}
           onClose={() => setImportId(null)}
           onImported={() => { loadProjects(); refreshSessions(); }}
+        />
+      )}
+      {applyBundleId && (
+        <ApplyBundleDialog
+          projectId={applyBundleId}
+          projectName={projects.find((p) => p.id === applyBundleId)?.name ?? applyBundleId}
+          onClose={() => setApplyBundleId(null)}
+          onApplied={() => { loadProjects(); refreshSessions(); }}
         />
       )}
     </div>

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import JSZip from "jszip";
 import { requireUserIdentity } from "@/lib/web-session";
 import { isApiRequestAllowed } from "@/lib/request-security";
-import { listBundles, isValidBundleName, saveBundle } from "@/lib/config-bundles-store";
+import { deleteBundle, listBundles, isValidBundleName, saveBundle } from "@/lib/config-bundles-store";
 
 export const dynamic = "force-dynamic";
 
@@ -59,4 +59,24 @@ export async function POST(req: Request) {
   const data = Buffer.from(await file.arrayBuffer());
   saveBundle(name, description, data);
   return NextResponse.json({ ok: true, name, size: data.length }, { status: 201 });
+}
+
+// DELETE /api/bundles?name=… — admin remove a preset bundle.
+export async function DELETE(req: Request) {
+  if (!isApiRequestAllowed(req)) {
+    return NextResponse.json({ error: "Untrusted API request" }, { status: 403 });
+  }
+  const identity = requireUserIdentity(req);
+  if (!identity.ok) return NextResponse.json({ error: "登录已失效" }, { status: identity.status });
+  if (identity.session.user.role !== "admin") {
+    return NextResponse.json({ error: "仅管理员可管理配置模板" }, { status: 403 });
+  }
+  const name = new URL(req.url).searchParams.get("name") ?? "";
+  if (!isValidBundleName(name)) {
+    return NextResponse.json({ error: "非法模板名" }, { status: 400 });
+  }
+  if (!deleteBundle(name)) {
+    return NextResponse.json({ error: "模板不存在" }, { status: 404 });
+  }
+  return NextResponse.json({ ok: true, name });
 }

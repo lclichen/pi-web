@@ -8,7 +8,7 @@ import { validateAgentImages } from "./image-attachments";
 import { hasActiveSessionLivenessProvider } from "./session-liveness";
 import { invalidateModelsCache } from "./models-cache";
 import { resolveVisibleModels, selectInitialModelScope } from "./model-scope";
-import { cacheSessionPath, invalidateSessionListCache, resolveSessionPath } from "./session-reader";
+import { cacheSessionPath, getLatestModelChange, invalidateSessionListCache, resolveSessionPath } from "./session-reader";
 import { readPreferences } from "./preferences-service";
 import { readMcpConfig } from "./mcp-config";
 import { getProjectTrustStatus, projectTrustReloadOptions } from "./project-trust";
@@ -2334,22 +2334,30 @@ export async function startRpcSession(
       : undefined;
     const defaultProvider = services.settingsManager.getDefaultProvider();
     const defaultModelId = services.settingsManager.getDefaultModel();
-    const hasExistingMessages = sessionManager.getBranch().some((entry) => entry.type === "message");
-    const initial = hasExistingMessages
-      ? { scopedModels: [...scope.scopedModels] }
-      : selectInitialModelScope(scope, {
+    const branch = sessionManager.getBranch();
+    const hasExistingMessages = branch.some((entry) => entry.type === "message");
+    const savedModel = hasExistingMessages
+      ? getLatestModelChange(branch as unknown as SessionEntry[])
+      : null;
+    const restoredModel = savedModel
+      ? services.modelRuntime.getModel(savedModel.provider, savedModel.modelId)
+      : undefined;
+    const initial = hasExistingMessages ? null : selectInitialModelScope(scope, {
         ...(effectiveInitialModel ? { requestedModel: effectiveInitialModel } : {}),
         ...(defaultProvider && defaultModelId
           ? { defaultModel: { provider: defaultProvider, modelId: defaultModelId } }
           : {}),
         ...(thinkingLevel ? { thinkingLevel } : {}),
       });
+    const startupModel = restoredModel && services.modelRuntime.hasConfiguredAuth(restoredModel.provider)
+      ? restoredModel
+      : initial?.model;
     const { session: inner } = await createAgentSessionFromServices({
       services,
       sessionManager,
-      ...(initial.model ? { model: initial.model } : {}),
-      ...(initial.thinkingLevel ? { thinkingLevel: initial.thinkingLevel } : {}),
-      ...(initial.scopedModels.length > 0 ? { scopedModels: initial.scopedModels } : {}),
+      ...(startupModel ? { model: startupModel } : {}),
+      ...(initial?.thinkingLevel ? { thinkingLevel: initial.thinkingLevel } : {}),
+      ...(scope.scopedModels.length > 0 ? { scopedModels: [...scope.scopedModels] } : {}),
       ...(toolsOption !== undefined ? { tools: toolsOption } : {}),
       ...(subagentResources ? { excludeTools: [...SUBAGENT_CONTROL_TOOL_NAMES] } : {}),
     });

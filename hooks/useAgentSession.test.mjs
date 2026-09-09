@@ -147,6 +147,13 @@ test("fresh sessions use the preference while persisted and live sessions restor
   assert.doesNotMatch(loadToolsSource, /setPreferredToolPreset/);
 });
 
+test("the selector prefers the live wrapper model over persisted response metadata", () => {
+  assert.match(source, /model\?: \{ provider: string; id: string \}/);
+  assert.match(source, /const currentModel = currentModelOverride \?\? liveModel \?\? data\?\.context\.model \?\? pendingModel \?\? null/);
+  assert.match(source, /syncLiveModel\(liveState\)/);
+  assert.match(source, /syncLiveModel\(state\);[\s\S]*?const busy = data\.running/);
+});
+
 test("existing-session prompts rely on the persisted tool selection", () => {
   const sendSource = source.slice(
     source.indexOf("  const handleSend = useCallback"),

@@ -367,6 +367,16 @@ test("keeps one reducer-owned assistant partial and consumes Pi JSON deltas", ()
   assert.doesNotMatch(messageEndSource, /streamState\.streamingMessage/);
 });
 
+test("restoring a running session does not clear an SSE snapshot", () => {
+  const mountSource = source.slice(
+    source.indexOf("// Load session on mount"),
+    source.indexOf("useEffect(() => {\n    onSystemPromptChange"),
+  );
+
+  assert.match(mountSource, /dispatch\(\{ type: "resume" \}\)/);
+  assert.doesNotMatch(mountSource, /dispatch\(\{ type: "start" \}\)/);
+});
+
 test("shows the latest streamed tool execution progress in the running phase", () => {
   const updateSource = source.slice(
     source.indexOf('case "tool_execution_update"'),

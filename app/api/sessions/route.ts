@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { jsonResponse } from "@/lib/json-response";
 import {
   attachSessionProjectInfo,
   getSessionListVersion,
@@ -59,7 +60,8 @@ export async function GET(req: Request) {
     const visibleRunning = new Set(runningSessionIds);
     const completionNotificationSuppressedSessionIds = getCompletionNotificationSuppressedRpcSessionIds()
       .filter((sessionId) => visibleRunning.has(sessionId));
-    return NextResponse.json(
+    return jsonResponse(
+      req,
       {
         sessions,
         sessionListVersion,

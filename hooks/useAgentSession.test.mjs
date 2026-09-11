@@ -379,6 +379,24 @@ test("shows the latest streamed tool execution progress in the running phase", (
   assert.match(chatWindowSource, /chat\.runningNamedTool[\s\S]*latest\.progress/);
 });
 
+test("reconnects active shell output to its streaming tool call", () => {
+  const updateSource = source.slice(
+    source.indexOf('case "tool_execution_update"'),
+    source.indexOf('case "tool_execution_end"'),
+  );
+  const endSource = source.slice(
+    source.indexOf('case "tool_execution_end"'),
+    source.indexOf('case "queue_update"'),
+  );
+
+  assert.match(updateSource, /name === "bash" \|\| name === "powershell"/);
+  assert.match(updateSource, /setActiveToolResults/);
+  assert.match(updateSource, /content,/);
+  assert.match(endSource, /setActiveToolResults[\s\S]*next\.delete\(id\)/);
+  assert.match(chatWindowSource, /const map = new Map\(activeToolResults\)/);
+  assert.match(chatWindowSource, /<MessageView message=\{streamState\.streamingMessage as AgentMessage\} toolResults=\{toolResultsMap\}/);
+});
+
 test("plays the enabled sound once for each extension dialog", () => {
   assert.match(chatWindowSource, /soundedExtensionDialogIdRef = useRef<string \| null>\(null\)/);
   assert.match(

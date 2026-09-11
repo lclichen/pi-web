@@ -299,6 +299,7 @@ function quickToolSet(session: AgentSessionLike, mcpAllowlist?: string[]): strin
 
 export class AgentSessionWrapper {
   private listeners: EventListener[] = [];
+  private activeToolEvents = new Map<string, AgentEvent>();
   private pendingUiResponses = new Map<string, PendingUiResponse>();
   private pendingUiRequests = new Map<string, AgentEvent>();
   private activeCustomUis = new Map<string, ActiveCustomUi>();
@@ -387,6 +388,14 @@ export class AgentSessionWrapper {
       if (event.type === "agent_start") this.agentRunNeedsCompletion = true;
       if (event.type === "agent_end") {
         invalidateSessionListCache();
+      }
+      const toolCallId = event.toolCallId;
+      if (typeof toolCallId === "string") {
+        if (event.type === "tool_execution_start" || event.type === "tool_execution_update") {
+          this.activeToolEvents.set(toolCallId, event);
+        } else if (event.type === "tool_execution_end") {
+          this.activeToolEvents.delete(toolCallId);
+        }
       }
       if (IDLE_RESET_EVENT_TYPES.has(event.type)) this.resetIdleTimer();
       this.emit(event);
@@ -639,6 +648,7 @@ export class AgentSessionWrapper {
   onEvent(listener: EventListener): () => void {
     this.listeners.push(listener);
     for (const event of this.pendingUiRequests.values()) listener(event);
+    for (const event of this.activeToolEvents.values()) listener(event);
     return () => {
       const i = this.listeners.indexOf(listener);
       if (i !== -1) this.listeners.splice(i, 1);
@@ -1247,6 +1257,7 @@ export class AgentSessionWrapper {
     for (const id of Array.from(this.activeCustomUis.keys())) this.closeCustomUi(id, undefined);
     this.pendingUiResponses.clear();
     this.pendingUiRequests.clear();
+    this.activeToolEvents.clear();
     this.clearExtensionWidgets(false);
 
     const finishDispose = () => {

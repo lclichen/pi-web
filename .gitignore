@@ -52,3 +52,6 @@ yarn-error.log*
 next-env.d.ts
 .factory
 e2e_*.mjs
+
+# 本地凭据 — 绝不入库（模板见 scripts/vm-credentials.example.cjs）
+scripts/vm-credentials.cjs

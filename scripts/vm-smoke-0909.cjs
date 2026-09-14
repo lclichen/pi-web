@@ -1,4 +1,5 @@
 const { Client } = require('ssh2');
+const { loadVmConnection, loadVmAppPassword } = require('./vm-connection.cjs');
 const conn = new Client();
 
 // Quick-session E2E on the VM:
@@ -19,7 +20,8 @@ node -e '
     });
     return (r.headers.get("set-cookie") ?? "").split(";")[0];
   };
-  const adminCookie = await login("admin", "changeme123");
+  // 注入的密码经本地 base64 编码，避免引号破坏外层单引号 shell 串。
+  const adminCookie = await login("admin", atob("${Buffer.from(loadVmAppPassword("admin")).toString("base64")}"));
   console.log("admin login:", Boolean(adminCookie));
 
   // 1. templates list
@@ -70,7 +72,7 @@ node -e '
   console.log("answer:", answerText);
 
   // 5. test user permission
-  const testCookie = await login("test", "test1234");
+  const testCookie = await login("test", atob("${Buffer.from(loadVmAppPassword("test")).toString("base64")}"));
   const testCreate = await fetch("http://127.0.0.1:30141/api/agent/new", {
     method: "POST",
     headers: { "Content-Type": "application/json", Cookie: testCookie, Origin: "http://127.0.0.1:30141" },
@@ -90,4 +92,4 @@ conn.on('ready', () => {
     stream.on('close', () => { conn.end(); process.exit(0); });
   });
 });
-conn.connect({ host: '10.99.9.7', username: 'llmx', password: 'llmx112358X' });
+conn.connect(loadVmConnection());

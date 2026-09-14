@@ -183,7 +183,7 @@ start_platform() {
     # 要固定端口就在此文件加一行 PORT=xxxx（优先级高于自动探测）。
     JWT="$(head -c 64 /dev/urandom | od -An -tx1 | tr -d ' \n')"
     # 管理员初始密码：默认随机生成；启动前手动指定：环境变量 ADMIN_PASSWORD=xxx
-    # （平台生产模式会拒绝弱密码——至少 8 字符，且不能是 changeme123 等默认值，
+    # （平台生产模式会拒绝弱密码——至少 8 字符，且不能是已知弱默认口令，
     # 不满足时平台启动自检会直接报错退出）。
     if [ -n "${ADMIN_PASSWORD:-}" ]; then
       ADMIN_PW="$ADMIN_PASSWORD"

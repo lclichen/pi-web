@@ -1,4 +1,5 @@
 const { Client } = require('ssh2');
+const { loadVmConnection } = require('./vm-connection.cjs');
 const conn = new Client();
 
 const cmd = `
@@ -31,4 +32,4 @@ conn.on('ready', () => {
     stream.on('close', () => { conn.end(); process.exit(0); });
   });
 });
-conn.connect({ host: '10.99.9.7', username: 'llmx', password: 'llmx112358X' });
+conn.connect(loadVmConnection());

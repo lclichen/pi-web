@@ -6,10 +6,14 @@ import WebSocket from "../node_modules/ws/index.js";
 
 const base = "http://127.0.0.1:30141";
 
+// Local dev seed password — supplied via env, never hardcoded.
+const adminPassword = process.env.LOCAL_DEV_PASSWORD;
+if (!adminPassword) throw new Error("set LOCAL_DEV_PASSWORD (local dev seed admin password) before running");
+
 // Log in ourselves — no external cookie jar dependency.
 const loginRes = await fetch(base + "/api/webauth/login", {
   method: "POST", headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({ username: "admin", password: "LocalDev-9x" }),
+  body: JSON.stringify({ username: "admin", password: adminPassword }),
 });
 if (!loginRes.ok) throw new Error("login failed: " + loginRes.status);
 const setCookie = loginRes.headers.get("set-cookie") ?? "";

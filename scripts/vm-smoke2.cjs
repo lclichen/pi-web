@@ -1,4 +1,5 @@
 const { Client } = require('ssh2');
+const { loadVmConnection, loadVmAppPassword } = require('./vm-connection.cjs');
 const conn = new Client();
 const cmd = `
 export PATH=/home/llmx/tools/node/bin:$PATH
@@ -7,7 +8,7 @@ node -e '
 (async () => {
   const r0 = await fetch("http://127.0.0.1:30141/api/webauth/login", {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username: "admin", password: "changeme123" }),
+    body: JSON.stringify({ username: "admin", password: atob("${Buffer.from(loadVmAppPassword("admin")).toString("base64")}") }),
   });
   const cookie = (r0.headers.get("set-cookie") ?? "").split(";")[0];
   const res = await fetch("http://127.0.0.1:30141/api/agent/new", {
@@ -27,4 +28,4 @@ conn.on('ready', () => {
     stream.on('close', () => { conn.end(); process.exit(0); });
   });
 });
-conn.connect({ host: '10.99.9.7', username: 'llmx', password: 'llmx112358X' });
+conn.connect(loadVmConnection());

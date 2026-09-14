@@ -14,7 +14,8 @@
     ./scripts/start-all.sh   —— 一键启动 沙盒平台 + WebUI（首次运行自动生成配置）
     ./scripts/status-all.sh  —— 服务状态与日志位置
     ./scripts/stop-all.sh    —— 停止全部
-    浏览器访问 http://<本机IP>:30141 ，默认账号 admin/changeme123（登录后请改密）。
+    浏览器访问 http://<本机IP>:30141 ，管理员初始密码在首次启动时随机生成：
+    查看 config/admin-password.txt（或在启动日志中），登录后请立即改密并删除该文件。
     创建沙箱容器需要目标机已安装 Apptainer（https://apptainer.org）。
 
   纯 pi / pi-web（无沙盒组件）:

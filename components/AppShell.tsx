@@ -895,7 +895,16 @@ export function AppShell() {
     setSelectedSession(null);
     setNewSessionCwd(cwd);
     if (mode) setNewSessionMode(mode);
-    setNewSessionProjectId(projectId ?? null);
+    // ⚡ 快速会话把模板 id 放在 projectId 槽位传入（onNewSession 签名共用）；
+    // 归位到专门的 templateId 通道——否则 ensure_session 会拿着模板 id 去查
+    // 项目表（404 项目不存在），模型列表也会按不存在的项目解析。
+    if (mode === "quick") {
+      setNewSessionTemplateId(projectId ?? null);
+      setNewSessionProjectId(null);
+    } else {
+      setNewSessionTemplateId(null);
+      setNewSessionProjectId(projectId ?? null);
+    }
     setSessionKey((k) => k + 1);
     setBranchTree([]);
     setBranchActiveLeafId(null);

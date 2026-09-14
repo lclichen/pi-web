@@ -1147,7 +1147,9 @@ useEffect(() => {
       >
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
           <PiWebTitle />
-          <div style={{ display: "flex", gap: 6 }}>
+          {/* position:relative 是模板菜单的定位锚——缺了它会锚到更高的祖先，
+              菜单掉到视口外（y≈724），点了"没反应"。 */}
+          <div style={{ display: "flex", gap: 6, position: "relative" }}>
             {showTopNewButton && (
             <button
               onClick={() => setShowProjectWizard(true)}
@@ -1233,6 +1235,7 @@ useEffect(() => {
             {quickMenuOpen && (
               <div
                 role="menu"
+                data-quick-menu
                 style={{
                   position: "absolute",
                   top: "calc(100% + 4px)",

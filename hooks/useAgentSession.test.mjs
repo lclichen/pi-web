@@ -199,7 +199,7 @@ test("stale fresh-session completion cannot replace the active composer", () => 
   );
   assert.ok(
     createdSource.indexOf("activeNewSessionDraftKeyRef.current !== sourceDraftKey")
-      < createdSource.indexOf("setSelectedSession(session)"),
+      < createdSource.indexOf("setSelectedSession(session"),
   );
 });
 

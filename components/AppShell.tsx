@@ -157,6 +157,9 @@ export function AppShell() {
   // The temporary id distinguishes consecutive fresh composers in one cwd.
   const [newSessionCwd, setNewSessionCwd] = useState<string | null>(null);
   const [newSessionMode, setNewSessionMode] = useState<"host" | "sandbox" | "local-machine" | "ssh" | "quick">("host");
+  // 供 handleSessionCreated 在回调闭包里读最新草稿模式（transient 会话补 mode 用）。
+  const newSessionModeRef = useRef(newSessionMode);
+  newSessionModeRef.current = newSessionMode;
   // Quick sessions carry the chosen template id through to /api/agent/new.
   const [newSessionTemplateId, setNewSessionTemplateId] = useState<string | null>(null);
   const [newSessionProjectId, setNewSessionProjectId] = useState<string | null>(null);
@@ -895,6 +898,9 @@ export function AppShell() {
     setSelectedSession(null);
     setNewSessionCwd(cwd);
     if (mode) setNewSessionMode(mode);
+    // 未传 mode 的入口（键盘快捷键等）回默认 host——不清理会残留上次草稿的
+    // quick，普通新会话会被当快速会话创建。
+    else setNewSessionMode("host");
     // ⚡ 快速会话把模板 id 放在 projectId 槽位传入（onNewSession 签名共用）；
     // 归位到专门的 templateId 通道——否则 ensure_session 会拿着模板 id 去查
     // 项目表（404 项目不存在），模型列表也会按不存在的项目解析。
@@ -959,7 +965,9 @@ export function AppShell() {
     invalidateWorkspaceRestore();
     activeNewSessionDraftKeyRef.current = null;
     setNewSessionCwd(null);
-    setSelectedSession(session);
+    // transient SessionInfo 不带 mode，/api/sessions/[id] 也不合并 session-metas
+    // ——按草稿模式补上，否则 quick 会话首条消息后 hideFileExplorer/quickMode 失效。
+    setSelectedSession(session.mode ? session : { ...session, mode: newSessionModeRef.current });
     hydrateSelectedSession(session.id);
     router.replace(`?session=${encodeURIComponent(session.id)}`, { scroll: false });
   }, [invalidateWorkspaceRestore, router, hydrateSelectedSession]);
@@ -1293,6 +1301,7 @@ export function AppShell() {
         refreshKey={refreshKey}
         onSessionDeleted={handleSessionDeleted}
         selectedCwd={selectedSession?.cwd ?? newSessionCwd ?? null}
+        hideFileExplorer={activeSessionMode === "quick"}
         onCwdChange={handleCwdChange}
         onOpenFile={handleOpenFile}
         onFileDeleted={(filePath) => {
@@ -2993,7 +3002,8 @@ export function AppShell() {
               ),
               activate: () => setRightPanelMode("files"),
             },
-            {
+            // 快速会话没有工作区，也就没有仓库——Git tab 不出现。
+            ...(activeSessionMode === "quick" ? [] : [{
               id: "git" as const,
               label: "Git",
               icon: (
@@ -3002,7 +3012,7 @@ export function AppShell() {
                 </svg>
               ),
               activate: () => { setRightPanelMode("git"); setRightPanelOpen(true); },
-            },
+            }]),
             {
               id: "agents" as const,
               label: translate("智能体"),
@@ -3098,7 +3108,33 @@ export function AppShell() {
 
         {/* Only the active viewer is mounted. Lightweight per-tab state is restored on activation. */}
         <div style={{ flex: 1, minHeight: 0, overflow: "hidden", paddingBottom: "env(safe-area-inset-bottom)" }}>
-          {activeFileTab?.filePath ? (
+          {/* Subagent directory: stays mounted while the panel is open so its
+              5s record polling keeps the finished list fresh for the widget;
+              keyed by session, hidden via display:none.
+              （0.9.0 合并时此块连同 git/plan 挂载一起丢失，tab 切过去渲染空白——恢复。） */}
+          {selectedSession?.id ? (
+            <div style={{ display: rightPanelMode === "agents" ? "flex" : "none", height: "100%", flexDirection: "column" }}>
+              <SubagentDirectoryPanel
+                key={selectedSession.id}
+                sessionId={selectedSession.id}
+                subagentCalls={subagentCalls}
+              />
+            </div>
+          ) : null}
+          {rightPanelMode === "plan" ? (
+            <PlanPanel plan={sessionPlan} />
+          ) : rightPanelMode === "agents" && !selectedSession?.id ? (
+            <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-dim)", fontSize: 12 }}>
+              {translate("选择或创建一个会话后可查看子智能体调用记录")}
+            </div>
+          ) : (rightPanelMode === "git" && activeSessionMode !== "quick") ? (
+            <GitPanel
+              cwd={(activeCwd ?? selectedSession?.cwd ?? newSessionCwd) ?? ""}
+              sessionId={selectedSession?.id ?? null}
+              refreshKey={explorerRefreshKey}
+              onClose={() => { setRightPanelMode("files"); }}
+            />
+          ) : rightPanelMode === "files" && activeFileTab?.filePath ? (
             <FileViewer
               key={`${activeFileTab.id}:${activeFileTab.viewerRevision ?? 0}`}
               filePath={activeFileTab.filePath}

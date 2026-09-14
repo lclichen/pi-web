@@ -1778,6 +1778,7 @@ export class AgentSessionWrapper {
           key,
           lines: content,
           placement: options?.placement ?? "aboveEditor",
+          ...(options?.metadata !== undefined ? { metadata: options.metadata } : {}),
         });
         this.emit({
           type: "extension_ui_request",

@@ -115,6 +115,8 @@ interface Props {
   refreshKey?: number;
   onSessionDeleted?: (sessionId: string) => void;
   selectedCwd?: string | null;
+  /** 快速会话（quick 模式）没有工作区——隐藏文件浏览器整节。 */
+  hideFileExplorer?: boolean;
   onCwdChange?: (
     cwd: string | null,
     projectRoot?: string | null,
@@ -398,7 +400,7 @@ function PiWebTitle() {
   );
 }
 
-export function SessionSidebar({ authInfo = null, sessionSpace = "mine", onSessionSpaceChange, selectedSessionId, onSelectSession, onNewSession, initialSessionId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onOpenFile, onOpenTerminal, onFileDeleted, onFileRenamed, explorerRefreshKey, onExplorerRefresh, onAtMention, onAtMentions, onManageSandbox, projectsRefreshKey, pendingRemoteMode, pendingProjectLabel, remoteSessionProp, labPanelNode, onProjectsChanged, onBackgroundTaskDone, onRunningSessionIdsChange, onSessionsChange }: Props) {
+export function SessionSidebar({ authInfo = null, sessionSpace = "mine", onSessionSpaceChange, selectedSessionId, onSelectSession, onNewSession, initialSessionId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, hideFileExplorer = false, onCwdChange, onOpenFile, onOpenTerminal, onFileDeleted, onFileRenamed, explorerRefreshKey, onExplorerRefresh, onAtMention, onAtMentions, onManageSandbox, projectsRefreshKey, pendingRemoteMode, pendingProjectLabel, remoteSessionProp, labPanelNode, onProjectsChanged, onBackgroundTaskDone, onRunningSessionIdsChange, onSessionsChange }: Props) {
   const { t } = useI18n();
   const [allSessions, setAllSessions] = useState<SessionInfo[]>([]);
   // Remote-session context comes from AppShell as the SINGLE source of truth
@@ -1927,7 +1929,7 @@ useEffect(() => {
       <div
         ref={listScrollRef}
         onScroll={handleListScroll}
-        style={{ flex: explorerOpen && (selectedCwdProp || selectedCwd) ? "1 1 0" : "1 1 auto", overflowY: "auto", padding: "0", minHeight: 80 }}
+        style={{ flex: !hideFileExplorer && explorerOpen && (selectedCwdProp || selectedCwd) ? "1 1 0" : "1 1 auto", overflowY: "auto", padding: "0", minHeight: 80 }}
       >
         {loading && (
           <div style={{ padding: "16px 14px", color: "var(--text-muted)", fontSize: 12 }}>
@@ -2025,7 +2027,7 @@ useEffect(() => {
       </SessionSearch>
 
       {/* File Explorer section */}
-      {(selectedCwdProp || selectedCwd) && (
+      {!hideFileExplorer && (selectedCwdProp || selectedCwd) && (
         <div
           style={{
             borderTop: "1px solid var(--border)",

@@ -1098,6 +1098,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
               }}
               disabled={sessionBusy}
             />
+            <ExtensionWidgets widgets={belowEditorWidgets} />
             {chatInputElement}
             <ExtensionStatusBar statuses={extensionStatuses} widgets={extensionWidgets} />
           </div>
@@ -1483,6 +1484,9 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
         document.body,
       )}
 
+      {/* 底部 composer 只在非空态渲染：空态（新会话/快速会话草稿）的输入框
+          内联在上方 hero 里——两处同时渲染会叠出两层聊天 UI。 */}
+      {!isEmptyNew && (
       <div className="relative shrink-0">
         <div
           style={{
@@ -1515,7 +1519,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
         {chatInputElement}
         <ExtensionStatusBar statuses={extensionStatuses} widgets={extensionWidgets} />
       </div>
-      {isEmptyNew && <div className="min-h-0 flex-1" />}
+      )}
     </div>
   );
 }

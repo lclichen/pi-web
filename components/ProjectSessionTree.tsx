@@ -21,8 +21,9 @@ interface Props {
   onRenameSession: (sessionId: string, name: string) => void | Promise<void>;
   refreshSessions: () => void;
   isAdmin: boolean;
-  sessionSpace: "mine" | "host";
-  onSessionSpaceChange?: (space: "mine" | "host") => void;
+  /** mine = 项目会话；quick = 快速会话聚合（无工作区）；host = CLI/服务器目录（admin）。 */
+  sessionSpace: "mine" | "host" | "quick";
+  onSessionSpaceChange?: (space: "mine" | "host" | "quick") => void;
   onOpenServerDirectory?: () => void;
   /** Open the sandbox manager dialog bound to a project (sandbox mode). */
   onManageSandbox?: (project: ProjectRecord) => void;
@@ -254,10 +255,14 @@ export function ProjectSessionTree({
   };
 
   // Group sessions by project; ungrouped (host-mode/CLI) by projectRoot.
+  // Quick sessions (no workspace, no project) are partitioned out entirely —
+  // they render in their own "quick" space tab and must never leak into
+  // project groups or admin host-directory groups.
   const byProject = useMemo(() => {
     const map = new Map<string, SessionInfo[]>();
     const ungrouped: SessionInfo[] = [];
     for (const s of sessions) {
+      if (s.mode === "quick") continue;
       if (s.projectId) {
         const list = map.get(s.projectId) ?? [];
         list.push(s);
@@ -270,6 +275,12 @@ export function ProjectSessionTree({
     ungrouped.sort((a, b) => b.modified.localeCompare(a.modified));
     return { map, ungrouped };
   }, [sessions]);
+
+  // Quick-space flat list: newest first, no grouping (no projects to group by).
+  const quickSessions = useMemo(
+    () => sessions.filter((s) => s.mode === "quick").sort((a, b) => b.modified.localeCompare(a.modified)),
+    [sessions],
+  );
 
   // 管理员通过"打开服务器目录"（host 模式）建的会话没有 projectId，按目录
   // 动态分组显示——不区分 mine/host 空间（UI 没有空间切换入口，之前 gate
@@ -340,17 +351,18 @@ export function ProjectSessionTree({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 2, padding: "6px 4px" }}>
-      {/* Admin 空间切换：我的项目会话 ↔ Host 空间（CLI / 服务器目录会话）。 */}
-      {isAdmin && onSessionSpaceChange && !searching && (
+      {/* 空间切换：我的项目会话 ↔ 快速会话（所有人）↔ Host 空间（admin）。
+          快速会话没有项目/工作区，独立成第三个平级空间，避免混进项目列表。 */}
+      {onSessionSpaceChange && !searching && (
         <div style={{ display: "flex", gap: 0, padding: "0 4px 8px", borderRadius: 6, border: "1px solid var(--border)", overflow: "hidden", fontSize: 11 }}>
-          {(["mine", "host"] as const).map((space) => {
+          {(["mine", "quick", ...(isAdmin ? (["host"] as const) : [])] as const).map((space) => {
             const active = sessionSpace === space;
             return (
               <button
                 key={space}
                 type="button"
                 onClick={() => onSessionSpaceChange(space)}
-                title={space === "host" ? t("Host 会话：CLI 与服务器目录产生的会话（全局 sessions 目录）") : t("我的项目会话")}
+                title={space === "host" ? t("Host 会话：CLI 与服务器目录产生的会话（全局 sessions 目录）") : space === "quick" ? t("快速会话：无工作区的轻量对话") : t("我的项目会话")}
                 style={{
                   flex: 1, padding: "4px 0", border: "none", cursor: "pointer",
                   background: active ? "var(--bg-selected)" : "transparent",
@@ -358,7 +370,7 @@ export function ProjectSessionTree({
                   fontWeight: active ? 600 : 400,
                 }}
               >
-                {space === "mine" ? t("我的会话") : "Host (CLI)"}
+                {space === "mine" ? t("我的会话") : space === "quick" ? `⚡ ${t("快速会话")}` : "Host (CLI)"}
               </button>
             );
           })}
@@ -390,7 +402,7 @@ export function ProjectSessionTree({
             return (
               <div key={`search:${s.id}`} style={{ marginBottom: 2 }}>
                 <div style={{ padding: "2px 8px", fontSize: 10, color: "var(--text-dim)" }}>
-                  {owner ? t("项目：{name}", { name: owner.name }) : s.projectRoot ?? t("未分组")}
+                  {owner ? t("项目：{name}", { name: owner.name }) : s.mode === "quick" ? `⚡ ${t("快速会话")}` : s.projectRoot ?? t("未分组")}
                 </div>
                 {renderItem(s, owner)}
               </div>
@@ -489,6 +501,18 @@ export function ProjectSessionTree({
 
       {sessionSpace === "host" && hostGroups.length === 0 && (
         <div style={{ padding: "8px 6px", fontSize: 11, color: "var(--text-dim)" }}>{t("Host 空间暂无会话——在服务器上用 pi CLI 打开的会话会出现在这里")}</div>
+      )}
+
+      {/* 快速会话空间：无项目/工作区，扁平列表按最近排序；不分组。 */}
+      {sessionSpace === "quick" && (
+        <>
+          {quickSessions.map((s) => renderItem(s, null))}
+          {quickSessions.length === 0 && (
+            <div style={{ padding: "8px 6px", fontSize: 11, color: "var(--text-dim)", lineHeight: 1.7 }}>
+              {t("暂无快速会话——点上方 ⚡ 按模板开始；每次选择模板都会新建一个会话。")}
+            </div>
+          )}
+        </>
       )}
 
       {/* Host 空间动态分组（admin） */}
@@ -818,7 +842,9 @@ function ProjectSessionRow({
             {title}
           </span>
           {session.mode && session.mode !== "host" && (
-            <span style={{ fontSize: 9, color: session.mode === "sandbox" ? "#38bdf8" : "#a78bfa", flexShrink: 0 }}>{session.mode === "sandbox" ? t("沙箱") : t("本机")}</span>
+            <span style={{ fontSize: 9, color: session.mode === "sandbox" ? "#38bdf8" : session.mode === "quick" ? "#fbbf24" : "#a78bfa", flexShrink: 0 }}>
+              {session.mode === "sandbox" ? t("沙箱") : session.mode === "quick" ? t("快速") : t("本机")}
+            </span>
           )}
           <span style={{ fontSize: 10, color: "var(--text-dim)", flexShrink: 0 }}>{formatRelativeTime(new Date(session.modified).getTime())}</span>
           {canPin && hovered && (

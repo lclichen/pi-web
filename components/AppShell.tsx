@@ -162,7 +162,7 @@ export function AppShell() {
   const [newSessionProjectId, setNewSessionProjectId] = useState<string | null>(null);
   // Display name of the pending remote session's project (header badge).
   const [newSessionProjectLabel, setNewSessionProjectLabel] = useState<string | null>(null);
-  const [sessionSpace, setSessionSpace] = useState<"mine" | "host">("mine");
+  const [sessionSpace, setSessionSpace] = useState<"mine" | "host" | "quick">("mine");
   // Web identity (PI_WEB_AUTH): null while loading, {user} when logged in.
   const [webUser, setWebUser] = useState<{ id: number; username: string; role: "admin" | "user" } | null | "loading">("loading");
   // Deployment-wide Lab Training toggle (PI_WEB_LAB_TRAINING seeds the

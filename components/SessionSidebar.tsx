@@ -103,9 +103,9 @@ function ToolbarIconButton({
 interface Props {
   /** 多用户部署的认证信息（登录页/模式选择器显隐）。 */
   authInfo?: { enabled: boolean; user: { id: number; username: string; role: "admin" | "user" } | null } | null;
-  /** 当前会话空间（admin 可切 Host）。 */
-  sessionSpace?: "mine" | "host";
-  onSessionSpaceChange?: (space: "mine" | "host") => void;
+  /** 当前会话空间（mine / quick / host，host 仅 admin）。 */
+  sessionSpace?: "mine" | "host" | "quick";
+  onSessionSpaceChange?: (space: "mine" | "host" | "quick") => void;
   selectedSessionId: string | null;
   onSelectSession: (session: SessionInfo, isRestore?: boolean, entryId?: string, blockIndex?: number) => void;
   onNewSession?: (sessionId: string, cwd: string, mode?: "host" | "sandbox" | "local-machine" | "ssh" | "quick", projectId?: string, projectLabel?: string) => void;
@@ -853,6 +853,8 @@ useEffect(() => {
         const target = allSessions.find((s) => s.id === initialSessionId);
         if (target) {
           setSelectedCwd(target.cwd);
+          // URL 直接恢复快速会话时侧栏切到对应空间，会话行才可见。
+          if (target.mode === "quick") onSessionSpaceChange?.("quick");
           onSelectSession(target, true);
           return;
         }
@@ -862,7 +864,7 @@ useEffect(() => {
       const projects = getRecentProjects(allSessions);
       if (projects.length > 0) setSelectedCwd(projects[0].root);
     }
-  }, [allSessions, selectedCwd, initialSessionId, skipInitialProjectSelection, onSelectSession, onInitialRestoreDone]);
+  }, [allSessions, selectedCwd, initialSessionId, skipInitialProjectSelection, onSelectSession, onInitialRestoreDone, onSessionSpaceChange]);
 
   // Prefer an exact UI selection while a refetch is in flight. Once the
   // response catches up, the server-resolved path handles Windows case and
@@ -1258,6 +1260,9 @@ useEffect(() => {
                     role="menuitem"
                     onClick={() => {
                       setQuickMenuOpen(false);
+                      // 选模板 = 永远新建会话（绝不改当前会话的模式）；
+                      // 侧栏切到「快速会话」空间让新会话立刻可见。
+                      onSessionSpaceChange?.("quick");
                       const tempId = typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now()}`;
                       onNewSession?.(tempId, "", "quick", tpl.id, tpl.name);
                     }}
@@ -2143,7 +2148,7 @@ useEffect(() => {
           </div>
           {explorerOpen && pendingRemoteMode && pendingRemoteMode !== "host" && !remoteSession ? (
             <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-dim)", fontSize: 12, padding: 16, textAlign: "center" }}>
-              {pendingRemoteMode === "sandbox" ? "沙盒" : pendingRemoteMode === "ssh" ? "SSH" : "本机"}会话创建后（发送第一条消息）即可浏览远端文件
+              {pendingRemoteMode === "sandbox" ? "沙盒" : pendingRemoteMode === "ssh" ? "SSH" : pendingRemoteMode === "quick" ? "快速" : "本机"}会话创建后（发送第一条消息）即可浏览远端文件
             </div>
           ) : explorerOpen && (
             <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden" }}>
@@ -2572,8 +2577,8 @@ function SessionItem({
               )}
               <span>{t("sidebar.messagesCount", { count: session.messageCount })}</span>
               {session.mode && session.mode !== "host" && (
-                <span title={session.mode === "sandbox" ? "沙箱模式（容器执行）" : "本机模式（relay 执行）"} style={{ color: session.mode === "sandbox" ? "#38bdf8" : "#a78bfa", fontWeight: 600 }}>
-                  {session.mode === "sandbox" ? "沙箱" : "本机"}
+                <span title={session.mode === "sandbox" ? "沙箱模式（容器执行）" : session.mode === "quick" ? "快速会话（无工作区）" : "本机模式（relay 执行）"} style={{ color: session.mode === "sandbox" ? "#38bdf8" : session.mode === "quick" ? "#fbbf24" : "#a78bfa", fontWeight: 600 }}>
+                  {session.mode === "sandbox" ? "沙箱" : session.mode === "quick" ? "快速" : "本机"}
                 </span>
               )}
               {session.isWorktree && session.branch && (

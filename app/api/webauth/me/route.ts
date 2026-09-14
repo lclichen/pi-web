@@ -27,10 +27,11 @@ function platformConsoleUrlFor(role: string, req: Request): string | null {
   }
 }
 
-// GET /api/webauth/me — current web identity (also works with auth off,
-// reporting the implicit host admin so the client can render uniformly).
-// Carries deployment-wide settings so the client can gate UI like the Lab
-// Training panel before any session exists.
+// GET /api/webauth/me — current web identity. With auth off it reports
+// { authEnabled: false, user: null }: no web session exists, but the server
+// treats every request as the implicit host admin, so clients grant admin UI
+// when authEnabled is false. Carries deployment-wide settings so the client
+// can gate UI like the Lab Training panel before any session exists.
 export async function GET(req: Request) {
   const settings = getServerSettings();
   if (!isWebAuthEnabled()) {

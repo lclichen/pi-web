@@ -3127,6 +3127,8 @@ export function AppShell() {
         cwd={projectTrustCwd}
         sessionId={selectedSession?.id ?? null}
         initialSection={settingsSection}
+        isAdmin={!authEnabled /* auth-off 单用户模式 = 隐式 host 管理员，后端同样放行管理面 */
+          || (webUser !== "loading" && webUser !== null && webUser.role === "admin")}
         quoteSelectionEnabled={quoteSelectionEnabled}
         onQuoteSelectionChange={handleQuoteSelectionChange}
         onClose={() => {

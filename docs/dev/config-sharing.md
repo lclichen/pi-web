@@ -68,16 +68,14 @@ curl http://<host>:30141/api/bundles -H "Cookie: pi_web_sid=<sid>"
 
 ### P1 — 两种启动模式下配置包能力不对齐
 
-| 能力 | Host 目录项目 | 沙箱/本机/SSH 项目 |
+| 能力 | Host 目录项目 | 沙盒/本机/SSH 项目 |
 |---|---|---|
 | 导出配置包 | ✅（目录组菜单） | ✅（项目菜单） |
 | 导入项目配置 | ✅ | ✅ |
 | 创建时选模板 | ❌（Host 目录无向导） | ✅（向导下拉框） |
-| 创建后套用模板 | ✅（目录菜单后续接入） | ✅（「套用配置模板…」） |
+| 创建后套用模板 | ✅（「套用配置模板…」菜单，`POST /api/projects/:id/apply-bundle`） | ✅（「套用配置模板…」） |
 
-建议：给项目 ⋮ 菜单加「套用配置模板…」（列出 bundles，选中即
-applyBundleToDirectory 到该项目 home——后端函数已存在，只差一条 API
-和菜单项）。
+~~建议：给项目 ⋮ 菜单加「套用配置模板…」~~（已完成：ApplyBundleDialog + apply-bundle 端点）。
 
 ### ~~P1 — 模板管理无 UI + 无删除 API~~（已完成：设置分区 + DELETE 端点）
 

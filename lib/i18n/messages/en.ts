@@ -856,6 +856,8 @@ export const enLocale: LocalePlugin = {
     "（空目录）": "(empty directory)",
     "本机 Agent 未连接，无法浏览目录": "Local agent not connected — cannot browse directories",
     "配置模板（可选）": "Config template (optional)",
+    "快速会话模板": "Quick session templates",
+    "配置模板": "Config bundles",
     "不使用模板": "No template",
     "测试中…": "Testing…",
     "测试连接": "Test connection",

@@ -300,6 +300,12 @@ export function SettingsPanel({ cwd, sessionId, initialSection, onClose, onSessi
     { id: "agents", label: t("common.agents"), requiresProject: true },
     { id: "mcp", label: "MCP", requiresProject: true },
     { id: "plugins", label: t("common.plugins"), requiresProject: true },
+    // Admin-only management sections — their rendering is gated on isAdmin
+    // below; they must also appear here or there is no way to navigate to them.
+    ...(isAdmin ? [
+      { id: "quick-templates" as const, label: t("快速会话模板"), requiresProject: false },
+      { id: "bundles" as const, label: t("配置模板"), requiresProject: false },
+    ] : []),
   ];
 
   useEffect(() => setLastSettingsSection(initialSection), [initialSection]);
@@ -320,6 +326,15 @@ export function SettingsPanel({ cwd, sessionId, initialSection, onClose, onSessi
     setMountedSections((current) => new Set(current).add("general"));
     setLastSettingsSection("general");
   }, [cwd, section]);
+
+  // 恢复的上次分区是管理员专属而当前用户不是管理员（同源 localStorage 在
+  // 多用户间共享）→ 面板会渲染成空白，重置到通用分区。
+  useEffect(() => {
+    if (isAdmin || (section !== "quick-templates" && section !== "bundles")) return;
+    setSection("general");
+    setMountedSections((current) => new Set(current).add("general"));
+    setLastSettingsSection("general");
+  }, [section, isAdmin]);
 
   const activateSection = (nextSection: SettingsSection) => {
     setMountedSections((current) => new Set(current).add(nextSection));

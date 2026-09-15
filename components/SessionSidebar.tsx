@@ -1978,7 +1978,6 @@ useEffect(() => {
             isAdmin={authInfo.user?.role === "admin"}
             sessionSpace={sessionSpace}
             onSessionSpaceChange={onSessionSpaceChange}
-            onRequestQuickMenu={() => setQuickMenuOpen(true)}
             onOpenServerDirectory={() => setCustomPathOpen(true)}
             onManageSandbox={onManageSandbox}
             projectsRefreshKey={projectsRefreshKey}

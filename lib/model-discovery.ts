@@ -1,6 +1,11 @@
 export interface DiscoveredModel {
   id: string;
   name?: string;
+  /** 网关 metadata（/v1/models 响应为 snake_case，部分配置为 camelCase）——
+   * 端点不提供时保持 undefined，导入侧据此留空。 */
+  contextLength?: number;
+  maxOutputTokens?: number;
+  inputModalities?: string[];
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -9,6 +14,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function cleanString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function finitePositiveNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
+}
+
+function stringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const items = value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+  return items.length > 0 ? items : undefined;
 }
 
 function modelFromValue(value: unknown): DiscoveredModel | null {
@@ -25,7 +40,16 @@ function modelFromValue(value: unknown): DiscoveredModel | null {
   const name = cleanString(value.display_name)
     ?? cleanString(value.displayName)
     ?? (cleanString(value.id) || cleanString(value.model) ? cleanString(value.name) : undefined);
-  return name && name !== id ? { id, name } : { id };
+  const contextLength = finitePositiveNumber(value.context_length) ?? finitePositiveNumber(value.contextLength);
+  const maxOutputTokens = finitePositiveNumber(value.max_output_tokens) ?? finitePositiveNumber(value.maxOutputTokens);
+  const inputModalities = stringArray(value.input_modalities) ?? stringArray(value.inputModalities);
+  return {
+    id,
+    ...(name && name !== id ? { name } : {}),
+    ...(contextLength !== undefined ? { contextLength } : {}),
+    ...(maxOutputTokens !== undefined ? { maxOutputTokens } : {}),
+    ...(inputModalities !== undefined ? { inputModalities } : {}),
+  };
 }
 
 function listFromResponse(value: unknown): unknown[] {

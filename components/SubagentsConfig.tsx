@@ -2,8 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useIsMobile } from "@/hooks/useIsMobile";
+import { useI18n } from "@/hooks/useI18n";
 import { getLastSettingsSelection, setLastSettingsSelection } from "@/lib/settings-navigation";
 import type { AgentDetail, AgentInfo, ConfigScope, McpServerTools, WebPreferences } from "@/lib/api-types";
+import { ConfigButton, ConfigPanelShell, ConfigSidebarItem, ConfigSwitch } from "./SettingsUi";
 
 const THINKING_OPTIONS = ["off", "low", "medium", "high"];
 const BUILTIN_DEFAULTS = ["read", "write", "bash", "edit", "find", "grep", "ls"];
@@ -28,20 +30,6 @@ const labelStyle: React.CSSProperties = {
   marginBottom: 3,
   display: "block",
 };
-
-function buttonStyle(primary: boolean): React.CSSProperties {
-  return {
-    height: 28,
-    padding: "0 12px",
-    borderRadius: 6,
-    border: primary ? "none" : "1px solid var(--border)",
-    background: primary ? "var(--accent)" : "var(--bg-panel)",
-    color: primary ? "#fff" : "var(--text)",
-    fontSize: 12,
-    fontWeight: 500,
-    cursor: "pointer",
-  };
-}
 
 function shortenPath(p: string): string {
   return p.replace(/^\/(?:Users|home)\/[^/]+/, "~");
@@ -184,6 +172,7 @@ function ToolCheckbox({
 
 export function SubagentsConfig({ cwd, onClose, embedded = false }: { cwd: string; onClose: () => void; embedded?: boolean }) {
   const isMobile = useIsMobile();
+  const { t } = useI18n();
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -386,45 +375,34 @@ export function SubagentsConfig({ cwd, onClose, embedded = false }: { cwd: strin
   const showForm = creating || detail !== null;
 
   return (
-    <div style={embedded ? { display: "flex", flexDirection: "column", height: "100%" } : { position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.35)", display: "flex", alignItems: "center", justifyContent: "center" }}
-      onClick={(e) => { if (!embedded && e.target === e.currentTarget) onClose(); }}
-    >
-      <div style={embedded ? { flex: 1, minHeight: 0, background: "var(--bg)", border: "none", borderRadius: 0, display: "flex", flexDirection: "column", overflow: "hidden" } : { width: isMobile ? "calc(100vw - 16px)" : 920, maxWidth: "calc(100vw - 16px)", height: isMobile ? "calc(100dvh - 16px)" : "82vh", maxHeight: "calc(100dvh - 16px)", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 8, display: "flex", flexDirection: "column", boxShadow: "0 8px 32px rgba(0,0,0,0.18)", overflow: "hidden" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 8, minWidth: 0 }}>
-            <span style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>Subagents</span>
-            <code style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "var(--font-mono)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{shortenPath(cwd)}</code>
-          </div>
-          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-            <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10, cursor: "pointer", color: prefs.subagentsEnabled ? "var(--text)" : "var(--text-dim)" }}>
-              <input type="checkbox" checked={prefs.subagentsEnabled} onChange={(e) => void togglePref("subagentsEnabled", e.target.checked)} style={{ margin: 0 }} />
-              active
-            </label>
-            {!embedded && <button onClick={onClose} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 20, lineHeight: 1, padding: "2px 6px" }}>×</button>}
-          </div>
+    <ConfigPanelShell embedded={embedded} title={t("common.agents")} subtitle={shortenPath(cwd)} closeLabel={t("i18n.close")} onClose={onClose}>
+        {/* 工具栏：启用开关（共享 ConfigSwitch，与技能/插件页风格一致）。 */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 10, padding: "7px 14px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
+          <span style={{ fontSize: 11, color: prefs.subagentsEnabled ? "var(--text-muted)" : "var(--text-dim)" }}>{t("启用")}</span>
+          <ConfigSwitch checked={prefs.subagentsEnabled} label={t("启用")} onChange={(v) => void togglePref("subagentsEnabled", v)} />
         </div>
 
         <div style={{ flex: 1, display: "flex", flexDirection: isMobile ? "column" : "row", overflow: "hidden" }}>
-          {/* Left: agent list */}
+          {/* Left: agent list — 共享 ConfigSidebar 体系（与技能/插件页同风格） */}
           <div style={{ width: isMobile ? "100%" : 175, maxHeight: isMobile ? "32vh" : undefined, borderRight: isMobile ? "none" : "1px solid var(--border)", borderBottom: isMobile ? "1px solid var(--border)" : "none", display: "flex", flexDirection: "column", flexShrink: 0, background: "var(--bg-panel)" }}>
             <div style={{ padding: "6px 6px 2px" }}>
-              <button onClick={startCreate} style={{ ...buttonStyle(true), width: "100%" }}>+ New</button>
+              <ConfigButton variant="primary" onClick={startCreate} style={{ width: "100%" }}>＋ {t("新建")}</ConfigButton>
             </div>
-            <div style={{ flex: 1, overflowY: "auto", padding: "2px 4px 6px" }}>
-              {loading ? <div style={{ padding: "8px", fontSize: 11, color: "var(--text-muted)" }}>Loading...</div>
-              : error ? <div style={{ padding: "8px", fontSize: 11, color: "#ef4444" }}>{error}</div>
-              : agents.length === 0 ? <div style={{ padding: "8px", fontSize: 11, color: "var(--text-dim)" }}>No agents defined.</div>
+            <div className="config-sidebar-list" style={{ flex: 1, overflowY: "auto", padding: "2px 4px 6px", gap: 1 }}>
+              {loading ? <div className="config-sidebar-message">{t("i18n.loading")}</div>
+              : error ? <div className="config-sidebar-message is-error">{error}</div>
+              : agents.length === 0 ? <div className="config-sidebar-message is-empty">{t("暂无代理定义")}</div>
               : grouped.map((group) => (
                 <div key={group.scope} style={{ marginBottom: 4 }}>
-                  <div style={{ padding: "3px 6px 2px", fontSize: 9, fontWeight: 600, color: "var(--text-dim)", textTransform: "uppercase" }}>{group.scope === "builtin" ? "built-in" : group.scope}</div>
+                  <div className="config-sidebar-group-label">{group.scope === "builtin" ? t("内置") : group.scope}</div>
                   {group.agents.map((agent) => {
                     const key = `${agent.scope}\0${agent.name}`;
                     const isSelected = !creating && selectedKey === key;
                     return (
-                      <button key={key} onClick={() => selectAgent(agent)} style={{ display: "block", width: "100%", textAlign: "left", padding: "5px 6px", borderRadius: 4, border: "none", background: isSelected ? "var(--bg-selected)" : "transparent", color: isSelected ? "var(--text)" : "var(--text-muted)", cursor: "pointer", marginBottom: 1 }}>
-                        <div style={{ fontSize: 11, fontWeight: isSelected ? 600 : 400, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{agent.name}</div>
-                        {agent.description && <div style={{ fontSize: 9, color: "var(--text-dim)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{agent.description}</div>}
-                      </button>
+                      <ConfigSidebarItem key={key} active={isSelected} onClick={() => selectAgent(agent)}>
+                        <span className="config-sidebar-text is-grow">{agent.name}</span>
+                        {agent.description && <span className="config-sidebar-text is-muted">{agent.description}</span>}
+                      </ConfigSidebarItem>
                     );
                   })}
                 </div>
@@ -483,16 +461,16 @@ export function SubagentsConfig({ cwd, onClose, embedded = false }: { cwd: strin
                 {/* Tool picker */}
                 <div>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
-                    <button onClick={() => { setShowToolPicker((v) => !v); if (!discovery && !discoveryLoading) void loadDiscovery(); }} style={{ ...buttonStyle(false), height: 24, fontSize: 11 }}>
-                      {showToolPicker ? "Hide" : "Tools"}: {toolsSummary(form)}
-                    </button>
+                    <ConfigButton size="small" onClick={() => { setShowToolPicker((v) => !v); if (!discovery && !discoveryLoading) void loadDiscovery(); }}>
+                      {showToolPicker ? t("收起") : t("工具")}: {toolsSummary(form)}
+                    </ConfigButton>
                     {showToolPicker && !discovery && !discoveryLoading && (
-                      <button onClick={() => void loadDiscovery()} style={{ ...buttonStyle(false), height: 24, fontSize: 10 }}>Discover MCP</button>
+                      <ConfigButton size="small" onClick={() => void loadDiscovery()}>{t("探测 MCP 工具")}</ConfigButton>
                     )}
                   </div>
                   {showToolPicker && (
                     <div style={{ border: "1px solid var(--border)", borderRadius: 6, background: "var(--bg-panel)", padding: 8, maxHeight: 200, overflowY: "auto" }}>
-                      {discoveryLoading && <div style={{ fontSize: 11, color: "var(--text-muted)", padding: "4px 0" }}>Discovering tools...</div>}
+                      {discoveryLoading && <div style={{ fontSize: 11, color: "var(--text-muted)", padding: "4px 0" }}>{t("探测工具中…")}</div>}
                       {/* Builtin tools */}
                       {discovery && (
                         <>
@@ -555,8 +533,8 @@ export function SubagentsConfig({ cwd, onClose, embedded = false }: { cwd: strin
                     <div style={{ fontSize: 11, color: "var(--text-dim)" }}>Built-in agent — read-only. Create a same-named project agent to override it.</div>
                   ) : (
                     <>
-                      <button onClick={save} disabled={saving} style={buttonStyle(true)}>{saving ? "Saving..." : creating ? "Create" : "Save"}</button>
-                      {!creating && detail && <button onClick={remove} disabled={saving} style={buttonStyle(false)}>Delete</button>}
+                      <ConfigButton variant="primary" onClick={save} disabled={saving}>{saving ? t("保存中…") : creating ? t("创建") : t("保存")}</ConfigButton>
+                      {!creating && detail && <ConfigButton variant="danger" onClick={remove} disabled={saving}>{t("删除")}</ConfigButton>}
                     </>
                   )}
                 </div>
@@ -564,7 +542,6 @@ export function SubagentsConfig({ cwd, onClose, embedded = false }: { cwd: strin
             )}
           </div>
         </div>
-      </div>
-    </div>
+    </ConfigPanelShell>
   );
 }

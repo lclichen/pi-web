@@ -1931,7 +1931,13 @@ export function ModelsConfig({ onClose, embedded = false }: { onClose: () => voi
       for (const discoveredModel of discovered) {
         if (existingIds.has(discoveredModel.id)) continue;
         existingIds.add(discoveredModel.id);
-        models.push({ id: discoveredModel.id, name: discoveredModel.name });
+        // 网关 metadata 自动填充（docs/dev/models-api-sample.json）——
+        // 缺失的字段保持空置，不写默认值。
+        const entry: ModelEntry = { id: discoveredModel.id, ...(discoveredModel.name ? { name: discoveredModel.name } : {}) };
+        if (discoveredModel.contextLength !== undefined) entry.contextWindow = discoveredModel.contextLength;
+        if (discoveredModel.maxOutputTokens !== undefined) entry.maxTokens = discoveredModel.maxOutputTokens;
+        if (discoveredModel.inputModalities?.includes("image")) entry.input = ["text", "image"];
+        models.push(entry);
       }
       return { ...prev, providers: { ...(prev.providers ?? {}), [providerName]: { ...provider, models } } };
     });

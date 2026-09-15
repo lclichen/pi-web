@@ -1,0 +1,23 @@
+{
+  "_note": "GET /v1/models 响应示例 —— llm.models[].metadata 配置会作为额外字段出现在每个模型条目上（未配置 metadata 的模型不出现这些字段）。字段: context_length=总上下文(token), max_output_tokens=单次最大输出(token), input_modalities/output_modalities=输入/输出模态。",
+  "_configSource": "agentgateway ui-test-config.yaml → llm.models[].metadata (config 字段为 camelCase: contextLength/maxOutputTokens/inputModalities/outputModalities)",
+  "apiResponse": {
+    "data": [
+      {
+        "id": "MS/*",
+        "object": "model",
+        "created": 1789377301,
+        "owned_by": "openai",
+        "context_length": 131072,
+        "max_output_tokens": 16384,
+        "input_modalities": [
+          "text"
+        ],
+        "output_modalities": [
+          "text"
+        ]
+      }
+    ],
+    "object": "list"
+  }
+}

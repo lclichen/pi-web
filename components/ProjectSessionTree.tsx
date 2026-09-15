@@ -24,8 +24,6 @@ interface Props {
   /** mine = 项目会话；quick = 快速会话聚合（无工作区）；host = CLI/服务器目录（admin）。 */
   sessionSpace: "mine" | "host" | "quick";
   onSessionSpaceChange?: (space: "mine" | "host" | "quick") => void;
-  /** 快速空间视图内「＋ 新建」入口：打开侧栏顶部的模板菜单。 */
-  onRequestQuickMenu?: () => void;
   onOpenServerDirectory?: () => void;
   /** Open the sandbox manager dialog bound to a project (sandbox mode). */
   onManageSandbox?: (project: ProjectRecord) => void;
@@ -56,7 +54,6 @@ export function ProjectSessionTree({
   isAdmin,
   sessionSpace,
   onSessionSpaceChange,
-  onRequestQuickMenu,
   onOpenServerDirectory,
   onManageSandbox,
   projectsRefreshKey,
@@ -507,33 +504,13 @@ export function ProjectSessionTree({
       )}
 
       {/* 快速会话空间：无项目/工作区，扁平列表按最近排序；不分组。
-          视图内自带「＋ 新建」入口——顶栏 ⚡ 与空间 tab 都叫「快速会话」，
-          用户分不清哪个是创建入口，这里给出无歧义的一个。 */}
+          创建入口就是侧栏顶部的 ⚡ 按钮（视图内不再放重复按钮）。 */}
       {sessionSpace === "quick" && (
         <>
-          <div style={{ padding: "0 4px 6px" }}>
-            <button
-              type="button"
-              onClick={() => onRequestQuickMenu?.()}
-              title={t("选模板新建快速会话")}
-              style={{
-                display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
-                width: "100%", height: 28, padding: 0,
-                background: "var(--bg-hover)", border: "1px dashed var(--border)",
-                borderRadius: 6, color: "var(--text-muted)", fontSize: 11.5,
-                fontWeight: 500, cursor: "pointer",
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--accent)"; e.currentTarget.style.color = "var(--accent)"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.color = "var(--text-muted)"; }}
-            >
-              <span style={{ fontSize: 13, lineHeight: 1 }}>＋</span>
-              {t("新建快速会话")}
-            </button>
-          </div>
           {quickSessions.map((s) => renderItem(s, null))}
           {quickSessions.length === 0 && (
             <div style={{ padding: "8px 6px", fontSize: 11, color: "var(--text-dim)", lineHeight: 1.7 }}>
-              {t("暂无快速会话——每次选择模板都会新建一个独立会话。")}
+              {t("暂无快速会话——点上方 ⚡ 按模板开始；每次选择模板都会新建一个独立会话。")}
             </div>
           )}
         </>

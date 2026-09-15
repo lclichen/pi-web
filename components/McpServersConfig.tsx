@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useIsMobile } from "@/hooks/useIsMobile";
+import { useI18n } from "@/hooks/useI18n";
 import type {
   ConfigScope,
   McpConfigDocument,
@@ -12,6 +13,7 @@ import type {
   ServerEntry,
   WebPreferences,
 } from "@/lib/api-types";
+import { ConfigButton, ConfigPanelShell, ConfigSidebarItem, ConfigSwitch } from "./SettingsUi";
 
 const inputStyle: React.CSSProperties = {
   width: "100%", height: 30, padding: "3px 8px", background: "var(--bg-panel)",
@@ -21,9 +23,6 @@ const inputStyle: React.CSSProperties = {
 const labelStyle: React.CSSProperties = {
   fontSize: 10, fontWeight: 600, color: "var(--text-muted)", marginBottom: 3, display: "block",
 };
-function buttonStyle(primary: boolean): React.CSSProperties {
-  return { height: 28, padding: "0 12px", borderRadius: 6, border: primary ? "none" : "1px solid var(--border)", background: primary ? "var(--accent)" : "var(--bg-panel)", color: primary ? "#fff" : "var(--text)", fontSize: 12, fontWeight: 500, cursor: "pointer" };
-}
 function shortenPath(p: string): string { return p.replace(/^\/(?:Users|home)\/[^/]+/, "~"); }
 function parseLines(raw: string): string[] { return raw.split(/\r?\n/).map((s) => s.trim()).filter(Boolean); }
 function parseKv(raw: string, sep: RegExp): Record<string, string> {
@@ -98,6 +97,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 export function McpServersConfig({ cwd, onClose, embedded = false }: { cwd: string; onClose: () => void; embedded?: boolean }) {
   const isMobile = useIsMobile();
+  const { t } = useI18n();
   const [doc, setDoc] = useState<McpConfigDocument | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -246,47 +246,38 @@ export function McpServersConfig({ cwd, onClose, embedded = false }: { cwd: stri
   const diagnostics = doc?.diagnostics ?? [];
 
   return (
-    <div style={embedded ? { display: "flex", flexDirection: "column", height: "100%" } : { position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.35)", display: "flex", alignItems: "center", justifyContent: "center" }} onClick={(e) => { if (!embedded && e.target === e.currentTarget) onClose(); }}>
-      <div style={embedded ? { flex: 1, minHeight: 0, background: "var(--bg)", border: "none", borderRadius: 0, display: "flex", flexDirection: "column", overflow: "hidden" } : { width: isMobile ? "calc(100vw - 16px)" : 960, maxWidth: "calc(100vw - 16px)", height: isMobile ? "calc(100dvh - 16px)" : "84vh", maxHeight: "calc(100dvh - 16px)", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 8, display: "flex", flexDirection: "column", boxShadow: "0 8px 32px rgba(0,0,0,0.18)", overflow: "hidden" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 8, minWidth: 0 }}>
-            <span style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>MCP Servers</span>
-            <code style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "var(--font-mono)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{shortenPath(cwd)}</code>
-            {probingAll && <span style={{ fontSize: 10, color: "var(--text-muted)" }}>probing...</span>}
-          </div>
-          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-            <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10, cursor: "pointer", color: prefs.mcpEnabled ? "var(--text)" : "var(--text-dim)" }}>
-              <input type="checkbox" checked={prefs.mcpEnabled} onChange={(e) => void togglePref("mcpEnabled", e.target.checked)} style={{ margin: 0 }} />
-              active
-            </label>
-            <button onClick={() => void probeAll()} disabled={probingAll} style={{ ...buttonStyle(false), height: 26, fontSize: 10 }}>Refresh tools</button>
-            <button onClick={() => setShowSettings((v) => !v)} style={{ ...buttonStyle(false), height: 26, fontSize: 10 }}>{showSettings ? "Hide settings" : "Settings"}</button>
-            {!embedded && <button onClick={onClose} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 20, lineHeight: 1, padding: "2px 6px" }}>×</button>}
-          </div>
+    <ConfigPanelShell embedded={embedded} title={t("MCP 服务器")} subtitle={shortenPath(cwd)} closeLabel={t("i18n.close")} onClose={onClose}>
+        {/* 工具栏：启用开关 + 探测/设置（共享组件，与技能/插件/Agents 页同风格）。 */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 10, padding: "7px 14px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
+          {probingAll && <span style={{ fontSize: 10, color: "var(--text-muted)" }}>{t("探测中…")}</span>}
+          <span style={{ fontSize: 11, color: prefs.mcpEnabled ? "var(--text-muted)" : "var(--text-dim)" }}>{t("启用")}</span>
+          <ConfigSwitch checked={prefs.mcpEnabled} label={t("启用")} onChange={(v) => void togglePref("mcpEnabled", v)} />
+          <ConfigButton size="small" onClick={() => void probeAll()} disabled={probingAll}>{t("刷新工具")}</ConfigButton>
+          <ConfigButton size="small" onClick={() => setShowSettings((v) => !v)}>{showSettings ? t("收起设置") : t("设置")}</ConfigButton>
         </div>
 
         {showSettings && (
           <div style={{ padding: "10px 16px", borderBottom: "1px solid var(--border)", background: "var(--bg-panel)", display: "flex", flexWrap: "wrap", gap: 10, alignItems: "flex-end" }}>
             <div style={{ width: 140 }}><Field label="toolPrefix"><select style={inputStyle} value={settingsDraft.toolPrefix ?? ""} onChange={(e) => setSettingsDraft((s) => ({ ...s, toolPrefix: (e.target.value || undefined) as McpSettings["toolPrefix"] }))}><option value="">(default)</option><option value="server">server</option><option value="none">none</option><option value="short">short</option><option value="mcp">mcp</option></select></Field></div>
             <div style={{ width: 110 }}><Field label="idleTimeout (min)"><input style={inputStyle} value={settingsDraft.idleTimeout ?? ""} onChange={(e) => setSettingsDraft((s) => ({ ...s, idleTimeout: e.target.value === "" ? undefined : Number(e.target.value) }))} /></Field></div>
-            <button onClick={saveSettings} disabled={settingsSaving} style={buttonStyle(true)}>{settingsSaving ? "Saving..." : "Save Settings"}</button>
+            <ConfigButton variant="primary" onClick={saveSettings} disabled={settingsSaving}>{settingsSaving ? t("保存中…") : t("保存设置")}</ConfigButton>
           </div>
         )}
 
         <div style={{ flex: 1, display: "flex", flexDirection: isMobile ? "column" : "row", overflow: "hidden" }}>
-          {/* Left: server + tool tree */}
+          {/* Left: server + tool tree — 共享 ConfigSidebar 体系 */}
           <div style={{ width: isMobile ? "100%" : 320, maxHeight: isMobile ? "34vh" : undefined, borderRight: isMobile ? "none" : "1px solid var(--border)", borderBottom: isMobile ? "1px solid var(--border)" : "none", display: "flex", flexDirection: "column", flexShrink: 0, background: "var(--bg-panel)" }}>
             <div style={{ padding: "6px 6px 2px" }}>
-              <button onClick={startCreate} style={{ ...buttonStyle(true), width: "100%" }}>+ New Server</button>
+              <ConfigButton variant="primary" onClick={startCreate} style={{ width: "100%" }}>＋ {t("新建服务器")}</ConfigButton>
             </div>
-            <div style={{ flex: 1, overflowY: "auto", padding: "2px 4px 6px" }}>
+            <div className="config-sidebar-list" style={{ flex: 1, overflowY: "auto", padding: "2px 4px 6px", gap: 1 }}>
               {diagnostics.filter((d) => d.parseError).map((d) => (<div key={`diag-${d.scope}`} style={{ padding: "3px 6px", fontSize: 10, color: "#ef4444" }} title={d.parseError}>{d.scope}: invalid JSON</div>))}
-              {loading ? <div style={{ padding: "8px", fontSize: 11, color: "var(--text-muted)" }}>Loading...</div>
-              : error ? <div style={{ padding: "8px", fontSize: 11, color: "#ef4444" }}>{error}</div>
-              : servers.length === 0 ? <div style={{ padding: "8px", fontSize: 11, color: "var(--text-dim)" }}>No MCP servers configured.</div>
+              {loading ? <div className="config-sidebar-message">{t("i18n.loading")}</div>
+              : error ? <div className="config-sidebar-message is-error">{error}</div>
+              : servers.length === 0 ? <div className="config-sidebar-message is-empty">{t("暂无 MCP 服务器")}</div>
               : grouped.map((group) => (
                 <div key={group.scope} style={{ marginBottom: 4 }}>
-                  <div style={{ padding: "3px 6px 2px", fontSize: 9, fontWeight: 600, color: "var(--text-dim)", textTransform: "uppercase" }}>{group.scope}</div>
+                  <div className="config-sidebar-group-label">{group.scope}</div>
                   {group.servers.map((srv) => {
                     const key = `${srv.scope}\0${srv.name}`;
                     const isSelected = !creating && selectedKey === key;
@@ -297,15 +288,15 @@ export function McpServersConfig({ cwd, onClose, embedded = false }: { cwd: stri
                       <div key={key}>
                         <div style={{ display: "flex", alignItems: "center" }}>
                           <button onClick={() => toggleExpand(key)} style={{ background: "none", border: "none", color: "var(--text-dim)", cursor: "pointer", padding: "0 2px", fontSize: 10, flexShrink: 0 }}>{isExpanded ? "▼" : "▶"}</button>
-                          <button onClick={() => selectServer(srv)} style={{ display: "block", flex: 1, textAlign: "left", padding: "5px 4px", borderRadius: 4, border: "none", background: isSelected ? "var(--bg-selected)" : "transparent", color: isSelected ? "var(--text)" : "var(--text-muted)", cursor: "pointer", marginBottom: 1, minWidth: 0 }}>
-                            <div style={{ fontSize: 11, fontWeight: isSelected ? 600 : 400, display: "flex", alignItems: "center", gap: 4 }}>
+                          <ConfigSidebarItem active={isSelected} onClick={() => selectServer(srv)} style={{ flex: 1, minWidth: 0 }}>
+                            <span style={{ fontSize: 11, fontWeight: isSelected ? 600 : 400, display: "flex", alignItems: "center", gap: 4, minWidth: 0, overflow: "hidden" }}>
                               <span style={{ fontSize: 8, padding: "1px 4px", borderRadius: 3, background: srv.transport === "http" ? "#2563eb33" : "#16a34a33", color: srv.transport === "http" ? "#60a5fa" : "#4ade80", flexShrink: 0 }}>{srv.transport}</span>
                               <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{srv.name}</span>
                               {srv.directToolsOn && <span style={{ fontSize: 8, color: "var(--accent)" }}>DT</span>}
                               {toolInfo?.error && <span style={{ fontSize: 8, color: "#f59e0b" }}>!</span>}
                               {!toolInfo?.error && toolCount > 0 && <span style={{ fontSize: 8, color: "var(--text-dim)" }}>{toolCount}</span>}
-                            </div>
-                          </button>
+                            </span>
+                          </ConfigSidebarItem>
                         </div>
                         {isExpanded && (
                           <div style={{ paddingLeft: 18, paddingBottom: 4 }}>
@@ -371,22 +362,21 @@ export function McpServersConfig({ cwd, onClose, embedded = false }: { cwd: stri
                   <div style={{ flex: 1 }}><Field label="excludeTools (comma-separated)"><input style={inputStyle} value={form.excludeTools} onChange={(e) => set("excludeTools", e.target.value)} /></Field></div>
                 </div>
 
-                <button onClick={() => setShowAdvanced((v) => !v)} style={{ ...buttonStyle(false), height: 24, fontSize: 11, alignSelf: "flex-start" }}>{showAdvanced ? "Hide debug" : "Debug"}</button>
+                <ConfigButton size="small" onClick={() => setShowAdvanced((v) => !v)}>{showAdvanced ? t("收起调试") : t("调试")}</ConfigButton>
                 {showAdvanced && (<div style={{ display: "flex", alignItems: "center", gap: 6 }}><label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, cursor: "pointer" }}><input type="checkbox" checked={form.debug} onChange={(e) => set("debug", e.target.checked)} /> debug (show stderr)</label></div>)}
 
                 {formError && <div style={{ fontSize: 11, color: "#ef4444" }}>{formError}</div>}
                 {formMsg && !formError && <div style={{ fontSize: 11, color: "var(--accent)" }}>{formMsg}</div>}
 
                 <div style={{ display: "flex", gap: 8 }}>
-                  <button onClick={save} disabled={saving} style={buttonStyle(true)}>{saving ? "Saving..." : creating ? "Create" : "Save"}</button>
-                  <button onClick={() => void probeOne(creating ? form.name : originalName, creating ? form.scope : originalScope)} disabled={probingAll} style={buttonStyle(false)}>Probe</button>
-                  {!creating && <button onClick={remove} disabled={saving} style={buttonStyle(false)}>Delete</button>}
+                  <ConfigButton variant="primary" onClick={save} disabled={saving}>{saving ? t("保存中…") : creating ? t("创建") : t("保存")}</ConfigButton>
+                  <ConfigButton onClick={() => void probeOne(creating ? form.name : originalName, creating ? form.scope : originalScope)} disabled={probingAll}>{t("探测")}</ConfigButton>
+                  {!creating && <ConfigButton variant="danger" onClick={remove} disabled={saving}>{t("删除")}</ConfigButton>}
                 </div>
               </div>
             )}
           </div>
         </div>
-      </div>
-    </div>
+    </ConfigPanelShell>
   );
 }

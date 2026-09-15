@@ -181,7 +181,7 @@ export function BundlesConfig({ embedded = false }: { embedded?: boolean }) {
             ))}
           </ConfigSidebarList>
           {/* 上传入口固定在侧栏左下角（与模型页「添加 Provider」一致） */}
-          <ConfigListAction onClick={startUpload} active={showUpload}>＋ {t("上传模板")}</ConfigListAction>
+          <ConfigListAction onClick={startUpload} active={showUpload}>{t("上传模板")}</ConfigListAction>
         </ConfigSidebar>
 
         {/* Right: upload form / bundle detail */}

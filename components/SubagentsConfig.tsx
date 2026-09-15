@@ -413,7 +413,7 @@ export function SubagentsConfig({ cwd, onClose, embedded = false }: { cwd: strin
             ))}
           </ConfigSidebarList>
           {/* 新建入口固定在侧栏左下角（与模型页「添加 Provider」一致） */}
-          <ConfigListAction onClick={startCreate} active={creating}>{t("新建")}</ConfigListAction>
+          <ConfigListAction onClick={startCreate} active={creating}>{t("agents.new")}</ConfigListAction>
         </ConfigSidebar>
 
         {/* Right: detail / form */}
@@ -425,7 +425,7 @@ export function SubagentsConfig({ cwd, onClose, embedded = false }: { cwd: strin
               <>
                 <ConfigDetailHeader>
                   <ConfigDetailHeaderInfo>
-                    <ConfigDetailTitle>{creating ? t("新建") : form.name || detail?.name}</ConfigDetailTitle>
+                    <ConfigDetailTitle>{creating ? t("agents.new") : form.name || detail?.name}</ConfigDetailTitle>
                     {readOnly && <span className="config-scope-tag">built-in</span>}
                   </ConfigDetailHeaderInfo>
                   <ConfigDetailActions>

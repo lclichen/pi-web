@@ -219,7 +219,7 @@ export function QuickTemplatesConfig({ embedded = false }: { embedded?: boolean 
             ))}
           </ConfigSidebarList>
           {/* 新建入口固定在侧栏左下角（与模型页「添加 Provider」一致） */}
-          <ConfigListAction onClick={startCreate} active={creating}>＋ {t("新增模板")}</ConfigListAction>
+          <ConfigListAction onClick={startCreate} active={creating}>{t("新增模板")}</ConfigListAction>
         </ConfigSidebar>
 
         {/* Right: detail / form */}

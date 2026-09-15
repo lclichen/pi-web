@@ -118,8 +118,8 @@ test("uses top navigation on desktop and one compact section picker on mobile", 
 test("labels agent profiles as sub-agents", () => {
   assert.match(enSource, /"common\.agents": "Sub-agents"/);
   assert.match(enSource, /"agents\.new": "New sub-agent"/);
-  assert.match(zhSource, /"common\.agents": "子代理"/);
-  assert.match(zhSource, /"agents\.new": "新建子代理"/);
+  assert.match(zhSource, /"common\.agents": "子智能体"/);
+  assert.match(zhSource, /"agents\.new": "新建子智能体"/);
 });
 
 test("uses the child-session robot glyph for the sub-agents tab", () => {

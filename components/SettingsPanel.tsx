@@ -294,8 +294,8 @@ export function SettingsPanel({ cwd, sessionId, initialSection, onClose, onSessi
   );
   const sections: Array<{ id: SettingsSection; label: string; requiresProject: boolean }> = [
     { id: "general", label: t("settings.general"), requiresProject: false },
-    { id: "models", label: t("common.models"), requiresProject: false },
     { id: "account", label: t("settings.account"), requiresProject: false },
+    { id: "models", label: t("common.models"), requiresProject: false },
     { id: "skills", label: t("common.skills"), requiresProject: true },
     { id: "agents", label: t("common.agents"), requiresProject: true },
     { id: "mcp", label: "MCP", requiresProject: true },
@@ -400,8 +400,8 @@ export function SettingsPanel({ cwd, sessionId, initialSection, onClose, onSessi
 
         <main className="settings-dialog-main">
           {sectionHost("general", <GeneralSettings sessionId={sessionId} onSessionReloaded={onSessionReloaded} quoteSelectionEnabled={quoteSelectionEnabled} onQuoteSelectionChange={onQuoteSelectionChange} />)}
-          {sectionHost("models", <ModelsConfig embedded onClose={onClose} />)}
           {sectionHost("account", <AccountSettings onClose={onClose} />)}
+          {sectionHost("models", <ModelsConfig embedded onClose={onClose} />)}
           {cwd && sectionHost("skills", <SkillsConfig embedded key={cwd} cwd={cwd} onClose={onClose} />)}
           {cwd && sectionHost("agents", <SubagentsConfig embedded key={cwd} cwd={cwd} onClose={onClose} />)}
           {cwd && sectionHost("mcp", <McpServersConfig embedded key={cwd} cwd={cwd} onClose={onClose} />)}

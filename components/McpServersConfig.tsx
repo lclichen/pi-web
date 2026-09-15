@@ -343,7 +343,7 @@ export function McpServersConfig({ cwd, onClose, embedded = false }: { cwd: stri
             ))}
           </ConfigSidebarList>
           {/* 新建入口固定在侧栏左下角（与模型页「添加 Provider」一致） */}
-          <ConfigListAction onClick={startCreate} active={creating}>＋ {t("新建服务器")}</ConfigListAction>
+          <ConfigListAction onClick={startCreate} active={creating}>{t("新建服务器")}</ConfigListAction>
         </ConfigSidebar>
 
         {/* Right: detail / form */}

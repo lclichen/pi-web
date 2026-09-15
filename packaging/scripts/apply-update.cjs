@@ -33,6 +33,14 @@ if (!config.version || !config.framework || !config.pkgKind || !config.dataDir) 
 
 const STAGING_ROOT = path.join(config.dataDir, "update-staging");
 const STAGING = path.join(STAGING_ROOT, String(Date.now()));
+/**
+ * tarball/electron 的解包目标。必须与 appRoot 同级且在其**外部**：dataDir 默认
+ * 在包根内（appRoot/data/...），若解到 appRoot 里面，交换第一步（appRoot→.bak）
+ * 会把暂存连同新根一起搬走，第二步 rename 就 ENOENT 了。
+ */
+const EXTRACT_DIR = config.pkgKind === "appimage"
+  ? STAGING
+  : `${config.appRoot}.update-staging-${Date.now()}`;
 const STATUS_FILE = path.join(config.dataDir, "update-status.json");
 const LOG_FILE = path.join(config.dataDir, "update.log");
 /** 用户数据目录（tarball/electron 形态默认在包根内，交换后必须回迁）。 */
@@ -150,11 +158,18 @@ function pruneBackups(parent, prefix, keep = 1) {
 
 (async () => {
   try {
-    // 旧尝试的 staging 残留清掉（整包不小，别攒）。
+    // 旧尝试的 staging 残留清掉（整包不小，别攒）——下载暂存与解包暂存两处。
     try {
       mkdirSync(STAGING_ROOT, { recursive: true });
       for (const name of readdirSync(STAGING_ROOT)) {
         if (path.join(STAGING_ROOT, name) !== STAGING) rmSync(path.join(STAGING_ROOT, name), { recursive: true, force: true });
+      }
+      if (config.appRoot && config.pkgKind !== "appimage") {
+        const parent = path.dirname(config.appRoot);
+        const prefix = path.basename(config.appRoot) + ".update-staging-";
+        for (const name of readdirSync(parent)) {
+          if (name.startsWith(prefix)) rmSync(path.join(parent, name), { recursive: true, force: true });
+        }
       }
     } catch { /* 尽力而为 */ }
     mkdirSync(STAGING, { recursive: true });
@@ -196,7 +211,7 @@ function pruneBackups(parent, prefix, keep = 1) {
     } else {
       if (!config.appRoot) throw new Error("缺少 AMEDAC_APP_ROOT");
       status("staging", { message: "解包新版本…" });
-      const stagedRoot = path.join(STAGING, "root");
+      const stagedRoot = path.join(EXTRACT_DIR, "root");
       extractTar(stagedRoot, artifact);
       // tar.gz 含一层顶层目录（amedac.ai-pi-linux-<arch>/）——取该层为新根。
       const entries = readdirSync(stagedRoot);
@@ -216,10 +231,11 @@ function pruneBackups(parent, prefix, keep = 1) {
         renameSync(newRoot, config.appRoot);
         migrateDataDirs(backup, config.appRoot); // 用户数据（config/data/run/logs）mv 回新根
       } catch (e) {
-        // 交换或回迁失败：把数据搬回 .bak 后整体还原。
+        // 交换或回迁失败：把数据搬回 .bak 后整体还原，并把旧版服务拉回来。
         try { migrateDataDirs(config.appRoot, backup); } catch { /* 双重失败，保留现场 */ }
         rmSync(config.appRoot, { recursive: true, force: true });
         renameSync(backup, config.appRoot);
+        spawn("bash", [path.join(config.appRoot, "scripts", "start-all.sh")], { detached: true, stdio: "ignore" }).unref();
         throw e;
       }
 
@@ -243,6 +259,8 @@ function pruneBackups(parent, prefix, keep = 1) {
       pruneBackups(path.dirname(config.appRoot), path.basename(config.appRoot) + ".bak-");
     }
 
+    rmSync(STAGING, { recursive: true, force: true }); // 下载暂存
+    rmSync(EXTRACT_DIR, { recursive: true, force: true }); // 解包暂存（成功后新根已 mv 走，剩残壳）
     status("done", { message: `已更新到 ${config.version}；若页面未自动恢复，请稍后刷新。` });
     process.exit(0);
   } catch (e) {

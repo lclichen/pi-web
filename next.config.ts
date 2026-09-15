@@ -5,6 +5,15 @@ import { fileURLToPath } from "url";
 
 const configDir = dirname(fileURLToPath(import.meta.url));
 const { version } = JSON.parse(readFileSync(join(configDir, "package.json"), "utf8")) as { version: string };
+// 自有版本体系（amedac.ai-agent-framework）：version.json 是分发版本的唯一事实源，
+// 打包时随包分发并附 pkg-kind 标记（tarball/appimage/electron），更新器据此对账。
+let appVersion = version;
+let appChannel = "stable";
+try {
+  const release = JSON.parse(readFileSync(join(configDir, "version.json"), "utf8")) as { version?: string; channel?: string };
+  if (release.version) appVersion = release.version;
+  if (release.channel) appChannel = release.channel;
+} catch { /* 开发环境无 version.json 时回落 npm 版本 */ }
 let piVersion = "unknown";
 try {
   const piPkgPath = join(configDir, "node_modules/@earendil-works/pi-coding-agent/package.json");
@@ -80,7 +89,8 @@ const nextConfig: NextConfig = {
     ];
   },
   env: {
-    NEXT_PUBLIC_APP_VERSION: version,
+    NEXT_PUBLIC_APP_VERSION: appVersion,
+    NEXT_PUBLIC_APP_CHANNEL: appChannel,
     NEXT_PUBLIC_PI_VERSION: piVersion,
   },
 };

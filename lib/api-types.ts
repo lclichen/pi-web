@@ -78,6 +78,36 @@ export interface AppUpdateResponse {
   latestVersion: string;
   updateAvailable: boolean;
   releaseUrl: string;
+  /** catalog（自有更新源）| npm（上游回落）| off（跳过检查）。 */
+  source?: "catalog" | "npm" | "off";
+  channel?: string;
+  /** catalog 命中的目标版本详情（含可下载 framework）。 */
+  target?: {
+    version: string;
+    channel: string;
+    releasedAt?: string;
+    frameworks: Array<{ kind: "tarball" | "appimage" | "electron"; fileName: string; sizeBytes: number }>;
+  };
+  /** 当前部署形态（pkg-kind），决定 apply 用哪个 framework。 */
+  pkgKind?: "tarball" | "appimage" | "electron";
+  /** 本实例是否支持自助应用更新（appRoot/pkgKind 可得时）。 */
+  canSelfUpdate?: boolean;
+}
+
+export interface UpdateApplyResponse {
+  started: boolean;
+  statusUrl?: string;
+  error?: string;
+}
+
+export interface UpdateStatusResponse {
+  phase: "idle" | "downloading" | "verifying" | "staging" | "swapping" | "restarting" | "done" | "failed";
+  message?: string;
+  /** 下载进度（0-1，phase=downloading 时有效）。 */
+  progress?: number;
+  targetVersion?: string;
+  updatedAt?: number;
+  error?: string;
 }
 
 export interface PushConfigResponse {

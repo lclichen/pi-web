@@ -330,6 +330,9 @@ PI_WEB_DATA_DIR=$DATA_DIR/piweb
 # 每次启动都会变化）；如需指向自建扩展目录，取消注释并改为你的绝对路径。
 # PI_WEB_SANDBOX_EXTENSION_PATH=/abs/path/to/pi-sandbox-extension
 PI_WEB_LAB_TRAINING=off
+# 自有更新源（catalog.json，http(s) URL 或本地文件路径）——配置后设置页可
+# 检查/下载/自动应用更新；产物相对路径以 catalog 所在目录为基准解析。
+# AMEDAC_UPDATE_CATALOG_URL=http://updates.internal/amedac/catalog.json
 EOF
     chmod 600 "$WEB_ENV_FILE"
     warn "WebUI 与沙盒平台共用同一套账号（WebUI 登录即平台登录）。"
@@ -352,6 +355,10 @@ EOF
       warn "piweb.env 的 PI_WEB_SANDBOX_EXTENSION_PATH 指向不存在的目录，已回落当前包内扩展: $EXTENSION_DIR"
       export PI_WEB_SANDBOX_EXTENSION_PATH="$EXTENSION_DIR"
     fi
+    # 自有版本体系：暴露应用根与部署形态给更新器。pkg-kind 文件缺失的旧包按
+    # AppImage 环境变量识别（squashfs 只读，更新策略不同，不能误判成 tarball）。
+    export AMEDAC_APP_ROOT="$PKG"
+    export AMEDAC_PKG_KIND="$(cat "$PKG/pkg-kind" 2>/dev/null || { [ -n "${APPIMAGE:-}" ] && echo appimage || echo tarball; })"
     setsid nohup "$NODE_BIN" ./node_modules/next/dist/bin/next start -H 0.0.0.0 -p "$WEB_PORT" \
       > "$LOG_DIR/web.log" 2>&1 < /dev/null &
     echo $! > "$RUN_DIR/web.pid"

@@ -197,9 +197,23 @@ mkdir -p "$PKG/scripts"
 for f in "$ROOT"/packaging/*; do
   case "$(basename "$f")" in
     pi|pi-web|pi-web.sh) cp -a "$f" "$PKG/" ;;
+    # packaging/scripts/ 打平进包内 scripts/（更新器 applier 按
+    # <包根>/scripts/apply-update.cjs 定位）。
+    scripts)              cp -a "$f/." "$PKG/scripts/" ;;
     *)            cp -a "$f" "$PKG/scripts/" ;;
   esac
 done
+# 自有版本体系：version.json（更新器对账的事实源）随包分发——包根与 app/ 各一份
+# （运行时 WebUI 的 cwd 是 app/，两处都放确保读得到）；pkg-kind 标记部署形态。
+# 缺失时用 npm version 生成等价物（channel 按预发布后缀推导），正式发布前应提交 version.json。
+if [ -f "$SRC/version.json" ]; then
+  cp -a "$SRC/version.json" "$PKG/version.json"
+else
+  case "$VERSION" in *-*) APP_CHANNEL="${VERSION#*-}" ;; *) APP_CHANNEL="stable" ;; esac
+  printf '{\n  "project": "amedac.ai-agent-framework",\n  "version": "%s",\n  "channel": "%s"\n}\n' "$VERSION" "$APP_CHANNEL" > "$PKG/version.json"
+fi
+cp -a "$PKG/version.json" "$PKG/app/version.json"
+echo tarball > "$PKG/pkg-kind"
 echo "$VERSION" > "$PKG/scripts/VERSION.txt"
 chmod +x "$PKG/pi" "$PKG/pi-web" "$PKG/pi-web.sh" "$PKG/scripts/"*.sh
 

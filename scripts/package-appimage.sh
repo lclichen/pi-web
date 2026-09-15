@@ -61,6 +61,8 @@ cp -a "$PKG_SRC" "$APPDIR/usr/share/amedac"
 rm -rf "$APPDIR/usr/share/amedac/run" \
        "$APPDIR/usr/share/amedac/logs" \
        "$APPDIR/usr/share/amedac/data"          # 打包机残留的运行数据不进镜像
+# AppImage 的自更新走「替换 .AppImage 文件本身」策略（squashfs 只读）。
+echo appimage > "$APPDIR/usr/share/amedac/pkg-kind"
 
 cp -a "$ROOT/packaging/appimage/AppRun" "$APPDIR/AppRun"
 chmod +x "$APPDIR/AppRun"

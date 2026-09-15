@@ -79,22 +79,25 @@ export function listAgents(cwd: string, scope: ConfigScope): AgentInfo[] {
       } catch {
         continue;
       }
-      seenNames.add(name);
+      seenNames.add(name.toLowerCase());
       out.push(parseAgentFile(name, raw, scope, filePath));
     }
   }
 
   // Include built-in default agents that don't have a .md override in this scope.
-  // They appear in the project scope (defaults are global but shown under project for UX).
-  // Descriptions come from the canonical builtin profiles (lib/subagents) so the
-  // listing matches what the read-only detail view serves.
+  // They must carry scope "builtin" so the settings UI groups them under 内置 and
+  // matches the read-only detail view (/api/agents/[name] serves scope "builtin"
+  // for these fileless names). Names use the canonical profile spelling so the
+  // list, detail and form all agree; override detection is case-insensitive.
+  // Descriptions come from the canonical builtin profiles (lib/subagents).
   if (scope === "project") {
     for (const defaultName of DEFAULT_AGENT_NAMES) {
-      if (!seenNames.has(defaultName)) {
-        const profile = BUILTIN_PROFILES.find((p) => p.name === defaultName.toLowerCase());
+      const profile = BUILTIN_PROFILES.find((p) => p.name === defaultName.toLowerCase());
+      const name = profile?.name ?? defaultName;
+      if (!seenNames.has(name.toLowerCase())) {
         out.push({
-          name: defaultName,
-          scope: "project",
+          name,
+          scope: "builtin",
           filePath: "",
           enabled: true,
           isDefault: true,

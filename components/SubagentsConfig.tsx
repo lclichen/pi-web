@@ -1,34 +1,46 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useIsMobile } from "@/hooks/useIsMobile";
 import { useI18n } from "@/hooks/useI18n";
 import { getLastSettingsSelection, setLastSettingsSelection } from "@/lib/settings-navigation";
 import type { AgentDetail, AgentInfo, ConfigScope, McpServerTools, WebPreferences } from "@/lib/api-types";
-import { ConfigButton, ConfigPanelShell, ConfigSidebarItem, ConfigSwitch } from "./SettingsUi";
+import {
+  ConfigButton,
+  ConfigDetail,
+  ConfigDetailActions,
+  ConfigDetailHeader,
+  ConfigDetailHeaderInfo,
+  ConfigDetailStack,
+  ConfigDetailTitle,
+  ConfigEmptyState,
+  ConfigField,
+  ConfigFooter,
+  ConfigListAction,
+  ConfigPanelShell,
+  ConfigSidebar,
+  ConfigSidebarGroupLabel,
+  ConfigSidebarItem,
+  ConfigSidebarList,
+  ConfigSidebarText,
+  ConfigSplitView,
+  ConfigSwitch,
+} from "./SettingsUi";
 
 const THINKING_OPTIONS = ["off", "low", "medium", "high"];
 const BUILTIN_DEFAULTS = ["read", "write", "bash", "edit", "find", "grep", "ls"];
 
+// 与模型/技能页同款输入框样式。
 const inputStyle: React.CSSProperties = {
   width: "100%",
   height: 30,
-  padding: "3px 8px",
+  padding: "3px 9px",
   background: "var(--bg-panel)",
   border: "1px solid var(--border)",
-  borderRadius: 6,
+  borderRadius: 5,
   color: "var(--text)",
   fontSize: 12,
   fontFamily: "var(--font-mono)",
   outline: "none",
-};
-
-const labelStyle: React.CSSProperties = {
-  fontSize: 10,
-  fontWeight: 600,
-  color: "var(--text-muted)",
-  marginBottom: 3,
-  display: "block",
 };
 
 function shortenPath(p: string): string {
@@ -120,15 +132,6 @@ function toolsSummary(form: AgentForm): string {
   return parts.join(", ");
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <label style={labelStyle}>{label}</label>
-      {children}
-    </div>
-  );
-}
-
 function ToolCheckbox({
   checked,
   onChange,
@@ -171,7 +174,6 @@ function ToolCheckbox({
 }
 
 export function SubagentsConfig({ cwd, onClose, embedded = false }: { cwd: string; onClose: () => void; embedded?: boolean }) {
-  const isMobile = useIsMobile();
   const { t } = useI18n();
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -374,87 +376,103 @@ export function SubagentsConfig({ cwd, onClose, embedded = false }: { cwd: strin
   const set = <K extends keyof AgentForm>(key: K, value: AgentForm[K]) => setForm((f) => ({ ...f, [key]: value }));
   const showForm = creating || detail !== null;
 
+  const scopeGroupLabel = (scope: string) =>
+    scope === "builtin" ? t("agents.scope.builtin")
+      : scope === "project" ? t("agents.scope.project")
+        : t("agents.scope.global");
+
   return (
     <ConfigPanelShell embedded={embedded} title={t("common.agents")} subtitle={shortenPath(cwd)} closeLabel={t("i18n.close")} onClose={onClose}>
-        {/* 工具栏：启用开关（共享 ConfigSwitch，与技能/插件页风格一致）。 */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 10, padding: "7px 14px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
-          <span style={{ fontSize: 11, color: prefs.subagentsEnabled ? "var(--text-muted)" : "var(--text-dim)" }}>{t("启用")}</span>
-          <ConfigSwitch checked={prefs.subagentsEnabled} label={t("启用")} onChange={(v) => void togglePref("subagentsEnabled", v)} />
-        </div>
+      {/* 顶部工具栏：启用开关（共享 ConfigSwitch，与技能/插件页风格一致）。 */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 10, padding: "7px 14px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
+        <span style={{ fontSize: 11, color: prefs.subagentsEnabled ? "var(--text-muted)" : "var(--text-dim)" }}>{t("启用")}</span>
+        <ConfigSwitch checked={prefs.subagentsEnabled} label={t("启用")} onChange={(v) => void togglePref("subagentsEnabled", v)} />
+      </div>
 
-        <div style={{ flex: 1, display: "flex", flexDirection: isMobile ? "column" : "row", overflow: "hidden" }}>
-          {/* Left: agent list — 共享 ConfigSidebar 体系（与技能/插件页同风格） */}
-          <div style={{ width: isMobile ? "100%" : 175, maxHeight: isMobile ? "32vh" : undefined, borderRight: isMobile ? "none" : "1px solid var(--border)", borderBottom: isMobile ? "1px solid var(--border)" : "none", display: "flex", flexDirection: "column", flexShrink: 0, background: "var(--bg-panel)" }}>
-            <div style={{ padding: "6px 6px 2px" }}>
-              <ConfigButton variant="primary" onClick={startCreate} style={{ width: "100%" }}>＋ {t("新建")}</ConfigButton>
-            </div>
-            <div className="config-sidebar-list" style={{ flex: 1, overflowY: "auto", padding: "2px 4px 6px", gap: 1 }}>
-              {loading ? <div className="config-sidebar-message">{t("i18n.loading")}</div>
-              : error ? <div className="config-sidebar-message is-error">{error}</div>
-              : agents.length === 0 ? <div className="config-sidebar-message is-empty">{t("暂无代理定义")}</div>
-              : grouped.map((group) => (
-                <div key={group.scope} style={{ marginBottom: 4 }}>
-                  <div className="config-sidebar-group-label">{group.scope === "builtin" ? t("内置") : group.scope}</div>
-                  {group.agents.map((agent) => {
-                    const key = `${agent.scope}\0${agent.name}`;
-                    const isSelected = !creating && selectedKey === key;
-                    return (
-                      <ConfigSidebarItem key={key} active={isSelected} onClick={() => selectAgent(agent)}>
-                        <span className="config-sidebar-text is-grow">{agent.name}</span>
-                        {agent.description && <span className="config-sidebar-text is-muted">{agent.description}</span>}
-                      </ConfigSidebarItem>
-                    );
-                  })}
-                </div>
-              ))}
-            </div>
-          </div>
+      {/* Body */}
+      <ConfigSplitView>
+        {/* Left: agent list（与模型页同构：列表 + 左下角新建） */}
+        <ConfigSidebar>
+          <ConfigSidebarList>
+            {loading ? <div className="config-sidebar-message">{t("i18n.loading")}</div>
+            : error ? <div className="config-sidebar-message is-error">{error}</div>
+            : agents.length === 0 ? <div className="config-sidebar-message is-empty">{t("暂无代理定义")}</div>
+            : grouped.map((group) => (
+              <div key={group.scope} className="config-sidebar-group">
+                <ConfigSidebarGroupLabel>{scopeGroupLabel(group.scope)}</ConfigSidebarGroupLabel>
+                {group.agents.map((agent) => {
+                  const key = `${agent.scope}\0${agent.name}`;
+                  const isSelected = !creating && selectedKey === key;
+                  return (
+                    <ConfigSidebarItem key={key} active={isSelected} onClick={() => selectAgent(agent)}>
+                      <ConfigSidebarText className="is-grow" title={agent.description}>{agent.name}</ConfigSidebarText>
+                    </ConfigSidebarItem>
+                  );
+                })}
+              </div>
+            ))}
+          </ConfigSidebarList>
+          {/* 新建入口固定在侧栏左下角（与模型页「添加 Provider」一致） */}
+          <ConfigListAction onClick={startCreate} active={creating}>{t("新建")}</ConfigListAction>
+        </ConfigSidebar>
 
-          {/* Right: form */}
-          <div style={{ flex: 1, overflowY: "auto", padding: 14, display: "flex", flexDirection: "column" }}>
+        {/* Right: detail / form */}
+        <ConfigDetail>
+          <ConfigDetailStack className="is-fill">
             {!showForm ? (
-              <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-dim)", fontSize: 12 }}>Select an agent or create a new one.</div>
+              <ConfigEmptyState>{t("agents.empty")}</ConfigEmptyState>
             ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 10, flex: 1, minHeight: 0 }}>
-                {/* Compact metadata grid */}
+              <>
+                <ConfigDetailHeader>
+                  <ConfigDetailHeaderInfo>
+                    <ConfigDetailTitle>{creating ? t("新建") : form.name || detail?.name}</ConfigDetailTitle>
+                    {readOnly && <span className="config-scope-tag">built-in</span>}
+                  </ConfigDetailHeaderInfo>
+                  <ConfigDetailActions>
+                    {!creating && detail && !readOnly && (
+                      <ConfigButton variant="danger" size="small" onClick={remove} disabled={saving}>{t("删除")}</ConfigButton>
+                    )}
+                  </ConfigDetailActions>
+                </ConfigDetailHeader>
+
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                   <div style={{ flex: "1 1 140px" }}>
-                    <Field label="Name">
+                    <ConfigField label="Name">
                       <input style={inputStyle} value={form.name} disabled={!creating || readOnly} onChange={(e) => set("name", e.target.value)} placeholder="security-auditor" />
-                    </Field>
+                    </ConfigField>
                   </div>
                   <div style={{ width: 110 }}>
-                    <Field label="Scope">
+                    <ConfigField label="Scope">
                       <select style={inputStyle} value={form.scope} disabled={!creating || readOnly} onChange={(e) => set("scope", e.target.value as ConfigScope)}>
                         <option value="project">project</option>
                         <option value="global">global</option>
                       </select>
-                    </Field>
+                    </ConfigField>
                   </div>
                   <div style={{ flex: "1 1 160px" }}>
-                    <Field label="Description">
+                    <ConfigField label="Description">
                       <input style={inputStyle} value={form.description} disabled={readOnly} onChange={(e) => set("description", e.target.value)} placeholder="Security code reviewer" />
-                    </Field>
+                    </ConfigField>
                   </div>
                 </div>
 
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                   <div style={{ flex: "1 1 160px" }}>
-                    <Field label="Model (empty = session default)">
+                    <ConfigField label="Model (empty = session default)">
                       <input style={inputStyle} value={form.model} disabled={readOnly} onChange={(e) => set("model", e.target.value)} placeholder="session default" />
-                    </Field>
+                    </ConfigField>
                   </div>
                   <div style={{ width: 100 }}>
-                    <Field label="Thinking">
+                    <ConfigField label="Thinking">
                       <select style={inputStyle} value={form.thinking} disabled={readOnly} onChange={(e) => set("thinking", e.target.value)}>
                         {THINKING_OPTIONS.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
                       </select>
-                    </Field>
+                    </ConfigField>
                   </div>
-                  <div style={{ width: 100 }}>
-                    <Field label="Max turns (0 = unlimited)">
+                  <div style={{ width: 110 }}>
+                    <ConfigField label="Max turns (0 = unlimited)">
                       <input style={inputStyle} value={form.maxTurns} disabled={readOnly} onChange={(e) => set("maxTurns", e.target.value)} placeholder="10" />
-                    </Field>
+                    </ConfigField>
                   </div>
                 </div>
 
@@ -512,36 +530,39 @@ export function SubagentsConfig({ cwd, onClose, embedded = false }: { cwd: strin
                   )}
                 </div>
 
-                {/* System prompt - gets remaining space */}
-                <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
-                  <label style={labelStyle}>System prompt</label>
-                  <textarea
-                    style={{ ...inputStyle, flex: 1, minHeight: 160, height: "auto", resize: "none", padding: 8, lineHeight: 1.5 }}
-                    value={form.systemPrompt}
-                    disabled={readOnly}
-                    onChange={(e) => set("systemPrompt", e.target.value)}
-                    placeholder="Instructions defining the agent's behavior and constraints..."
-                  />
+                {/* System prompt */}
+                <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 180 }}>
+                  <ConfigField label="System prompt" style={{ flex: 1 }}>
+                    <textarea
+                      style={{ ...inputStyle, flex: 1, minHeight: 160, height: "auto", resize: "none", padding: 8, lineHeight: 1.5 }}
+                      value={form.systemPrompt}
+                      disabled={readOnly}
+                      onChange={(e) => set("systemPrompt", e.target.value)}
+                      placeholder="Instructions defining the agent's behavior and constraints..."
+                    />
+                  </ConfigField>
                 </div>
-
-                {detail?.parseError && <div style={{ fontSize: 11, color: "#f59e0b" }}>Parse warning: {detail.parseError}</div>}
-                {formError && <div style={{ fontSize: 11, color: "#ef4444" }}>{formError}</div>}
-                {formMsg && !formError && <div style={{ fontSize: 11, color: "var(--accent)" }}>{formMsg}</div>}
-
-                <div style={{ display: "flex", gap: 8, flexShrink: 0, alignItems: "center" }}>
-                  {readOnly ? (
-                    <div style={{ fontSize: 11, color: "var(--text-dim)" }}>Built-in agent — read-only. Create a same-named project agent to override it.</div>
-                  ) : (
-                    <>
-                      <ConfigButton variant="primary" onClick={save} disabled={saving}>{saving ? t("保存中…") : creating ? t("创建") : t("保存")}</ConfigButton>
-                      {!creating && detail && <ConfigButton variant="danger" onClick={remove} disabled={saving}>{t("删除")}</ConfigButton>}
-                    </>
-                  )}
-                </div>
-              </div>
+              </>
             )}
-          </div>
-        </div>
+          </ConfigDetailStack>
+        </ConfigDetail>
+      </ConfigSplitView>
+
+      {/* Footer：状态 + 右下角保存（与模型页一致） */}
+      <ConfigFooter status={
+        <>
+          {readOnly && <span style={{ color: "var(--text-dim)" }}>{t("内置代理为只读；可创建同名 project 代理来覆盖。")}</span>}
+          {detail?.parseError && <span style={{ color: "#f59e0b" }}>Parse warning: {detail.parseError}</span>}
+          {formError && <span style={{ color: "#ef4444" }}>{formError}</span>}
+          {formMsg && !formError && <span style={{ color: "var(--accent)" }}>{formMsg}</span>}
+        </>
+      }>
+        {showForm && !readOnly && (
+          <ConfigButton variant="primary" onClick={save} disabled={saving}>
+            {saving ? t("保存中…") : creating ? t("创建") : t("保存")}
+          </ConfigButton>
+        )}
+      </ConfigFooter>
     </ConfigPanelShell>
   );
 }

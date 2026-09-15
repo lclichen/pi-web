@@ -4,18 +4,28 @@ import { useCallback, useEffect, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import {
   ConfigButton,
+  ConfigDetail,
   ConfigDetailActions,
   ConfigDetailHeader,
   ConfigDetailHeaderInfo,
   ConfigDetailStack,
   ConfigDetailTitle,
+  ConfigEmptyState,
   ConfigField,
+  ConfigFooter,
+  ConfigListAction,
   ConfigPanelShell,
+  ConfigSidebar,
+  ConfigSidebarItem,
+  ConfigSidebarList,
+  ConfigSidebarText,
+  ConfigSplitView,
 } from "./SettingsUi";
 
 /**
- * 快速会话模板管理（设置面板，仅管理员）— 列表 + 编辑/新增/删除。
- * 内置默认模板可编辑不可删除。UI 走共享 Config* 组件（与技能/插件页同风格）。
+ * 快速会话模板管理（设置面板，仅管理员）— 左侧模板列表 + 右侧编辑表单。
+ * 内置默认模板可编辑不可删除。布局走共享 Config* 组件（与模型/子代理页同构：
+ * 列表在左、新建入口在侧栏左下角、保存固定在右下角）。
  */
 
 interface QuickTemplate {
@@ -50,22 +60,42 @@ function toDraft(t: QuickTemplate): Draft {
   };
 }
 
+// 与模型/子代理页同款输入框样式。
 const inputStyle: React.CSSProperties = {
-  width: "100%", padding: "6px 9px", border: "1px solid var(--border)", borderRadius: 6,
-  background: "var(--bg)", color: "var(--text)", fontSize: 12, outline: "none",
+  width: "100%",
+  height: 30,
+  padding: "3px 9px",
+  background: "var(--bg-panel)",
+  border: "1px solid var(--border)",
+  borderRadius: 5,
+  color: "var(--text)",
+  fontSize: 12,
+  outline: "none",
 };
 const monoStyle: React.CSSProperties = { ...inputStyle, fontFamily: "var(--font-mono)" };
+const textareaStyle: React.CSSProperties = {
+  ...monoStyle,
+  height: "auto",
+  minHeight: 180,
+  resize: "vertical",
+  padding: 8,
+  lineHeight: 1.5,
+};
 
 export function QuickTemplatesConfig({ embedded = false }: { embedded?: boolean }) {
   const { t } = useI18n();
   const [templates, setTemplates] = useState<QuickTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [formMsg, setFormMsg] = useState<string | null>(null);
+
+  const selected = templates.find((tpl) => tpl.id === selectedId) ?? null;
+  const showForm = creating || selected !== null;
 
   const load = useCallback(async () => {
     try {
@@ -83,29 +113,37 @@ export function QuickTemplatesConfig({ embedded = false }: { embedded?: boolean 
 
   useEffect(() => { void load(); }, [load]);
 
-  const startEdit = (tpl: QuickTemplate) => {
+  const selectTemplate = (tpl: QuickTemplate) => {
     setCreating(false);
-    setEditingId(tpl.id);
+    setSelectedId(tpl.id);
     setDraft(toDraft(tpl));
     setFormError(null);
+    setFormMsg(null);
   };
 
   const startCreate = () => {
-    setEditingId(null);
+    setSelectedId(null);
     setCreating(true);
     setDraft(emptyDraft);
     setFormError(null);
+    setFormMsg(null);
   };
 
   const cancel = () => {
-    setEditingId(null);
-    setCreating(false);
     setFormError(null);
+    setFormMsg(null);
+    if (creating) {
+      setCreating(false);
+      setDraft(emptyDraft);
+    } else if (selected) {
+      setDraft(toDraft(selected));
+    }
   };
 
   const save = async () => {
     setSaving(true);
     setFormError(null);
+    setFormMsg(null);
     try {
       const payload: Record<string, unknown> = {
         name: draft.name,
@@ -127,14 +165,19 @@ export function QuickTemplatesConfig({ embedded = false }: { embedded?: boolean 
         : await fetch("/api/quick-templates", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id: editingId, template: payload }),
+          body: JSON.stringify({ id: selectedId, template: payload }),
         });
       const data = (await res.json()) as { template?: QuickTemplate; errors?: Array<{ field: string; reason: string }>; error?: string };
       if (!res.ok) {
         throw new Error(data.errors?.map((e) => `${e.field}: ${e.reason}`).join("；") ?? data.error ?? `HTTP ${res.status}`);
       }
       await load();
-      cancel();
+      setFormMsg(creating ? t("模板已创建。") : t("模板已保存。"));
+      setCreating(false);
+      if (data.template) {
+        setSelectedId(data.template.id);
+        setDraft(toDraft(data.template));
+      }
     } catch (e) {
       setFormError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -148,6 +191,10 @@ export function QuickTemplatesConfig({ embedded = false }: { embedded?: boolean 
       const res = await fetch(`/api/quick-templates?id=${encodeURIComponent(tpl.id)}`, { method: "DELETE" });
       const data = (await res.json()) as { error?: string };
       if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+      if (selectedId === tpl.id) {
+        setSelectedId(null);
+        setDraft(emptyDraft);
+      }
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -155,88 +202,88 @@ export function QuickTemplatesConfig({ embedded = false }: { embedded?: boolean 
   };
 
   return (
-    <ConfigPanelShell embedded={embedded} title={t("快速会话模板")} onClose={() => {}}>
-      <ConfigDetailStack className="is-fill">
-        <ConfigDetailHeader>
-          <ConfigDetailHeaderInfo>
-            <ConfigDetailTitle>{t("快速会话模板")}</ConfigDetailTitle>
-            <span style={{ fontSize: 11, color: "var(--text-dim)" }}>
-              {t("模板决定快速会话的系统提示词、模型与 MCP 白名单；default 可编辑不可删除。")}
-            </span>
-          </ConfigDetailHeaderInfo>
-          <ConfigDetailActions>
-            {!creating && !editingId && (
-              <ConfigButton variant="primary" onClick={startCreate}>＋ {t("新增模板")}</ConfigButton>
-            )}
-          </ConfigDetailActions>
-        </ConfigDetailHeader>
-
-        {error && (
-          <div role="alert" style={{ color: "#f87171", fontSize: 12, padding: "6px 10px", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 6 }}>
-            {error}
-          </div>
-        )}
-
-        {loading ? (
-          <div style={{ padding: 16, fontSize: 12, color: "var(--text-dim)" }}>{t("加载模板…")}</div>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {templates.map((tpl) => (
-              <div key={tpl.id} style={{ border: "1px solid var(--border)", borderRadius: 8, padding: "8px 12px" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ fontWeight: 600, fontSize: 13, color: "var(--text)" }}>{tpl.name}</span>
-                  {tpl.builtin && <span className="config-scope-tag is-project">{t("默认 · 不可删除")}</span>}
-                  {tpl.model && <span style={{ fontSize: 10, color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>{tpl.model.provider}/{tpl.model.modelId}</span>}
-                  <div style={{ flex: 1 }} />
-                  <ConfigButton size="small" onClick={() => startEdit(tpl)}>{t("编辑")}</ConfigButton>
-                  {!tpl.builtin && (
-                    <ConfigButton size="small" variant="danger" onClick={() => void remove(tpl)}>{t("删除")}</ConfigButton>
-                  )}
-                </div>
-                {tpl.description && <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 3 }}>{tpl.description}</div>}
-                {tpl.mcpServers && tpl.mcpServers.length > 0 && (
-                  <div style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 2, fontFamily: "var(--font-mono)" }}>
-                    MCP: {tpl.mcpServers.join(", ")}
-                  </div>
-                )}
-              </div>
+    <ConfigPanelShell embedded={embedded} title={t("快速会话模板")} closeLabel={t("i18n.close")} onClose={() => {}}>
+      {/* Body */}
+      <ConfigSplitView>
+        {/* Left: template list（与模型页同构：列表 + 左下角新建） */}
+        <ConfigSidebar>
+          <ConfigSidebarList>
+            {loading ? <div className="config-sidebar-message">{t("加载模板…")}</div>
+            : error ? <div className="config-sidebar-message is-error">{error}</div>
+            : templates.length === 0 ? <div className="config-sidebar-message is-empty">{t("暂无模板")}</div>
+            : templates.map((tpl) => (
+              <ConfigSidebarItem key={tpl.id} active={!creating && selectedId === tpl.id} onClick={() => selectTemplate(tpl)}>
+                <ConfigSidebarText className="is-grow">{tpl.name}</ConfigSidebarText>
+                {tpl.builtin && <span className="config-scope-tag is-project">{t("默认")}</span>}
+              </ConfigSidebarItem>
             ))}
-          </div>
-        )}
+          </ConfigSidebarList>
+          {/* 新建入口固定在侧栏左下角（与模型页「添加 Provider」一致） */}
+          <ConfigListAction onClick={startCreate} active={creating}>＋ {t("新增模板")}</ConfigListAction>
+        </ConfigSidebar>
 
-        {(creating || editingId) && (
-          <div style={{ border: "1px solid rgba(37,99,235,0.35)", borderRadius: 8, padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
-            <div style={{ fontWeight: 600, fontSize: 12 }}>{creating ? t("新增模板") : t("编辑模板")}</div>
-            <ConfigField label={t("模板名称（用户可见，如「产品A助手」）")}>
-              <input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} style={inputStyle} maxLength={60} />
-            </ConfigField>
-            <ConfigField label={t("描述（可选）")}>
-              <input value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} style={inputStyle} maxLength={300} />
-            </ConfigField>
-            <ConfigField label={t("系统提示词")}>
-              <textarea value={draft.systemPrompt} onChange={(e) => setDraft({ ...draft, systemPrompt: e.target.value })} rows={6} style={monoStyle} />
-            </ConfigField>
-            <div style={{ display: "flex", gap: 8 }}>
-              <ConfigField label={t("模型 Provider（可选，如 modelscope）")} style={{ flex: 1 }}>
-                <input value={draft.modelProvider} onChange={(e) => setDraft({ ...draft, modelProvider: e.target.value })} style={monoStyle} placeholder={t("默认用用户当前模型")} />
-              </ConfigField>
-              <ConfigField label={t("模型 ID（可选）")} style={{ flex: 1 }}>
-                <input value={draft.modelId} onChange={(e) => setDraft({ ...draft, modelId: e.target.value })} style={monoStyle} placeholder="Qwen/Qwen3.5-27B" />
-              </ConfigField>
-            </div>
-            <ConfigField label={t("MCP 服务器允许列表（可选，逗号分隔服务器名；留空 = 用户配置的全部服务器）")}>
-              <input value={draft.mcpServers} onChange={(e) => setDraft({ ...draft, mcpServers: e.target.value })} style={monoStyle} placeholder="weather, db-query" />
-            </ConfigField>
-            {formError && <div role="alert" style={{ color: "#f87171", fontSize: 11 }}>{formError}</div>}
-            <div style={{ display: "flex", gap: 8 }}>
-              <ConfigButton variant="primary" onClick={() => void save()} disabled={saving}>
-                {saving ? t("保存中…") : t("保存")}
-              </ConfigButton>
-              <ConfigButton onClick={cancel}>{t("取消")}</ConfigButton>
-            </div>
-          </div>
+        {/* Right: detail / form */}
+        <ConfigDetail>
+          <ConfigDetailStack className="is-fill">
+            {!showForm ? (
+              <ConfigEmptyState>{t("模板决定快速会话的系统提示词、模型与 MCP 白名单；default 可编辑不可删除。选择左侧模板，或点击左下角「新增模板」。")}</ConfigEmptyState>
+            ) : (
+              <>
+                <ConfigDetailHeader>
+                  <ConfigDetailHeaderInfo>
+                    <ConfigDetailTitle>{creating ? t("新增模板") : draft.name || selected?.name}</ConfigDetailTitle>
+                    {selected?.builtin && <span className="config-scope-tag is-project">{t("默认 · 不可删除")}</span>}
+                  </ConfigDetailHeaderInfo>
+                  <ConfigDetailActions>
+                    {!creating && selected && !selected.builtin && (
+                      <ConfigButton variant="danger" size="small" onClick={() => void remove(selected)} disabled={saving}>{t("删除")}</ConfigButton>
+                    )}
+                  </ConfigDetailActions>
+                </ConfigDetailHeader>
+
+                <ConfigField label={t("模板名称（用户可见，如「产品A助手」）")}>
+                  <input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} style={inputStyle} maxLength={60} />
+                </ConfigField>
+                <ConfigField label={t("描述（可选）")}>
+                  <input value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} style={inputStyle} maxLength={300} />
+                </ConfigField>
+                <ConfigField label={t("系统提示词")}>
+                  <textarea value={draft.systemPrompt} onChange={(e) => setDraft({ ...draft, systemPrompt: e.target.value })} style={textareaStyle} />
+                </ConfigField>
+                <div style={{ display: "flex", gap: 10 }}>
+                  <ConfigField label={t("模型 Provider（可选，如 modelscope）")} style={{ flex: 1 }}>
+                    <input value={draft.modelProvider} onChange={(e) => setDraft({ ...draft, modelProvider: e.target.value })} style={monoStyle} placeholder={t("默认用用户当前模型")} />
+                  </ConfigField>
+                  <ConfigField label={t("模型 ID（可选）")} style={{ flex: 1 }}>
+                    <input value={draft.modelId} onChange={(e) => setDraft({ ...draft, modelId: e.target.value })} style={monoStyle} placeholder="Qwen/Qwen3.5-27B" />
+                  </ConfigField>
+                </div>
+                <ConfigField label={t("MCP 服务器允许列表（可选，逗号分隔服务器名；留空 = 用户配置的全部服务器）")}>
+                  <input value={draft.mcpServers} onChange={(e) => setDraft({ ...draft, mcpServers: e.target.value })} style={monoStyle} placeholder="weather, db-query" />
+                </ConfigField>
+              </>
+            )}
+          </ConfigDetailStack>
+        </ConfigDetail>
+      </ConfigSplitView>
+
+      {/* Footer：状态 + 右下角操作（与模型页一致） */}
+      <ConfigFooter status={
+        <>
+          {error && <span style={{ color: "#ef4444" }}>{error}</span>}
+          {formError && <span style={{ color: "#ef4444" }}>{formError}</span>}
+          {formMsg && !formError && <span style={{ color: "var(--accent)" }}>{formMsg}</span>}
+        </>
+      }>
+        {showForm && (
+          <>
+            <ConfigButton onClick={cancel}>{t("取消")}</ConfigButton>
+            <ConfigButton variant="primary" onClick={() => void save()} disabled={saving}>
+              {saving ? t("保存中…") : t("保存")}
+            </ConfigButton>
+          </>
         )}
-      </ConfigDetailStack>
+      </ConfigFooter>
     </ConfigPanelShell>
   );
 }

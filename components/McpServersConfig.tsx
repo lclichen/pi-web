@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useIsMobile } from "@/hooks/useIsMobile";
 import { useI18n } from "@/hooks/useI18n";
 import type {
   ConfigScope,
@@ -13,16 +12,49 @@ import type {
   ServerEntry,
   WebPreferences,
 } from "@/lib/api-types";
-import { ConfigButton, ConfigPanelShell, ConfigSidebarItem, ConfigSwitch } from "./SettingsUi";
+import {
+  ConfigButton,
+  ConfigDetail,
+  ConfigDetailActions,
+  ConfigDetailHeader,
+  ConfigDetailHeaderInfo,
+  ConfigDetailStack,
+  ConfigDetailTitle,
+  ConfigEmptyState,
+  ConfigField,
+  ConfigFooter,
+  ConfigListAction,
+  ConfigPanelShell,
+  ConfigSidebar,
+  ConfigSidebarGroupLabel,
+  ConfigSidebarItem,
+  ConfigSidebarList,
+  ConfigSplitView,
+  ConfigSwitch,
+} from "./SettingsUi";
 
+// 与模型/技能页同款输入框样式。
 const inputStyle: React.CSSProperties = {
-  width: "100%", height: 30, padding: "3px 8px", background: "var(--bg-panel)",
-  border: "1px solid var(--border)", borderRadius: 6, color: "var(--text)", fontSize: 12,
-  fontFamily: "var(--font-mono)", outline: "none",
+  width: "100%",
+  height: 30,
+  padding: "3px 9px",
+  background: "var(--bg-panel)",
+  border: "1px solid var(--border)",
+  borderRadius: 5,
+  color: "var(--text)",
+  fontSize: 12,
+  fontFamily: "var(--font-mono)",
+  outline: "none",
 };
-const labelStyle: React.CSSProperties = {
-  fontSize: 10, fontWeight: 600, color: "var(--text-muted)", marginBottom: 3, display: "block",
+const textareaStyle: React.CSSProperties = {
+  ...inputStyle,
+  height: "auto",
+  minHeight: 56,
+  resize: "vertical",
+  padding: 8,
+  lineHeight: 1.5,
 };
+
 function shortenPath(p: string): string { return p.replace(/^\/(?:Users|home)\/[^/]+/, "~"); }
 function parseLines(raw: string): string[] { return raw.split(/\r?\n/).map((s) => s.trim()).filter(Boolean); }
 function parseKv(raw: string, sep: RegExp): Record<string, string> {
@@ -91,12 +123,7 @@ function formToEntry(form: ServerForm): ServerEntry {
   return entry;
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (<div><label style={labelStyle}>{label}</label>{children}</div>);
-}
-
 export function McpServersConfig({ cwd, onClose, embedded = false }: { cwd: string; onClose: () => void; embedded?: boolean }) {
-  const isMobile = useIsMobile();
   const { t } = useI18n();
   const [doc, setDoc] = useState<McpConfigDocument | null>(null);
   const [loading, setLoading] = useState(true);
@@ -244,139 +271,161 @@ export function McpServersConfig({ cwd, onClose, embedded = false }: { cwd: stri
 
   const showForm = creating || selectedKey !== null;
   const diagnostics = doc?.diagnostics ?? [];
+  const scopeGroupLabel = (scope: string) => scope === "project" ? t("agents.scope.project") : t("agents.scope.global");
 
   return (
     <ConfigPanelShell embedded={embedded} title={t("MCP 服务器")} subtitle={shortenPath(cwd)} closeLabel={t("i18n.close")} onClose={onClose}>
-        {/* 工具栏：启用开关 + 探测/设置（共享组件，与技能/插件/Agents 页同风格）。 */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 10, padding: "7px 14px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
-          {probingAll && <span style={{ fontSize: 10, color: "var(--text-muted)" }}>{t("探测中…")}</span>}
-          <span style={{ fontSize: 11, color: prefs.mcpEnabled ? "var(--text-muted)" : "var(--text-dim)" }}>{t("启用")}</span>
-          <ConfigSwitch checked={prefs.mcpEnabled} label={t("启用")} onChange={(v) => void togglePref("mcpEnabled", v)} />
-          <ConfigButton size="small" onClick={() => void probeAll()} disabled={probingAll}>{t("刷新工具")}</ConfigButton>
-          <ConfigButton size="small" onClick={() => setShowSettings((v) => !v)}>{showSettings ? t("收起设置") : t("设置")}</ConfigButton>
+      {/* 顶部工具栏：启用开关 + 探测/设置（共享组件，与子代理页同款）。 */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 10, padding: "7px 14px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
+        {probingAll && <span style={{ fontSize: 10, color: "var(--text-muted)" }}>{t("探测中…")}</span>}
+        <span style={{ fontSize: 11, color: prefs.mcpEnabled ? "var(--text-muted)" : "var(--text-dim)" }}>{t("启用")}</span>
+        <ConfigSwitch checked={prefs.mcpEnabled} label={t("启用")} onChange={(v) => void togglePref("mcpEnabled", v)} />
+        <ConfigButton size="small" onClick={() => void probeAll()} disabled={probingAll}>{t("刷新工具")}</ConfigButton>
+        <ConfigButton size="small" onClick={() => setShowSettings((v) => !v)}>{showSettings ? t("收起设置") : t("设置")}</ConfigButton>
+      </div>
+
+      {showSettings && (
+        <div style={{ padding: "10px 16px", borderBottom: "1px solid var(--border)", background: "var(--bg-panel)", display: "flex", flexWrap: "wrap", gap: 10, alignItems: "flex-end" }}>
+          <div style={{ width: 140 }}><ConfigField label="toolPrefix"><select style={inputStyle} value={settingsDraft.toolPrefix ?? ""} onChange={(e) => setSettingsDraft((s) => ({ ...s, toolPrefix: (e.target.value || undefined) as McpSettings["toolPrefix"] }))}><option value="">(default)</option><option value="server">server</option><option value="none">none</option><option value="short">short</option><option value="mcp">mcp</option></select></ConfigField></div>
+          <div style={{ width: 110 }}><ConfigField label="idleTimeout (min)"><input style={inputStyle} value={settingsDraft.idleTimeout ?? ""} onChange={(e) => setSettingsDraft((s) => ({ ...s, idleTimeout: e.target.value === "" ? undefined : Number(e.target.value) }))} /></ConfigField></div>
+          <ConfigButton variant="primary" onClick={saveSettings} disabled={settingsSaving}>{settingsSaving ? t("保存中…") : t("保存设置")}</ConfigButton>
         </div>
+      )}
 
-        {showSettings && (
-          <div style={{ padding: "10px 16px", borderBottom: "1px solid var(--border)", background: "var(--bg-panel)", display: "flex", flexWrap: "wrap", gap: 10, alignItems: "flex-end" }}>
-            <div style={{ width: 140 }}><Field label="toolPrefix"><select style={inputStyle} value={settingsDraft.toolPrefix ?? ""} onChange={(e) => setSettingsDraft((s) => ({ ...s, toolPrefix: (e.target.value || undefined) as McpSettings["toolPrefix"] }))}><option value="">(default)</option><option value="server">server</option><option value="none">none</option><option value="short">short</option><option value="mcp">mcp</option></select></Field></div>
-            <div style={{ width: 110 }}><Field label="idleTimeout (min)"><input style={inputStyle} value={settingsDraft.idleTimeout ?? ""} onChange={(e) => setSettingsDraft((s) => ({ ...s, idleTimeout: e.target.value === "" ? undefined : Number(e.target.value) }))} /></Field></div>
-            <ConfigButton variant="primary" onClick={saveSettings} disabled={settingsSaving}>{settingsSaving ? t("保存中…") : t("保存设置")}</ConfigButton>
-          </div>
-        )}
-
-        <div style={{ flex: 1, display: "flex", flexDirection: isMobile ? "column" : "row", overflow: "hidden" }}>
-          {/* Left: server + tool tree — 共享 ConfigSidebar 体系 */}
-          <div style={{ width: isMobile ? "100%" : 320, maxHeight: isMobile ? "34vh" : undefined, borderRight: isMobile ? "none" : "1px solid var(--border)", borderBottom: isMobile ? "1px solid var(--border)" : "none", display: "flex", flexDirection: "column", flexShrink: 0, background: "var(--bg-panel)" }}>
-            <div style={{ padding: "6px 6px 2px" }}>
-              <ConfigButton variant="primary" onClick={startCreate} style={{ width: "100%" }}>＋ {t("新建服务器")}</ConfigButton>
-            </div>
-            <div className="config-sidebar-list" style={{ flex: 1, overflowY: "auto", padding: "2px 4px 6px", gap: 1 }}>
-              {diagnostics.filter((d) => d.parseError).map((d) => (<div key={`diag-${d.scope}`} style={{ padding: "3px 6px", fontSize: 10, color: "#ef4444" }} title={d.parseError}>{d.scope}: invalid JSON</div>))}
-              {loading ? <div className="config-sidebar-message">{t("i18n.loading")}</div>
-              : error ? <div className="config-sidebar-message is-error">{error}</div>
-              : servers.length === 0 ? <div className="config-sidebar-message is-empty">{t("暂无 MCP 服务器")}</div>
-              : grouped.map((group) => (
-                <div key={group.scope} style={{ marginBottom: 4 }}>
-                  <div className="config-sidebar-group-label">{group.scope}</div>
-                  {group.servers.map((srv) => {
-                    const key = `${srv.scope}\0${srv.name}`;
-                    const isSelected = !creating && selectedKey === key;
-                    const isExpanded = expandedServers.has(key);
-                    const toolInfo = toolMap.get(key);
-                    const toolCount = toolInfo?.tools.length ?? 0;
-                    return (
-                      <div key={key}>
-                        <div style={{ display: "flex", alignItems: "center" }}>
-                          <button onClick={() => toggleExpand(key)} style={{ background: "none", border: "none", color: "var(--text-dim)", cursor: "pointer", padding: "0 2px", fontSize: 10, flexShrink: 0 }}>{isExpanded ? "▼" : "▶"}</button>
-                          <ConfigSidebarItem active={isSelected} onClick={() => selectServer(srv)} style={{ flex: 1, minWidth: 0 }}>
-                            <span style={{ fontSize: 11, fontWeight: isSelected ? 600 : 400, display: "flex", alignItems: "center", gap: 4, minWidth: 0, overflow: "hidden" }}>
-                              <span style={{ fontSize: 8, padding: "1px 4px", borderRadius: 3, background: srv.transport === "http" ? "#2563eb33" : "#16a34a33", color: srv.transport === "http" ? "#60a5fa" : "#4ade80", flexShrink: 0 }}>{srv.transport}</span>
-                              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{srv.name}</span>
-                              {srv.directToolsOn && <span style={{ fontSize: 8, color: "var(--accent)" }}>DT</span>}
-                              {toolInfo?.error && <span style={{ fontSize: 8, color: "#f59e0b" }}>!</span>}
-                              {!toolInfo?.error && toolCount > 0 && <span style={{ fontSize: 8, color: "var(--text-dim)" }}>{toolCount}</span>}
-                            </span>
-                          </ConfigSidebarItem>
-                        </div>
-                        {isExpanded && (
-                          <div style={{ paddingLeft: 18, paddingBottom: 4 }}>
-                            {toolInfo?.error ? (
-                              <div style={{ fontSize: 10, color: toolInfo.needsAuth ? "#f59e0b" : "#ef4444", padding: "2px 0" }}>{toolInfo.needsAuth ? "Auth required" : toolInfo.error.slice(0, 60)}</div>
-                            ) : toolCount > 0 ? toolInfo!.tools.map((tool) => (
-                              <div key={tool.name} style={{ fontSize: 10, padding: "1px 0", display: "flex", gap: 4, alignItems: "baseline" }}>
-                                <code style={{ fontFamily: "var(--font-mono)", color: "var(--accent)", fontSize: 10 }}>{srv.name}_{tool.name}</code>
-                                {tool.description && <span style={{ color: "var(--text-dim)", fontSize: 9, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{tool.description.slice(0, 50)}</span>}
-                              </div>
-                            )) : probingAll ? <div style={{ fontSize: 10, color: "var(--text-dim)", padding: "2px 0" }}>probing...</div> : <div style={{ fontSize: 10, color: "var(--text-dim)", padding: "2px 0" }}>No tools</div>}
-                          </div>
-                        )}
+      {/* Body */}
+      <ConfigSplitView>
+        {/* Left: server + tool tree（与模型页同构：列表 + 左下角新建） */}
+        <ConfigSidebar>
+          <ConfigSidebarList>
+            {diagnostics.filter((d) => d.parseError).map((d) => (<div key={`diag-${d.scope}`} style={{ padding: "3px 8px", fontSize: 10, color: "#ef4444" }} title={d.parseError}>{d.scope}: invalid JSON</div>))}
+            {loading ? <div className="config-sidebar-message">{t("i18n.loading")}</div>
+            : error ? <div className="config-sidebar-message is-error">{error}</div>
+            : servers.length === 0 ? <div className="config-sidebar-message is-empty">{t("暂无 MCP 服务器")}</div>
+            : grouped.map((group) => (
+              <div key={group.scope} className="config-sidebar-group">
+                <ConfigSidebarGroupLabel>{scopeGroupLabel(group.scope)}</ConfigSidebarGroupLabel>
+                {group.servers.map((srv) => {
+                  const key = `${srv.scope}\0${srv.name}`;
+                  const isSelected = !creating && selectedKey === key;
+                  const isExpanded = expandedServers.has(key);
+                  const toolInfo = toolMap.get(key);
+                  const toolCount = toolInfo?.tools.length ?? 0;
+                  return (
+                    <div key={key}>
+                      <div style={{ display: "flex", alignItems: "center" }}>
+                        <button onClick={() => toggleExpand(key)} aria-label={isExpanded ? t("收起") : t("展开")} style={{ background: "none", border: "none", color: "var(--text-dim)", cursor: "pointer", padding: "0 2px", fontSize: 10, flexShrink: 0 }}>{isExpanded ? "▼" : "▶"}</button>
+                        <ConfigSidebarItem active={isSelected} onClick={() => selectServer(srv)} style={{ flex: 1, minWidth: 0 }}>
+                          <span style={{ fontSize: 11, fontWeight: isSelected ? 600 : 400, display: "flex", alignItems: "center", gap: 4, minWidth: 0, overflow: "hidden" }}>
+                            <span style={{ fontSize: 8, padding: "1px 4px", borderRadius: 3, background: srv.transport === "http" ? "#2563eb33" : "#16a34a33", color: srv.transport === "http" ? "#60a5fa" : "#4ade80", flexShrink: 0 }}>{srv.transport}</span>
+                            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{srv.name}</span>
+                            {srv.directToolsOn && <span style={{ fontSize: 8, color: "var(--accent)" }}>DT</span>}
+                            {toolInfo?.error && <span style={{ fontSize: 8, color: "#f59e0b" }}>!</span>}
+                            {!toolInfo?.error && toolCount > 0 && <span style={{ fontSize: 8, color: "var(--text-dim)" }}>{toolCount}</span>}
+                          </span>
+                        </ConfigSidebarItem>
                       </div>
-                    );
-                  })}
-                </div>
-              ))}
-            </div>
-          </div>
+                      {isExpanded && (
+                        <div style={{ paddingLeft: 18, paddingBottom: 4 }}>
+                          {toolInfo?.error ? (
+                            <div style={{ fontSize: 10, color: toolInfo.needsAuth ? "#f59e0b" : "#ef4444", padding: "2px 0" }}>{toolInfo.needsAuth ? "Auth required" : toolInfo.error.slice(0, 60)}</div>
+                          ) : toolCount > 0 ? toolInfo!.tools.map((tool) => (
+                            <div key={tool.name} style={{ fontSize: 10, padding: "1px 0", display: "flex", gap: 4, alignItems: "baseline" }}>
+                              <code style={{ fontFamily: "var(--font-mono)", color: "var(--accent)", fontSize: 10 }}>{srv.name}_{tool.name}</code>
+                              {tool.description && <span style={{ color: "var(--text-dim)", fontSize: 9, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{tool.description.slice(0, 50)}</span>}
+                            </div>
+                          )) : probingAll ? <div style={{ fontSize: 10, color: "var(--text-dim)", padding: "2px 0" }}>probing...</div> : <div style={{ fontSize: 10, color: "var(--text-dim)", padding: "2px 0" }}>No tools</div>}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+          </ConfigSidebarList>
+          {/* 新建入口固定在侧栏左下角（与模型页「添加 Provider」一致） */}
+          <ConfigListAction onClick={startCreate} active={creating}>＋ {t("新建服务器")}</ConfigListAction>
+        </ConfigSidebar>
 
-          {/* Right: edit form */}
-          <div style={{ flex: 1, overflowY: "auto", padding: 14 }}>
+        {/* Right: detail / form */}
+        <ConfigDetail>
+          <ConfigDetailStack className="is-fill">
             {!showForm ? (
-              <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-dim)", fontSize: 12 }}>Select a server or create a new one.</div>
+              <ConfigEmptyState>{t("选择或新建 MCP 服务器")}</ConfigEmptyState>
             ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 10, maxWidth: 600 }}>
-                <div style={{ display: "flex", gap: 10 }}>
-                  <div style={{ flex: 1 }}><Field label="Name"><input style={inputStyle} value={form.name} disabled={!creating} onChange={(e) => set("name", e.target.value)} placeholder="LithoChat" /></Field></div>
-                  <div style={{ width: 110 }}><Field label="Scope"><select style={inputStyle} value={form.scope} disabled={!creating} onChange={(e) => set("scope", e.target.value as ConfigScope)}><option value="project">project</option><option value="global">global</option></select></Field></div>
-                  <div style={{ width: 110 }}><Field label="Connection"><select style={inputStyle} value={form.transport} onChange={(e) => set("transport", e.target.value as "stdio" | "http")}><option value="stdio">stdio</option><option value="http">http</option></select></Field></div>
+              <>
+                <ConfigDetailHeader>
+                  <ConfigDetailHeaderInfo>
+                    <ConfigDetailTitle>{creating ? t("新建服务器") : originalName}</ConfigDetailTitle>
+                  </ConfigDetailHeaderInfo>
+                  <ConfigDetailActions>
+                    {!creating && (
+                      <ConfigButton variant="danger" size="small" onClick={remove} disabled={saving}>{t("删除")}</ConfigButton>
+                    )}
+                  </ConfigDetailActions>
+                </ConfigDetailHeader>
+
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  <div style={{ flex: "1 1 140px" }}><ConfigField label="Name"><input style={inputStyle} value={form.name} disabled={!creating} onChange={(e) => set("name", e.target.value)} placeholder="LithoChat" /></ConfigField></div>
+                  <div style={{ width: 110 }}><ConfigField label="Scope"><select style={inputStyle} value={form.scope} disabled={!creating} onChange={(e) => set("scope", e.target.value as ConfigScope)}><option value="project">project</option><option value="global">global</option></select></ConfigField></div>
+                  <div style={{ width: 110 }}><ConfigField label="Connection"><select style={inputStyle} value={form.transport} onChange={(e) => set("transport", e.target.value as "stdio" | "http")}><option value="stdio">stdio</option><option value="http">http</option></select></ConfigField></div>
                 </div>
 
                 {form.transport === "stdio" ? (
                   <>
-                    <Field label="Command"><input style={inputStyle} value={form.command} onChange={(e) => set("command", e.target.value)} placeholder="npx" /></Field>
-                    <Field label="Args (one per line)"><textarea style={{ ...inputStyle, height: "auto", minHeight: 56, resize: "vertical", padding: 8, lineHeight: 1.5 }} value={form.args} onChange={(e) => set("args", e.target.value)} /></Field>
-                    <Field label="Env (KEY=VALUE per line)"><textarea style={{ ...inputStyle, height: "auto", minHeight: 48, resize: "vertical", padding: 8, lineHeight: 1.5 }} value={form.env} onChange={(e) => set("env", e.target.value)} /></Field>
-                    <Field label="Working directory"><input style={inputStyle} value={form.cwd} onChange={(e) => set("cwd", e.target.value)} /></Field>
+                    <ConfigField label="Command"><input style={inputStyle} value={form.command} onChange={(e) => set("command", e.target.value)} placeholder="npx" /></ConfigField>
+                    <ConfigField label="Args (one per line)"><textarea style={textareaStyle} value={form.args} onChange={(e) => set("args", e.target.value)} /></ConfigField>
+                    <ConfigField label="Env (KEY=VALUE per line)"><textarea style={{ ...textareaStyle, minHeight: 48 }} value={form.env} onChange={(e) => set("env", e.target.value)} /></ConfigField>
+                    <ConfigField label="Working directory"><input style={inputStyle} value={form.cwd} onChange={(e) => set("cwd", e.target.value)} /></ConfigField>
                   </>
                 ) : (
                   <>
-                    <Field label="URL"><input style={inputStyle} value={form.url} onChange={(e) => set("url", e.target.value)} placeholder="http://host:port/mcp" /></Field>
-                    <Field label="Headers (KEY: VALUE per line)"><textarea style={{ ...inputStyle, height: "auto", minHeight: 48, resize: "vertical", padding: 8, lineHeight: 1.5 }} value={form.headers} onChange={(e) => set("headers", e.target.value)} /></Field>
+                    <ConfigField label="URL"><input style={inputStyle} value={form.url} onChange={(e) => set("url", e.target.value)} placeholder="http://host:port/mcp" /></ConfigField>
+                    <ConfigField label="Headers (KEY: VALUE per line)"><textarea style={{ ...textareaStyle, minHeight: 48 }} value={form.headers} onChange={(e) => set("headers", e.target.value)} /></ConfigField>
                     <div style={{ display: "flex", gap: 10 }}>
-                      <div style={{ width: 120 }}><Field label="Auth"><select style={inputStyle} value={form.auth} onChange={(e) => set("auth", e.target.value as ServerForm["auth"])}><option value="none">none</option><option value="bearer">bearer</option><option value="oauth">oauth</option></select></Field></div>
-                      {form.auth === "bearer" && (<><div style={{ flex: 1 }}><Field label="Bearer token"><input style={inputStyle} value={form.bearerToken} onChange={(e) => set("bearerToken", e.target.value)} /></Field></div><div style={{ flex: 1 }}><Field label="Env var name"><input style={inputStyle} value={form.bearerTokenEnv} onChange={(e) => set("bearerTokenEnv", e.target.value)} /></Field></div></>)}
+                      <div style={{ width: 120 }}><ConfigField label="Auth"><select style={inputStyle} value={form.auth} onChange={(e) => set("auth", e.target.value as ServerForm["auth"])}><option value="none">none</option><option value="bearer">bearer</option><option value="oauth">oauth</option></select></ConfigField></div>
+                      {form.auth === "bearer" && (<><div style={{ flex: 1 }}><ConfigField label="Bearer token"><input style={inputStyle} value={form.bearerToken} onChange={(e) => set("bearerToken", e.target.value)} /></ConfigField></div><div style={{ flex: 1 }}><ConfigField label="Env var name"><input style={inputStyle} value={form.bearerTokenEnv} onChange={(e) => set("bearerTokenEnv", e.target.value)} /></ConfigField></div></>)}
                     </div>
                   </>
                 )}
 
                 {/* Common params */}
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                  <div style={{ width: 140 }}><Field label="lifecycle"><select style={inputStyle} value={form.lifecycle} onChange={(e) => set("lifecycle", e.target.value)}><option value="">(default)</option><option value="keep-alive">keep-alive</option><option value="lazy">lazy</option><option value="lazy-keep-alive">lazy-keep-alive</option><option value="eager">eager</option></select></Field></div>
-                  <div style={{ width: 130 }}><Field label="idleTimeout"><input style={inputStyle} value={form.idleTimeout} onChange={(e) => set("idleTimeout", e.target.value)} placeholder="10000" /></Field></div>
-                  <div style={{ width: 150 }}><Field label="toolTimeoutMs"><input style={inputStyle} value={form.toolTimeoutMs} onChange={(e) => set("toolTimeoutMs", e.target.value)} placeholder="1800000" /></Field></div>
+                  <div style={{ width: 140 }}><ConfigField label="lifecycle"><select style={inputStyle} value={form.lifecycle} onChange={(e) => set("lifecycle", e.target.value)}><option value="">(default)</option><option value="keep-alive">keep-alive</option><option value="lazy">lazy</option><option value="lazy-keep-alive">lazy-keep-alive</option><option value="eager">eager</option></select></ConfigField></div>
+                  <div style={{ width: 130 }}><ConfigField label="idleTimeout"><input style={inputStyle} value={form.idleTimeout} onChange={(e) => set("idleTimeout", e.target.value)} placeholder="10000" /></ConfigField></div>
+                  <div style={{ width: 150 }}><ConfigField label="toolTimeoutMs"><input style={inputStyle} value={form.toolTimeoutMs} onChange={(e) => set("toolTimeoutMs", e.target.value)} placeholder="1800000" /></ConfigField></div>
                 </div>
 
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                  <div style={{ width: 140 }}><Field label="directTools"><select style={inputStyle} value={form.directToolsMode} onChange={(e) => set("directToolsMode", e.target.value as ServerForm["directToolsMode"])}><option value="off">off</option><option value="all">all (true)</option><option value="list">whitelist</option></select></Field></div>
-                  {form.directToolsMode === "list" && <div style={{ flex: 1 }}><Field label="directTools whitelist (comma-separated)"><input style={inputStyle} value={form.directToolsList} onChange={(e) => set("directToolsList", e.target.value)} /></Field></div>}
-                  <div style={{ flex: 1 }}><Field label="includeTools (comma-separated)"><input style={inputStyle} value={form.includeTools} onChange={(e) => set("includeTools", e.target.value)} /></Field></div>
-                  <div style={{ flex: 1 }}><Field label="excludeTools (comma-separated)"><input style={inputStyle} value={form.excludeTools} onChange={(e) => set("excludeTools", e.target.value)} /></Field></div>
+                  <div style={{ width: 140 }}><ConfigField label="directTools"><select style={inputStyle} value={form.directToolsMode} onChange={(e) => set("directToolsMode", e.target.value as ServerForm["directToolsMode"])}><option value="off">off</option><option value="all">all (true)</option><option value="list">whitelist</option></select></ConfigField></div>
+                  {form.directToolsMode === "list" && <div style={{ flex: 1 }}><ConfigField label="directTools whitelist (comma-separated)"><input style={inputStyle} value={form.directToolsList} onChange={(e) => set("directToolsList", e.target.value)} /></ConfigField></div>}
+                  <div style={{ flex: 1 }}><ConfigField label="includeTools (comma-separated)"><input style={inputStyle} value={form.includeTools} onChange={(e) => set("includeTools", e.target.value)} /></ConfigField></div>
+                  <div style={{ flex: 1 }}><ConfigField label="excludeTools (comma-separated)"><input style={inputStyle} value={form.excludeTools} onChange={(e) => set("excludeTools", e.target.value)} /></ConfigField></div>
                 </div>
 
-                <ConfigButton size="small" onClick={() => setShowAdvanced((v) => !v)}>{showAdvanced ? t("收起调试") : t("调试")}</ConfigButton>
-                {showAdvanced && (<div style={{ display: "flex", alignItems: "center", gap: 6 }}><label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, cursor: "pointer" }}><input type="checkbox" checked={form.debug} onChange={(e) => set("debug", e.target.checked)} /> debug (show stderr)</label></div>)}
-
-                {formError && <div style={{ fontSize: 11, color: "#ef4444" }}>{formError}</div>}
-                {formMsg && !formError && <div style={{ fontSize: 11, color: "var(--accent)" }}>{formMsg}</div>}
-
-                <div style={{ display: "flex", gap: 8 }}>
-                  <ConfigButton variant="primary" onClick={save} disabled={saving}>{saving ? t("保存中…") : creating ? t("创建") : t("保存")}</ConfigButton>
-                  <ConfigButton onClick={() => void probeOne(creating ? form.name : originalName, creating ? form.scope : originalScope)} disabled={probingAll}>{t("探测")}</ConfigButton>
-                  {!creating && <ConfigButton variant="danger" onClick={remove} disabled={saving}>{t("删除")}</ConfigButton>}
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <ConfigButton size="small" onClick={() => setShowAdvanced((v) => !v)}>{showAdvanced ? t("收起调试") : t("调试")}</ConfigButton>
+                  {showAdvanced && (<label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, cursor: "pointer" }}><input type="checkbox" checked={form.debug} onChange={(e) => set("debug", e.target.checked)} /> debug (show stderr)</label>)}
                 </div>
-              </div>
+              </>
             )}
-          </div>
-        </div>
+          </ConfigDetailStack>
+        </ConfigDetail>
+      </ConfigSplitView>
+
+      {/* Footer：状态 + 右下角操作（与模型页一致） */}
+      <ConfigFooter status={
+        <>
+          {formError && <span style={{ color: "#ef4444" }}>{formError}</span>}
+          {formMsg && !formError && <span style={{ color: "var(--accent)" }}>{formMsg}</span>}
+        </>
+      }>
+        {showForm && (
+          <>
+            <ConfigButton onClick={() => void probeOne(creating ? form.name : originalName, creating ? form.scope : originalScope)} disabled={probingAll}>{t("探测")}</ConfigButton>
+            <ConfigButton variant="primary" onClick={save} disabled={saving}>{saving ? t("保存中…") : creating ? t("创建") : t("保存")}</ConfigButton>
+          </>
+        )}
+      </ConfigFooter>
     </ConfigPanelShell>
   );
 }

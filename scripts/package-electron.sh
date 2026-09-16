@@ -35,11 +35,22 @@ log() { echo "   $*"; }
 die() { echo "   错误: $*" >&2; exit 1; }
 
 command -v node >/dev/null 2>&1 || die "PATH 中没有 node"
-command -v unzip >/dev/null 2>&1 || die "需要 unzip"
+
+# 解压 electron zip：优先 unzip（保留权限），回落 python3 zipfile（权限丢失，
+# 由下方 chmod 补齐可执行文件——最小化构建机依赖）。
+extract_zip() { # zip dest_dir
+  if command -v unzip >/dev/null 2>&1; then
+    unzip -q "$1" -d "$2"
+  elif command -v python3 >/dev/null 2>&1; then
+    python3 -m zipfile -e "$1" "$2"
+  else
+    die "需要 unzip 或 python3 来解压 electron zip"
+  fi
+}
 
 # 1. 基础服务包（复用 package-linux.sh 产物）
 PKG_SRC="$ROOT/build/package-linux/amedac.ai-pi-linux-$ARCH"
-if [ "$SKIP_LINUX_PACKAGE" != "1" ] || [ ! -d "$PKG_SRC/scripts" ]; then
+if [ "${SKIP_LINUX_PACKAGE:-0}" != "1" ] || [ ! -d "$PKG_SRC/scripts" ]; then
   log "构建基础 Linux 包（package-linux.sh）…"
   (cd "$ROOT" && bash scripts/package-linux.sh)
 fi
@@ -61,8 +72,11 @@ fi
 # 3. 组装
 rm -rf "$OUT"
 mkdir -p "$OUT"
-unzip -q "$ELECTRON_CACHE" -d "$OUT"
-[ -x "$OUT/electron" ] || die "Electron zip 解包后缺少 electron 可执行文件"
+extract_zip "$ELECTRON_CACHE" "$OUT"
+# python3 zipfile 回落路径会丢执行位——统一补齐。
+chmod +x "$OUT/electron" "$OUT/chrome_crashpad_handler" 2>/dev/null || true
+[ -x "$OUT/electron" ] || { chmod +x "$OUT/electron" 2>/dev/null || true; }
+[ -x "$OUT/electron" ] || die "Electron zip 解包后 electron 不可执行"
 
 mkdir -p "$OUT/resources/app"
 cp -a "$SRC/electron/main.js" "$SRC/electron/preload.js" "$OUT/resources/app/"
@@ -84,10 +98,15 @@ echo electron > "$OUT/resources/app/bundle/pkg-kind"
 # （更新器重启 electron 时同样带 --no-sandbox）。
 chmod +x "$OUT/electron" 2>/dev/null || true
 
-# 4. 压缩产物
+# 4. 压缩产物（zip 优先；无 zip 的机器回落 python3 zipfile——external_attr
+#    会保留执行位，目标机解压即用）。
 OUT_ZIP="$DIST/amedac.ai-electron-$ARCH-$APP_VERSION.zip"
 log "压缩 → $OUT_ZIP"
-(cd "$WORK" && zip -qr "$OUT_ZIP" "amedac-electron-$ARCH")
+if command -v zip >/dev/null 2>&1; then
+  (cd "$WORK" && zip -qr "$OUT_ZIP" "amedac-electron-$ARCH")
+else
+  (cd "$WORK" && python3 -m zipfile -c "$OUT_ZIP" "amedac-electron-$ARCH")
+fi
 ( cd "$DIST" && sha256sum "amedac.ai-electron-$ARCH-$APP_VERSION.zip" > "amedac.ai-electron-$ARCH-$APP_VERSION.zip.sha256" )
 
 # 5. 冒烟（有 xvfb 时做真启动检查；无则提示手动）

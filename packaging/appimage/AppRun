@@ -18,6 +18,10 @@
 #   ./amedac.ai-*.AppImage stop         停止全部（可在另开的终端执行）
 #   ./amedac.ai-*.AppImage status       服务状态
 #   ./amedac.ai-*.AppImage logs         日志位置提示
+#   ./amedac.ai-*.AppImage --version    打印版本（自有版本/通道 + pi-web npm 版本）
+#   ./amedac.ai-*.AppImage --update [catalog-url] [版本]
+#                                       外部自更新：按 catalog 下载新 AppImage、
+#                                       校验 sha256、替换自身并重启（--web）
 #
 # 为什么 --web 是前台监护：AppImage 挂载点（FUSE 挂载或 --appimage-extract-and-run
 # 的自解压目录）随本进程退出而消失。服务与 ~/.pi/agent 里的包内软链
@@ -156,6 +160,36 @@ case "$CMD" in
     echo "  平台: $AMEDAC_LOG_DIR/platform.log"
     echo "  WebUI: $AMEDAC_LOG_DIR/web.log"
     exit 0
+    ;;
+  --version|version)
+    # 版本三件套：自有版本（version.json）+ 通道/形态 + 上游 pi-web npm 版本。
+    VER_JSON="$(cat "$PAYLOAD/version.json" 2>/dev/null || echo '{}')"
+    V="$(printf '%s' "$VER_JSON" | tr -d '\n' | sed 's/.*"version": *"\([^"]*\)".*/\1/')"
+    CH="$(printf '%s' "$VER_JSON" | tr -d '\n' | sed 's/.*"channel": *"\([^"]*\)".*/\1/')"
+    echo "amedac.ai $V (channel ${CH:-unknown}, pkg-kind $(cat "$PAYLOAD/pkg-kind" 2>/dev/null || echo appimage))"
+    echo "pi-web npm: $("$PAYLOAD/runtime/bin/node" -p "require('$PAYLOAD/app/package.json').version" 2>/dev/null || echo unknown)"
+    exit 0
+    ;;
+  --update|update)
+    # 外部自更新：./amedac.ai-*.AppImage --update [catalog-url] [版本]
+    # catalog 未给时回落 piweb.env 的 AMEDAC_UPDATE_CATALOG_URL。执行体是包内
+    # apply-update.cjs 的 self 模式：自己拉 catalog、选 appimage 产物、替换文件。
+    CATALOG="${2:-}"
+    TARGET_VER="${3:-}"
+    if [ -z "$CATALOG" ]; then
+      CATALOG="$(grep -E '^AMEDAC_UPDATE_CATALOG_URL=' "$AMEDAC_CONFIG_DIR/piweb.env" 2>/dev/null | cut -d= -f2- | tr -d '"' | tr -d "'" || true)"
+    fi
+    if [ -z "$CATALOG" ]; then
+      echo "ERROR: 未指定 catalog。用法：$0 --update <catalog.json 的 URL> [版本]" >&2
+      echo "       或在 $AMEDAC_CONFIG_DIR/piweb.env 配置 AMEDAC_UPDATE_CATALOG_URL=..." >&2
+      exit 1
+    fi
+    NODE_BIN="$PAYLOAD/runtime/bin/node"
+    [ -x "$NODE_BIN" ] || NODE_BIN="$(command -v node || true)"
+    [ -n "$NODE_BIN" ] || { echo "ERROR: 包内无 node 运行时且 PATH 无 node" >&2; exit 1; }
+    CONFIG="$(printf '{"mode":"self","catalogSource":"%s","version":"%s","pkgKind":"appimage","appImagePath":"%s","appDir":"%s","dataDir":"%s"}' \
+      "$CATALOG" "$TARGET_VER" "${APPIMAGE:-}" "$PAYLOAD" "$DATA_DIR/piweb")"
+    exec "$NODE_BIN" "$PAYLOAD/scripts/apply-update.cjs" "$CONFIG"
     ;;
   -h|--help|help)
     sed -n '3,29p' "$0" | sed 's/^# \{0,1\}//'

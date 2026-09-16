@@ -81,6 +81,49 @@
 | P1 | catalog.json 签名 + applier 验签 | 0.5 天 |
 | P2 | 完整性自检 integrity.json + 机器绑定 + bytenode | 2 天 |
 
+## 三b、WebUI 本体的保护（补充）
+
+WebUI 是 Next.js 服务端渲染 + 客户端 bundle——**所有秘密本来就不该在前端**，
+这一点现有架构天然满足（模型凭证、平台 API key、JWT 全在服务端）。保护分四层：
+
+### 1. 运行许可（谁能跑起来）——最有效的一层
+
+- **License JWT（离线验签）**：发布方用 ed25519 私钥签发 `{客户, 产品, 版本,
+  过期, 可选机器指纹}`；pi-web 服务端内置公钥，启动与每日校验。无效/过期 →
+  全站替换为维护页（中间件层重定向，不动业务代码）。
+- 许可文件放 `AMEDAC_HOME/config/license.jwt`，重装/升级不丢；宽限期 14 天
+  处理纯内网时钟漂移。
+- 这是商业化主闸门：**拿走代码也跑不起来**，比混淆代码有效得多。
+
+### 2. 代码保护（看不懂/改不动）
+
+- 服务端 `.next/server` 产物本身已编译压缩；关键授权/加密模块（license 校验、
+  apkg 解密）再叠加 javascript-obfuscator（控制流扁平化 + 字符串数组）。
+- Next.js 客户端 bundle 可开启生产级混淆（swc minify 已有 + 可选
+  scramble），并**确保这些模块的逻辑不出现在客户端**——前端只调
+  `/api/license/status` 拿布尔值。
+- Electron 形态：main.js 用 bytenode 编译成 V8 字节码（`.jsc`），源码不落盘。
+
+### 3. 完整性（改了会暴露）
+
+- 打包时生成 `integrity.json`（关键服务端文件 sha256 清单，用 License 私钥
+  签名）；启动时自检，不匹配 → 拒绝启动并提示联系供应商。防破解者直接
+  patch 掉 license 校验逻辑。
+- 自更新链已有 sha256；叠加 catalog 签名后，更新通道也无法投毒。
+
+### 4. 传输与接口（防白嫖调用）
+
+- WebUI 已有多用户会话 + 平台 API key 池——商用部署保持 `PI_WEB_AUTH=on`，
+  外网暴露必须走反代 + TLS（README 已述）。
+- 管理类接口（bundles/quick-templates/feedback apply）已有 admin 门——
+  License 层是它们之外的独立闸门，即使 admin 账号泄露，过期许可同样锁站。
+
+### 优先级
+
+License 验签（1 天）> integrity 自检（1 天）> 混淆（半天）> bytenode（仅
+Electron 需要）。**先上 License**：它是唯一能把「复制整个部署目录给别人用」
+变成不可行的措施。
+
 ## 四、明确不做（性价比过低）
 
 - 前端 DRM/防截屏——教学产品内容本就展示给学生。

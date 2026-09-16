@@ -548,6 +548,22 @@ export function AppShell() {
   const [hasLabTraining, setHasLabTraining] = useState(false);
   const sendCommandRef = useRef<((cmd: string) => void) | null>(null);
 
+  // 实验步骤的 UI 提示（Step.ui）：进入带 openTerminal/openFile 的步骤时自动
+  // 打开终端抽屉/文件面板。按 stepId 记忆已触发的步骤，避免同一步重复弹开。
+  const handledSuggestStepRef = useRef<string | null>(null);
+  const labSuggest = (labWidget?.metadata as LabWidgetState | undefined)?.suggest as
+    | { openTerminal?: boolean; openFile?: string }
+    | undefined;
+  const labSuggestStepId = (labWidget?.metadata as LabWidgetState | undefined)?.currentStep?.stepId ?? null;
+  useEffect(() => {
+    if (!labSuggest || !labSuggestStepId) return;
+    if (handledSuggestStepRef.current === labSuggestStepId) return;
+    handledSuggestStepRef.current = labSuggestStepId;
+    if (labSuggest.openTerminal) setTerminalDrawerOpen(true);
+    if (labSuggest.openFile) handleOpenFile(labSuggest.openFile, getFileName(labSuggest.openFile), { sourceSessionId: selectedSession?.id ?? null });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [labSuggestStepId, labSuggest?.openTerminal, labSuggest?.openFile]);
+
   const handleSendCommand = useCallback((cmd: string) => {
     sendCommandRef.current?.(cmd);
   }, []);
@@ -2326,49 +2342,8 @@ export function AppShell() {
               <span>{translate("平台管理")}</span>
             </button>
           )}
-          {showChat && projectTrust?.requiresTrust && !projectTrust.trusted && (
-            <button
-              type="button"
-              onClick={() => {
-                setProjectTrustError(null);
-                setProjectTrustDialogOpen(true);
-              }}
-              title={translate("trust.resourcesNotLoaded")}
-              aria-label={translate("trust.resourcesNotLoaded")}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                height: "100%",
-                padding: isMobile ? "0 10px" : "0 12px",
-                background: "none",
-                border: "none",
-                borderRight: "1px solid var(--border)",
-                color: "#d97706",
-                cursor: "pointer",
-                flexShrink: 0,
-                fontSize: 11,
-                whiteSpace: "nowrap",
-              }}
-            >
-              <svg
-                width="13"
-                height="13"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
-                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z" />
-                <path d="M12 8v4" />
-                <path d="M12 16h.01" />
-              </svg>
-              {!isMobile && <span>{translate("trust.resourcesNotLoaded")}</span>}
-            </button>
-          )}
+          {/* 「受限模式」提示只保留右侧 renderProjectTrustWarning 一处——
+              这里曾并列渲染过第二枚同义按钮，顶部出现两条重复提示。 */}
           {isMobile && (
             <div
               ref={mobileToolbarRef}

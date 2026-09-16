@@ -26,9 +26,60 @@ const { spawn, spawnSync } = require("node:child_process");
 const path = require("node:path");
 
 const config = JSON.parse(process.argv[2] || "{}");
-if (!config.version || !config.framework || !config.pkgKind || !config.dataDir) {
-  console.error("apply-update: 配置不完整");
-  process.exit(2);
+
+/** self 模式：`AppImage --update` 外部更新入口——自己拉 catalog 并补全
+ *  version/framework 字段，然后走标准 appimage 交换流程。 */
+async function bootstrapSelf(raw) {
+  if (!raw.catalogSource) throw new Error("self 模式缺少 catalogSource");
+  const text = /^https?:\/\//i.test(raw.catalogSource)
+    ? await (await fetch(raw.catalogSource, { redirect: "follow" })).text()
+    : readFileSync(raw.catalogSource, "utf8");
+  const catalog = JSON.parse(text);
+  if (catalog.schema_version !== 1) throw new Error(`不支持的 catalog schema_version: ${catalog.schema_version}`);
+
+  // 当前版本/通道：从 appDir 的 version.json 读（AppImage 的 payload 内）。
+  let channel = "stable";
+  let current = "";
+  try {
+    const v = JSON.parse(readFileSync(path.join(raw.appDir || ".", "version.json"), "utf8"));
+    channel = v.channel || "stable";
+    current = v.version || "";
+  } catch { /* 无 version.json 用 default_version 通道 */ }
+  const wanted = raw.version
+    || (catalog.latest_versions && catalog.latest_versions[channel])
+    || catalog.default_version;
+  const entry = (catalog.versions || []).find((v) => v.version === wanted);
+  if (!entry) throw new Error(`catalog 中不存在版本 ${wanted}`);
+  const fw = entry.frameworks && (entry.frameworks[raw.pkgKind] || (raw.pkgKind === "electron" ? entry.frameworks.tarball : undefined));
+  if (!fw) throw new Error(`版本 ${wanted} 没有 ${raw.pkgKind} 产物`);
+
+  if (current && !raw.version) {
+    // 简单比较：仅当目标不同才继续（允许外部强制指定版本做升级/降级/重装）。
+    if (current === entry.version) {
+      console.log(`apply-update: 已是 ${current}，无需更新（--update 指定版本可强制重装）`);
+      process.exit(0);
+    }
+  }
+  return {
+    ...raw,
+    catalogSource: raw.catalogSource,
+    version: entry.version,
+    framework: {
+      kind: raw.pkgKind,
+      fileName: fw.file_name,
+      relativePath: fw.relative_path,
+      sha256: fw.checksum_sha256,
+      sizeBytes: fw.size_bytes || 0,
+    },
+  };
+}
+
+async function main() {
+  if (!config.version || !config.framework || !config.pkgKind || !config.dataDir) {
+    console.error("apply-update: 配置不完整");
+    process.exit(2);
+  }
+  await runUpdate();
 }
 
 const STAGING_ROOT = path.join(config.dataDir, "update-staging");
@@ -156,7 +207,7 @@ function pruneBackups(parent, prefix, keep = 1) {
   } catch { /* 清理旧备份尽力而为 */ }
 }
 
-(async () => {
+async function runUpdate() {
   try {
     // 旧尝试的 staging 残留清掉（整包不小，别攒）——下载暂存与解包暂存两处。
     try {
@@ -267,5 +318,22 @@ function pruneBackups(parent, prefix, keep = 1) {
     log(`失败: ${e.stack || e.message}`);
     status("failed", { error: e.message });
     process.exit(1);
+  }
+}
+
+
+// ---- 入口（放文件尾：确保上方 const 声明先初始化，避免 TDZ）----
+void (async () => {
+  if (config.mode === "self") {
+    try {
+      const bootstrapped = await bootstrapSelf(config);
+      Object.assign(config, bootstrapped);
+      await main();
+    } catch (e) {
+      console.error(`apply-update: ${e.message}`);
+      process.exit(1);
+    }
+  } else {
+    await main();
   }
 })();

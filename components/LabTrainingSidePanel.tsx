@@ -52,6 +52,8 @@ interface QAExchange {
 
 export interface WidgetState {
   mode: "training" | "qa" | "idle";
+  /** 进入当前步骤的 UI 提示（实验 yml 的 Step.ui 派生）。 */
+  suggest?: { openTerminal?: boolean; openFile?: string };
   labTitle: string | null;
   sectionTitle: string | null;
   blockTitle: string | null;

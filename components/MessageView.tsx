@@ -333,6 +333,13 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
     ? commandText.slice(commandSeparator + 1)
     : "";
 
+  // lab-training 教学轮：完整上下文前置在用户消息里（模型需要），对学习者是
+  // 噪音——默认只显示「本步用户输入」一行，完整内容收进可展开详情。
+  const isTeachingTurn = content.includes("【本轮教学信息】");
+  const teachingInput = isTeachingTurn
+    ? (/本步用户输入：([^\n]*)/.exec(content)?.[1] ?? "").trim()
+    : "";
+
   const time = formatTime(message.timestamp);
   const canFork = !!entryId && !!onFork;
   const copyTarget = commandText ?? content;
@@ -453,6 +460,43 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
               </div>
               {expanded && (
                 <MarkdownBody className="markdown-user-message" cwd={cwd} onOpenFile={onOpenFile}>{content}</MarkdownBody>
+              )}
+            </div>
+          ) : isTeachingTurn ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 0 }}>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+                <span style={{ fontFamily: "var(--font-mono)", fontSize: "calc(13px + var(--chat-font-size-offset, 0px))", color: "var(--text)" }}>
+                  {teachingInput || t("教学指令")}
+                </span>
+                <button
+                  onClick={() => setExpanded((prev) => !prev)}
+                  title={expanded ? t("i18n.collapse") : t("i18n.expand")}
+                  aria-expanded={expanded}
+                  style={{
+                    padding: 0, background: "none", border: "none", cursor: "pointer",
+                    color: "var(--text-dim)", fontSize: 10.5,
+                    display: "flex", alignItems: "center", gap: 3,
+                  }}
+                >
+                  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ transform: expanded ? "rotate(90deg)" : "none", transition: "transform 0.15s" }}>
+                    <polyline points="9 18 15 12 9 6" />
+                  </svg>
+                  {t("本轮教学信息")}
+                </button>
+              </div>
+              {expanded && (
+                <div style={{
+                  fontSize: "calc(12px + var(--chat-font-size-offset, 0px))",
+                  color: "var(--text-muted)",
+                  whiteSpace: "pre-wrap",
+                  wordBreak: "break-word",
+                  maxHeight: USER_BUBBLE_MAX_HEIGHT,
+                  overflowY: "auto",
+                  borderLeft: "2px solid var(--border)",
+                  paddingLeft: 8,
+                }}>
+                  {content}
+                </div>
               )}
             </div>
           ) : (

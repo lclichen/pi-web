@@ -874,6 +874,8 @@ export const enLocale: LocalePlugin = {
     "探测工具中…": "Discovering tools…",
     "新建服务器": "New server",
     "MCP 服务器": "MCP servers",
+    "教学指令": "Teaching command",
+    "本轮教学信息": "This turn’s teaching info",
     "版本与更新": "Version & updates",
     "检查更新": "Check for updates",
     "检查中…": "Checking…",

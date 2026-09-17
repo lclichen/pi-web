@@ -85,16 +85,17 @@ async function main() {
 const STAGING_ROOT = path.join(config.dataDir, "update-staging");
 const STAGING = path.join(STAGING_ROOT, String(Date.now()));
 /**
- * tarball/electron 的解包目标。必须与 appRoot 同级且在其**外部**：dataDir 默认
- * 在包根内（appRoot/data/...），若解到 appRoot 里面，交换第一步（appRoot→.bak）
- * 会把暂存连同新根一起搬走，第二步 rename 就 ENOENT 了。
+ * tarball/electron 的解包目标。必须与 appRoot 同级且在其**外部**：旧布局包的
+ * dataDir 在包根内（appRoot/data/...），若解到 appRoot 里面，交换第一步
+ * （appRoot→.bak）会把暂存连同新根一起搬走，第二步 rename 就 ENOENT 了。
+ * （v3 起可变数据默认在包外 $AMEDAC_HOME，仅老包兜底路径仍命中此约束。）
  */
 const EXTRACT_DIR = config.pkgKind === "appimage"
   ? STAGING
   : `${config.appRoot}.update-staging-${Date.now()}`;
 const STATUS_FILE = path.join(config.dataDir, "update-status.json");
 const LOG_FILE = path.join(config.dataDir, "update.log");
-/** 用户数据目录（tarball/electron 形态默认在包根内，交换后必须回迁）。 */
+/** 用户数据目录（仅老布局包"外置失败"兜底时交换后回迁；v3 起数据在包外）。 */
 const DATA_DIRS = ["run", "logs", "config", "data"];
 
 function log(line) {
@@ -199,6 +200,35 @@ function migrateDataDirs(fromRoot, toRoot) {
   }
 }
 
+/**
+ * 交换目录前把包内可变数据外置到 $AMEDAC_HOME（幂等，见 scripts/amedac-home.sh）。
+ * 成功后数据在包外，交换后无需回迁；失败或老包无 helper 时返回 false，
+ * 沿用旧版"交换后 migrateDataDirs 回迁"兜底路径（不丢数据）。
+ * 必须在 stopServices 之后调用（避免搬移运行中的 sqlite）。
+ */
+function externalizePkgUserData(appRoot) {
+  const helper = path.join(appRoot, "scripts", "amedac-home.sh");
+  if (!existsSync(helper)) return false;
+  try {
+    const r = spawnSync(
+      "bash",
+      ["-c", `source "${helper}" && amedac_resolve_dirs && amedac_migrate_pkg_dirs "${appRoot}"`],
+      { timeout: 60_000, stdio: "pipe", encoding: "utf8" },
+    );
+    if (r.status !== 0) {
+      log(`包内数据外置失败（status=${r.status}），改用交换后回迁兜底`);
+      return false;
+    }
+    for (const line of (r.stdout || "").split("\n")) {
+      if (line.trim()) log(line.replace(/\u001b\[[0-9;]*m/g, "").trim());
+    }
+    return true;
+  } catch (e) {
+    log(`包内数据外置异常：${e.message}，改用交换后回迁兜底`);
+    return false;
+  }
+}
+
 /** 只保留最近 N 个 .bak-（与 appimage 新文件 .bak 共用策略）。 */
 function pruneBackups(parent, prefix, keep = 1) {
   try {
@@ -276,14 +306,17 @@ async function runUpdate() {
 
       status("swapping", { message: "停止服务并交换目录…" });
       stopServices(config.appRoot);
+      // 包内可变数据先外置到 $AMEDAC_HOME（幂等）。成功则数据在包外，
+      // 交换后无需回迁；失败时回退旧版"交换后回迁"路径兜底。
+      const externalized = externalizePkgUserData(config.appRoot);
       const backup = `${config.appRoot}.bak-${Date.now()}`;
       renameSync(config.appRoot, backup);
       try {
         renameSync(newRoot, config.appRoot);
-        migrateDataDirs(backup, config.appRoot); // 用户数据（config/data/run/logs）mv 回新根
+        if (!externalized) migrateDataDirs(backup, config.appRoot); // 用户数据（config/data/run/logs）mv 回新根
       } catch (e) {
         // 交换或回迁失败：把数据搬回 .bak 后整体还原，并把旧版服务拉回来。
-        try { migrateDataDirs(config.appRoot, backup); } catch { /* 双重失败，保留现场 */ }
+        try { if (!externalized) migrateDataDirs(config.appRoot, backup); } catch { /* 双重失败，保留现场 */ }
         rmSync(config.appRoot, { recursive: true, force: true });
         renameSync(backup, config.appRoot);
         spawn("bash", [path.join(config.appRoot, "scripts", "start-all.sh")], { detached: true, stdio: "ignore" }).unref();

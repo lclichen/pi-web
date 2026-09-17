@@ -13,8 +13,11 @@ while [ -L "$SOURCE" ]; do
 done
 SCRIPTS="$(cd "$(dirname "$SOURCE")" && pwd)"
 PKG="$(cd "$SCRIPTS/.." && pwd)"
-RUN_DIR="${AMEDAC_RUN_DIR:-$PKG/run}"
-LOG_DIR="${AMEDAC_LOG_DIR:-$PKG/logs}"
+# 可写区与 start-all 同源（默认每用户 $AMEDAC_HOME，见 amedac-home.sh）
+source "$SCRIPTS/amedac-home.sh"
+amedac_resolve_dirs
+RUN_DIR="$AMEDAC_RUN_DIR"
+LOG_DIR="$AMEDAC_LOG_DIR"
 # 端口兜底顺序：环境变量 > run/ports.env（自动探测的记录）> 默认值
 PORTS_FILE="$RUN_DIR/ports.env"
 PLATFORM_PORT="${PLATFORM_PORT:-$(grep -E '^PLATFORM_PORT=' "$PORTS_FILE" 2>/dev/null | cut -d= -f2 | tr -d '[:space:]')}"

@@ -25,8 +25,10 @@
 # 退出码: 0 = 已最新或更新完成；2 = 有新版（--check 时）；1 = 出错
 #
 # 注意:
-#   * 更新只替换包目录本身；用户数据都在 ~/.pi/（agent 目录），在包外，
-#     不受影响。
+#   * 更新只替换包目录本身；用户数据都在 ~/.pi/（agent 目录）与
+#     $AMEDAC_HOME（默认 ~/.local/share/amedac：平台/WebUI 的配置与数据，
+#     v3 起位于包外），不受影响。旧版把数据放包内的部署会在替换前自动
+#     一次性迁移（见 scripts/amedac-home.sh）。
 #   * 需要能访问更新源，且对包所在目录有写权限。
 #   * GitHub 的 latest 重定向不指向预发布（alpha/beta 若标为 prerelease），
 #     此时请用 PI_UPDATE_BASE_URL 指定具体地址，例如:
@@ -51,6 +53,15 @@ PARENT="$(dirname "$ROOT")"
 cd "$PARENT"
 NODE="$ROOT/runtime/bin/node"
 CUR_VER="$(cat "$DIR/VERSION.txt" 2>/dev/null || echo "unknown")"
+
+# 旧版包内可变数据（config 三件套 / data/ / app/data）先收敛到
+# $AMEDAC_HOME（幂等）：整目录替换前不迁移，会随旧包一起被删。
+if [ -f "$DIR/amedac-home.sh" ]; then
+  # shellcheck source=amedac-home.sh
+  source "$DIR/amedac-home.sh"
+  amedac_resolve_dirs
+  amedac_migrate_pkg_dirs "$ROOT" || true
+fi
 CHECK=0
 YES=0
 for arg in "$@"; do
@@ -180,7 +191,7 @@ fi
 CUR_NAME="$(basename "$ROOT")"
 OLD_DIR="$PARENT/.$CUR_NAME.old"
 rm -rf "$OLD_DIR"
-log "替换包目录（用户数据在 ~/.pi，不受影响）..."
+log "替换包目录（用户数据在 ~/.pi 与 $AMEDAC_HOME，包外不受影响）..."
 mv "$ROOT" "$OLD_DIR" || die "无法移动当前目录（对包所在目录 $PARENT 没有写权限？）"
 if ! mv "$NEW_DIR" "$ROOT"; then
   mv "$OLD_DIR" "$ROOT" || true

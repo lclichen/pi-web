@@ -15,7 +15,8 @@
     ./scripts/status-all.sh  —— 服务状态与日志位置
     ./scripts/stop-all.sh    —— 停止全部
     浏览器访问 http://<本机IP>:30141 ，管理员初始密码在首次启动时随机生成：
-    查看 config/admin-password.txt（或在启动日志中），登录后请立即改密并删除该文件。
+    查看数据目录下 config/admin-password.txt（默认 ~/.local/share/amedac/config/，
+    或启动日志中），登录后请立即改密并删除该文件。
     创建沙箱容器需要目标机已安装 Apptainer（https://apptainer.org）。
 
   纯 pi / pi-web（无沙盒组件）:
@@ -39,6 +40,23 @@
 【数据与配置】
   pi 会读写 ~/.pi/ 目录（会话文件、models.json、settings.json 等），
   与官方安装共用同一份数据，互不冲突。
+
+  平台 / WebUI 的可变数据（配置、数据库、容器工作区、日志等）自本版本起
+  收敛到每用户主目录（与 AppImage 形态一致），包目录保持只读——因此：
+    * 包可以放在 /opt 等只读位置，同一台机器多个用户共用一份部署，
+      各用户数据互相隔离（各自的配置、数据、端口自动错开）；
+    * 整体更新只替换包目录，用户数据不受影响（update.sh / 换目录解压均可）。
+  默认位置（可用 AMEDAC_HOME 环境变量整体改址；AMEDAC_CONFIG_DIR /
+  AMEDAC_RUN_DIR / AMEDAC_LOG_DIR / DATA_DIR 可单独覆盖）：
+    ~/.local/share/amedac/
+      config/   platform.env、piweb.env、admin-password.txt（首启生成）
+      data/     平台 sqlite/overlay/镜像/工作区、WebUI 数据（更新不丢）
+      run/      pid 与端口记录
+      logs/     服务日志
+  旧版本把可变数据放在包内的部署：首次启动任一入口（start-all / pi-web /
+  update.sh）时自动一次性迁移到上述目录（包内原件改名 .v3-backup 留存，
+  env 文件里的旧路径同步改写）。注意：旧包内数据会被首个启动的用户迁走，
+  多人共用旧包的场景请由管理员先启动一次完成迁移再分发使用。
 
 【配置模板（可选，取决于打包者是否打入 config/pi/）】
   本包可能自带一套 pi 配置模板（扩展、技能、提示词、主题，模型接口配置，
@@ -76,8 +94,9 @@
 【检查更新】
   ./scripts/update.sh            检查更新源并更新（需要能访问更新源）
   ./scripts/update.sh --check    只检查是否有新版本
-  更新只替换程序本体，下载包会做 SHA256 校验；你的会话与配置在
-  ~/.pi/，位于包外，不受更新影响。更新源默认取 app/package.json 里的
+  更新只替换程序本体（包目录），下载包会做 SHA256 校验；你的会话与配置在
+  ~/.pi/ 与 ~/.local/share/amedac/，均位于包外，不受更新影响；旧版包内
+  数据会在替换前自动迁移。更新源默认取 app/package.json 里的
   仓库地址（GitHub Releases 的 latest/download），内网分发请在打包时
   用 PI_UPDATE_BASE_URL 指定托管 versions.json 的目录。
 
@@ -92,6 +111,8 @@
   runtime/    内置 Node.js 运行时
   bin/        可选：附带 CLI 工具（fd / rg 等，启动时自动加入 PATH）
   config/     可选：pi 配置模板（config/pi/）与更新源地址（update-url.txt）
+              —— 均为随包只读内容；运行时生成的配置在
+              ~/.local/share/amedac/config/，不在包内
   pi          CLI Agent 启动器
   pi-web.sh   WebUI 启动器
   scripts/    辅助脚本与文档（见下）
@@ -133,7 +154,8 @@
           apptainer instance list && apptainer instance stop t1
         该命令失败即环境问题，与平台无关；成功则把输出发给平台维护者。
   Q: 怎么卸载？
-  A: 直接删除整个目录。若执行过 install-to-path.sh，再删除
+  A: 直接删除整个目录（用户数据在 ~/.local/share/amedac/，如确认不再
+     需要可一并删除）。若执行过 install-to-path.sh，再删除
      ~/.local/bin/pi 与 ~/.local/bin/pi-web 两个软链即可。
      注意：~/.pi/agent/ 里的 npm/ 与随包扩展默认是指向包目录的软链，
      删除包目录后它们会悬空（不影响其它功能，再次运行任一入口会自动

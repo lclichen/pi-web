@@ -35,4 +35,22 @@ if [ -x "$DIR/scripts/install-pi-config.sh" ]; then
   "$DIR/scripts/install-pi-config.sh" || true
 fi
 
+# 可写数据目录收敛到每用户 $AMEDAC_HOME（v3 起与 start-all / AppImage
+# 一致；显式 PI_WEB_DATA_DIR 优先）。旧独立部署曾回落写到 <包>/app/data
+# （cwd/data），首次启动时一次性迁移（幂等）。
+if [ -f "$DIR/scripts/amedac-home.sh" ]; then
+  # 打包布局：helper 位于 <包>/scripts/
+  # shellcheck source=scripts/amedac-home.sh
+  source "$DIR/scripts/amedac-home.sh"
+elif [ -f "$DIR/amedac-home.sh" ]; then
+  # 仓库布局：helper 与本脚本同在 packaging/
+  # shellcheck source=amedac-home.sh
+  source "$DIR/amedac-home.sh"
+fi
+if declare -F amedac_resolve_dirs >/dev/null 2>&1; then
+  amedac_resolve_dirs
+  amedac_migrate_pkg_dirs "$DIR"
+  export PI_WEB_DATA_DIR="${PI_WEB_DATA_DIR:-$DATA_DIR/piweb}"
+fi
+
 exec "$DIR/runtime/bin/node" "$DIR/app/bin/pi-web.js" "$@"

@@ -22,11 +22,15 @@
 # 从高到低）：环境变量 PLATFORM_PORT/WEB_PORT > env 文件里的 PORT= 行 >
 # ports.env 记录 > 向上探测。
 #
-# 可写区定位（AppImage 只读挂载时由 AppRun 指到外部数据目录）:
-#   AMEDAC_CONFIG_DIR  默认 <包>/sandbox        （platform.env / piweb.env）
-#   AMEDAC_RUN_DIR     默认 <包>/run
-#   AMEDAC_LOG_DIR     默认 <包>/logs
-#   DATA_DIR           默认 <包>/data
+# 可写区定位（v3 起与 AppImage 对齐，默认收敛到每用户 $AMEDAC_HOME ——
+# ${XDG_DATA_HOME:-$HOME/.local/share}/amedac；包体可放 /opt 等只读位置
+# 多人共用，整体更新只替换包目录）:
+#   AMEDAC_CONFIG_DIR  默认 $AMEDAC_HOME/config （platform.env / piweb.env）
+#   AMEDAC_RUN_DIR     默认 $AMEDAC_HOME/run
+#   AMEDAC_LOG_DIR     默认 $AMEDAC_HOME/logs
+#   DATA_DIR           默认 $AMEDAC_HOME/data
+# 显式环境变量仍优先（AppRun 即显式导出这套变量，行为不变）。旧版把
+# 可写内容放包内的部署由 amedac_migrate_pkg_dirs 一次性搬迁。
 set -uo pipefail
 
 # 解析脚本真实路径（支持软链调用）
@@ -55,13 +59,14 @@ if [ -x "$PKG/scripts/install-pi-config.sh" ] && [ -d "$PKG/config/pi" ]; then
     || echo -e '\033[1;33m!!\033[0m pi 配置模板合并失败（不影响服务启动；可手动执行 scripts/install-pi-config.sh 排查）'
 fi
 
-RUN_DIR="${AMEDAC_RUN_DIR:-$PKG/run}"
-LOG_DIR="${AMEDAC_LOG_DIR:-$PKG/logs}"
-DATA_DIR="${DATA_DIR:-$PKG/data}"
-# 配置独立成 config/ 目录（与 data/run/logs 平级）：tar 原地升级时排除
-# config data run logs 即可保住全部用户配置；旧部署的 sandbox/*.env 会
-# 自动搬迁过来（原件留 .v1 备份）。
-CONFIG_DIR="${AMEDAC_CONFIG_DIR:-$PKG/config}"
+# 可写区解析 + 旧版包内布局一次性搬迁（均幂等；详见 amedac-home.sh）
+source "$SCRIPTS/amedac-home.sh"
+amedac_resolve_dirs
+amedac_migrate_pkg_dirs "$PKG"
+RUN_DIR="$AMEDAC_RUN_DIR"
+LOG_DIR="$AMEDAC_LOG_DIR"
+DATA_DIR="$DATA_DIR"
+CONFIG_DIR="$AMEDAC_CONFIG_DIR"
 if [ ! -f "$CONFIG_DIR/platform.env" ] && [ -f "$PKG/sandbox/platform.env" ]; then
   mkdir -p "$CONFIG_DIR"
   for f in platform.env piweb.env admin-password.txt; do

@@ -45,7 +45,7 @@ Read-only exploration is allowed: read / ls / find / grep and non-mutating shell
 
 Workflow:
 1. Explore the relevant code and context first. When delegating, keep subagent work read-only.
-2. If a decision genuinely blocks the plan (ambiguous goal, mutually exclusive approaches), state the options with your recommendation and ask in your reply.
+2. If a decision genuinely blocks the plan (ambiguous goal, mutually exclusive approaches), use the ask_user_question tool when available (options + recommended default); otherwise state the options with your recommendation and ask in your reply.
 3. Save the plan with plan_save: brief context, the recommended approach with rationale, a step checklist as \`- [ ]\` items (3-7 steps), and a verification section (how to prove it works).
 4. Call exit_plan_mode to request user approval. Do NOT call it before the plan is saved.
 
@@ -56,6 +56,19 @@ const APPROVED_HANDOFF =
   "User approved the plan. Switched to EXECUTE mode. Start by writing the plan steps into the todo list " +
   "(mark exactly one step in_progress), then implement step by step, updating todo as you go. " +
   "Follow the saved plan; if reality diverges from it materially, say so instead of silently deviating.";
+
+/** Codex's "clear context and implement" variant: the plan file becomes the
+ *  source of user intent for a context that is about to be compacted. */
+const FRESH_CONTEXT_HANDOFF =
+  (path: string) =>
+  `User approved the plan and chose to implement in a FRESH context. Switched to EXECUTE mode and a context ` +
+  `compaction is running. Treat the saved plan as the source of user intent: first read ${path}, write its steps ` +
+  `into the todo list (mark exactly one in_progress), then implement step by step. Do not rely on details of the ` +
+  `pre-approval exploration that are not in the plan file — re-read the specific files you need as you go.`;
+
+const APPROVAL_CHOICE_IMPLEMENT = "直接实施";
+const APPROVAL_CHOICE_FRESH = "清上下文实施";
+const APPROVAL_CHOICE_STAY = "继续规划";
 
 const textBlock = (s: string) => ({ type: "text" as const, text: s });
 
@@ -188,8 +201,9 @@ export function makePlanModeExtension(): InlineExtension {
       label: "Exit Plan Mode",
       description:
         "Request user approval for the saved plan and switch back to EXECUTE mode. Only valid in PLAN mode and " +
-        "after the plan has been saved with plan_save. The user sees a confirmation dialog; on approval the agent " +
-        "starts implementing (first writing the plan steps into the todo list).",
+        "after the plan has been saved with plan_save. The user picks: implement now / implement in a fresh " +
+        "context (compaction runs; the saved plan becomes the source of intent) / keep planning. On approval the " +
+        "agent starts implementing, first writing the plan steps into the todo list.",
       promptSnippet: "exit_plan_mode — request plan approval and return to execution",
       promptGuidelines: [
         "计划保存（plan_save）之后调用 exit_plan_mode 请求用户批准；未经批准不要开始实施。被拒或未响应时根据对话反馈修订计划后再次请求。",
@@ -216,30 +230,33 @@ export function makePlanModeExtension(): InlineExtension {
             isError: true,
           };
         }
-        // Blocking confirmation over the RPC UI channel. Timeout / abort /
-        // exceptions resolve to "not approved". A headless host (bench,
-        // print mode) has no human to ask — detect it via ctx.hasUI === false
-        // (the SDK's no-op UI still exposes callable confirm/select that
-        // silently decline, so checking for the method alone is not enough)
-        // and auto-approve there so the workflow can never dead-lock.
-        let approved = false;
+        // Three-way approval over the blocking RPC UI channel (#8): implement
+        // now / implement in a fresh context (compact; the plan file becomes
+        // the source of intent — codex's clear-context handoff) / keep
+        // planning. Timeout / abort / exceptions resolve to "keep planning".
+        // A headless host (bench, print mode) has no human to ask — detect it
+        // via ctx.hasUI === false (the SDK's no-op UI still exposes callable
+        // select/confirm that silently decline, so checking for the method
+        // alone is not enough) and auto-approve as "implement now" there so
+        // the workflow can never dead-lock.
+        let choice: string | undefined;
         let note = "";
-        if (ctx.hasUI === false || typeof ctx.ui?.confirm !== "function") {
-          approved = true;
+        if (ctx.hasUI === false || typeof ctx.ui?.select !== "function") {
+          choice = APPROVAL_CHOICE_IMPLEMENT;
           note = "（当前宿主无交互确认 UI，自动批准）";
         } else {
           try {
-            approved = await ctx.ui.confirm(
+            choice = await ctx.ui.select(
               "实施此计划？",
-              params.summary?.trim() || `已保存计划：${planPath}`,
+              [APPROVAL_CHOICE_IMPLEMENT, APPROVAL_CHOICE_FRESH, APPROVAL_CHOICE_STAY],
               { timeout: 300_000, signal },
-            ) === true;
+            );
           } catch {
-            approved = false;
+            choice = undefined;
             note = "（确认框异常）";
           }
         }
-        if (!approved) {
+        if (choice !== APPROVAL_CHOICE_IMPLEMENT && choice !== APPROVAL_CHOICE_FRESH) {
           return {
             content: [
               textBlock(
@@ -251,6 +268,21 @@ export function makePlanModeExtension(): InlineExtension {
           };
         }
         setMode("execute", pi, ctx);
+        if (choice === APPROVAL_CHOICE_FRESH) {
+          // Fire-and-forget: pi queues the compaction safely relative to the
+          // running tool batch; the handoff tells the model not to lean on
+          // pre-approval context either way.
+          try {
+            ctx.compact();
+          } catch {
+            // compaction is an optimization of the fresh-context choice, not
+            // a requirement — the plan-driven handoff works without it.
+          }
+          return {
+            content: [textBlock(FRESH_CONTEXT_HANDOFF(planPath))],
+            details: { mode: "execute", approved: true, freshContext: true, planPath },
+          };
+        }
         return {
           content: [textBlock(note ? `${APPROVED_HANDOFF}${note}` : APPROVED_HANDOFF)],
           details: { mode: "execute", approved: true, planPath, ...(note ? { autoApproved: true } : {}) },

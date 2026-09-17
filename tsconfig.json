@@ -41,6 +41,9 @@
     // 打包产物目录：package-linux 会把 sandbox 扩展等第三方源码拷进来，
     // 它们的 TS 风格（如 .ts 后缀导入）不属于本项目，不能进类型检查。
     "build",
-    "dist"
+    "dist",
+    // 随包分发的 pi 扩展模板（vendored 上游包，含可选 peer 的导入），
+    // 由 pi 的 jiti 加载器在目标机加载，不参与本工程类型检查。
+    "pi-config"
   ]
 }

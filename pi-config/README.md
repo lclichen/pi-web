@@ -14,6 +14,8 @@ pi-config/
 └─ agent/               # 内容 = ~/.pi/agent 的模板
    ├─ agents/           # 子智能体定义（.md；含 qa-e2e-tester 全流程测试员）
    ├─ extensions/       # pi 扩展（.ts/.js）
+   │   └─ rpiv-ask-user-question/  # 问答工具（vendored，见其 VENDORED.md；
+   │                                # pi-web 里渲染为阻塞问卷对话框）
    ├─ skills/           # 技能（SKILL.md）
    ├─ prompts/          # 提示词模板
    ├─ themes/           # 主题

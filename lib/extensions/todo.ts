@@ -33,12 +33,22 @@ import {
   type TodoStatus,
   TODO_WIDGET_KEY,
 } from "./todo-protocol.ts";
+import { buildReminderMessage } from "./reminder-channel.ts";
 
 export { TODO_WIDGET_KEY };
 export type { TodoItem, TodoStatus };
 
 const CLEAR_TYPE = "todo-clear";
 const MAX_ITEMS = 30;
+
+/**
+ * CC-style double-threshold todo nudge (#2): remind the model when it has
+ * produced N assistant turns without a todo write AND without a recent
+ * reminder, while a non-empty list with unfinished items exists. Both
+ * thresholds prevent reminder loops.
+ */
+const NUDGE_ASSISTANT_TURNS = 3;
+const VERIFICATION_RE = /verif|测试|test|验证|检查|校验|lint|build|构建/i;
 
 /** Tool-level input item; ids are extension-assigned, never model-supplied. */
 interface TodoWriteInput {
@@ -149,10 +159,19 @@ function writeTodos(input: TodoWriteInput[], state: TodoState): {
   state.todos = mergeIds(input, state);
   if (state.todos.length > 0 && state.todos.every((t) => t.status === "completed")) {
     const count = state.todos.length;
+    // Verification nudge (#9, CC experiment semantics): a batch completion of
+    // 3+ steps where NO step even mentions verification likely skipped the
+    // "tests actually pass" discipline — suggest a verification pass before
+    // reporting done.
+    const mentionsVerification = input.some((s) => VERIFICATION_RE.test(s.content));
+    const nudge =
+      count >= 3 && !mentionsVerification
+        ? `\n\n[Nudge] You completed ${count} steps at once and none of them mentions verification. Before reporting done, consider re-running the tests/build or spawning a read-only verification subagent to confirm the changes actually work.`
+        : "";
     state.todos = [];
     state.nextId = 1;
     return {
-      content: [textBlock(`All ${count} steps completed — list cleared. Nice work.`)],
+      content: [textBlock(`All ${count} steps completed — list cleared. Nice work.${nudge}`)],
       details: { todos: [], nextId: 1 },
     };
   }
@@ -248,6 +267,37 @@ export function makeTodoExtension(): InlineExtension {
       publishWidget(ctx);
     });
 
+    // CC-style double-threshold nudge (#2), injected through the shared
+    // <system-reminder> attachment channel (request-scoped: the appended
+    // message never persists into the session file). Fires only while a list
+    // with unfinished items exists, at most once per NUDGE_ASSISTANT_TURNS
+    // assistant turns, and only after that many turns without a todo write.
+    // A todo write resets both counters — the model is engaged with the list.
+    let nudgedAtAssistantCount = Number.NEGATIVE_INFINITY;
+    pi.on("context", async (event) => {
+      if (state.todos.length === 0 || state.todos.every((t) => t.status === "completed")) return undefined;
+      let lastTodoWriteIdx = -1;
+      let assistantCount = 0;
+      const messages = event.messages as Array<{ role?: string; toolName?: string }>;
+      for (let i = 0; i < messages.length; i++) {
+        const msg = messages[i];
+        if (msg.role === "assistant") assistantCount++;
+        if (msg.role === "toolResult" && msg.toolName === "todo") lastTodoWriteIdx = i;
+      }
+      let assistantSinceWrite = 0;
+      for (let i = lastTodoWriteIdx + 1; i < messages.length; i++) {
+        if (messages[i].role === "assistant") assistantSinceWrite++;
+      }
+      if (assistantSinceWrite < NUDGE_ASSISTANT_TURNS) return undefined;
+      if (assistantCount - nudgedAtAssistantCount < NUDGE_ASSISTANT_TURNS) return undefined;
+      nudgedAtAssistantCount = assistantCount;
+      const done = state.todos.filter((t) => t.status === "completed").length;
+      const reminder = buildReminderMessage([
+        `The todo tool hasn't been used in the last ${assistantSinceWrite} assistant turns, but this session tracks a task list (${done}/${state.todos.length} done):\n${renderList(state.todos)}\nIf the current work has drifted from this list, update it with the todo tool (full-list rewrite; exactly one in_progress while working). Do not use the todo tool for trivial single-step work.`,
+      ]);
+      return { messages: [...event.messages, reminder as unknown as (typeof event.messages)[number]] };
+    });
+
     pi.registerTool(defineTool({
       name: "todo",
       label: "Todo",
@@ -266,6 +316,8 @@ export function makeTodoExtension(): InlineExtension {
       parameters: TodoWriteParams,
       execute: async (_toolCallId, params: { todos: TodoWriteInput[] }, _signal, _onUpdate, ctx) => {
         const result = writeTodos(params.todos ?? [], state);
+        // A write re-engages the list — give the nudge throttle a fresh start.
+        nudgedAtAssistantCount = Number.NEGATIVE_INFINITY;
         publishWidget(ctx);
         return result;
       },

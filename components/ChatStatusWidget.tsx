@@ -4,12 +4,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import type { SubagentCall } from "@/hooks/useAgentSession";
 import type { SessionPlan } from "@/hooks/use-session-plan";
+import type { TodoItem } from "@/lib/extensions/todo-protocol";
 
-export interface CapsuleTodo {
-  id: number;
-  text: string;
-  done: boolean;
-}
+/** Session todo items as published by the todo extension ("todo-list" widget). */
+export type CapsuleTodo = TodoItem;
 
 interface Props {
   subagentCalls: SubagentCall[];
@@ -71,8 +69,10 @@ export function ChatStatusWidget({
   useEffect(() => { setAgentsOpen(runningCount > 0); }, [runningCount]);
   const rootRef = useRef<HTMLDivElement | null>(null);
 
-  const todoDone = todos.filter((x) => x.done).length;
-  const currentTodo = todos.find((x) => !x.done) ?? null;
+  const todoDone = todos.filter((x) => x.status === "completed").length;
+  // in_progress is authoritative; fall back to the first pending step so the
+  // capsule still pins something between writes (e.g. right after creation).
+  const currentTodo = todos.find((x) => x.status === "in_progress") ?? todos.find((x) => x.status === "pending") ?? null;
 
   const planSummaryText = plan ? planSummary(plan.content, t("计划")) : null;
   const planStep = plan ? planCurrentStep(plan.content) : null;
@@ -94,7 +94,7 @@ export function ChatStatusWidget({
 
   // Pinned capsule text: current TODO step → plan step → goal → 状态.
   const pinnedText = currentTodo
-    ? currentTodo.text
+    ? (currentTodo.status === "in_progress" ? (currentTodo.activeForm ?? currentTodo.content) : currentTodo.content)
     : (planStep ?? planSummaryText ?? goal ?? t("状态"));
   const pinnedKind: "todo" | "plan" | "goal" | "idle"
     = currentTodo ? "todo"
@@ -254,7 +254,9 @@ export function ChatStatusWidget({
               </div>
             ) : (
               <div style={{ padding: "0 8px 8px", display: "flex", flexDirection: "column" }}>
-                {todos.map((todo, index) => {
+                {todos.map((todo) => {
+                  const isDone = todo.status === "completed";
+                  const isRunning = todo.status === "in_progress";
                   const isCurrent = currentTodo?.id === todo.id;
                   return (
                     <div
@@ -263,10 +265,9 @@ export function ChatStatusWidget({
                         display: "flex", alignItems: "flex-start", gap: 7,
                         padding: "3px 4px", borderRadius: 5,
                         background: isCurrent ? "color-mix(in srgb, var(--accent) 9%, transparent)" : "transparent",
-                        marginLeft: index === 0 ? 0 : 0,
                       }}
                     >
-                      {todo.done ? (
+                      {isDone ? (
                         <span style={{
                           flexShrink: 0, width: 13, height: 13, borderRadius: 999, marginTop: 1,
                           border: "1px solid var(--success, #22c55e)", background: "var(--success, #22c55e)",
@@ -274,6 +275,14 @@ export function ChatStatusWidget({
                         }}>
                           <svg width="8" height="8" viewBox="0 0 16 16" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M3 8l3.5 3.5L13 4" /></svg>
                         </span>
+                      ) : isRunning ? (
+                        <span
+                          className="chat-status-pulse"
+                          style={{
+                            flexShrink: 0, width: 13, height: 13, borderRadius: 999, marginTop: 1,
+                            border: "1.5px solid var(--accent)", background: "color-mix(in srgb, var(--accent) 35%, transparent)",
+                          }}
+                        />
                       ) : isCurrent ? (
                         <span style={{
                           flexShrink: 0, width: 13, height: 13, borderRadius: 999, marginTop: 1,
@@ -281,18 +290,18 @@ export function ChatStatusWidget({
                           fontSize: 9, fontWeight: 700, fontFamily: "var(--font-mono)",
                           display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1,
                         }}>
-                          {index + 1}
+                          {todo.id}
                         </span>
                       ) : (
                         <span style={{ flexShrink: 0, width: 13, height: 13, borderRadius: 999, marginTop: 1, border: "1.5px solid var(--text-dim)" }} />
                       )}
                       <span style={{
                         flex: 1, minWidth: 0, fontSize: 11, lineHeight: "15px",
-                        color: todo.done ? "var(--text-dim)" : isCurrent ? "var(--text)" : "var(--text-muted)",
-                        textDecoration: todo.done ? "line-through" : "none",
+                        color: isDone ? "var(--text-dim)" : isCurrent ? "var(--text)" : "var(--text-muted)",
+                        textDecoration: isDone ? "line-through" : "none",
                         overflowWrap: "anywhere",
                       }}>
-                        {todo.text}
+                        {isRunning && todo.activeForm ? todo.activeForm : todo.content}
                       </span>
                     </div>
                   );

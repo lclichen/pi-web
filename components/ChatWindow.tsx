@@ -25,6 +25,7 @@ import type { SessionStatsInfo } from "@/lib/pi-types";
 import type { AppUpdateResponse } from "@/lib/api-types";
 import type { ToolEntry } from "@/lib/tool-presets";
 import { findChatScrollAnchor, type ChatScrollPosition } from "@/lib/chat-scroll-position";
+import { parseTodoWidgetLine } from "@/lib/extensions/todo-protocol";
 import {
   captureScrollDistance,
   getPromptAnchorSpacerHeight,
@@ -782,12 +783,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
   const capsuleTodos = useMemo(() => {
     const widget = extensionWidgets.find((w) => w.key === "todo-list");
     if (!widget || widget.lines.length === 0) return [];
-    try {
-      const parsed = JSON.parse(widget.lines[0]) as { todos?: Array<{ id: number; text: string; done: boolean }> };
-      return Array.isArray(parsed.todos) ? parsed.todos : [];
-    } catch {
-      return [];
-    }
+    return parseTodoWidgetLine(widget.lines[0]);
   }, [extensionWidgets]);
   // 目标：会话的第一条用户消息（极简描述，单行截断）。
   const capsuleGoal = useMemo(() => {

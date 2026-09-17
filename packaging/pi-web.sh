@@ -53,4 +53,9 @@ if declare -F amedac_resolve_dirs >/dev/null 2>&1; then
   export PI_WEB_DATA_DIR="${PI_WEB_DATA_DIR:-$DATA_DIR/piweb}"
 fi
 
+# agent 会话空闲关闭时长：代码默认 10 分钟对整日使用的工作会话太激进，
+# 部署默认放宽为 7 天（0=禁用；显式设置优先）。会话文件始终保留，
+# 空闲关闭只是释放运行时资源，重新打开会话可完整恢复。
+export PI_WEB_IDLE_TIMEOUT_MS="${PI_WEB_IDLE_TIMEOUT_MS:-604800000}"
+
 exec "$DIR/runtime/bin/node" "$DIR/app/bin/pi-web.js" "$@"

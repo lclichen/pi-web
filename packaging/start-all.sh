@@ -335,12 +335,23 @@ PI_WEB_DATA_DIR=$DATA_DIR/piweb
 # 每次启动都会变化）；如需指向自建扩展目录，取消注释并改为你的绝对路径。
 # PI_WEB_SANDBOX_EXTENSION_PATH=/abs/path/to/pi-sandbox-extension
 PI_WEB_LAB_TRAINING=off
+# agent 会话空闲多久后自动关闭（运行时会话驱逐，会话文件保留、重开可恢复；
+# 非登录态。0=禁用空闲关闭）。代码默认 10 分钟对整日使用的工作会话太激进，
+# 部署默认放宽为 7 天。
+PI_WEB_IDLE_TIMEOUT_MS=604800000
 # 自有更新源（catalog.json，http(s) URL 或本地文件路径）——配置后设置页可
 # 检查/下载/自动应用更新；产物相对路径以 catalog 所在目录为基准解析。
 # AMEDAC_UPDATE_CATALOG_URL=http://updates.internal/amedac/catalog.json
 EOF
     chmod 600 "$WEB_ENV_FILE"
     warn "WebUI 与沙盒平台共用同一套账号（WebUI 登录即平台登录）。"
+  fi
+
+  # 旧版生成的 piweb.env 缺少会话空闲关闭时长（回落代码默认 10 分钟）——
+  # 补写为 7 天；用户手写过该行的不覆盖。
+  if [ -f "$WEB_ENV_FILE" ] && ! grep -q "^PI_WEB_IDLE_TIMEOUT_MS=" "$WEB_ENV_FILE" 2>/dev/null; then
+    printf '# （start-all 升级：旧版缺失此变量，默认 10 分钟过短，补写为 7 天；0=禁用）\nPI_WEB_IDLE_TIMEOUT_MS=604800000\n' >> "$WEB_ENV_FILE"
+    log "piweb.env 已补写 PI_WEB_IDLE_TIMEOUT_MS=604800000（旧版缺失）"
   fi
 
   mkdir -p "$DATA_DIR/piweb"

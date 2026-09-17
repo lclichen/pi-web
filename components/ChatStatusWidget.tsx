@@ -24,6 +24,8 @@ interface Props {
   todos?: CapsuleTodo[];
   /** Minimal goal description (first user message of the session). */
   goal?: string | null;
+  /** Collaboration mode from the plan-mode extension ("plan" shows a badge). */
+  planMode?: "execute" | "plan" | null;
 }
 
 /**
@@ -47,6 +49,7 @@ export function ChatStatusWidget({
   subagentCalls, onOpenAgents, onOpenPlan, sessionId,
   planActive,
   plan = null, todos = [], goal = null,
+  planMode = null,
 }: Props) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
@@ -136,8 +139,29 @@ export function ChatStatusWidget({
     <div
       ref={rootRef}
       className="chat-status-widget"
-      style={{ position: "absolute", top: 12, right: 36, zIndex: 45, pointerEvents: "auto" }}
+      style={{ position: "absolute", top: 12, right: 36, zIndex: 45, pointerEvents: "auto", display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}
     >
+      {/* PLAN mode badge — read-only planning is active (plan-mode extension).
+          Clicking it opens the plan panel where the saved plan lives. */}
+      {planMode === "plan" && (
+        <button
+          type="button"
+          onClick={onOpenPlan}
+          title={t("PLAN 模式：只读规划中，写操作已禁用。计划保存在计划面板，完成后由模型请求批准切换回执行。")}
+          style={{
+            display: "flex", alignItems: "center", gap: 5,
+            padding: "2px 9px", borderRadius: 999,
+            fontSize: 10, fontWeight: 700, letterSpacing: 0.6,
+            fontFamily: "var(--font-mono)",
+            cursor: "pointer",
+            background: "color-mix(in srgb, var(--accent) 14%, var(--bg-panel))",
+            color: "var(--accent)",
+            border: "1px solid var(--accent)",
+          }}
+        >
+          ⏸ PLAN
+        </button>
+      )}
       {/* The single capsule */}
       <button
         type="button"

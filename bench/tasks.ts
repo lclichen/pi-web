@@ -15,7 +15,7 @@ import type { Check } from "./checks.ts";
 export interface BenchTask {
   id: string;
   /** Capability area — used for report grouping / blame localization. */
-  area: "edit" | "bash" | "todo" | "plan" | "refactor" | "verify";
+  area: "edit" | "bash" | "todo" | "plan" | "plan-mode" | "refactor" | "verify";
   description: string;
   prompt: string;
   /** Files written into the isolated workspace before the run. */
@@ -138,6 +138,24 @@ export const TASKS: BenchTask[] = [
       { kind: "file_contains", path: "LICENSE", regex: "^MIT", name: "LICENSE is MIT" },
     ],
     timeoutMs: 420_000,
+  },
+  {
+    id: "plan-mode-workflow",
+    area: "plan-mode",
+    description: "Full PLAN→approve→EXECUTE loop: auto-enter plan mode, gated exploration, saved plan, handoff implementation (P1-1 live suite).",
+    prompt:
+      "This task involves multiple files and needs planning first. Requirement: create two files — docs/alpha.md " +
+      "containing the single line 'A' and docs/beta.md containing the single line 'B'. Follow the plan-mode " +
+      "workflow your tools provide: plan before touching anything, then implement after approval.",
+    files: {},
+    checks: [
+      { kind: "tool_called", tool: "enter_plan_mode", minCalls: 1, name: "auto-entered plan mode" },
+      { kind: "plan_saved", name: "plan saved during planning" },
+      { kind: "tool_called", tool: "exit_plan_mode", minCalls: 1, name: "approval requested" },
+      { kind: "file_contains", path: "docs/alpha.md", regex: "^A\\s*$", name: "alpha.md created" },
+      { kind: "file_contains", path: "docs/beta.md", regex: "^B\\s*$", name: "beta.md created" },
+    ],
+    timeoutMs: 480_000,
   },
   {
     id: "refactor-rename-across-files",

@@ -31,6 +31,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { makeSessionPlanExtension } from "../lib/extensions/session-plan.ts";
 import { makeTodoExtension } from "../lib/extensions/todo.ts";
+import { makePlanModeExtension } from "../lib/extensions/plan-mode.ts";
 import type { BenchTask } from "./tasks.ts";
 
 export interface ModelSelection {
@@ -52,7 +53,7 @@ export function resolveModelSelection(
 
 /** The extension stack product sessions run; the benchmark runs the same. */
 export function benchExtensionFactories(): InlineExtension[] {
-  return [makeTodoExtension(), makeSessionPlanExtension()];
+  return [makeTodoExtension(), makeSessionPlanExtension(), makePlanModeExtension()];
 }
 
 export interface BenchRunResult {

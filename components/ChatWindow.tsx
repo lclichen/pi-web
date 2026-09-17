@@ -785,6 +785,17 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
     if (!widget || widget.lines.length === 0) return [];
     return parseTodoWidgetLine(widget.lines[0]);
   }, [extensionWidgets]);
+  // plan-mode extension payload: current collaboration mode for the badge.
+  const planMode = useMemo<"execute" | "plan" | null>(() => {
+    const widget = extensionWidgets.find((w) => w.key === "plan-mode");
+    if (!widget || widget.lines.length === 0) return null;
+    try {
+      const parsed = JSON.parse(widget.lines[0]) as { mode?: string };
+      return parsed.mode === "plan" ? "plan" : parsed.mode === "execute" ? "execute" : null;
+    } catch {
+      return null;
+    }
+  }, [extensionWidgets]);
   // 目标：会话的第一条用户消息（极简描述，单行截断）。
   const capsuleGoal = useMemo(() => {
     for (let i = 0; i < messages.length; i++) {
@@ -971,10 +982,10 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
   // the message column, belowEditor above the chat input. The todo-list
   // widget is consumed by the status capsule instead (raw JSON otherwise).
   const aboveEditorWidgets = extensionWidgets.filter(
-    (widget) => widget.placement !== "belowEditor" && widget.key !== "todo-list",
+    (widget) => widget.placement !== "belowEditor" && widget.key !== "todo-list" && widget.key !== "plan-mode",
   );
   const belowEditorWidgets = extensionWidgets.filter(
-    (widget) => widget.placement === "belowEditor" && widget.key !== "todo-list",
+    (widget) => widget.placement === "belowEditor" && widget.key !== "todo-list" && widget.key !== "plan-mode",
   );
 
   if (loading) {
@@ -1117,6 +1128,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
           plan={plan}
           todos={capsuleTodos}
           goal={capsuleGoal}
+          planMode={planMode}
         />
         <div
           style={{

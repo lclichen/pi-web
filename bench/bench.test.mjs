@@ -31,6 +31,7 @@ function tempWorkspace() {
 const CHECK_KINDS = new Set([
   "file_exists", "file_not_exists", "file_contains", "file_not_contains",
   "node_script", "command", "plan_saved", "todo_used", "todo_all_completed",
+  "tool_called",
 ]);
 
 test("task fixtures are well-formed", async () => {
@@ -267,7 +268,7 @@ test("resolveModelSelection refuses to run without provider/model", async () => 
 test("bench extension stack registers the todo and plan_save tools", async () => {
   const { benchExtensionFactories } = await import("./harness.ts");
   const factories = benchExtensionFactories();
-  assert.equal(factories.length, 2);
+  assert.equal(factories.length, 3);
   const tools = [];
   for (const factory of factories) {
     factory({
@@ -280,6 +281,7 @@ test("bench extension stack registers the todo and plan_save tools", async () =>
   const names = tools.map((t) => t.name);
   assert.ok(names.includes("todo"), "todo tool must be exposed to bench sessions");
   assert.ok(names.includes("plan_save"), "plan_save tool must be exposed to bench sessions");
+  assert.ok(names.includes("enter_plan_mode") && names.includes("exit_plan_mode"), "plan-mode tools must be exposed to bench sessions");
   const todo = tools.find((t) => t.name === "todo");
   assert.ok(todo.promptGuidelines?.length >= 3, "todo guidance rides along into bench sessions");
 });

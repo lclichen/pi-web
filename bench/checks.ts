@@ -34,7 +34,8 @@ export type Check =
   | { kind: "command"; argv: string[]; expectExit?: number; stdoutRegex?: string; name?: string }
   | { kind: "plan_saved"; name?: string }
   | { kind: "todo_used"; minCalls?: number; maxCalls?: number; forbidErrors?: boolean; name?: string }
-  | { kind: "todo_all_completed"; name?: string };
+  | { kind: "todo_all_completed"; name?: string }
+  | { kind: "tool_called"; tool: string; minCalls?: number; maxCalls?: number; name?: string };
 
 export interface CheckResult {
   name: string;
@@ -228,6 +229,16 @@ export async function runCheck(check: Check, ctx: CheckContext): Promise<CheckRe
       return allDone
         ? pass(todos.length === 0 ? "final list auto-cleared after completion" : "all steps completed")
         : fail(`final list has ${todos.filter((t) => t.status !== "completed").length} unfinished step(s)`);
+    }
+    case "tool_called": {
+      const { calls } = collectToolEvents(ctx.messages);
+      const n = calls.filter((c) => c.name === check.tool).length;
+      const min = check.minCalls ?? 1;
+      if (n < min) return fail(`${check.tool} called ${n}x, expected >= ${min}`);
+      if (check.maxCalls !== undefined && n > check.maxCalls) {
+        return fail(`${check.tool} called ${n}x, expected <= ${check.maxCalls}`);
+      }
+      return pass(`${check.tool} called ${n}x`);
     }
   }
 }

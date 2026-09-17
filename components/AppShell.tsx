@@ -106,6 +106,18 @@ export function AppShell() {
     if (Notification.permission !== "granted") return;
     void setupPushSubscription(locale);
   }, [locale]);
+  // Session keep-alive: hourly no-op ping. The server slides the login
+  // session's idle window on every request and re-issues the session cookie
+  // (throttled to ≥1h) on this endpoint — covering users whose page stays
+  // open for days with only a long-lived SSE connection, whose headers were
+  // set once at stream open. 401 here is handled by the normal auth flow.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const id = setInterval(() => {
+      void fetch("/api/webauth/touch", { credentials: "same-origin" }).catch(() => {});
+    }, 60 * 60 * 1000);
+    return () => clearInterval(id);
+  }, []);
   // Audio ownership lives here (not in ChatWindow) so the completion tone can
   // also fire for tasks finishing in a non-active workspace whose ChatWindow
   // is not mounted. ChatWindow receives the audio callbacks as props.

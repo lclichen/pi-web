@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getWebSession, isWebAuthEnabled } from "@/lib/web-session";
+import { getWebSession, isWebAuthEnabled, sessionCookieRefreshHeader } from "@/lib/web-session";
 import { getServerSettings } from "@/lib/server-settings";
 import { platformUrl } from "@/lib/platform/client";
 
@@ -39,12 +39,17 @@ export async function GET(req: Request) {
   }
   const session = getWebSession(req);
   if (!session) return NextResponse.json({ authEnabled: true, user: null, ...settings }, { status: 401 });
+  // Page loads double as a (throttled) sliding-renewal cookie refresh point.
+  const refreshCookie = sessionCookieRefreshHeader(req);
   const consoleUrl = platformConsoleUrlFor(session.user.role, req);
-  return NextResponse.json({
-    authEnabled: true,
-    user: session.user,
-    ...settings,
-    ...(consoleUrl ? { platformConsoleUrl: consoleUrl } : {}),
-    ...(session.changeTicket ? { mustChangePassword: true } : {}),
-  });
+  return NextResponse.json(
+    {
+      authEnabled: true,
+      user: session.user,
+      ...settings,
+      ...(consoleUrl ? { platformConsoleUrl: consoleUrl } : {}),
+      ...(session.changeTicket ? { mustChangePassword: true } : {}),
+    },
+    refreshCookie ? { headers: { "Set-Cookie": refreshCookie } } : undefined,
+  );
 }

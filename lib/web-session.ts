@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { dataDir } from "./mode-homes";
-import { writePrivateFileAtomicSync } from "./atomic-file";
-import { platformDelete } from "./platform/client";
+import { dataDir } from "./mode-homes.ts";
+import { writePrivateFileAtomicSync } from "./atomic-file.ts";
+import { platformDelete } from "./platform/client.ts";
 
 /**
  * Web login sessions for PI_WEB_AUTH=on (multi-user mode).
@@ -17,6 +17,20 @@ import { platformDelete } from "./platform/client";
  * <data>/web-sessions.json (mode 0600) so a pi-web restart does not log
  * everyone out: an invalidated cookie then hits the API layer with 401 and
  * the UI redirects to /login instead of silently breaking.
+ *
+ * Retention model (sliding + absolute cap, since 2026-09):
+ * - IDLE window (default 7 days, PI_WEB_SESSION_IDLE_DAYS): every request
+ *   slides `lastSeenAt`; no activity for 7 days → session expires and its
+ *   platform key is revoked.
+ * - ABSOLUTE cap (default 90 days, PI_WEB_SESSION_ABSOLUTE_DAYS): from
+ *   login regardless of activity → forced re-login (key rotation hygiene).
+ * - The cookie's Max-Age follows the idle window and is re-issued (throttled
+ *   to ≥1h apart, via sessionCookieRefreshHeader) on login, SSE (re)connects,
+ *   /api/webauth/me and the hourly /api/webauth/touch ping. Cookie lifetime
+ *   never exceeds the remaining absolute cap, so the cap cannot be outrun
+ *   client-side. lastSeenAt is persisted only alongside those throttled
+ *   refreshes (and create/delete), so after a restart the idle window may
+ *   count from up to 1h earlier — conservative, never looser.
  */
 
 export interface PlatformUser {
@@ -35,6 +49,8 @@ export interface WebSession {
   apiKeyId: number | string;
   createdAt: number;
   lastSeenAt: number;
+  /** Last time a fresh session cookie was issued (throttle marker). */
+  cookieRefreshedAt?: number;
   /**
    * Set for the forced-password-change flow only: the login succeeded but
    * the platform requires a password change before anything else. This
@@ -45,8 +61,37 @@ export interface WebSession {
 }
 
 export const WEB_SESSION_COOKIE = "pi_web_sid";
-const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_SESSION_IDLE_TTL_MS = 7 * DAY_MS;
+const DEFAULT_SESSION_ABSOLUTE_TTL_MS = 90 * DAY_MS;
+/** Cookie re-issue throttle: at most one Set-Cookie per hour of activity. */
+const SESSION_COOKIE_REFRESH_MS = 60 * 60 * 1000;
 const SESSION_SWEEP_MS = 10 * 60 * 1000;
+
+/** Resolve session retention windows from env (days). Invalid values fall
+ *  back to defaults with a warning; an absolute cap below the idle window is
+ *  clamped up to the idle window (the cap must not expire sessions faster
+ *  than inactivity would). */
+export function resolveSessionTtls(
+  env: Record<string, string | undefined> = process.env,
+): { idleTtlMs: number; absoluteTtlMs: number } {
+  const readDays = (name: string, fallbackMs: number): number => {
+    const raw = env[name]?.trim();
+    if (!raw) return fallbackMs;
+    const days = Number(raw);
+    if (!Number.isFinite(days) || days < 1 || days > 3650) {
+      console.warn(`[pi-web] invalid ${name} "${raw}", falling back to ${fallbackMs / DAY_MS} days`);
+      return fallbackMs;
+    }
+    return days * DAY_MS;
+  };
+  const idleTtlMs = readDays("PI_WEB_SESSION_IDLE_DAYS", DEFAULT_SESSION_IDLE_TTL_MS);
+  const absoluteTtlMs = Math.max(readDays("PI_WEB_SESSION_ABSOLUTE_DAYS", DEFAULT_SESSION_ABSOLUTE_TTL_MS), idleTtlMs);
+  return { idleTtlMs, absoluteTtlMs };
+}
+
+const { idleTtlMs: SESSION_IDLE_TTL_MS, absoluteTtlMs: SESSION_ABSOLUTE_TTL_MS } = resolveSessionTtls();
+export { SESSION_IDLE_TTL_MS, SESSION_ABSOLUTE_TTL_MS };
 
 declare global {
   var __piWebSessions: Map<string, WebSession> | undefined;
@@ -64,9 +109,7 @@ function loadPersisted(): Map<string, WebSession> {
     const now = Date.now();
     const map = new Map<string, WebSession>();
     for (const [sid, session] of Object.entries(parsed)) {
-      // Absolute TTL from createdAt, matching the cookie's fixed Max-Age —
-      // a sliding server TTL would outlive the cookie and mint orphan keys.
-      if (!sid || !session?.user || now - (session.createdAt ?? 0) > SESSION_TTL_MS) continue;
+      if (!sid || !session?.user || sessionIsExpired(session, now)) continue;
       map.set(sid, session);
     }
     return map;
@@ -97,8 +140,11 @@ function revokeSessionKey(session: WebSession): void {
     .catch(() => {});
 }
 
-function isExpired(session: WebSession, now: number): boolean {
-  return now - (session.createdAt ?? 0) > SESSION_TTL_MS;
+/** Sliding idle window from lastSeenAt + absolute cap from createdAt. */
+export function sessionIsExpired(session: WebSession, now: number): boolean {
+  const idleMs = now - (session.lastSeenAt ?? session.createdAt ?? 0);
+  const absoluteMs = now - (session.createdAt ?? 0);
+  return idleMs > SESSION_IDLE_TTL_MS || absoluteMs > SESSION_ABSOLUTE_TTL_MS;
 }
 
 function store(): Map<string, WebSession> {
@@ -111,7 +157,7 @@ function store(): Map<string, WebSession> {
       const sessions = globalThis.__piWebSessions ?? new Map();
       let changed = false;
       for (const [sid, session] of sessions) {
-        if (isExpired(session, now)) {
+        if (sessionIsExpired(session, now)) {
           sessions.delete(sid);
           // The platform key is long-lived; dropping only the local record
           // would leave a credential no one can ever revoke from the UI.
@@ -154,7 +200,7 @@ export function getWebSession(request: Request): WebSession | null {
   if (!sid) return null;
   const session = store().get(sid);
   if (!session) return null;
-  if (isExpired(session, Date.now())) {
+  if (sessionIsExpired(session, Date.now())) {
     store().delete(sid);
     revokeSessionKey(session);
     persist(store());
@@ -162,6 +208,25 @@ export function getWebSession(request: Request): WebSession | null {
   }
   session.lastSeenAt = Date.now();
   return session;
+}
+
+/**
+ * Throttled cookie re-issue for sliding renewal. Slides the session window
+ * (via getWebSession) and, if the last cookie issue is ≥1h old, persists the
+ * touched session and returns a fresh Set-Cookie header value whose Max-Age
+ * is min(idle window, remaining absolute cap). Returns null on the vast
+ * majority of requests — attach only when non-null.
+ */
+export function sessionCookieRefreshHeader(request: Request): string | null {
+  const session = getWebSession(request);
+  if (!session || session.changeTicket) return null;
+  const now = Date.now();
+  if (now - (session.cookieRefreshedAt ?? session.createdAt) < SESSION_COOKIE_REFRESH_MS) return null;
+  session.cookieRefreshedAt = now;
+  persist(store());
+  const remainingAbsoluteMs = SESSION_ABSOLUTE_TTL_MS - (now - (session.createdAt ?? 0));
+  const maxAgeSeconds = Math.max(1, Math.min(SESSION_IDLE_TTL_MS, remainingAbsoluteMs)) / 1000;
+  return sessionCookieHeader(session.sid, maxAgeSeconds);
 }
 
 export function dropWebSession(request: Request): void {
@@ -172,7 +237,7 @@ export function dropWebSession(request: Request): void {
   persist(store());
 }
 
-export function sessionCookieHeader(sid: string, maxAgeSeconds = SESSION_TTL_MS / 1000): string {
+export function sessionCookieHeader(sid: string, maxAgeSeconds = SESSION_IDLE_TTL_MS / 1000): string {
   const parts = [
     `${WEB_SESSION_COOKIE}=${sid}`,
     "Path=/",

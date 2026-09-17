@@ -78,13 +78,16 @@ export async function POST(req: Request) {
     );
   }
 
-  // Mint a dedicated pi-web API key (plaintext returned only here).
+  // Mint a dedicated pi-web API key (plaintext returned only here). The name
+  // carries the mint date so platform admins can identify/clean keys from
+  // long-gone pi-web sessions (pi-web revokes them on expiry/logout, but a
+  // wiped data dir can orphan them).
   let key: PlatformApiKeyCreated;
   try {
     key = await platformPostBearer<PlatformApiKeyCreated>(
       "/api/v1/auth/api-keys",
       login.data.accessToken,
-      { name: "pi-web" },
+      { name: `pi-web ${new Date().toISOString().slice(0, 10)}` },
     );
   } catch (err) {
     return NextResponse.json(

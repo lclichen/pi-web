@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
-import { platformUrl } from "./platform/client";
-import type { SessionMode } from "./session-modes";
+import { platformUrl } from "./platform/client.ts";
+import type { SessionMode } from "./session-modes.ts";
 
 /**
  * Per-user stub home directories for remote-execution modes (design doc §5).

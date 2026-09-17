@@ -3,16 +3,22 @@ import { createAgentEventStream } from "@/lib/agent-event-stream";
 import { resolveSessionAccess } from "@/lib/session-access";
 import { getRpcSession, startRpcSession, type AgentSessionWrapper } from "@/lib/rpc-manager";
 import { restoreSessionOptions } from "@/lib/session-restore-options";
+import { sessionCookieRefreshHeader } from "@/lib/web-session";
 
 export const dynamic = "force-dynamic";
 
 // GET /api/agent/[id]/events - SSE stream of agent events
 export async function GET(
   req: Request,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
   if (req.signal.aborted) return new Response(null, { status: 204 });
+
+  // Sliding renewal: each (re)connect is a natural cookie refresh point —
+  // headers can only be set at stream open, so long-lived connections are
+  // covered by the hourly /api/webauth/touch ping instead.
+  const sessionRefreshCookie = sessionCookieRefreshHeader(req);
 
   // Fast path: already-running session
   const existing = getRpcSession(id);
@@ -41,6 +47,7 @@ export async function GET(
       "Cache-Control": "no-cache, no-transform",
       Connection: "keep-alive",
       "X-Accel-Buffering": "no",
+      ...(sessionRefreshCookie ? { "Set-Cookie": sessionRefreshCookie } : {}),
     },
   });
 }

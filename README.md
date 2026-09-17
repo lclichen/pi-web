@@ -50,6 +50,8 @@ For port and hostname, command-line options override the corresponding environme
 | `PI_WEB_ALLOWED_HOSTS` | Additional exact proxy or custom hostnames, comma-separated | Unset |
 | `PI_WEB_PASSWORD` | Enable HTTP Basic Auth; the username is always `pi` | Authentication disabled |
 | `PI_WEB_IDLE_TIMEOUT_MS` | Session idle timeout in milliseconds, up to `2147483647`; `0` disables idle shutdown; invalid or out-of-range values use the default | `600000` (10 min) |
+| `PI_WEB_SESSION_IDLE_DAYS` | Login session sliding idle window in days (any activity renews it; the session cookie is re-issued at most hourly) | `7` |
+| `PI_WEB_SESSION_ABSOLUTE_DAYS` | Login session absolute cap in days from login — forced re-login regardless of activity; clamped up to the idle window | `90` |
 
 For example:
 

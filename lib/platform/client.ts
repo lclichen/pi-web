@@ -66,6 +66,10 @@ export function platformDelete<T>(path: string, credential: string): Promise<T> 
   return request<T>("DELETE", path, credential);
 }
 
+export function platformPatch<T>(path: string, credential: string, body: unknown): Promise<T> {
+  return request<T>("PATCH", path, credential, body);
+}
+
 /** Call with a Bearer JWT (short-lived, e.g. right after login). */
 export function platformPostBearer<T>(path: string, bearerToken: string, body?: unknown): Promise<T> {
   const run = async (): Promise<T> => {

@@ -14,6 +14,7 @@ import { SubagentsConfig } from "./SubagentsConfig";
 import { McpServersConfig } from "./McpServersConfig";
 import { ConnectLocalMachine } from "./relay/ConnectLocalMachine";
 import { SandboxManagerDialog } from "./SandboxManagerDialog";
+import { PlatformAdminDialog } from "./PlatformAdminDialog";
 import { MyWorkspaceDialog } from "./MyWorkspaceDialog";
 import { WorkspaceTerminal } from "./WorkspaceTerminal";
 import { SubagentDirectoryPanel } from "./SubagentDirectoryPanel";
@@ -186,6 +187,9 @@ export function AppShell() {
   const [authEnabled, setAuthEnabled] = useState(true);
   // Admin-only link to the sandbox platform ops console (from /api/webauth/me).
   const [platformConsoleUrl, setPlatformConsoleUrl] = useState<string | null>(null);
+  // In-app platform admin panel (P1: users; the console link stays as the
+  // full-feature fallback until later batches migrate in).
+  const [platformAdminOpen, setPlatformAdminOpen] = useState(false);
   // Sandbox manager dialog: null = closed; bind = project context (optional).
   const [myWorkspaceOpen, setMyWorkspaceOpen] = useState(false);
   const [sandboxManager, setSandboxManager] = useState<
@@ -2333,8 +2337,8 @@ export function AppShell() {
           {platformConsoleUrl && webUser && webUser !== "loading" && webUser.role === "admin" && (
             <button
               type="button"
-              onClick={() => window.open(platformConsoleUrl, "_blank", "noopener")}
-              title={translate("沙盒平台管理台（镜像/用户/配额/LLM）：{url}", { url: platformConsoleUrl })}
+              onClick={() => setPlatformAdminOpen(true)}
+              title={translate("平台管理（用户/密码重置；完整控制台在面板内）")}
               style={{
                 display: "flex", alignItems: "center", gap: 6, height: "100%",
                 padding: "0 12px", background: "none",
@@ -3171,6 +3175,11 @@ export function AppShell() {
       />
     )}
     {myWorkspaceOpen && <MyWorkspaceDialog onClose={() => setMyWorkspaceOpen(false)} />}
+    <PlatformAdminDialog
+      open={platformAdminOpen}
+      onClose={() => setPlatformAdminOpen(false)}
+      consoleUrl={platformConsoleUrl}
+    />
     {sandboxManager !== null && (
       <SandboxManagerDialog
         bind={sandboxManager.projectId ? { projectId: sandboxManager.projectId, projectName: sandboxManager.projectName ?? "", containerId: sandboxManager.containerId } : null}

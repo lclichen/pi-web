@@ -271,3 +271,16 @@ export function requireUserIdentity(request: Request): { ok: true; session: WebS
   if (!session || session.changeTicket) return { ok: false, status: 401 };
   return { ok: true, session };
 }
+
+/**
+ * Admin gate for platform-management BFF routes: a valid identity whose
+ * platform role is admin. The returned session carries the platform API key
+ * the platform itself authorized at login — X-API-Key forwarding means the
+ * platform re-checks admin rights on every call (defense in depth).
+ */
+export function requireAdminIdentity(request: Request): { ok: true; session: WebSession } | { ok: false; status: number } {
+  const identity = requireUserIdentity(request);
+  if (!identity.ok) return identity;
+  if (identity.session.user.role !== "admin") return { ok: false, status: 403 };
+  return identity;
+}

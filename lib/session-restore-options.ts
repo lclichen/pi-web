@@ -1,5 +1,6 @@
 import { existsSync } from "fs";
-import type { InlineExtension } from "@earendil-works/pi-coding-agent";
+import { join } from "path";
+import { getAgentDir, type InlineExtension } from "@earendil-works/pi-coding-agent";
 import type { RpcSessionStartOptions } from "./rpc-manager";
 import { getSessionMeta } from "./session-metas";
 import { ensureProjectHome, getOwnedProject, projectHome, writeSandboxConfig } from "./projects";
@@ -9,9 +10,6 @@ import { makeRelayToolsExtension } from "./extensions/relay-tools";
 import { makeRemoteVerifyExtension } from "./extensions/remote-verify";
 import { makeEnvironmentInfoExtension } from "./extensions/environment-info";
 import { makeSshToolsExtension } from "./extensions/ssh-tools";
-import { makeTodoExtension } from "./extensions/todo";
-import { makeSessionPlanExtension } from "./extensions/session-plan";
-import { makePlanModeExtension } from "./extensions/plan-mode";
 import { makeBgTasksExtension } from "./extensions/bg-tasks";
 import { readSshConfig } from "./ssh";
 import { requireUserIdentity } from "./web-session";
@@ -116,15 +114,43 @@ export async function restoreSessionOptions(req: Request, sessionId: string): Pr
   }
 
   const ownerId = meta?.ownerId ?? user.id;
+  const coreExtensionPaths = resolveCoreExtensionPaths(additionalExtensionPaths);
   return {
-    ...(additionalExtensionPaths ? { additionalExtensionPaths } : {}),
-    // The todo tool, session plan store and plan mode are mode-agnostic
-    // (state lives in session entries / the project home on the server side).
-    extensionFactories: [makeTodoExtension(), makeSessionPlanExtension(), makePlanModeExtension(), makeBgTasksExtension(), ...(extensionFactories ?? [])],
+    ...(coreExtensionPaths ? { additionalExtensionPaths: coreExtensionPaths } : {}),
+    // The core session extensions (todo / plan_save / plan-mode) load via the
+    // global agent dir's amedac-core package — the SAME source the pi CLI
+    // distribution ships, so CLI and WebUI stay behaviorally identical
+    // (single source of truth in pi-config/agent/extensions/amedac-core).
+    // They must NOT also be injected as inline factories: tools dedupe by
+    // "last registration wins" while both copies' event handlers would run.
+    // Only server-coupled extensions stay inline here.
+    extensionFactories: [makeBgTasksExtension(), ...(extensionFactories ?? [])],
     ...(ownerId !== 0 ? { ownerId } : {}),
     mode,
     ...(mode === "quick" ? { quick: {} } : {}),
     // Project-scoped model credentials live in the project home's .pi/.
     ...(effectiveCwd && project ? { projectCredentialDir: effectiveCwd } : {}),
   };
+}
+
+/**
+ * amedac-core fallback for source deployments: packaged deployments link the
+ * pi-config template into the global agent dir (install-pi-config.sh), so
+ * discovery finds it there and this returns nothing extra. A bare source
+ * checkout (npm-run dev / /opt/pi-web without the offline package) never ran
+ * the installer — point discovery at the repo's bundled copy instead, but
+ * ONLY when the agent dir does not already provide it (never both paths:
+ * double registration silently overwrites tools and runs both copies'
+ * event handlers).
+ */
+export function resolveCoreExtensionPaths(existing?: string[]): string[] | undefined {
+  try {
+    const installed = join(getAgentDir(), "extensions", "amedac-core");
+    if (existsSync(join(installed, "package.json"))) return existing;
+    const bundled = join(process.cwd(), "pi-config", "agent", "extensions", "amedac-core");
+    if (existsSync(join(bundled, "package.json"))) return [...(existing ?? []), bundled];
+  } catch {
+    // best-effort — sessions degrade to no core extensions
+  }
+  return existing;
 }

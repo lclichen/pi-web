@@ -1,0 +1,13 @@
+{
+  "name": "amedac-core-extensions",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Core session extensions shared by the pi CLI and pi-web: todo (full-list write), session plan persistence, PLAN/EXECUTE mode. Distributed via pi-config; pi-web loads the same source through lib/extensions re-export shims.",
+  "pi": {
+    "extensions": ["./index.ts"]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-ai": "*"
+  }
+}

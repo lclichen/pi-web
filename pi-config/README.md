@@ -14,6 +14,9 @@ pi-config/
 └─ agent/               # 内容 = ~/.pi/agent 的模板
    ├─ agents/           # 子智能体定义（.md；含 qa-e2e-tester 全流程测试员）
    ├─ extensions/       # pi 扩展（.ts/.js）
+   │   ├─ amedac-core/            # 核心会话扩展：todo/plan_save/PLAN 模式/
+   │   │                          # context_status（CLI 与 WebUI 单一事实源，
+   │   │                          # 见其 README.md）
    │   └─ rpiv-ask-user-question/  # 问答工具（vendored，见其 VENDORED.md；
    │                                # pi-web 里渲染为阻塞问卷对话框）
    ├─ skills/           # 技能（SKILL.md）

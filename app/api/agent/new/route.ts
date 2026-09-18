@@ -5,9 +5,8 @@ import { existsSync } from "fs";
 import { randomUUID } from "crypto";
 import { allowFileRoot } from "@/lib/file-access";
 import { makeSshToolsExtension } from "@/lib/extensions/ssh-tools";
-import { makeTodoExtension } from "@/lib/extensions/todo";
-import { makeSessionPlanExtension } from "@/lib/extensions/session-plan";
 import { makeBgTasksExtension } from "@/lib/extensions/bg-tasks";
+import { resolveCoreExtensionPaths } from "@/lib/session-restore-options";
 import { getQuickTemplate, DEFAULT_TEMPLATE_ID } from "@/lib/quick-templates";
 import { readSshConfig } from "@/lib/ssh";
 import { invalidateSessionListCache } from "@/lib/session-reader";
@@ -285,6 +284,7 @@ export async function POST(req: Request) {
     // that share a key onto one session. Date.now() (ms resolution) collides for
     // requests in the same millisecond, merging two new sessions into one.
     const tempKey = `__new__${randomUUID()}`;
+    const coreExtensionPaths = resolveCoreExtensionPaths();
     const { session, realSessionId } = await startRpcSession(tempKey, "", effectiveCwd, {
       ...(toolNames ? { toolNames } : {}),
       ...(quickOptions?.model ? { initialModel: quickOptions.model } : {}),
@@ -294,8 +294,12 @@ export async function POST(req: Request) {
       ownerId: user.id,
       mode,
       ...(quickOptions ? { quick: quickOptions } : {}),
-      // todo tool and session plan store are mode-agnostic and present in every session.
-      extensionFactories: [makeTodoExtension(), makeSessionPlanExtension(), makeBgTasksExtension(), ...(extensionFactories ?? [])],
+      // Core extensions (todo/plan_save/plan-mode) load via the global agent
+      // dir's amedac-core package (single source of truth with the CLI
+      // distribution); restoreSessionOptions adds a source-layout fallback.
+      // Only server-coupled extensions inject inline here.
+      extensionFactories: [makeBgTasksExtension(), ...(extensionFactories ?? [])],
+      ...(coreExtensionPaths ? { additionalExtensionPaths: coreExtensionPaths } : {}),
       ...(projectRef ? { projectCredentialDir: effectiveCwd } : {}),
     });
 

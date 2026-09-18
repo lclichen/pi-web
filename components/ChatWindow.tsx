@@ -308,6 +308,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
     slashCommands, slashCommandsLoading, queuedMessages,
     notices, extensionDialog, extensionCustomUi, extensionStatuses, extensionWidgets, respondToExtensionUi, sendExtensionCustomInput, setNoticePaused,
     isAutoModelSelection,
+    isAutoThinkingSelection,
     agentPhase,
     subagentCalls,
     isNew,
@@ -961,6 +962,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
       toolPreset={toolPreset}
       onToolPresetChange={session || isNew ? handleToolPresetChange : undefined}
       thinkingLevel={thinkingLevel}
+      isAutoThinkingSelection={isAutoThinkingSelection}
       onThinkingLevelChange={session || isNew ? handleThinkingLevelChange : undefined}
       availableThinkingLevels={availableThinkingLevels}
       thinkingLevelMap={currentThinkingLevelMap}

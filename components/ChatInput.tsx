@@ -64,6 +64,8 @@ interface Props {
   toolPreset?: ToolPreset;
   onToolPresetChange?: (preset: ToolPreset) => void;
   thinkingLevel?: "auto" | "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+  /** New session has not committed a thinking level; the button still shows the resolved default. */
+  isAutoThinkingSelection?: boolean;
   onThinkingLevelChange?: (level: "auto" | "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max") => void;
   availableThinkingLevels?: string[] | null;
   thinkingLevelMap?: Record<string, string | null> | null;
@@ -546,7 +548,7 @@ export function ModelScopeWarningBanner({ warnings }: { warnings?: string[] }) {
 export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   onSend, onAbort, onSteer, onFollowUp, isStreaming, model, isAutoModelSelection, modelNames, modelList, modelError, modelScopeWarnings, onModelChange, modelSwitching,
   onCompact, onAbortCompaction, isCompacting, compactError, compactResult, toolPreset, onToolPresetChange,
-  thinkingLevel, onThinkingLevelChange, availableThinkingLevels, thinkingLevelMap,
+  thinkingLevel, isAutoThinkingSelection = false, onThinkingLevelChange, availableThinkingLevels, thinkingLevelMap,
   retryInfo, queuedMessages, inputHistory = [], onRecallQueue,
   slashCommands, slashCommandsLoading, onLoadSlashCommands,
   onBuiltinCommand,
@@ -1526,8 +1528,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const compactResultText = compactResult
     ? `${compactResult.reason && compactResult.reason !== "manual" ? `${compactResult.reason[0].toUpperCase()}${compactResult.reason.slice(1)} ` : t("chat.compacted")} ${formatTokenCount(compactResult.tokensBefore)} -> ${formatTokenCount(compactResult.estimatedTokensAfter)} tokens (${t("chat.tokensSaved", { saved: formatTokenCount(compactSavedTokens) })})`
     : null;
+  const resolvedThinkingLevel = thinkingLevel && thinkingLevel !== "auto" ? thinkingLevel : null;
   const thinkingDisplayLabel = (() => {
-    const lvl = thinkingLevel ?? "auto";
+    const lvl = resolvedThinkingLevel ?? "auto";
     if (lvl === "auto" || !thinkingLevelMap) return lvl;
     return thinkingLevelMap[lvl] ?? lvl;
   })();
@@ -1553,6 +1556,12 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, []);
+
+  useEffect(() => {
+    if (!isStreaming) return;
+    setThinkingDropdownOpen(false);
+    setToolDropdownOpen(false);
+  }, [isStreaming]);
 
   useEffect(() => {
     if (!isMobile) setControlsMenuOpen(false);
@@ -2382,13 +2391,15 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 backdropFilter: "blur(10px)",
               } : null),
             }}>
-            {!isStreaming && onThinkingLevelChange && (
+            {onThinkingLevelChange && (
               <div ref={thinkingDropdownRef} style={{ position: "relative" }}>
                 <button
                   onClick={() => !isStreaming && setThinkingDropdownOpen((v) => !v)}
                   disabled={isStreaming}
-                   title={t("chat.changeReasoning", { level: thinkingDisplayLabel })}
-                   aria-label={t("chat.changeReasoningLabel")}
+                  title={isStreaming
+                    ? t("chat.currentReasoning", { level: thinkingDisplayLabel })
+                    : t("chat.changeReasoning", { level: thinkingDisplayLabel })}
+                  aria-label={t("chat.changeReasoningLabel")}
                   style={{
                     display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
                     padding: isMobile ? "0 6px" : "8px 12px",
@@ -2433,15 +2444,24 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                       if (lvl === "auto") return true;
                       return availableThinkingLevels.includes(lvl);
                     }).map((lvl) => {
-                      const isActive = (thinkingLevel ?? "auto") === lvl;
-                       const desc = t(THINKING_LEVEL_DESC_KEYS[lvl]);
+                      const isActive = lvl === "auto"
+                        ? isAutoThinkingSelection
+                        : !isAutoThinkingSelection && resolvedThinkingLevel === lvl;
+                      const desc = t(THINKING_LEVEL_DESC_KEYS[lvl]);
                       const mappedVal = (lvl !== "auto" && thinkingLevelMap) ? thinkingLevelMap[lvl] : undefined;
                       const displayLabel = (mappedVal != null && mappedVal !== lvl) ? mappedVal : lvl;
                       const showOriginal = mappedVal != null && mappedVal !== lvl;
                       return (
                         <button
                           key={lvl}
-                          onClick={() => { setThinkingDropdownOpen(false); if (!isActive) onThinkingLevelChange(lvl); }}
+                          onClick={() => {
+                            setThinkingDropdownOpen(false);
+                            if (lvl === "auto") {
+                              if (!isAutoThinkingSelection) onThinkingLevelChange("auto");
+                              return;
+                            }
+                            if (!isActive || isAutoThinkingSelection) onThinkingLevelChange(lvl);
+                          }}
                           style={{
                             display: "flex", alignItems: "center", gap: 8,
                             width: "100%", padding: "7px 12px",

@@ -1,6 +1,6 @@
 import { execFile } from "child_process";
 import { existsSync, mkdirSync, realpathSync } from "fs";
-import { basename, dirname, join, resolve } from "path";
+import { basename, dirname, isAbsolute, join, resolve } from "path";
 import { promisify } from "util";
 import { allowFileRoot } from "./allowed-roots";
 import { samePath, toNativePath } from "./paths";
@@ -95,14 +95,23 @@ export async function resolveProject(cwd: string): Promise<ProjectInfo> {
       return info;
     }
     const out = await git(cwd, [
-      "rev-parse", "--path-format=absolute",
+      "rev-parse",
       "--git-common-dir", "--git-dir", "--show-toplevel",
       "--abbrev-ref", "HEAD",
     ]);
     const [commonDirRaw, gitDirRaw, toplevelRaw, ref] = out.split("\n").map((l) => l.trim());
+    // No --path-format=absolute here: it needs git ≥2.31 and older Git for
+    // Windows (2.30 ships with Win10 LTSC etc.) echoes the unknown flag and
+    // prints RELATIVE paths. Plain rev-parse already returns cwd-relative
+    // `.git` at a main toplevel and absolute paths for linked worktrees —
+    // resolving relative values against cwd normalizes old and new gits
+    // alike.
+    const toAbsolute = (p: string) => (isAbsolute(p) ? p : join(cwd, p));
     // Only the first three lines are paths — `ref` is a branch name and must
     // keep its forward slashes (`feature/foo`).
-    const [commonDir, gitDir, toplevel] = [commonDirRaw, gitDirRaw, toplevelRaw].map(toNativePath);
+    const [commonDir, gitDir, toplevel] = [commonDirRaw, gitDirRaw, toplevelRaw]
+      .map(toAbsolute)
+      .map(toNativePath);
     // git prints resolved (symlink-free) paths; normalize cwd the same way
     const realCwd = realPathOrSelf(cwd);
     // For a linked worktree, --git-dir differs from --git-common-dir.

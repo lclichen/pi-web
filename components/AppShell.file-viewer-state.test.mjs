@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const source = await readFile(new URL("./AppShell.tsx", import.meta.url), "utf8");
+// Normalize CRLF: on Windows checkouts (autocrlf) the working tree is CRLF
+// and the \n-containing match patterns below would never hit.
+const source = (await readFile(new URL("./AppShell.tsx", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
 
 function fileContentBlock() {
   const start = source.indexOf("{/* Only the active viewer");

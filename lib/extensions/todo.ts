@@ -307,11 +307,21 @@ export function makeTodoExtension(): InlineExtension {
         "Keep exactly one step in_progress while working on it and mark steps completed as soon as they are done. " +
         "The result echoes the stored list with ids; the UI status capsule shows the current step live.",
       promptSnippet: "todo — rewrite the session TODO list (full list each call; exactly one in_progress while working)",
+      // 中文版备查（P0-2 决策：system prompt 统一纯英文，中文保留于此）：
+      // 1) 对于预计三步以上的任务，先调用一次 todo 写入完整步骤清单（每步一句祈使句，
+      //    通常 3-7 步）；之后每次进展变化都传入整张表，不要只传增量。
+      // 2) 任何时刻恰好保持一个 in_progress：开始某步前把它设为 in_progress；
+      //    做完立即设为 completed，不要攒到最后批量勾选。
+      // 3) 只有验证通过（测试运行、构建成功、结果核对）才能标记 completed；
+      //    全部完成后列表会自动清空。
+      // 4) 调用 todo 后界面胶囊会实时展示清单，不要在回复中复述整个列表；
+      //    两步以内的简单任务不要建清单。
       promptGuidelines: [
-        "对于预计三步以上的任务，先调用一次 todo 写入完整步骤清单（每步一句祈使句，通常 3-7 步）；之后每次进展变化都传入整张表，不要只传增量。",
-        "任何时刻恰好保持一个 in_progress：开始某步前把它设为 in_progress；做完立即设为 completed，不要攒到最后批量勾选。",
-        "只有验证通过（测试运行、构建成功、结果核对）才能标记 completed；全部完成后列表会自动清空。",
-        "调用 todo 后界面胶囊会实时展示清单，不要在回复中复述整个列表；两步以内的简单任务不要建清单。",
+        "For any task expected to take more than two steps, call todo ONCE up front with the COMPLETE step list (one imperative sentence per step, usually 3-7 steps); afterwards always send the full list on every progress change — never a delta.",
+        "Keep exactly one step in_progress at any moment: set a step to in_progress BEFORE starting it; mark it completed immediately when done — do not batch completions to the end.",
+        "Mark a step completed only after verification (tests run, build passes, result checked); once every step is completed the list auto-clears.",
+        "After a todo call the UI capsule shows the list live — do not repeat the whole list in replies; do not create a list for trivial tasks of two steps or fewer.",
+        "Literal call shape: {\"todos\":[{\"content\":\"Run the unit tests\",\"status\":\"in_progress\"},{\"content\":\"Update the docs\",\"status\":\"pending\"}]} — ids are tool-assigned and echoed in the result.",
       ],
       parameters: TodoWriteParams,
       execute: async (_toolCallId, params: { todos: TodoWriteInput[] }, _signal, _onUpdate, ctx) => {

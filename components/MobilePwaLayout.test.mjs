@@ -1,14 +1,19 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+// Normalize CRLF (Windows autocrlf checkouts) - the newline-based match
+// patterns in these source-assertion tests would never hit a CRLF tree.
+async function readSource(rel) {
+  return (await readFile(new URL(rel, import.meta.url), "utf8")).replace(/\r\n/g, "\n");
+}
 
-const layoutSource = await readFile(new URL("../app/layout.tsx", import.meta.url), "utf8");
-const settingsCssSource = await readFile(new URL("../app/settings.css", import.meta.url), "utf8");
-const cssSource = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
-const appShellSource = await readFile(new URL("./AppShell.tsx", import.meta.url), "utf8");
-const chatWindowSource = await readFile(new URL("./ChatWindow.tsx", import.meta.url), "utf8");
-const chatInputSource = await readFile(new URL("./ChatInput.tsx", import.meta.url), "utf8");
-const viewportHookSource = await readFile(new URL("../hooks/useViewportHeight.ts", import.meta.url), "utf8");
+const layoutSource = await readSource("../app/layout.tsx");
+const settingsCssSource = await readSource("../app/settings.css");
+const cssSource = await readSource("../app/globals.css");
+const appShellSource = await readSource("./AppShell.tsx");
+const chatWindowSource = await readSource("./ChatWindow.tsx");
+const chatInputSource = await readSource("./ChatInput.tsx");
+const viewportHookSource = await readSource("../hooks/useViewportHeight.ts");
 
 test("configures iOS standalone mode to use the full screen", () => {
   assert.match(layoutSource, /statusBarStyle: "black-translucent"/);
@@ -24,7 +29,7 @@ test("tracks the visual viewport while the software keyboard is open", () => {
   assert.match(appShellSource, /paddingLeft: "env\(safe-area-inset-left\)"/);
   assert.match(appShellSource, /paddingRight: "env\(safe-area-inset-right\)"/);
   assert.match(appShellSource, /height: "calc\(36px \+ env\(safe-area-inset-top\)\)"/);
-  assert.match(appShellSource, /\/\* Right panel tab bar \*\/[\s\S]*?height: "calc\(36px \+ env\(safe-area-inset-top\)\)"/);
+  assert.match(appShellSource, /Right panel tab bar[\s\S]*?height: "calc\(36px \+ env\(safe-area-inset-top\)\)"/);
   assert.match(appShellSource, /height: "var\(--app-viewport-height, 100dvh\)"/);
   assert.match(appShellSource, /data-mobile-toolbar-file=\{mobile \? "true" : undefined\}/);
   assert.match(viewportHookSource, /window\.visualViewport/);

@@ -173,9 +173,14 @@ export function makePlanModeExtension(): InlineExtension {
         "explore read-only, save an implementation plan with plan_save, then request approval with exit_plan_mode. " +
         "Mutating tools are blocked in PLAN mode. Do NOT enter for small single-file edits, quick lookups, or simple questions.",
       promptSnippet: "enter_plan_mode — switch to read-only planning for multi-step/architectural tasks",
+      // 中文版备查（P0-2 决策：system prompt 统一纯英文）：
+      // 1) 任务涉及多个文件或模块、需要 3 步以上的有序实施、存在架构/接口/方案取舍、
+      //    或是高风险变更（重构、迁移、删除）时，在动手探索之前先进入；用户明确要求
+      //    先出计划时同样进入。
+      // 2) 不要为单文件小改动、查询/解释类请求、两步以内的琐事进入计划模式。
       promptGuidelines: [
-        "调用 enter_plan_mode 的时机：任务涉及多个文件或模块、需要 3 步以上的有序实施、存在架构/接口/方案取舍、或是高风险变更（重构、迁移、删除）时，在动手探索之前先进入；用户明确要求先出计划时同样进入。",
-        "不要为单文件小改动、查询/解释类请求、两步以内的琐事进入计划模式——那只会拖慢响应。",
+        "Enter plan mode when the task clearly spans multiple files or modules, needs 3 or more ordered implementation steps, involves architecture/API/design trade-offs, or is a high-risk change (refactor, migration, deletion) — enter BEFORE exploring. Also enter when the user explicitly asks for a plan first.",
+        "Do NOT enter for single-file small edits, lookup/explanation requests, or trivial two-step chores — planning there only slows the response down.",
       ],
       parameters: Type.Object({}),
       execute: async (_toolCallId, _params, _signal, _onUpdate, ctx) => {
@@ -205,8 +210,10 @@ export function makePlanModeExtension(): InlineExtension {
         "context (compaction runs; the saved plan becomes the source of intent) / keep planning. On approval the " +
         "agent starts implementing, first writing the plan steps into the todo list.",
       promptSnippet: "exit_plan_mode — request plan approval and return to execution",
+      // 中文版备查：计划保存（plan_save）之后调用 exit_plan_mode 请求用户批准；
+      // 未经批准不要开始实施。被拒或未响应时根据对话反馈修订计划后再次请求。
       promptGuidelines: [
-        "计划保存（plan_save）之后调用 exit_plan_mode 请求用户批准；未经批准不要开始实施。被拒或未响应时根据对话反馈修订计划后再次请求。",
+        "After the plan is saved (plan_save), call exit_plan_mode to request user approval; never start implementing before approval. On decline or no response, revise the plan per the conversation and request again.",
       ],
       parameters: Type.Object({
         summary: Type.Optional(

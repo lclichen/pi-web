@@ -55,8 +55,10 @@ export function makeSessionPlanExtension(): InlineExtension {
         ".pi/plans/plan-sess_<sessionId>.md in the project and shown in the WebUI 计划 panel " +
         "and status capsule. Call it whenever a plan is created or meaningfully revised.",
       promptSnippet: "plan_save — persist the session implementation plan (markdown)",
+      // 中文版备查：产出或实质性修订实施计划后，用 plan_save 保存完整 markdown 计划
+      // （含步骤清单，未完成步骤用 `- [ ]` 复选框表达）；不要把计划只留在对话里。
       promptGuidelines: [
-        "产出或实质性修订实施计划后，用 plan_save 保存完整 markdown 计划（含步骤清单，未完成步骤用 `- [ ]` 复选框表达）；不要把计划只留在对话里。",
+        "After producing or materially revising an implementation plan, save the full markdown with plan_save (steps expressed as `- [ ]` checkboxes); never leave the plan only in the conversation.",
       ],
       parameters: Type.Object({
         content: Type.String({ description: "Full markdown plan. Use `- [ ]` / `- [x]` checkboxes for steps." }),

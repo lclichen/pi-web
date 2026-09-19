@@ -12,6 +12,7 @@ import { getProjectActivity, getRecentProjects, sessionsForProject } from "@/lib
 import { workspaceKeyOf } from "@/lib/workspace-memory";
 import { formatRelativeTime } from "@/lib/i18n/format";
 import { useI18n } from "@/hooks/useI18n";
+import { useResizablePanel } from "@/hooks/useResizablePanel";
 import { DirectoryPicker } from "./DirectoryPicker";
 import { RemoteConnectWizard } from "./RemoteConnectWizard";
 import { FileExplorer, type FileExplorerHandle } from "./FileExplorer";
@@ -191,6 +192,10 @@ interface ValidatedProject {
 const UNREAD_SESSIONS_STORAGE_KEY = "pi-web:unread-session-ids";
 const LAST_CUSTOM_CWD_STORAGE_KEY = "pi-web:last-custom-cwd";
 const RUNNING_SESSIONS_POLL_MS = 2500;
+const SESSION_PANE_DEFAULT_HEIGHT = 320;
+const SESSION_PANE_MIN_HEIGHT = 80;
+const EXPLORER_PANE_MIN_HEIGHT = 120;
+const SESSION_PANE_MAX_HEIGHT = 1600;
 
 function loadLastCustomCwd(): string {
   if (typeof window === "undefined") return "";
@@ -496,6 +501,39 @@ useEffect(() => {
 
   // Virtualized session list: only the visible window of rows is mounted.
   const listScrollRef = useRef<HTMLDivElement>(null);
+  const sessionPaneRef = useRef<HTMLDivElement>(null);
+  const explorerSectionRef = useRef<HTMLDivElement>(null);
+  const sessionPaneHeightRef = useRef(SESSION_PANE_DEFAULT_HEIGHT);
+  const getDefaultSessionPaneHeight = useCallback(() => {
+    if (!explorerOpen) return SESSION_PANE_DEFAULT_HEIGHT;
+    const paneHeight = sessionPaneRef.current?.getBoundingClientRect().height;
+    const explorerHeight = explorerSectionRef.current?.getBoundingClientRect().height;
+    return paneHeight && explorerHeight
+      ? Math.round((paneHeight + explorerHeight) / 2)
+      : SESSION_PANE_DEFAULT_HEIGHT;
+  }, [explorerOpen]);
+  const getMaxSessionPaneHeight = useCallback(() => {
+    if (!explorerOpen || !(selectedCwdProp || selectedCwd)) return SESSION_PANE_MAX_HEIGHT;
+    const paneHeight = sessionPaneRef.current?.getBoundingClientRect().height ?? SESSION_PANE_DEFAULT_HEIGHT;
+    const explorerHeight = explorerSectionRef.current?.getBoundingClientRect().height ?? EXPLORER_PANE_MIN_HEIGHT;
+    return Math.max(
+      SESSION_PANE_MIN_HEIGHT,
+      paneHeight + explorerHeight - EXPLORER_PANE_MIN_HEIGHT,
+    );
+  }, [explorerOpen, selectedCwd, selectedCwdProp]);
+  const sessionPaneResizer = useResizablePanel({
+    ariaLabel: t("layout.resizeSidebarSections"),
+    axis: "vertical",
+    cssVariable: "--sidebar-session-pane-height",
+    defaultWidth: SESSION_PANE_DEFAULT_HEIGHT,
+    getDefaultWidth: getDefaultSessionPaneHeight,
+    getMaxWidth: getMaxSessionPaneHeight,
+    growthDirection: "down",
+    maxWidth: SESSION_PANE_MAX_HEIGHT,
+    minWidth: SESSION_PANE_MIN_HEIGHT,
+    storageKey: "pi-web:sidebar-session-pane-height",
+    widthRef: sessionPaneHeightRef,
+  });
   const [listViewportH, setListViewportH] = useState(0);
   const [listScrollTop, setListScrollTop] = useState(0);
   const [focusedSessionId, setFocusedSessionId] = useState<string | null>(null);
@@ -1117,7 +1155,16 @@ useEffect(() => {
   );
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
+    <div
+      ref={sessionPaneResizer.panelRef}
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        height: "100%",
+        overflow: "hidden",
+        "--sidebar-session-pane-height": `${sessionPaneResizer.width}px`,
+      } as CSSProperties}
+    >
       {showProjectWizard && (
         <RemoteConnectWizard
           onClose={() => setShowProjectWizard(false)}
@@ -1925,12 +1972,29 @@ useEffect(() => {
       </div>
 
       {/* Session list */}
-      <SessionSearch open={sessionSearchOpen} query={sessionSearchQuery} refreshKey={sessionListVersion} selectedSessionId={selectedSessionId} onSelectSession={handleSelectSessionFromList}>
       <div
-        ref={listScrollRef}
-        onScroll={handleListScroll}
-        style={{ flex: !hideFileExplorer && explorerOpen && (selectedCwdProp || selectedCwd) ? "1 1 0" : "1 1 auto", overflowY: "auto", padding: "0", minHeight: 80 }}
+        ref={sessionPaneRef}
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          flex: !hideFileExplorer && explorerOpen && (selectedCwdProp || selectedCwd)
+            ? "0 1 var(--sidebar-session-pane-height, 320px)"
+            : "1 1 auto",
+          minHeight: SESSION_PANE_MIN_HEIGHT,
+          overflow: "hidden",
+        }}
       >
+        <SessionSearch open={sessionSearchOpen} query={sessionSearchQuery} refreshKey={sessionListVersion} selectedSessionId={selectedSessionId} onSelectSession={handleSelectSessionFromList}>
+        <div
+          ref={listScrollRef}
+          onScroll={handleListScroll}
+          style={{
+            flex: "1 1 auto",
+            minHeight: 0,
+            overflowY: "auto",
+            padding: "0",
+          }}
+        >
         {loading && (
           <div style={{ padding: "16px 14px", color: "var(--text-muted)", fontSize: 12 }}>
             {t("sidebar.loading")}
@@ -2022,18 +2086,39 @@ useEffect(() => {
           </div>
           )
         )}
+        </div>
+        </SessionSearch>
       </div>
-      </SessionSearch>
+
+      {!hideFileExplorer && explorerOpen && (selectedCwdProp || selectedCwd) && (
+        <div
+          className={`sidebar-section-resize-handle${sessionPaneResizer.isResizing ? " is-resizing" : ""}`}
+          data-resize-handle="sidebar-sections"
+          title={`${t("layout.resizeSidebarSections")}: ${t("layout.resizeHeightHint")}`}
+          style={{
+            position: "relative",
+            zIndex: 20,
+            width: "100%",
+            height: 12,
+            margin: "-6px 0",
+            flex: "0 0 12px",
+            cursor: "row-resize",
+            touchAction: "none",
+          }}
+          {...sessionPaneResizer.separatorProps}
+        />
+      )}
 
       {/* File Explorer section */}
       {!hideFileExplorer && (selectedCwdProp || selectedCwd) && (
         <div
+          ref={explorerSectionRef}
           style={{
             borderTop: "1px solid var(--border)",
             display: "flex",
             flexDirection: "column",
             flex: explorerOpen ? "1 1 0" : "0 0 auto",
-            minHeight: 0,
+            minHeight: explorerOpen ? EXPLORER_PANE_MIN_HEIGHT : 0,
             overflow: "hidden",
           }}
         >

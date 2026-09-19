@@ -74,3 +74,12 @@ test("the legacy console stays available as a fallback link, not the primary ent
   assert.match(dialogSource, /consoleUrl/);
   assert.match(dialogSource, /完整控制台/);
 });
+
+test("P3 tabs exist: overview/quotas/workspaces/llm/logs", async () => {
+  assert.match(dialogSource, /"overview" \| "users" \| "containers" \| "images" \| "quotas" \| "workspaces" \| "llm" \| "logs"/);
+  assert.match(dialogSource, /\/api\/admin\/overview/);
+  assert.match(dialogSource, /\/api\/admin\/quotas/);
+  assert.match(dialogSource, /\/api\/admin\/workspaces/);
+  assert.match(dialogSource, /\/api\/admin\/llm\/bindings/);
+  assert.match(dialogSource, /\/api\/admin\/logs/);
+});

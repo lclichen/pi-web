@@ -54,12 +54,12 @@ interface Props {
   consoleUrl?: string | null;
 }
 
-type Tab = "users" | "containers" | "images";
+type Tab = "overview" | "users" | "containers" | "images" | "quotas" | "workspaces" | "llm" | "logs";
 type ActionFn = (path: string, init?: RequestInit) => Promise<boolean>;
 
 export function PlatformAdminDialog({ open, onClose, consoleUrl }: Props) {
   const { t } = useI18n();
-  const [tab, setTab] = useState<Tab>("users");
+  const [tab, setTab] = useState<Tab>("overview");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -105,7 +105,7 @@ export function PlatformAdminDialog({ open, onClose, consoleUrl }: Props) {
       >
         {/* header + tabs */}
         <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "10px 16px 0", borderBottom: "1px solid var(--border)" }}>
-          {(["users", "containers", "images"] as const).map((key) => (
+          {(["overview", "users", "containers", "images", "quotas", "workspaces", "llm", "logs"] as const).map((key) => (
             <button
               key={key}
               type="button"
@@ -116,7 +116,7 @@ export function PlatformAdminDialog({ open, onClose, consoleUrl }: Props) {
                 color: tab === key ? "var(--text)" : "var(--text-muted)", fontWeight: tab === key ? 600 : 400,
               }}
             >
-              {key === "users" ? t("用户") : key === "containers" ? t("容器") : t("镜像")}
+              {key === "overview" ? t("概览") : key === "users" ? t("用户") : key === "containers" ? t("容器") : key === "images" ? t("镜像") : key === "quotas" ? t("配额") : key === "workspaces" ? t("工作区") : key === "llm" ? "LLM" : t("日志")}
             </button>
           ))}
           <div style={{ flex: 1 }} />
@@ -140,9 +140,14 @@ export function PlatformAdminDialog({ open, onClose, consoleUrl }: Props) {
           </div>
         )}
 
+        {tab === "overview" && <OverviewTab notify={(n) => setNotice(n)} />}
         {tab === "users" && <UsersTab action={action} notify={(n) => setNotice(n)} />}
         {tab === "containers" && <ContainersTab action={action} notify={(n) => setNotice(n)} />}
         {tab === "images" && <ImagesTab action={action} notify={(n) => setNotice(n)} />}
+        {tab === "quotas" && <QuotasTab action={action} notify={(n) => setNotice(n)} />}
+        {tab === "workspaces" && <WorkspacesTab action={action} notify={(n) => setNotice(n)} />}
+        {tab === "llm" && <LlmTab action={action} notify={(n) => setNotice(n)} />}
+        {tab === "logs" && <LogsTab notify={(n) => setNotice(n)} />}
       </div>
     </div>
   );
@@ -658,8 +663,577 @@ function CreateImageForm({ onCancel, onCreated, action, t }: {
 }
 
 // ---------------------------------------------------------------------------
-// Shared bits
+// P3 tabs: overview / quotas / workspaces / llm / logs
 // ---------------------------------------------------------------------------
+
+interface OverviewData {
+  users: number;
+  images: number;
+  runningContainers: number;
+  recentFailures24h: number;
+  containersByStatus: Record<string, number>;
+  executor: string;
+  dialect: string;
+}
+
+function OverviewTab({ notify }: { notify: (msg: string) => void }) {
+  const { t } = useI18n();
+  const [data, setData] = useState<OverviewData | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/admin/overview", { credentials: "same-origin" });
+      const json = (await res.json()) as OverviewData & { error?: string };
+      if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
+      setData(json);
+    } catch (e) {
+      notify(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  }, [notify]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  if (loading && !data) {
+    return <div style={{ padding: 24, textAlign: "center", color: "var(--text-dim)", fontSize: 12 }}>{t("加载中…")}</div>;
+  }
+  if (!data) return null;
+
+  const cards: Array<[string, string | number, string?]> = [
+    [t("用户总数"), data.users],
+    [t("运行中容器"), data.runningContainers],
+    [t("镜像数"), data.images],
+    [t("24h 失败操作"), data.recentFailures24h, data.recentFailures24h > 0 ? "#f87171" : undefined],
+  ];
+
+  return (
+    <div style={{ flex: 1, overflow: "auto", padding: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10, marginBottom: 14 }}>
+        {cards.map(([label, value, color]) => (
+          <div key={label} style={{ padding: "12px 14px", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 8 }}>
+            <div style={{ fontSize: 10.5, color: "var(--text-dim)", marginBottom: 4 }}>{label}</div>
+            <div style={{ fontSize: 22, fontWeight: 700, fontFamily: "var(--font-mono)", color: color ?? "var(--text)" }}>{value}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginBottom: 14 }}>
+        {Object.entries(data.containersByStatus).map(([status, count]) => (
+          <span key={status} style={{ fontSize: 11.5, padding: "3px 10px", borderRadius: 999, border: "1px solid var(--border)", color: statusColor(status) }}>
+            {status}: <strong style={{ fontFamily: "var(--font-mono)" }}>{count}</strong>
+          </span>
+        ))}
+      </div>
+      <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
+        {t("执行器：{kind} · 数据库：{dialect}", { kind: data.executor, dialect: data.dialect })}
+      </div>
+      <div style={{ marginTop: 12 }}>
+        <button type="button" onClick={() => void load()} style={{ ...pagerBtn }}>{t("刷新")}</button>
+      </div>
+    </div>
+  );
+}
+
+interface QuotaRow {
+  id: number;
+  name: string;
+  description: string | null;
+  max_containers: number;
+  max_cpu_cores: number;
+  max_memory_mb: number;
+  max_disk_gb: number;
+  max_snapshots_per_container: number;
+  max_workspaces_per_user?: number | null;
+}
+
+function QuotasTab({ action, notify }: { action: ActionFn; notify: (msg: string) => void }) {
+  const { t } = useI18n();
+  const [rows, setRows] = useState<QuotaRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [editing, setEditing] = useState<QuotaRow | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/admin/quotas", { credentials: "same-origin" });
+      const data = (await res.json()) as { quotas?: QuotaRow[]; error?: string };
+      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+      setRows(data.quotas ?? []);
+    } catch (e) {
+      notify(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  }, [notify]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const doDelete = async (q: QuotaRow) => {
+    if (!window.confirm(t("确定删除配额 {name}？使用该配额的用户将失去配额限制依据", { name: q.name }))) return;
+    if (await action(`/api/admin/quotas/${q.id}`, { method: "DELETE" })) {
+      notify(t("已删除配额 {name}", { name: q.name }));
+      void load();
+    }
+  };
+
+  return (
+    <>
+      <div style={{ display: "flex", gap: 8, padding: "10px 16px", borderBottom: "1px solid var(--border)", alignItems: "center" }}>
+        <span style={{ fontSize: 11, color: "var(--text-dim)" }}>{t("配额层级（限制每用户可创建的容器/工作区数量与资源）")}</span>
+        <div style={{ flex: 1 }} />
+        <button type="button" onClick={() => setCreating((v) => !v)} style={{ padding: "5px 12px", fontSize: 12, border: "1px solid var(--accent)", color: "var(--accent)", background: "none", borderRadius: 6, cursor: "pointer" }}>
+          {creating ? t("取消") : t("+ 新建配额")}
+        </button>
+      </div>
+      {creating && (
+        <QuotaForm
+          onCancel={() => setCreating(false)}
+          onSaved={async () => { setCreating(false); notify(t("配额已创建")); await load(); }}
+          action={action}
+          t={t}
+        />
+      )}
+      {editing && (
+        <QuotaForm
+          initial={editing}
+          onCancel={() => setEditing(null)}
+          onSaved={async () => { setEditing(null); notify(t("配额已更新")); await load(); }}
+          action={action}
+          t={t}
+        />
+      )}
+      <div style={{ flex: 1, overflow: "auto", padding: "0 8px" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+          <thead>
+            <tr style={{ textAlign: "left", color: "var(--text-dim)", fontSize: 10.5 }}>
+              <th style={{ padding: "8px 8px", fontWeight: 500 }}>#</th>
+              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("名称")}</th>
+              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("容器")}</th>
+              <th style={{ padding: "8px 8px", fontWeight: 500 }}>CPU</th>
+              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("内存")}</th>
+              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("磁盘")}</th>
+              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("快照/容器")}</th>
+              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("操作")}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading && <tr><td colSpan={8} style={{ padding: 18, textAlign: "center", color: "var(--text-dim)" }}>{t("加载中…")}</td></tr>}
+            {!loading && rows.map((q) => (
+              <tr key={q.id} style={{ borderTop: "1px solid var(--border)" }}>
+                <td style={{ padding: "7px 8px", color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>{q.id}</td>
+                <td style={{ padding: "7px 8px", fontWeight: 500 }} title={q.description ?? undefined}>{q.name}</td>
+                <td style={{ padding: "7px 8px", fontFamily: "var(--font-mono)" }}>{q.max_containers}</td>
+                <td style={{ padding: "7px 8px", fontFamily: "var(--font-mono)" }}>{q.max_cpu_cores}</td>
+                <td style={{ padding: "7px 8px", fontFamily: "var(--font-mono)" }}>{Math.round(q.max_memory_mb / 1024)}G</td>
+                <td style={{ padding: "7px 8px", fontFamily: "var(--font-mono)" }}>{q.max_disk_gb}G</td>
+                <td style={{ padding: "7px 8px", fontFamily: "var(--font-mono)" }}>{q.max_snapshots_per_container}</td>
+                <td style={{ padding: "7px 8px", whiteSpace: "nowrap" }}>
+                  <MiniButton onClick={() => setEditing(q)} accent>{t("编辑")}</MiniButton>
+                  <MiniButton onClick={() => void doDelete(q)} danger>{t("删除")}</MiniButton>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
+function QuotaForm({ initial, onCancel, onSaved, action, t }: {
+  initial?: QuotaRow;
+  onCancel: () => void;
+  onSaved: () => void;
+  action: ActionFn;
+  t: (key: string, params?: Record<string, string>) => string;
+}) {
+  const [name, setName] = useState(initial?.name ?? "");
+  const [description, setDescription] = useState(initial?.description ?? "");
+  const [maxContainers, setMaxContainers] = useState(String(initial?.max_containers ?? 5));
+  const [maxCpu, setMaxCpu] = useState(String(initial?.max_cpu_cores ?? 4));
+  const [maxMemGb, setMaxMemGb] = useState(String(Math.round((initial?.max_memory_mb ?? 8192) / 1024)));
+  const [maxDiskGb, setMaxDiskGb] = useState(String(initial?.max_disk_gb ?? 20));
+  const [maxSnapshots, setMaxSnapshots] = useState(String(initial?.max_snapshots_per_container ?? 5));
+  const [busy, setBusy] = useState(false);
+
+  const valid = name.length > 0 && /^\d+$/.test(maxContainers) && /^\d+$/.test(maxCpu) && /^\d+$/.test(maxMemGb) && /^\d+$/.test(maxDiskGb) && /^\d+$/.test(maxSnapshots);
+  const num = (v: string) => Number(v);
+
+  const submit = async () => {
+    if (!valid) return;
+    setBusy(true);
+    const body = { name, description: description || undefined, max_containers: num(maxContainers), max_cpu_cores: num(maxCpu), max_memory_mb: num(maxMemGb) * 1024, max_disk_gb: num(maxDiskGb), max_snapshots_per_container: num(maxSnapshots) };
+    const ok = initial
+      ? await action(`/api/admin/quotas/${initial.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+      : await action("/api/admin/quotas", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    setBusy(false);
+    if (ok) onSaved();
+  };
+
+  const field = (label: string, value: string, set: (v: string) => void, width = 70) => (
+    <label style={{ display: "flex", flexDirection: "column", gap: 3, fontSize: 10.5, color: "var(--text-dim)" }}>
+      {label}
+      <input
+        value={value}
+        onChange={(e) => set(e.target.value)}
+        style={{ width, padding: "5px 8px", fontSize: 12, background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text)", fontFamily: "var(--font-mono)" }}
+      />
+    </label>
+  );
+
+  return (
+    <div style={{ display: "flex", gap: 10, padding: "12px 16px", borderBottom: "1px solid var(--border)", flexWrap: "wrap", alignItems: "flex-end" }}>
+      {field(t("名称"), name, setName, 110)}
+      {field(t("描述"), description, setDescription, 160)}
+      {field(t("容器上限"), maxContainers, setMaxContainers)}
+      {field("CPU", maxCpu, setMaxCpu)}
+      {field(t("内存 (GB)"), maxMemGb, setMaxMemGb)}
+      {field(t("磁盘 (GB)"), maxDiskGb, setMaxDiskGb)}
+      {field(t("快照上限"), maxSnapshots, setMaxSnapshots)}
+      <button type="button" disabled={busy || !valid} onClick={() => void submit()} style={{ padding: "6px 14px", fontSize: 12, border: "1px solid var(--accent)", color: "var(--accent)", background: "none", borderRadius: 6, cursor: "pointer", opacity: busy || !valid ? 0.4 : 1 }}>
+        {initial ? t("保存") : t("创建")}
+      </button>
+      <button type="button" onClick={onCancel} style={{ padding: "6px 14px", fontSize: 12, border: "1px solid var(--border)", color: "var(--text-muted)", background: "none", borderRadius: 6, cursor: "pointer" }}>
+        {t("取消")}
+      </button>
+    </div>
+  );
+}
+
+interface WorkspaceRow {
+  id: number;
+  name: string;
+  owner_username?: string | null;
+  description: string | null;
+  size_bytes: number;
+  file_count: number;
+  source_container_id: number | null;
+  created_at: string;
+}
+
+function WorkspacesTab({ action, notify }: { action: ActionFn; notify: (msg: string) => void }) {
+  const { t } = useI18n();
+  const [rows, setRows] = useState<WorkspaceRow[]>([]);
+  const [total, setTotal] = useState(0);
+  const [offset, setOffset] = useState(0);
+  const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(false);
+  const PAGE = 20;
+
+  const load = useCallback(async (nextOffset = 0) => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({ limit: String(PAGE), offset: String(nextOffset) });
+      if (search.trim()) params.set("search", search.trim());
+      const res = await fetch(`/api/admin/workspaces?${params}`, { credentials: "same-origin" });
+      const data = (await res.json()) as { workspaces?: WorkspaceRow[]; total?: number; error?: string };
+      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+      setRows(data.workspaces ?? []);
+      setTotal(data.total ?? 0);
+      setOffset(nextOffset);
+    } catch (e) {
+      notify(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  }, [search, notify]);
+
+  useEffect(() => {
+    void load(0);
+  }, [load]);
+
+  const doDelete = async (ws: WorkspaceRow) => {
+    if (!window.confirm(t("确定删除工作区 {name}（{owner}）？存储目录将一并删除", { name: ws.name, owner: ws.owner_username ?? "?" }))) return;
+    if (await action(`/api/admin/workspaces/${ws.id}`, { method: "DELETE" })) {
+      notify(t("已删除工作区 {name}", { name: ws.name }));
+      void load(offset);
+    }
+  };
+
+  const pages = Math.max(1, Math.ceil(total / PAGE));
+  const page = Math.floor(offset / PAGE) + 1;
+  const fmtSize = (bytes: number): string =>
+    bytes > 1024 * 1024 * 1024 ? `${(bytes / 1024 / 1024 / 1024).toFixed(1)}G` : bytes > 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)}M` : `${Math.round(bytes / 1024)}K`;
+
+  return (
+    <>
+      <div style={{ display: "flex", gap: 8, padding: "10px 16px", borderBottom: "1px solid var(--border)" }}>
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") void load(0); }}
+          placeholder={t("搜索工作区名称")}
+          style={{ flex: 1, padding: "5px 9px", fontSize: 12, background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text)" }}
+        />
+        <button type="button" onClick={() => void load(0)} style={{ padding: "5px 12px", fontSize: 12, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text)", borderRadius: 6, cursor: "pointer" }}>
+          {t("搜索")}
+        </button>
+      </div>
+      <div style={{ flex: 1, overflow: "auto", padding: "0 8px" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+          <thead>
+            <tr style={{ textAlign: "left", color: "var(--text-dim)", fontSize: 10.5 }}>
+              <th style={{ padding: "8px 8px", fontWeight: 500 }}>#</th>
+              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("名称")}</th>
+              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("所有者")}</th>
+              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("大小")}</th>
+              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("文件数")}</th>
+              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("来源容器")}</th>
+              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("操作")}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading && <tr><td colSpan={7} style={{ padding: 18, textAlign: "center", color: "var(--text-dim)" }}>{t("加载中…")}</td></tr>}
+            {!loading && rows.length === 0 && <tr><td colSpan={7} style={{ padding: 18, textAlign: "center", color: "var(--text-dim)" }}>{t("没有工作区")}</td></tr>}
+            {!loading && rows.map((ws) => (
+              <tr key={ws.id} style={{ borderTop: "1px solid var(--border)" }}>
+                <td style={{ padding: "7px 8px", color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>{ws.id}</td>
+                <td style={{ padding: "7px 8px", fontWeight: 500 }} title={ws.description ?? undefined}>{ws.name}</td>
+                <td style={{ padding: "7px 8px", color: "var(--text-muted)" }}>{ws.owner_username ?? "—"}</td>
+                <td style={{ padding: "7px 8px", fontFamily: "var(--font-mono)", color: "var(--text-dim)" }}>{fmtSize(ws.size_bytes)}</td>
+                <td style={{ padding: "7px 8px", fontFamily: "var(--font-mono)", color: "var(--text-dim)" }}>{ws.file_count}</td>
+                <td style={{ padding: "7px 8px", fontFamily: "var(--font-mono)", color: "var(--text-dim)" }}>{ws.source_container_id ? `#${ws.source_container_id}` : "—"}</td>
+                <td style={{ padding: "7px 8px" }}>
+                  <MiniButton onClick={() => void doDelete(ws)} danger>{t("删除")}</MiniButton>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <Pager page={page} pages={pages} loading={loading} onNav={(o) => void load(o)} pageSize={PAGE} total={total} noun={t("个")} />
+    </>
+  );
+}
+
+interface LlmBindingRow {
+  id: number;
+  platform_user_id: number;
+  username?: string | null;
+  max_budget: number;
+  budget_duration: string | null;
+  models: string[] | null;
+  granted_at: string;
+  revoked_at: string | null;
+}
+
+function LlmTab({ action, notify }: { action: ActionFn; notify: (msg: string) => void }) {
+  const { t } = useI18n();
+  const [rows, setRows] = useState<LlmBindingRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [grantUserId, setGrantUserId] = useState("");
+  const [grantBudget, setGrantBudget] = useState("10");
+  const [plaintext, setPlaintext] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/admin/llm/bindings", { credentials: "same-origin" });
+      const data = (await res.json()) as { bindings?: LlmBindingRow[]; error?: string };
+      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+      setRows(data.bindings ?? []);
+    } catch (e) {
+      notify(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  }, [notify]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const doGrant = async () => {
+    if (!/^\d+$/.test(grantUserId) || !/^\d+(\.\d+)?$/.test(grantBudget)) return;
+    const ok = await action("/api/admin/llm/bindings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ platformUserId: Number(grantUserId), maxBudget: Number(grantBudget), budgetDuration: "monthly" }),
+    });
+    if (ok) {
+      notify(t("已授权用户 #{id}（预算 {budget}/月）", { id: grantUserId, budget: grantBudget }));
+      setGrantUserId("");
+      void load();
+    }
+  };
+
+  const doRevoke = async (b: LlmBindingRow) => {
+    if (!window.confirm(t("确定撤销用户 #{id} 的 LLM 访问？其虚拟密钥将立即失效", { id: String(b.platform_user_id) }))) return;
+    if (await action(`/api/admin/llm/bindings/${b.platform_user_id}`, { method: "DELETE" })) {
+      notify(t("已撤销用户 #{id} 的 LLM 访问", { id: String(b.platform_user_id) }));
+      void load();
+    }
+  };
+
+  return (
+    <>
+      <div style={{ display: "flex", gap: 8, padding: "10px 16px", borderBottom: "1px solid var(--border)", alignItems: "center", flexWrap: "wrap" }}>
+        <span style={{ fontSize: 11, color: "var(--text-dim)" }}>{t("LLM 访问授权（绑定平台用户与虚拟密钥预算）")}</span>
+        <div style={{ flex: 1 }} />
+        <input
+          value={grantUserId}
+          onChange={(e) => setGrantUserId(e.target.value)}
+          placeholder={t("用户 #id")}
+          style={{ width: 90, padding: "5px 8px", fontSize: 12, background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text)", fontFamily: "var(--font-mono)" }}
+        />
+        <input
+          value={grantBudget}
+          onChange={(e) => setGrantBudget(e.target.value)}
+          placeholder={t("预算")}
+          style={{ width: 70, padding: "5px 8px", fontSize: 12, background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text)", fontFamily: "var(--font-mono)" }}
+        />
+        <button
+          type="button"
+          disabled={!/^\d+$/.test(grantUserId) || !/^\d+(\.\d+)?$/.test(grantBudget)}
+          onClick={() => void doGrant()}
+          style={{ padding: "5px 12px", fontSize: 12, border: "1px solid var(--accent)", color: "var(--accent)", background: "none", borderRadius: 6, cursor: "pointer", opacity: !/^\d+$/.test(grantUserId) || !/^\d+(\.\d+)?$/.test(grantBudget) ? 0.4 : 1 }}
+        >
+          {t("授权")}
+        </button>
+      </div>
+      <div style={{ flex: 1, overflow: "auto", padding: "0 8px" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+          <thead>
+            <tr style={{ textAlign: "left", color: "var(--text-dim)", fontSize: 10.5 }}>
+              <th style={{ padding: "8px 8px", fontWeight: 500 }}>#</th>
+              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("用户")}</th>
+              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("预算")}</th>
+              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("周期")}</th>
+              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("模型")}</th>
+              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("状态")}</th>
+              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("操作")}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading && <tr><td colSpan={7} style={{ padding: 18, textAlign: "center", color: "var(--text-dim)" }}>{t("加载中…")}</td></tr>}
+            {!loading && rows.length === 0 && <tr><td colSpan={7} style={{ padding: 18, textAlign: "center", color: "var(--text-dim)" }}>{t("没有 LLM 授权")}</td></tr>}
+            {!loading && rows.map((b) => (
+              <tr key={b.id} style={{ borderTop: "1px solid var(--border)" }}>
+                <td style={{ padding: "7px 8px", color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>{b.id}</td>
+                <td style={{ padding: "7px 8px", fontWeight: 500 }}>#{b.platform_user_id}{b.username ? ` ${b.username}` : ""}</td>
+                <td style={{ padding: "7px 8px", fontFamily: "var(--font-mono)" }}>{b.max_budget}</td>
+                <td style={{ padding: "7px 8px", color: "var(--text-muted)" }}>{b.budget_duration ?? "—"}</td>
+                <td style={{ padding: "7px 8px", color: "var(--text-muted)", fontSize: 11 }}>{b.models ? b.models.join(", ") : t("全部")}</td>
+                <td style={{ padding: "7px 8px", color: b.revoked_at ? "var(--text-dim)" : "var(--success, #22c55e)" }}>{b.revoked_at ? t("已撤销") : t("生效中")}</td>
+                <td style={{ padding: "7px 8px" }}>
+                  {!b.revoked_at && <MiniButton onClick={() => void doRevoke(b)} danger>{t("撤销")}</MiniButton>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
+interface LogRow {
+  id: number;
+  user_id: number | null;
+  action: string;
+  resource_type: string | null;
+  resource_id: number | null;
+  status: string;
+  detail: string | null;
+  created_at: string;
+}
+
+function LogsTab({ notify }: { notify: (msg: string) => void }) {
+  const { t } = useI18n();
+  const [rows, setRows] = useState<LogRow[]>([]);
+  const [total, setTotal] = useState(0);
+  const [offset, setOffset] = useState(0);
+  const [actionFilter, setActionFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [loading, setLoading] = useState(false);
+  const PAGE = 30;
+
+  const load = useCallback(async (nextOffset = 0) => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({ limit: String(PAGE), offset: String(nextOffset) });
+      if (actionFilter.trim()) params.set("action", actionFilter.trim());
+      if (statusFilter) params.set("status", statusFilter);
+      const res = await fetch(`/api/admin/logs?${params}`, { credentials: "same-origin" });
+      const data = (await res.json()) as { logs?: LogRow[]; total?: number; error?: string };
+      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+      setRows(data.logs ?? []);
+      setTotal(data.total ?? 0);
+      setOffset(nextOffset);
+    } catch (e) {
+      notify(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  }, [actionFilter, statusFilter, notify]);
+
+  useEffect(() => {
+    void load(0);
+  }, [load]);
+
+  const pages = Math.max(1, Math.ceil(total / PAGE));
+  const page = Math.floor(offset / PAGE) + 1;
+
+  return (
+    <>
+      <div style={{ display: "flex", gap: 8, padding: "10px 16px", borderBottom: "1px solid var(--border)" }}>
+        <input
+          value={actionFilter}
+          onChange={(e) => setActionFilter(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") void load(0); }}
+          placeholder={t("按操作过滤（如 container.create）")}
+          style={{ flex: 1, padding: "5px 9px", fontSize: 12, background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text)", fontFamily: "var(--font-mono)" }}
+        />
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={{ padding: "5px 7px", fontSize: 12, background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text)" }}>
+          <option value="">{t("全部状态")}</option>
+          <option value="success">success</option>
+          <option value="failure">failure</option>
+        </select>
+        <button type="button" onClick={() => void load(0)} style={{ padding: "5px 12px", fontSize: 12, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text)", borderRadius: 6, cursor: "pointer" }}>
+          {t("搜索")}
+        </button>
+      </div>
+      <div style={{ flex: 1, overflow: "auto", padding: "0 8px" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+          <thead>
+            <tr style={{ textAlign: "left", color: "var(--text-dim)", fontSize: 10.5 }}>
+              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("时间")}</th>
+              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("用户")}</th>
+              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("操作")}</th>
+              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("资源")}</th>
+              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("状态")}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading && <tr><td colSpan={5} style={{ padding: 18, textAlign: "center", color: "var(--text-dim)" }}>{t("加载中…")}</td></tr>}
+            {!loading && rows.length === 0 && <tr><td colSpan={5} style={{ padding: 18, textAlign: "center", color: "var(--text-dim)" }}>{t("没有日志")}</td></tr>}
+            {!loading && rows.map((log) => (
+              <tr key={log.id} style={{ borderTop: "1px solid var(--border)" }}>
+                <td style={{ padding: "7px 8px", color: "var(--text-dim)", fontFamily: "var(--font-mono)", fontSize: 11, whiteSpace: "nowrap" }}>
+                  {log.created_at?.replace("T", " ").slice(0, 19)}
+                </td>
+                <td style={{ padding: "7px 8px", color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>{log.user_id ?? "—"}</td>
+                <td style={{ padding: "7px 8px", fontFamily: "var(--font-mono)", fontSize: 11 }} title={log.detail ?? undefined}>{log.action}</td>
+                <td style={{ padding: "7px 8px", color: "var(--text-dim)", fontFamily: "var(--font-mono)", fontSize: 11 }}>
+                  {log.resource_type ? `${log.resource_type}${log.resource_id ? `#${log.resource_id}` : ""}` : "—"}
+                </td>
+                <td style={{ padding: "7px 8px", color: log.status === "failure" ? "#f87171" : "var(--success, #22c55e)" }}>{log.status}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <Pager page={page} pages={pages} loading={loading} onNav={(o) => void load(o)} pageSize={PAGE} total={total} noun={t("条")} />
+    </>
+  );
+}
 
 function statusColor(s: string): string {
   return (

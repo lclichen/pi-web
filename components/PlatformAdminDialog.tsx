@@ -50,14 +50,12 @@ export interface PlatformImageRow {
 interface Props {
   open: boolean;
   onClose: () => void;
-  /** Legacy console URL — kept as a fallback link until P3 pages land. */
-  consoleUrl?: string | null;
 }
 
 type Tab = "overview" | "users" | "containers" | "images" | "quotas" | "workspaces" | "llm" | "logs";
 type ActionFn = (path: string, init?: RequestInit) => Promise<boolean>;
 
-export function PlatformAdminDialog({ open, onClose, consoleUrl }: Props) {
+export function PlatformAdminDialog({ open, onClose }: Props) {
   const { t } = useI18n();
   const [tab, setTab] = useState<Tab>("overview");
   const [error, setError] = useState<string | null>(null);
@@ -120,17 +118,6 @@ export function PlatformAdminDialog({ open, onClose, consoleUrl }: Props) {
             </button>
           ))}
           <div style={{ flex: 1 }} />
-          {consoleUrl && (
-            <a
-              href={consoleUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{ fontSize: 11, color: "var(--text-muted)", textDecoration: "none", paddingBottom: 8 }}
-              title={t("完整管理台（旧版控制台，功能逐步迁入）")}
-            >
-              {t("完整控制台 ↗")}
-            </a>
-          )}
           <button type="button" onClick={onClose} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 15, paddingBottom: 6 }}>✕</button>
         </div>
 

@@ -185,10 +185,8 @@ export function AppShell() {
   // default; admins can flip it at runtime via /api/server-settings).
   const [labTrainingEnabled, setLabTrainingEnabled] = useState(true);
   const [authEnabled, setAuthEnabled] = useState(true);
-  // Admin-only link to the sandbox platform ops console (from /api/webauth/me).
-  const [platformConsoleUrl, setPlatformConsoleUrl] = useState<string | null>(null);
-  // In-app platform admin panel (P1: users; the console link stays as the
-  // full-feature fallback until later batches migrate in).
+  // In-app platform admin panel (all management pages migrated; the legacy
+  // external console link is retired).
   const [platformAdminOpen, setPlatformAdminOpen] = useState(false);
   // Sandbox manager dialog: null = closed; bind = project context (optional).
   const [myWorkspaceOpen, setMyWorkspaceOpen] = useState(false);
@@ -2334,11 +2332,11 @@ export function AppShell() {
               <span>{translate("沙箱容器")}</span>
             </button>
           )}
-          {platformConsoleUrl && webUser && webUser !== "loading" && webUser.role === "admin" && (
+          {webUser && webUser !== "loading" && webUser.role === "admin" && (
             <button
               type="button"
               onClick={() => setPlatformAdminOpen(true)}
-              title={translate("平台管理（用户/密码重置；完整控制台在面板内）")}
+              title={translate("平台管理")}
               style={{
                 display: "flex", alignItems: "center", gap: 6, height: "100%",
                 padding: "0 12px", background: "none",
@@ -3178,7 +3176,6 @@ export function AppShell() {
     <PlatformAdminDialog
       open={platformAdminOpen}
       onClose={() => setPlatformAdminOpen(false)}
-      consoleUrl={platformConsoleUrl}
     />
     {sandboxManager !== null && (
       <SandboxManagerDialog

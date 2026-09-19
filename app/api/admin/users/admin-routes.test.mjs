@@ -70,9 +70,10 @@ test("reset-password flow enforces the 8-char policy client-side and reports ses
   assert.match(dialogSource, /重置后该用户的所有会话与登录态立即失效/);
 });
 
-test("the legacy console stays available as a fallback link, not the primary entry", async () => {
-  assert.match(dialogSource, /consoleUrl/);
-  assert.match(dialogSource, /完整控制台/);
+test("the legacy external console link is fully retired", async () => {
+  assert.ok(!/consoleUrl/.test(dialogSource), "no consoleUrl prop should remain");
+  assert.ok(!/完整控制台/.test(dialogSource), "no fallback console link should remain");
+  assert.ok(!/完整管理台/.test(dialogSource), "no legacy console mention should remain");
 });
 
 test("P3 tabs exist: overview/quotas/workspaces/llm/logs", async () => {

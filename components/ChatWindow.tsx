@@ -312,6 +312,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
     agentPhase,
     subagentCalls,
     isNew,
+    showScrollToBottom,
     sessionIdRef, scrollContainerRef,
     lastUserMsgRef, promptAnchorActive,
     handleSend, handleAbort, handleFork, handleNavigate, handleModelChange,
@@ -1495,6 +1496,31 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
           内联在上方 hero 里——两处同时渲染会叠出两层聊天 UI。 */}
       {!isEmptyNew && (
       <div className="relative shrink-0">
+        <div
+          style={{
+            position: "absolute",
+            bottom: "100%",
+            left: 0,
+            right: isMobile ? 0 : CHAT_MINIMAP_WIDTH,
+            display: "flex",
+            justifyContent: "center",
+            paddingBottom: 10,
+            pointerEvents: "none",
+            zIndex: 20,
+          }}
+        >
+          <button
+            type="button"
+            className={`chat-scroll-to-bottom${showScrollToBottom && !pendingScrollRestore ? " is-visible" : ""}`}
+            title={t("chat.scrollToLatest")}
+            aria-label={t("chat.scrollToLatest")}
+            onClick={() => scrollToBottom("smooth")}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M12 5v14M5 12l7 7 7-7" />
+            </svg>
+          </button>
+        </div>
         <div
           style={{
             padding: `0 ${CHAT_COLUMN_PADDING}px`,

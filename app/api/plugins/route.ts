@@ -122,7 +122,9 @@ function getRelativePath(resource: ResolvedResource): string {
   const baseDir = resource.metadata.baseDir;
   if (!baseDir) return resource.path;
   const rel = relative(baseDir, resource.path);
-  return rel && !rel.startsWith("..") ? rel : resource.path;
+  // Normalize to forward slashes so API output is stable across platforms
+  // (Node's path.relative returns backslashes on Windows).
+  return rel && !rel.startsWith("..") ? rel.split(sep).join("/") : resource.path;
 }
 
 function getConfiguredVersion(source: string): string | undefined {

@@ -18,12 +18,20 @@ export async function register(): Promise<void> {
     } catch (err) {
       console.error("[relay] failed to start agent relay server:", err);
     }
-    // Ctrl+C used to hang whenever a browser tab was open: Next's graceful
-    // shutdown waits for open connections, and the UI's SSE streams never
-    // finish. Close our sockets + force-exit after a grace window.
+  }
+
+  // In production Next 16 answers SIGINT/SIGTERM with server.close() and waits
+  // for every connection to end, without a timeout. SSE streams only end when
+  // the client disconnects, so close them here or the process never exits.
+  const { closeAllAgentEventStreams } = await import("@/lib/agent-event-stream");
+  const shutdownStreams = () => closeAllAgentEventStreams();
+
+  if (process.env.PI_RELAY_DISABLE !== "1" && isServerPhase) {
+    // Full handler: SSE + relay sockets + force exit after grace window.
     const { createShutdownHandler } = await import("@/lib/shutdown");
     const shutdown = createShutdownHandler({
       closeServers: () => {
+        shutdownStreams();
         const relay = globalThis.__piRelayServer;
         if (relay) {
           relay.server.close();
@@ -33,5 +41,9 @@ export async function register(): Promise<void> {
     });
     process.once("SIGINT", () => shutdown("SIGINT"));
     process.once("SIGTERM", () => shutdown("SIGTERM"));
+  } else {
+    // Minimal path (relay disabled or non-server phase): just close SSE.
+    process.on("SIGINT", shutdownStreams);
+    process.on("SIGTERM", shutdownStreams);
   }
 }

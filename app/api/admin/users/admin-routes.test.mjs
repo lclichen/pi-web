@@ -46,16 +46,23 @@ test("user ids are numerically validated before hitting the platform", async () 
 
 test("the panel never touches platform URLs from the browser", async () => {
   assert.ok(!/PI_WEB_PLATFORM_URL|platformUrl\(\)/.test(dialogSource), "browser code must stay platform-agnostic");
-  // Every backend interaction targets the BFF proxy (list + create + reset +
-  // patch + delete + approve/reject ride /api/admin/users — 6 call sites,
-  // approve/reject share one).
-  const targets = [...dialogSource.matchAll(/["'`](\/api\/admin\/users[^"'`]*)["'`]/g)].map((m) => m[1]);
-  assert.ok(targets.length >= 6, `expected >=6 BFF call sites, found ${targets.length}`);
+  // Every backend interaction targets the BFF proxy across all three tabs
+  // (users + containers + images: list/create/reset/patch/delete/lifecycle).
+  const targets = [...dialogSource.matchAll(/["'`](\/api\/admin\/[a-z]+[^"'`]*)["'`]/g)].map((m) => m[1]);
+  assert.ok(targets.length >= 12, `expected >=12 BFF call sites, found ${targets.length}`);
   // And no other absolute API paths are fetched.
   const allApiRefs = [...dialogSource.matchAll(/["'`](\/api\/[^"'`]+)["'`]/g)].map((m) => m[1]);
   for (const ref of allApiRefs) {
-    assert.ok(ref.startsWith("/api/admin/users"), `unexpected API target: ${ref}`);
+    assert.ok(ref.startsWith("/api/admin/"), `unexpected API target: ${ref}`);
   }
+});
+
+test("P2 tabs exist: containers lifecycle + image catalogue actions", async () => {
+  assert.match(dialogSource, /"containers" \| "images"/);
+  assert.match(dialogSource, /\/api\/admin\/containers\/\$\{row\.id\}\/\$\{act\}/);
+  assert.match(dialogSource, /\/api\/admin\/containers\/\$\{row\.id\}`/);
+  assert.match(dialogSource, /\/api\/admin\/images\/\$\{img\.id\}/);
+  assert.match(dialogSource, /owner_username/);
 });
 
 test("reset-password flow enforces the 8-char policy client-side and reports session invalidation", async () => {

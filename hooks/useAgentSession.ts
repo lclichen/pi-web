@@ -22,6 +22,7 @@ import { mergeSessionStats, type SessionFileStats } from "@/lib/session-stats";
 import { userMessageKey } from "@/lib/prompt-recovery";
 import { AgentEventConnection } from "@/lib/agent-event-connection";
 import { getToolExecutionProgress } from "@/lib/tool-execution-progress";
+import { updateExtensionWidgets } from "@/lib/extension-widgets";
 import {
   CHAT_SCROLL_REATTACH_TOLERANCE,
   CHAT_SCROLL_TAIL_TOLERANCE,
@@ -900,17 +901,13 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         });
         break;
       case "setWidget":
-        setExtensionWidgets((prev) => {
-          const rest = prev.filter((item) => item.key !== request.widgetKey);
-          return request.widgetLines
-            ? [...rest, {
-                key: request.widgetKey,
-                lines: request.widgetLines,
-                placement: request.widgetPlacement ?? "aboveEditor",
-                metadata: request.widgetMetadata,
-              }]
-            : rest;
-        });
+        setExtensionWidgets((prev) => updateExtensionWidgets(
+          prev,
+          request.widgetKey,
+          request.widgetLines,
+          request.widgetPlacement,
+          request.widgetMetadata,
+        ));
         break;
       case "setTitle":
         if (request.title) document.title = request.title;

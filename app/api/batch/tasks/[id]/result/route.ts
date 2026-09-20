@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireBatchIdentity } from "@/lib/batch/batch-auth";
 import { isApiRequestAllowed } from "@/lib/request-security";
 import { getTask, isTerminal } from "@/lib/batch/task-store";
+import { getBatchVersionInfo } from "@/lib/batch/version-info";
 
 export const dynamic = "force-dynamic";
 
@@ -39,5 +40,6 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     durationMs: task.endedAt && task.startedAt ? task.endedAt - task.startedAt : undefined,
     workDir: task.actualWorkDir,
     error: task.error,
+    versions: getBatchVersionInfo(),
   });
 }

@@ -121,7 +121,13 @@ X-Platform-API-Key: sk-...
   },
   "durationMs": 45230,
   "workDir": "/data/tests/my-project-2",      // 实际使用的目录（可能带后缀）
-  "error": null                   // failed 时的错误信息
+  "error": null,                  // failed 时的错误信息
+  "versions": {                   // 框架与配置包版本（用于跨部署对比）
+    "frameworkVersion": "0.0.1-alpha",
+    "frameworkChannel": "alpha",
+    "piSdkVersion": "0.85.1",
+    "configBundleVersion": "4"    // null = 开发环境（未部署离线包）
+  }
 }
 ```
 
@@ -179,7 +185,13 @@ X-Platform-API-Key: sk-...
   "sessionFile": "/data/sessions/batch-a1b2c3d4.jsonl",
   "durationMs": 45230,
   "workDir": "/data/tests/my-project-2",
-  "error": null
+  "error": null,
+  "versions": {
+    "frameworkVersion": "0.0.1-alpha",
+    "frameworkChannel": "alpha",
+    "piSdkVersion": "0.85.1",
+    "configBundleVersion": "4"
+  }
 }
 ```
 

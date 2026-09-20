@@ -3,6 +3,7 @@ import { platformAnonPost, platformPostBearer, type PlatformApiKeyCreated, type 
 import { createWebSession, isWebAuthEnabled, sessionCookieHeader } from "@/lib/web-session";
 import { isApiRequestAllowed, hasJsonContentType } from "@/lib/request-security";
 import { clientIpOf, consumeRateLimit } from "@/lib/rate-limit";
+import { consumeInitialPasswordIfMatch } from "@/lib/initial-password";
 
 export const dynamic = "force-dynamic";
 
@@ -97,8 +98,11 @@ export async function POST(req: Request) {
   }
 
   const session = createWebSession(user, key.key, key.id);
+  // 首次用初始密码成功登录 → 消费密码文件（登录页首启横幅随之消失），
+  // 并告知前端提醒改密。非初始密码登录不触碰文件。
+  const usedInitialPassword = user.username === "admin" && consumeInitialPasswordIfMatch(password);
   return NextResponse.json(
-    { user: session.user },
+    { user: session.user, ...(usedInitialPassword ? { usedInitialPassword: true } : {}) },
     { headers: { "Set-Cookie": sessionCookieHeader(session.sid) } },
   );
 }

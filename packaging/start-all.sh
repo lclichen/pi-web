@@ -375,6 +375,9 @@ EOF
     # AppImage 环境变量识别（squashfs 只读，更新策略不同，不能误判成 tarball）。
     export AMEDAC_APP_ROOT="$PKG"
     export AMEDAC_PKG_KIND="$(cat "$PKG/pkg-kind" 2>/dev/null || { [ -n "${APPIMAGE:-}" ] && echo appimage || echo tarball; })"
+    # 首启引导：初始密码文件路径交给 WebUI（登录页在本机浏览器直接显示，
+    # 首次用它登录成功后由服务端删除）。源码部署无此 env → 功能静默关闭。
+    export PI_WEB_INITIAL_PASSWORD_FILE="$ADMIN_PW_FILE"
     setsid nohup "$NODE_BIN" ./node_modules/next/dist/bin/next start -H 0.0.0.0 -p "$WEB_PORT" \
       > "$LOG_DIR/web.log" 2>&1 < /dev/null &
     echo $! > "$RUN_DIR/web.pid"

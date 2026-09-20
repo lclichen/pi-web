@@ -28,12 +28,22 @@ function LoginForm() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // 首启引导：初始密码文件仍在时（打包部署首次运行），回环访问显示
+  // admin + 初始密码，非回环给「请在本机打开」提示；首次用它登录成功
+  // 后文件被服务端消费，刷新即消失。
+  const [firstRun, setFirstRun] = useState<{ username?: string; password?: string; hint?: string } | null>(null);
 
   useEffect(() => {
     fetch("/api/webauth/config")
       .then((r) => r.json())
       .then((d: { registerMode?: "off" | "open" | "approval" }) => {
         if (d.registerMode) setRegisterMode(d.registerMode);
+      })
+      .catch(() => {});
+    fetch("/api/webauth/first-run")
+      .then((r) => r.json())
+      .then((d: { needed?: boolean; username?: string; password?: string; hint?: string }) => {
+        if (d.needed) setFirstRun({ username: d.username, password: d.password, hint: d.hint });
       })
       .catch(() => {});
     // Returning from a must-change-password login: the cookie session holds
@@ -61,12 +71,16 @@ function LoginForm() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ username, password }),
         });
-        const d = (await res.json()) as { mustChangePassword?: boolean; error?: string };
+        const d = (await res.json()) as { mustChangePassword?: boolean; usedInitialPassword?: boolean; error?: string };
         if (!res.ok) throw new Error(d.error ?? `HTTP ${res.status}`);
         if (d.mustChangePassword) {
           setPhase("change-password");
           setNotice("首次登录需要修改密码。");
           return;
+        }
+        if (d.usedInitialPassword) {
+          // 仍在用初始密码——文件已被服务端消费（横幅消失），进站后提示改密。
+          setNotice("你正在使用初始密码登录。为了安全，请进入 设置 → 账户 立即修改密码。");
         }
         router.replace(next);
         router.refresh();
@@ -135,6 +149,48 @@ function LoginForm() {
           {phase === "register" && (registerMode === "approval" ? "注册后需管理员审批" : "创建新账号")}
           {phase === "change-password" && "修改密码后需重新登录"}
         </div>
+
+        {/* 首启引导：本机访问显示初始账号密码（一键填充）；远程访问只提示。 */}
+        {firstRun && (
+          <div
+            role="status"
+            style={{
+              display: "flex", flexDirection: "column", gap: 8,
+              padding: "10px 12px", borderRadius: 8,
+              border: "1px solid rgba(217,119,6,0.4)",
+              background: "rgba(217,119,6,0.08)",
+              fontSize: 12, lineHeight: 1.6,
+              color: "var(--text, #e7e7e7)",
+            }}
+          >
+            {firstRun.password ? (
+              <>
+                <span style={{ fontWeight: 600 }}>首次运行 —— 初始管理员账号</span>
+                <span style={{ fontFamily: "monospace", wordBreak: "break-all" }}>
+                  admin / {firstRun.password}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => { setUsername("admin"); setPassword(firstRun.password ?? ""); }}
+                  style={{
+                    alignSelf: "flex-start", padding: "4px 10px", borderRadius: 6,
+                    border: "1px solid var(--border, #2a2c30)",
+                    background: "var(--bg, #141517)", color: "var(--text, #e7e7e7)",
+                    fontSize: 11.5, cursor: "pointer",
+                  }}
+                >
+                  填入并登录
+                </button>
+                <span style={{ color: "var(--text-muted, #9a9a9a)" }}>
+                  出于安全，初始密码仅在本机（127.0.0.1）显示；登录后请立即在 设置 → 账户 修改密码。
+                </span>
+              </>
+            ) : (
+              <span>检测到首次运行：初始管理员密码仅在这台机器的浏览器中显示，
+                请在本机打开 http://127.0.0.1:30141/ 查看并登录。</span>
+            )}
+          </div>
+        )}
 
         {phase !== "change-password" && (
           <label style={{ display: "flex", flexDirection: "column", gap: 5, fontSize: 12, color: "var(--text-muted, #9a9a9a)" }}>

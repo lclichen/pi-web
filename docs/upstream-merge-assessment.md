@@ -66,3 +66,19 @@
 2. **下次合并窗口**：`c844973`（截断提示）+ `8cbafdd`（元数据缓存）——中等冲突量
 3. **大合并窗口**（或等上游 v0.10）：`1cbd96f`（会话搜索）+ `5f8f47b`（窗口化列表）+ 子智能体批次——建议一次专用会话处理
 4. **跳过**：`237d0ca`（内置子智能体——与 tintinweb 架构冲突）、`e5a2434`（Next.js 16 升级——独立评估）
+
+## 更新（2026-09-21 第二批）
+
+新增合入 7 个提交（全量 1084/1/12，唯一 fail 为既有 Windows 问题）：
+
+| 提交 | 内容 | 冲突处理 |
+|---|---|---|
+| `09383ae` | gzip 大 JSON 响应 | sessions route 冲突，保我们的元数据逻辑 + 上游 jsonResponse |
+| `fce666a` | plugins relativePath Windows 分隔符 | import 冲突，保我们的完整 import（含 sep）|
+| `afd2575` | npm 更新不用 npm.cmd shim | 零冲突 |
+| `8df5132` | 扩展 widget 顺序保持 | useAgentSession 冲突，取上游 helper + 补 metadata 参数 |
+| `c844973` | 响应截断提示 | MessageView import 冲突，保我们的 import + 加 isAssistantTruncated |
+| `8cbafdd` | 会话元数据缓存 | session-reader 结构冲突，**保留我们的 per-space 缓存**（上游用全局缓存，不兼容多用户空间）；测试 2 项重新标记 skip |
+| `d11d344` | 工具卡片折叠时显示图片 | MessageView 冲突，取上游 ResultImages + 保我们的无 apply-patch 渲染 |
+
+累计已合入：**13 个上游提交**（第一批 6 + 第二批 7）。

@@ -85,3 +85,16 @@
 4. **等上游 v0.10**：考虑整体 merge（到时冲突面可能更大但一次性解决）
 5. **持续跳过**：`237d0ca`（内置子智能体）、`e5a2434`（Next.js 16 独立评估）
 
+
+## 更新（2026-09-21 第三批）
+
+新增合入 3 个提交（全量 1099/1/13）：
+
+| 提交 | 内容 | 冲突处理 |
+|---|---|---|
+| `38cba2b` | Plugins 面板显示包描述 | 保我们的 sidebar 结构 + 上游 title tooltip + detail 描述行 |
+| `e70c367` | apply_patch split diff 渲染 | 三方 import 冲突（isAssistantTruncated + apply-patch），逐层合并 |
+| `b42d3f4` | 工具卡片展开保持 | import 冲突，加 tool-call-expansion |
+
+累计已合入：**16 个上游提交**（第一批 6 + 第二批 7 + 第三批 3）。
+上游 plugins 测试 1 项 skip（格式与 fork 的 origin/sourceLabel 字段不兼容）。

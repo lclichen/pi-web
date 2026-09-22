@@ -21,7 +21,8 @@ import { randomUUID } from "node:crypto";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { getRpcSession, startRpcSession, type AgentSessionWrapper } from "../rpc-manager.ts";
 import { trustProject } from "../project-trust.ts";
-import { updateTask, type BatchTask, type BatchStopReason } from "./task-store.ts";
+import { toClientAgentEvent } from "../agent-event-wire.ts";
+import { getTask, publishTaskEvent, updateTask, type BatchTask, type BatchStopReason } from "./task-store.ts";
 
 // ---------------------------------------------------------------------------
 // Directory preparation
@@ -108,12 +109,15 @@ interface UiResponder {
  * - confirm → true (auto-approve)
  * - input → empty string (model decides what to do)
  *
- * The responder is non-destructive: if a human answers first (via SSE), the
+ * Dialog arrival flips the task into `waiting_input`; the auto-answer (or a
+ * human response over the session) flips it back to `running`. The responder
+ * is non-destructive: if a human answers first (via SSE), the
  * pendingUiResponses entry resolves and our late response is a no-op.
  */
 function attachAutoResponder(
   wrapper: AgentSessionWrapper,
   inputTimeoutMs: number,
+  taskId: string,
 ): UiResponder {
   let active = true;
   const timers: Set<ReturnType<typeof setTimeout>> = new Set();
@@ -123,6 +127,11 @@ function attachAutoResponder(
     if (!event.id || !event.method) return;
     const method = event.method;
     if (method !== "select" && method !== "confirm" && method !== "input") return;
+
+    // Surface the wait in the task state (and thus the SSE stream).
+    if (getTask(taskId)?.state === "running") {
+      updateTask(taskId, { state: "waiting_input" });
+    }
 
     const requestEvent = event as { id: string; method: string; title?: string; options?: string[] };
     const timer = setTimeout(() => {
@@ -148,6 +157,9 @@ function attachAutoResponder(
         void wrapper.send(response);
       } catch {
         // Session may have ended — best-effort
+      }
+      if (getTask(taskId)?.state === "waiting_input") {
+        updateTask(taskId, { state: "running" });
       }
     }, inputTimeoutMs);
     timers.add(timer);
@@ -187,6 +199,7 @@ export async function runBatchTask(options: RunTaskOptions): Promise<void> {
   const { taskId } = options;
   let wrapper: AgentSessionWrapper | undefined;
   let responder: UiResponder | undefined;
+  let unsubscribeAgentEvents: (() => void) | undefined;
   let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
 
   try {
@@ -213,7 +226,20 @@ export async function runBatchTask(options: RunTaskOptions): Promise<void> {
     updateTask(taskId, { sessionId: realSessionId });
 
     // 4. Attach auto-responder for interactive tools
-    responder = attachAutoResponder(wrapper, options.inputTimeoutMs);
+    responder = attachAutoResponder(wrapper, options.inputTimeoutMs, taskId);
+
+    // 4b. Forward agent events into the task channel (SSE stream consumers).
+    // Same wire projection as the WebUI's own event stream, so batch clients
+    // see message deltas, tool calls and tool updates as they happen.
+    unsubscribeAgentEvents = wrapper.onEvent((event) => {
+      const clientEvent = toClientAgentEvent(event as { type: string; [key: string]: unknown });
+      if (clientEvent) {
+        publishTaskEvent(taskId, {
+          type: "agent_event",
+          agentEvent: clientEvent as Record<string, unknown>,
+        });
+      }
+    });
 
     // 5. Set up overall timeout
     const abortController = new AbortController();
@@ -270,6 +296,7 @@ export async function runBatchTask(options: RunTaskOptions): Promise<void> {
       error: e instanceof Error ? e.message : String(e),
     });
   } finally {
+    unsubscribeAgentEvents?.();
     // 8. Cleanup: stop sandbox container if requested
     if (options.stopContainer && options.containerId !== undefined) {
       try {

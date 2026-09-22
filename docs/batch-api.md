@@ -1,10 +1,10 @@
 # pi-web 批量测试 API
 
-> 版本 1.0 · 2026-09-20 · 认证方式：X-Platform-API-Key
+> 版本 1.1 · 2026-09-22 · 认证方式：X-Platform-API-Key
 
 ## 概述
 
-pi-web 批量测试 API 允许通过 HTTP 请求自动化执行 Agent 测试任务。每个任务在独立的工作目录中运行，支持 Host 模式（服务器目录）和沙盒模式（容器）。任务异步执行——提交后立即返回任务 ID，通过轮询获取状态，终态后获取完整结果。
+pi-web 批量测试 API 允许通过 HTTP 请求自动化执行 Agent 测试任务。每个任务在独立的工作目录中运行，支持 Host 模式（服务器目录）和沙盒模式（容器）。任务异步执行——提交后立即返回任务 ID，通过轮询获取状态，终态后获取完整结果。自 1.1 起支持 `"stream": true` 以 SSE 流式返回任务事件（状态变化、Agent 消息增量、最终结果），并可随时通过独立端点订阅任一已有任务的事件流。
 
 **设计参考**：ACP (Agent Client Protocol) v2 的提交/完成分离模式——"提交成功 ≠ 任务完成"；StopReason 结构化枚举；`requires_action` 超时后自动应答（非取消）。
 
@@ -82,11 +82,16 @@ X-Platform-API-Key: sk-...
   "containerId": 42,
 
   // 可选：关联的项目 ID（sandbox 模式下用于容器绑定）
-  "projectId": 7
+  "projectId": 7,
+
+  // 可选：流式返回模式（默认 false）
+  // true 时不返回 202+taskId，而是直接以 HTTP SSE 流式返回任务事件，
+  // 在终态 result 事件后关闭流。详见下文"流式模式（SSE）"
+  "stream": true
 }
 ```
 
-**响应（202 Accepted）：**
+**响应（202 Accepted，默认异步模式）：**
 
 ```json
 {
@@ -207,6 +212,68 @@ X-Platform-API-Key: sk-...
 
 ---
 
+## 流式模式（SSE）
+
+### 方式一：创建时直接流式返回
+
+`POST /api/batch/tasks` 请求体加 `"stream": true`，响应即为 `text/event-stream`（HTTP 200），从 `task_created` 开始按序推送事件，终态 `result` 事件后服务器关闭流。
+
+### 方式二：订阅已有任务的事件流
+
+```
+GET /api/batch/tasks/{taskId}/stream
+X-Platform-API-Key: sk-...
+```
+
+连接后**从缓冲区重放**该任务的全部历史事件（从 `task_created` 起），再继续转发实时事件，终态 `result` 后关闭。适用场景：异步提交后想改为观察进度；网络断开后重连（重连会从头重放，客户端按 `seq` 去重即可）；对已结束任务一次调用拿到完整事件回放。
+
+### 事件格式
+
+每个 SSE `data:` 行是一个 JSON 对象。常规事件带序号信封：
+
+```jsonc
+{ "seq": 3, "at": 1690000000000, "event": { "type": "...", ... } }
+```
+
+| `event.type` | 说明 |
+|---|---|
+| `task_created` | 任务已创建（含 `taskId`、`state: "queued"`、`versions`） |
+| `status` | 状态迁移（含新 `state`，终态时含 `stopReason`） |
+| `agent_event` | Agent 事件转发（`agentEvent` 字段），与 WebUI 事件流同一线格式：`message_start` / `message_update`（含文本增量与工具调用增量）/ `message_end` / `tool_execution_update` / `extension_ui_request` 等 |
+| `result` | **最后一个事件**。`result` 字段与 `GET /result` 响应体完全一致（finalResponse、usage、toolCallLog、artifacts…），另附 `versions` |
+
+例外：重连时若服务端事件缓冲已截断，会先推一条无信封的通知 `{"type":"notice","notice":"event_buffer_truncated","firstSeq":22}`；任务不存在时推 `{"type":"error","error":"Task not found"}` 后关流。
+
+### 语义要点
+
+- **断线不取消任务**：SSE 流只是任务的视图。客户端断开后任务继续执行，可重连 `/stream`、轮询或取消。
+- **`waiting_input` 可见**：Agent 弹出交互对话框时流中会先收到 `status`（`state: "waiting_input"`）与对应 `extension_ui_request` 事件；`inputTimeoutMs` 超时自动应答后回到 `running`。
+- **心跳**：每 30 秒推送一个 SSE 注释帧（`:\n\n`），用于保活与代理缓冲探测。
+- **缓冲上限**：每任务服务端保留最近 500 条事件用于重放；超出丢弃最旧并置截断标记。`result` 恒为最后一条，重连已结束任务总能拿到完整结果。
+- 暂不支持按 `seq` 断点续传（V2 候选）。
+
+### curl 示例
+
+```bash
+# 创建并流式观察
+curl -N -X POST http://localhost:30141/api/batch/tasks \
+  -H "Content-Type: application/json" \
+  -H "X-Platform-API-Key: sk-your-admin-key" \
+  -d '{
+    "mode": "host",
+    "workDir": "/data/batch-test/demo",
+    "prompt": "Create a hello world Node.js project with a test file, then run the tests.",
+    "stream": true,
+    "timeoutMs": 120000
+  }'
+
+# 订阅一个已有任务的事件流（重放 + 实时）
+curl -N http://localhost:30141/api/batch/tasks/$TASK_ID/stream \
+  -H "X-Platform-API-Key: sk-your-admin-key"
+```
+
+---
+
 ### 取消任务
 
 ```
@@ -306,6 +373,7 @@ curl -s http://localhost:30141/api/batch/tasks/$TASK_ID/result \
 
 - **SSH / Local-machine 模式**：暂不支持（需要 relay 配置，V2 计划）
 - **交互式多轮测试**：当前仅支持一次性 prompt；多轮对话需 V2 的 follow-up 接口
+- **SSE 断点续传**：重连从缓冲区头重放（客户端按 `seq` 去重），不支持 `Last-Event-ID` 式按序号续传（V2 候选）
 - **任务持久化**：当前任务状态在 pi-web 内存中（globalThis），重启后运行中任务丢失；终态任务结果可通过 sessionFile 回溯
 - **并发限制**：无内置限制（依赖系统资源自然约束）；生产环境建议外部队列控制并发数
 - **沙盒自动创建**：sandbox 模式下如未指定 containerId，将自动创建容器（使用默认镜像）

@@ -4,10 +4,14 @@ import { requireBatchIdentity } from "@/lib/batch/batch-auth";
 import { isApiRequestAllowed, hasJsonContentType } from "@/lib/request-security";
 import { createTaskRecord, listTasks, toSummary } from "@/lib/batch/task-store";
 import { runBatchTask } from "@/lib/batch/task-runner";
+import { batchSseHeaders, createBatchTaskEventStream } from "@/lib/batch/task-event-stream";
 
 export const dynamic = "force-dynamic";
 
-// POST /api/batch/tasks — create a batch test task (async, returns taskId).
+// POST /api/batch/tasks — create a batch test task.
+//   Default: async — returns 202 + taskId; the caller polls.
+//   stream: true — responds with an SSE stream of task events and closes
+//   after the terminal result event (same events as GET /tasks/{id}/stream).
 // GET  /api/batch/tasks?limit=50 — list recent tasks.
 export async function POST(req: Request) {
   if (!isApiRequestAllowed(req)) {
@@ -33,6 +37,7 @@ export async function POST(req: Request) {
     stopContainer?: unknown;
     containerId?: unknown;
     projectId?: unknown;
+    stream?: unknown;
   };
   try {
     body = (await req.json()) as typeof body;
@@ -77,7 +82,8 @@ export async function POST(req: Request) {
     projectId: typeof body.projectId === "number" ? body.projectId : undefined,
   });
 
-  // Fire-and-forget: the task runs in the background; the caller polls.
+  // Fire-and-forget: the task runs in the background; the caller polls or
+  // (with stream: true) receives events over the SSE response below.
   void runBatchTask({
     taskId,
     prompt: body.prompt,
@@ -96,6 +102,15 @@ export async function POST(req: Request) {
     // runBatchTask handles its own errors; this is a safety net
     console.error(`[batch] task ${taskId} crashed:`, e);
   });
+
+  // Streaming mode: same task lifecycle, SSE view instead of 202 + polling.
+  // A client disconnect only drops the view — the task keeps running and
+  // stays reachable via polling / cancel / GET /tasks/{id}/stream.
+  if (body.stream === true) {
+    return new Response(createBatchTaskEventStream(taskId, req), {
+      headers: batchSseHeaders(),
+    });
+  }
 
   return NextResponse.json(
     {

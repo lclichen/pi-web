@@ -2,8 +2,8 @@ import {
   isEventIncludedInSnapshot,
   toClientAgentEvent,
   type AgentEventLike,
-} from "./agent-event-wire";
-import { acquireSessionLivenessLease } from "./session-liveness";
+} from "./agent-event-wire.ts";
+import { acquireSessionLivenessLease } from "./session-liveness.ts";
 
 export interface AgentEventStreamSession {
   readonly isStreaming: boolean;
@@ -29,9 +29,21 @@ const HEARTBEAT_INTERVAL_MS = 30_000;
  * would be two disconnected registries. Symbol.for + globalThis shares one.
  */
 const CLOSER_REGISTRY: symbol = Symbol.for("pi-web.agentEventStreamClosers");
-type StreamCloser = (closeController: boolean | "error") => void;
+export type StreamCloser = (closeController: boolean | "error") => void;
 const activeStreamClosers: Set<StreamCloser> =
   ((globalThis as Record<symbol, Set<StreamCloser>>)[CLOSER_REGISTRY] ??= new Set<StreamCloser>());
+
+/**
+ * Register an SSE stream closer in the shared shutdown registry (invoked by
+ * closeAllAgentEventStreams on process shutdown signals). Shared by the agent
+ * event stream and the batch task stream so both terminate on SIGINT/SIGTERM.
+ */
+export function registerEventStreamCloser(closer: StreamCloser): () => void {
+  activeStreamClosers.add(closer);
+  return () => {
+    activeStreamClosers.delete(closer);
+  };
+}
 
 /** Close every live SSE stream (called on process shutdown signals). */
 export function closeAllAgentEventStreams(): void {

@@ -27,7 +27,7 @@ WORK="$ROOT/build/package-electron"
 DIST="$ROOT/dist"
 ARCH="${ELECTRON_ARCH:-$(uname -m | sed 's/^x86_64$/x64/;s/^aarch64$/arm64/')}"
 ELECTRON_VERSION="${ELECTRON_VERSION:-36.4.0}"
-ELECTRON_MIRROR="${ELECTRON_MIRROR:-https://npmmirror.com/mirrors/electron}"
+ELECTRON_MIRROR="${ELECTRON_MIRROR:-https://npmjs.org/mirrors/electron}"
 OUT="$WORK/amedac-electron-$ARCH"
 APP_VERSION="$(node -p "require('$SRC/version.json').version" 2>/dev/null || node -p "require('$SRC/package.json').version")"
 

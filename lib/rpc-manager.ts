@@ -9,6 +9,7 @@ import { hasActiveSessionLivenessProvider } from "./session-liveness";
 import { invalidateModelsCache } from "./models-cache";
 import { resolveVisibleModels, selectInitialModelScope } from "./model-scope";
 import { cacheSessionPath, getLatestModelChange, invalidateSessionListCache, resolveSessionPath } from "./session-reader";
+import { appendWebUiAddendum } from "./web-system-prompt";
 import { readPreferences } from "./preferences-service";
 import { readMcpConfig } from "./mcp-config";
 import { getProjectTrustStatus, projectTrustReloadOptions } from "./project-trust";
@@ -116,6 +117,13 @@ type ExtensionCommandContextActionsLike = {
 type AgentSessionWrapperOptions = {
   exactSystemPrompt?: () => string;
   chatOnly?: boolean;
+  /**
+   * Append the web-UI output addendum (images / PDF page links) to whatever
+   * system prompt this session ends up using. Enabled for regular and
+   * chat-only sessions; quick templates and subagent sessions keep their
+   * exact prompts untouched.
+   */
+  webUiPrompt?: boolean;
   onAgentRunComplete?: AgentRunCompleteListener;
   suppressCompletionNotifications?: boolean;
 };
@@ -319,6 +327,7 @@ export class AgentSessionWrapper {
   private extensionBindingError: unknown = null;
   private forceEmptySystemPrompt = false;
   private exactSystemPrompt?: () => string;
+  private readonly webUiPrompt: boolean;
   private readonly chatOnly: boolean;
   private readonly onAgentRunComplete?: AgentRunCompleteListener;
   private readonly suppressCompletionNotifications: boolean;
@@ -335,10 +344,14 @@ export class AgentSessionWrapper {
     options: AgentSessionWrapperOptions = {},
   ) {
     this.exactSystemPrompt = options.exactSystemPrompt;
+    this.webUiPrompt = options.webUiPrompt ?? false;
     this.chatOnly = options.chatOnly ?? false;
     this.onAgentRunComplete = options.onAgentRunComplete;
     this.suppressCompletionNotifications = options.suppressCompletionNotifications ?? false;
     this.installExactSystemPromptContinuation();
+    // Installed after the exact-prompt continuation so the addendum wraps it
+    // (runs last) and appends to the final prompt, whatever produced it.
+    this.installWebUiAddendumContinuation();
     this.applyExactSystemPrompt();
   }
 
@@ -547,6 +560,7 @@ export class AgentSessionWrapper {
       state.systemPrompt = this.exactSystemPrompt();
     }
     this.applyForcedEmptySystemPrompt();
+    this.applyWebUiAddendumToState();
   }
 
   private applyForcedEmptySystemPrompt(): void {
@@ -568,6 +582,34 @@ export class AgentSessionWrapper {
         },
       };
     };
+  }
+
+  /**
+   * Append the web-UI output addendum to every turn's system prompt — the
+   * model-visible copy flows through here even when the display state is
+   * rebuilt. Appending is idempotent and skipped for forced-empty prompts.
+   */
+  private installWebUiAddendumContinuation(): void {
+    if (!this.webUiPrompt) return;
+    const previous = this.inner.agent.prepareNextTurnWithContext;
+    this.inner.agent.prepareNextTurnWithContext = async (turn, signal) => {
+      const prepared = await previous?.(turn, signal);
+      if (this.forceEmptySystemPrompt) return prepared;
+      const source = prepared?.context ?? turn.context;
+      const patched = appendWebUiAddendum(source.systemPrompt ?? "");
+      if (patched === source.systemPrompt) return prepared;
+      return {
+        ...prepared,
+        context: { ...source, systemPrompt: patched },
+      };
+    };
+  }
+
+  /** Mirror the addendum into the prompt shown by the UI, after pi rebuilds it. */
+  private applyWebUiAddendumToState(): void {
+    if (!this.webUiPrompt || this.forceEmptySystemPrompt) return;
+    const state = this.inner.agent?.state;
+    if (state?.systemPrompt) state.systemPrompt = appendWebUiAddendum(state.systemPrompt);
   }
 
   /** Quick mode template switch: re-pin the exact system prompt. */
@@ -2424,6 +2466,9 @@ export async function startRpcSession(
     const wrapper = new AgentSessionWrapper(inner, {
       exactSystemPrompt,
       chatOnly,
+      // Regular and chat-only web sessions learn the web output capabilities;
+      // quick teaching templates and subagent sessions keep their exact prompts.
+      webUiPrompt: !subagentResources && !quick,
       onAgentRunComplete: (completedSessionId) => {
         void notifySessionComplete(completedSessionId).catch((error) => {
           console.error("[pi-web] failed to send completion push:", error instanceof Error ? error.message : error);

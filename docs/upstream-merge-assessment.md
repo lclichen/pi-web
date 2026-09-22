@@ -1,7 +1,7 @@
-# pi-web 上游合并评估（2026-09-21 更新）
+# pi-web 上游合并评估（2026-09-22 更新）
 
 > 上游 `agegr/pi-web` 自 fork 分叉点以来 136 个新提交；本 fork 领先 201 个提交。
-> 已 cherry-pick **13 个**高价值提交（两批）；以下是**尚未合入**的高价值提交清单。
+> 已 cherry-pick **16 个**高价值提交（三批）；另经核对，**v0.9.0 squash 合并（`a249552`）已带入 51 个提交的内容**（见文末 09-22 更新）。
 
 ## 已合入（13 个，两批）
 
@@ -37,16 +37,11 @@
 | 提交 | 内容 | 冲突面 | 建议 |
 |---|---|---|---|
 | `b44017a` | 看到其他 pi 进程写的会话 | rpc-manager + session-reader + e2e | rpc-manager 是我们改动最重的文件，需逐 hunks 合并；**用户已明确暂缓** |
-| `e70c367` | apply_patch 渲染为 split diff | MessageView + 新模块 | 是 `c844973`/`d11d344` 的依赖；合入后可补全这两个提交的 apply-patch 分支 |
-| `b42d3f4` | 流式更新时保持用户展开的工具卡片 | MessageView + 新模块 | 也是 `c844973` 的依赖 |
-| `38cba2b` | Plugins 面板显示包描述 | plugins route + PluginsConfig + i18n | 小改动，i18n 三语言需加键 |
 
 ### 大冲突面（建议专用合并窗口）
 
 | 提交 | 内容 | 涉及文件数 | 建议 |
 |---|---|---|---|
-| `1cbd96f` | **会话搜索**（文本跳转+跨窗口同步） | 15+（AppShell/ChatWindow/SessionSidebar/i18n/hooks） | 冲突面最大，建议单独一次会话处理 |
-| `5f8f47b` | 侧栏窗口化渲染（只挂载可见行） | ChatWindow + SessionSidebar + e2e | 与管理面板按钮同区域；性能收益显著 |
 | `ed50d88` | 侧栏面板可拖拽调宽 | SessionSidebar + globals.css + i18n | 布局改动大 |
 | `f2d600b` | /auto-compact 斜杠命令 | ChatInput + useAgentSession + i18n | ChatInput 我们改过多处 |
 | `3f07a5f` | 显示运行中 turn 的推理级别 | ChatWindow/MessageView | 未评估冲突面 |
@@ -74,16 +69,17 @@
 
 ### 其余未列入的提交
 
-136 - 13 = 123 个尚未合入。其中上述清单覆盖约 20 个高价值项；其余约 100 个为小修复、
-文档更新、CI 配置、i18n 补充等，可随下次大合并窗口批量处理或等上游 v0.10 统一 merge。
+136 个上游提交中：51 个（v0.8.11..v0.9.0）已随 `a249552` squash 合入；余 85 个中 15 个已
+cherry-pick（16 个中 `8cbafdd` 出自 squash 段，为 per-space 适配的有意重做）；**实际待合入约 70 个**，
+其中上述清单覆盖约 15 个高价值项；其余为小修复、文档更新、CI 配置、i18n 补充等，可随下次大合并窗口
+批量处理或等上游 v0.10 统一 merge。
 
 ## 建议下一步
 
-1. **低成本快赢**：`38cba2b`（plugins 描述）——唯一剩下的"小改动高价值"项
-2. **依赖链**：`e70c367`（apply-patch 渲染）→ 补全 `c844973`/`d11d344` 的 apply-patch 分支 + `b42d3f4`（工具卡片展开保持）
-3. **下次合并窗口**：`1cbd96f`（会话搜索）+ `5f8f47b`（窗口化列表）——两个大 UI 功能
-4. **等上游 v0.10**：考虑整体 merge（到时冲突面可能更大但一次性解决）
-5. **持续跳过**：`237d0ca`（内置子智能体）、`e5a2434`（Next.js 16 独立评估）
+1. **低成本快赢**：已无——第三批后剩余项均需评估冲突面
+2. **下次合并窗口**：`ed50d88`（侧栏拖拽调宽）等大 UI 功能；`1cbd96f`（会话搜索）+ `5f8f47b`（窗口化列表）**已随 v0.9.0 squash 合入，无需再处理**
+3. **等上游 v0.10**：考虑整体 merge（到时冲突面可能更大但一次性解决）
+4. **持续跳过**：`237d0ca`（内置子智能体）、`e5a2434`（Next.js 16 独立评估）
 
 
 ## 更新（2026-09-21 第三批）
@@ -98,3 +94,34 @@
 
 累计已合入：**16 个上游提交**（第一批 6 + 第二批 7 + 第三批 3）。
 上游 plugins 测试 1 项 skip（格式与 fork 的 origin/sourceLabel 字段不兼容）。
+
+
+## 更新（2026-09-22 v0.9.0 squash 合并核对）
+
+**发现**：`1cbd96f`（会话搜索）与 `5f8f47b`（侧栏窗口化）**已在 dev 中**——随 `a249552`
+（2026-09-08，"Merge upstream v0.9.0 (ce18006)"，单亲 squash 合并）进入，此前本文件将二者
+误列为未合入。
+
+**根因**：squash 合并只带内容不带提交，`git branch --contains` / `git cherry` 等基于祖先或
+patch-id 的核对全部失效。凡落在 `28bab3c..ce18006`（v0.8.11..v0.9.0，51 个提交）区间的
+"未合入"条目都应按内容重查。
+
+**`1cbd96f` 核验证据**（2026-09-22，逐项比对 dev HEAD）：
+
+- 新文件逐字节一致：`lib/session-search.ts`、`lib/session-search.test.mjs`、`components/SessionSearch.tsx`
+- `app/api/sessions/search/route.ts`：功能在且更严格——加了 per-user 空间隔离
+  （`requireUserIdentity` + `spaceForRequest`，含 MERGE-NOTE 标注），搜索不跨用户
+- 会话列表版本管道齐全：`getSessionListVersion()`（session-reader）→ `/api/sessions` 与
+  `/api/agent/running` 响应 → SessionSidebar 轮询比对刷新
+- 前端跳转链齐全：AppShell `searchTarget` → ChatWindow `pendingSearchScroll`（含 tail:200
+  向上翻页定位）→ MessageView `searchBlock`/`data-search-target` 高亮；`scrollToMessage`
+  已演进（viewportOffset 参数，兼供滚动位置恢复）
+- i18n 7 键 × 3 locale 全在；搜索相关测试通过（session-search/session-reader/
+  runtime-route/MessageView；唯一 fail 为既有的 subagent relations 测试，与本功能无关）
+
+**`5f8f47b` 核验证据**：SessionSidebar 已是窗口化渲染（`SESSION_LIST_ITEM_HEIGHT` + overscan
+可见切片），对应测试（"scrolling keeps the focused session…"）在 dev 测试文件中。
+
+**结论**：无需任何 cherry-pick；强行重放会与演进后的代码冲突或造成回退。本文件上方表格
+已同步清理（第三批 3 项与本次 2 项均已移出未合入清单）。
+

@@ -74,6 +74,39 @@ app/api/
   skills/search/route.ts          GET/POST skills.sh search
   subagents/settings/route.ts     GET/PUT built-in subagent feature setting
   worktrees/route.ts              GET/POST/DELETE git worktrees
+  plugins/check/route.ts          POST check plugin package updates
+  project-trust/route.ts          GET/POST project trust for package installs
+  sessions/search/route.ts        GET session search
+  sessions/[id]/state/route.ts    GET live wrapper state when the session is running
+  sessions/[id]/auto-name/route.ts POST generate a session title
+  terminal/create/route.ts        POST create a terminal session
+  terminal/shells/route.ts        GET available shells
+  terminal/[sid]/events/route.ts  GET SSE terminal stream
+  terminal/[sid]/input|resize|close/route.ts POST terminal control
+  cwd/browse/route.ts             GET browse allowed cwd directories
+  app-update/route.ts             GET current vs latest published pi-web version
+  file-index/route.ts             GET file list for @-mentions
+  git/status/route.ts             GET changed files for a cwd
+  git/diff/route.ts               GET diff for one changed file
+  push/config/route.ts            GET VAPID public key for push subscriptions
+  push/subscribe/route.ts         POST register a push subscription
+  tools/settings/route.ts         GET/PUT shell tool settings (PowerShell on Windows)
+  webauth/config/route.ts         GET web auth configuration
+  webauth/first-run/route.ts      GET first-run status
+  webauth/change-password/route.ts POST change web password
+  account/route.ts                GET current account info
+  preferences/route.ts            GET/PUT user preferences
+  server-settings/route.ts        GET/PATCH server settings (admin)
+  feedback/route.ts               POST/GET user feedback
+  quick-templates/route.ts        GET/POST/PATCH/DELETE quick prompt templates
+  workspaces/route.ts             GET workspace list
+  batch/tasks/route.ts            POST create | GET list batch test tasks
+  batch/tasks/[id]/route.ts       GET task status
+  batch/tasks/[id]/stream/route.ts GET SSE task stream replay
+  batch/tasks/[id]/result|cancel/route.ts GET result | POST cancel
+  admin/*                         platform admin panel (users/containers/images/workspaces/quotas/logs/overview/llm bindings)
+  sandbox/containers/route.ts     GET/POST/DELETE sandbox containers
+  projects/route.ts               GET/POST projects; projects/[id]/route.ts subroutes
 
 lib/
   agent-client.ts      typed fetch helper for /api/agent commands

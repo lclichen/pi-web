@@ -477,6 +477,22 @@ button.extension-widget-trigger:focus-visible {
   line-height: 1.45;
   white-space: pre;
 }
+
+/* Queued message rows: per-message actions (convert/edit/interrupt/delete)
+   appear on hover/focus; touch devices fall back to always-visible. */
+.queued-message-row .queued-row-actions {
+  display: none;
+}
+.queued-message-row:hover .queued-row-actions,
+.queued-message-row:focus-within .queued-row-actions {
+  display: inline-flex;
+}
+@media (hover: none) {
+  .queued-message-row .queued-row-actions {
+    display: inline-flex;
+  }
+}
+
 ::-webkit-scrollbar-thumb:hover {
   background: var(--text-dim);
 }

@@ -15,6 +15,7 @@ import type {
 import { isBlockingExtensionUiRequest } from "@/lib/browser-notifications";
 import { normalizeToolCalls } from "@/lib/normalize";
 import { isPromptRejectedError, sendAgentCommand } from "@/lib/agent-client";
+import type { QueueOp } from "@/lib/queue-ops";
 import { clearDraft, rekeyDraft, restoreDraftSubmission } from "@/lib/draft-store";
 import { getPreferredToolPreset, setPreferredToolPreset } from "@/lib/tool-preset-preference";
 import { getPresetFromToolNames, getToolNamesForPreset, type ToolEntry, type ToolPreset } from "@/lib/tool-presets";
@@ -2000,6 +2001,27 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }
   }, [opts.chatInputRef, addNotice]);
 
+  // Single-item queue operations (edit / delete / convert / interrupt) via
+  // the atomic update_queue command. The queue_update events emitted by the
+  // rebuild keep the UI in sync; setting from the response covers the
+  // disconnected-SSE case (same pattern as handleRecallQueue).
+  const handleQueueOp = useCallback(async (op: QueueOp) => {
+    const sid = sessionIdRef.current;
+    if (!sid) return;
+    try {
+      const result = await sendAgentCommand<{ steering?: string[]; followUp?: string[] }>(sid, {
+        type: "update_queue",
+        op,
+      });
+      if (result && (result.steering !== undefined || result.followUp !== undefined)) {
+        setQueuedMessages({ steering: result.steering ?? [], followUp: result.followUp ?? [] });
+      }
+    } catch (e) {
+      console.error("Queue op failed:", e);
+      addNotice({ type: "error", message: e instanceof Error ? e.message : String(e) });
+    }
+  }, [addNotice]);
+
   const handleThinkingLevelChange = useCallback(async (level: ThinkingLevelOption) => {
     if (level === "auto") {
       thinkingLevelOverrideRef.current = null;
@@ -2322,6 +2344,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     handleSend, handleAbort, handleFork, handleNavigate, handleModelChange,
     handleCompact, handleSteer, handleFollowUp, handlePromptWithStreamingBehavior, handleAbortCompaction,
     handleRecallQueue,
+    handleQueueOp,
     handleBuiltinSlashCommand,
     setNoticePaused: setPausedNoticeId,
     handleToolPresetChange, handleThinkingLevelChange, loadTools, loadSlashCommands, setActiveLeafId, setData, setMessages, loadContext,

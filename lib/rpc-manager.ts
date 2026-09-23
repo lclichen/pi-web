@@ -5,6 +5,7 @@ import { randomUUID } from "crypto";
 import { existsSync, realpathSync, writeFileSync } from "fs";
 import { join, resolve } from "path";
 import { validateAgentImages } from "./image-attachments";
+import { applyQueueOp, describeQueueOpError, type QueueOp } from "./queue-ops";
 import { hasActiveSessionLivenessProvider } from "./session-liveness";
 import { invalidateModelsCache } from "./models-cache";
 import { resolveVisibleModels, selectInitialModelScope } from "./model-scope";
@@ -332,6 +333,11 @@ export class AgentSessionWrapper {
   private readonly onAgentRunComplete?: AgentRunCompleteListener;
   private readonly suppressCompletionNotifications: boolean;
   private unsubscribe: (() => void) | null = null;
+  /** Texts this wrapper queued WITH image attachments. clearQueue() returns
+   *  texts only, so a drain+requeue rebuild would silently drop their images —
+   *  update_queue refuses ops that would rebuild protected texts (deleting the
+   *  protected message itself is allowed: image goes with the message). */
+  private queuedImageTexts = new Set<string>();
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private onDestroyCallback: (() => void) | null = null;
   private shutdownPromise: Promise<void> | null = null;
@@ -410,6 +416,7 @@ export class AgentSessionWrapper {
           this.activeToolEvents.delete(toolCallId);
         }
       }
+      if (event.type === "queue_update") this.pruneQueuedImageTexts();
       if (IDLE_RESET_EVENT_TYPES.has(event.type)) this.resetIdleTimer();
       this.emit(event);
       if (event.type === "agent_settled") this.notifyAgentRunCompleteIfIdle();
@@ -732,6 +739,29 @@ export class AgentSessionWrapper {
     }
   }
 
+  /** Requeue drained messages in delivery order (steering first, then
+   *  follow-up) — used by the update_queue drain+rebuild cycle. steer()/
+   *  followUp() enqueue synchronously before their first await, so the whole
+   *  loop completes inside one microtask chain and cannot interleave with
+   *  the agent loop or other commands. */
+  private async requeueMessages(queues: { steering: string[]; followUp: string[] }): Promise<void> {
+    for (const text of queues.steering) await this.inner.steer(text);
+    for (const text of queues.followUp) await this.inner.followUp(text);
+  }
+
+  /** Drop image-tracking entries whose message left the queue (delivered or
+   *  cleared) so identical future texts are not wrongly protected. */
+  private pruneQueuedImageTexts(): void {
+    if (this.queuedImageTexts.size === 0) return;
+    const remaining = new Set<string>([
+      ...this.inner.getSteeringMessages(),
+      ...this.inner.getFollowUpMessages(),
+    ]);
+    for (const text of this.queuedImageTexts) {
+      if (!remaining.has(text)) this.queuedImageTexts.delete(text);
+    }
+  }
+
   async send(command: Record<string, unknown>): Promise<unknown> {
     const type = command.type as string;
     const allowedDuringReplacement = COMMANDS_ALLOWED_DURING_SESSION_REPLACEMENT.has(type);
@@ -773,6 +803,13 @@ export class AgentSessionWrapper {
           }
           const promptImages = command.images as Array<{ type: "image"; data: string; mimeType: string }> | undefined;
           const streamingBehavior = command.streamingBehavior as "steer" | "followUp" | undefined;
+          if (promptImages?.length && streamingBehavior && typeof command.message === "string") {
+            // Track for update_queue image protection. The SDK queue stores
+            // the *expanded* text; plain texts match, expanded skill text
+            // with images simply stays unprotected (rare, degrades to a
+            // normal edit that drops the image — acceptable).
+            this.queuedImageTexts.add(command.message);
+          }
           let preflightAccepted = false;
           let preflightSettled = false;
           let promptSettled = false;
@@ -1064,19 +1101,81 @@ export class AgentSessionWrapper {
       }
 
       case "clear_queue": {
-        // Full clear only: pi has no single-item dequeue, and clear+requeue
-        // races against the agent loop pulling messages mid-flight.
+        this.queuedImageTexts.clear();
+        // Full clear only: pi has no single-item dequeue. For single-item
+        // operations use update_queue, which drains+transforms+requeues
+        // atomically inside one command.
         return this.inner.clearQueue();
+      }
+
+      case "update_queue": {
+        // Single-item queue op (edit/delete/convert/interrupt). Drain → pure
+        // transform (lib/queue-ops) → requeue all run within this microtask
+        // chain, so the agent loop (driven by I/O macrotasks) cannot
+        // interleave — the "clear+requeue races" caveat only applies to
+        // multi-request sequences.
+        const op = command.op as QueueOp;
+        if (!op || !["edit", "delete", "convert", "interrupt"].includes(String(op?.op))) {
+          throw new Error("Invalid update_queue op");
+        }
+        if (op.kind !== "steering" && op.kind !== "followUp") {
+          throw new Error("Invalid update_queue kind");
+        }
+        if (typeof op.index !== "number" || !Number.isInteger(op.index) || op.index < 0) {
+          throw new Error("Invalid update_queue index");
+        }
+        if (op.op === "edit" && typeof op.text !== "string") {
+          throw new Error("Invalid update_queue text");
+        }
+        const drained = this.inner.clearQueue();
+        const result = applyQueueOp(
+          drained,
+          op,
+          (text) => this.queuedImageTexts.has(text),
+        );
+        if (!result.ok) {
+          // Restore the drained queue untouched before failing the command —
+          // the op was rejected, the queue must not change.
+          await this.requeueMessages(drained);
+          throw new Error(describeQueueOpError(result.error));
+        }
+        await this.requeueMessages(result.next);
+        if (result.interruptedText !== undefined) {
+          // Interrupt: abort the current run, then send the message as a
+          // fresh turn. Requeueing already happened above, so the remaining
+          // steering messages inject into the new run at tool-call
+          // boundaries. If the prompt is rejected, requeue the text so it is
+          // never lost.
+          this.extensionUiAbortController.abort(new DOMException("Extension UI cancelled by Stop", "AbortError"));
+          try {
+            await this.withFinalIdleReset(() => this.inner.abort());
+          } catch {
+            // Already idle / nothing to abort — the prompt below still runs.
+          }
+          try {
+            await this.inner.prompt(result.interruptedText, { source: "rpc" });
+          } catch (error) {
+            await this.inner.steer(result.interruptedText).catch(() => {});
+            throw error;
+          }
+        }
+        this.pruneQueuedImageTexts();
+        return {
+          steering: [...this.inner.getSteeringMessages()],
+          followUp: [...this.inner.getFollowUpMessages()],
+        };
       }
 
       case "steer": {
         const steerImages = command.images as Array<{ type: "image"; data: string; mimeType: string }> | undefined;
+        if (steerImages?.length && typeof command.message === "string") this.queuedImageTexts.add(command.message);
         await this.inner.steer(command.message as string, steerImages?.length ? steerImages : undefined);
         return null;
       }
 
       case "follow_up": {
         const followImages = command.images as Array<{ type: "image"; data: string; mimeType: string }> | undefined;
+        if (followImages?.length && typeof command.message === "string") this.queuedImageTexts.add(command.message);
         await this.inner.followUp(command.message as string, followImages?.length ? followImages : undefined);
         return null;
       }

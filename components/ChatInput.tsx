@@ -2,6 +2,7 @@
 
 import React, { useRef, useState, useCallback, useEffect, useLayoutEffect, useImperativeHandle, forwardRef, KeyboardEvent } from "react";
 import type { BuiltinSlashCommandResult, CompactResultInfo, QueuedMessages, SlashCommandInfo } from "@/hooks/useAgentSession";
+import type { QueueOp } from "@/lib/queue-ops";
 import type { SkillsResponse } from "@/lib/api-types";
 import type { TextContent, UserMessage } from "@/lib/types";
 import {
@@ -73,6 +74,9 @@ interface Props {
   queuedMessages?: QueuedMessages | null;
   inputHistory?: string[];
   onRecallQueue?: () => void;
+  /** Single-item queued-message operations (edit/delete/convert/interrupt),
+   *  executed atomically server-side via the update_queue command. */
+  onQueueOp?: (op: QueueOp) => void;
   slashCommands?: SlashCommandInfo[];
   slashCommandsLoading?: boolean;
   onLoadSlashCommands?: () => Promise<SlashCommandInfo[]> | SlashCommandInfo[];
@@ -418,10 +422,64 @@ function revokeImagePreview(image: AttachedImage): void {
   }
 }
 
-function QueuedMessageRow({ kind, text }: { kind: "steer" | "follow-up"; text: string }) {
+function QueuedMessageRow({
+  kind,
+  text,
+  canModify,
+  onEdit,
+  onDelete,
+  onConvert,
+  onInterrupt,
+}: {
+  kind: "steer" | "follow-up";
+  text: string;
+  canModify: boolean;
+  onEdit?: (text: string) => void;
+  onDelete?: () => void;
+  onConvert?: () => void;
+  onInterrupt?: () => void;
+}) {
+  const { t } = useI18n();
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(text);
+
+  if (editing) {
+    const save = () => {
+      const trimmed = draft.trim();
+      if (trimmed) onEdit?.(trimmed);
+      setEditing(false);
+    };
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "3px 10px" }}>
+        <input
+          autoFocus
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.nativeEvent.isComposing) save();
+            if (e.key === "Escape") setEditing(false);
+          }}
+          style={{
+            flex: 1, minWidth: 0, fontSize: 12, padding: "3px 8px",
+            background: "var(--bg)", color: "var(--text)",
+            border: "1px solid color-mix(in srgb, var(--accent) 45%, var(--border))",
+            borderRadius: 6, outline: "none",
+          }}
+        />
+        <QueueRowButton title={t("chat.queuedSave")} onClick={save} label={<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>} />
+        <QueueRowButton title={t("chat.queuedCancelEdit")} onClick={() => { setDraft(text); setEditing(false); }} label={<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>} />
+      </div>
+    );
+  }
+
+  const iconBtn = (title: string, onClick: (() => void) | undefined, path: React.ReactNode, danger = false) => (
+    <QueueRowButton key={title} title={title} onClick={onClick} disabled={!canModify || !onClick} danger={danger} label={path} />
+  );
+
   return (
     <div
-      title={text}
+      className="queued-message-row"
+      title={kind === "steer" ? t("chat.queueSteerTip") : t("chat.queueFollowUpTip")}
       style={{
         display: "flex",
         alignItems: "center",
@@ -445,8 +503,49 @@ function QueuedMessageRow({ kind, text }: { kind: "steer" | "follow-up"; text: s
       >
         {kind}
       </span>
-      <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{text}</span>
+      <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{text}</span>
+      {canModify && (
+        <span className="queued-row-actions" style={{ display: "none", flexShrink: 0, alignItems: "center", gap: 2 }}>
+          {iconBtn(kind === "steer" ? t("chat.queuedConvertToFollowUp") : t("chat.queuedConvertToSteer"), onConvert,
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="17 1 21 5 17 9" /><path d="M3 11V9a4 4 0 0 1 4-4h14" /><polyline points="7 23 3 19 7 15" /><path d="M21 13v2a4 4 0 0 1-4 4H3" /></svg>)}
+          {iconBtn(t("chat.queuedEditTitle"), () => { setDraft(text); setEditing(true); },
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" /></svg>)}
+          {kind === "follow-up" && iconBtn(t("chat.queuedInterruptTitle"), onInterrupt,
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></svg>, true)}
+          {iconBtn(t("chat.queuedDeleteTitle"), onDelete,
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>, true)}
+        </span>
+      )}
     </div>
+  );
+}
+
+function QueueRowButton({ title, onClick, label, disabled, danger }: {
+  title: string;
+  onClick?: () => void;
+  label: React.ReactNode;
+  disabled?: boolean;
+  danger?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      disabled={disabled}
+      onClick={onClick}
+      style={{
+        display: "inline-flex", alignItems: "center", justifyContent: "center",
+        width: 20, height: 20, padding: 0,
+        background: "transparent",
+        border: "none", borderRadius: 4,
+        color: disabled ? "var(--text-dim)" : danger ? "rgb(220,38,38)" : "var(--text-muted)",
+        cursor: disabled ? "not-allowed" : "pointer",
+      }}
+      onMouseEnter={(e) => { if (!disabled) e.currentTarget.style.background = "var(--bg-hover)"; }}
+      onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+    >
+      {label}
+    </button>
   );
 }
 
@@ -549,7 +648,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   onSend, onAbort, onSteer, onFollowUp, isStreaming, model, isAutoModelSelection, modelNames, modelList, modelError, modelScopeWarnings, onModelChange, modelSwitching,
   onCompact, onAbortCompaction, isCompacting, compactError, compactResult, toolPreset, onToolPresetChange,
   thinkingLevel, isAutoThinkingSelection = false, onThinkingLevelChange, availableThinkingLevels, thinkingLevelMap,
-  retryInfo, queuedMessages, inputHistory = [], onRecallQueue,
+  retryInfo, queuedMessages, inputHistory = [], onRecallQueue, onQueueOp,
   slashCommands, slashCommandsLoading, onLoadSlashCommands,
   onBuiltinCommand,
   soundEnabled, onSoundToggle, onAudioUnlock,
@@ -1673,10 +1772,28 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               )}
             </div>
             {queuedMessages?.steering.map((text, i) => (
-              <QueuedMessageRow key={`steer-${i}`} kind="steer" text={text} />
+              <QueuedMessageRow
+                key={`steer-${i}`}
+                kind="steer"
+                text={text}
+                canModify={Boolean(onQueueOp)}
+                onEdit={(next) => onQueueOp?.({ op: "edit", kind: "steering", index: i, text: next })}
+                onDelete={() => onQueueOp?.({ op: "delete", kind: "steering", index: i })}
+                onConvert={() => onQueueOp?.({ op: "convert", kind: "steering", index: i })}
+                onInterrupt={() => onQueueOp?.({ op: "interrupt", kind: "steering", index: i })}
+              />
             ))}
             {queuedMessages?.followUp.map((text, i) => (
-              <QueuedMessageRow key={`followup-${i}`} kind="follow-up" text={text} />
+              <QueuedMessageRow
+                key={`followup-${i}`}
+                kind="follow-up"
+                text={text}
+                canModify={Boolean(onQueueOp)}
+                onEdit={(next) => onQueueOp?.({ op: "edit", kind: "followUp", index: i, text: next })}
+                onDelete={() => onQueueOp?.({ op: "delete", kind: "followUp", index: i })}
+                onConvert={() => onQueueOp?.({ op: "convert", kind: "followUp", index: i })}
+                onInterrupt={() => onQueueOp?.({ op: "interrupt", kind: "followUp", index: i })}
+              />
             ))}
           </div>
         )}

@@ -1,4 +1,5 @@
 import { authorizeRemoteTerminal, subscribeRemoteTerminal } from "@/lib/remote-terminal";
+import { createSseStream, sseHeaders } from "@/lib/sse-stream";
 
 export const dynamic = "force-dynamic";
 
@@ -16,44 +17,11 @@ export async function GET(
       headers: { "content-type": "application/json" },
     });
   }
-  const stream = new ReadableStream({
-    start(controller) {
-      const encoder = new TextEncoder();
-      const encode = (data: unknown) => {
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
-      };
-      encode({ type: "ready" });
-      const unsubscribe = subscribeRemoteTerminal(sid, (frame) => {
-        try {
-          encode(frame);
-        } catch {
-          // controller closed
-        }
-      });
-      const heartbeat = setInterval(() => {
-        try {
-          controller.enqueue(encoder.encode(":\n\n"));
-        } catch {
-          // controller closed
-        }
-      }, 30_000);
-      const cleanup = () => {
-        clearInterval(heartbeat);
-        unsubscribe();
-        try {
-          controller.close();
-        } catch {
-          // already closed
-        }
-      };
-      req.signal?.addEventListener("abort", cleanup);
+  const stream = createSseStream(req, {
+    onOpen({ send }) {
+      send({ type: "ready" });
+      return subscribeRemoteTerminal(sid, (frame) => send(frame));
     },
   });
-  return new Response(stream, {
-    headers: {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      Connection: "keep-alive",
-    },
-  });
+  return new Response(stream, { headers: sseHeaders() });
 }

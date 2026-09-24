@@ -34,6 +34,10 @@ interface BundleMeta {
   description: string;
   size: number;
   createdAt: number;
+  /** "apkg" = 加密配置包（套用时内存解密，导入后禁止再导出）。 */
+  kind: "zip" | "apkg";
+  /** 内容版本（.apkg 头部/manifest v2；明文 zip 可能为空）。 */
+  version: string;
 }
 
 // 与模型/子代理页同款输入框样式。
@@ -118,7 +122,7 @@ export function BundlesConfig({ embedded = false }: { embedded?: boolean }) {
   const upload = async () => {
     const file = fileRef.current?.files?.[0];
     if (!file) {
-      setFormError(t("请选择一个 zip 文件"));
+      setFormError(t("请选择一个 zip 或 apkg 文件"));
       return;
     }
     setUploading(true);
@@ -175,7 +179,14 @@ export function BundlesConfig({ embedded = false }: { embedded?: boolean }) {
             : bundles.length === 0 ? <div className="config-sidebar-message is-empty">{t("暂无模板")}</div>
             : bundles.map((b) => (
               <ConfigSidebarItem key={b.name} active={!showUpload && selectedName === b.name} onClick={() => selectBundle(b)}>
-                <ConfigSidebarText className="is-grow" title={b.description}>{b.name}</ConfigSidebarText>
+                <ConfigSidebarText className="is-grow" title={b.description}>
+                  {b.name}
+                  {b.kind === "apkg" && (
+                    <span title={t("加密配置包：套用时内存解密；套用后项目禁止再导出配置。")} style={{ marginLeft: 6, fontSize: 10, color: "var(--accent)", fontFamily: "var(--font-mono)" }}>
+                      {t("加密")}{b.version ? ` · v${b.version}` : ""}
+                    </span>
+                  )}
+                </ConfigSidebarText>
                 <ConfigSidebarText className="is-muted">{formatSize(b.size)}</ConfigSidebarText>
               </ConfigSidebarItem>
             ))}
@@ -195,10 +206,10 @@ export function BundlesConfig({ embedded = false }: { embedded?: boolean }) {
                   </ConfigDetailHeaderInfo>
                 </ConfigDetailHeader>
                 <span style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.6 }}>
-                  {t("配置模板是管理员维护的标准 .pi/ 配置 + labs/ 打包（zip）。用户新建项目时可在向导中选择；已有项目可通过项目菜单「套用配置模板…」补装。")}
+                  {t("配置模板是管理员维护的标准 .pi/ 配置 + labs/ 打包（zip 或加密 .apkg）。用户新建项目时可在向导中选择；已有项目可通过项目菜单「套用配置模板…」补装。")}
                 </span>
-                <ConfigField label={t("选择 zip 文件")}>
-                  <input ref={fileRef} type="file" accept=".zip" onChange={(e) => setFileChosen(e.target.files?.[0]?.name ?? null)} style={{ fontSize: 11, color: "var(--text-muted)" }} />
+                <ConfigField label={t("选择 zip / apkg 文件")}>
+                  <input ref={fileRef} type="file" accept=".zip,.apkg" onChange={(e) => setFileChosen(e.target.files?.[0]?.name ?? null)} style={{ fontSize: 11, color: "var(--text-muted)" }} />
                   {fileChosen && <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{fileChosen}</span>}
                 </ConfigField>
                 <ConfigField label={t("模板名（可选，默认用文件名；字母数字点下划线连字符）")}>
@@ -225,9 +236,23 @@ export function BundlesConfig({ embedded = false }: { embedded?: boolean }) {
                     <span style={{ width: 80, color: "var(--text-dim)" }}>{t("上传时间")}</span>
                     <span style={{ color: "var(--text)" }}>{new Date(selected.createdAt).toLocaleString()}</span>
                   </div>
+                  <div style={{ display: "flex", gap: 10 }}>
+                    <span style={{ width: 80, color: "var(--text-dim)" }}>{t("类型")}</span>
+                    <span style={{ color: "var(--text)" }}>
+                      {selected.kind === "apkg"
+                        ? t("加密配置包（apkg）") + (selected.version ? ` · v${selected.version}` : "")
+                        : t("明文配置包（zip）")}
+                    </span>
+                  </div>
+                  {selected.kind === "apkg" && (
+                    <div style={{ display: "flex", gap: 10 }}>
+                      <span style={{ width: 80, color: "var(--text-dim)" }}>{t("说明")}</span>
+                      <span style={{ color: "var(--text-muted)" }}>{t("套用时内存解密；套用后该项目禁止再导出配置（防二次分发）。")}</span>
+                    </div>
+                  )}
                 </div>
                 <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.6 }}>
-                  {t("配置模板是管理员维护的标准 .pi/ 配置 + labs/ 打包（zip）。用户新建项目时可在向导中选择；已有项目可通过项目菜单「套用配置模板…」补装。")}
+                  {t("配置模板是管理员维护的标准 .pi/ 配置 + labs/ 打包（zip 或加密 .apkg）。用户新建项目时可在向导中选择；已有项目可通过项目菜单「套用配置模板…」补装。")}
                 </div>
               </>
             ) : (

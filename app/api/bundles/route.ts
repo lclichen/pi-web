@@ -3,6 +3,7 @@ import JSZip from "jszip";
 import { requireUserIdentity } from "@/lib/web-session";
 import { isApiRequestAllowed } from "@/lib/request-security";
 import { deleteBundle, listBundles, isValidBundleName, saveBundle } from "@/lib/config-bundles-store";
+import { isApkgBytes, readApkgHeader } from "@/lib/apkg-format";
 
 export const dynamic = "force-dynamic";
 
@@ -39,7 +40,7 @@ export async function POST(req: Request) {
   const file = form.get("file");
   const rawName = String(form.get("name") ?? "");
   const description = String(form.get("description") ?? "");
-  const name = (rawName.trim() || (file instanceof File ? file.name.replace(/\.zip$/i, "") : "")).trim();
+  const name = (rawName.trim() || (file instanceof File ? file.name.replace(/\.(zip|apkg)$/i, "") : "")).trim();
   if (!isValidBundleName(name)) {
     return NextResponse.json({ error: "模板名只能包含字母、数字、点、下划线、连字符（≤64 字符）" }, { status: 400 });
   }
@@ -49,14 +50,27 @@ export async function POST(req: Request) {
   if (file.size > MAX_BUNDLE_BYTES) {
     return NextResponse.json({ error: "模板包过大（>200MB）" }, { status: 413 });
   }
-  // Zip integrity check before storing.
-  try {
-    await JSZip.loadAsync(await file.arrayBuffer());
-  } catch {
-    return NextResponse.json({ error: "无法解析压缩包（需要 zip 格式）" }, { status: 400 });
+  const data = Buffer.from(await file.arrayBuffer());
+  if (isApkgBytes(data)) {
+    // Encrypted package: validate the envelope header (zip integrity is
+    // proven at apply time by the GCM tag; the ciphertext is stored verbatim).
+    try {
+      readApkgHeader(data);
+    } catch (e) {
+      return NextResponse.json(
+        { error: e instanceof Error ? e.message : "加密配置包格式无效" },
+        { status: 400 },
+      );
+    }
+  } else {
+    // Plain zip integrity check before storing.
+    try {
+      await JSZip.loadAsync(data);
+    } catch {
+      return NextResponse.json({ error: "无法解析压缩包（需要 zip 或 .apkg 格式）" }, { status: 400 });
+    }
   }
 
-  const data = Buffer.from(await file.arrayBuffer());
   saveBundle(name, description, data);
   return NextResponse.json({ ok: true, name, size: data.length }, { status: 201 });
 }

@@ -4,6 +4,7 @@ import { requireUserIdentity } from "@/lib/web-session";
 import { isApiRequestAllowed } from "@/lib/request-security";
 import { getAllowedFileRootsForRequest, isExistingFilePathAllowed } from "@/lib/file-access";
 import { bundleDownloadResponse, exportProjectConfigBundle } from "@/lib/project-config-bundle";
+import { isBundleLocked } from "@/lib/apkg";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +31,12 @@ export async function GET(req: Request) {
   }
 
   try {
+    if (isBundleLocked(cwd)) {
+      return NextResponse.json(
+        { error: "该目录的配置来自加密配置包（.apkg），不允许再导出" },
+        { status: 403 },
+      );
+    }
     const name = cwd.replace(/\/+$/, "").split("/").filter(Boolean).pop() || "directory";
     const { bytes, stats } = await exportProjectConfigBundle(cwd, name);
     if (stats.files === 0) {

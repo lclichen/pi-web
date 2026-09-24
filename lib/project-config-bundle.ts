@@ -3,7 +3,8 @@
  * configuration, for the "导入项目配置 / 导出配置包" workflow.
  *
  * Bundle layout (zip root):
- *   manifest.json        export metadata (name, exportedAt, format version)
+ *   manifest.json        export metadata (name, exportedAt, format version,
+ *                        package identity since format v2)
  *   AGENTS.md            project instructions (optional, exported when present)
  *   .pi/…                agent config: agents/, extensions/, skills/,
  *                        subagents.json, models.json, … (credentials excluded)
@@ -12,6 +13,12 @@
  * Import is additive-with-overwrite: existing files with the same path are
  * replaced, everything else is kept — same intent as "复制为新项目", but the
  * source is an uploaded archive instead of another project.
+ *
+ * Encrypted packages (.apkg, commercial-protection.md §一) are accepted by
+ * the same import path: the envelope is decrypted with server-held KEKs
+ * (lib/apkg.ts), license terms (expiry / max imports) are enforced before
+ * any write, and a successful import drops .pi/.bundle-lock.json which makes
+ * both export routes refuse to re-export the home.
  *
  * Security posture: imports are untrusted input. Entries are confined to the
  * whitelist above, path traversal and symlink escapes are rejected, and
@@ -22,9 +29,11 @@ import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { Readable } from "node:stream";
 import JSZip from "jszip";
+import { isApkgBytes, openApkgBytes, type ApkgHeader } from "./apkg-format.ts";
+import { checkApkgLicense, getApkgKeys, recordApkgImport, writeBundleLock, LOCK_BASENAME } from "./apkg.ts";
 
 export const BUNDLE_FORMAT = "amedac-project-config";
-export const BUNDLE_VERSION = 1;
+export const BUNDLE_VERSION = 2;
 
 export const MAX_IMPORT_BYTES = 200 * 1024 * 1024;
 const MAX_ENTRIES = 20_000;
@@ -33,8 +42,10 @@ const MAX_UNCOMPRESSED_BYTES = 600 * 1024 * 1024;
 /** Never exported, never imported — credentials and machine/user state.
  *  ssh.json carries the SSH project's password/private key; sandbox-platform.json
  *  carries the platform API key. Both are per-machine secrets that must never
- *  travel in shared bundles (the target reconnects with its own credentials). */
-const DENIED_BASENAMES = new Set(["auth.json", "ssh.json", "sandbox-platform.json"]);
+ *  travel in shared bundles (the target reconnects with its own credentials).
+ *  .bundle-lock.json is written only by the .apkg import flow — bundles must
+ *  never carry or strip it. */
+const DENIED_BASENAMES = new Set(["auth.json", "ssh.json", "sandbox-platform.json", LOCK_BASENAME]);
 /**
  * Path segments (at any depth) excluded from bundles both ways. Note
  * node_modules is deliberately NOT here: bundles target offline deployment,
@@ -56,11 +67,24 @@ export interface ExportStats {
   skipped: string[];
 }
 
+/** Package identity block (manifest v2) — display + versioning metadata. */
+export interface BundlePackageMeta {
+  name: string;
+  title: string;
+  description: string;
+  version: string;
+  channel: string;
+}
+
 export interface ImportStats {
   added: number;
   overwritten: number;
   /** Written paths (relative to home), for the result report. */
   files: string[];
+  /** Package identity from manifest v2 (null for v1 bundles / missing manifest). */
+  package: BundlePackageMeta | null;
+  /** True when the source was an encrypted .apkg (lock written, re-export blocked). */
+  apkg: boolean;
 }
 
 function isDeniedPath(relPath: string): boolean {
@@ -90,10 +114,17 @@ async function* walkFiles(root: string, rel: string): AsyncGenerator<{ rel: stri
   }
 }
 
+export interface ExportOptions {
+  /** Package identity for manifest v2; callers without explicit metadata get
+   *  name/version defaults derived from the project. */
+  package?: Partial<BundlePackageMeta>;
+}
+
 /** Build a config bundle zip for a project home. Returns the archive bytes. */
 export async function exportProjectConfigBundle(
   home: string,
   projectName: string,
+  options: ExportOptions = {},
 ): Promise<{ bytes: Buffer; stats: ExportStats }> {
   const zip = new JSZip();
   const stats: ExportStats = { files: 0, bytes: 0, skipped: [] };
@@ -122,11 +153,20 @@ export async function exportProjectConfigBundle(
     // no AGENTS.md — nothing to add
   }
 
+  const slug = projectName.trim().replace(/[^\w.-]+/g, "-").replace(/^-+|-+$/g, "") || "project";
+  const pkg: BundlePackageMeta = {
+    name: options.package?.name ?? slug,
+    title: options.package?.title ?? projectName,
+    description: options.package?.description ?? "",
+    version: options.package?.version ?? "1.0.0",
+    channel: options.package?.channel ?? "stable",
+  };
   zip.file("manifest.json", JSON.stringify({
     format: BUNDLE_FORMAT,
     version: BUNDLE_VERSION,
     project: projectName,
     exportedAt: new Date().toISOString(),
+    package: pkg,
   }, null, 2));
 
   const bytes = await zip.generateAsync({
@@ -158,24 +198,83 @@ function assertAllowed(relPath: string): void {
   throw new Error(`包内不支持的路径（仅支持 .pi/ 与 labs/）: ${relPath.slice(0, 80)}`);
 }
 
+export interface ImportOptions {
+  /** KEK override for tests; defaults to the server key store (lib/apkg.ts). */
+  apkgKeys?: Record<string, Buffer>;
+}
+
 /**
- * Apply an uploaded bundle to a project home. Validation happens fully before
- * the first write, so a malformed archive leaves the project untouched.
+ * Apply an uploaded bundle (.zip or encrypted .apkg) to a project home.
+ * Validation happens fully before the first write, so a malformed archive
+ * leaves the project untouched — .apkg license checks (expiry / import
+ * counter) likewise run before any file lands. A successful .apkg import
+ * writes .pi/.bundle-lock.json, which blocks both export routes.
  */
 export async function importProjectConfigBundle(
   home: string,
   data: Buffer,
+  options: ImportOptions = {},
 ): Promise<ImportStats> {
+  let zipData = data;
+  let apkgHeader: ApkgHeader | undefined;
+  let apkgFingerprint: string | undefined;
+  if (isApkgBytes(data)) {
+    const opened = openApkgBytes(data, options.apkgKeys ?? getApkgKeys());
+    zipData = opened.zip;
+    apkgHeader = opened.header;
+    apkgFingerprint = opened.fingerprint;
+  }
+
   let archive: JSZip;
   try {
-    archive = await JSZip.loadAsync(data);
+    archive = await JSZip.loadAsync(zipData);
   } catch {
-    throw new Error("无法解析压缩包（需要 zip 格式的配置包）");
+    throw new Error(isApkgBytes(data) ? "配置包解密后的内容损坏" : "无法解析压缩包（需要 zip 或 .apkg 格式的配置包）");
   }
 
   const entries = Object.values(archive.files).filter((e) => !e.dir);
   if (entries.length === 0) throw new Error("压缩包为空");
   if (entries.length > MAX_ENTRIES) throw new Error(`压缩包条目过多（>${MAX_ENTRIES}）`);
+
+  // Package identity + authoritative .apkg license live in the manifest
+  // (v2 / pack-CLI injected). Display-only fallback: the .apkg header.
+  let packageMeta: BundlePackageMeta | null = null;
+  let license = apkgHeader?.license ?? {};
+  const manifestEntry = archive.file("manifest.json");
+  if (manifestEntry) {
+    try {
+      const manifest = JSON.parse((await manifestEntry.async("string")) as string) as {
+        package?: Partial<BundlePackageMeta>;
+        apkg?: { license?: Record<string, unknown> };
+      };
+      if (manifest.package && typeof manifest.package.name === "string") {
+        packageMeta = {
+          name: manifest.package.name,
+          title: manifest.package.title ?? manifest.package.name,
+          description: manifest.package.description ?? "",
+          version: manifest.package.version ?? "1.0.0",
+          channel: manifest.package.channel ?? "stable",
+        };
+      }
+      if (apkgHeader && manifest.apkg?.license) {
+        license = manifest.apkg.license as typeof license;
+      }
+    } catch {
+      // malformed manifest — treat as absent
+    }
+  }
+  if (apkgHeader && !packageMeta) {
+    packageMeta = {
+      name: apkgHeader.name,
+      title: apkgHeader.title ?? apkgHeader.name,
+      description: apkgHeader.description ?? "",
+      version: apkgHeader.version ?? "1.0.0",
+      channel: apkgHeader.channel ?? "stable",
+    };
+  }
+  if (apkgHeader) {
+    checkApkgLicense(license, apkgFingerprint!, apkgHeader);
+  }
 
   // Validate everything first; collect writes for a single pass afterwards.
   const writes: Array<{ rel: string; content: Buffer; existed: boolean }> = [];
@@ -204,7 +303,7 @@ export async function importProjectConfigBundle(
   }
   if (writes.length === 0) throw new Error("包内没有可导入的配置文件（仅支持 .pi/ 与 labs/）");
 
-  const stats: ImportStats = { added: 0, overwritten: 0, files: [] };
+  const stats: ImportStats = { added: 0, overwritten: 0, files: [], package: packageMeta, apkg: Boolean(apkgHeader) };
   for (const write of writes) {
     const target = join(home, write.rel);
     await mkdir(dirname(target), { recursive: true });
@@ -214,6 +313,17 @@ export async function importProjectConfigBundle(
     stats.files.push(write.rel);
   }
   stats.files.sort();
+
+  // Encrypted imports leave a lock: re-export through the product is refused.
+  if (apkgHeader) {
+    writeBundleLock(home, {
+      apkg: true,
+      keyId: apkgHeader.keyId,
+      fingerprint: apkgFingerprint!,
+      importedAt: new Date().toISOString(),
+    });
+    recordApkgImport(apkgFingerprint!);
+  }
   return stats;
 }
 

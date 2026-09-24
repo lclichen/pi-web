@@ -1,6 +1,7 @@
 # 商业化保护方案（项目本体 + 配置包）
 
-> 状态：方案设计（待分期实施）。目标读者：需要对外商业化分发的部署/开发。
+> 状态：**§一 配置包加密 P0 已实施**（2026-09-24，见文末"实施状态"）；其余分期待实施。
+> 目标读者：需要对外商业化分发的部署/开发。
 > 威胁模型先说清楚：**所有客户端/本地保护都只能提高门槛，不能做到绝对**——
 > 攻击者拥有目标机 root 权限时，任何本地校验都可被绕过。方案按「防普通用户
 > 误扩散 / 防低成本转卖」设计，关键秘密全部收敛在发布方与服务端。
@@ -128,3 +129,47 @@ Electron 需要）。**先上 License**：它是唯一能把「复制整个部�
 
 - 前端 DRM/防截屏——教学产品内容本就展示给学生。
 - 对拥有 root 的目标机做强对抗（VM 探测/反调试军备竞赛）——成本高且伤正常用户。
+
+## 五、§一 实施状态与使用指南（2026-09-24）
+
+### 已落地
+
+| 能力 | 位置 |
+|---|---|
+| `.apkg` 信封加密格式（AES-256-GCM 双层：DEK 加密内容、KEK 包装 DEK、keyId 分代、明文头部仅展示） | `lib/apkg-format.ts` |
+| 服务端密钥存储（`<数据目录>/apkg-keys.json`，0600，env `PI_WEB_APKG_KEYS` 可合并覆盖；删 key 即吊销该代全部包） | `lib/apkg.ts` |
+| 导入链路全量接入（项目导入 / Host 导入 / 预置模板套用自动识别 `.apkg`；GCM tag 校验；**授权（过期/导入上限）在写盘前强制**） | `lib/project-config-bundle.ts` |
+| 导入计数器（`<数据目录>/apkg-imports.json`，按包指纹；**单服务器口径**，见诚实边界） | `lib/apkg.ts` |
+| `.bundle-lock.json` 禁再导出（项目与 Host 两条导出路由 403；锁文件列入双向 DENIED 清单，明文包无法携带/覆盖锁） | `lib/apkg.ts` + 两个导出路由 |
+| 预置模板密文存储（`.apkg` 原件落盘，套用时内存解密；列表展示 加密·版本 徽标） | `lib/config-bundles-store.ts` + `BundlesConfig.tsx` |
+| manifest v2：`package`（name/title/description/version/channel）规范化说明块，明文包同样携带；导入统计返回给 UI | `lib/project-config-bundle.ts` |
+| 发布侧 CLI | `scripts/pack-apkg.ts` |
+
+### 发布方打包流程
+
+```bash
+# 1) 用现有界面导出明文 zip（项目菜单 → 导出配置包）
+# 2) 加密打包（首次运行自动生成 KEK 并写入 data/apkg-keys.json）
+node --experimental-strip-types scripts/pack-apkg.ts \
+  --in course-lab-config.zip \
+  --name course-lab --title "课程实验包" --version 1.2.0 \
+  --desc "2026 秋季学期" --channel stable \
+  --expires 2027-09-01 --max-imports 50
+# → course-lab-config.apkg + 打印指纹（导入计数与锁文件的包标识）
+
+# 3) 把 data/apkg-keys.json 部署到每台要开包的 pi-web 服务器
+#    <数据目录>/apkg-keys.json（tar.gz 部署 = ~/.local/share/amedac）；
+#    容器化部署可用 PI_WEB_APKG_KEYS 环境变量注入同构 JSON。
+```
+
+### 版本管理与配置包说明规范
+
+- **两种版本正交**：`formatVersion`（信封/manifest 结构兼容性，当前 1/2，导入侧向后兼容 v1）与 `package.version`（内容版本，发布方自定，建议 semver）。列表/详情/导入结果统一展示 `package.version`。
+- **说明字段**：`title`（展示名）+ `description`（一句话说明）随包分发；预置模板的描述字段与包内说明独立（前者是平台侧运营文案，后者是包自带的）。
+- **渠道**：`channel`（stable/alpha/beta）仅供发布方管理分发线，导入侧不做限制。
+
+### 诚实边界（实施后仍成立）
+
+- 明文必然存在于项目 home（pi 运行时要读）；有服务器文件系统访问权的人可以直接拷文件。锁防的是**经由产品导出功能**的二次分发。
+- 导入计数是单服务器口径：包复制到另一台服务器重新计数。多服务器场景靠 `maxImports × 服务器数` 估算发放量，或未来升级为服务端发放计数。
+- KEK 内嵌场景（完全离线单机导入）尚未实现——当前要求目标服务器持有 keys 文件。

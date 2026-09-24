@@ -122,7 +122,7 @@ export function BundlesConfig({ embedded = false }: { embedded?: boolean }) {
   const upload = async () => {
     const file = fileRef.current?.files?.[0];
     if (!file) {
-      setFormError(t("请选择一个 zip 或 apkg 文件"));
+      setFormError(t("bundles.chooseZipApkgFile2"));
       return;
     }
     setUploading(true);
@@ -143,7 +143,7 @@ export function BundlesConfig({ embedded = false }: { embedded?: boolean }) {
       await load();
       setUploadMode(false);
       if (data.name) setSelectedName(data.name);
-      setFormMsg(t("模板已上传。"));
+      setFormMsg(t("bundles.bundleUploaded"));
     } catch (e) {
       setFormError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -152,7 +152,7 @@ export function BundlesConfig({ embedded = false }: { embedded?: boolean }) {
   };
 
   const remove = async (bundle: BundleMeta) => {
-    if (!window.confirm(t("确定删除模板「{name}」吗？已套用它的项目不受影响。", { name: bundle.name }))) return;
+    if (!window.confirm(t("bundles.deleteBundleProjectsAlreadyUsing", { name: bundle.name }))) return;
     try {
       const res = await fetch(`/api/bundles?name=${encodeURIComponent(bundle.name)}`, { method: "DELETE" });
       const data = (await res.json()) as { error?: string };
@@ -168,22 +168,22 @@ export function BundlesConfig({ embedded = false }: { embedded?: boolean }) {
   const showDetail = !showUpload && selected !== null;
 
   return (
-    <ConfigPanelShell embedded={embedded} title={t("配置模板")} closeLabel={t("i18n.close")} onClose={() => {}}>
+    <ConfigPanelShell embedded={embedded} title={t("bundles.configBundles")} closeLabel={t("i18n.close")} onClose={() => {}}>
       {/* Body */}
       <ConfigSplitView>
         {/* Left: bundle list（与模型页同构：列表 + 左下角上传） */}
         <ConfigSidebar>
           <ConfigSidebarList>
-            {loading ? <div className="config-sidebar-message">{t("加载配置模板…")}</div>
+            {loading ? <div className="config-sidebar-message">{t("bundles.loadingConfigBundles")}</div>
             : error ? <div className="config-sidebar-message is-error">{error}</div>
-            : bundles.length === 0 ? <div className="config-sidebar-message is-empty">{t("暂无模板")}</div>
+            : bundles.length === 0 ? <div className="config-sidebar-message is-empty">{t("bundles.templatesYet")}</div>
             : bundles.map((b) => (
               <ConfigSidebarItem key={b.name} active={!showUpload && selectedName === b.name} onClick={() => selectBundle(b)}>
                 <ConfigSidebarText className="is-grow" title={b.description}>
                   {b.name}
                   {b.kind === "apkg" && (
-                    <span title={t("加密配置包：套用时内存解密；套用后项目禁止再导出配置。")} style={{ marginLeft: 6, fontSize: 10, color: "var(--accent)", fontFamily: "var(--font-mono)" }}>
-                      {t("加密")}{b.version ? ` · v${b.version}` : ""}
+                    <span title={t("bundles.apkgBadgeTip")} style={{ marginLeft: 6, fontSize: 10, color: "var(--accent)", fontFamily: "var(--font-mono)" }}>
+                      {t("bundles.encrypted")}{b.version ? ` · v${b.version}` : ""}
                     </span>
                   )}
                 </ConfigSidebarText>
@@ -192,7 +192,7 @@ export function BundlesConfig({ embedded = false }: { embedded?: boolean }) {
             ))}
           </ConfigSidebarList>
           {/* 上传入口固定在侧栏左下角（与模型页「添加 Provider」一致） */}
-          <ConfigListAction onClick={startUpload} active={showUpload}>{t("上传模板")}</ConfigListAction>
+          <ConfigListAction onClick={startUpload} active={showUpload}>{t("bundles.uploadBundle")}</ConfigListAction>
         </ConfigSidebar>
 
         {/* Right: upload form / bundle detail */}
@@ -202,20 +202,20 @@ export function BundlesConfig({ embedded = false }: { embedded?: boolean }) {
               <>
                 <ConfigDetailHeader>
                   <ConfigDetailHeaderInfo>
-                    <ConfigDetailTitle>{t("上传新模板")}</ConfigDetailTitle>
+                    <ConfigDetailTitle>{t("bundles.uploadNew")}</ConfigDetailTitle>
                   </ConfigDetailHeaderInfo>
                 </ConfigDetailHeader>
                 <span style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.6 }}>
-                  {t("配置模板是管理员维护的标准 .pi/ 配置 + labs/ 打包（zip 或加密 .apkg）。用户新建项目时可在向导中选择；已有项目可通过项目菜单「套用配置模板…」补装。")}
+                  {t("bundles.configBundlesStandardPiConfig")}
                 </span>
-                <ConfigField label={t("选择 zip / apkg 文件")}>
+                <ConfigField label={t("bundles.chooseZipApkgFile")}>
                   <input ref={fileRef} type="file" accept=".zip,.apkg" onChange={(e) => setFileChosen(e.target.files?.[0]?.name ?? null)} style={{ fontSize: 11, color: "var(--text-muted)" }} />
                   {fileChosen && <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{fileChosen}</span>}
                 </ConfigField>
-                <ConfigField label={t("模板名（可选，默认用文件名；字母数字点下划线连字符）")}>
+                <ConfigField label={t("bundles.bundleNameOptionalDefaultsFile")}>
                   <input value={name} onChange={(e) => setName(e.target.value)} style={monoStyle} maxLength={64} placeholder="standard-lab" />
                 </ConfigField>
-                <ConfigField label={t("描述（可选）")}>
+                <ConfigField label={t("common.descriptionOptional")}>
                   <input value={description} onChange={(e) => setDescription(e.target.value)} style={inputStyle} maxLength={200} />
                 </ConfigField>
               </>
@@ -227,36 +227,36 @@ export function BundlesConfig({ embedded = false }: { embedded?: boolean }) {
                     <span style={{ fontSize: 11, color: "var(--text-dim)" }}>{formatSize(selected.size)}</span>
                   </ConfigDetailHeaderInfo>
                   <ConfigDetailActions>
-                    <ConfigButton variant="danger" size="small" onClick={() => void remove(selected)}>{t("删除")}</ConfigButton>
+                    <ConfigButton variant="danger" size="small" onClick={() => void remove(selected)}>{t("common.delete")}</ConfigButton>
                   </ConfigDetailActions>
                 </ConfigDetailHeader>
                 {selected.description && <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.6 }}>{selected.description}</div>}
                 <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12 }}>
                   <div style={{ display: "flex", gap: 10 }}>
-                    <span style={{ width: 80, color: "var(--text-dim)" }}>{t("上传时间")}</span>
+                    <span style={{ width: 80, color: "var(--text-dim)" }}>{t("bundles.uploaded")}</span>
                     <span style={{ color: "var(--text)" }}>{new Date(selected.createdAt).toLocaleString()}</span>
                   </div>
                   <div style={{ display: "flex", gap: 10 }}>
-                    <span style={{ width: 80, color: "var(--text-dim)" }}>{t("类型")}</span>
+                    <span style={{ width: 80, color: "var(--text-dim)" }}>{t("bundles.type")}</span>
                     <span style={{ color: "var(--text)" }}>
                       {selected.kind === "apkg"
-                        ? t("加密配置包（apkg）") + (selected.version ? ` · v${selected.version}` : "")
-                        : t("明文配置包（zip）")}
+                        ? t("bundles.encryptedPackageApkg") + (selected.version ? ` · v${selected.version}` : "")
+                        : t("bundles.plainPackageZip")}
                     </span>
                   </div>
                   {selected.kind === "apkg" && (
                     <div style={{ display: "flex", gap: 10 }}>
-                      <span style={{ width: 80, color: "var(--text-dim)" }}>{t("说明")}</span>
-                      <span style={{ color: "var(--text-muted)" }}>{t("套用时内存解密；套用后该项目禁止再导出配置（防二次分发）。")}</span>
+                      <span style={{ width: 80, color: "var(--text-dim)" }}>{t("bundles.notes")}</span>
+                      <span style={{ color: "var(--text-muted)" }}>{t("bundles.apkgApplyNote")}</span>
                     </div>
                   )}
                 </div>
                 <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.6 }}>
-                  {t("配置模板是管理员维护的标准 .pi/ 配置 + labs/ 打包（zip 或加密 .apkg）。用户新建项目时可在向导中选择；已有项目可通过项目菜单「套用配置模板…」补装。")}
+                  {t("bundles.configBundlesStandardPiConfig")}
                 </div>
               </>
             ) : (
-              <ConfigEmptyState>{t("配置模板是管理员维护的标准 .pi/ 配置 + labs/ 打包（zip）。选择左侧模板查看详情，或点击左下角「上传模板」。")}</ConfigEmptyState>
+              <ConfigEmptyState>{t("bundles.configBundlesStandardPiConfig")}</ConfigEmptyState>
             )}
           </ConfigDetailStack>
         </ConfigDetail>
@@ -272,9 +272,9 @@ export function BundlesConfig({ embedded = false }: { embedded?: boolean }) {
       }>
         {showUpload && (
           <>
-            <ConfigButton onClick={exitUpload}>{t("取消")}</ConfigButton>
+            <ConfigButton onClick={exitUpload}>{t("common.cancel")}</ConfigButton>
             <ConfigButton variant="primary" onClick={() => void upload()} disabled={uploading}>
-              {uploading ? t("上传中…") : t("上传")}
+              {uploading ? t("bundles.uploading") : t("bundles.upload")}
             </ConfigButton>
           </>
         )}

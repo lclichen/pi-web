@@ -308,8 +308,8 @@ export function SettingsPanel({ cwd, sessionId, initialSection, onClose, onSessi
     // Admin-only management sections — their rendering is gated on isAdmin
     // below; they must also appear here or there is no way to navigate to them.
     ...(isAdmin ? [
-      { id: "quick-templates" as const, label: t("快速会话模板"), requiresProject: false },
-      { id: "bundles" as const, label: t("配置模板"), requiresProject: false },
+      { id: "quick-templates" as const, label: t("quickTemplates.quickSessionTemplates"), requiresProject: false },
+      { id: "bundles" as const, label: t("bundles.configBundles"), requiresProject: false },
     ] : []),
   ];
 

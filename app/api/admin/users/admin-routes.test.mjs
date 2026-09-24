@@ -67,7 +67,10 @@ test("P2 tabs exist: containers lifecycle + image catalogue actions", async () =
 
 test("reset-password flow enforces the 8-char policy client-side and reports session invalidation", async () => {
   assert.match(dialogSource, /resetPassword\.length < 8/);
-  assert.match(dialogSource, /重置后该用户的所有会话与登录态立即失效/);
+  // Session-invalidation notice（原中文直键，2026-09 统一为英文键 admin.allUsersSessionsLoginsBecome）
+  assert.match(dialogSource, /admin\.allUsersSessionsLoginsBecome/);
+  const zh = await readFile(new URL("../../../../lib/i18n/messages/zh-CN.ts", import.meta.url), "utf8");
+  assert.match(zh, /"admin\.allUsersSessionsLoginsBecome":\s*"重置后该用户的所有会话与登录态立即失效/);
 });
 
 test("the legacy external console link is fully retired", async () => {

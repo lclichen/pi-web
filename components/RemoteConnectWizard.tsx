@@ -76,9 +76,9 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
 
   const presetRow = (
     <label style={fieldStyle}>
-      {t("配置模板（可选）")}
+      {t("remote.configTemplateOptional")}
       <select value={presetBundle} onChange={(e) => setPresetBundle(e.target.value)} style={inputStyle}>
-        <option value="">{t("不使用模板")}</option>
+        <option value="">{t("remote.template")}</option>
         {presets.map((p) => (
           <option key={p.name} value={p.name}>{p.name}{p.description ? ` — ${p.description}` : ""}</option>
         ))}
@@ -109,10 +109,10 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
           setError(null);
           setStep(4);
         } else {
-          setError(t("本机尚未配对：在下方完成配对后将自动继续。"));
+          setError(t("remote.localMachinePairedCompletePairing"));
         }
       } catch {
-        if (!cancelled) setError(t("无法获取本机连接状态"));
+        if (!cancelled) setError(t("remote.unableFetchLocalMachineConnection"));
       }
     };
     void check();
@@ -223,7 +223,7 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
     setSshTestMsg(null);
     try {
       const { whoami } = await runSshTest();
-      setSshTestMsg({ ok: true, text: t("连接成功：{user}", { user: whoami ?? "?" }) });
+      setSshTestMsg({ ok: true, text: t("remote.connected", { user: whoami ?? "?" }) });
     } catch (e) {
       setSshTestMsg({ ok: false, text: e instanceof Error ? e.message : String(e) });
     } finally {
@@ -287,7 +287,7 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
 
   const methodCards: Array<{ id: string; title: string; sub: string; icon: React.ReactNode; disabled?: boolean; soon?: boolean }> = [
     {
-      id: "sandbox", title: t("连接沙盒"), sub: t("平台容器 · 镜像可选"),
+      id: "sandbox", title: t("remote.sandbox"), sub: t("remote.platformContainerImageSelectable"),
       icon: (
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
           <rect x="3" y="3" width="8" height="8" rx="1.5" /><rect x="13" y="3" width="8" height="8" rx="1.5" />
@@ -296,7 +296,7 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
       ),
     },
     {
-      id: "local", title: t("连接本地"), sub: t("你自己的电脑（一个 Agent 连接可跑多个项目）"),
+      id: "local", title: t("remote.computer"), sub: t("remote.ownMachineOneAgentConnection"),
       icon: (
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
           <rect x="2" y="4" width="20" height="12" rx="2" /><path d="M8 20h8M12 16v4" />
@@ -304,7 +304,7 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
       ),
     },
     {
-      id: "server", title: t("打开服务器目录"), sub: t("pi-web 服务器上的目录（Host 模式）"),
+      id: "server", title: t("remote.openServerDirectory"), sub: t("remote.hostModeDir"),
       icon: (
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
           <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
@@ -312,7 +312,7 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
       ),
     },
     {
-      id: "ssh", title: t("SSH 连接"), sub: t("远程主机 · 通过 SSH 执行会话工具"),
+      id: "ssh", title: t("remote.ssh"), sub: t("remote.remoteHostSessionToolsRun"),
       icon: (
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
           <path d="M4 17l6-6-6-6M12 19h8" />
@@ -333,7 +333,7 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
       >
         {/* 左侧 stepper */}
         <aside style={{ width: 200, flexShrink: 0, background: "var(--bg)", borderRight: "1px solid var(--border)", padding: "18px 0", display: "flex", flexDirection: "column" }}>
-          <div style={{ padding: "0 18px 16px", fontWeight: 700, fontSize: 13, color: "var(--text)" }}>{t("远程连接")}</div>
+          <div style={{ padding: "0 18px 16px", fontWeight: 700, fontSize: 13, color: "var(--text)" }}>{t("remote.remoteConnection")}</div>
           {STEPS.map((s) => {
             const active = s.n === step;
             const done = s.n < step;
@@ -348,7 +348,7 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
           })}
           <div style={{ flex: 1 }} />
           <button onClick={onClose} style={{ margin: "0 18px", background: "transparent", border: "none", color: "var(--text-dim)", textAlign: "left", padding: "6px 0" }}>
-            {t("取消")}
+            {t("common.cancel")}
           </button>
         </aside>
 
@@ -356,8 +356,8 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
         <section style={{ flex: 1, display: "flex", flexDirection: "column", padding: "22px 26px", overflow: "auto" }}>
           {step === 1 && (
             <>
-              <h2 style={{ margin: "0 0 4px", fontSize: 17, color: "var(--text)" }}>{t("选择连接方式")}</h2>
-              <p style={{ margin: "0 0 18px", fontSize: 12.5, color: "var(--text-dim)" }}>{t("选择进入当前工作区的连接方式，然后继续填写对应的连接配置。")}</p>
+              <h2 style={{ margin: "0 0 4px", fontSize: 17, color: "var(--text)" }}>{t("remote.chooseConnectionMethod")}</h2>
+              <p style={{ margin: "0 0 18px", fontSize: 12.5, color: "var(--text-dim)" }}>{t("remote.chooseMethodHint")}</p>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 14 }}>
                 {methodCards.filter((c) => (c as { id: string }).id !== "server" || isAdmin).map((c) => (
                   <button
@@ -377,7 +377,7 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
                     <span style={{ color: c.disabled ? "var(--text-dim)" : "var(--accent)" }}>{c.icon}</span>
                     <span style={{ fontSize: 14, fontWeight: 600 }}>
                       {c.title}
-                      {c.soon && <span style={{ marginLeft: 6, fontSize: 10, padding: "1px 6px", borderRadius: 8, border: "1px solid var(--border)", color: "var(--text-dim)" }}>{t("即将推出")}</span>}
+                      {c.soon && <span style={{ marginLeft: 6, fontSize: 10, padding: "1px 6px", borderRadius: 8, border: "1px solid var(--border)", color: "var(--text-dim)" }}>{t("remote.comingSoon")}</span>}
                     </span>
                     <span style={{ fontSize: 11.5, color: "var(--text-dim)" }}>{c.sub}</span>
                   </button>
@@ -388,8 +388,8 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
 
           {step === 2 && method === "sandbox" && (
             <>
-              <h2 style={{ margin: "0 0 4px", fontSize: 17, color: "var(--text)" }}>{t("填写连接配置")}</h2>
-              <p style={{ margin: "0 0 10px", fontSize: 12.5, color: "var(--text-dim)" }}>{t("配置沙盒项目的运行环境，创建后项目会话将在容器 /workspace 内执行。")}</p>
+              <h2 style={{ margin: "0 0 4px", fontSize: 17, color: "var(--text)" }}>{t("remote.connectionSettings")}</h2>
+              <p style={{ margin: "0 0 10px", fontSize: 12.5, color: "var(--text-dim)" }}>{t("remote.sandboxEnvHint")}</p>
               {error && <div className="error-banner">{error}</div>}
               <div style={{ flex: 1, margin: "0 -26px", padding: "0 26px", overflow: "auto" }}>
                 <NewProjectDialog mode="sandbox" busy={sandboxBusy} embedded onCancel={() => setStep(1)} onCreate={handleSandboxCreated} />
@@ -399,41 +399,41 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
 
           {step === 2 && method === "ssh" && (
             <>
-              <h2 style={{ margin: "0 0 4px", fontSize: 17, color: "var(--text)" }}>{t("SSH 连接配置")}</h2>
-              <p style={{ margin: "0 0 14px", fontSize: 12.5, color: "var(--text-dim)" }}>{t("会话在 pi-web 服务器上运行，但 bash / 文件读写等工具通过 SSH 在远程主机的工作目录内执行。")}</p>
+              <h2 style={{ margin: "0 0 4px", fontSize: 17, color: "var(--text)" }}>{t("remote.sshConnectionSettings")}</h2>
+              <p style={{ margin: "0 0 14px", fontSize: 12.5, color: "var(--text-dim)" }}>{t("remote.sessionsRunPiWebServer")}</p>
               {error && <div className="error-banner" style={{ marginBottom: 10 }}>{error}</div>}
               <div style={{ display: "flex", flexDirection: "column", gap: 12, maxWidth: 460 }}>
                 <label style={fieldStyle}>
-                  {t("项目名称")}
+                  {t("projects.projectName")}
                   <input value={sshName} onChange={(e) => setSshName(e.target.value)} placeholder="my-ssh-lab" autoFocus style={inputStyle} />
                 </label>
                 <div style={{ display: "flex", gap: 10 }}>
                   <label style={{ ...fieldStyle, flex: 1 }}>
-                    {t("主机地址")}
+                    {t("remote.hostAddress")}
                     <input value={sshForm.host} onChange={(e) => setSshForm({ ...sshForm, host: e.target.value })} placeholder="192.168.1.100" style={inputStyle} />
                   </label>
                   <label style={{ ...fieldStyle, width: 96 }}>
-                    {t("端口")}
+                    {t("remote.port")}
                     <input value={sshForm.port} onChange={(e) => setSshForm({ ...sshForm, port: e.target.value.replace(/[^0-9]/g, "") })} placeholder="22" style={inputStyle} />
                   </label>
                 </div>
                 <label style={fieldStyle}>
-                  {t("用户名")}
+                  {t("admin.username")}
                   <input value={sshForm.username} onChange={(e) => setSshForm({ ...sshForm, username: e.target.value })} placeholder="root" style={inputStyle} />
                 </label>
                 <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "var(--text-muted)" }}>
-                  <span>{t("认证方式")}</span>
+                  <span>{t("remote.authMethod")}</span>
                   <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
                     <input type="radio" checked={sshForm.authType === "password"} onChange={() => setSshForm({ ...sshForm, authType: "password" })} />
-                    {t("密码")}
+                    {t("remote.password")}
                   </label>
                   {sshForm.authType === "password" ? (
                     <input type="password" value={sshForm.password} onChange={(e) => setSshForm({ ...sshForm, password: e.target.value })} style={{ ...inputStyle, marginLeft: 22, width: "calc(100% - 22px)" }} />
                   ) : null}
                   <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
                     <input type="radio" checked={sshForm.authType === "key"} onChange={() => setSshForm({ ...sshForm, authType: "key" })} />
-                    {t("私钥")}
-                    <span style={{ fontSize: 10.5, color: "var(--text-dim)" }}>{t("（留空使用服务器默认密钥）")}</span>
+                    {t("remote.privateKey")}
+                    <span style={{ fontSize: 10.5, color: "var(--text-dim)" }}>{t("remote.leaveEmptyUseServerDefault")}</span>
                   </label>
                   {sshForm.authType === "key" ? (
                     <textarea value={sshForm.privateKey} onChange={(e) => setSshForm({ ...sshForm, privateKey: e.target.value })} rows={3} placeholder="-----BEGIN OPENSSH PRIVATE KEY-----" style={{ ...inputStyle, marginLeft: 22, width: "calc(100% - 22px)", height: "auto", padding: 8, fontFamily: "var(--font-mono)", fontSize: 11, resize: "vertical" }} />
@@ -446,39 +446,39 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
                     disabled={sshTesting || !sshForm.host.trim() || !sshForm.username.trim()}
                     style={{ ...secondaryBtn, opacity: sshTesting || !sshForm.host.trim() || !sshForm.username.trim() ? 0.5 : 1, cursor: sshTesting || !sshForm.host.trim() || !sshForm.username.trim() ? "not-allowed" : "pointer" }}
                   >
-                    {sshTesting ? t("测试中…") : t("测试连接")}
+                    {sshTesting ? t("remote.testing") : t("remote.testConnection")}
                   </button>
                   {sshTestMsg && <span style={{ fontSize: 12, color: sshTestMsg.ok ? "var(--success)" : "#ef4444" }}>{sshTestMsg.text}</span>}
                 </div>
                 {presetRow}
-                <div className="info-banner">{t("SSH 凭据保存在项目配置中（0600 权限），不会随配置包导出。")}</div>
+                <div className="info-banner">{t("remote.sshCredentialsStoredProjectConfig")}</div>
               </div>
               <div style={{ flex: 1 }} />
               <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4 }}>
-                <button onClick={() => setStep(1)} style={secondaryBtn}>{t("上一步")}</button>
-                <button className="primary" disabled={!sshForm.host.trim() || !sshForm.username.trim() || !sshName.trim()} onClick={() => setStep(3)} title={!sshName.trim() ? t("请先填写项目名称") : undefined} style={{ ...primaryBtn, opacity: !sshForm.host.trim() || !sshForm.username.trim() || !sshName.trim() ? 0.5 : 1 }}>{t("下一步")}</button>
+                <button onClick={() => setStep(1)} style={secondaryBtn}>{t("remote.back")}</button>
+                <button className="primary" disabled={!sshForm.host.trim() || !sshForm.username.trim() || !sshName.trim()} onClick={() => setStep(3)} title={!sshName.trim() ? t("remote.enterProjectNameFirst") : undefined} style={{ ...primaryBtn, opacity: !sshForm.host.trim() || !sshForm.username.trim() || !sshName.trim() ? 0.5 : 1 }}>{t("remote.next")}</button>
               </div>
             </>
           )}
 
           {step === 3 && method === "ssh" && (
             <>
-              <h2 style={{ margin: "0 0 4px", fontSize: 17, color: "var(--text)" }}>{t("连接中")}</h2>
+              <h2 style={{ margin: "0 0 4px", fontSize: 17, color: "var(--text)" }}>{t("remote.connecting")}</h2>
               {sshStep3Busy ? (
                 <div style={{ display: "flex", alignItems: "center", gap: 10, color: "var(--text-dim)", fontSize: 13 }}>
-                  <span className="spinner" /> {t("正在测试 SSH 连接…")}
+                  <span className="spinner" /> {t("remote.testingSshConnection")}
                 </div>
               ) : error ? (
                 <div style={{ display: "flex", flexDirection: "column", gap: 12, maxWidth: 460 }}>
                   <div className="error-banner">{error}</div>
-                  <div className="info-banner">{t("请返回上一步检查主机地址、端口与认证信息，或重试。")}</div>
+                  <div className="info-banner">{t("remote.goBackPreviousStepCheck")}</div>
                 </div>
               ) : null}
               <div style={{ flex: 1 }} />
               {!sshStep3Busy && error && (
                 <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4 }}>
-                  <button onClick={() => { setError(null); setStep(2); }} style={secondaryBtn}>{t("上一步")}</button>
-                  <button className="primary" onClick={() => setSshStep3Retry((n) => n + 1)} style={primaryBtn}>{t("重试")}</button>
+                  <button onClick={() => { setError(null); setStep(2); }} style={secondaryBtn}>{t("remote.back")}</button>
+                  <button className="primary" onClick={() => setSshStep3Retry((n) => n + 1)} style={primaryBtn}>{t("remote.retry")}</button>
                 </div>
               )}
             </>
@@ -486,9 +486,9 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
 
           {step === 3 && method === "sandbox" && (
             <>
-              <h2 style={{ margin: "0 0 4px", fontSize: 17, color: "var(--text)" }}>{t("连接中")}</h2>
+              <h2 style={{ margin: "0 0 4px", fontSize: 17, color: "var(--text)" }}>{t("remote.connecting")}</h2>
               <div style={{ display: "flex", alignItems: "center", gap: 10, color: "var(--text-dim)", fontSize: 13 }}>
-                <span className="spinner" /> {t("正在创建容器并准备项目环境…")}
+                <span className="spinner" /> {t("remote.creatingContainer")}
               </div>
               <div style={{ flex: 1 }} />
             </>
@@ -496,37 +496,37 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
 
           {step === 2 && method === "local" && (
             <>
-              <h2 style={{ margin: "0 0 4px", fontSize: 17, color: "var(--text)" }}>{t("填写连接配置")}</h2>
-              <p style={{ margin: "0 0 14px", fontSize: 12.5, color: "var(--text-dim)" }}>{t("本机模式按用户配对：一个 Agent 连接可以承载多个项目，各项目使用不同的工作目录。")}</p>
+              <h2 style={{ margin: "0 0 4px", fontSize: 17, color: "var(--text)" }}>{t("remote.connectionSettings")}</h2>
+              <p style={{ margin: "0 0 14px", fontSize: 12.5, color: "var(--text-dim)" }}>{t("remote.localMachineModePairedPer")}</p>
               {error && <div className="error-banner" style={{ marginBottom: 10 }}>{error}</div>}
               <div style={{ display: "flex", flexDirection: "column", gap: 12, maxWidth: 460 }}>
                 <label style={fieldStyle}>
-                  {t("项目名称")}
-                  <input value={localName} onChange={(e) => setLocalName(e.target.value)} placeholder={t("如：my-local-lab")} autoFocus style={inputStyle} />
+                  {t("projects.projectName")}
+                  <input value={localName} onChange={(e) => setLocalName(e.target.value)} placeholder={t("remote.eGMyLocalLab")} autoFocus style={inputStyle} />
                 </label>
-                <div className="info-banner">{t("下一步将在向导内完成本机配对（已配对则直接进入目录选择）。")}</div>
+                <div className="info-banner">{t("remote.nextStepCompletesPairingInside")}</div>
                 {presetRow}
               </div>
               <div style={{ flex: 1 }} />
               <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4 }}>
-                <button onClick={() => setStep(1)} style={secondaryBtn}>{t("上一步")}</button>
-                <button className="primary" disabled={!localName.trim()} onClick={() => setStep(3)} style={{ ...primaryBtn, opacity: !localName.trim() ? 0.5 : 1 }}>{t("下一步")}</button>
+                <button onClick={() => setStep(1)} style={secondaryBtn}>{t("remote.back")}</button>
+                <button className="primary" disabled={!localName.trim()} onClick={() => setStep(3)} style={{ ...primaryBtn, opacity: !localName.trim() ? 0.5 : 1 }}>{t("remote.next")}</button>
               </div>
             </>
           )}
 
           {step === 3 && method === "local" && (
             <>
-              <h2 style={{ margin: "0 0 4px", fontSize: 17, color: "var(--text)" }}>{t("连接中")}</h2>
+              <h2 style={{ margin: "0 0 4px", fontSize: 17, color: "var(--text)" }}>{t("remote.connecting")}</h2>
               {/* 未配对：提示横幅 + 下方内嵌配对面板；配对成功由轮询自动进入下一步。 */}
               {error && <div className="error-banner" style={{ marginBottom: 10 }}>{error}</div>}
               {relayInfo?.online ? (
                 <>
-                  <div className="info-banner">{t("本机 Agent 已连接")}{relayInfo.hostname ? `：${relayInfo.hostname}` : ""}</div>
+                  <div className="info-banner">{t("remote.localAgentConnected")}{relayInfo.hostname ? `：${relayInfo.hostname}` : ""}</div>
                   <div style={{ flex: 1 }} />
                   <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-                    <button onClick={() => setStep(2)}>{t("上一步")}</button>
-                    <button className="primary" onClick={() => setStep(4)}>{t("下一步")}</button>
+                    <button onClick={() => setStep(2)}>{t("remote.back")}</button>
+                    <button className="primary" onClick={() => setStep(4)}>{t("remote.next")}</button>
                   </div>
                 </>
               ) : (
@@ -539,40 +539,40 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
 
           {step === 4 && method === "local" && (
             <>
-              <h2 style={{ margin: "0 0 4px", fontSize: 17, color: "var(--text)" }}>{t("选择目录")}</h2>
-              <p style={{ margin: "0 0 14px", fontSize: 12.5, color: "var(--text-dim)" }}>{t("填写本机上该项目的工作目录（Agent 侧路径，例如 /home/me/projects/demo；留空则使用默认工作区）。")}</p>
+              <h2 style={{ margin: "0 0 4px", fontSize: 17, color: "var(--text)" }}>{t("remote.chooseDirectory")}</h2>
+              <p style={{ margin: "0 0 14px", fontSize: 12.5, color: "var(--text-dim)" }}>{t("remote.localWorkdirHint")}</p>
               <div style={{ display: "flex", flexDirection: "column", gap: 12, maxWidth: 460 }}>
                 {(relayMachines?.length ?? 0) > 1 && (
                   <label style={fieldStyle}>
-                    {t("使用哪台机器")}
+                    {t("remote.whichMachine")}
                     <select
                       value={localMachineId}
                       onChange={(e) => { setLocalMachineId(e.target.value); setLocalDir(""); }}
                       style={inputStyle}
                     >
-                      <option value="">{t("默认（最近连接的机器）")}</option>
+                      <option value="">{t("remote.defaultMachine")}</option>
                       {relayMachines?.map((m) => (
                         <option key={m.machineId} value={m.machineId} disabled={!m.online}>
-                          {m.label}{m.online ? "" : `（${t("离线")}）`}
+                          {m.label}{m.online ? "" : `（${t("remote.offline")}）`}
                         </option>
                       ))}
                     </select>
                   </label>
                 )}
                 <label style={fieldStyle}>
-                  {t("本机工作目录（可选）")}
+                  {t("remote.localWorkingDirectoryOptional")}
                   <div style={{ display: "flex", gap: 8 }}>
                     <input value={localDir} onChange={(e) => setLocalDir(e.target.value)} placeholder="/home/me/projects/demo" style={{ ...inputStyle, flex: 1 }} />
-                    <button type="button" onClick={() => setLocalPickerOpen(true)} title={t("打开本机目录浏览器")} style={{ ...secondaryBtn, flexShrink: 0 }}>{t("浏览…")}</button>
+                    <button type="button" onClick={() => setLocalPickerOpen(true)} title={t("remote.openLocalDirectoryBrowser")} style={{ ...secondaryBtn, flexShrink: 0 }}>{t("remote.browse")}</button>
                   </div>
                 </label>
                 {error && <div className="error-banner">{error}</div>}
               </div>
               <div style={{ flex: 1 }} />
               <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4 }}>
-                <button onClick={() => setStep(3)} style={secondaryBtn}>{t("上一步")}</button>
+                <button onClick={() => setStep(3)} style={secondaryBtn}>{t("remote.back")}</button>
                 <button className="primary" disabled={busy || !localName.trim()} onClick={finishLocal} style={{ ...primaryBtn, opacity: busy || !localName.trim() ? 0.5 : 1 }}>
-                  {busy ? t("创建中…") : t("完成")}
+                  {busy ? t("projects.creating") : t("common.finish")}
                 </button>
               </div>
             </>
@@ -580,23 +580,23 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
 
           {step === 4 && method === "ssh" && (
             <>
-              <h2 style={{ margin: "0 0 4px", fontSize: 17, color: "var(--text)" }}>{t("选择目录")}</h2>
-              <p style={{ margin: "0 0 14px", fontSize: 12.5, color: "var(--text-dim)" }}>{t("选择或填写远程主机上该项目的工作目录（例如 /root/projects/demo；留空则使用远程 home）。")}</p>
+              <h2 style={{ margin: "0 0 4px", fontSize: 17, color: "var(--text)" }}>{t("remote.chooseDirectory")}</h2>
+              <p style={{ margin: "0 0 14px", fontSize: 12.5, color: "var(--text-dim)" }}>{t("remote.pickEnterProjectWorkingDirectory")}</p>
               <div style={{ display: "flex", flexDirection: "column", gap: 12, maxWidth: 460 }}>
                 <label style={fieldStyle}>
-                  {t("远程工作目录（可选）")}
+                  {t("remote.remoteWorkingDirectoryOptional")}
                   <div style={{ display: "flex", gap: 8 }}>
                     <input value={localDir} onChange={(e) => setLocalDir(e.target.value)} placeholder="/root/projects/demo" style={{ ...inputStyle, flex: 1 }} />
-                    <button type="button" onClick={() => setSshPickerOpen(true)} title={t("打开远程目录浏览器")} style={{ ...secondaryBtn, flexShrink: 0 }}>{t("浏览…")}</button>
+                    <button type="button" onClick={() => setSshPickerOpen(true)} title={t("remote.openRemoteDirectoryBrowser")} style={{ ...secondaryBtn, flexShrink: 0 }}>{t("remote.browse")}</button>
                   </div>
                 </label>
                 {error && <div className="error-banner">{error}</div>}
               </div>
               <div style={{ flex: 1 }} />
               <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4 }}>
-                <button onClick={() => setStep(3)} style={secondaryBtn}>{t("上一步")}</button>
+                <button onClick={() => setStep(3)} style={secondaryBtn}>{t("remote.back")}</button>
                 <button className="primary" disabled={busy || !sshName.trim()} onClick={() => void finishSsh()} style={{ ...primaryBtn, opacity: busy || !sshName.trim() ? 0.5 : 1 }}>
-                  {busy ? t("创建中…") : t("完成")}
+                  {busy ? t("projects.creating") : t("common.finish")}
                 </button>
               </div>
             </>
@@ -604,11 +604,11 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
 
           {step === 4 && method === "sandbox" && (
             <>
-              <h2 style={{ margin: "0 0 4px", fontSize: 17, color: "var(--text)" }}>{t("选择目录")}</h2>
-              <div className="info-banner">{t("沙盒项目的目录固定为容器 /workspace——项目会话、终端与文件面板都在其中执行。")}</div>
+              <h2 style={{ margin: "0 0 4px", fontSize: 17, color: "var(--text)" }}>{t("remote.chooseDirectory")}</h2>
+              <div className="info-banner">{t("remote.sandboxDirFixedHint")}</div>
               <div style={{ flex: 1 }} />
               <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-                <button className="primary" onClick={() => { onCreated("sandbox", sandboxDone?.name ?? ""); onClose(); }}>{t("完成")}</button>
+                <button className="primary" onClick={() => { onCreated("sandbox", sandboxDone?.name ?? ""); onClose(); }}>{t("common.finish")}</button>
               </div>
             </>
           )}
@@ -616,7 +616,7 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
         {localPickerOpen && (
           <div onClick={(e) => { if (e.target === e.currentTarget) setLocalPickerOpen(false); }} style={{ position: "fixed", inset: 0, zIndex: 1300, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.45)", padding: 20 }}>
             <div style={{ width: "min(560px, 94vw)", background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: 10, padding: 14 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>{t("浏览本机目录")}</div>
+              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>{t("remote.browseLocalDirectories")}</div>
               <LocalDirectoryPicker
                 onPick={(abs) => { setLocalDir(abs); setLocalPickerOpen(false); }}
                 onClose={() => setLocalPickerOpen(false)}
@@ -628,7 +628,7 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
         {sshPickerOpen && (
           <div onClick={(e) => { if (e.target === e.currentTarget) setSshPickerOpen(false); }} style={{ position: "fixed", inset: 0, zIndex: 1300, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.45)", padding: 20 }}>
             <div style={{ width: "min(560px, 94vw)", background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: 10, padding: 14 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>{t("浏览远程目录")}</div>
+              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>{t("remote.browseRemoteDirectories")}</div>
               <SshDirectoryPicker
                 config={sshTestPayload()}
                 onPick={(abs) => { setLocalDir(abs); setSshPickerOpen(false); }}

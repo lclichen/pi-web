@@ -125,7 +125,7 @@ export function SshDirectoryPicker({ config, onPick, onClose }: Props) {
               </button>
             ))}
             {entries.length === 0 && !loading && (
-              <div style={{ padding: 12, fontSize: 11, color: "var(--text-dim)" }}>{t("（空目录）")}</div>
+              <div style={{ padding: 12, fontSize: 11, color: "var(--text-dim)" }}>{t("relay.emptyDirectory")}</div>
             )}
           </>
         )}
@@ -138,16 +138,16 @@ export function SshDirectoryPicker({ config, onPick, onClose }: Props) {
         </code>
         <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
           <button type="button" onClick={onClose} style={{ height: 28, padding: "0 12px", borderRadius: 6, border: "1px solid var(--border)", background: "transparent", color: "var(--text)", fontSize: 12, cursor: "pointer" }}>
-            {t("取消")}
+            {t("common.cancel")}
           </button>
           <button
             type="button"
             disabled={!selected || selected === "/"}
             onClick={() => onPick(selected)}
-            title={selected === "/" ? t("请选择 / 以外的目录") : undefined}
+            title={selected === "/" ? t("relay.chooseDirectoryOtherThan") : undefined}
             style={{ height: 28, padding: "0 14px", borderRadius: 6, border: "none", background: "var(--accent)", color: "#fff", fontSize: 12, cursor: selected && selected !== "/" ? "pointer" : "not-allowed", opacity: selected && selected !== "/" ? 1 : 0.5 }}
           >
-            {t("选择此目录")}
+            {t("relay.chooseDirectory")}
           </button>
         </div>
       </div>

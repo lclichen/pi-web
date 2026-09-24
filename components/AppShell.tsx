@@ -554,7 +554,7 @@ export function AppShell() {
   // tear down and recreate the container PTY on every stats update.
   const remoteSessionCtx = useMemo(
     () => (activeSessionMode && activeSessionMode !== "host" && activeSessionMode !== "quick" && selectedSession
-      ? { sessionId: selectedSession.id, label: activeSessionMode === "sandbox" ? translate("沙箱容器") : activeSessionMode === "ssh" ? translate("SSH 远程主机") : translate("本机") }
+      ? { sessionId: selectedSession.id, label: activeSessionMode === "sandbox" ? translate("app.sandboxContainer") : activeSessionMode === "ssh" ? translate("app.sshRemoteHost") : translate("app.localMachine") }
       : null),
     [activeSessionMode, selectedSession, translate],
   );
@@ -1217,7 +1217,7 @@ export function AppShell() {
 
   const handleCloseFileTab = useCallback((tabId: string) => {
     if (tabId === activeFileTabId && activeFileDirty) {
-      const discard = window.confirm(translate("此文件有未保存的修改，关闭将丢弃。确定关闭吗？"));
+      const discard = window.confirm(translate("app.fileUnsavedChangesCloseDiscard"));
       if (!discard) return;
       setActiveFileDirty(false);
     }
@@ -1381,8 +1381,8 @@ export function AppShell() {
         remoteSessionProp={remoteSessionCtx}
         pendingProjectLabel={
           pendingRemoteSession
-            ? newSessionProjectLabel ?? translate("新会话")
-            : (selectedSession?.mode && selectedSession.mode !== "host" ? (selectedSession.name ? translate("会话：{name}", { name: selectedSession.name }) : translate("远程会话")) : null)
+            ? newSessionProjectLabel ?? translate("app.newSession")
+            : (selectedSession?.mode && selectedSession.mode !== "host" ? (selectedSession.name ? translate("app.session", { name: selectedSession.name }) : translate("app.remoteSession")) : null)
         }
         labPanelNode={labTrainingEnabled ? (
           <LabTrainingSidePanel
@@ -2310,7 +2310,7 @@ export function AppShell() {
             <button
               type="button"
               onClick={() => setMyWorkspaceOpen(true)}
-              title={translate("我的工作区：云端文件留存（建项目时可初始化 /workspace）")}
+              title={translate("app.myWorkspaceCloudPersistedFiles")}
               style={{
                 display: "flex", alignItems: "center", gap: 6, height: "100%",
                 padding: "0 12px", background: "none",
@@ -2327,14 +2327,14 @@ export function AppShell() {
                 <polyline points="8 16 12 12 16 16" />
                 <line x1="12" y1="12" x2="12" y2="21" />
               </svg>
-              <span>{translate("我的工作区")}</span>
+              <span>{translate("app.myWorkspace")}</span>
             </button>
           )}
           {webUser && webUser !== "loading" && (
             <button
               type="button"
               onClick={() => setSandboxManager({})}
-              title={translate("沙箱容器管理（新建/启停/删除/快照/绑定项目）")}
+              title={translate("app.sandboxContainersCreateStartStop")}
               style={{
                 display: "flex", alignItems: "center", gap: 6, height: "100%",
                 padding: "0 12px", background: "none",
@@ -2347,14 +2347,14 @@ export function AppShell() {
               onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-muted)"; e.currentTarget.style.background = "none"; }}
             >
               <span style={{ width: 8, height: 8, borderRadius: 2, border: "1.5px solid currentColor", flexShrink: 0 }} />
-              <span>{translate("沙箱容器")}</span>
+              <span>{translate("app.sandboxContainer")}</span>
             </button>
           )}
           {webUser && webUser !== "loading" && webUser.role === "admin" && (
             <button
               type="button"
               onClick={() => setPlatformAdminOpen(true)}
-              title={translate("平台管理")}
+              title={translate("app.platformAdmin")}
               style={{
                 display: "flex", alignItems: "center", gap: 6, height: "100%",
                 padding: "0 12px", background: "none",
@@ -2371,7 +2371,7 @@ export function AppShell() {
                 <line x1="8" y1="21" x2="16" y2="21" />
                 <line x1="12" y1="17" x2="12" y2="21" />
               </svg>
-              <span>{translate("平台管理")}</span>
+              <span>{translate("app.platformAdmin")}</span>
             </button>
           )}
           {/* 「受限模式」提示只保留右侧 renderProjectTrustWarning 一处——
@@ -2468,7 +2468,7 @@ export function AppShell() {
                       body: JSON.stringify({ labTraining: next }),
                     }).then((r) => { if (!r.ok) setLabTrainingEnabled(!next); }).catch(() => setLabTrainingEnabled(!next));
                   }}
-                  title={labTrainingEnabled ? translate("教学面板：已开启（点击对全员关闭）") : translate("教学面板：已关闭（点击对全员开启）")}
+                  title={labTrainingEnabled ? translate("app.teachingPanelClickDisableEveryone") : translate("app.teachingPanelOffClickEnable")}
                   aria-pressed={labTrainingEnabled}
                   style={{
                     display: "flex", alignItems: "center", gap: 6, height: "100%",
@@ -2484,15 +2484,15 @@ export function AppShell() {
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
                     <path d="M22 10v6M2 10l10-5 10 5-10 5z" /><path d="M6 12v5c3 3 9 3 12 0v-5" />
                   </svg>
-                  <span>{translate("教学")}</span>
+                  <span>{translate("app.teaching")}</span>
                 </button>
               )}
               {webUser && webUser !== "loading" && (
                 <button
                   type="button"
                   onClick={async () => { await fetch("/api/webauth/logout", { method: "POST" }).catch(() => {}); window.location.href = "/login"; }}
-                  title={translate("登出（{name}）", { name: webUser.username })}
-                  aria-label={translate("登出（{name}）", { name: webUser.username })}
+                  title={translate("app.logOut", { name: webUser.username })}
+                  aria-label={translate("app.logOut", { name: webUser.username })}
                   style={{
                     display: "flex", alignItems: "center", gap: 6, height: "100%",
                     padding: "0 10px", background: "none",
@@ -2508,7 +2508,7 @@ export function AppShell() {
                     <polyline points="16 17 21 12 16 7" />
                     <line x1="21" y1="12" x2="9" y2="12" />
                   </svg>
-                  <span>{translate("登出")}</span>
+                  <span>{translate("app.logOut2")}</span>
                 </button>
               )}
             </>
@@ -2932,7 +2932,7 @@ export function AppShell() {
               <div
                 onMouseDown={startTerminalDrawerResize}
                 onDoubleClick={() => setTerminalDrawerHeight(280)}
-                title={translate("拖动调整高度（双击复位）")}
+                title={translate("app.dragResizeDoubleClickReset")}
                 style={{
                   height: 5, cursor: "row-resize", background: "var(--bg-panel)",
                   borderBottom: "1px solid var(--border)", flexShrink: 0,
@@ -2941,7 +2941,7 @@ export function AppShell() {
               <div style={{ height: terminalDrawerOpen ? `calc(100% - 6px)` : 0 }}>
                 {pendingRemoteSession ? (
                   <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-dim)", fontSize: 12, padding: 20, textAlign: "center", background: "var(--bg)" }}>
-                    {translate("{kind}会话创建后（发送第一条消息）即可使用远程终端", { kind: pendingRemoteSession === "sandbox" ? translate("沙箱") : pendingRemoteSession === "ssh" ? translate("SSH") : translate("本机") })}
+                    {translate("app.sendFirstMessageEnableRemote", { kind: pendingRemoteSession === "sandbox" ? translate("app.sandbox") : pendingRemoteSession === "ssh" ? translate("SSH") : translate("app.localMachine") })}
                   </div>
                 ) : (
                   <WorkspaceTerminal
@@ -3002,7 +3002,7 @@ export function AppShell() {
           {([
             {
               id: "files" as const,
-              label: translate("文件"),
+              label: translate("app.files"),
               icon: (
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                   <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><polyline points="13 2 13 9 20 9" />
@@ -3023,8 +3023,8 @@ export function AppShell() {
             }]),
             {
               id: "agents" as const,
-              label: translate("智能体"),
-              title: translate("子智能体目录"),
+              label: translate("app.agents"),
+              title: translate("app.subagentDirectory"),
               icon: (
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                   <rect x="4" y="8" width="16" height="12" rx="2" /><path d="M12 8V4" /><circle cx="9" cy="14" r="0.5" /><circle cx="15" cy="14" r="0.5" />
@@ -3036,7 +3036,7 @@ export function AppShell() {
             ...(planTabVisible
               ? [{
                   id: "plan" as const,
-                  label: translate("计划"),
+                  label: translate("app.plan"),
                   icon: (
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                       <path d="M9 4h6a2 2 0 0 1 2 2v14H7V6a2 2 0 0 1 2-2Z" /><path d="M7 20h10" /><path d="M10 8h4" />
@@ -3148,7 +3148,7 @@ export function AppShell() {
             <PlanPanel plan={sessionPlan} />
           ) : rightPanelMode === "agents" && !selectedSession?.id ? (
             <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-dim)", fontSize: 12 }}>
-              {translate("选择或创建一个会话后可查看子智能体调用记录")}
+              {translate("app.selectCreateSessionViewSubagent")}
             </div>
           ) : (rightPanelMode === "git" && activeSessionMode !== "quick") ? (
             <GitPanel

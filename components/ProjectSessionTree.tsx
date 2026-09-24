@@ -160,7 +160,7 @@ export function ProjectSessionTree({
       a.click();
       URL.revokeObjectURL(url);
     } catch {
-      window.alert(t("导出失败，请重试"));
+      window.alert(t("sessions.exportFailedRetry"));
     }
   };
 
@@ -182,11 +182,11 @@ export function ProjectSessionTree({
       a.click();
       URL.revokeObjectURL(url);
     } catch {
-      window.alert(t("导出失败，请重试"));
+      window.alert(t("sessions.exportFailedRetry"));
     }
   };
   const remove = async (project: ProjectRecord) => {
-    if (!window.confirm(t("删除项目「{name}」及其配置目录？（会话记录保留）", { name: project.name }))) return;
+    if (!window.confirm(t("sessions.deleteProjectConfirm", { name: project.name }))) return;
     await fetch(`/api/projects/${encodeURIComponent(project.id)}`, { method: "DELETE" }).catch(() => {});
     loadProjects();
     refreshSessions();
@@ -206,7 +206,7 @@ export function ProjectSessionTree({
   const [menuBusy, setMenuBusy] = useState(false);
   const projectSnapshot = async (project: ProjectRecord, action: "save" | "restore" | "delete", snapshotId?: number) => {
     if (menuBusy) return;
-    if (action === "restore" && !window.confirm(t("恢复存档？容器 /workspace 将回到存档时间点，之后的改动会丢失。"))) return;
+    if (action === "restore" && !window.confirm(t("sessions.restoreSaveConfirm"))) return;
     setMenuBusy(true);
     try {
       const res = await fetch(`/api/projects/${encodeURIComponent(project.id)}/snapshots`, {
@@ -216,10 +216,10 @@ export function ProjectSessionTree({
       });
       const d = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) {
-        window.alert(d?.error ?? t("操作失败：HTTP {code}", { code: res.status }));
+        window.alert(d?.error ?? t("sessions.operationFailedHttp", { code: res.status }));
         return;
       }
-      if (action === "save") window.alert(t("已保存存档（保留最近 2 个）。"));
+      if (action === "save") window.alert(t("sessions.saveCreatedLast2Kept"));
     } catch (e) {
       window.alert(e instanceof Error ? e.message : String(e));
     } finally {
@@ -232,8 +232,8 @@ export function ProjectSessionTree({
   // 把项目容器的 /workspace 打包导出到我的工作区（tar.gz，单向留存）。
   const exportWorkspace = async (project: ProjectRecord) => {
     if (menuBusy) return;
-    if (project.containerId == null) { window.alert(t("项目没有绑定容器")); return; }
-    if (myWorkspaceId == null) { window.alert(t("工作区不可用")); return; }
+    if (project.containerId == null) { window.alert(t("sessions.projectBoundContainer")); return; }
+    if (myWorkspaceId == null) { window.alert(t("sessions.cloudWorkspaceUnavailable")); return; }
     setMenuBusy(true);
     try {
       const res = await fetch(`/api/sandbox/containers`, {
@@ -243,10 +243,10 @@ export function ProjectSessionTree({
       });
       const d = (await res.json().catch(() => ({}))) as { error?: string; fileName?: string };
       if (!res.ok) {
-        window.alert(d?.error ?? t("导出失败：HTTP {code}", { code: res.status }));
+        window.alert(d?.error ?? t("sessions.exportFailedHttp", { code: res.status }));
         return;
       }
-      window.alert(t("已导出到我的工作区：{file}（仅文件；完整环境请用存档）", { file: d.fileName ?? "*.tar.gz" }));
+      window.alert(t("sessions.exportedMyWorkspaceFilesOnly", { file: d.fileName ?? "*.tar.gz" }));
     } catch (e) {
       window.alert(e instanceof Error ? e.message : String(e));
     } finally {
@@ -362,7 +362,7 @@ export function ProjectSessionTree({
                 key={space}
                 type="button"
                 onClick={() => onSessionSpaceChange(space)}
-                title={space === "host" ? t("Host 会话：CLI 与服务器目录产生的会话（全局 sessions 目录）") : space === "quick" ? t("快速会话：无工作区的轻量对话") : t("我的项目会话")}
+                title={space === "host" ? t("sessions.hostSessionsCreatedPiCli") : space === "quick" ? t("sessions.quickSessionsHint") : t("sessions.myProjectSessions")}
                 style={{
                   flex: 1, padding: "4px 0", border: "none", cursor: "pointer",
                   background: active ? "var(--bg-selected)" : "transparent",
@@ -370,7 +370,7 @@ export function ProjectSessionTree({
                   fontWeight: active ? 600 : 400,
                 }}
               >
-                {space === "mine" ? t("我的会话") : space === "quick" ? `⚡ ${t("快速会话")}` : "Host (CLI)"}
+                {space === "mine" ? t("sessions.mySessions") : space === "quick" ? `⚡ ${t("sessions.quick")}` : "Host (CLI)"}
               </button>
             );
           })}
@@ -383,7 +383,7 @@ export function ProjectSessionTree({
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Escape") setQuery(""); }}
-          placeholder={t("搜索会话…")}
+          placeholder={t("sessions.searchSessions")}
           spellCheck={false}
           style={{
             width: "100%", boxSizing: "border-box", height: 26, padding: "0 8px",
@@ -396,13 +396,13 @@ export function ProjectSessionTree({
       {searching && (
         <div>
           {searchResults.length === 0 ? (
-            <div style={{ padding: "8px 6px", fontSize: 11, color: "var(--text-dim)" }}>{t("没有匹配的会话")}</div>
+            <div style={{ padding: "8px 6px", fontSize: 11, color: "var(--text-dim)" }}>{t("sessions.matchingSessions")}</div>
           ) : searchResults.map((s) => {
             const owner = projects.find((p) => p.id === s.projectId) ?? null;
             return (
               <div key={`search:${s.id}`} style={{ marginBottom: 2 }}>
                 <div style={{ padding: "2px 8px", fontSize: 10, color: "var(--text-dim)" }}>
-                  {owner ? t("项目：{name}", { name: owner.name }) : s.mode === "quick" ? `⚡ ${t("快速会话")}` : s.projectRoot ?? t("未分组")}
+                  {owner ? t("sessions.project", { name: owner.name }) : s.mode === "quick" ? `⚡ ${t("sessions.quick")}` : s.projectRoot ?? t("sessions.ungrouped")}
                 </div>
                 {renderItem(s, owner)}
               </div>
@@ -423,10 +423,10 @@ export function ProjectSessionTree({
         const modeColor = project.mode === "sandbox" ? "#38bdf8" : project.mode === "ssh" ? "#34d399" : "#a78bfa";
         // 容器状态点（沙箱项目绑定容器的前台可见性）。
         const bound = project.containerId != null ? containers.find((c) => c.id === project.containerId) : undefined;
-        const containerState = bound?.status === "running" ? { color: "#22c55e", label: t("运行中") }
-          : bound?.status === "stopped" ? { color: "#9ca3af", label: t("已停止") }
+        const containerState = bound?.status === "running" ? { color: "#22c55e", label: t("projects.running") }
+          : bound?.status === "stopped" ? { color: "#9ca3af", label: t("projects.stopped") }
           : bound ? { color: "#f59e0b", label: bound.status }
-          : { color: "#ef4444", label: t("无容器") };
+          : { color: "#ef4444", label: t("sessions.container2") };
         return (
           <div key={project.id} style={{ marginBottom: 2 }}>
             <div
@@ -444,7 +444,7 @@ export function ProjectSessionTree({
               <span style={{ fontSize: 9, color: "var(--text-dim)", width: 10 }}>{isCollapsed ? "▸" : "▾"}</span>
               {project.mode === "sandbox" ? (
                 <span
-                  title={t("容器：{info}", { info: bound ? `#${bound.id} ${bound.name} · ${containerState.label}${bound.imageName ? ` · ${bound.imageName}` : ""}` : containerState.label })}
+                  title={t("sessions.container", { info: bound ? `#${bound.id} ${bound.name} · ${containerState.label}${bound.imageName ? ` · ${bound.imageName}` : ""}` : containerState.label })}
                   style={{ width: 8, height: 8, borderRadius: "50%", background: containerState.color, flexShrink: 0, boxShadow: containerState.label === "运行中" ? `0 0 5px ${containerState.color}` : "none" }}
                 />
               ) : (
@@ -455,22 +455,22 @@ export function ProjectSessionTree({
                 color: modeColor,
                 background: project.mode === "sandbox" ? "rgba(56,189,248,0.12)" : project.mode === "ssh" ? "rgba(52,211,153,0.14)" : "rgba(167,139,250,0.12)",
               }}>
-                {project.mode === "sandbox" ? t("沙盒") : project.mode === "ssh" ? t("SSH") : t("本地")}
+                {project.mode === "sandbox" ? t("sessions.sandbox") : project.mode === "ssh" ? t("SSH") : t("sessions.local")}
               </span>
               <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{project.name}</span>
               {project.mode === "sandbox" && (
-                <span title={t("项目会话在容器 /workspace 内执行")} style={{ flexShrink: 0, fontFamily: "var(--font-mono)", fontSize: 9, color: "var(--text-dim)" }}>/workspace</span>
+                <span title={t("sessions.runInsideContainer")} style={{ flexShrink: 0, fontFamily: "var(--font-mono)", fontSize: 9, color: "var(--text-dim)" }}>/workspace</span>
               )}
               <span style={{ fontSize: 10, color: "var(--text-dim)" }}>{total}</span>
               <button
                 type="button"
-                title={t("新建会话")}
+                title={t("sessions.newSession")}
                 onClick={(e) => { e.stopPropagation(); onNewSessionInProject(project); }}
                 style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--text-dim)", fontSize: 13, padding: "0 3px" }}
               >＋</button>
               <button
                 type="button"
-                title={t("项目菜单")}
+                title={t("sessions.projectMenu")}
                 onClick={(e) => { e.stopPropagation(); setMenu({ project, x: e.currentTarget.getBoundingClientRect().right, y: e.currentTarget.getBoundingClientRect().bottom }); }}
                 style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--text-dim)", fontSize: 12, padding: "0 3px" }}
               >⋮</button>
@@ -484,11 +484,11 @@ export function ProjectSessionTree({
                     onClick={() => setShowAll((prev) => new Set(prev).add(project.id))}
                     style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--accent)", fontSize: 11, padding: "2px 6px 2px 26px" }}
                   >
-                    {t("显示全部 {n} 个会话", { n: total })}
+                    {t("sessions.showAllSessions", { n: total })}
                   </button>
                 )}
                 {total === 0 && (
-                  <div style={{ padding: "4px 6px 6px 26px", fontSize: 11, color: "var(--text-dim)" }}>{t("暂无会话，点 ＋ 新建")}</div>
+                  <div style={{ padding: "4px 6px 6px 26px", fontSize: 11, color: "var(--text-dim)" }}>{t("sessions.sessionsYetClickCreate")}</div>
                 )}
               </div>
             )}
@@ -496,11 +496,11 @@ export function ProjectSessionTree({
         );
       })}
       {sessionSpace === "mine" && projects.length === 0 && hostGroups.length === 0 && (
-        <div style={{ padding: "8px 6px", fontSize: 11, color: "var(--text-dim)" }}>{t("还没有项目——点上方按钮创建第一个。")}</div>
+        <div style={{ padding: "8px 6px", fontSize: 11, color: "var(--text-dim)" }}>{t("sessions.projectsYetUseButtonAbove")}</div>
       )}
 
       {sessionSpace === "host" && hostGroups.length === 0 && (
-        <div style={{ padding: "8px 6px", fontSize: 11, color: "var(--text-dim)" }}>{t("Host 空间暂无会话——在服务器上用 pi CLI 打开的会话会出现在这里")}</div>
+        <div style={{ padding: "8px 6px", fontSize: 11, color: "var(--text-dim)" }}>{t("sessions.hostSessionsYetSessionsOpened")}</div>
       )}
 
       {/* 快速会话空间：无项目/工作区，扁平列表按最近排序；不分组。
@@ -510,7 +510,7 @@ export function ProjectSessionTree({
           {quickSessions.map((s) => renderItem(s, null))}
           {quickSessions.length === 0 && (
             <div style={{ padding: "8px 6px", fontSize: 11, color: "var(--text-dim)", lineHeight: 1.7 }}>
-              {t("暂无快速会话——点上方 ⚡ 按模板开始；每次选择模板都会新建一个独立会话。")}
+              {t("sessions.quickSessionsYetPickTemplate")}
             </div>
           )}
         </>
@@ -541,14 +541,14 @@ export function ProjectSessionTree({
               {onNewSessionInDirectory && (
                 <button
                   type="button"
-                  title={t("新建会话")}
+                  title={t("sessions.newSession")}
                   onClick={(e) => { e.stopPropagation(); onNewSessionInDirectory(root); }}
                   style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--text-dim)", fontSize: 13, padding: "0 3px" }}
                 >＋</button>
               )}
               <button
                 type="button"
-                title={t("目录菜单")}
+                title={t("sessions.directoryMenu")}
                 onClick={(e) => { e.stopPropagation(); setMenu({ directory: root, x: e.currentTarget.getBoundingClientRect().right, y: e.currentTarget.getBoundingClientRect().bottom }); }}
                 style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--text-dim)", fontSize: 12, padding: "0 3px" }}
               >⋮</button>
@@ -556,7 +556,7 @@ export function ProjectSessionTree({
             {visible.map((s) => renderItem(s, null))}
             {!isCollapsed && list.length > RECENT_COUNT && (
               <button type="button" onClick={() => setShowAll((prev) => new Set(prev).add(key))} style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--accent)", fontSize: 11, padding: "2px 6px 2px 26px" }}>
-                {t("显示全部 {n} 个会话", { n: list.length })}
+                {t("sessions.showAllSessions", { n: list.length })}
               </button>
             )}
           </div>
@@ -575,14 +575,14 @@ export function ProjectSessionTree({
             boxShadow: "0 8px 24px rgba(0,0,0,0.3)", overflow: "hidden", fontSize: 12,
           }}
         >
-          <MenuItem label={t("新建会话")} onClick={() => { onNewSessionInDirectory(menu.directory!); setMenu(null); }} />
-          <MenuItem label={t("导入项目配置…")} onClick={() => { setHostImportDir(menu.directory!); setMenu(null); }} />
-          <MenuItem label={t("导出配置包…")} onClick={() => { void exportHostConfig(menu.directory!); setMenu(null); }} />
-          <MenuItem label={t("复制路径")} onClick={() => {
+          <MenuItem label={t("sessions.newSession")} onClick={() => { onNewSessionInDirectory(menu.directory!); setMenu(null); }} />
+          <MenuItem label={t("sessions.importProjectConfig")} onClick={() => { setHostImportDir(menu.directory!); setMenu(null); }} />
+          <MenuItem label={t("sessions.exportConfigBundle")} onClick={() => { void exportHostConfig(menu.directory!); setMenu(null); }} />
+          <MenuItem label={t("sessions.copyPath")} onClick={() => {
             void navigator.clipboard?.writeText(menu.directory!).catch(() => {});
             setMenu(null);
           }} />
-          <MenuItem label={t("在文件管理器中浏览")} onClick={() => {
+          <MenuItem label={t("sessions.browseFilePanel")} onClick={() => {
             // 与项目会话同一套文件面板：把该目录设为当前工作目录并建一个会话。
             onNewSessionInDirectory(menu.directory!);
             setMenu(null);
@@ -604,9 +604,9 @@ export function ProjectSessionTree({
             boxShadow: "0 8px 24px rgba(0,0,0,0.3)", overflow: "hidden", fontSize: 12,
           }}
         >
-          <MenuItem label={t("新建会话")} onClick={() => { onNewSessionInProject(menuProject); setMenu(null); }} />
-          <MenuItem label={t("重命名")} onClick={() => {
-            const name = window.prompt(t("项目新名称："), menuProject.name);
+          <MenuItem label={t("sessions.newSession")} onClick={() => { onNewSessionInProject(menuProject); setMenu(null); }} />
+          <MenuItem label={t("common.rename")} onClick={() => {
+            const name = window.prompt(t("sessions.newProjectName"), menuProject.name);
             if (name?.trim()) {
               void fetch(`/api/projects/${encodeURIComponent(menuProject.id)}`, {
                 method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: name.trim() }),
@@ -614,11 +614,11 @@ export function ProjectSessionTree({
             }
             setMenu(null);
           }} />
-          <MenuItem label={t("复制为新项目")} onClick={() => { void duplicate(menuProject); setMenu(null); }} />
-          <MenuItem label={t("设置（模型凭证等）")} onClick={() => { setSettingsId(menuProject.id); setMenu(null); }} />
-          <MenuItem label={t("导入项目配置…")} onClick={() => { setImportId(menuProject.id); setMenu(null); }} />
-          <MenuItem label={t("套用配置模板…")} onClick={() => { setApplyBundleId(menuProject.id); setMenu(null); }} />
-          <MenuItem label={t("导出配置包…")} onClick={() => { void exportConfig(menuProject); setMenu(null); }} />
+          <MenuItem label={t("sessions.duplicateNewProject")} onClick={() => { void duplicate(menuProject); setMenu(null); }} />
+          <MenuItem label={t("sessions.settingsModelCredentials")} onClick={() => { setSettingsId(menuProject.id); setMenu(null); }} />
+          <MenuItem label={t("sessions.importProjectConfig")} onClick={() => { setImportId(menuProject.id); setMenu(null); }} />
+          <MenuItem label={t("bundles.applyMenu")} onClick={() => { setApplyBundleId(menuProject.id); setMenu(null); }} />
+          <MenuItem label={t("sessions.exportConfigBundle")} onClick={() => { void exportConfig(menuProject); setMenu(null); }} />
           {menuProject.mode === "sandbox" && (() => {
             // 绑定信息：项目 → 容器 → 镜像 三位一体（debug 友好）。
             const boundInfo = menuProject.containerId != null
@@ -626,9 +626,9 @@ export function ProjectSessionTree({
               : undefined;
             return (
               <div style={{ borderTop: "1px solid var(--border)", padding: "6px 10px", color: "var(--text-dim)", fontSize: 10.5, lineHeight: 1.6 }}>
-                {t("容器：{info}", { info: boundInfo ? `#${boundInfo.id} · ${boundInfo.status === "running" ? t("运行中") : boundInfo.status}` : "未绑定" })}
+                {t("sessions.container", { info: boundInfo ? `#${boundInfo.id} · ${boundInfo.status === "running" ? t("projects.running") : boundInfo.status}` : "未绑定" })}
                 {boundInfo?.imageName ? ` · ${boundInfo.imageName}` : ""}
-                {t("存档 {n}/2（游戏存档制，保留最近 2 个）", { n: menuProject.snapshotSlots?.length ?? 0 })}
+                {t("sessions.saves2MostRecent2", { n: menuProject.snapshotSlots?.length ?? 0 })}
               </div>
             );
           })()}
@@ -636,12 +636,12 @@ export function ProjectSessionTree({
             <div style={{ borderTop: "1px solid var(--border)", padding: "4px 10px", color: "var(--text-dim)", fontSize: 10 }}>存档（含环境与文件）</div>
           )}
           {menuProject.mode === "sandbox" && (
-            <MenuItem label={t("保存存档（快照当前容器）")} onClick={() => { void projectSnapshot(menuProject, "save"); setMenu(null); }} />
+            <MenuItem label={t("sessions.saveStateSnapshot")} onClick={() => { void projectSnapshot(menuProject, "save"); setMenu(null); }} />
           )}
           {menuProject.mode === "sandbox" && (menuProject.snapshotSlots ?? []).map((slot) => (
             <MenuItem
               key={slot.id}
-              label={t("↩ 恢复存档 · {time}", { time: new Date(slot.createdAt).toLocaleString() })}
+              label={t("sessions.restoreSave", { time: new Date(slot.createdAt).toLocaleString() })}
               onClick={() => { void projectSnapshot(menuProject, "restore", slot.id); setMenu(null); }}
             />
           ))}
@@ -649,7 +649,7 @@ export function ProjectSessionTree({
             <div style={{ borderTop: "1px solid var(--border)", padding: "4px 10px", color: "var(--text-dim)", fontSize: 10 }}>文件留存（仅文件）</div>
           )}
           {menuProject.mode === "sandbox" && (
-            <MenuItem label={t("导出到我的工作区（tar.gz）")} onClick={() => { void exportWorkspace(menuProject); setMenu(null); }} />
+            <MenuItem label={t("sessions.exportMyWorkspaceTarGz")} onClick={() => { void exportWorkspace(menuProject); setMenu(null); }} />
           )}
           {menuProject.mode === "sandbox" && (
             <div style={{ borderTop: "1px solid var(--border)", padding: "4px 10px", color: "var(--text-dim)", fontSize: 10 }}>沙箱容器</div>
@@ -662,13 +662,13 @@ export function ProjectSessionTree({
             />
           ))}
           {menuProject.mode === "sandbox" && (
-            <MenuItem label={t("跟随平台默认容器")} onClick={() => void setContainer(menuProject, null)} />
+            <MenuItem label={t("sessions.followPlatformDefaultContainer")} onClick={() => void setContainer(menuProject, null)} />
           )}
           {menuProject.mode === "sandbox" && onManageSandbox && (
-            <MenuItem label={t("管理沙箱容器（新建/启停/删除）…")} onClick={() => { onManageSandbox(menuProject); setMenu(null); }} />
+            <MenuItem label={t("sessions.manageContainers")} onClick={() => { onManageSandbox(menuProject); setMenu(null); }} />
           )}
           <div style={{ borderTop: "1px solid var(--border)" }} />
-          <MenuItem label={t("删除项目")} danger onClick={() => { void remove(menuProject); setMenu(null); }} />
+          <MenuItem label={t("sessions.deleteProject")} danger onClick={() => { void remove(menuProject); setMenu(null); }} />
         </div>
       );
       })()}
@@ -778,7 +778,7 @@ function ProjectSessionRow({
         }}
       >
         <div style={{ flex: 1, minWidth: 0, fontSize: 12, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {t("删除")} <span style={{ fontWeight: 600 }}>“{title.slice(0, 20)}{title.length > 20 ? "…" : ""}”</span>？
+          {t("common.delete")} <span style={{ fontWeight: 600 }}>“{title.slice(0, 20)}{title.length > 20 ? "…" : ""}”</span>？
         </div>
         <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
           <button
@@ -789,7 +789,7 @@ function ProjectSessionRow({
               background: "#ef4444", color: "#fff", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap",
             }}
           >
-            {t("删除")}
+            {t("common.delete")}
           </button>
           <button
             type="button"
@@ -799,7 +799,7 @@ function ProjectSessionRow({
               border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-muted)", fontSize: 11, cursor: "pointer", whiteSpace: "nowrap",
             }}
           >
-            {t("取消")}
+            {t("common.cancel")}
           </button>
         </div>
       </div>
@@ -845,14 +845,14 @@ function ProjectSessionRow({
           </span>
           {session.mode && session.mode !== "host" && (
             <span style={{ fontSize: 9, color: session.mode === "sandbox" ? "#38bdf8" : session.mode === "quick" ? "#fbbf24" : "#a78bfa", flexShrink: 0 }}>
-              {session.mode === "sandbox" ? t("沙箱") : session.mode === "quick" ? t("快速") : t("本机")}
+              {session.mode === "sandbox" ? t("app.sandbox") : session.mode === "quick" ? t("sessions.quick2") : t("app.localMachine")}
             </span>
           )}
           <span style={{ fontSize: 10, color: "var(--text-dim)", flexShrink: 0 }}>{formatRelativeTime(new Date(session.modified).getTime())}</span>
           {canPin && hovered && (
             <button
               type="button"
-              title={pinned ? t("取消置顶") : t("置顶")}
+              title={pinned ? t("sessions.unpin") : t("sessions.pin")}
               onClick={(e) => { e.stopPropagation(); onTogglePin(); }}
               style={{ background: "transparent", border: "none", cursor: "pointer", padding: "0 2px", color: pinned ? "#f59e0b" : "var(--text-dim)", fontSize: 11, flexShrink: 0 }}
             >
@@ -866,7 +866,7 @@ function ProjectSessionRow({
             <>
               <button
                 type="button"
-                title={t("重命名")}
+                title={t("common.rename")}
                 onClick={startRename}
                 style={{
                   display: "flex", alignItems: "center", justifyContent: "center",
@@ -883,7 +883,7 @@ function ProjectSessionRow({
               </button>
               <button
                 type="button"
-                title={t("删除会话")}
+                title={t("sessions.deleteSession")}
                 onClick={(e) => { e.stopPropagation(); if (e.shiftKey) onDelete(); else setConfirmDelete(true); }}
                 style={{
                   display: "flex", alignItems: "center", justifyContent: "center",

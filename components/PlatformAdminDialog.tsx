@@ -114,7 +114,7 @@ export function PlatformAdminDialog({ open, onClose }: Props) {
                 color: tab === key ? "var(--text)" : "var(--text-muted)", fontWeight: tab === key ? 600 : 400,
               }}
             >
-              {key === "overview" ? t("概览") : key === "users" ? t("用户") : key === "containers" ? t("容器") : key === "images" ? t("镜像") : key === "quotas" ? t("配额") : key === "workspaces" ? t("工作区") : key === "llm" ? "LLM" : t("日志")}
+              {key === "overview" ? t("admin.overview") : key === "users" ? t("admin.users") : key === "containers" ? t("admin.containers") : key === "images" ? t("admin.images") : key === "quotas" ? t("admin.quotas") : key === "workspaces" ? t("admin.workspaces") : key === "llm" ? "LLM" : t("admin.logs")}
             </button>
           ))}
           <div style={{ flex: 1 }} />
@@ -189,7 +189,7 @@ function UsersTab({ action, notify }: { action: ActionFn; notify: (msg: string) 
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ password: resetPassword }),
     })) {
-      notify(t("已重置 {name} 的密码，其所有旧会话已失效", { name: resetFor.username }));
+      notify(t("admin.passwordResetAllTheirOld", { name: resetFor.username }));
       setResetFor(null);
       setResetPassword("");
     }
@@ -201,22 +201,22 @@ function UsersTab({ action, notify }: { action: ActionFn; notify: (msg: string) 
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status: next }),
     })) {
-      notify(t("已将 {name} 置为 {status}", { name: user.username, status: next }));
+      notify(t("admin.set", { name: user.username, status: next }));
       void load(offset);
     }
   };
 
   const doDelete = async (user: PlatformUserRow) => {
-    if (!window.confirm(t("确定删除用户 {name}？其容器与工作区将一并清理", { name: user.username }))) return;
+    if (!window.confirm(t("admin.deleteUserConfirm", { name: user.username }))) return;
     if (await action(`/api/admin/users/${user.id}`, { method: "DELETE" })) {
-      notify(t("已删除 {name}", { name: user.username }));
+      notify(t("admin.deleted", { name: user.username }));
       void load(offset);
     }
   };
 
   const doApprove = async (user: PlatformUserRow, act: "approve" | "reject") => {
     if (await action(`/api/admin/users/${user.id}/${act}`, { method: "POST" })) {
-      notify(act === "approve" ? t("已批准 {name}", { name: user.username }) : t("已拒绝 {name}", { name: user.username }));
+      notify(act === "approve" ? t("admin.approved", { name: user.username }) : t("admin.rejected", { name: user.username }));
       void load(offset);
     }
   };
@@ -231,24 +231,24 @@ function UsersTab({ action, notify }: { action: ActionFn; notify: (msg: string) 
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") void load(0); }}
-          placeholder={t("搜索用户名/邮箱")}
+          placeholder={t("admin.searchUsernameEmail")}
           style={{ flex: 1, minWidth: 160, padding: "5px 9px", fontSize: 12, background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text)" }}
         />
         <select value={status} onChange={(e) => setStatus(e.target.value)} style={{ padding: "5px 7px", fontSize: 12, background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text)" }}>
-          {STATUSES.map((s) => <option key={s} value={s}>{s === "" ? t("全部状态") : s}</option>)}
+          {STATUSES.map((s) => <option key={s} value={s}>{s === "" ? t("admin.allStatuses") : s}</option>)}
         </select>
         <button type="button" onClick={() => void load(0)} style={{ padding: "5px 12px", fontSize: 12, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text)", borderRadius: 6, cursor: "pointer" }}>
-          {t("搜索")}
+          {t("admin.search")}
         </button>
         <button type="button" onClick={() => setCreating((v) => !v)} style={{ padding: "5px 12px", fontSize: 12, border: "1px solid var(--accent)", color: "var(--accent)", background: "none", borderRadius: 6, cursor: "pointer" }}>
-          {creating ? t("取消") : t("+ 新建用户")}
+          {creating ? t("common.cancel") : t("admin.newUser")}
         </button>
       </div>
 
       {creating && (
         <CreateUserForm
           onCancel={() => setCreating(false)}
-          onCreated={async (name) => { setCreating(false); notify(t("已创建用户 {name}", { name })); await load(0); }}
+          onCreated={async (name) => { setCreating(false); notify(t("admin.createdUser", { name })); await load(0); }}
           action={action}
           t={t}
         />
@@ -259,22 +259,22 @@ function UsersTab({ action, notify }: { action: ActionFn; notify: (msg: string) 
           <thead>
             <tr style={{ textAlign: "left", color: "var(--text-dim)", fontSize: 10.5 }}>
               <th style={{ padding: "8px 8px", fontWeight: 500 }}>#</th>
-              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("用户名")}</th>
+              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("admin.username")}</th>
               <th style={{ padding: "8px 8px", fontWeight: 500 }}>Email</th>
-              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("角色")}</th>
-              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("状态")}</th>
-              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("操作")}</th>
+              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("admin.role")}</th>
+              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("chat.status")}</th>
+              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("admin.actions")}</th>
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={6} style={{ padding: 18, textAlign: "center", color: "var(--text-dim)" }}>{t("加载中…")}</td></tr>}
-            {!loading && rows.length === 0 && <tr><td colSpan={6} style={{ padding: 18, textAlign: "center", color: "var(--text-dim)" }}>{t("没有匹配的用户")}</td></tr>}
+            {loading && <tr><td colSpan={6} style={{ padding: 18, textAlign: "center", color: "var(--text-dim)" }}>{t("admin.loading")}</td></tr>}
+            {!loading && rows.length === 0 && <tr><td colSpan={6} style={{ padding: 18, textAlign: "center", color: "var(--text-dim)" }}>{t("admin.matchingUsers")}</td></tr>}
             {!loading && rows.map((u) => (
               <tr key={u.id} style={{ borderTop: "1px solid var(--border)" }}>
                 <td style={{ padding: "7px 8px", color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>{u.id}</td>
                 <td style={{ padding: "7px 8px", fontWeight: 500 }}>
                   {u.username}
-                  {u.must_change_password && <span style={{ marginLeft: 6, fontSize: 10, color: "var(--warning, #eab308)" }} title={t("下次登录须改密")}>⟳</span>}
+                  {u.must_change_password && <span style={{ marginLeft: 6, fontSize: 10, color: "var(--warning, #eab308)" }} title={t("admin.mustChangePasswordNextLogin")}>⟳</span>}
                 </td>
                 <td style={{ padding: "7px 8px", color: "var(--text-muted)" }}>{u.email ?? "—"}</td>
                 <td style={{ padding: "7px 8px" }}>{u.role}</td>
@@ -282,16 +282,16 @@ function UsersTab({ action, notify }: { action: ActionFn; notify: (msg: string) 
                 <td style={{ padding: "7px 8px", whiteSpace: "nowrap" }}>
                   {u.status === "pending" ? (
                     <>
-                      <MiniButton onClick={() => void doApprove(u, "approve")} accent>{t("批准")}</MiniButton>
-                      <MiniButton onClick={() => void doApprove(u, "reject")}>{t("拒绝")}</MiniButton>
+                      <MiniButton onClick={() => void doApprove(u, "approve")} accent>{t("admin.approve")}</MiniButton>
+                      <MiniButton onClick={() => void doApprove(u, "reject")}>{t("admin.reject")}</MiniButton>
                     </>
                   ) : (
                     <>
-                      <MiniButton onClick={() => setResetFor(u)} accent>{t("重置密码")}</MiniButton>
+                      <MiniButton onClick={() => setResetFor(u)} accent>{t("admin.resetPassword")}</MiniButton>
                       {u.status === "active"
-                        ? <MiniButton onClick={() => void doStatus(u, "disabled")}>{t("停用")}</MiniButton>
-                        : u.status === "disabled" && <MiniButton onClick={() => void doStatus(u, "active")}>{t("启用")}</MiniButton>}
-                      <MiniButton onClick={() => void doDelete(u)} danger>{t("删除")}</MiniButton>
+                        ? <MiniButton onClick={() => void doStatus(u, "disabled")}>{t("admin.disable")}</MiniButton>
+                        : u.status === "disabled" && <MiniButton onClick={() => void doStatus(u, "active")}>{t("common.enable")}</MiniButton>}
+                      <MiniButton onClick={() => void doDelete(u)} danger>{t("common.delete")}</MiniButton>
                     </>
                   )}
                 </td>
@@ -301,25 +301,25 @@ function UsersTab({ action, notify }: { action: ActionFn; notify: (msg: string) 
         </table>
       </div>
 
-      <Pager page={page} pages={pages} loading={loading} onNav={(o) => void load(o)} pageSize={PAGE_SIZE} total={total} noun={t("人")} />
+      <Pager page={page} pages={pages} loading={loading} onNav={(o) => void load(o)} pageSize={PAGE_SIZE} total={total} noun={t("admin.people")} />
 
       {resetFor && (
         <div style={{ position: "absolute", inset: 0, zIndex: 91, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.35)", borderRadius: 10 }}>
           <div style={{ width: 320, background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: 10, padding: 16 }}>
-            <strong style={{ fontSize: 12.5 }}>{t("重置 {name} 的密码", { name: resetFor.username })}</strong>
-            <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "8px 0" }}>{t("重置后该用户的所有会话与登录态立即失效；请将新密码安全地告知用户（至少 8 字符）。")}</p>
+            <strong style={{ fontSize: 12.5 }}>{t("admin.resetPassword2", { name: resetFor.username })}</strong>
+            <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "8px 0" }}>{t("admin.allUsersSessionsLoginsBecome")}</p>
             <input
               type="text"
               value={resetPassword}
               onChange={(e) => setResetPassword(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") void doResetPassword(); }}
-              placeholder={t("新密码（≥8 字符）")}
+              placeholder={t("admin.newPassword8Chars")}
               autoFocus
               style={{ width: "100%", boxSizing: "border-box", padding: "6px 9px", fontSize: 12, background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text)", fontFamily: "var(--font-mono)" }}
             />
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
-              <MiniButton onClick={() => { setResetFor(null); setResetPassword(""); }}>{t("取消")}</MiniButton>
-              <MiniButton accent disabled={resetPassword.length < 8} onClick={() => void doResetPassword()}>{t("确定重置")}</MiniButton>
+              <MiniButton onClick={() => { setResetFor(null); setResetPassword(""); }}>{t("common.cancel")}</MiniButton>
+              <MiniButton accent disabled={resetPassword.length < 8} onClick={() => void doResetPassword()}>{t("admin.reset")}</MiniButton>
             </div>
           </div>
         </div>
@@ -351,7 +351,7 @@ function CreateUserForm({ onCancel, onCreated, action, t }: {
     });
     setBusy(false);
     if (ok) onCreated(username);
-    else setErr(t("创建失败（用户名重复或密码不符合策略）"));
+    else setErr(t("admin.createFailedHint"));
   };
 
   const field = (value: string, set: (v: string) => void, placeholder: string, mono = false) => (
@@ -365,14 +365,14 @@ function CreateUserForm({ onCancel, onCreated, action, t }: {
 
   return (
     <div style={{ display: "flex", gap: 8, padding: "10px 16px", borderBottom: "1px solid var(--border)", flexWrap: "wrap", alignItems: "center" }}>
-      {field(username, setUsername, t("用户名"))}
-      {field(password, setPassword, t("初始密码（≥8 字符）"), true)}
+      {field(username, setUsername, t("admin.username"))}
+      {field(password, setPassword, t("admin.initialPassword8Chars"), true)}
       {field(email, setEmail, "Email（可选）")}
       <button type="button" disabled={busy || !username || password.length < 8} onClick={() => void submit()} style={{ padding: "5px 12px", fontSize: 12, border: "1px solid var(--accent)", color: "var(--accent)", background: "none", borderRadius: 6, cursor: "pointer", opacity: busy || !username || password.length < 8 ? 0.4 : 1 }}>
-        {t("创建")}
+        {t("common.create")}
       </button>
       <button type="button" onClick={onCancel} style={{ padding: "5px 12px", fontSize: 12, border: "1px solid var(--border)", color: "var(--text-muted)", background: "none", borderRadius: 6, cursor: "pointer" }}>
-        {t("取消")}
+        {t("common.cancel")}
       </button>
       {err && <span style={{ fontSize: 11, color: "#f87171" }}>{err}</span>}
     </div>
@@ -413,15 +413,15 @@ function ContainersTab({ action, notify }: { action: ActionFn; notify: (msg: str
 
   const doLifecycle = async (row: PlatformContainerRow, act: "start" | "stop") => {
     if (await action(`/api/admin/containers/${row.id}/${act}`, { method: "POST" })) {
-      notify(act === "start" ? t("已启动容器 {name}", { name: row.name }) : t("已停止容器 {name}", { name: row.name }));
+      notify(act === "start" ? t("admin.startedContainer", { name: row.name }) : t("admin.stoppedContainer", { name: row.name }));
       void load();
     }
   };
 
   const doDelete = async (row: PlatformContainerRow) => {
-    if (!window.confirm(t("确定删除容器 {name}（{owner}）？实例与可写层将被清理", { name: row.name, owner: row.owner_username ?? "?" }))) return;
+    if (!window.confirm(t("admin.deleteContainerConfirm", { name: row.name, owner: row.owner_username ?? "?" }))) return;
     if (await action(`/api/admin/containers/${row.id}`, { method: "DELETE" })) {
-      notify(t("已删除容器 {name}", { name: row.name }));
+      notify(t("admin.deletedContainer", { name: row.name }));
       void load();
     }
   };
@@ -430,12 +430,12 @@ function ContainersTab({ action, notify }: { action: ActionFn; notify: (msg: str
     <>
       <div style={{ display: "flex", gap: 8, padding: "10px 16px", borderBottom: "1px solid var(--border)", alignItems: "center" }}>
         <select value={status} onChange={(e) => setStatus(e.target.value)} style={{ padding: "5px 7px", fontSize: 12, background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text)" }}>
-          {CONTAINER_FILTERS.map((s) => <option key={s} value={s}>{s === "" ? t("全部状态") : s}</option>)}
+          {CONTAINER_FILTERS.map((s) => <option key={s} value={s}>{s === "" ? t("admin.allStatuses") : s}</option>)}
         </select>
         <div style={{ flex: 1 }} />
-        <span style={{ fontSize: 11, color: "var(--text-dim)" }}>{t("最多显示最近 50 个")}</span>
+        <span style={{ fontSize: 11, color: "var(--text-dim)" }}>{t("admin.showing50MostRecent")}</span>
         <button type="button" onClick={() => void load()} style={{ padding: "5px 12px", fontSize: 12, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text)", borderRadius: 6, cursor: "pointer" }}>
-          {t("刷新")}
+          {t("admin.refresh")}
         </button>
       </div>
       <div style={{ flex: 1, overflow: "auto", padding: "0 8px" }}>
@@ -443,17 +443,17 @@ function ContainersTab({ action, notify }: { action: ActionFn; notify: (msg: str
           <thead>
             <tr style={{ textAlign: "left", color: "var(--text-dim)", fontSize: 10.5 }}>
               <th style={{ padding: "8px 8px", fontWeight: 500 }}>#</th>
-              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("名称")}</th>
-              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("所有者")}</th>
-              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("镜像")}</th>
-              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("状态")}</th>
-              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("资源")}</th>
-              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("操作")}</th>
+              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("admin.name")}</th>
+              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("admin.owner")}</th>
+              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("admin.images")}</th>
+              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("chat.status")}</th>
+              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("admin.resources")}</th>
+              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("admin.actions")}</th>
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={7} style={{ padding: 18, textAlign: "center", color: "var(--text-dim)" }}>{t("加载中…")}</td></tr>}
-            {!loading && rows.length === 0 && <tr><td colSpan={7} style={{ padding: 18, textAlign: "center", color: "var(--text-dim)" }}>{t("没有容器")}</td></tr>}
+            {loading && <tr><td colSpan={7} style={{ padding: 18, textAlign: "center", color: "var(--text-dim)" }}>{t("admin.loading")}</td></tr>}
+            {!loading && rows.length === 0 && <tr><td colSpan={7} style={{ padding: 18, textAlign: "center", color: "var(--text-dim)" }}>{t("admin.containers2")}</td></tr>}
             {!loading && rows.map((c) => (
               <tr key={c.id} style={{ borderTop: "1px solid var(--border)" }}>
                 <td style={{ padding: "7px 8px", color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>{c.id}</td>
@@ -469,9 +469,9 @@ function ContainersTab({ action, notify }: { action: ActionFn; notify: (msg: str
                 </td>
                 <td style={{ padding: "7px 8px", whiteSpace: "nowrap" }}>
                   {c.status === "running"
-                    ? <MiniButton onClick={() => void doLifecycle(c, "stop")}>{t("停止")}</MiniButton>
-                    : <MiniButton onClick={() => void doLifecycle(c, "start")} accent>{t("启动")}</MiniButton>}
-                  <MiniButton onClick={() => void doDelete(c)} danger>{t("删除")}</MiniButton>
+                    ? <MiniButton onClick={() => void doLifecycle(c, "stop")}>{t("admin.stop")}</MiniButton>
+                    : <MiniButton onClick={() => void doLifecycle(c, "start")} accent>{t("admin.start")}</MiniButton>}
+                  <MiniButton onClick={() => void doDelete(c)} danger>{t("common.delete")}</MiniButton>
                 </td>
               </tr>
             ))}
@@ -517,15 +517,15 @@ function ImagesTab({ action, notify }: { action: ActionFn; notify: (msg: string)
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ is_public: next }),
     })) {
-      notify(next ? t("镜像 {name} 已设为公开", { name: img.display_name }) : t("镜像 {name} 已设为私有", { name: img.display_name }));
+      notify(next ? t("admin.imageNowPublic", { name: img.display_name }) : t("admin.imageNowPrivate", { name: img.display_name }));
       void load();
     }
   };
 
   const doDelete = async (img: PlatformImageRow) => {
-    if (!window.confirm(t("确定删除镜像 {name}？（不影响已用该镜像创建的容器）", { name: img.display_name }))) return;
+    if (!window.confirm(t("admin.deleteImageExistingContainersBuilt", { name: img.display_name }))) return;
     if (await action(`/api/admin/images/${img.id}`, { method: "DELETE" })) {
-      notify(t("已删除镜像 {name}", { name: img.display_name }));
+      notify(t("admin.deletedImage", { name: img.display_name }));
       void load();
     }
   };
@@ -533,20 +533,20 @@ function ImagesTab({ action, notify }: { action: ActionFn; notify: (msg: string)
   return (
     <>
       <div style={{ display: "flex", gap: 8, padding: "10px 16px", borderBottom: "1px solid var(--border)", alignItems: "center" }}>
-        <span style={{ fontSize: 11, color: "var(--text-dim)" }}>{t("镜像目录（sif 需先放到平台可访问的路径）")}</span>
+        <span style={{ fontSize: 11, color: "var(--text-dim)" }}>{t("admin.imageCataloguePlaceSifPlatform")}</span>
         <div style={{ flex: 1 }} />
         <button type="button" onClick={() => void load()} style={{ padding: "5px 12px", fontSize: 12, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text)", borderRadius: 6, cursor: "pointer" }}>
-          {t("刷新")}
+          {t("admin.refresh")}
         </button>
         <button type="button" onClick={() => setCreating((v) => !v)} style={{ padding: "5px 12px", fontSize: 12, border: "1px solid var(--accent)", color: "var(--accent)", background: "none", borderRadius: 6, cursor: "pointer" }}>
-          {creating ? t("取消") : t("+ 注册镜像")}
+          {creating ? t("common.cancel") : t("admin.registerImage")}
         </button>
       </div>
 
       {creating && (
         <CreateImageForm
           onCancel={() => setCreating(false)}
-          onCreated={async (name) => { setCreating(false); notify(t("已注册镜像 {name}", { name })); await load(); }}
+          onCreated={async (name) => { setCreating(false); notify(t("admin.registeredImage", { name })); await load(); }}
           action={action}
           t={t}
         />
@@ -557,16 +557,16 @@ function ImagesTab({ action, notify }: { action: ActionFn; notify: (msg: string)
           <thead>
             <tr style={{ textAlign: "left", color: "var(--text-dim)", fontSize: 10.5 }}>
               <th style={{ padding: "8px 8px", fontWeight: 500 }}>#</th>
-              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("显示名")}</th>
-              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("名称")}</th>
+              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("admin.displayName")}</th>
+              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("admin.name")}</th>
               <th style={{ padding: "8px 8px", fontWeight: 500 }}>sif</th>
-              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("可见性")}</th>
-              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("操作")}</th>
+              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("admin.visibility")}</th>
+              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("admin.actions")}</th>
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={6} style={{ padding: 18, textAlign: "center", color: "var(--text-dim)" }}>{t("加载中…")}</td></tr>}
-            {!loading && rows.length === 0 && <tr><td colSpan={6} style={{ padding: 18, textAlign: "center", color: "var(--text-dim)" }}>{t("镜像目录为空")}</td></tr>}
+            {loading && <tr><td colSpan={6} style={{ padding: 18, textAlign: "center", color: "var(--text-dim)" }}>{t("admin.loading")}</td></tr>}
+            {!loading && rows.length === 0 && <tr><td colSpan={6} style={{ padding: 18, textAlign: "center", color: "var(--text-dim)" }}>{t("admin.imageCatalogueEmpty")}</td></tr>}
             {!loading && rows.map((img) => (
               <tr key={img.id} style={{ borderTop: "1px solid var(--border)" }}>
                 <td style={{ padding: "7px 8px", color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>{img.id}</td>
@@ -575,14 +575,14 @@ function ImagesTab({ action, notify }: { action: ActionFn; notify: (msg: string)
                 <td style={{ padding: "7px 8px", color: "var(--text-dim)", fontFamily: "var(--font-mono)", fontSize: 11, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={img.sif_path}>{img.sif_path}</td>
                 <td style={{ padding: "7px 8px" }}>
                   {img.is_public
-                    ? <span style={{ color: "var(--success, #22c55e)" }}>{t("公开")}</span>
-                    : <span style={{ color: "var(--text-dim)" }}>{t("私有")}</span>}
+                    ? <span style={{ color: "var(--success, #22c55e)" }}>{t("admin.public")}</span>
+                    : <span style={{ color: "var(--text-dim)" }}>{t("admin.private")}</span>}
                 </td>
                 <td style={{ padding: "7px 8px", whiteSpace: "nowrap" }}>
                   <MiniButton onClick={() => void doTogglePublic(img)}>
-                    {img.is_public ? t("设为私有") : t("设为公开")}
+                    {img.is_public ? t("admin.setPrivate") : t("admin.setPublic")}
                   </MiniButton>
-                  <MiniButton onClick={() => void doDelete(img)} danger>{t("删除")}</MiniButton>
+                  <MiniButton onClick={() => void doDelete(img)} danger>{t("common.delete")}</MiniButton>
                 </td>
               </tr>
             ))}
@@ -631,19 +631,19 @@ function CreateImageForm({ onCancel, onCreated, action, t }: {
 
   return (
     <div style={{ display: "flex", gap: 8, padding: "10px 16px", borderBottom: "1px solid var(--border)", flexWrap: "wrap", alignItems: "center" }}>
-      {field(name, setName, t("名称（字母/数字/_./-）"), true)}
-      {field(displayName, setDisplayName, t("显示名"))}
+      {field(name, setName, t("admin.nameLettersDigits"), true)}
+      {field(displayName, setDisplayName, t("admin.displayName"))}
       {field(sifPath, setSifPath, "/path/to/image.sif", true)}
-      {field(description, setDescription, t("描述（可选）"))}
+      {field(description, setDescription, t("common.descriptionOptional"))}
       <label style={{ fontSize: 11.5, color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
         <input type="checkbox" checked={isPublic} onChange={(e) => setIsPublic(e.target.checked)} />
-        {t("公开")}
+        {t("admin.public")}
       </label>
       <button type="button" disabled={busy || !valid} onClick={() => void submit()} style={{ padding: "5px 12px", fontSize: 12, border: "1px solid var(--accent)", color: "var(--accent)", background: "none", borderRadius: 6, cursor: "pointer", opacity: busy || !valid ? 0.4 : 1 }}>
-        {t("注册")}
+        {t("admin.register")}
       </button>
       <button type="button" onClick={onCancel} style={{ padding: "5px 12px", fontSize: 12, border: "1px solid var(--border)", color: "var(--text-muted)", background: "none", borderRadius: 6, cursor: "pointer" }}>
-        {t("取消")}
+        {t("common.cancel")}
       </button>
     </div>
   );
@@ -687,15 +687,15 @@ function OverviewTab({ notify }: { notify: (msg: string) => void }) {
   }, [load]);
 
   if (loading && !data) {
-    return <div style={{ padding: 24, textAlign: "center", color: "var(--text-dim)", fontSize: 12 }}>{t("加载中…")}</div>;
+    return <div style={{ padding: 24, textAlign: "center", color: "var(--text-dim)", fontSize: 12 }}>{t("admin.loading")}</div>;
   }
   if (!data) return null;
 
   const cards: Array<[string, string | number, string?]> = [
-    [t("用户总数"), data.users],
-    [t("运行中容器"), data.runningContainers],
-    [t("镜像数"), data.images],
-    [t("24h 失败操作"), data.recentFailures24h, data.recentFailures24h > 0 ? "#f87171" : undefined],
+    [t("admin.totalUsers"), data.users],
+    [t("admin.runningContainers"), data.runningContainers],
+    [t("admin.images2"), data.images],
+    [t("admin.failedOps24h"), data.recentFailures24h, data.recentFailures24h > 0 ? "#f87171" : undefined],
   ];
 
   return (
@@ -716,10 +716,10 @@ function OverviewTab({ notify }: { notify: (msg: string) => void }) {
         ))}
       </div>
       <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
-        {t("执行器：{kind} · 数据库：{dialect}", { kind: data.executor, dialect: data.dialect })}
+        {t("admin.executorDatabase", { kind: data.executor, dialect: data.dialect })}
       </div>
       <div style={{ marginTop: 12 }}>
-        <button type="button" onClick={() => void load()} style={{ ...pagerBtn }}>{t("刷新")}</button>
+        <button type="button" onClick={() => void load()} style={{ ...pagerBtn }}>{t("admin.refresh")}</button>
       </div>
     </div>
   );
@@ -763,9 +763,9 @@ function QuotasTab({ action, notify }: { action: ActionFn; notify: (msg: string)
   }, [load]);
 
   const doDelete = async (q: QuotaRow) => {
-    if (!window.confirm(t("确定删除配额 {name}？使用该配额的用户将失去配额限制依据", { name: q.name }))) return;
+    if (!window.confirm(t("admin.deleteQuotaUsersLoseTheir", { name: q.name }))) return;
     if (await action(`/api/admin/quotas/${q.id}`, { method: "DELETE" })) {
-      notify(t("已删除配额 {name}", { name: q.name }));
+      notify(t("admin.deletedQuota", { name: q.name }));
       void load();
     }
   };
@@ -773,16 +773,16 @@ function QuotasTab({ action, notify }: { action: ActionFn; notify: (msg: string)
   return (
     <>
       <div style={{ display: "flex", gap: 8, padding: "10px 16px", borderBottom: "1px solid var(--border)", alignItems: "center" }}>
-        <span style={{ fontSize: 11, color: "var(--text-dim)" }}>{t("配额层级（限制每用户可创建的容器/工作区数量与资源）")}</span>
+        <span style={{ fontSize: 11, color: "var(--text-dim)" }}>{t("admin.quotaTiersPerUserCaps")}</span>
         <div style={{ flex: 1 }} />
         <button type="button" onClick={() => setCreating((v) => !v)} style={{ padding: "5px 12px", fontSize: 12, border: "1px solid var(--accent)", color: "var(--accent)", background: "none", borderRadius: 6, cursor: "pointer" }}>
-          {creating ? t("取消") : t("+ 新建配额")}
+          {creating ? t("common.cancel") : t("admin.newQuota")}
         </button>
       </div>
       {creating && (
         <QuotaForm
           onCancel={() => setCreating(false)}
-          onSaved={async () => { setCreating(false); notify(t("配额已创建")); await load(); }}
+          onSaved={async () => { setCreating(false); notify(t("admin.quotaCreated")); await load(); }}
           action={action}
           t={t}
         />
@@ -791,7 +791,7 @@ function QuotasTab({ action, notify }: { action: ActionFn; notify: (msg: string)
         <QuotaForm
           initial={editing}
           onCancel={() => setEditing(null)}
-          onSaved={async () => { setEditing(null); notify(t("配额已更新")); await load(); }}
+          onSaved={async () => { setEditing(null); notify(t("admin.quotaUpdated")); await load(); }}
           action={action}
           t={t}
         />
@@ -801,17 +801,17 @@ function QuotasTab({ action, notify }: { action: ActionFn; notify: (msg: string)
           <thead>
             <tr style={{ textAlign: "left", color: "var(--text-dim)", fontSize: 10.5 }}>
               <th style={{ padding: "8px 8px", fontWeight: 500 }}>#</th>
-              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("名称")}</th>
-              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("容器")}</th>
+              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("admin.name")}</th>
+              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("admin.containers")}</th>
               <th style={{ padding: "8px 8px", fontWeight: 500 }}>CPU</th>
-              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("内存")}</th>
-              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("磁盘")}</th>
-              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("快照/容器")}</th>
-              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("操作")}</th>
+              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("admin.memory")}</th>
+              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("admin.disk")}</th>
+              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("admin.snapsContainer")}</th>
+              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("admin.actions")}</th>
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={8} style={{ padding: 18, textAlign: "center", color: "var(--text-dim)" }}>{t("加载中…")}</td></tr>}
+            {loading && <tr><td colSpan={8} style={{ padding: 18, textAlign: "center", color: "var(--text-dim)" }}>{t("admin.loading")}</td></tr>}
             {!loading && rows.map((q) => (
               <tr key={q.id} style={{ borderTop: "1px solid var(--border)" }}>
                 <td style={{ padding: "7px 8px", color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>{q.id}</td>
@@ -822,8 +822,8 @@ function QuotasTab({ action, notify }: { action: ActionFn; notify: (msg: string)
                 <td style={{ padding: "7px 8px", fontFamily: "var(--font-mono)" }}>{q.max_disk_gb}G</td>
                 <td style={{ padding: "7px 8px", fontFamily: "var(--font-mono)" }}>{q.max_snapshots_per_container}</td>
                 <td style={{ padding: "7px 8px", whiteSpace: "nowrap" }}>
-                  <MiniButton onClick={() => setEditing(q)} accent>{t("编辑")}</MiniButton>
-                  <MiniButton onClick={() => void doDelete(q)} danger>{t("删除")}</MiniButton>
+                  <MiniButton onClick={() => setEditing(q)} accent>{t("admin.edit")}</MiniButton>
+                  <MiniButton onClick={() => void doDelete(q)} danger>{t("common.delete")}</MiniButton>
                 </td>
               </tr>
             ))}
@@ -877,18 +877,18 @@ function QuotaForm({ initial, onCancel, onSaved, action, t }: {
 
   return (
     <div style={{ display: "flex", gap: 10, padding: "12px 16px", borderBottom: "1px solid var(--border)", flexWrap: "wrap", alignItems: "flex-end" }}>
-      {field(t("名称"), name, setName, 110)}
-      {field(t("描述"), description, setDescription, 160)}
-      {field(t("容器上限"), maxContainers, setMaxContainers)}
+      {field(t("admin.name"), name, setName, 110)}
+      {field(t("admin.description"), description, setDescription, 160)}
+      {field(t("admin.maxContainers"), maxContainers, setMaxContainers)}
       {field("CPU", maxCpu, setMaxCpu)}
-      {field(t("内存 (GB)"), maxMemGb, setMaxMemGb)}
-      {field(t("磁盘 (GB)"), maxDiskGb, setMaxDiskGb)}
-      {field(t("快照上限"), maxSnapshots, setMaxSnapshots)}
+      {field(t("admin.memoryGb"), maxMemGb, setMaxMemGb)}
+      {field(t("admin.diskGb"), maxDiskGb, setMaxDiskGb)}
+      {field(t("admin.maxSnapshots"), maxSnapshots, setMaxSnapshots)}
       <button type="button" disabled={busy || !valid} onClick={() => void submit()} style={{ padding: "6px 14px", fontSize: 12, border: "1px solid var(--accent)", color: "var(--accent)", background: "none", borderRadius: 6, cursor: "pointer", opacity: busy || !valid ? 0.4 : 1 }}>
-        {initial ? t("保存") : t("创建")}
+        {initial ? t("common.save") : t("common.create")}
       </button>
       <button type="button" onClick={onCancel} style={{ padding: "6px 14px", fontSize: 12, border: "1px solid var(--border)", color: "var(--text-muted)", background: "none", borderRadius: 6, cursor: "pointer" }}>
-        {t("取消")}
+        {t("common.cancel")}
       </button>
     </div>
   );
@@ -937,9 +937,9 @@ function WorkspacesTab({ action, notify }: { action: ActionFn; notify: (msg: str
   }, [load]);
 
   const doDelete = async (ws: WorkspaceRow) => {
-    if (!window.confirm(t("确定删除工作区 {name}（{owner}）？存储目录将一并删除", { name: ws.name, owner: ws.owner_username ?? "?" }))) return;
+    if (!window.confirm(t("admin.deleteWorkspaceConfirm", { name: ws.name, owner: ws.owner_username ?? "?" }))) return;
     if (await action(`/api/admin/workspaces/${ws.id}`, { method: "DELETE" })) {
-      notify(t("已删除工作区 {name}", { name: ws.name }));
+      notify(t("admin.deletedWorkspace", { name: ws.name }));
       void load(offset);
     }
   };
@@ -956,11 +956,11 @@ function WorkspacesTab({ action, notify }: { action: ActionFn; notify: (msg: str
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") void load(0); }}
-          placeholder={t("搜索工作区名称")}
+          placeholder={t("admin.searchWorkspaceName")}
           style={{ flex: 1, padding: "5px 9px", fontSize: 12, background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text)" }}
         />
         <button type="button" onClick={() => void load(0)} style={{ padding: "5px 12px", fontSize: 12, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text)", borderRadius: 6, cursor: "pointer" }}>
-          {t("搜索")}
+          {t("admin.search")}
         </button>
       </div>
       <div style={{ flex: 1, overflow: "auto", padding: "0 8px" }}>
@@ -968,17 +968,17 @@ function WorkspacesTab({ action, notify }: { action: ActionFn; notify: (msg: str
           <thead>
             <tr style={{ textAlign: "left", color: "var(--text-dim)", fontSize: 10.5 }}>
               <th style={{ padding: "8px 8px", fontWeight: 500 }}>#</th>
-              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("名称")}</th>
-              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("所有者")}</th>
-              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("大小")}</th>
-              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("文件数")}</th>
-              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("来源容器")}</th>
-              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("操作")}</th>
+              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("admin.name")}</th>
+              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("admin.owner")}</th>
+              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("admin.size")}</th>
+              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("admin.files")}</th>
+              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("admin.container")}</th>
+              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("admin.actions")}</th>
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={7} style={{ padding: 18, textAlign: "center", color: "var(--text-dim)" }}>{t("加载中…")}</td></tr>}
-            {!loading && rows.length === 0 && <tr><td colSpan={7} style={{ padding: 18, textAlign: "center", color: "var(--text-dim)" }}>{t("没有工作区")}</td></tr>}
+            {loading && <tr><td colSpan={7} style={{ padding: 18, textAlign: "center", color: "var(--text-dim)" }}>{t("admin.loading")}</td></tr>}
+            {!loading && rows.length === 0 && <tr><td colSpan={7} style={{ padding: 18, textAlign: "center", color: "var(--text-dim)" }}>{t("admin.workspaces2")}</td></tr>}
             {!loading && rows.map((ws) => (
               <tr key={ws.id} style={{ borderTop: "1px solid var(--border)" }}>
                 <td style={{ padding: "7px 8px", color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>{ws.id}</td>
@@ -988,14 +988,14 @@ function WorkspacesTab({ action, notify }: { action: ActionFn; notify: (msg: str
                 <td style={{ padding: "7px 8px", fontFamily: "var(--font-mono)", color: "var(--text-dim)" }}>{ws.file_count}</td>
                 <td style={{ padding: "7px 8px", fontFamily: "var(--font-mono)", color: "var(--text-dim)" }}>{ws.source_container_id ? `#${ws.source_container_id}` : "—"}</td>
                 <td style={{ padding: "7px 8px" }}>
-                  <MiniButton onClick={() => void doDelete(ws)} danger>{t("删除")}</MiniButton>
+                  <MiniButton onClick={() => void doDelete(ws)} danger>{t("common.delete")}</MiniButton>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-      <Pager page={page} pages={pages} loading={loading} onNav={(o) => void load(o)} pageSize={PAGE} total={total} noun={t("个")} />
+      <Pager page={page} pages={pages} loading={loading} onNav={(o) => void load(o)} pageSize={PAGE} total={total} noun={t("admin.items")} />
     </>
   );
 }
@@ -1045,16 +1045,16 @@ function LlmTab({ action, notify }: { action: ActionFn; notify: (msg: string) =>
       body: JSON.stringify({ platformUserId: Number(grantUserId), maxBudget: Number(grantBudget), budgetDuration: "monthly" }),
     });
     if (ok) {
-      notify(t("已授权用户 #{id}（预算 {budget}/月）", { id: grantUserId, budget: grantBudget }));
+      notify(t("admin.grantedUserBudgetMo", { id: grantUserId, budget: grantBudget }));
       setGrantUserId("");
       void load();
     }
   };
 
   const doRevoke = async (b: LlmBindingRow) => {
-    if (!window.confirm(t("确定撤销用户 #{id} 的 LLM 访问？其虚拟密钥将立即失效", { id: String(b.platform_user_id) }))) return;
+    if (!window.confirm(t("admin.revokeLlmAccessUserTheir", { id: String(b.platform_user_id) }))) return;
     if (await action(`/api/admin/llm/bindings/${b.platform_user_id}`, { method: "DELETE" })) {
-      notify(t("已撤销用户 #{id} 的 LLM 访问", { id: String(b.platform_user_id) }));
+      notify(t("admin.revokedLlmAccessUser", { id: String(b.platform_user_id) }));
       void load();
     }
   };
@@ -1062,18 +1062,18 @@ function LlmTab({ action, notify }: { action: ActionFn; notify: (msg: string) =>
   return (
     <>
       <div style={{ display: "flex", gap: 8, padding: "10px 16px", borderBottom: "1px solid var(--border)", alignItems: "center", flexWrap: "wrap" }}>
-        <span style={{ fontSize: 11, color: "var(--text-dim)" }}>{t("LLM 访问授权（绑定平台用户与虚拟密钥预算）")}</span>
+        <span style={{ fontSize: 11, color: "var(--text-dim)" }}>{t("admin.llmAccessGrantsPlatformUsers")}</span>
         <div style={{ flex: 1 }} />
         <input
           value={grantUserId}
           onChange={(e) => setGrantUserId(e.target.value)}
-          placeholder={t("用户 #id")}
+          placeholder={t("admin.userId")}
           style={{ width: 90, padding: "5px 8px", fontSize: 12, background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text)", fontFamily: "var(--font-mono)" }}
         />
         <input
           value={grantBudget}
           onChange={(e) => setGrantBudget(e.target.value)}
-          placeholder={t("预算")}
+          placeholder={t("admin.budget")}
           style={{ width: 70, padding: "5px 8px", fontSize: 12, background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text)", fontFamily: "var(--font-mono)" }}
         />
         <button
@@ -1082,7 +1082,7 @@ function LlmTab({ action, notify }: { action: ActionFn; notify: (msg: string) =>
           onClick={() => void doGrant()}
           style={{ padding: "5px 12px", fontSize: 12, border: "1px solid var(--accent)", color: "var(--accent)", background: "none", borderRadius: 6, cursor: "pointer", opacity: !/^\d+$/.test(grantUserId) || !/^\d+(\.\d+)?$/.test(grantBudget) ? 0.4 : 1 }}
         >
-          {t("授权")}
+          {t("admin.grant")}
         </button>
       </div>
       <div style={{ flex: 1, overflow: "auto", padding: "0 8px" }}>
@@ -1090,27 +1090,27 @@ function LlmTab({ action, notify }: { action: ActionFn; notify: (msg: string) =>
           <thead>
             <tr style={{ textAlign: "left", color: "var(--text-dim)", fontSize: 10.5 }}>
               <th style={{ padding: "8px 8px", fontWeight: 500 }}>#</th>
-              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("用户")}</th>
-              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("预算")}</th>
-              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("周期")}</th>
-              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("模型")}</th>
-              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("状态")}</th>
-              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("操作")}</th>
+              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("admin.users")}</th>
+              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("admin.budget")}</th>
+              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("admin.cycle")}</th>
+              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("admin.models")}</th>
+              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("chat.status")}</th>
+              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("admin.actions")}</th>
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={7} style={{ padding: 18, textAlign: "center", color: "var(--text-dim)" }}>{t("加载中…")}</td></tr>}
-            {!loading && rows.length === 0 && <tr><td colSpan={7} style={{ padding: 18, textAlign: "center", color: "var(--text-dim)" }}>{t("没有 LLM 授权")}</td></tr>}
+            {loading && <tr><td colSpan={7} style={{ padding: 18, textAlign: "center", color: "var(--text-dim)" }}>{t("admin.loading")}</td></tr>}
+            {!loading && rows.length === 0 && <tr><td colSpan={7} style={{ padding: 18, textAlign: "center", color: "var(--text-dim)" }}>{t("admin.llmGrants")}</td></tr>}
             {!loading && rows.map((b) => (
               <tr key={b.id} style={{ borderTop: "1px solid var(--border)" }}>
                 <td style={{ padding: "7px 8px", color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>{b.id}</td>
                 <td style={{ padding: "7px 8px", fontWeight: 500 }}>#{b.platform_user_id}{b.username ? ` ${b.username}` : ""}</td>
                 <td style={{ padding: "7px 8px", fontFamily: "var(--font-mono)" }}>{b.max_budget}</td>
                 <td style={{ padding: "7px 8px", color: "var(--text-muted)" }}>{b.budget_duration ?? "—"}</td>
-                <td style={{ padding: "7px 8px", color: "var(--text-muted)", fontSize: 11 }}>{b.models ? b.models.join(", ") : t("全部")}</td>
-                <td style={{ padding: "7px 8px", color: b.revoked_at ? "var(--text-dim)" : "var(--success, #22c55e)" }}>{b.revoked_at ? t("已撤销") : t("生效中")}</td>
+                <td style={{ padding: "7px 8px", color: "var(--text-muted)", fontSize: 11 }}>{b.models ? b.models.join(", ") : t("admin.all")}</td>
+                <td style={{ padding: "7px 8px", color: b.revoked_at ? "var(--text-dim)" : "var(--success, #22c55e)" }}>{b.revoked_at ? t("admin.revoked") : t("admin.active")}</td>
                 <td style={{ padding: "7px 8px" }}>
-                  {!b.revoked_at && <MiniButton onClick={() => void doRevoke(b)} danger>{t("撤销")}</MiniButton>}
+                  {!b.revoked_at && <MiniButton onClick={() => void doRevoke(b)} danger>{t("admin.revoke")}</MiniButton>}
                 </td>
               </tr>
             ))}
@@ -1175,32 +1175,32 @@ function LogsTab({ notify }: { notify: (msg: string) => void }) {
           value={actionFilter}
           onChange={(e) => setActionFilter(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") void load(0); }}
-          placeholder={t("按操作过滤（如 container.create）")}
+          placeholder={t("admin.filterActionEGContainer")}
           style={{ flex: 1, padding: "5px 9px", fontSize: 12, background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text)", fontFamily: "var(--font-mono)" }}
         />
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={{ padding: "5px 7px", fontSize: 12, background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text)" }}>
-          <option value="">{t("全部状态")}</option>
+          <option value="">{t("admin.allStatuses")}</option>
           <option value="success">success</option>
           <option value="failure">failure</option>
         </select>
         <button type="button" onClick={() => void load(0)} style={{ padding: "5px 12px", fontSize: 12, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text)", borderRadius: 6, cursor: "pointer" }}>
-          {t("搜索")}
+          {t("admin.search")}
         </button>
       </div>
       <div style={{ flex: 1, overflow: "auto", padding: "0 8px" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
           <thead>
             <tr style={{ textAlign: "left", color: "var(--text-dim)", fontSize: 10.5 }}>
-              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("时间")}</th>
-              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("用户")}</th>
-              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("操作")}</th>
-              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("资源")}</th>
-              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("状态")}</th>
+              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("admin.time")}</th>
+              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("admin.users")}</th>
+              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("admin.actions")}</th>
+              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("admin.resources")}</th>
+              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("chat.status")}</th>
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={5} style={{ padding: 18, textAlign: "center", color: "var(--text-dim)" }}>{t("加载中…")}</td></tr>}
-            {!loading && rows.length === 0 && <tr><td colSpan={5} style={{ padding: 18, textAlign: "center", color: "var(--text-dim)" }}>{t("没有日志")}</td></tr>}
+            {loading && <tr><td colSpan={5} style={{ padding: 18, textAlign: "center", color: "var(--text-dim)" }}>{t("admin.loading")}</td></tr>}
+            {!loading && rows.length === 0 && <tr><td colSpan={5} style={{ padding: 18, textAlign: "center", color: "var(--text-dim)" }}>{t("admin.logs2")}</td></tr>}
             {!loading && rows.map((log) => (
               <tr key={log.id} style={{ borderTop: "1px solid var(--border)" }}>
                 <td style={{ padding: "7px 8px", color: "var(--text-dim)", fontFamily: "var(--font-mono)", fontSize: 11, whiteSpace: "nowrap" }}>
@@ -1217,7 +1217,7 @@ function LogsTab({ notify }: { notify: (msg: string) => void }) {
           </tbody>
         </table>
       </div>
-      <Pager page={page} pages={pages} loading={loading} onNav={(o) => void load(o)} pageSize={PAGE} total={total} noun={t("条")} />
+      <Pager page={page} pages={pages} loading={loading} onNav={(o) => void load(o)} pageSize={PAGE} total={total} noun={t("admin.entries")} />
     </>
   );
 }
@@ -1242,11 +1242,11 @@ function Pager({ page, pages, loading, onNav, pageSize, total, noun }: {
   const { t } = useI18n();
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 16px", borderTop: "1px solid var(--border)", fontSize: 11, color: "var(--text-dim)" }}>
-      <span>{t("共 {total} {noun}", { total: String(total), noun })}</span>
+      <span>{t("admin.totalCount", { total: String(total), noun })}</span>
       <div style={{ flex: 1 }} />
-      <button type="button" disabled={page <= 1 || loading} onClick={() => onNav(Math.max(0, (page - 2) * pageSize))} style={{ ...pagerBtn, opacity: page <= 1 ? 0.4 : 1 }}>{t("上一页")}</button>
+      <button type="button" disabled={page <= 1 || loading} onClick={() => onNav(Math.max(0, (page - 2) * pageSize))} style={{ ...pagerBtn, opacity: page <= 1 ? 0.4 : 1 }}>{t("admin.prev")}</button>
       <span>{page} / {pages}</span>
-      <button type="button" disabled={page >= pages || loading} onClick={() => onNav(page * pageSize)} style={{ ...pagerBtn, opacity: page >= pages ? 0.4 : 1 }}>{t("下一页")}</button>
+      <button type="button" disabled={page >= pages || loading} onClick={() => onNav(page * pageSize)} style={{ ...pagerBtn, opacity: page >= pages ? 0.4 : 1 }}>{t("admin.next")}</button>
     </div>
   );
 }

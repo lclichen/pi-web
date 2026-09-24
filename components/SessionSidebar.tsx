@@ -1218,7 +1218,7 @@ useEffect(() => {
                 flexShrink: 0,
                 transition: "background 0.12s, color 0.12s, border-color 0.12s",
               }}
-             title={t("新建项目")}
+             title={t("sessions.newProject")}
               onMouseEnter={(e) => {
                 if (!selectedCwd) return;
                 e.currentTarget.style.background = "var(--bg-selected)";
@@ -1235,14 +1235,14 @@ useEffect(() => {
                 <line x1="6" y1="1" x2="6" y2="11" />
                 <line x1="1" y1="6" x2="11" y2="6" />
               </svg>
-              {t("新建项目")}
+              {t("sessions.newProject")}
             </button>
             )}
             <button
               type="button"
               onClick={() => { setQuickMenuOpen((v) => !v); setWtDropdownOpen(false); }}
               data-quick-menu
-              title={t("快速会话：无工作区，选择助手模板直接开始")}
+              title={t("sessions.quickIntro")}
               aria-haspopup="menu"
               aria-expanded={quickMenuOpen}
               style={{
@@ -1279,7 +1279,7 @@ useEffect(() => {
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
               </svg>
-              {t("快速会话")}
+              {t("sessions.quick")}
             </button>
             {quickMenuOpen && (
               <div
@@ -1302,7 +1302,7 @@ useEffect(() => {
               >
                 {quickTemplates.length === 0 && (
                   <div style={{ padding: "8px 10px", fontSize: 11, color: "var(--text-dim)" }}>
-                    {t("暂无模板（管理员可在 设置 → 快速会话模板 中添加）")}
+                    {t("sessions.noTemplates")}
                   </div>
                 )}
                 {quickTemplates.map((tpl) => (

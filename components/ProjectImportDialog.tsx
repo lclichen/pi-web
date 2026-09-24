@@ -41,11 +41,11 @@ export function ProjectImportDialog({ projectId, hostDir, projectName, onClose, 
     setResult(null);
     if (!f) return;
     if (!/\.zip$/i.test(f.name)) {
-      setError(t("仅支持 .zip 配置包"));
+      setError(t("projects.onlyZipConfigBundlesSupported"));
       return;
     }
     if (f.size > 200 * 1024 * 1024) {
-      setError(t("配置包过大（>30MB）"));
+      setError(t("projects.importTooLarge"));
       return;
     }
     setFile(f);
@@ -95,7 +95,7 @@ export function ProjectImportDialog({ projectId, hostDir, projectName, onClose, 
       >
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <span style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>
-            {t("导入项目配置")} <span style={{ fontWeight: 400, fontSize: 12, color: "var(--text-muted)" }}>— {projectName}</span>
+            {t("projects.importProjectConfig")} <span style={{ fontWeight: 400, fontSize: 12, color: "var(--text-muted)" }}>— {projectName}</span>
           </span>
           <button type="button" onClick={onClose} style={{ background: "transparent", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 16 }}>×</button>
         </div>
@@ -123,11 +123,11 @@ export function ProjectImportDialog({ projectId, hostDir, projectName, onClose, 
                   <span style={{ fontSize: 11 }}>{(file.size / 1024).toFixed(1)} KB</span>
                 </>
               ) : (
-                <span>{t("点击选择或拖入 .zip 配置包")}</span>
+                <span>{t("projects.clickChooseDropZipConfig")}</span>
               )}
               <span style={{ fontSize: 11 }}>
-                {t("支持内容：.pi/ 配置（子智能体 · skills · 插件 · 模型配置）+ labs/ 实验手册")}<br />
-                {t("同名文件覆盖，其余保留；凭证（auth.json）会被自动剥离")}
+                {t("projects.contentsPiConfigSubagentsSkills")}<br />
+                {t("projects.sameNamedFilesOverwriteRest")}
               </span>
             </div>
             <input
@@ -150,7 +150,7 @@ export function ProjectImportDialog({ projectId, hostDir, projectName, onClose, 
                   color: "var(--text)", fontSize: 12, cursor: "pointer",
                 }}
               >
-                {t("取消")}
+                {t("common.cancel")}
               </button>
               <button
                 type="button"
@@ -163,7 +163,7 @@ export function ProjectImportDialog({ projectId, hostDir, projectName, onClose, 
                   opacity: !file || busy ? 0.5 : 1,
                 }}
               >
-                {busy ? t("导入中…") : t("导入")}
+                {busy ? t("projects.importing") : t("projects.import")}
               </button>
             </div>
           </>
@@ -172,10 +172,10 @@ export function ProjectImportDialog({ projectId, hostDir, projectName, onClose, 
         {result && (
           <>
             <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#22c55e", fontSize: 13 }}>
-              ✓ {t("导入完成")}
+              ✓ {t("projects.importComplete")}
             </div>
             <div style={{ fontSize: 12, color: "var(--text)" }}>
-              {t("新增 {n} 个文件，覆盖 {m} 个文件", { n: String(result.added), m: String(result.overwritten) })}
+              {t("projects.fileSAddedOverwritten", { n: String(result.added), m: String(result.overwritten) })}
             </div>
             <div
               style={{
@@ -187,7 +187,7 @@ export function ProjectImportDialog({ projectId, hostDir, projectName, onClose, 
               {result.files.map((f) => <div key={f}>{f}</div>)}
             </div>
             <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
-              {t("重新打开该项目会话后新配置生效（子智能体 / skills 即时可用）。")}
+              {t("projects.reopenProjectSessionNewConfig")}
             </div>
             <div style={{ display: "flex", justifyContent: "flex-end" }}>
               <button
@@ -199,7 +199,7 @@ export function ProjectImportDialog({ projectId, hostDir, projectName, onClose, 
                   fontSize: 12, fontWeight: 500, cursor: "pointer",
                 }}
               >
-                {t("完成")}
+                {t("common.finish")}
               </button>
             </div>
           </>

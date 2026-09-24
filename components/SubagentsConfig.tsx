@@ -385,8 +385,8 @@ export function SubagentsConfig({ cwd, onClose, embedded = false }: { cwd: strin
     <ConfigPanelShell embedded={embedded} title={t("common.agents")} subtitle={shortenPath(cwd)} closeLabel={t("i18n.close")} onClose={onClose}>
       {/* 顶部工具栏：启用开关（共享 ConfigSwitch，与技能/插件页风格一致）。 */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 10, padding: "7px 14px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
-        <span style={{ fontSize: 11, color: prefs.subagentsEnabled ? "var(--text-muted)" : "var(--text-dim)" }}>{t("启用")}</span>
-        <ConfigSwitch checked={prefs.subagentsEnabled} label={t("启用")} onChange={(v) => void togglePref("subagentsEnabled", v)} />
+        <span style={{ fontSize: 11, color: prefs.subagentsEnabled ? "var(--text-muted)" : "var(--text-dim)" }}>{t("common.enable")}</span>
+        <ConfigSwitch checked={prefs.subagentsEnabled} label={t("common.enable")} onChange={(v) => void togglePref("subagentsEnabled", v)} />
       </div>
 
       {/* Body */}
@@ -396,7 +396,7 @@ export function SubagentsConfig({ cwd, onClose, embedded = false }: { cwd: strin
           <ConfigSidebarList>
             {loading ? <div className="config-sidebar-message">{t("i18n.loading")}</div>
             : error ? <div className="config-sidebar-message is-error">{error}</div>
-            : agents.length === 0 ? <div className="config-sidebar-message is-empty">{t("暂无代理定义")}</div>
+            : agents.length === 0 ? <div className="config-sidebar-message is-empty">{t("subagents.agentsDefined")}</div>
             : grouped.map((group) => (
               <div key={group.scope} className="config-sidebar-group">
                 <ConfigSidebarGroupLabel>{scopeGroupLabel(group.scope)}</ConfigSidebarGroupLabel>
@@ -430,7 +430,7 @@ export function SubagentsConfig({ cwd, onClose, embedded = false }: { cwd: strin
                   </ConfigDetailHeaderInfo>
                   <ConfigDetailActions>
                     {!creating && detail && !readOnly && (
-                      <ConfigButton variant="danger" size="small" onClick={remove} disabled={saving}>{t("删除")}</ConfigButton>
+                      <ConfigButton variant="danger" size="small" onClick={remove} disabled={saving}>{t("common.delete")}</ConfigButton>
                     )}
                   </ConfigDetailActions>
                 </ConfigDetailHeader>
@@ -480,15 +480,15 @@ export function SubagentsConfig({ cwd, onClose, embedded = false }: { cwd: strin
                 <div>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
                     <ConfigButton size="small" onClick={() => { setShowToolPicker((v) => !v); if (!discovery && !discoveryLoading) void loadDiscovery(); }}>
-                      {showToolPicker ? t("收起") : t("工具")}: {toolsSummary(form)}
+                      {showToolPicker ? t("mcp.collapse") : t("subagents.tools")}: {toolsSummary(form)}
                     </ConfigButton>
                     {showToolPicker && !discovery && !discoveryLoading && (
-                      <ConfigButton size="small" onClick={() => void loadDiscovery()}>{t("探测 MCP 工具")}</ConfigButton>
+                      <ConfigButton size="small" onClick={() => void loadDiscovery()}>{t("subagents.discoverMcpTools")}</ConfigButton>
                     )}
                   </div>
                   {showToolPicker && (
                     <div style={{ border: "1px solid var(--border)", borderRadius: 6, background: "var(--bg-panel)", padding: 8, maxHeight: 200, overflowY: "auto" }}>
-                      {discoveryLoading && <div style={{ fontSize: 11, color: "var(--text-muted)", padding: "4px 0" }}>{t("探测工具中…")}</div>}
+                      {discoveryLoading && <div style={{ fontSize: 11, color: "var(--text-muted)", padding: "4px 0" }}>{t("subagents.discoveringTools")}</div>}
                       {/* Builtin tools */}
                       {discovery && (
                         <>
@@ -551,7 +551,7 @@ export function SubagentsConfig({ cwd, onClose, embedded = false }: { cwd: strin
       {/* Footer：状态 + 右下角保存（与模型页一致） */}
       <ConfigFooter status={
         <>
-          {readOnly && <span style={{ color: "var(--text-dim)" }}>{t("内置代理为只读；可创建同名 project 代理来覆盖。")}</span>}
+          {readOnly && <span style={{ color: "var(--text-dim)" }}>{t("subagents.builtAgentsReadOnlyCreate")}</span>}
           {detail?.parseError && <span style={{ color: "#f59e0b" }}>Parse warning: {detail.parseError}</span>}
           {formError && <span style={{ color: "#ef4444" }}>{formError}</span>}
           {formMsg && !formError && <span style={{ color: "var(--accent)" }}>{formMsg}</span>}
@@ -559,7 +559,7 @@ export function SubagentsConfig({ cwd, onClose, embedded = false }: { cwd: strin
       }>
         {showForm && !readOnly && (
           <ConfigButton variant="primary" onClick={save} disabled={saving}>
-            {saving ? t("保存中…") : creating ? t("创建") : t("保存")}
+            {saving ? t("common.saving") : creating ? t("common.create") : t("common.save")}
           </ConfigButton>
         )}
       </ConfigFooter>

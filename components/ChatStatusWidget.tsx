@@ -77,7 +77,7 @@ export function ChatStatusWidget({
   // capsule still pins something between writes (e.g. right after creation).
   const currentTodo = todos.find((x) => x.status === "in_progress") ?? todos.find((x) => x.status === "pending") ?? null;
 
-  const planSummaryText = plan ? planSummary(plan.content, t("计划")) : null;
+  const planSummaryText = plan ? planSummary(plan.content, t("app.plan")) : null;
   const planStep = plan ? planCurrentStep(plan.content) : null;
 
   // Close the popover on outside click / Escape.
@@ -98,7 +98,7 @@ export function ChatStatusWidget({
   // Pinned capsule text: current TODO step → plan step → goal → 状态.
   const pinnedText = currentTodo
     ? (currentTodo.status === "in_progress" ? (currentTodo.activeForm ?? currentTodo.content) : currentTodo.content)
-    : (planStep ?? planSummaryText ?? goal ?? t("状态"));
+    : (planStep ?? planSummaryText ?? goal ?? t("chat.status"));
   const pinnedKind: "todo" | "plan" | "goal" | "idle"
     = currentTodo ? "todo"
       : plan ? "plan"
@@ -147,7 +147,7 @@ export function ChatStatusWidget({
         <button
           type="button"
           onClick={onOpenPlan}
-          title={t("PLAN 模式：只读规划中，写操作已禁用。计划保存在计划面板，完成后由模型请求批准切换回执行。")}
+          title={t("chat.status.planModeHint")}
           style={{
             display: "flex", alignItems: "center", gap: 5,
             padding: "2px 9px", borderRadius: 999,
@@ -172,7 +172,7 @@ export function ChatStatusWidget({
         onBlur={() => setHovered(false)}
         aria-expanded={open}
         aria-haspopup="menu"
-        title={t("会话状态：目标 / 进程 / 智能体 / 终端")}
+        title={t("chat.status.panelTitle")}
         className="chat-status-capsule"
         style={{
           display: "flex", alignItems: "center", gap: 7,
@@ -253,7 +253,7 @@ export function ChatStatusWidget({
               <span style={{
                 flexShrink: 0, fontSize: 10, lineHeight: "17px", padding: "0 6px", borderRadius: 999,
                 background: "var(--bg-selected)", color: "var(--text-muted)", fontWeight: 600,
-              }}>{t("目标")}</span>
+              }}>{t("chat.status.goals")}</span>
               <div style={{ flex: 1, minWidth: 0, fontSize: 11.5, color: "var(--text)", lineHeight: "17px", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
                 {goal ?? pinnedText}
               </div>
@@ -267,14 +267,14 @@ export function ChatStatusWidget({
 
           {/* 进程 section */}
           <Section
-            title={t("进程")}
+            title={t("chat.processes")}
             open={processOpen}
             onToggle={() => setProcessOpen((v) => !v)}
             count={todos.length > 0 ? `${todoDone}/${todos.length}` : undefined}
           >
             {todos.length === 0 ? (
               <div style={{ padding: "4px 12px 9px", fontSize: 10.5, color: "var(--text-dim)", lineHeight: "15px" }}>
-                {t("暂无步骤 —— 多步任务中模型会通过 todo 工具自动维护进度清单")}
+                {t("chat.status.noSteps")}
               </div>
             ) : (
               <div style={{ padding: "0 8px 8px", display: "flex", flexDirection: "column" }}>
@@ -336,14 +336,14 @@ export function ChatStatusWidget({
 
           {/* 智能体 section */}
           <Section
-            title={t("智能体")}
+            title={t("app.agents")}
             open={agentsOpen}
             onToggle={() => setAgentsOpen((v) => !v)}
             count={subagentCalls.length > 0 ? String(subagentCalls.length) : undefined}
           >
             {subagentCalls.length === 0 ? (
               <div style={{ padding: "4px 12px 9px", fontSize: 10.5, color: "var(--text-dim)", lineHeight: "15px" }}>
-                {t("暂无子智能体调用")}
+                {t("chat.status.noSubagents")}
               </div>
             ) : (
               <div style={{ padding: "0 8px 8px", display: "flex", flexDirection: "column", gap: 1 }}>
@@ -383,7 +383,7 @@ export function ChatStatusWidget({
                         </span>
                       </button>
                       {isRunning && (
-                        <span style={{ flexShrink: 0, fontSize: 10, color: "var(--text-dim)", fontFamily: "var(--font-mono)", minWidth: 34, textAlign: "right" }} title={t("已运行时长")}>
+                        <span style={{ flexShrink: 0, fontSize: 10, color: "var(--text-dim)", fontFamily: "var(--font-mono)", minWidth: 34, textAlign: "right" }} title={t("chat.status.runtime")}>
                           {formatElapsed(call.startedAt)}
                         </span>
                       )}
@@ -397,8 +397,8 @@ export function ChatStatusWidget({
                           type="button"
                           onClick={() => { void handleStop(call); }}
                           disabled={stopping || !sessionId || !call.agentId}
-                          title={t("停止该后台任务")}
-                          aria-label={t("停止该后台任务")}
+                          title={t("chat.status.stopTask")}
+                          aria-label={t("chat.status.stopTask")}
                           style={{
                             flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
                             width: 18, height: 18, padding: 0, border: "none", borderRadius: 4,
@@ -432,7 +432,7 @@ export function ChatStatusWidget({
                   onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
                 >
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}><path d="M9 18l6-6-6-6" /></svg>
-                  {t("打开子智能体目录")}
+                  {t("chat.status.openSubagents")}
                 </button>
               </div>
             )}
@@ -448,7 +448,7 @@ export function ChatStatusWidget({
                 title={plan.path}
                 active={planActive}
                 icon={<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 4h6a2 2 0 0 1 2 2v14H7V6a2 2 0 0 1 2-2Z" /><path d="M7 20h10" /><path d="M10 8h4" /></svg>}
-                label={planSummaryText ?? t("计划")}
+                label={planSummaryText ?? t("app.plan")}
               />
             )}
           </div>

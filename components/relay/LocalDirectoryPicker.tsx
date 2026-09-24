@@ -68,7 +68,7 @@ export function LocalDirectoryPicker({ onPick, onClose, machineId }: Props) {
   if (!machineOnline) {
     return (
       <div style={{ padding: 16, fontSize: 12, color: "var(--text-dim)" }}>
-        {t("本机 Agent 未连接，无法浏览目录")}
+        {t("relay.localAgentConnectedCannotBrowse")}
       </div>
     );
   }
@@ -122,7 +122,7 @@ export function LocalDirectoryPicker({ onPick, onClose, machineId }: Props) {
               </button>
             ))}
             {entries.length === 0 && !loading && (
-              <div style={{ padding: 12, fontSize: 11, color: "var(--text-dim)" }}>{t("（空目录）")}</div>
+              <div style={{ padding: 12, fontSize: 11, color: "var(--text-dim)" }}>{t("relay.emptyDirectory")}</div>
             )}
           </>
         )}
@@ -135,14 +135,14 @@ export function LocalDirectoryPicker({ onPick, onClose, machineId }: Props) {
         </code>
         <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
           <button type="button" onClick={onClose} style={{ height: 28, padding: "0 12px", borderRadius: 6, border: "1px solid var(--border)", background: "transparent", color: "var(--text)", fontSize: 12, cursor: "pointer" }}>
-            {t("取消")}
+            {t("common.cancel")}
           </button>
           <button
             type="button"
             onClick={() => onPick(selectedAbs)}
             style={{ height: 28, padding: "0 14px", borderRadius: 6, border: "none", background: "var(--accent)", color: "#fff", fontSize: 12, cursor: "pointer" }}
           >
-            {t("选择此目录")}
+            {t("relay.chooseDirectory")}
           </button>
         </div>
       </div>

@@ -172,7 +172,7 @@ export function QuickTemplatesConfig({ embedded = false }: { embedded?: boolean 
         throw new Error(data.errors?.map((e) => `${e.field}: ${e.reason}`).join("；") ?? data.error ?? `HTTP ${res.status}`);
       }
       await load();
-      setFormMsg(creating ? t("模板已创建。") : t("模板已保存。"));
+      setFormMsg(creating ? t("quickTemplates.templateCreated") : t("quickTemplates.templateSaved"));
       setCreating(false);
       if (data.template) {
         setSelectedId(data.template.id);
@@ -186,7 +186,7 @@ export function QuickTemplatesConfig({ embedded = false }: { embedded?: boolean 
   };
 
   const remove = async (tpl: QuickTemplate) => {
-    if (!window.confirm(t("确定删除模板「{name}」吗？", { name: tpl.name }))) return;
+    if (!window.confirm(t("quickTemplates.deleteTemplate", { name: tpl.name }))) return;
     try {
       const res = await fetch(`/api/quick-templates?id=${encodeURIComponent(tpl.id)}`, { method: "DELETE" });
       const data = (await res.json()) as { error?: string };
@@ -202,63 +202,63 @@ export function QuickTemplatesConfig({ embedded = false }: { embedded?: boolean 
   };
 
   return (
-    <ConfigPanelShell embedded={embedded} title={t("快速会话模板")} closeLabel={t("i18n.close")} onClose={() => {}}>
+    <ConfigPanelShell embedded={embedded} title={t("quickTemplates.quickSessionTemplates")} closeLabel={t("i18n.close")} onClose={() => {}}>
       {/* Body */}
       <ConfigSplitView>
         {/* Left: template list（与模型页同构：列表 + 左下角新建） */}
         <ConfigSidebar>
           <ConfigSidebarList>
-            {loading ? <div className="config-sidebar-message">{t("加载模板…")}</div>
+            {loading ? <div className="config-sidebar-message">{t("bundles.loadingTemplates")}</div>
             : error ? <div className="config-sidebar-message is-error">{error}</div>
-            : templates.length === 0 ? <div className="config-sidebar-message is-empty">{t("暂无模板")}</div>
+            : templates.length === 0 ? <div className="config-sidebar-message is-empty">{t("bundles.templatesYet")}</div>
             : templates.map((tpl) => (
               <ConfigSidebarItem key={tpl.id} active={!creating && selectedId === tpl.id} onClick={() => selectTemplate(tpl)}>
                 <ConfigSidebarText className="is-grow">{tpl.name}</ConfigSidebarText>
-                {tpl.builtin && <span className="config-scope-tag is-project">{t("默认")}</span>}
+                {tpl.builtin && <span className="config-scope-tag is-project">{t("quickTemplates.default")}</span>}
               </ConfigSidebarItem>
             ))}
           </ConfigSidebarList>
           {/* 新建入口固定在侧栏左下角（与模型页「添加 Provider」一致） */}
-          <ConfigListAction onClick={startCreate} active={creating}>{t("新增模板")}</ConfigListAction>
+          <ConfigListAction onClick={startCreate} active={creating}>{t("quickTemplates.newTemplate")}</ConfigListAction>
         </ConfigSidebar>
 
         {/* Right: detail / form */}
         <ConfigDetail>
           <ConfigDetailStack className="is-fill">
             {!showForm ? (
-              <ConfigEmptyState>{t("模板决定快速会话的系统提示词、模型与 MCP 白名单；default 可编辑不可删除。选择左侧模板，或点击左下角「新增模板」。")}</ConfigEmptyState>
+              <ConfigEmptyState>{t("quickTemplates.templatesDriveHint")}</ConfigEmptyState>
             ) : (
               <>
                 <ConfigDetailHeader>
                   <ConfigDetailHeaderInfo>
-                    <ConfigDetailTitle>{creating ? t("新增模板") : draft.name || selected?.name}</ConfigDetailTitle>
-                    {selected?.builtin && <span className="config-scope-tag is-project">{t("默认 · 不可删除")}</span>}
+                    <ConfigDetailTitle>{creating ? t("quickTemplates.newTemplate") : draft.name || selected?.name}</ConfigDetailTitle>
+                    {selected?.builtin && <span className="config-scope-tag is-project">{t("quickTemplates.defaultDeletable")}</span>}
                   </ConfigDetailHeaderInfo>
                   <ConfigDetailActions>
                     {!creating && selected && !selected.builtin && (
-                      <ConfigButton variant="danger" size="small" onClick={() => void remove(selected)} disabled={saving}>{t("删除")}</ConfigButton>
+                      <ConfigButton variant="danger" size="small" onClick={() => void remove(selected)} disabled={saving}>{t("common.delete")}</ConfigButton>
                     )}
                   </ConfigDetailActions>
                 </ConfigDetailHeader>
 
-                <ConfigField label={t("模板名称（用户可见，如「产品A助手」）")}>
+                <ConfigField label={t("quickTemplates.templateNameUserVisibleE")}>
                   <input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} style={inputStyle} maxLength={60} />
                 </ConfigField>
-                <ConfigField label={t("描述（可选）")}>
+                <ConfigField label={t("common.descriptionOptional")}>
                   <input value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} style={inputStyle} maxLength={300} />
                 </ConfigField>
-                <ConfigField label={t("系统提示词")}>
+                <ConfigField label={t("quickTemplates.systemPrompt")}>
                   <textarea value={draft.systemPrompt} onChange={(e) => setDraft({ ...draft, systemPrompt: e.target.value })} style={textareaStyle} />
                 </ConfigField>
                 <div style={{ display: "flex", gap: 10 }}>
-                  <ConfigField label={t("模型 Provider（可选，如 modelscope）")} style={{ flex: 1 }}>
-                    <input value={draft.modelProvider} onChange={(e) => setDraft({ ...draft, modelProvider: e.target.value })} style={monoStyle} placeholder={t("默认用用户当前模型")} />
+                  <ConfigField label={t("quickTemplates.modelProviderOptionalEG")} style={{ flex: 1 }}>
+                    <input value={draft.modelProvider} onChange={(e) => setDraft({ ...draft, modelProvider: e.target.value })} style={monoStyle} placeholder={t("quickTemplates.defaultsUsersCurrentModel")} />
                   </ConfigField>
-                  <ConfigField label={t("模型 ID（可选）")} style={{ flex: 1 }}>
+                  <ConfigField label={t("quickTemplates.modelIdOptional")} style={{ flex: 1 }}>
                     <input value={draft.modelId} onChange={(e) => setDraft({ ...draft, modelId: e.target.value })} style={monoStyle} placeholder="Qwen/Qwen3.5-27B" />
                   </ConfigField>
                 </div>
-                <ConfigField label={t("MCP 服务器允许列表（可选，逗号分隔服务器名；留空 = 用户配置的全部服务器）")}>
+                <ConfigField label={t("quickTemplates.mcpAllowlistHint")}>
                   <input value={draft.mcpServers} onChange={(e) => setDraft({ ...draft, mcpServers: e.target.value })} style={monoStyle} placeholder="weather, db-query" />
                 </ConfigField>
               </>
@@ -277,9 +277,9 @@ export function QuickTemplatesConfig({ embedded = false }: { embedded?: boolean 
       }>
         {showForm && (
           <>
-            <ConfigButton onClick={cancel}>{t("取消")}</ConfigButton>
+            <ConfigButton onClick={cancel}>{t("common.cancel")}</ConfigButton>
             <ConfigButton variant="primary" onClick={() => void save()} disabled={saving}>
-              {saving ? t("保存中…") : t("保存")}
+              {saving ? t("common.saving") : t("common.save")}
             </ConfigButton>
           </>
         )}

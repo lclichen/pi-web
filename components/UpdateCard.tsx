@@ -49,7 +49,7 @@ export function UpdateCard({ isAdmin }: { isAdmin?: boolean }) {
       if (Date.now() > deadline) {
         stopPolling();
         setStatus((prev) => prev && prev.phase !== "done" && prev.phase !== "failed"
-          ? { ...prev, phase: "failed", error: t("等待服务恢复超时——请手动检查服务状态。") }
+          ? { ...prev, phase: "failed", error: t("update.timedOutWaitingServicesCome") }
           : prev);
         return;
       }
@@ -72,7 +72,7 @@ export function UpdateCard({ isAdmin }: { isAdmin?: boolean }) {
   const apply = useCallback(async () => {
     setApplying(true);
     setError(null);
-    setStatus({ phase: "downloading", message: t("已提交…") });
+    setStatus({ phase: "downloading", message: t("update.submitted") });
     try {
       const res = await fetch("/api/app-update/apply", {
         method: "POST",
@@ -91,18 +91,18 @@ export function UpdateCard({ isAdmin }: { isAdmin?: boolean }) {
 
   const busy = applying && status && !["done", "failed"].includes(status.phase);
   const phaseText: Record<string, string> = {
-    downloading: t("下载中"),
-    verifying: t("校验中"),
-    staging: t("解包中"),
-    swapping: t("交换中"),
-    restarting: t("重启中"),
+    downloading: t("update.downloading"),
+    verifying: t("update.verifying"),
+    staging: t("update.extracting"),
+    swapping: t("update.swapping"),
+    restarting: t("update.restarting"),
   };
 
   const formatSize = (bytes: number) => (bytes > 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.round(bytes / 1024)} KB`);
 
   return (
     <div>
-      <ConfigSectionTitle>{t("版本与更新")}</ConfigSectionTitle>
+      <ConfigSectionTitle>{t("update.versionUpdates")}</ConfigSectionTitle>
       <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
           <span style={{ fontFamily: "var(--font-mono)" }}>
@@ -111,7 +111,7 @@ export function UpdateCard({ isAdmin }: { isAdmin?: boolean }) {
           {state?.channel && <span className="config-scope-tag is-project">{state.channel}</span>}
           <div style={{ flex: 1 }} />
           <ConfigButton size="small" onClick={() => void check()} disabled={checking || Boolean(busy)}>
-            {checking ? t("检查中…") : t("检查更新")}
+            {checking ? t("update.checking") : t("update.checkUpdates")}
           </ConfigButton>
         </div>
 
@@ -120,7 +120,7 @@ export function UpdateCard({ isAdmin }: { isAdmin?: boolean }) {
         {state?.source === "catalog" && state.updateAvailable && state.target && (
           <div style={{ border: "1px solid rgba(37,99,235,0.35)", borderRadius: 8, padding: 10, display: "flex", flexDirection: "column", gap: 6 }}>
             <div style={{ fontSize: 12, fontWeight: 600 }}>
-              {t("可更新到")} <span style={{ fontFamily: "var(--font-mono)" }}>{state.target.version}</span>
+              {t("update.updateAvailable")} <span style={{ fontFamily: "var(--font-mono)" }}>{state.target.version}</span>
               {state.target.releasedAt && <span style={{ fontSize: 10, color: "var(--text-dim)", marginLeft: 6 }}>{state.target.releasedAt.slice(0, 10)}</span>}
             </div>
             {state.target.frameworks.map((fw) => (
@@ -131,7 +131,7 @@ export function UpdateCard({ isAdmin }: { isAdmin?: boolean }) {
             {state.canSelfUpdate ? (
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                 <ConfigButton variant="primary" size="small" onClick={() => void apply()} disabled={Boolean(busy)}>
-                  {busy ? (phaseText[status?.phase ?? ""] ?? t("处理中")) : t("下载并安装")}
+                  {busy ? (phaseText[status?.phase ?? ""] ?? t("update.working")) : t("update.downloadInstall")}
                 </ConfigButton>
                 {busy && status?.phase === "downloading" && typeof status.progress === "number" && (
                   <span style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
@@ -144,27 +144,27 @@ export function UpdateCard({ isAdmin }: { isAdmin?: boolean }) {
               </div>
             ) : (
               <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
-                {t("当前部署形态不支持自助更新（开发环境或未知形态），请手动更新。")}
+                {t("update.selfUpdateAvailableDeploymentDev")}
               </div>
             )}
             {isAdmin === false && state.canSelfUpdate && (
-              <div style={{ fontSize: 11, color: "var(--text-dim)" }}>{t("需要管理员权限才能应用更新。")}</div>
+              <div style={{ fontSize: 11, color: "var(--text-dim)" }}>{t("update.adminRightsRequired")}</div>
             )}
           </div>
         )}
 
         {state?.source === "catalog" && !state.updateAvailable && (
-          <div style={{ fontSize: 11, color: "var(--text-dim)" }}>{t("已是最新版本。")}</div>
+          <div style={{ fontSize: 11, color: "var(--text-dim)" }}>{t("update.upDate")}</div>
         )}
 
         {status?.phase === "done" && (
-          <div style={{ fontSize: 11, color: "#22c55e" }}>{status.message ?? t("更新完成。")}</div>
+          <div style={{ fontSize: 11, color: "#22c55e" }}>{status.message ?? t("update.updateCompleted")}</div>
         )}
         {status?.phase === "failed" && (
-          <div role="alert" style={{ fontSize: 11, color: "#f87171" }}>{status.error ?? t("更新失败。")}</div>
+          <div role="alert" style={{ fontSize: 11, color: "#f87171" }}>{status.error ?? t("update.updateFailed")}</div>
         )}
         {status?.phase === "restarting" && (
-          <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{t("服务重启中，页面稍后自动恢复…")}</div>
+          <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{t("update.restartingReconnect")}</div>
         )}
       </div>
     </div>

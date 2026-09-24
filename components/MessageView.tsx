@@ -484,7 +484,7 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
             <div style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 0 }}>
               <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
                 <span style={{ fontFamily: "var(--font-mono)", fontSize: "calc(13px + var(--chat-font-size-offset, 0px))", color: "var(--text)" }}>
-                  {teachingInput || t("教学指令")}
+                  {teachingInput || t("chat.teachingCommand")}
                 </span>
                 <button
                   onClick={() => setExpanded((prev) => !prev)}
@@ -499,7 +499,7 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
                   <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ transform: expanded ? "rotate(90deg)" : "none", transition: "transform 0.15s" }}>
                     <polyline points="9 18 15 12 9 6" />
                   </svg>
-                  {t("本轮教学信息")}
+                  {t("chat.turnsTeachingInfo")}
                 </button>
               </div>
               {expanded && (

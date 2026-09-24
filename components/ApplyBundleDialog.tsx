@@ -28,7 +28,7 @@ export function ApplyBundleDialog({ projectId, projectName, onClose, onApplied }
       .then((d: { bundles?: Array<{ name: string; description: string; size: number }> }) => {
         setBundles(d.bundles ?? []);
       })
-      .catch(() => setError(t("加载模板列表失败")))
+      .catch(() => setError(t("bundles.loadFailed")))
       .finally(() => setLoading(false));
   }, [t]);
 
@@ -65,23 +65,23 @@ export function ApplyBundleDialog({ projectId, projectName, onClose, onApplied }
       <div style={{ background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: 10, padding: 18, width: "min(440px, calc(100vw - 32px))", boxShadow: "0 12px 36px rgba(0,0,0,0.2)" }}>
         {done ? (
           <>
-            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>{t("已套用模板「{name}」", { name: done })}</div>
+            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>{t("bundles.applied", { name: done })}</div>
             <div style={{ fontSize: 11, color: "var(--text-dim)", marginBottom: 14, lineHeight: 1.6 }}>
-              {t("同名文件已覆盖，其余保留。项目下次会话生效（扩展需重新加载）。")}
+              {t("bundles.applyResultHint")}
             </div>
             <div style={{ display: "flex", justifyContent: "flex-end" }}>
-              <button type="button" style={{ ...btnStyle, borderColor: "rgba(37,99,235,0.35)", color: "var(--accent)" }} onClick={() => { onApplied(); onClose(); }}>{t("完成")}</button>
+              <button type="button" style={{ ...btnStyle, borderColor: "rgba(37,99,235,0.35)", color: "var(--accent)" }} onClick={() => { onApplied(); onClose(); }}>{t("common.finish")}</button>
             </div>
           </>
         ) : (
           <>
-            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>{t("套用配置模板")}</div>
+            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>{t("bundles.applyTitle")}</div>
             <div style={{ fontSize: 11, color: "var(--text-dim)", marginBottom: 12 }}>{projectName}</div>
             {loading ? (
-              <div style={{ fontSize: 12, color: "var(--text-dim)", padding: "8px 0" }}>{t("加载模板…")}</div>
+              <div style={{ fontSize: 12, color: "var(--text-dim)", padding: "8px 0" }}>{t("bundles.loadingTemplates")}</div>
             ) : bundles.length === 0 ? (
               <div style={{ fontSize: 12, color: "var(--text-dim)", padding: "8px 0", lineHeight: 1.6 }}>
-                {t("暂无可用模板。管理员可在 设置 → 配置模板 上传。")}
+                {t("bundles.noneAvailable")}
               </div>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 12, maxHeight: 240, overflowY: "auto" }}>
@@ -105,14 +105,14 @@ export function ApplyBundleDialog({ projectId, projectName, onClose, onApplied }
             )}
             {error && <div style={{ color: "#f87171", fontSize: 11, marginBottom: 8 }}>{error}</div>}
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-              <button type="button" style={btnStyle} onClick={onClose}>{t("取消")}</button>
+              <button type="button" style={btnStyle} onClick={onClose}>{t("common.cancel")}</button>
               <button
                 type="button"
                 disabled={!selected || applying}
                 onClick={() => void apply()}
                 style={{ ...btnStyle, borderColor: "rgba(37,99,235,0.35)", color: "var(--accent)", fontWeight: 600, opacity: !selected || applying ? 0.5 : 1 }}
               >
-                {applying ? t("套用中…") : t("套用")}
+                {applying ? t("bundles.applying") : t("bundles.apply")}
               </button>
             </div>
           </>

@@ -274,21 +274,21 @@ export function McpServersConfig({ cwd, onClose, embedded = false }: { cwd: stri
   const scopeGroupLabel = (scope: string) => scope === "project" ? t("agents.scope.project") : t("agents.scope.global");
 
   return (
-    <ConfigPanelShell embedded={embedded} title={t("MCP 服务器")} subtitle={shortenPath(cwd)} closeLabel={t("i18n.close")} onClose={onClose}>
+    <ConfigPanelShell embedded={embedded} title={t("mcp.mcpServers")} subtitle={shortenPath(cwd)} closeLabel={t("i18n.close")} onClose={onClose}>
       {/* 顶部工具栏：启用开关 + 探测/设置（共享组件，与子代理页同款）。 */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 10, padding: "7px 14px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
-        {probingAll && <span style={{ fontSize: 10, color: "var(--text-muted)" }}>{t("探测中…")}</span>}
-        <span style={{ fontSize: 11, color: prefs.mcpEnabled ? "var(--text-muted)" : "var(--text-dim)" }}>{t("启用")}</span>
-        <ConfigSwitch checked={prefs.mcpEnabled} label={t("启用")} onChange={(v) => void togglePref("mcpEnabled", v)} />
-        <ConfigButton size="small" onClick={() => void probeAll()} disabled={probingAll}>{t("刷新工具")}</ConfigButton>
-        <ConfigButton size="small" onClick={() => setShowSettings((v) => !v)}>{showSettings ? t("收起设置") : t("设置")}</ConfigButton>
+        {probingAll && <span style={{ fontSize: 10, color: "var(--text-muted)" }}>{t("mcp.probing")}</span>}
+        <span style={{ fontSize: 11, color: prefs.mcpEnabled ? "var(--text-muted)" : "var(--text-dim)" }}>{t("common.enable")}</span>
+        <ConfigSwitch checked={prefs.mcpEnabled} label={t("common.enable")} onChange={(v) => void togglePref("mcpEnabled", v)} />
+        <ConfigButton size="small" onClick={() => void probeAll()} disabled={probingAll}>{t("mcp.refreshTools")}</ConfigButton>
+        <ConfigButton size="small" onClick={() => setShowSettings((v) => !v)}>{showSettings ? t("mcp.hideSettings") : t("mcp.settings")}</ConfigButton>
       </div>
 
       {showSettings && (
         <div style={{ padding: "10px 16px", borderBottom: "1px solid var(--border)", background: "var(--bg-panel)", display: "flex", flexWrap: "wrap", gap: 10, alignItems: "flex-end" }}>
           <div style={{ width: 140 }}><ConfigField label="toolPrefix"><select style={inputStyle} value={settingsDraft.toolPrefix ?? ""} onChange={(e) => setSettingsDraft((s) => ({ ...s, toolPrefix: (e.target.value || undefined) as McpSettings["toolPrefix"] }))}><option value="">(default)</option><option value="server">server</option><option value="none">none</option><option value="short">short</option><option value="mcp">mcp</option></select></ConfigField></div>
           <div style={{ width: 110 }}><ConfigField label="idleTimeout (min)"><input style={inputStyle} value={settingsDraft.idleTimeout ?? ""} onChange={(e) => setSettingsDraft((s) => ({ ...s, idleTimeout: e.target.value === "" ? undefined : Number(e.target.value) }))} /></ConfigField></div>
-          <ConfigButton variant="primary" onClick={saveSettings} disabled={settingsSaving}>{settingsSaving ? t("保存中…") : t("保存设置")}</ConfigButton>
+          <ConfigButton variant="primary" onClick={saveSettings} disabled={settingsSaving}>{settingsSaving ? t("common.saving") : t("mcp.saveSettings")}</ConfigButton>
         </div>
       )}
 
@@ -300,7 +300,7 @@ export function McpServersConfig({ cwd, onClose, embedded = false }: { cwd: stri
             {diagnostics.filter((d) => d.parseError).map((d) => (<div key={`diag-${d.scope}`} style={{ padding: "3px 8px", fontSize: 10, color: "#ef4444" }} title={d.parseError}>{d.scope}: invalid JSON</div>))}
             {loading ? <div className="config-sidebar-message">{t("i18n.loading")}</div>
             : error ? <div className="config-sidebar-message is-error">{error}</div>
-            : servers.length === 0 ? <div className="config-sidebar-message is-empty">{t("暂无 MCP 服务器")}</div>
+            : servers.length === 0 ? <div className="config-sidebar-message is-empty">{t("mcp.mcpServersConfigured")}</div>
             : grouped.map((group) => (
               <div key={group.scope} className="config-sidebar-group">
                 <ConfigSidebarGroupLabel>{scopeGroupLabel(group.scope)}</ConfigSidebarGroupLabel>
@@ -313,7 +313,7 @@ export function McpServersConfig({ cwd, onClose, embedded = false }: { cwd: stri
                   return (
                     <div key={key}>
                       <div style={{ display: "flex", alignItems: "center" }}>
-                        <button onClick={() => toggleExpand(key)} aria-label={isExpanded ? t("收起") : t("展开")} style={{ background: "none", border: "none", color: "var(--text-dim)", cursor: "pointer", padding: "0 2px", fontSize: 10, flexShrink: 0 }}>{isExpanded ? "▼" : "▶"}</button>
+                        <button onClick={() => toggleExpand(key)} aria-label={isExpanded ? t("mcp.collapse") : t("mcp.expand")} style={{ background: "none", border: "none", color: "var(--text-dim)", cursor: "pointer", padding: "0 2px", fontSize: 10, flexShrink: 0 }}>{isExpanded ? "▼" : "▶"}</button>
                         <ConfigSidebarItem active={isSelected} onClick={() => selectServer(srv)} style={{ flex: 1, minWidth: 0 }}>
                           <span style={{ fontSize: 11, fontWeight: isSelected ? 600 : 400, display: "flex", alignItems: "center", gap: 4, minWidth: 0, overflow: "hidden" }}>
                             <span style={{ fontSize: 8, padding: "1px 4px", borderRadius: 3, background: srv.transport === "http" ? "#2563eb33" : "#16a34a33", color: srv.transport === "http" ? "#60a5fa" : "#4ade80", flexShrink: 0 }}>{srv.transport}</span>
@@ -343,23 +343,23 @@ export function McpServersConfig({ cwd, onClose, embedded = false }: { cwd: stri
             ))}
           </ConfigSidebarList>
           {/* 新建入口固定在侧栏左下角（与模型页「添加 Provider」一致） */}
-          <ConfigListAction onClick={startCreate} active={creating}>{t("新建服务器")}</ConfigListAction>
+          <ConfigListAction onClick={startCreate} active={creating}>{t("mcp.newServer")}</ConfigListAction>
         </ConfigSidebar>
 
         {/* Right: detail / form */}
         <ConfigDetail>
           <ConfigDetailStack className="is-fill">
             {!showForm ? (
-              <ConfigEmptyState>{t("选择或新建 MCP 服务器")}</ConfigEmptyState>
+              <ConfigEmptyState>{t("mcp.selectServerCreateNewOne")}</ConfigEmptyState>
             ) : (
               <>
                 <ConfigDetailHeader>
                   <ConfigDetailHeaderInfo>
-                    <ConfigDetailTitle>{creating ? t("新建服务器") : originalName}</ConfigDetailTitle>
+                    <ConfigDetailTitle>{creating ? t("mcp.newServer") : originalName}</ConfigDetailTitle>
                   </ConfigDetailHeaderInfo>
                   <ConfigDetailActions>
                     {!creating && (
-                      <ConfigButton variant="danger" size="small" onClick={remove} disabled={saving}>{t("删除")}</ConfigButton>
+                      <ConfigButton variant="danger" size="small" onClick={remove} disabled={saving}>{t("common.delete")}</ConfigButton>
                     )}
                   </ConfigDetailActions>
                 </ConfigDetailHeader>
@@ -403,7 +403,7 @@ export function McpServersConfig({ cwd, onClose, embedded = false }: { cwd: stri
                 </div>
 
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <ConfigButton size="small" onClick={() => setShowAdvanced((v) => !v)}>{showAdvanced ? t("收起调试") : t("调试")}</ConfigButton>
+                  <ConfigButton size="small" onClick={() => setShowAdvanced((v) => !v)}>{showAdvanced ? t("mcp.hideDebug") : t("mcp.debug")}</ConfigButton>
                   {showAdvanced && (<label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, cursor: "pointer" }}><input type="checkbox" checked={form.debug} onChange={(e) => set("debug", e.target.checked)} /> debug (show stderr)</label>)}
                 </div>
               </>
@@ -421,8 +421,8 @@ export function McpServersConfig({ cwd, onClose, embedded = false }: { cwd: stri
       }>
         {showForm && (
           <>
-            <ConfigButton onClick={() => void probeOne(creating ? form.name : originalName, creating ? form.scope : originalScope)} disabled={probingAll}>{t("探测")}</ConfigButton>
-            <ConfigButton variant="primary" onClick={save} disabled={saving}>{saving ? t("保存中…") : creating ? t("创建") : t("保存")}</ConfigButton>
+            <ConfigButton onClick={() => void probeOne(creating ? form.name : originalName, creating ? form.scope : originalScope)} disabled={probingAll}>{t("mcp.probe")}</ConfigButton>
+            <ConfigButton variant="primary" onClick={save} disabled={saving}>{saving ? t("common.saving") : creating ? t("common.create") : t("common.save")}</ConfigButton>
           </>
         )}
       </ConfigFooter>

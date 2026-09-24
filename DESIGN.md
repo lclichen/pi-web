@@ -116,8 +116,12 @@ pi-web 是**多用户、高信息密度的运营型 Web 工作台**（教学机�
 
 ## i18n（强约束，违反即 bug）
 
-- 键名 `域.名称`（如 `chat.queuedEditTitle`）；**en / zh-CN / zh-TW 三文件必须同键**
-  （回退链 locale→en→key，缺键会裸露键名）。
+- **键名只用英文 dot-key**（`域.名称`，如 `chat.queuedEditTitle`；域 = 组件域，如
+  bundles/relay/remote/admin/sessions/chat）。2026-09 已完成全库迁移：399 个历史
+  中文直键全部改英文键、36 个缺失键补齐（此前靠回退裸显中文）、30 个死键删除。
+  **禁止新增中文直键。**
+- **en / zh-CN / zh-TW 三文件必须同键**（回退链 locale→en→key，缺键会裸露键名；
+  registry 测试强制三文件键集一致）。
 - zh-TW 用台湾惯用语（佇列/儲存/滑鼠），不是简体直转。
 - 文案带参数用 `{count}` 占位（format.ts）；快捷键提示注明平台差异先例见
   followUp 按钮（isMobile 分支）。

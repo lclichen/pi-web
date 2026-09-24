@@ -328,7 +328,7 @@ function AddSkillPanel({
       const res = await fetch(`/api/skills/import?cwd=${encodeURIComponent(cwd)}`, { method: "POST", body });
       const d = (await res.json()) as { ok?: boolean; skill?: string; files?: number; error?: string };
       if (!res.ok || d.error) throw new Error(d.error ?? `HTTP ${res.status}`);
-      setUploadMsg(t("已导入技能 {skill}（{n} 个文件）", { skill: d.skill ?? "?", n: String(d.files ?? 0) }));
+      setUploadMsg(t("skills.importedSkillFiles", { skill: d.skill ?? "?", n: String(d.files ?? 0) }));
       onInstalled();
     } catch (e) {
       setInstallError(e instanceof Error ? e.message : String(e));
@@ -395,9 +395,9 @@ function AddSkillPanel({
             onChange={(e) => void uploadZip(e.target.files?.[0] ?? null)}
           />
           <ConfigButton onClick={() => uploadRef.current?.click()} disabled={uploading || !projectResourcesLoaded}>
-            {uploading ? t("导入中…") : t("上传技能包 (.zip)")}
+            {uploading ? t("projects.importing") : t("skills.uploadSkillBundleZip")}
           </ConfigButton>
-          <span style={{ fontSize: 11, color: "var(--text-dim)" }}>{t("离线分发：解压到项目 .pi/skills/（每个技能目录含 SKILL.md）")}</span>
+          <span style={{ fontSize: 11, color: "var(--text-dim)" }}>{t("skills.offlineSharingUnpacksIntoProject")}</span>
         </div>
         {uploadMsg && <div style={{ fontSize: 12, color: "#22c55e" }}>{uploadMsg}</div>}
 

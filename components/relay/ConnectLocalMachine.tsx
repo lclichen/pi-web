@@ -102,16 +102,16 @@ export function ConnectLocalMachine({ embedded = false }: { embedded?: boolean }
       <div style={{ padding: 14, height: "100%", overflowY: "auto", boxSizing: "border-box" }}>
         {online && info ? (
           <div style={{ padding: 0 }}>
-            <div style={{ color: "#22c55e", fontSize: 13, marginBottom: 12 }}>{t("✓ 已连接")}</div>
-            <Row label={t("主机名")} value={info.hostname} />
-            <Row label={t("系统")} value={`${info.os} / ${info.arch}`} />
-            <Row label={t("工作目录")} value={info.workspaceRoot} />
-            <Row label={t("Agent 版本")} value={info.agentVersion} />
+            <div style={{ color: "#22c55e", fontSize: 13, marginBottom: 12 }}>{t("relay.connected2")}</div>
+            <Row label={t("relay.hostname")} value={info.hostname} />
+            <Row label={t("relay.os")} value={`${info.os} / ${info.arch}`} />
+            <Row label={t("relay.workingDirectory")} value={info.workspaceRoot} />
+            <Row label={t("relay.agentVersion")} value={info.agentVersion} />
           </div>
         ) : (
           <div style={{ padding: 0 }}>
             <p style={{ ...muted, marginTop: 0 }}>
-              {t("在你的本地机器（如 CentOS 7）上运行以下命令，把 pi-web 连接到该机器的文件系统与命令行。")}
+              {t("relay.runFollowingCommandLocalMachine")}
             </p>
             <PairingSteps
               asset={asset}
@@ -132,7 +132,7 @@ export function ConnectLocalMachine({ embedded = false }: { embedded?: boolean }
     <>
       <button
         onClick={() => setOpen(true)}
-        title={online ? t("已连接：{host} ({os}/{arch})", { host: info?.hostname ?? "", os: info?.os ?? "", arch: info?.arch ?? "" }) : t("连接本地机器")}
+        title={online ? t("relay.connected", { host: info?.hostname ?? "", os: info?.os ?? "", arch: info?.arch ?? "" }) : t("relay.connectLocalMachine")}
         style={{
           display: "flex", alignItems: "center", gap: 6, height: "100%",
           padding: "0 12px", background: "none",
@@ -149,7 +149,7 @@ export function ConnectLocalMachine({ embedded = false }: { embedded?: boolean }
           background: ready ? (online ? "#22c55e" : "#9ca3af") : "#6b7280",
           boxShadow: online ? "0 0 6px #22c55e" : "none",
         }} />
-        <span>{online ? t("本地机器") : t("连接本地机器")}</span>
+        <span>{online ? t("relay.localMachine") : t("relay.connectLocalMachine")}</span>
         {machinesList.length > 1 && (
           <span style={{ fontSize: 10, color: "var(--text-muted)" }}>×{machinesList.length}</span>
         )}
@@ -167,7 +167,7 @@ export function ConnectLocalMachine({ embedded = false }: { embedded?: boolean }
         >
           <div role="dialog" aria-modal="true" style={dialogStyle}>
             <div style={headerStyle}>
-              <span style={{ fontWeight: 600 }}>{t("本地机器")}</span>
+              <span style={{ fontWeight: 600 }}>{t("relay.localMachine")}</span>
               <button onClick={() => setOpen(false)} style={closeBtnStyle}>×</button>
             </div>
 
@@ -175,7 +175,7 @@ export function ConnectLocalMachine({ embedded = false }: { embedded?: boolean }
               {machinesList.length > 0 ? (
                 <>
                   <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>
-                    {t("已配对的机器")}（{machinesList.length}）
+                    {t("relay.pairedMachines")}（{machinesList.length}）
                   </div>
                   {machinesList.map((m) => (
                     <div key={m.machineId} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 0", borderBottom: "1px solid var(--border)" }}>
@@ -204,7 +204,7 @@ export function ConnectLocalMachine({ embedded = false }: { embedded?: boolean }
                         onClick={() => { setOpen(false); setPanel({ machineId: m.machineId }); }}
                         style={{ ...secondaryBtnStyle, opacity: m.online ? 1 : 0.5 }}
                       >
-                        {t("面板")}
+                        {t("relay.panel")}
                       </button>
                       {m.online && m.info && (
                         <WorkspaceRootEditor
@@ -217,7 +217,7 @@ export function ConnectLocalMachine({ embedded = false }: { embedded?: boolean }
                         disabled={busyMachine === m.machineId}
                         onClick={() => void renameMachine(m)}
                         style={{ ...closeBtnStyle, fontSize: 13 }}
-                        title={t("重命名")}
+                        title={t("common.rename")}
                       >
                         ✎
                       </button>
@@ -225,7 +225,7 @@ export function ConnectLocalMachine({ embedded = false }: { embedded?: boolean }
                         disabled={busyMachine === m.machineId}
                         onClick={() => void unpairMachine(m)}
                         style={{ ...closeBtnStyle, fontSize: 13, color: "#ef4444" }}
-                        title={t("解绑")}
+                        title={t("relay.unbind")}
                       >
                         ⨯
                       </button>
@@ -234,13 +234,13 @@ export function ConnectLocalMachine({ embedded = false }: { embedded?: boolean }
                 </>
               ) : (
                 <p style={{ ...muted, marginTop: 0 }}>
-                  {t("在你的本地机器（如 CentOS 7）上运行以下命令，把 pi-web 连接到该机器的文件系统与命令行。")}
+                  {t("relay.runFollowingCommandLocalMachine")}
                 </p>
               )}
 
               <div style={{ marginTop: 12, borderTop: machinesList.length > 0 ? "1px solid var(--border)" : "none", paddingTop: 12 }}>
                 <button onClick={() => { setPairSectionOpen((v) => !v); setPairing(null); }} style={secondaryBtnStyle}>
-                  {pairSectionOpen ? t("收起配对") : t("＋ 配对新机器")}
+                  {pairSectionOpen ? t("relay.collapsePairing") : t("relay.pairNewMachine")}
                 </button>
                 {pairSectionOpen && (
                   <div style={{ marginTop: 10 }}>
@@ -288,7 +288,7 @@ function PairingSteps({
   const { t } = useI18n();
   return (
     <>
-      <Step n={1} title={t("下载 Agent")}>
+      <Step n={1} title={t("relay.downloadAgent")}>
         <CodeBlock code={`curl -fsSL -o pi-agent ${downloadUrl}\nchmod +x pi-agent`} />
         <div style={{ ...muted, fontSize: 11, marginTop: 4 }}>
           检测到 {asset.label}；其它架构请在 URL 里替换文件名（linux-arm64 / windows-amd64.exe）。

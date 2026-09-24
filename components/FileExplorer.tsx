@@ -1294,19 +1294,19 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
           <div style={{ display: "flex", gap: 4, padding: "2px 4px 4px", borderBottom: "1px solid var(--border)" }}>
             <button
               onClick={() => { setCreating({ type: "file", dir: cwd }); setCreatingName(""); }}
-              title={t("新建文件")}
+              title={t("files.newFile")}
               style={{ flex: 1, height: 22, border: "1px solid var(--border)", borderRadius: 4, background: "var(--bg-panel)", color: "var(--text-muted)", cursor: "pointer", fontSize: 11, display: "flex", alignItems: "center", justifyContent: "center", gap: 3, whiteSpace: "nowrap" }}
             >
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
-              {t("新建文件")}
+              {t("files.newFile")}
             </button>
             <button
               onClick={() => { setCreating({ type: "dir", dir: cwd }); setCreatingName(""); }}
-              title={t("新建文件夹")}
+              title={t("files.newFolder")}
               style={{ flex: 1, height: 22, border: "1px solid var(--border)", borderRadius: 4, background: "var(--bg-panel)", color: "var(--text-muted)", cursor: "pointer", fontSize: 11, display: "flex", alignItems: "center", justifyContent: "center", gap: 3, whiteSpace: "nowrap" }}
             >
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>
-              {t("新建文件夹")}
+              {t("files.newFolder")}
             </button>
           </div>
 
@@ -1318,7 +1318,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
               {contextMenu.node.isDir && (
                 <>
                   <ContextMenuButton
-                    label={t("上传文件到此文件夹")}
+                    label={t("files.uploadFilesFolder")}
                     color="var(--text)"
                     disabled={uploadBusy}
                     onClick={() => {
@@ -1327,13 +1327,13 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
                       if (!uploadBusy) uploadInputRef.current?.click();
                     }}
                   />
-                  <ContextMenuButton label={t("新建文件")} color="var(--text)" onClick={() => { setCreating({ type: "file", dir: contextMenu.node.fullPath }); setCreatingName(""); setContextMenu(null); }} />
-                  <ContextMenuButton label={t("新建文件夹")} color="var(--text)" onClick={() => { setCreating({ type: "dir", dir: contextMenu.node.fullPath }); setCreatingName(""); setContextMenu(null); }} />
+                  <ContextMenuButton label={t("files.newFile")} color="var(--text)" onClick={() => { setCreating({ type: "file", dir: contextMenu.node.fullPath }); setCreatingName(""); setContextMenu(null); }} />
+                  <ContextMenuButton label={t("files.newFolder")} color="var(--text)" onClick={() => { setCreating({ type: "dir", dir: contextMenu.node.fullPath }); setCreatingName(""); setContextMenu(null); }} />
                   <div style={{ height: 1, background: "var(--border)", margin: "2px 0" }} />
                 </>
               )}
-              <ContextMenuButton label={t("重命名")} color="var(--text)" onClick={() => { const n = contextMenu.node; setRenaming({ oldPath: n.fullPath, oldName: n.name }); setRenamingName(n.name); setContextMenu(null); }} />
-              <ContextMenuButton label={t("删除")} color="#f87171" onClick={() => { const n = contextMenu.node; setContextMenu(null); if (window.confirm(`删除 ${n.name}？`)) handleDelete(n.fullPath); }} />
+              <ContextMenuButton label={t("common.rename")} color="var(--text)" onClick={() => { const n = contextMenu.node; setRenaming({ oldPath: n.fullPath, oldName: n.name }); setRenamingName(n.name); setContextMenu(null); }} />
+              <ContextMenuButton label={t("common.delete")} color="#f87171" onClick={() => { const n = contextMenu.node; setContextMenu(null); if (window.confirm(`删除 ${n.name}？`)) handleDelete(n.fullPath); }} />
             </div>
           )}
 

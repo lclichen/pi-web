@@ -21,6 +21,7 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { dataDir } from "./mode-homes.ts";
+import { projectIdentityKey } from "./project-identity.ts";
 import { randomBytes } from "node:crypto";
 import type { ApkgHeader, ApkgLicense } from "./apkg-format.ts";
 
@@ -159,4 +160,52 @@ export function isBundleLocked(home: string): boolean {
 export function writeBundleLock(home: string, lock: BundleLock): void {
   mkdirSync(join(home, ".pi"), { recursive: true });
   writeFileSync(bundleLockPath(home), JSON.stringify(lock, null, 2));
+}
+
+// ---------------------------------------------------------------------------
+// Server-side locked-homes registry
+//
+// The in-home lock file alone cannot survive the session's own agent: its
+// bash/write/edit tools run with the project home as cwd, so ".pi/ is inside
+// the agent's write range and "delete the lock" is one prompt away. This
+// registry lives in the server dataDir — OUTSIDE every project home and thus
+// outside the agent's write fence — and the export routes consult it in
+// addition to the lock file (either hit ⇒ refuse). What it does NOT cover is
+// the documented honest boundary: an agent can still tar the plaintext and
+// the user can download it via the file viewer.
+// ---------------------------------------------------------------------------
+
+interface LockedHomeEntry {
+  fingerprint: string;
+  keyId: string;
+  importedAt: string;
+}
+
+function lockedHomesPath(): string {
+  return join(dataDir(), "apkg-locked-homes.json");
+}
+
+function readLockedHomes(): Record<string, LockedHomeEntry> {
+  try {
+    return JSON.parse(readFileSync(lockedHomesPath(), "utf8")) as Record<string, LockedHomeEntry>;
+  } catch {
+    return {};
+  }
+}
+
+/** Server-side half of the no-re-export lock; survives agent-side tampering. */
+export function recordApkgLockedHome(home: string, entry: LockedHomeEntry): void {
+  const registry = readLockedHomes();
+  registry[projectIdentityKey(home)] = entry;
+  mkdirSync(dataDir(), { recursive: true });
+  writeFileSync(lockedHomesPath(), JSON.stringify(registry, null, 2));
+}
+
+export function isApkgLockedHome(home: string): boolean {
+  return readLockedHomes()[projectIdentityKey(home)] !== undefined;
+}
+
+/** Export gate: the in-home lock file OR the server-side registry. */
+export function isExportLocked(home: string): boolean {
+  return isBundleLocked(home) || isApkgLockedHome(home);
 }

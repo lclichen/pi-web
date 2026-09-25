@@ -30,7 +30,7 @@ import { dirname, join, resolve } from "node:path";
 import { Readable } from "node:stream";
 import JSZip from "jszip";
 import { isApkgBytes, openApkgBytes, type ApkgHeader } from "./apkg-format.ts";
-import { checkApkgLicense, getApkgKeys, recordApkgImport, writeBundleLock, LOCK_BASENAME } from "./apkg.ts";
+import { checkApkgLicense, getApkgKeys, recordApkgImport, recordApkgLockedHome, writeBundleLock, LOCK_BASENAME } from "./apkg.ts";
 
 export const BUNDLE_FORMAT = "amedac-project-config";
 export const BUNDLE_VERSION = 2;
@@ -314,12 +314,20 @@ export async function importProjectConfigBundle(
   }
   stats.files.sort();
 
-  // Encrypted imports leave a lock: re-export through the product is refused.
+  // Encrypted imports leave a double lock: the in-home file plus the
+  // server-side registry (dataDir, outside the agent's write fence) —
+  // re-export through the product is refused even if the agent deletes the
+  // in-home lock.
   if (apkgHeader) {
     writeBundleLock(home, {
       apkg: true,
       keyId: apkgHeader.keyId,
       fingerprint: apkgFingerprint!,
+      importedAt: new Date().toISOString(),
+    });
+    recordApkgLockedHome(home, {
+      fingerprint: apkgFingerprint!,
+      keyId: apkgHeader.keyId,
       importedAt: new Date().toISOString(),
     });
     recordApkgImport(apkgFingerprint!);

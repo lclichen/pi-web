@@ -34,6 +34,7 @@ import {
   TODO_WIDGET_KEY,
 } from "./todo-protocol.ts";
 import { buildReminderMessage } from "./reminder-channel.ts";
+import { PLAN_MODE_ENTRY_TYPE } from "./plan-mode.ts";
 
 export { TODO_WIDGET_KEY };
 export type { TodoItem, TodoStatus };
@@ -49,6 +50,25 @@ const MAX_ITEMS = 30;
  */
 const NUDGE_ASSISTANT_TURNS = 3;
 const VERIFICATION_RE = /verif|测试|test|验证|检查|校验|lint|build|构建/i;
+
+/**
+ * Plan-coupled empty-list nudge (2026-09, ZCode 对标 #3 的门控设计): the
+ * approved-plan handoff says "start by writing the plan steps into the todo
+ * list" — this fires when a session that used plan mode never writes any
+ * todo list. Deliberately session-scoped and plan-gated: fixed-flow agents
+ * (lab-training) and quick chats never enter plan mode, so they never arm
+ * it; no per-session toggle exists because the coupling itself is the gate.
+ */
+const PLAN_NUDGE_ASSISTANT_TURNS = 5;
+
+/** Plan coupling for the empty-list nudge: armed once the session branch
+ *  contains any plan-mode entry (the mode switched at least once). */
+function planUsedInBranch(entries: Iterable<{ type?: string; customType?: string }>): boolean {
+  for (const entry of entries) {
+    if (entry.type === "custom" && entry.customType === PLAN_MODE_ENTRY_TYPE) return true;
+  }
+  return false;
+}
 
 /** Tool-level input item; ids are extension-assigned, never model-supplied. */
 interface TodoWriteInput {
@@ -234,6 +254,8 @@ export function reconstructTodoState(entries: Iterable<{ type: string; customTyp
 
 export function makeTodoExtension(): InlineExtension {
   const state: TodoState = { todos: [], nextId: 1 };
+  /** Armed by rebuild(): this session's branch contains a plan-mode entry. */
+  let planCoupled = false;
 
   const publishWidget = (ctx: ExtensionContext) => {
     try {
@@ -269,11 +291,11 @@ export function makeTodoExtension(): InlineExtension {
   };
 
   const rebuild = (ctx: ExtensionContext) => {
-    const restored = reconstructTodoState(
-      ctx.sessionManager.getBranch() as Iterable<{ type: string; customType?: string; message?: unknown }>,
-    );
+    const branch = ctx.sessionManager.getBranch() as Iterable<{ type: string; customType?: string; message?: unknown }>;
+    const restored = reconstructTodoState(branch);
     state.todos = restored.todos;
     state.nextId = restored.nextId;
+    planCoupled = planUsedInBranch(branch);
   };
 
   return (pi: ExtensionAPI): void => {
@@ -286,18 +308,43 @@ export function makeTodoExtension(): InlineExtension {
       publishWidget(ctx);
     });
 
-    // CC-style double-threshold nudge (#2), injected through the shared
-    // <system-reminder> attachment channel (request-scoped: the appended
-    // message never persists into the session file). Fires only while a list
-    // with unfinished items exists, at most once per NUDGE_ASSISTANT_TURNS
-    // assistant turns, and only after that many turns without a todo write.
-    // A todo write resets both counters — the model is engaged with the list.
+    // Two nudges share the <system-reminder> attachment channel
+    // (request-scoped: the appended message never persists into the session
+    // file).
+    //
+    // (a) Plan-coupled empty-list nudge: plan mode was used and the approved
+    // handoff says to write the plan steps into the todo list, but no todo
+    // write ever happened. Once ANY todo write lands this branch retires —
+    // the stale-list nudge below takes over from there.
+    let planNudgedAtAssistantCount = Number.NEGATIVE_INFINITY;
+    // (b) Throttle state for the stale-list nudge — outer closure so it
+    // persists across context invocations.
     let nudgedAtAssistantCount = Number.NEGATIVE_INFINITY;
     pi.on("context", async (event) => {
+      const messages = event.messages as Array<{ role?: string; toolName?: string }>;
+      if (planCoupled && state.todos.length === 0 && !messages.some((m) => m.role === "toolResult" && m.toolName === "todo")) {
+        const assistantCount = messages.filter((m) => m.role === "assistant").length;
+        if (
+          assistantCount >= PLAN_NUDGE_ASSISTANT_TURNS &&
+          assistantCount - planNudgedAtAssistantCount >= PLAN_NUDGE_ASSISTANT_TURNS
+        ) {
+          planNudgedAtAssistantCount = assistantCount;
+          const reminder = buildReminderMessage([
+            "This session planned via plan mode and the approved handoff says to start by writing the plan steps into the todo list, but no todo list has been written yet. If implementation is underway, call todo now with the plan's step checklist (full-list rewrite; mark exactly one step in_progress). If you are still exploring or waiting on the user, ignore this reminder.",
+          ]);
+          return { messages: [...event.messages, reminder as unknown as (typeof event.messages)[number]] };
+        }
+        return undefined;
+      }
+
+      // (b) CC-style double-threshold stale-list nudge (#2): fires only
+      // while a list with unfinished items exists, at most once per
+      // NUDGE_ASSISTANT_TURNS assistant turns, and only after that many
+      // turns without a todo write. A todo write resets both counters — the
+      // model is engaged with the list.
       if (state.todos.length === 0 || state.todos.every((t) => t.status === "completed")) return undefined;
       let lastTodoWriteIdx = -1;
       let assistantCount = 0;
-      const messages = event.messages as Array<{ role?: string; toolName?: string }>;
       for (let i = 0; i < messages.length; i++) {
         const msg = messages[i];
         if (msg.role === "assistant") assistantCount++;
@@ -345,8 +392,11 @@ export function makeTodoExtension(): InlineExtension {
       parameters: TodoWriteParams,
       execute: async (_toolCallId, params: { todos: TodoWriteInput[] }, _signal, _onUpdate, ctx) => {
         const result = writeTodos(params.todos ?? [], state);
-        // A write re-engages the list — give the nudge throttle a fresh start.
+        // A write re-engages the list — give both nudge throttles a fresh
+        // start (the plan-coupled branch also retires on its own once a
+        // toolResult is visible in the context messages).
         nudgedAtAssistantCount = Number.NEGATIVE_INFINITY;
+        planNudgedAtAssistantCount = Number.NEGATIVE_INFINITY;
         publishWidget(ctx);
         return result;
       },

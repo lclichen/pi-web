@@ -3,11 +3,27 @@
 # package-linux.sh — 构建 pi-web + pi CLI Agent 的 Linux 离线分发包。
 #
 # 产物（目录 + 压缩包）:
-#   dist/amedac.ai-pi-linux-<arch>-<version>.tar.gz   (+ SHA256SUMS)
-#   build/package-linux/amedac.ai-pi-linux-<arch>/    原始目录，可直接拷贝分发
+#   dist/amedac.ai-pi-linux-<arch>-<version>[-glibc-217].tar.gz   (+ SHA256SUMS)
+#   build/package-linux/amedac.ai-pi-linux-<arch>[-glibc-217]/  原始目录，可直接拷贝分发
 #
 # 用法:
 #   bash scripts/package-linux.sh
+#   bash scripts/package-linux.sh </dev/null   # 无终端环境（CI）时防 script(1) 卡读
+#
+# CentOS 7 兼容打包（glibc 2.17）:
+#   GLIBC_COMPAT=217 NODE_RUNTIME_LOCAL=/data/node-v22-glibc217.tar.xz \
+#     NODE_PTY_LOCAL=/data/node-pty-glibc217 bash scripts/package-linux.sh
+#   产物文件名带 -glibc-217 后缀（amedac.ai-pi-linux-<arch>-<version>-glibc-217.tar.gz），
+#   包根含 glibc-compat 标记文件（更新源请与常规包分开，防交叉升级）。
+#   - Node 运行时用 NODE_RUNTIME_LOCAL 指定 glibc-2.17 兼容构建（nodejs.org
+#     官方包要求 glibc>=2.28，CentOS 7 上无法运行；unofficial-builds 的
+#     glibc-217 变体或自行编译均可，tar.xz/tar.gz/目录/URL 四种形式都支持）。
+#   - node-pty 的原生绑定必须同样面向 glibc 2.17 编译。NODE_PTY_LOCAL 指定：
+#       1) 一个编译好的 .node 文件 —— 只替换绑定（按内置运行时的 ABI 与
+#          ARCH 定位 prebuilds/linux-<arch>/node.abi<N>.node，推荐这种方式）
+#       2) 一个完整包目录（含 package.json，prebuilds 布局）或其 .tgz ——
+#          整体替换 node_modules 里的 @homebridge/node-pty-prebuilt-multiarch
+#     不设置时仅告警：产物在其他机器正常，但 CentOS 7 上终端功能会加载失败。
 #
 # 环境变量（全部可选）:
 #   PI_CODING_AGENT_LOCAL  本地编译的 pi-coding-agent 安装包的路径或 URL：
@@ -99,11 +115,24 @@ NODE_VERSION="${NODE_VERSION:-22.23.0}"
 OUT_DIR="${OUT_DIR:-$ROOT/dist}"
 SMOKE_TEST="${SMOKE_TEST:-1}"
 LOCAL="${PI_CODING_AGENT_LOCAL:-}"
+
+# CentOS 7 / glibc-2.17 兼容打包开关（当前仅支持 217）：产物加 -glibc-217
+# 后缀；配合 NODE_RUNTIME_LOCAL（glibc-2.17 Node）与 NODE_PTY_LOCAL
+# （glibc-2.17 node-pty 绑定）使用，见文件头说明。
+GLIBC_COMPAT="${GLIBC_COMPAT:-}"
+case "$GLIBC_COMPAT" in
+  ""|217) ;;
+  *) die "GLIBC_COMPAT 目前仅支持 217（收到: $GLIBC_COMPAT）" ;;
+esac
+PKG_SUFFIX=""
+[ "$GLIBC_COMPAT" = "217" ] && PKG_SUFFIX="-glibc-217"
+PKG_NAME="amedac.ai-pi-linux-$ARCH$PKG_SUFFIX"
 # pi 配置模板默认取仓库内 pi-config/ 目录（未显式指定且目录不存在时静默跳过）
 PI_CONFIG_DIR_EXPLICIT="${PI_CONFIG_DIR+set}"
 PI_CONFIG_DIR="${PI_CONFIG_DIR:-$ROOT/pi-config}"
 
 log() { printf '\033[1;32m>>\033[0m %s\n' "$*"; }
+warn() { printf '\033[1;33m警告:\033[0m %s\n' "$*"; }
 die() { printf '\033[1;31mERROR:\033[0m %s\n' "$*" >&2; exit 1; }
 # 构建计时（SECONDS 是 bash 内建的秒计数器）
 BUILD_START=$SECONDS
@@ -182,7 +211,7 @@ find "$SRC/.next" -name '*.map' -type f -delete
 # ---------------------------------------------------------------------------
 # 7. 组装包目录
 # ---------------------------------------------------------------------------
-PKG="$WORK/amedac.ai-pi-linux-$ARCH"
+PKG="$WORK/$PKG_NAME"
 rm -rf "$PKG"
 mkdir -p "$PKG/app"
 log "组装 $PKG"
@@ -214,6 +243,16 @@ else
 fi
 cp -a "$PKG/version.json" "$PKG/app/version.json"
 echo tarball > "$PKG/pkg-kind"
+if [ "$GLIBC_COMPAT" = "217" ]; then
+  # 兼容包标记：目标机/更新源据此区分（version.json 相同版本号的 glibc-217
+  # 包与常规包不可交叉升级——更新源务必分开托管或过滤）。
+  echo "$GLIBC_COMPAT" > "$PKG/glibc-compat"
+  warn "glibc-2.17 兼容包: 与常规包同版本号，更新源必须分开（catalog 混装会交叉升级）"
+  [ -n "${NODE_RUNTIME_LOCAL:-}" ] \
+    || warn "GLIBC_COMPAT=217 但未设置 NODE_RUNTIME_LOCAL —— 将从 nodejs.org 下载的 Node 要求 glibc>=2.28，CentOS 7 上无法启动"
+  [ -n "${NODE_PTY_LOCAL:-}" ] \
+    || warn "GLIBC_COMPAT=217 但未设置 NODE_PTY_LOCAL —— 产物终端功能在 CentOS 7 上会加载失败"
+fi
 echo "$VERSION" > "$PKG/scripts/VERSION.txt"
 chmod +x "$PKG/pi" "$PKG/pi-web" "$PKG/pi-web.sh" "$PKG/scripts/"*.sh
 
@@ -528,6 +567,70 @@ if [ -n "${PI_BINARIES:-}" ]; then
 fi
 
 # ---------------------------------------------------------------------------
+# 8c.（可选）node-pty 本地替换 —— glibc 兼容打包的核心（须在 runtime 就位
+#     后执行：单绑定文件按内置 Node 的 ABI 定位目标）。NODE_PTY_LOCAL 三种
+#     形态:
+#       - 单个 .node 文件: 覆盖依赖树中所有
+#         @homebridge/node-pty-prebuilt-multiarch/prebuilds/linux-<ARCH>/
+#         node.abi<N>.node（N 取自内置运行时的 process.versions.modules）
+#       - 包目录（含 package.json，prebuilds 布局）或其 .tgz: 整体交换
+#         node_modules 里的该包（顶层与嵌套出现位置都处理）
+#     覆盖范围: app/node_modules 与 config/pi（PI_EXTENSIONS 带的依赖树）。
+#     构建机上 glibc-2.17 编译产物可直接运行（glibc 向前兼容），冒烟测试照常。
+# ---------------------------------------------------------------------------
+if [ -n "${NODE_PTY_LOCAL:-}" ]; then
+  PTY_SRC="$NODE_PTY_LOCAL"
+  [ -e "$PTY_SRC" ] || die "NODE_PTY_LOCAL 不存在: $PTY_SRC"
+  PTY_PKG_DIR="node_modules/@homebridge/node-pty-prebuilt-multiarch"
+  PTY_SEARCH_DIRS=("$PKG/app/node_modules")
+  [ -d "$PKG/config/pi" ] && PTY_SEARCH_DIRS+=("$PKG/config/pi")
+
+  if [ -f "$PTY_SRC" ] && [ "${PTY_SRC##*.}" = "node" ]; then
+    # 形态 1: 单绑定文件
+    RT_ABI="$("$PKG/runtime/bin/node" -p 'process.versions.modules' 2>/dev/null || true)"
+    [ -n "$RT_ABI" ] || die "无法执行内置 Node 读取 ABI（交叉架构构建时不能使用 .node 形态的 NODE_PTY_LOCAL，改用整包目录形式）"
+    PTY_HITS=0
+    while IFS= read -r dest; do
+      [ -n "$dest" ] || continue
+      cp -f "$PTY_SRC" "$dest/node.abi$RT_ABI.node"
+      PTY_HITS=$((PTY_HITS + 1))
+      log "node-pty 绑定替换: ${dest#"$PKG/"}/node.abi$RT_ABI.node"
+    done < <(find "${PTY_SEARCH_DIRS[@]}" -type d -path "*/$PTY_PKG_DIR/prebuilds/linux-$ARCH" 2>/dev/null)
+    [ "$PTY_HITS" -gt 0 ] || die "依赖树中未找到 $PTY_PKG_DIR/prebuilds/linux-$ARCH（绑定无处安放）"
+    log "已替换 $PTY_HITS 处 node-pty 绑定（linux-$ARCH / ABI $RT_ABI）"
+  else
+    # 形态 2: 整包目录 / .tgz
+    if [ -f "$PTY_SRC" ]; then
+      case "$PTY_SRC" in
+        *.tgz|*.tar.gz) ;;
+        *) die "NODE_PTY_LOCAL 需为 .node 绑定文件、包目录或 .tgz: $PTY_SRC" ;;
+      esac
+      rm -rf "$WORK/node-pty-local"
+      mkdir -p "$WORK/node-pty-local"
+      tar -xzf "$PTY_SRC" -C "$WORK/node-pty-local"
+      PTY_DIR="$(find "$WORK/node-pty-local" -type f -name package.json -printf '%h\n' | head -n 1)"
+      [ -n "$PTY_DIR" ] || die "NODE_PTY_LOCAL tgz 中未找到 package.json: $PTY_SRC"
+    else
+      PTY_DIR="$PTY_SRC"
+    fi
+    [ -f "$PTY_DIR/package.json" ] || die "NODE_PTY_LOCAL 目录缺少 package.json: $PTY_DIR"
+    PTY_NAME="$(node -p "require('$PTY_DIR/package.json').name")"
+    [ "$PTY_NAME" = "@homebridge/node-pty-prebuilt-multiarch" ] \
+      || warn "NODE_PTY_LOCAL 包名为 $PTY_NAME（预期 @homebridge/node-pty-prebuilt-multiarch），仍按该包位置替换"
+    PTY_HITS=0
+    while IFS= read -r dest; do
+      [ -n "$dest" ] || continue
+      rm -rf "$dest"
+      mkdir -p "$(dirname "$dest")"
+      cp -a "$PTY_DIR" "$dest"
+      PTY_HITS=$((PTY_HITS + 1))
+      log "node-pty 整包替换: ${dest#"$PKG/"}"
+    done < <(find "${PTY_SEARCH_DIRS[@]}" -type d -path "*/$PTY_PKG_DIR" -prune 2>/dev/null)
+    [ "$PTY_HITS" -gt 0 ] || die "依赖树中未找到 $PTY_PKG_DIR（整包无处替换）"
+  fi
+fi
+
+# ---------------------------------------------------------------------------
 # 9. 冒烟测试（产物必须能启动）
 # ---------------------------------------------------------------------------
 if [ "$SMOKE_TEST" != "0" ]; then
@@ -634,17 +737,17 @@ fi
 # ---------------------------------------------------------------------------
 # 10. 打包
 # ---------------------------------------------------------------------------
-OUT="$OUT_DIR/amedac.ai-pi-linux-$ARCH-$VERSION.tar.gz"
+OUT="$OUT_DIR/$PKG_NAME-$VERSION.tar.gz"
 log "打包 $OUT"
-(cd "$WORK" && tar -czf "$OUT" "amedac.ai-pi-linux-$ARCH")
-(cd "$OUT_DIR" && sha256sum "amedac.ai-pi-linux-$ARCH-$VERSION.tar.gz" > SHA256SUMS)
+(cd "$WORK" && tar -czf "$OUT" "$PKG_NAME")
+(cd "$OUT_DIR" && sha256sum "$PKG_NAME-$VERSION.tar.gz" > SHA256SUMS)
 BUILD_TAKEN=$((SECONDS - BUILD_START))
 log "完成（用时 $(fmt_dur "$BUILD_TAKEN")），产物："
 printf '  %10s  %s\n' "$(du -h "$OUT" | cut -f1)" "$OUT"
 printf '  %10s  %s\n' "$(du -h "$OUT_DIR/SHA256SUMS" | cut -f1)" "$OUT_DIR/SHA256SUMS"
 printf '  %10s  %s（未压缩目录）\n' "$(du -sh "$PKG" | cut -f1)" "$PKG"
 echo
-echo "  将 amedac.ai-pi-linux-$ARCH/ 拷到目标 Linux 机器后："
+echo "  将 $PKG_NAME/ 拷到目标 Linux 机器后："
 if [ "$WITH_SANDBOX" = "1" ]; then
   echo "  【沙盒教学平台（一键部署）】"
   echo "    ./scripts/start-all.sh   启动沙盒平台 + WebUI（首次运行自动生成配置，"

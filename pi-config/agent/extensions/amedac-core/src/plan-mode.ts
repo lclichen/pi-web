@@ -18,13 +18,19 @@
  *   切回 execute 并注入官方交接语（先把计划步骤写入 todo 再实施）。
  *   确认超时/中止/无 UI 宿主一律按"未确认"处理并给出手动路径——永不
  *   抛错失败；
+ * - 压缩连续性（2026-09，ZCode plan-file-continuity 对标）：计划文件在磁盘
+ *   存活但压缩会把 plan_save 结果逐出上下文——session_compact 事件与
+ *   session_start/tree 的分支扫描（最后一次压缩晚于最后一次 plan_save）
+ *   双路武装重注入，下一次 context 以 <system-reminder> 一次性回灌计划全文；
+ *   FRESH 上下文实施路径有意压缩，正是靠这条重注入交付计划；
  * - 当前模式经 widget key "plan-mode" 发布 {mode}，ChatStatusWidget 显示
  *   模式徽标。
  */
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { defineTool, type ExtensionAPI, type ExtensionContext, type InlineExtension } from "@earendil-works/pi-coding-agent";
 import { Type } from "@earendil-works/pi-ai";
 import { sessionPlanPath } from "./session-plan.ts";
+import { buildReminderMessage } from "./reminder-channel.ts";
 
 export const PLAN_MODE_WIDGET_KEY = "plan-mode";
 export const PLAN_MODE_ENTRY_TYPE = "plan-mode";
@@ -109,6 +115,30 @@ function isMutatingShellCommand(input: unknown): boolean {
   return typeof command === "string" && MUTATING_COMMAND_RE.test(command);
 }
 
+/** Re-injection size cap: plans are 3-7-step checklists, but subagent-captured
+ *  plans (auto-capture path) can grow large — truncate defensively. */
+const PLAN_REINJECT_MAX_CHARS = 8_000;
+
+/** True when the branch's last compaction postdates its last plan_save
+ *  result — the LLM context no longer contains the plan, but the file on
+ *  disk still does (ZCode's plan-file-continuity pattern). */
+export function compactionAfterLastPlanSave(
+  entries: Iterable<{ type?: string; message?: unknown }>,
+): boolean {
+  let lastPlanSaveIdx = -1;
+  let lastCompactionIdx = -1;
+  let i = 0;
+  for (const entry of entries) {
+    if (entry.type === "compaction") lastCompactionIdx = i;
+    if (entry.type === "message") {
+      const msg = entry.message as { role?: string; toolName?: string } | undefined;
+      if (msg?.role === "toolResult" && msg.toolName === "plan_save") lastPlanSaveIdx = i;
+    }
+    i++;
+  }
+  return lastPlanSaveIdx >= 0 && lastCompactionIdx > lastPlanSaveIdx;
+}
+
 export function makePlanModeExtension(): InlineExtension {
   let mode: PlanMode = "execute";
 
@@ -154,14 +184,55 @@ export function makePlanModeExtension(): InlineExtension {
     }
   };
 
+  const readPlanContent = (ctx: ExtensionContext): { path: string; content: string } | null => {
+    try {
+      const sid = ctx.sessionManager.getSessionId();
+      const path = sessionPlanPath(ctx.cwd, sid);
+      if (!existsSync(path)) return null;
+      const content = readFileSync(path, "utf8").trim();
+      return content.length > 0 ? { path, content } : null;
+    } catch {
+      return null;
+    }
+  };
+
   return (pi: ExtensionAPI): void => {
+    // Compaction continuity: once a plan exists, a compaction that postdates
+    // its last save drops the plan out of the LLM context (summary + recent
+    // tail only). Re-inject the authoritative file as a one-shot reminder on
+    // the next context — armed both by the in-process session_compact event
+    // and by the branch scan at session_start/session_tree (restart after a
+    // post-plan compaction). The FRESH-context exit path deliberately
+    // compacts and benefits from this re-injection by design.
+    let planReinjectionPending = false;
+
     pi.on("session_start", async (_event, ctx) => {
       mode = reconstructPlanMode(ctx.sessionManager.getBranch() as never);
+      planReinjectionPending = compactionAfterLastPlanSave(ctx.sessionManager.getBranch() as never);
       publishWidget(ctx);
     });
     pi.on("session_tree", async (_event, ctx) => {
       mode = reconstructPlanMode(ctx.sessionManager.getBranch() as never);
+      planReinjectionPending = compactionAfterLastPlanSave(ctx.sessionManager.getBranch() as never);
       publishWidget(ctx);
+    });
+    pi.on("session_compact", async (_event, ctx) => {
+      if (readPlanContent(ctx)) planReinjectionPending = true;
+    });
+
+    pi.on("context", async (event, ctx) => {
+      if (!planReinjectionPending) return undefined;
+      planReinjectionPending = false;
+      const plan = readPlanContent(ctx);
+      if (!plan) return undefined;
+      const body =
+        plan.content.length > PLAN_REINJECT_MAX_CHARS
+          ? `${plan.content.slice(0, PLAN_REINJECT_MAX_CHARS)}\n…(truncated — full plan file: ${plan.path})`
+          : plan.content;
+      const reminder = buildReminderMessage([
+        `Context compaction dropped the implementation plan out of this session's context. The authoritative plan file (${plan.path}) is re-injected below — follow it, and make sure the todo list reflects its steps:\n\n${body}`,
+      ]);
+      return { messages: [...event.messages, reminder as unknown as (typeof event.messages)[number]] };
     });
 
     // Mode instructions ride the (chained) system-prompt replacement; zero

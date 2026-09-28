@@ -96,8 +96,9 @@
 #   SANDBOX_PLATFORM_DIR     sandbox-platform 仓库路径。默认依次探测:
 #                            ../sandbox-platform、../../AgentSandbox/sandbox-platform
 #   SANDBOX_EXTENSION_DIR    pi-sandbox-extension 仓库路径。默认探测: ../pi-sandbox-extension
-#   PLATFORM_WEB_DIST        管理控制台静态页（web/dist）来源；默认取源码仓内
-#                            已构建的 web/dist，缺失时控制台不随包（有警告）。
+#                         （管理控制台 SPA 已随 web/ 归档移除——管理界面全部
+#                          迁入 pi-web 的管理面板，平台包不再携带前端静态页；
+#                          原 PLATFORM_WEB_DIST 参数已删除。）
 #   BCRYPT_BINDING_LOCAL     离线构建机兜底：bcrypt 的 napi-v3 预编译 .node 文件
 #                            路径，打包时拷入平台 node_modules 对应位置。
 #   NATIVE_BINDING_FIX       通用原生绑定补拷，"包内相对路径=来源文件" 空格分隔
@@ -406,20 +407,6 @@ if [ "$WITH_SANDBOX" = "1" ]; then
       cp -f "$src_abs" "$SBX/platform/$dest_rel"
       log "原生绑定补拷: $src_abs -> sandbox/platform/$dest_rel"
     done
-  fi
-
-  # ---- 管理控制台静态页（web/dist）--------------------------------------
-  # 平台在 APP_ROOT/web/dist 服务管理员 SPA（镜像/用户/配额/LLM 控制台），
-  # WebUI 顶栏管理员的「沙盒平台管理台」按钮跳转的就是它。默认取源码仓里
-  # 已构建的产物；构建机上没有时用 PLATFORM_WEB_DIST 显式指定一份。
-  WEB_DIST_SRC="${PLATFORM_WEB_DIST:-$SANDBOX_PLATFORM_SRC/web/dist}"
-  if [ -d "$WEB_DIST_SRC" ] && [ -f "$WEB_DIST_SRC/index.html" ]; then
-    mkdir -p "$SBX/platform/web"
-    cp -a "$WEB_DIST_SRC" "$SBX/platform/web/dist"
-    log "已打包管理控制台静态页 (web/dist)"
-  else
-    warn "未找到管理控制台静态页（web/dist）——打包产物的控制台将不可用。"
-    warn "在源码仓构建一次 web/ 或用 PLATFORM_WEB_DIST=/已构建目录 指定后再打包。"
   fi
 
   PLATFORM_VERSION="$(node -p "require('$SBX/platform/package.json').version")"

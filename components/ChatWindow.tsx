@@ -281,10 +281,14 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
   const soundEnabledRef = useRef(soundEnabled);
   soundEnabledRef.current = soundEnabled;
   const soundedExtensionDialogIdRef = useRef<string | null>(null);
+  // Bumped on every agent end so the status capsule refreshes its git summary
+  // (the turn just touched the working tree).
+  const [capsuleRefresh, setCapsuleRefresh] = useState(0);
   const wrappedOnAgentEnd = useCallback(() => {
     if (completionNotificationsEnabled && soundEnabledRef.current) {
       playDoneSoundRef.current();
     }
+    setCapsuleRefresh((n) => n + 1);
     onAgentEnd?.();
   }, [completionNotificationsEnabled, onAgentEnd]);
 
@@ -1131,6 +1135,10 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
           onOpenAgents={() => onOpenAgentsPanel?.()}
           onOpenPlan={() => onOpenPlanPanel?.()}
           sessionId={session?.id ?? null}
+          cwd={session?.cwd ?? newSessionCwd ?? null}
+          refreshSignal={capsuleRefresh}
+          agentRunning={agentRunning}
+          bashRunning={bashRunning}
           planActive={planPanelActive}
           plan={plan}
           todos={capsuleTodos}

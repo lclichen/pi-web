@@ -1083,5 +1083,12 @@ export const enLocale: LocalePlugin = {
     "relay.unbind": "Unbind",
     "relay.panel": "Panel",
     "relay.pairNewMachine": "＋ Pair a new machine",
+    "chat.status.gitSummary": "Working tree changes",
+    "chat.status.activitySubagents": "{count} subagent(s) running",
+    "chat.status.activityBash": "Command running",
+    "chat.status.activityAgent": "Model generating",
+    "chat.status.activityMixed": "{count} activities running",
+    "chat.status.endedCollapsed": "Ended ({count})",
+    "chat.status.hiddenSteps": "{count} hidden",
   },
 };

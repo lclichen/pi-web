@@ -1083,5 +1083,12 @@ export const zhCNLocale: LocalePlugin = {
     "relay.unbind": "解绑",
     "relay.panel": "面板",
     "relay.pairNewMachine": "＋ 配对新机器",
+    "chat.status.gitSummary": "工作区变更",
+    "chat.status.activitySubagents": "{count} 个子智能体运行中",
+    "chat.status.activityBash": "命令执行中",
+    "chat.status.activityAgent": "模型生成中",
+    "chat.status.activityMixed": "{count} 项进行中",
+    "chat.status.endedCollapsed": "已结束 {count}",
+    "chat.status.hiddenSteps": "已折叠 {count} 步",
   },
 };

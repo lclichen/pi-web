@@ -1817,3 +1817,14 @@ span.token.table {
   color: var(--text-dim);
   line-height: 1.4;
 }
+
+/* Status capsule live pulse (running agent / todo in-progress dot). The class
+   existed in markup but its animation was lost in a refactor; restored with
+   the capsule rework (2026-09). */
+.chat-status-pulse {
+  animation: chat-status-pulse-anim 1.6s ease-in-out infinite;
+}
+@keyframes chat-status-pulse-anim {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}

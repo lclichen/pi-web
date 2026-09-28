@@ -1084,5 +1084,12 @@ export const zhTWLocale: LocalePlugin = {
     "relay.unbind": "解綁",
     "relay.panel": "面板",
     "relay.pairNewMachine": "＋ 配對新機器",
+    "chat.status.gitSummary": "工作區變更",
+    "chat.status.activitySubagents": "{count} 個子智能體執行中",
+    "chat.status.activityBash": "命令執行中",
+    "chat.status.activityAgent": "模型生成中",
+    "chat.status.activityMixed": "{count} 項進行中",
+    "chat.status.endedCollapsed": "已結束 {count}",
+    "chat.status.hiddenSteps": "已摺疊 {count} 步",
   },
 };

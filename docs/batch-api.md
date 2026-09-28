@@ -1,10 +1,10 @@
 # pi-web 批量测试 API
 
-> 版本 1.1 · 2026-09-22 · 认证方式：X-Platform-API-Key
+> 版本 1.2 · 2026-09-24 · 认证方式：X-Platform-API-Key
 
 ## 概述
 
-pi-web 批量测试 API 允许通过 HTTP 请求自动化执行 Agent 测试任务。每个任务在独立的工作目录中运行，支持 Host 模式（服务器目录）和沙盒模式（容器）。任务异步执行——提交后立即返回任务 ID，通过轮询获取状态，终态后获取完整结果。自 1.1 起支持 `"stream": true` 以 SSE 流式返回任务事件（状态变化、Agent 消息增量、最终结果），并可随时通过独立端点订阅任一已有任务的事件流。
+pi-web 批量测试 API 允许通过 HTTP 请求自动化执行 Agent 测试任务。每个任务在独立的工作目录中运行，支持 Host 模式（服务器目录）和沙盒模式（容器）。任务异步执行——提交后立即返回任务 ID，通过轮询获取状态，终态后获取完整结果；亦可用 `"stream": true` 以 SSE 流式返回（1.1 起）。**评测框架接入**（如 deepeval）：`input → prompt`、`actual_output → finalResponse`、代码类判分经产物内容端点取回文件（1.2 起，见下）。
 
 **设计参考**：ACP (Agent Client Protocol) v2 的提交/完成分离模式——"提交成功 ≠ 任务完成"；StopReason 结构化枚举；`requires_action` 超时后自动应答（非取消）。
 
@@ -210,6 +210,44 @@ X-Platform-API-Key: sk-...
 }
 ```
 
+#### 结果字段语义（`GET /result` 与 SSE `result` 事件的 `result` 字段）
+
+| 字段 | 类型 | 语义 |
+|---|---|---|
+| `taskId` | string | 任务 ID（提交时返回的原值） |
+| `sessionId` | string | 服务端 pi 会话 ID（对应 sessionFile 去扩展名；服务器侧排查用） |
+| `state` | `"completed" \| "failed" \| "cancelled"` | 终态（此处只会是三者之一） |
+| `stopReason` | string? | `end_turn`（正常收尾）/ `max_tokens` / `timeout`（总超时被取消）/ `cancelled`（手动取消）/ `refusal` / `error`；failed 时为 `error` |
+| `finalResponse` | string? | 最后一条 assistant 消息的全部文本块拼接——**LLM-as-judge 的 `actual_output`**；失败/取消可能缺失 |
+| `usage.inputTokens` / `outputTokens` / `totalTokens` | number | SDK 统计的 token 用量（成本核算用）；失败可能缺失 |
+| `usage.toolCalls` | number | 本任务工具调用总次数 |
+| `toolCallLog[]` | array | 工具调用轨迹：`name` + `argumentsSummary`（参数 JSON 前 200 字符）+ `resultSummary`（结果文本前 200 字符）+ `isError`；`durationMs` 当前恒为 0（未统计，占位） |
+| `artifacts[]` | array | 产物清单：`path`（相对 `workDir` 的 posix 路径）+ `size`（字节）。深度≤3、跳过点文件与 node_modules、上限 100 条；**内容经产物端点取回** |
+| `sessionFile` | string? | 服务端会话 JSONL 绝对路径（客户端不可直接读取，留作对账） |
+| `durationMs` | number? | `startedAt → endedAt` 实耗毫秒；两者齐备才有 |
+| `workDir` | string | 实际使用的目录（请求路径已存在时带 `-2`/`-3` 后缀——拼产物 URL 前先读这里） |
+| `error` | string? | `failed` 时的错误信息；成功时缺省 |
+| `versions` | object | 框架四项版本（跨部署对齐评测口径；`configBundleVersion` 开发机为 `null`） |
+
+### 获取产物文件内容（评测判分用）
+
+```
+GET /api/batch/tasks/{taskId}/artifacts/{path}
+X-Platform-API-Key: sk-...
+```
+
+path 是 `result.artifacts[]` 里的相对路径（多级用 `/`）。**白名单围栏**：只有精确命中该任务产物清单的路径可取（扫描时已排除符号链接，清单即围栏）；仅终态任务可取。
+
+- 响应体为文件原始字节，`Content-Type` 按扩展名（代码/文本类为 utf-8 文本，未知扩展名 `application/octet-stream`），≤2MB（超过返回 413）。
+- 状态码：`409` 任务仍在运行；`404` 路径不在产物清单；`410` 文件已被清理；`413` 超过大小上限。
+
+```bash
+curl -s http://localhost:30141/api/batch/tasks/$TASK_ID/artifacts/src/parser.ts \
+  -H "X-Platform-API-Key: sk-your-admin-key"
+```
+
+评测侧典型用法（deepeval 自定义 metric 内）：`input` → 提交任务的 `prompt`；`actual_output` → `finalResponse`；代码正确性判分 → 按需拉取 `artifacts` 内容交给 judge 或在评测侧执行。
+
 ---
 
 ## 流式模式（SSE）
@@ -331,8 +369,10 @@ X-Platform-API-Key: sk-...
 | 400 | 请求体格式错误 / 缺少必填字段 |
 | 401 | API Key 无效或未提供 |
 | 403 | 非管理员身份 |
-| 404 | 任务不存在 |
-| 409 | 获取结果时任务仍在运行 |
+| 404 | 任务不存在 / 产物路径不在清单 |
+| 409 | 任务仍在运行（获取结果或产物时） |
+| 410 | 产物文件已被清理（清单还在、文件没了） |
+| 413 | 请求体过大 / 产物超过 2MB 上限 |
 | 415 | Content-Type 不是 application/json |
 | 502 | 平台 API 调用失败 |
 

@@ -3,7 +3,7 @@
  * they are directly testable with node --experimental-strip-types.
  */
 import { existsSync, mkdirSync, readdirSync, statSync, writeFileSync, copyFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { join, resolve, sep } from "node:path";
 
 /**
  * Resolve the actual working directory: if the requested path already exists,
@@ -91,4 +91,28 @@ export function scanArtifacts(workDir: string): Array<{ path: string; size: numb
     // best-effort
   }
   return results.slice(0, 100);
+}
+
+/**
+ * Resolve one artifact content request against a task's artifact whitelist.
+ * The task's scanned artifact list is the ONLY source of truth (symlinks were
+ * excluded at scan time, so whitelist membership is an escape-proof fence);
+ * the returned absolute path is additionally prefix-checked against workDir.
+ * Returns null for anything not exactly on the list.
+ */
+export function resolveArtifactPath(
+  workDir: string,
+  artifacts: Array<{ path: string }>,
+  segments: string[],
+): string | null {
+  if (segments.length === 0) return null;
+  const rel = segments.join("/").replace(/\\/g, "/");
+  // Reject traversal/implied paths early — only clean relative posix paths
+  // that exactly match a whitelisted entry pass.
+  if (rel.split("/").some((s) => s === "" || s === "." || s === "..")) return null;
+  if (!artifacts.some((a) => a.path === rel)) return null;
+  const abs = resolve(workDir, ...segments);
+  const root = resolve(workDir);
+  if (abs !== root && !abs.startsWith(root + sep)) return null;
+  return abs;
 }

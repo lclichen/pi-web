@@ -7,11 +7,14 @@
  * - 进入方式：模型自动（enter_plan_mode 工具 + promptGuidelines 教时机）
  *   或用户手动（/plan、/plan-exit 斜杠命令）；
  * - plan 模式下 before_agent_start 追加 <collaboration_mode> 指令块（多
- *   扩展链式替换的尾部），tool_call 钩子硬门禁写类工具（write/edit、
- *   变异 bash/powershell、todo——计划文件才是规划期的清单，防双清单
- *   混淆，codex 同款策略）；plan_save 是唯一允许的"写"；
+ *   扩展链式替换的尾部），tool_call 钩子硬门禁：只读白名单放行（read/
+ *   ls/find/grep、非变异 shell、plan_save、ask_user_question 等），其余
+ *   一律默认拒绝——write/edit/todo、未知/自定义/MCP 工具、子代理委派
+ *   （子会话以 execute 模式跑不受门禁，放行即绕过；ZCode 权限层分类法
+ *   在 pi 扩展钩子上的等价实现）；plan_save 是唯一允许的"写"；
  * - 退出经 exit_plan_mode 工具：要求先 plan_save 存了计划，再经
- *   ctx.ui.confirm 弹用户确认（pi-web RPC 通道渲染阻塞确认框）；确认后
+ *   ctx.ui.select 四选（直接实施 / 清上下文实施 / 反馈意见-拒因回灌 /
+ *   继续规划；pi-web RPC 通道渲染阻塞选择框）；确认后
  *   切回 execute 并注入官方交接语（先把计划步骤写入 todo 再实施）。
  *   确认超时/中止/无 UI 宿主一律按"未确认"处理并给出手动路径——永不
  *   抛错失败；
@@ -34,17 +37,29 @@ export type PlanMode = "execute" | "plan";
 const MUTATING_COMMAND_RE =
   /\b(rm|rmdir|mv|cp|mkdir|touch|tee|chmod|chown|ln|dd|shred|truncate|kill|pkill|mkfs|mount|umount)\b|(^|[^2s])>>?|\bsed\b[^|]*\s-i\b|\bgit\b[^|]*\b(commit|push|merge|rebase|reset|checkout|restore|apply|revert|clean|stash|tag)\b|\bnpm\b[^|]*\b(install|uninstall|update|link|publish|ci)\b|\bpnpm\b|\byarn\b[^|]*\b(add|remove)\b|\bpip3?\b[^|]*\b(install|uninstall)\b|\bcargo\b[^|]*\b(add|install)\b|\bgo\b[^|]*\b(install|get)\b|\bapt(-get)?\b|\byum\b|\bdnf\b|\bmake\b|\bdocker\b[^|]*\b(run|build|rm|exec|create)\b|\bapptainer\b.*\b(run|exec|instance\s+start)\b|\bcurl\b[^|]*\s(-X|-d|-T|--request|--data|--upload)\b|\bwget\b[^|]*\b(--post|--put)\b|\bnode\b[^|]*\s-e\b|\bpython3?\b[^|]*\s-c\b|\b(remove|move|copy|rename|new|set)-item\b|\bout-file\b|\b(set|add)-content\b|\b(start|stop)-process\b|\bremove-itemproperty\b/i;
 
-/** Tools blocked outright while planning (todo blocked: the plan file is the
- *  checklist in plan mode — same separation codex enforces for update_plan). */
-const PLAN_BLOCKED_TOOLS = new Set(["write", "edit", "todo"]);
+/** Tools allowed while planning — everything NOT on this list is blocked
+ * (write/edit/todo included, but crucially also unknown/custom/MCP tools and
+ * subagent delegation: those sessions start in execute mode, so delegating
+ * would bypass the plan fence — ZCode's plan-mode-policy lesson applied to
+ * pi's tool_call hook: classify allow-side read-only-ness instead of naming
+ * mutations). Adding a genuinely read-only custom tool = add its name here. */
+const PLAN_ALLOWED_TOOLS = new Set([
+  // read-only exploration built-ins
+  "read", "ls", "find", "grep", "glob",
+  // shells: additionally gated by the mutating-command heuristic below
+  "bash", "powershell",
+  // planning + interaction surface (session-scope, non-mutating)
+  "plan_save", "enter_plan_mode", "exit_plan_mode", "context_status",
+  "ask_user_question", "skills", "skill",
+]);
 
 const PLAN_MODE_INSTRUCTIONS = `<collaboration_mode>
 You are now in PLAN mode. Your job is to explore and produce an implementation plan — not to make changes.
 
-Read-only exploration is allowed: read / ls / find / grep and non-mutating shell commands. Mutating tools (write, edit, mutating bash/powershell, todo) are BLOCKED while planning; plan_save is the only write target — the plan file is the checklist during planning.
+Read-only exploration is allowed: read / ls / find / grep, read-only shell commands, and the planning tools (plan_save / ask_user_question). Everything else is BLOCKED while planning — write, edit, todo, custom/MCP tools, and subagent delegation (subagent sessions are not plan-gated). plan_save is the only write target — the plan file is the checklist during planning.
 
 Workflow:
-1. Explore the relevant code and context first. When delegating, keep subagent work read-only.
+1. Explore the relevant code directly with read / ls / find / grep and read-only shell commands.
 2. If a decision genuinely blocks the plan (ambiguous goal, mutually exclusive approaches), use the ask_user_question tool when available (options + recommended default); otherwise state the options with your recommendation and ask in your reply.
 3. Save the plan with plan_save: brief context, the recommended approach with rationale, a step checklist as \`- [ ]\` items (3-7 steps), and a verification section (how to prove it works).
 4. Call exit_plan_mode to request user approval. Do NOT call it before the plan is saved.
@@ -69,6 +84,8 @@ const FRESH_CONTEXT_HANDOFF =
 const APPROVAL_CHOICE_IMPLEMENT = "直接实施";
 const APPROVAL_CHOICE_FRESH = "清上下文实施";
 const APPROVAL_CHOICE_STAY = "继续规划";
+/** ZCode 式"拒绝并反馈"：选此项弹输入框，意见回灌给模型驱动计划修订。 */
+const APPROVAL_CHOICE_FEEDBACK = "反馈意见（继续规划）";
 
 const textBlock = (s: string) => ({ type: "text" as const, text: s });
 
@@ -154,24 +171,27 @@ export function makePlanModeExtension(): InlineExtension {
       return { systemPrompt: `${event.systemPrompt}\n${PLAN_MODE_INSTRUCTIONS}` };
     });
 
-    // Hard gating while planning (belt to the prompt's suspenders).
+    // Hard gating while planning (belt to the prompt's suspenders):
+    // allowlist-based default-DENY — unknown/custom/MCP tools and subagent
+    // delegation are blocked alongside write/edit/todo.
     pi.on("tool_call", async (event) => {
       if (mode !== "plan") return undefined;
       const name = event.toolName;
-      if (PLAN_BLOCKED_TOOLS.has(name)) {
-        return {
-          block: true,
-          reason:
-            name === "todo"
-              ? "PLAN mode: the plan file is the checklist while planning. Save/update the plan with plan_save, then call exit_plan_mode; after approval, write the plan steps into the todo list."
-              : "PLAN mode is read-only — no file modifications. Save the plan with plan_save and call exit_plan_mode to switch to execution.",
-        };
-      }
       if ((name === "bash" || name === "powershell") && isMutatingShellCommand(event.input)) {
         return {
           block: true,
           reason:
             "PLAN mode allows read-only shell commands only — this one looks mutating. If the classification is wrong, rephrase the command read-only (e.g. drop redirections); real changes happen after exit_plan_mode approval.",
+        };
+      }
+      if (!PLAN_ALLOWED_TOOLS.has(name)) {
+        return {
+          block: true,
+          reason:
+            name === "todo"
+              ? "PLAN mode: the plan file is the checklist while planning. Save/update the plan with plan_save, then call exit_plan_mode; after approval, write the plan steps into the todo list."
+              : `PLAN mode is read-only and '${name}' is not on the plan-mode allowlist (unknown/custom/MCP tools and subagent delegation are blocked — subagent sessions are not plan-gated). ` +
+                "Explore with read/ls/find/grep or read-only shell, save the plan with plan_save, and call exit_plan_mode; mutations happen after approval.",
         };
       }
       return undefined;
@@ -219,13 +239,15 @@ export function makePlanModeExtension(): InlineExtension {
       description:
         "Request user approval for the saved plan and switch back to EXECUTE mode. Only valid in PLAN mode and " +
         "after the plan has been saved with plan_save. The user picks: implement now / implement in a fresh " +
-        "context (compaction runs; the saved plan becomes the source of intent) / keep planning. On approval the " +
+        "context (compaction runs; the saved plan becomes the source of intent) / give feedback (decline with " +
+        "revision notes — revise the plan accordingly and request again) / keep planning. On approval the " +
         "agent starts implementing, first writing the plan steps into the todo list.",
       promptSnippet: "exit_plan_mode — request plan approval and return to execution",
       // 中文版备查：计划保存（plan_save）之后调用 exit_plan_mode 请求用户批准；
-      // 未经批准不要开始实施。被拒或未响应时根据对话反馈修订计划后再次请求。
+      // 未经批准不要开始实施。用户选"反馈意见"时按回灌的具体意见修订计划后
+      // 再次请求；被拒或未响应时根据对话反馈修订后重试。
       promptGuidelines: [
-        "After the plan is saved (plan_save), call exit_plan_mode to request user approval; never start implementing before approval. On decline or no response, revise the plan per the conversation and request again.",
+        "After the plan is saved (plan_save), call exit_plan_mode to request user approval; never start implementing before approval. When the user declines with feedback, revise the plan to address every point and request approval again.",
       ],
       parameters: Type.Object({
         summary: Type.Optional(
@@ -249,9 +271,10 @@ export function makePlanModeExtension(): InlineExtension {
             isError: true,
           };
         }
-        // Three-way approval over the blocking RPC UI channel (#8): implement
+        // Four-way approval over the blocking RPC UI channel (#8): implement
         // now / implement in a fresh context (compact; the plan file becomes
-        // the source of intent — codex's clear-context handoff) / keep
+        // the source of intent — codex's clear-context handoff) / give
+        // feedback (decline-with-revision-notes, ZCode-style) / keep
         // planning. Timeout / abort / exceptions resolve to "keep planning".
         // A headless host (bench, print mode) has no human to ask — detect it
         // via ctx.hasUI === false (the SDK's no-op UI still exposes callable
@@ -267,13 +290,40 @@ export function makePlanModeExtension(): InlineExtension {
           try {
             choice = await ctx.ui.select(
               "实施此计划？",
-              [APPROVAL_CHOICE_IMPLEMENT, APPROVAL_CHOICE_FRESH, APPROVAL_CHOICE_STAY],
+              [APPROVAL_CHOICE_IMPLEMENT, APPROVAL_CHOICE_FRESH, APPROVAL_CHOICE_FEEDBACK, APPROVAL_CHOICE_STAY],
               { timeout: 300_000, signal },
             );
           } catch {
             choice = undefined;
             note = "（确认框异常）";
           }
+        }
+        if (choice === APPROVAL_CHOICE_FEEDBACK) {
+          // Free-text decline: the notes go back to the model verbatim —
+          // this is the revision loop fixed options cannot express.
+          let feedback = "";
+          if (typeof ctx.ui?.input === "function") {
+            try {
+              feedback = ((await ctx.ui.input("对计划的修改意见：", "例如：第 2 步不要改公共接口，改用适配器…", { timeout: 300_000, signal })) ?? "").trim();
+            } catch {
+              feedback = "";
+            }
+          }
+          return {
+            content: [
+              textBlock(
+                feedback
+                  ? `用户未批准计划，并给出反馈：${feedback}\n仍在 PLAN 模式：按反馈逐条修订计划（plan_save 更新后再次调用 exit_plan_mode）。计划文件：${planPath}`
+                  : `用户选择了"反馈意见"但未填写内容。仍在 PLAN 模式：询问用户具体要调整哪些部分，或根据对话中的反馈修订计划（plan_save 更新后再次调用 exit_plan_mode）。计划文件：${planPath}`,
+              ),
+            ],
+            details: {
+              mode: "plan",
+              approved: false,
+              reason: feedback ? "declined-with-feedback" : "declined",
+              ...(feedback ? { feedback } : {}),
+            },
+          };
         }
         if (choice !== APPROVAL_CHOICE_IMPLEMENT && choice !== APPROVAL_CHOICE_FRESH) {
           return {

@@ -34,15 +34,21 @@ async function resolvePlatformUser(key: string): Promise<PlatformUser | null> {
   const cached = keyCache.get(key);
   if (cached && Date.now() - cached.at < KEY_CACHE_TTL_MS) return cached.user;
   try {
-    const me = await platformGet<{ id: number; username: string; email: string | null; role: string; status: string }>(
+    // The platform wraps /auth/me in { user: {...} }; accept both shapes so a
+    // wrapper change degrades to a 401 (visible) rather than silent mismatch.
+    const res = await platformGet<{
+      user?: { id: number; username: string; email: string | null; role: string; status: string };
+      id?: number; username?: string; email?: string | null; role?: string; status?: string;
+    }>(
       "/api/v1/auth/me",
       key,
     );
-    if (!me || me.status !== "active") return null;
+    const me = res.user ?? res;
+    if (!me || typeof me.id !== "number" || typeof me.username !== "string" || me.status !== "active") return null;
     const user: PlatformUser = {
       id: me.id,
       username: me.username,
-      email: me.email,
+      email: me.email ?? null,
       role: me.role === "admin" ? "admin" : "user",
       status: me.status,
     };

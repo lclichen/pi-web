@@ -33,12 +33,25 @@ export function proxy(request: NextRequest) {
   // allowlist of prebuilt binaries, so they stay public in both auth modes.
   const isRelayDownload = pathname.startsWith("/api/agent-relay/download/");
 
+  // Batch test API authenticates with X-Platform-API-Key (sk_...), validated
+  // against the platform inside the routes (requireBatchIdentity: key →
+  // /auth/me → admin role). Without this bypass the session gate rejects
+  // headless callers before the route ever runs. This is only a FORMAT
+  // pre-check — the route's own validation remains the authority.
+  const hasBatchPlatformKey = pathname.startsWith("/api/batch/")
+    && (() => {
+      const direct = request.headers.get("x-platform-api-key");
+      if (direct?.startsWith("sk_")) return true;
+      const bearer = request.headers.get("authorization");
+      return Boolean(bearer?.startsWith("Bearer sk_"));
+    })();
+
   if (process.env.PI_WEB_AUTH === "on") {
     // /api/webauth/* validates its own credentials (login/register/config are
     // inherently pre-session; me/logout/change-password check the cookie
     // themselves and tolerate change-ticket sessions).
     const isWebAuthRoute = pathname.startsWith("/api/webauth/");
-    if (!isRelayDownload && !isWebAuthRoute) {
+    if (!isRelayDownload && !isWebAuthRoute && !hasBatchPlatformKey) {
       const session = getWebSession(request);
       const usable = session && !session.changeTicket;
       if (!usable) {
@@ -54,6 +67,7 @@ export function proxy(request: NextRequest) {
   const password = process.env.PI_WEB_PASSWORD;
   if (
     !isRelayDownload
+    && !hasBatchPlatformKey
     && isWebPasswordEnabled(password)
     && !isValidBasicAuthorization(request.headers.get("authorization"), password)
   ) {

@@ -1,11 +1,14 @@
 /**
  * Batch task state — in-memory registry (globalThis, hot-reload safe) with
- * a JSONL sidecar for cross-restart visibility (finished tasks can be
- * queried after a pi-web restart; running tasks are marked stale).
+ * a per-task JSON sidecar under <data>/batch-tasks/ so records survive
+ * pi-web restarts (long-running tasks can outlive the process: records are
+ * queryable after restart, and interrupted ones are resumable via
+ * POST /tasks/{id}/resume).
  *
  * State machine (ACP-inspired):
  *   queued → running → completed | failed | cancelled
  *                 ↘ waiting_input → running (auto-responded)
+ *   running → interrupted (pi-web restart) → running (resume)
  *   Any state can transition to cancelled (explicit cancel or timeout).
  *   Terminal states are absorbing — late runner updates cannot resurrect
  *   a finished/cancelled task.
@@ -16,12 +19,17 @@
  * on overflow the oldest events are dropped and the channel is flagged
  * truncated so reconnecting clients know the replay is partial.
  */
+import { existsSync, mkdirSync, readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
+import { atomicWriteFile } from "../atomic-write.ts";
+import { dataDir } from "../mode-homes.ts";
 import { getBatchVersionInfo } from "./version-info.ts";
 
 export type BatchTaskState =
   | "queued"
   | "running"
   | "waiting_input"
+  | "interrupted"
   | "completed"
   | "failed"
   | "cancelled";
@@ -76,6 +84,14 @@ export interface BatchTask {
   stopContainer: boolean;
   containerId?: number;
   projectId?: number;
+  /** Active tool allowlist for the session (eval fidelity). */
+  toolNames?: string[];
+  /** Sandbox mode: per-task stub home carrying .pi/sandbox-platform.json. */
+  homeDir?: string;
+  /** Set when the process died mid-task; cleared on resume. */
+  interruptedAt?: number;
+  /** How many times this task was resumed after an interruption. */
+  resumedCount?: number;
 
   // Results (populated at terminal states)
   finalResponse?: string;
@@ -144,8 +160,55 @@ declare global {
 function store(): Map<string, BatchTask> {
   if (!globalThis.__piWebBatchTasks) {
     globalThis.__piWebBatchTasks = new Map();
+    loadPersistedTasks(globalThis.__piWebBatchTasks);
   }
   return globalThis.__piWebBatchTasks;
+}
+
+/** Records dir — env-overridable so tests can point at a tmp dir. */
+function persistDir(): string {
+  return process.env.PI_WEB_BATCH_TASK_DIR ?? join(dataDir(), "batch-tasks");
+}
+
+/**
+ * Load records written by a previous process. Non-terminal ones are marked
+ * `interrupted` (resumable) — the in-process agent session is gone, so we
+ * never pretend a task is still running.
+ */
+function loadPersistedTasks(into: Map<string, BatchTask>): void {
+  const dir = persistDir();
+  try {
+    if (!existsSync(dir)) return;
+    for (const name of readdirSync(dir)) {
+      if (!name.endsWith(".json")) continue;
+      try {
+        const raw = JSON.parse(readFileSync(join(dir, name), "utf8")) as BatchTask;
+        if (!raw?.taskId) continue;
+        if (!isTerminal(raw.state)) {
+          raw.state = "interrupted";
+          raw.interruptedAt = Date.now();
+        }
+        into.set(raw.taskId, raw);
+        if (!channels().has(raw.taskId)) {
+          channels().set(raw.taskId, { listeners: new Set(), buffer: [], nextSeq: 1, truncated: false });
+        }
+      } catch {
+        // Corrupt record — skip, never fail the store
+      }
+    }
+  } catch {
+    // Best-effort: a missing/unreadable dir just means no history
+  }
+}
+
+function persistTask(task: BatchTask): void {
+  try {
+    const dir = persistDir();
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    atomicWriteFile(join(dir, `${task.taskId}.json`), JSON.stringify(task, null, 2));
+  } catch (e) {
+    console.error("[batch] task persist failed:", e);
+  }
 }
 
 function channels(): Map<string, TaskEventChannel> {
@@ -207,6 +270,7 @@ export function createTaskRecord(init: Omit<BatchTask, "createdAt" | "state">): 
   const task: BatchTask = { ...init, createdAt: Date.now(), state: "queued" };
   store().set(task.taskId, task);
   channels().set(task.taskId, { listeners: new Set(), buffer: [], nextSeq: 1, truncated: false });
+  persistTask(task);
   publishTaskEvent(task.taskId, {
     type: "task_created",
     taskId: task.taskId,
@@ -247,6 +311,7 @@ export function updateTask(taskId: string, patch: Partial<BatchTask>): BatchTask
       });
     }
   }
+  persistTask(task);
   return task;
 }
 

@@ -15,18 +15,38 @@
  * first-class state; after timeout we provide a deterministic answer rather
  * than cancelling the task or guessing permissions.
  */
-import { existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { randomUUID } from "node:crypto";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import { getRpcSession, startRpcSession, type AgentSessionWrapper } from "../rpc-manager.ts";
+import { startRpcSession, type AgentSessionWrapper } from "../rpc-manager.ts";
 import { trustProject } from "../project-trust.ts";
 import { toClientAgentEvent } from "../agent-event-wire.ts";
+import { writeSandboxConfig } from "../projects.ts";
+import { dataDir } from "../mode-homes.ts";
+import { resolveCoreExtensionPaths } from "../session-restore-options.ts";
+import { makeRemoteVerifyExtension } from "../extensions/remote-verify.ts";
+import { makeEnvironmentInfoExtension } from "../extensions/environment-info.ts";
+import { makeBgTasksExtension } from "../extensions/bg-tasks.ts";
+import { registerBgChannel } from "../extensions/bg-shell.ts";
+import { makeSandboxBgChannel } from "../extensions/bg-channels.ts";
 import { getTask, publishTaskEvent, updateTask, type BatchTask, type BatchStopReason } from "./task-store.ts";
 
 // ---------------------------------------------------------------------------
 // Directory preparation
 // ---------------------------------------------------------------------------
+
+/**
+ * Per-task stub home for sandbox-mode batch tasks (mirrors the per-user
+ * sandbox homes): its .pi/sandbox-platform.json carries the platform url,
+ * API key and the task's containerId for the sandbox bridge extension.
+ * Per-task (not per-user) so concurrent batch tasks never fight over one
+ * config file.
+ */
+export function ensureBatchHome(taskId: string): string {
+  const home = join(dataDir(), "batch-homes", taskId);
+  if (!existsSync(home)) mkdirSync(home, { recursive: true });
+  return home;
+}
 
 /**
  * Resolve the actual working directory: if the requested path already exists,
@@ -71,7 +91,6 @@ export function copyPathPackage(workDir: string, sourcePath: string): void {
   const stat = statSync(src);
   if (stat.isFile()) {
     // Single file: copy to workDir root
-    const { copyFileSync } = require("node:fs") as typeof import("node:fs");
     copyFileSync(src, join(workDir, src.split("/").pop() ?? "package-file"));
     return;
   }
@@ -88,7 +107,6 @@ function copyDirRecursive(src: string, dst: string): void {
     if (entry.isDirectory()) {
       copyDirRecursive(srcPath, dstPath);
     } else if (entry.isFile()) {
-      const { copyFileSync } = require("node:fs") as typeof import("node:fs");
       copyFileSync(srcPath, dstPath);
     }
   }
@@ -182,6 +200,7 @@ function attachAutoResponder(
 export interface RunTaskOptions {
   taskId: string;
   prompt: string;
+  /** Host mode: server directory to prepare. Sandbox mode: unused (home is derived). */
   workDir: string;
   files?: Record<string, string>;
   filePackagePath?: string;
@@ -189,10 +208,21 @@ export interface RunTaskOptions {
   model?: { provider: string; modelId: string };
   timeoutMs: number;
   inputTimeoutMs: number;
+  /** Ignored in sandbox mode — the caller owns the container lifecycle. */
   stopContainer: boolean;
   ownerId: number;
+  /** Sandbox mode: platform container the seven coding tools route into. */
   containerId?: number;
   projectId?: number;
+  /** Sandbox mode: platform API key used by the bridge extension. */
+  platformApiKey?: string;
+  /** environment-info username (product parity in the system prompt). */
+  username?: string;
+  /** Active tool allowlist (eval fidelity: disable host-side web tools etc.). */
+  toolNames?: string[];
+  /** Resume after a pi-web restart: reopen the persisted session file and skip
+   * dir preparation / file materialization (state already on disk). */
+  resume?: boolean;
 }
 
 export async function runBatchTask(options: RunTaskOptions): Promise<void> {
@@ -201,29 +231,96 @@ export async function runBatchTask(options: RunTaskOptions): Promise<void> {
   let responder: UiResponder | undefined;
   let unsubscribeAgentEvents: (() => void) | undefined;
   let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
+  let timedOut = false;
 
   try {
     updateTask(taskId, { state: "running", startedAt: Date.now() });
 
-    // 1. Prepare working directory
-    const actualWorkDir = prepareWorkDir(options.workDir);
-    updateTask(taskId, { actualWorkDir });
+    // 1. Resolve the session cwd and per-mode wiring.
+    //    - host: prepare a fresh workDir (suffix-if-exists) + materialize files
+    //    - sandbox: per-task stub home whose .pi/sandbox-platform.json binds
+    //      the bridge extension to the caller's container; the repo lives in
+    //      the container image, files/filePackagePath are rejected at the route
+    let sessionCwd: string;
+    if (options.mode === "sandbox") {
+      const extPath = process.env.PI_WEB_SANDBOX_EXTENSION_PATH;
+      if (!process.env.PI_WEB_PLATFORM_URL) throw new Error("沙盒模式未配置（缺少 PI_WEB_PLATFORM_URL）");
+      if (!extPath || !existsSync(extPath)) throw new Error("沙盒模式未配置（PI_WEB_SANDBOX_EXTENSION_PATH 无效）");
+      if (options.containerId === undefined) throw new Error("sandbox mode requires containerId");
+      if (!options.platformApiKey) throw new Error("sandbox mode requires platformApiKey");
+      sessionCwd = ensureBatchHome(taskId);
+      writeSandboxConfig(sessionCwd, { apiKey: options.platformApiKey, containerId: options.containerId });
+      updateTask(taskId, { homeDir: sessionCwd });
+    } else if (options.resume) {
+      // Resume (host): reuse the previously prepared directory as-is.
+      const task = getTask(taskId);
+      sessionCwd = task?.actualWorkDir || prepareWorkDir(options.workDir);
+    } else {
+      sessionCwd = prepareWorkDir(options.workDir);
+    }
+    updateTask(taskId, { actualWorkDir: sessionCwd });
 
-    // 2. Materialize files
-    if (options.files) materializeFiles(actualWorkDir, options.files);
-    if (options.filePackagePath) copyPathPackage(actualWorkDir, options.filePackagePath);
+    // 2. Materialize files (host mode, fresh runs only)
+    if (!options.resume && options.mode !== "sandbox") {
+      if (options.files) materializeFiles(sessionCwd, options.files);
+      if (options.filePackagePath) copyPathPackage(sessionCwd, options.filePackagePath);
+    }
 
-    // 3. Start agent session
+    // 3. Start agent session (resume: reopen the persisted session file)
     const sessionId = `batch-${taskId.slice(0, 8)}-${Date.now().toString(36)}`;
-    const { session } = await startRpcSession(sessionId, "", actualWorkDir, {
+    const resumeFile = options.resume ? getTask(taskId)?.sessionFile : undefined;
+    const coreOptions = {
       ownerId: options.ownerId,
       mode: options.mode,
       ...(options.model ? { initialModel: options.model } : {}),
-      ...(options.containerId !== undefined ? { containerId: options.containerId } : {}),
-    });
+      ...(options.toolNames ? { toolNames: options.toolNames } : {}),
+    };
+    const { session } = await startRpcSession(
+      sessionId,
+      resumeFile ?? "",
+      resumeFile ? undefined : sessionCwd,
+      options.mode === "sandbox"
+        ? {
+            ...coreOptions,
+            additionalExtensionPaths: resolveCoreExtensionPaths([process.env.PI_WEB_SANDBOX_EXTENSION_PATH!]),
+            extensionFactories: [
+              makeBgTasksExtension(),
+              makeRemoteVerifyExtension("sandbox", options.ownerId),
+              makeEnvironmentInfoExtension({
+                mode: "sandbox",
+                username: options.username ?? "batch",
+                containerId: options.containerId,
+              }),
+            ],
+          }
+        : {
+            ...coreOptions,
+            extensionFactories: [
+              makeBgTasksExtension(),
+              makeEnvironmentInfoExtension({ mode: "host", username: options.username ?? "batch" }),
+            ],
+          },
+    );
     wrapper = session;
     const realSessionId = wrapper.sessionId;
-    updateTask(taskId, { sessionId: realSessionId });
+    // Record the session file immediately (not just at completion) so an
+    // interruption at any point leaves a resumable record on disk.
+    updateTask(taskId, { sessionId: realSessionId, ...(wrapper.sessionFile ? { sessionFile: wrapper.sessionFile } : {}) });
+
+    // Pin the model through the product set_model path. Startup selection
+    // drops providers the runtime does not count as "configured" (custom
+    // models.json providers with inline keys fail hasConfiguredAuth), leaving
+    // a model-less session whose prompt resolves instantly with zero output —
+    // found live on the VM with Modelscope-Free.
+    if (options.model) {
+      await wrapper.send({ type: "set_model", provider: options.model.provider, modelId: options.model.modelId });
+    }
+
+    if (options.mode === "sandbox") {
+      // bg-shell channel: sandbox tasks run INSIDE the container via the
+      // platform tools/bash API — never a server-side local spawn.
+      registerBgChannel(realSessionId, makeSandboxBgChannel(options.platformApiKey!, options.containerId!));
+    }
 
     // 4. Attach auto-responder for interactive tools
     responder = attachAutoResponder(wrapper, options.inputTimeoutMs, taskId);
@@ -241,14 +338,21 @@ export async function runBatchTask(options: RunTaskOptions): Promise<void> {
       }
     });
 
-    // 5. Set up overall timeout
-    const abortController = new AbortController();
+    // 5. Overall timeout: abort the in-flight prompt through the session
+    // (same mechanism as the cancel route). A bare AbortController here was
+    // never wired to anything — long tasks would hang past their deadline.
     timeoutTimer = setTimeout(() => {
-      abortController.abort();
+      timedOut = true;
+      void wrapper!.send({ type: "abort" }).catch(() => {
+        // Session may already be gone — the send below settles either way
+      });
     }, options.timeoutMs);
 
-    // 6. Send the prompt (this blocks until the agent settles)
-    await wrapper.send({ type: "prompt", content: options.prompt });
+    // 6. Send the prompt (this blocks until the agent settles). Field is
+    // `message` — the same wire shape the WebUI sends; a `content` field is
+    // silently undefined here and dies inside the SDK's message parsing
+    // (found live: undefined.startsWith in inner.prompt).
+    await wrapper.send({ type: "prompt", message: options.prompt });
 
     // 7. Collect results — use the wrapper's inner session for stats/messages
     clearTimeout(timeoutTimer);
@@ -266,12 +370,16 @@ export async function runBatchTask(options: RunTaskOptions): Promise<void> {
     const stopReason = ((lastAssistant as { stopReason?: string } | undefined)?.stopReason) ?? "end_turn";
 
     const toolCallLog = collectToolCalls(messages);
-    const artifacts = scanArtifacts(actualWorkDir);
+    const artifacts = options.mode === "sandbox"
+      // Sandbox artifacts live inside the container; the caller collects them
+      // (e.g. deep-swe verifier.collect via the platform tools API).
+      ? []
+      : scanArtifacts(sessionCwd);
     const sessionFile = wrapper.sessionFile;
 
     updateTask(taskId, {
-      state: "completed",
-      stopReason: normalizeStopReason(stopReason),
+      state: timedOut ? "cancelled" : "completed",
+      stopReason: timedOut ? "timeout" : normalizeStopReason(stopReason),
       endedAt: Date.now(),
       finalResponse: finalText,
       summary: finalText.slice(0, 200),
@@ -288,24 +396,17 @@ export async function runBatchTask(options: RunTaskOptions): Promise<void> {
   } catch (e) {
     if (responder) responder.stop();
     if (timeoutTimer) clearTimeout(timeoutTimer);
-    const isAbort = e instanceof Error && e.name === "AbortError";
+    console.error(`[batch] task ${taskId} failed:`, e);
     updateTask(taskId, {
-      state: isAbort ? "cancelled" : "failed",
-      stopReason: isAbort ? "timeout" : "error",
+      state: timedOut ? "cancelled" : "failed",
+      stopReason: timedOut ? "timeout" : "error",
       endedAt: Date.now(),
       error: e instanceof Error ? e.message : String(e),
     });
   } finally {
     unsubscribeAgentEvents?.();
-    // 8. Cleanup: stop sandbox container if requested
-    if (options.stopContainer && options.containerId !== undefined) {
-      try {
-        const platformModule = await import("@/lib/platform/client");
-        await platformModule.platformPost(`/api/v1/containers/${options.containerId}/stop`, "", undefined);
-      } catch {
-        // Best-effort: container may already be stopped
-      }
-    }
+    // Sandbox containers belong to the caller (the eval runner provisions and
+    // disposes them) — no platform stop is issued here.
     // Dispose the session wrapper's inner session
     try {
       (wrapper as unknown as { inner: { dispose(): void } }).inner?.dispose();

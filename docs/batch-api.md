@@ -1,6 +1,6 @@
 # pi-web 批量测试 API
 
-> 版本 1.2 · 2026-09-24 · 认证方式：X-Platform-API-Key
+> 版本 1.3 · 2026-09-29 · 认证方式：X-Platform-API-Key
 
 ## 概述
 
@@ -19,6 +19,12 @@ X-Platform-API-Key: sk-xxxxxxxxxxxxxxxx
 ```
 
 管理员在 pi-web 管理面板 → 用户 → 选择目标用户 → 创建 API Key（或用平台的 `/api/v1/auth/api-keys` 接口铸造）。
+
+> 1.3 修复说明：此前 `PI_WEB_AUTH=on` 部署下，中央会话门（proxy.ts）会在批量路由
+> 之前把所有无 cookie 的请求 401 掉，平台 Key 方式**实际不可用**；且批量鉴权按平铺
+> 结构解析 `/auth/me`，而平台返回 `{user:{...}}` 包裹结构。两个叠加 bug 均已修复
+> （proxy 对 `/api/batch/*` 做 sk_ 格式预检放行，路由内仍是完整校验权威；
+> batch-auth 兼容两种响应结构）。
 
 ### 方式二：Web 会话 Cookie（适合浏览器调试）
 
@@ -47,41 +53,54 @@ X-Platform-API-Key: sk-...
   // 必填：执行模式
   "mode": "host",              // "host" | "sandbox"（ssh/local-machine 暂不支持）
 
-  // 必填：工作目录（服务器上的绝对路径或相对 pi-web 的路径）
+  // 必填（host 模式）：工作目录（服务器上的绝对路径或相对 pi-web 的路径）
   // 不存在则自动创建 + 自动信任
   // 已存在则自动加后缀（-2, -3, ...）确保干净环境
+  // sandbox 模式忽略此字段——工作区在容器镜像内（见下）
   "workDir": "/data/tests/my-project",
+
+  // 必填（sandbox 模式）：预创建的平台容器 ID
+  // 七个编码工具经沙盒桥扩展路由到该容器内执行（与产品沙盒会话同一条
+  // 代码路径）。容器生命周期归调用方（评测 runner）——pi-web 不创建、
+  // 也不停止它。要求部署已配置 PI_WEB_PLATFORM_URL +
+  // PI_WEB_SANDBOX_EXTENSION_PATH，否则 400。
+  "containerId": 42,
 
   // 必填：初始提示词（一次性请求，无交互）
   "prompt": "Read the test files in tests/ and fix any bugs you find. Run the test suite to verify.",
 
-  // 可选：内联小文件（{相对路径: 内容}），写入 workDir
+  // 可选（仅 host 模式）：内联小文件（{相对路径: 内容}），写入 workDir
+  // sandbox 模式下拒绝（400）——仓库烤在镜像里，容器内容由调用方负责
   "files": {
     "README.md": "# Test Project",
     "src/main.ts": "export function main() { return 42; }"
   },
 
-  // 可选：文件包来源（二选一）
+  // 可选（仅 host 模式）：文件包来源（二选一）
   // "path" = 服务器上已有目录/文件的路径（如公共 fixture 目录）
   "filePackagePath": "/shared/fixtures/test-project-v1",
 
   // 可选：指定模型（不指定则用会话默认）
   "model": { "provider": "zai", "modelId": "glm-4.7" },
 
-  // 可选：总超时毫秒数（默认 600000 = 10分钟，范围 30s ~ 1h）
+  // 可选：总超时毫秒数（默认 600000 = 10分钟，范围 30s ~ 21天）
+  // 长任务（如 deep-swe 评测 3h、多天运行）直接传大值；超时到点会向
+  // 会话发送 abort 强制收尾（1.3 起真正生效，此前超时不生效）
   "timeoutMs": 600000,
 
   // 可选：交互等待超时毫秒数（默认 300000 = 5分钟）
   // 超时后自动应答：ask_user_question → 选推荐选项；exit_plan_mode → 自动批准
   "inputTimeoutMs": 300000,
 
-  // 可选：测试结束后是否停止沙盒容器（默认 true；仅 sandbox 模式）
+  // 可选：工具白名单（字符串数组；不指定则会话默认）
+  // 评测保真场景用它关掉宿主侧有网工具（deep-swe 假设 agent 断网）：
+  // "toolNames": ["bash","read","write","edit","glob","grep"]
+  "toolNames": ["bash", "read", "write", "edit", "glob", "grep"],
+
+  // 已废弃：stopContainer（1.3 起 sandbox 容器生命周期归调用方，忽略）
   "stopContainer": true,
 
-  // 可选：使用已有容器 ID（不指定则 sandbox 模式自动创建新容器）
-  "containerId": 42,
-
-  // 可选：关联的项目 ID（sandbox 模式下用于容器绑定）
+  // 可选：关联的项目 ID（记录用途）
   "projectId": 7,
 
   // 可选：流式返回模式（默认 false）
@@ -143,9 +162,36 @@ X-Platform-API-Key: sk-...
 | `queued` | 任务已创建，尚未开始执行 |
 | `running` | Agent 正在执行 |
 | `waiting_input` | Agent 在等待用户交互（ask_user_question / exit_plan_mode 确认），超时后自动应答 |
+| `interrupted` | pi-web 重启导致中断（1.3 起）。任务记录与会话文件已落盘，可 `POST /tasks/{id}/resume` 续跑 |
 | `completed` | 正常完成 |
 | `failed` | 执行出错 |
 | `cancelled` | 被取消（手动取消或超时） |
+
+**持久化（1.3 起）**：任务记录写入 `<数据目录>/batch-tasks/<taskId>.json`，pi-web 重启后仍可查询；
+运行中的任务重启后标记为 `interrupted`（绝不假装还在跑），可通过 resume 端点恢复。
+
+---
+
+### 恢复中断的任务（1.3 起）
+
+```
+POST /api/batch/tasks/{taskId}/resume
+X-Platform-API-Key: sk-...
+Content-Type: application/json
+```
+
+**请求体（可选）：**
+
+```jsonc
+{
+  // 可选：续跑提示词。缺省使用内置的"服务器重启，继续之前的任务"提示
+  "prompt": "Continue where you left off and finish the task."
+}
+```
+
+语义：仅 `interrupted` 状态可恢复（否则 409）。重开会话文件继续同一转录，
+在原 workDir / 沙盒 home 中执行；模型、工具白名单沿用原任务记录；超时预算
+按本次续跑重新计时。响应 `202 { taskId, state: "running", resumed: true }`。
 
 ---
 
@@ -366,11 +412,11 @@ X-Platform-API-Key: sk-...
 
 | HTTP 状态 | 含义 |
 |---|---|
-| 400 | 请求体格式错误 / 缺少必填字段 |
+| 400 | 请求体格式错误 / 缺少必填字段 / sandbox 模式未配置或缺 `containerId` / sandbox 模式携带 `files` |
 | 401 | API Key 无效或未提供 |
 | 403 | 非管理员身份 |
 | 404 | 任务不存在 / 产物路径不在清单 |
-| 409 | 任务仍在运行（获取结果或产物时） |
+| 409 | 任务仍在运行（获取结果或产物时）；resume 非 `interrupted` 任务 |
 | 410 | 产物文件已被清理（清单还在、文件没了） |
 | 413 | 请求体过大 / 产物超过 2MB 上限 |
 | 415 | Content-Type 不是 application/json |

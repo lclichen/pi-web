@@ -105,7 +105,11 @@ export async function POST(req: Request) {
       ? body.model as { provider: string; modelId: string }
       : undefined,
     timeoutMs: num(body.timeoutMs, 600_000, 30_000, MAX_TIMEOUT_MS),
-    inputTimeoutMs: num(body.inputTimeoutMs, 300_000, 5_000, MAX_TIMEOUT_MS),
+    // Auto-answer must fire WELL BEFORE the dialog's own timeout (exit_plan_mode
+    // dialogs expire at 300s resolving as "not approved" — an equal default here
+    // always loses that race and traps the agent in a planning loop, hit live
+    // 9x on deep-swe smoke).
+    inputTimeoutMs: num(body.inputTimeoutMs, 60_000, 5_000, MAX_TIMEOUT_MS),
     // Sandbox containers are provisioned/disposed by the caller (eval runner);
     // stopContainer only ever applied to host-managed state and is ignored.
     stopContainer: mode === "sandbox" ? false : body.stopContainer !== false,

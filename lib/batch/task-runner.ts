@@ -29,7 +29,61 @@ import { makeEnvironmentInfoExtension } from "../extensions/environment-info.ts"
 import { makeBgTasksExtension } from "../extensions/bg-tasks.ts";
 import { registerBgChannel } from "../extensions/bg-shell.ts";
 import { makeSandboxBgChannel } from "../extensions/bg-channels.ts";
-import { getTask, publishTaskEvent, updateTask, type BatchTask, type BatchStopReason } from "./task-store.ts";
+import { countActiveTasks, getTask, publishTaskEvent, updateTask, type BatchTask, type BatchStopReason } from "./task-store.ts";
+
+// ---------------------------------------------------------------------------
+// Concurrency gate — PI_WEB_BATCH_MAX_CONCURRENT (0/unset = unlimited)
+// ---------------------------------------------------------------------------
+
+declare global {
+  var __piWebBatchQueue: import("./task-runner.ts").RunTaskOptions[] | undefined;
+}
+
+function batchQueue(): RunTaskOptions[] {
+  globalThis.__piWebBatchQueue ??= [];
+  return globalThis.__piWebBatchQueue;
+}
+
+function maxConcurrent(): number {
+  const n = Number(process.env.PI_WEB_BATCH_MAX_CONCURRENT ?? 0);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+}
+
+/**
+ * Admission for a new task. Without a limit (default) it launches directly;
+ * with PI_WEB_BATCH_MAX_CONCURRENT set, excess tasks WAIT in state `queued`
+ * (FIFO) until a slot frees — a flood of submissions must not spin up an
+ * unbounded number of concurrent pi sessions on a single event loop.
+ */
+export function scheduleBatchTask(options: RunTaskOptions): void {
+  if (maxConcurrent() <= 0) {
+    void runBatchTask(options);
+    return;
+  }
+  batchQueue().push(options);
+  drainBatchQueue();
+}
+
+/** Launch queued tasks while execution slots are free. */
+export function drainBatchQueue(): void {
+  const limit = maxConcurrent();
+  if (limit <= 0) return;
+  while (batchQueue().length > 0 && countActiveTasks() < limit) {
+    const next = batchQueue().shift();
+    if (!next) break;
+    // Occupy the slot synchronously — runBatchTask is async and its first
+    // state write is a tick away, so a concurrent drain would over-launch.
+    updateTask(next.taskId, { state: "running", startedAt: Date.now() });
+    void runBatchTask(next);
+  }
+}
+
+/** Drop a queued task (cancel before it ever started). */
+export function removeQueuedTask(taskId: string): void {
+  const q = batchQueue();
+  const idx = q.findIndex((o) => o.taskId === taskId);
+  if (idx >= 0) q.splice(idx, 1);
+}
 
 // ---------------------------------------------------------------------------
 // Directory preparation
@@ -436,6 +490,8 @@ export async function runBatchTask(options: RunTaskOptions): Promise<void> {
     } catch {
       // best-effort
     }
+    // Free slot filled by the next queued task (if the gate is enabled).
+    drainBatchQueue();
   }
 }
 

@@ -321,6 +321,15 @@ export function listTasks(limit = 50): BatchTask[] {
     .slice(0, limit);
 }
 
+/** Occupied execution slots — running or waiting on an interactive dialog. */
+export function countActiveTasks(): number {
+  let n = 0;
+  for (const t of store().values()) {
+    if (t.state === "running" || t.state === "waiting_input") n++;
+  }
+  return n;
+}
+
 export function toSummary(task: BatchTask): BatchTaskSummary {
   return {
     taskId: task.taskId,

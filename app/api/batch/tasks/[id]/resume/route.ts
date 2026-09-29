@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requireBatchIdentity } from "@/lib/batch/batch-auth";
 import { isApiRequestAllowed } from "@/lib/request-security";
 import { getTask, updateTask } from "@/lib/batch/task-store";
-import { runBatchTask } from "@/lib/batch/task-runner";
+import { scheduleBatchTask } from "@/lib/batch/task-runner";
 
 export const dynamic = "force-dynamic";
 
@@ -59,7 +59,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     prompt: continuation,
   });
 
-  void runBatchTask({
+  scheduleBatchTask({
     taskId: id,
     prompt: continuation,
     workDir: task.requestedWorkDir || task.actualWorkDir,
@@ -74,8 +74,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     username: auth.identity.user.username,
     toolNames: task.toolNames,
     resume: true,
-  }).catch((e) => {
-    console.error(`[batch] resumed task ${id} crashed:`, e);
   });
 
   return NextResponse.json({ taskId: id, state: "running", resumed: true }, { status: 202 });

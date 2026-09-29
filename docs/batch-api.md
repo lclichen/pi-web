@@ -397,7 +397,7 @@ X-Platform-API-Key: sk-...
 
 ## 交互任务自动应答机制
 
-当 Agent 调用需要用户交互的工具时（`ask_user_question`、`exit_plan_mode`），任务进入 `waiting_input` 状态。在 `inputTimeoutMs`（默认 1 分钟）内无人应答（须显著小于对话框自身超时——exit_plan_mode 为 300s，超时按“未批准”处理，等长默认曾致 agent 陷入规划循环）：
+当 Agent 调用需要用户交互的工具时（`ask_user_question`、`exit_plan_mode`），任务进入 `waiting_input` 状态。在 `inputTimeoutMs`（默认 1 分钟）内无人应答即自动应答：
 
 | 工具 | 自动应答行为 |
 |---|---|
@@ -407,6 +407,14 @@ X-Platform-API-Key: sk-...
 | 其他 `input` 对话框 | 返回空字符串（模型自行判断） |
 
 **注意**：自动应答不会取消任务——任务继续以自动应答的结果推进。这确保长时间测试不被阻塞。
+（交互式会话侧，exit_plan_mode 确认框自 2026-09-29 起**无限等待用户**、不再 300s 自动过期——超时≠拒绝，对齐 ZCode/codex 的权限 ask 语义；批量场景由上表的 `inputTimeoutMs` 应答兜底。）
+
+## 并发上限（1.4 起）
+
+环境变量 `PI_WEB_BATCH_MAX_CONCURRENT`（默认未设=不限）。设置后超出上限的任务保持
+`queued` 状态 FIFO 排队，运行中任务终态（含取消/超时）后自动补位；取消排队中的任务
+会直接出队（`POST /tasks/{id}/cancel`）。每次任务真正开跑时才占用并发额度与超时预算。
+建议：单事件循环部署按 LLM 配额与内存设置（VM 级 4-8，专用服务器按量）。
 
 ## 错误码
 

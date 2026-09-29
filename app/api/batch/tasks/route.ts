@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { requireBatchIdentity } from "@/lib/batch/batch-auth";
 import { isApiRequestAllowed, hasJsonContentType } from "@/lib/request-security";
 import { createTaskRecord, listTasks, toSummary } from "@/lib/batch/task-store";
-import { runBatchTask } from "@/lib/batch/task-runner";
+import { scheduleBatchTask } from "@/lib/batch/task-runner";
 import { batchSseHeaders, createBatchTaskEventStream } from "@/lib/batch/task-event-stream";
 
 export const dynamic = "force-dynamic";
@@ -120,7 +120,7 @@ export async function POST(req: Request) {
 
   // Fire-and-forget: the task runs in the background; the caller polls or
   // (with stream: true) receives events over the SSE response below.
-  void runBatchTask({
+  scheduleBatchTask({
     taskId,
     prompt: body.prompt,
     workDir,
@@ -137,9 +137,6 @@ export async function POST(req: Request) {
     platformApiKey: mode === "sandbox" ? auth.identity.apiKey : undefined,
     username: auth.identity.user.username,
     toolNames: task.toolNames,
-  }).catch((e) => {
-    // runBatchTask handles its own errors; this is a safety net
-    console.error(`[batch] task ${taskId} crashed:`, e);
   });
 
   // Streaming mode: same task lifecycle, SSE view instead of 202 + polling.

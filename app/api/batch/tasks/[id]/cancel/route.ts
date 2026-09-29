@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireBatchIdentity } from "@/lib/batch/batch-auth";
 import { isApiRequestAllowed } from "@/lib/request-security";
 import { getTask, isTerminal, updateTask } from "@/lib/batch/task-store";
+import { removeQueuedTask } from "@/lib/batch/task-runner";
 import { getRpcSession } from "@/lib/rpc-manager";
 
 export const dynamic = "force-dynamic";
@@ -34,6 +35,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   } catch {
     // Session may already be gone
   }
+
+  // A queued task (concurrency gate) never started — drop it from the FIFO
+  // so it does not launch after being cancelled.
+  removeQueuedTask(id);
 
   updateTask(id, {
     state: "cancelled",

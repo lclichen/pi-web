@@ -56,7 +56,7 @@ export function useSessionPlan({
     let cancelled = false;
     let es: EventSource | null = null;
     let refreshTimer: ReturnType<typeof setInterval> | null = null;
-    let reprobeTimer: ReturnType<typeof setInterval> | null = null;
+    let reprobeTimer: ReturnType<typeof setTimeout> | null = null;
 
     const root = cwd.replace(/[\\/]+$/, "");
     type Candidate = { path: string; via: "files" | "remotefs"; watch: "sse" | "poll" | "none" };
@@ -104,14 +104,26 @@ export function useSessionPlan({
 
     const startReprobe = () => {
       if (reprobeTimer || cancelled) return;
-      reprobeTimer = setInterval(async () => {
-        if (cancelled) return;
-        const ok = await probe();
-        if (!cancelled && ok) {
-          if (reprobeTimer) clearInterval(reprobeTimer);
-          reprobeTimer = null;
-        }
-      }, 8_000);
+      // Exponential backoff: 8s → 16s → 32s → 60s cap. A fixed 8s loop meant
+      // three 404s every 8 seconds forever in workspaces without plans —
+      // plans only appear from agent tool calls, so an idle session rarely
+      // needs re-checking. (Fully event-driven probing needs the plan_save
+      // tool event lifted from ChatWindow's stream to AppShell — follow-up.)
+      let delay = 8_000;
+      const schedule = () => {
+        reprobeTimer = setTimeout(async () => {
+          if (cancelled) return;
+          const ok = await probe();
+          if (cancelled || ok) {
+            if (reprobeTimer) clearTimeout(reprobeTimer);
+            reprobeTimer = null;
+            return;
+          }
+          delay = Math.min(delay * 2, 60_000);
+          schedule();
+        }, delay);
+      };
+      schedule();
     };
 
     // Probe all candidates in order; first non-empty hit wins.
@@ -167,7 +179,7 @@ export function useSessionPlan({
     return () => {
       cancelled = true;
       detachRefresh();
-      if (reprobeTimer) clearInterval(reprobeTimer);
+      if (reprobeTimer) clearTimeout(reprobeTimer);
     };
   }, [sessionId, cwd, remote?.sessionId, remote?.label]);
 

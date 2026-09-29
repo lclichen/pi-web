@@ -521,7 +521,11 @@ export function ProjectSessionTree({
       {sessionSpace !== "quick" && hostGroups.map(([root, list]) => {
         const key = `host:${root}`;
         const isCollapsed = collapsed.has(key);
-        const visible = isCollapsed ? [] : list.slice(0, RECENT_COUNT);
+        // Mirrors the project branch: "show all" must widen `visible` — this
+        // always sliced to RECENT_COUNT, so the button wrote showAll state
+        // that nothing read and the click appeared dead.
+        const expandedAll = showAll.has(key);
+        const visible = isCollapsed ? [] : expandedAll ? list : list.slice(0, RECENT_COUNT);
         return (
           <div key={key} style={{ marginBottom: 2 }}>
             <div
@@ -554,7 +558,7 @@ export function ProjectSessionTree({
               >⋮</button>
             </div>
             {visible.map((s) => renderItem(s, null))}
-            {!isCollapsed && list.length > RECENT_COUNT && (
+            {!isCollapsed && !expandedAll && list.length > RECENT_COUNT && (
               <button type="button" onClick={() => setShowAll((prev) => new Set(prev).add(key))} style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--accent)", fontSize: 11, padding: "2px 6px 2px 26px" }}>
                 {t("sessions.showAllSessions", { n: list.length })}
               </button>

@@ -107,6 +107,16 @@ export function AppShell() {
     if (Notification.permission !== "granted") return;
     void setupPushSubscription(locale);
   }, [locale]);
+  // exit_plan_mode 工具卡片的"查看计划"按钮经 window 事件开右侧计划面板
+  // （MessageView 深处不穿回调，同 THINKING_EXPANDED_EVENT 模式）。
+  useEffect(() => {
+    const open = () => {
+      setRightPanelMode("plan");
+      setRightPanelOpen(true);
+    };
+    window.addEventListener("amedac:open-plan-panel", open as EventListener);
+    return () => window.removeEventListener("amedac:open-plan-panel", open as EventListener);
+  }, []);
   // Session keep-alive: hourly no-op ping. The server slides the login
   // session's idle window on every request and re-issues the session cookie
   // (throttled to ≥1h) on this endpoint — covering users whose page stays
@@ -3145,7 +3155,7 @@ export function AppShell() {
             </div>
           ) : null}
           {rightPanelMode === "plan" ? (
-            <PlanPanel plan={sessionPlan} />
+            <PlanPanel plan={sessionPlan} sessionId={selectedSession?.id ?? null} />
           ) : rightPanelMode === "agents" && !selectedSession?.id ? (
             <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-dim)", fontSize: 12 }}>
               {translate("app.selectCreateSessionViewSubagent")}

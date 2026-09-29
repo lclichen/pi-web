@@ -11,6 +11,8 @@ import { makeRemoteVerifyExtension } from "./extensions/remote-verify";
 import { makeEnvironmentInfoExtension } from "./extensions/environment-info";
 import { makeSshToolsExtension } from "./extensions/ssh-tools";
 import { makeBgTasksExtension } from "./extensions/bg-tasks";
+import { registerBgChannel } from "./extensions/bg-shell";
+import { makeRelayBgChannel, makeSandboxBgChannel, makeSshBgChannel } from "./extensions/bg-channels";
 import { readSshConfig } from "./ssh";
 import { requireUserIdentity } from "./web-session";
 import { getAgentForUser } from "./relay/registry";
@@ -68,6 +70,22 @@ export async function restoreSessionOptions(req: Request, sessionId: string): Pr
           ...(project ? { projectName: project.name } : {}),
         }),
       ];
+      // bg-shell channel: sandbox tasks run INSIDE the container via the
+      // platform tools/bash API. Pre-project sessions have no container yet —
+      // a rejecting stub keeps bg_run from falling back to a server-side
+      // local spawn (wrong host, potential sandbox escape).
+      registerBgChannel(
+        sessionId,
+        project && project.containerId !== undefined
+          ? makeSandboxBgChannel(apiKey, project.containerId)
+          : {
+              label: "sandbox",
+              kind: "remote" as const,
+              run: async () => {
+                throw new Error("容器尚未创建——先发送首条消息启动沙箱会话，再使用后台任务");
+              },
+            },
+      );
     }
   } else if (mode === "local-machine") {
     if (getAgentForUser(meta?.ownerId ?? user.id)?.info) {
@@ -85,6 +103,9 @@ export async function restoreSessionOptions(req: Request, sessionId: string): Pr
           ...(project ? { projectName: project.name } : {}),
         }),
       ];
+      // bg-shell channel: tasks run on the user's paired machine via relay
+      // exec.run (nohup pattern); machine follows the project binding.
+      registerBgChannel(sessionId, makeRelayBgChannel(meta?.ownerId ?? user.id, project?.machineId ?? undefined));
     }
   } else if (mode === "ssh") {
     // SSH mode: the SDK session runs server-side in the project home; the
@@ -102,6 +123,9 @@ export async function restoreSessionOptions(req: Request, sessionId: string): Pr
             ...(project ? { projectName: project.name } : {}),
           }),
         ];
+        // bg-shell channel: tasks run on the remote host via the pooled
+        // client (nohup pattern), same connection the ssh-tools use.
+        registerBgChannel(sessionId, makeSshBgChannel(project.id, sshConfig, project.workdir ?? "/"));
       }
     }
   } else if (mode === "quick") {

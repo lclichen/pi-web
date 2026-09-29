@@ -15,6 +15,16 @@ import {
 /** Session todo items as published by the todo extension ("todo-list" widget). */
 export type CapsuleTodo = TodoItem;
 
+/** Background-shell task as published by the bg-shell extension ("bg-tasks"). */
+export interface CapsuleBgTask {
+  taskId: string;
+  name: string;
+  status: "running" | "completed" | "failed" | "cancelled" | "lost";
+  startedAt: number;
+  pid: string;
+  outputFile: string;
+}
+
 interface Props {
   subagentCalls: SubagentCall[];
   onOpenAgents: () => void;
@@ -29,6 +39,8 @@ interface Props {
   agentRunning?: boolean;
   /** A shell command is executing (activity chain input). */
   bashRunning?: boolean;
+  /** Background-shell tasks (bg-shell extension) — 任务 section + chain. */
+  bgTasks?: CapsuleBgTask[];
   /** Plan tab is active — highlight the plan row. */
   planActive?: boolean;
   /** Session plan (per-session file first, legacy workspace plans as
@@ -61,6 +73,7 @@ interface Props {
 export function ChatStatusWidget({
   subagentCalls, onOpenAgents, onOpenPlan, sessionId,
   cwd = null, refreshSignal = 0, agentRunning = false, bashRunning = false,
+  bgTasks = [],
   planActive,
   plan = null, todos = [], goal = null,
   planMode = null,
@@ -73,6 +86,9 @@ export function ChatStatusWidget({
   const [now, setNow] = useState(() => Date.now());
   const [stoppingIds, setStoppingIds] = useState<Set<string>>(new Set());
   const [stopError, setStopError] = useState<string | null>(null);
+  const [bgOpen, setBgOpen] = useState(true);
+  const [bgStoppingId, setBgStoppingId] = useState<string | null>(null);
+  const [bgStopError, setBgStopError] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const measureRef = useRef<HTMLDivElement | null>(null);
   const [miniWidth, setMiniWidth] = useState<number | null>(null);
@@ -172,6 +188,7 @@ export function ChatStatusWidget({
   const planStep = plan ? planCurrentStep(plan.content) : null;
 
   // ---- the model truth (①②): one derivation, everything renders from it --
+  const bgRunningCount = bgTasks.filter((x) => x.status === "running").length;
   const summary = useMemo(
     () => buildCollapsedSummary({
       todos,
@@ -181,9 +198,10 @@ export function ChatStatusWidget({
       endedSubagents: endedCalls.length,
       bashRunning,
       agentRunning,
+      bgRunning: bgRunningCount,
       hasPlan: Boolean(plan),
     }),
-    [todos, goal, gitSummary, runningCount, endedCalls.length, bashRunning, agentRunning, plan],
+    [todos, goal, gitSummary, runningCount, endedCalls.length, bashRunning, agentRunning, bgTasks, plan],
   );
   const visible = capsuleVisible(summary, planMode === "plan");
 
@@ -216,9 +234,24 @@ export function ChatStatusWidget({
     }
   };
 
+  const handleStopBg = async (taskId: string) => {
+    if (!sessionId) return;
+    setBgStoppingId(taskId);
+    setBgStopError(null);
+    try {
+      const { sendAgentCommand } = await import("@/lib/agent-client");
+      const r = (await sendAgentCommand(sessionId, { type: "stop_bg", taskId })) as { ok?: boolean; error?: string } | undefined;
+      if (r && r.ok === false) setBgStopError(r.error ?? "停止失败");
+    } catch (e) {
+      setBgStopError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBgStoppingId(null);
+    }
+  };
+
   if (!visible) return null;
 
-  const activityTotal = runningCount + (bashRunning ? 1 : 0) + (agentRunning ? 1 : 0);
+  const activityTotal = runningCount + (bashRunning || bgRunningCount > 0 ? 1 : 0) + (agentRunning ? 1 : 0);
   // Leading icon + pinned text per chain kind. Activity keeps the live pulse;
   // single-class activity uses that class's glyph, mixed uses the wave (ZCode).
   let leadingIcon: React.ReactNode;
@@ -262,9 +295,11 @@ export function ChatStatusWidget({
       } else if (summary.subagents > 0) {
         leadingIcon = <IconUsers />;
         pinnedText = t("chat.status.activitySubagents", { count: summary.subagents });
-      } else if (summary.bash) {
+      } else if (summary.bash || bgRunningCount > 0) {
         leadingIcon = <IconTerminal />;
-        pinnedText = t("chat.status.activityBash");
+        pinnedText = bgRunningCount > 0
+          ? t("chat.status.activityBg", { count: bgRunningCount })
+          : t("chat.status.activityBash");
       } else {
         pinnedText = t("chat.status.activityAgent");
       }
@@ -510,9 +545,77 @@ export function ChatStatusWidget({
               )}
             </Section>
 
+            {/* 任务 section — bg-shell background tasks (dev servers etc.) */}
+            {bgTasks.length > 0 && (
+              <Section
+                title={t("chat.status.bgTasks")}
+                open={bgOpen}
+                onToggle={() => setBgOpen((v) => !v)}
+                count={`${bgRunningCount}/${bgTasks.length}`}
+              >
+                <div style={{ padding: "0 8px 8px", display: "flex", flexDirection: "column", gap: 1 }}>
+                  {bgTasks.map((task) => (
+                    <div key={task.taskId} style={{ display: "flex", alignItems: "center", gap: 4, width: "100%" }}>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => { setVariantOverride("mini"); }}
+                        title={`${task.outputFile} (pid ${task.pid})`}
+                        style={{
+                          display: "flex", alignItems: "center", gap: 7, flex: 1, minWidth: 0,
+                          padding: "4px 6px", border: "none", borderRadius: 5, background: "transparent",
+                          color: "var(--text)", fontSize: 11, textAlign: "left", cursor: "pointer",
+                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-hover)"; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+                      >
+                        {task.status === "running" ? (
+                          <span className="chat-status-pulse" style={{ flexShrink: 0, width: 7, height: 7, borderRadius: 999, background: "var(--accent)" }} />
+                        ) : (
+                          <span style={{ flexShrink: 0, width: 7, height: 7, borderRadius: 999, background: task.status === "failed" ? "#f87171" : "var(--text-dim)" }} />
+                        )}
+                        <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {task.name}
+                        </span>
+                      </button>
+                      {task.status === "running" && (
+                        <>
+                          <span style={{ flexShrink: 0, fontSize: 10, color: "var(--text-dim)", fontFamily: "var(--font-mono)", minWidth: 34, textAlign: "right" }} title={t("chat.status.runtime")}>
+                            {formatElapsedStatic(now, task.startedAt)}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => { void handleStopBg(task.taskId); }}
+                            disabled={!sessionId || bgStoppingId === task.taskId}
+                            title={t("chat.status.stopTask")}
+                            aria-label={t("chat.status.stopTask")}
+                            style={{
+                              flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
+                              width: 18, height: 18, padding: 0, border: "none", borderRadius: 4,
+                              background: "transparent", color: bgStoppingId === task.taskId ? "var(--text-dim)" : "#f87171",
+                              cursor: bgStoppingId === task.taskId ? "default" : "pointer",
+                            }}
+                            onMouseEnter={(e) => { if (bgStoppingId !== task.taskId) e.currentTarget.style.background = "rgba(248,113,113,0.12)"; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+                          >
+                            {bgStoppingId === task.taskId
+                              ? <span style={{ fontSize: 9 }}>…</span>
+                              : <svg width="9" height="9" viewBox="0 0 10 10" aria-hidden="true"><rect x="1" y="1" width="8" height="8" rx="1.5" fill="currentColor" /></svg>}
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  ))}
+                  {bgStopError && (
+                    <div style={{ padding: "2px 6px", fontSize: 10, color: "#f87171", overflowWrap: "anywhere" }}>{bgStopError}</div>
+                  )}
+                </div>
+              </Section>
+            )}
+
             {/* Plan quick row — the terminal entry lives in the file explorer
                 toolbar (merge decision 1); background tasks got their own stop
-                controls in the 智能体 section above. */}
+                controls in the 任务 section above. */}
             <div style={{ borderTop: "1px solid var(--border)", padding: 3, display: "flex", flexDirection: "column" }}>
               {plan && (
                 <Row

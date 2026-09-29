@@ -1090,5 +1090,7 @@ export const zhCNLocale: LocalePlugin = {
     "chat.status.activityMixed": "{count} 项进行中",
     "chat.status.endedCollapsed": "已结束 {count}",
     "chat.status.hiddenSteps": "已折叠 {count} 步",
+    "chat.status.bgTasks": "任务",
+    "chat.status.activityBg": "{count} 个后台任务运行中",
   },
 };

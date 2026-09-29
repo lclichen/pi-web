@@ -100,6 +100,9 @@ export function SubagentDirectoryPanel({ sessionId, subagentCalls }: Props) {
         description: c.description,
         status: "running",
         startedAt: c.startedAt,
+        // Child session id from the tool-result details — powers the live
+        // readonly view while the subagent is still running.
+        ...(c.subagentSessionId ? { sessionId: c.subagentSessionId } : {}),
       }));
   }, [subagentCalls, finishedIds]);
 
@@ -140,6 +143,46 @@ export function SubagentDirectoryPanel({ sessionId, subagentCalls }: Props) {
       }
     })();
   }, []);
+
+  // Live readonly view: while a RUNNING subagent's conversation is open, poll
+  // it — the child session grows as the subagent works (ZCode parity).
+  useEffect(() => {
+    if (!openAgent || openAgent.status !== "running" || !openAgent.sessionId) return;
+    const record = openAgent;
+    const timer = setInterval(() => {
+      void (async () => {
+        try {
+          const params = new URLSearchParams({ deferThinking: "1", deferMedia: "1" });
+          const res = await fetch(`/api/sessions/${encodeURIComponent(record.sessionId!)}?${params}`);
+          if (!res.ok || openAgentIdRef.current !== record.key) return;
+          const d = (await res.json()) as { context?: { messages?: AgentMessage[] } };
+          if (openAgentIdRef.current !== record.key) return;
+          setConversation({ loading: false, messages: d.context?.messages ?? [] });
+        } catch {
+          // next poll retries
+        }
+      })();
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [openAgent]);
+
+  // Inline stop for RUNNING rows (same stop_subagent channel as the capsule).
+  const [stoppingKey, setStoppingKey] = useState<string | null>(null);
+  const [stopError, setStopError] = useState<string | null>(null);
+  const handleStop = useCallback(async (record: DirectoryRecord) => {
+    if (!record.id) return;
+    setStoppingKey(record.key);
+    setStopError(null);
+    try {
+      if (!sessionId) throw new Error("会话未激活");
+      const { sendAgentCommand } = await import("@/lib/agent-client");
+      await sendAgentCommand(sessionId, { type: "stop_subagent", agentId: record.id });
+    } catch (e) {
+      setStopError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setStoppingKey(null);
+    }
+  }, [sessionId]);
 
   if (openAgent) {
     return (
@@ -190,7 +233,21 @@ export function SubagentDirectoryPanel({ sessionId, subagentCalls }: Props) {
         {running.length === 0 ? (
           <Empty text="当前没有正在运行的子智能体" />
         ) : (
-          running.map((r) => <Row key={r.key} record={r} now={now} onClick={() => loadConversation(r)} />)
+          <>
+            {running.map((r) => (
+              <Row
+                key={r.key}
+                record={r}
+                now={now}
+                onClick={() => loadConversation(r)}
+                stopping={stoppingKey === r.key}
+                onStop={r.id ? () => { void handleStop(r); } : undefined}
+              />
+            ))}
+            {stopError && (
+              <div style={{ padding: "2px 14px 8px", fontSize: 10, color: "#f87171", overflowWrap: "anywhere" }}>{stopError}</div>
+            )}
+          </>
         )}
       </Section>
       <Section title={`已结束 · ${finished.length}`}>
@@ -236,15 +293,17 @@ function statusLabel(status: string): string {
   return map[status] ?? status;
 }
 
-function Row({ record, now, onClick }: { record: DirectoryRecord; now: number; onClick: () => void }) {
+function Row({ record, now, onClick, stopping, onStop }: { record: DirectoryRecord; now: number; onClick: () => void; stopping?: boolean; onStop?: () => void }) {
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onClick}
+      onKeyDown={(e) => { if (e.key === "Enter") onClick(); }}
       style={{
         display: "flex", alignItems: "center", gap: 8, width: "100%",
-        padding: "7px 14px", border: "none", textAlign: "left",
-        background: "transparent", cursor: "pointer", fontSize: 11,
+        padding: "7px 14px", textAlign: "left",
+        cursor: "pointer", fontSize: 11,
       }}
       onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-selected)"; }}
       onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
@@ -274,7 +333,28 @@ function Row({ record, now, onClick }: { record: DirectoryRecord; now: number; o
             ? formatRelativeTime(record.startedAt, now)
             : ""}
       </span>
-    </button>
+      {onStop && (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onStop(); }}
+          disabled={stopping}
+          title="停止该后台任务"
+          aria-label="停止该后台任务"
+          style={{
+            flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
+            width: 20, height: 20, padding: 0, border: "none", borderRadius: 4,
+            background: "transparent", color: stopping ? "var(--text-dim)" : "#f87171",
+            cursor: stopping ? "default" : "pointer",
+          }}
+          onMouseEnter={(e) => { if (!stopping) e.currentTarget.style.background = "rgba(248,113,113,0.12)"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+        >
+          {stopping
+            ? <span style={{ fontSize: 9 }}>…</span>
+            : <svg width="9" height="9" viewBox="0 0 10 10" aria-hidden="true"><rect x="1" y="1" width="8" height="8" rx="1.5" fill="currentColor" /></svg>}
+        </button>
+      )}
+    </div>
   );
 }
 

@@ -28,6 +28,7 @@ import type { AppUpdateResponse } from "@/lib/api-types";
 import type { ToolEntry } from "@/lib/tool-presets";
 import { findChatScrollAnchor, type ChatScrollPosition } from "@/lib/chat-scroll-position";
 import { parseTodoWidgetLine } from "@/lib/extensions/todo-protocol";
+import type { CapsuleBgTask } from "./ChatStatusWidget";
 import {
   captureScrollDistance,
   getPromptAnchorSpacerHeight,
@@ -805,6 +806,18 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
       return null;
     }
   }, [extensionWidgets]);
+  // bg-shell extension payload: background tasks (dev servers etc.) for the
+  // capsule's 任务 section + activity chain. Same JSON-line protocol.
+  const capsuleBgTasks = useMemo<CapsuleBgTask[]>(() => {
+    const widget = extensionWidgets.find((w) => w.key === "bg-tasks");
+    if (!widget || widget.lines.length === 0) return [];
+    try {
+      const parsed = JSON.parse(widget.lines[0]) as CapsuleBgTask[];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }, [extensionWidgets]);
   // 目标：会话的第一条用户消息（极简描述，单行截断）。
   const capsuleGoal = useMemo(() => {
     for (let i = 0; i < messages.length; i++) {
@@ -1142,6 +1155,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
           planActive={planPanelActive}
           plan={plan}
           todos={capsuleTodos}
+          bgTasks={capsuleBgTasks}
           goal={capsuleGoal}
           planMode={planMode}
         />

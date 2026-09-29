@@ -20,12 +20,14 @@ import { makeContextStatusExtension } from "./src/context-status.ts";
 import { makePlanModeExtension } from "./src/plan-mode.ts";
 import { makeSessionPlanExtension } from "./src/session-plan.ts";
 import { makeTodoExtension } from "./src/todo.ts";
+import { makeBgShellExtension } from "./src/bg-shell.ts";
 
-export { makeContextStatusExtension, makePlanModeExtension, makeSessionPlanExtension, makeTodoExtension };
+export { makeBgShellExtension, makeContextStatusExtension, makePlanModeExtension, makeSessionPlanExtension, makeTodoExtension };
 
 export default function amedacCore(pi: ExtensionAPI): void {
   makeTodoExtension()(pi);
   makeSessionPlanExtension()(pi);
   makePlanModeExtension()(pi);
   makeContextStatusExtension()(pi);
+  makeBgShellExtension()(pi);
 }

@@ -1090,5 +1090,7 @@ export const enLocale: LocalePlugin = {
     "chat.status.activityMixed": "{count} activities running",
     "chat.status.endedCollapsed": "Ended ({count})",
     "chat.status.hiddenSteps": "{count} hidden",
+    "chat.status.bgTasks": "Tasks",
+    "chat.status.activityBg": "{count} background task(s) running",
   },
 };

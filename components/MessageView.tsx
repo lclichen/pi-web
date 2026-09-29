@@ -966,7 +966,7 @@ function BlockView({ block, searchTarget, toolResults, isStreaming, streamingDur
     const tc = block as ToolCallContent;
     const result = toolResults?.get(tc.toolCallId);
     const duration = toolCallDurations?.get(tc.toolCallId);
-    return <ToolCallBlock block={tc} result={result} duration={duration} onOpenSession={onOpenSession} />;
+    return <ToolCallBlock block={tc} result={result} duration={duration} onOpenSession={onOpenSession} cwd={cwd} />;
   }
   return null;
 }
@@ -1096,7 +1096,7 @@ function isSubagentToolDetails(value: unknown): value is SubagentToolDetails {
   return details.kind === "pi-web-subagent" && typeof details.sessionId === "string";
 }
 
-function ToolCallBlock({ block, result, duration, onOpenSession }: { block: ToolCallContent; result?: ToolResultMessage; duration?: number; onOpenSession?: (sessionId: string) => void }) {
+function ToolCallBlock({ block, result, duration, onOpenSession, cwd }: { block: ToolCallContent; result?: ToolResultMessage; duration?: number; onOpenSession?: (sessionId: string) => void; cwd?: string }) {
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(() => isToolCallExpanded(block.toolCallId));
   const toggleExpanded = () => {
@@ -1122,6 +1122,14 @@ function ToolCallBlock({ block, result, duration, onOpenSession }: { block: Tool
   const isError = (result?.isError ?? false)
     || (isApplyPatchToolName(block.toolName) && applyPatchResultHasFailures(result?.details));
   const subagent = isSubagentToolDetails(result?.details) ? result.details : null;
+  // exit_plan_mode result: the submitted plan rides in the details — render a
+  // fade preview + a button that opens the right-panel 计划 tab (window event,
+  // no callback threading through the memo tree).
+  const planExit = block.toolName === "exit_plan_mode" &&
+    result?.details && typeof (result.details as { planMarkdown?: unknown }).planMarkdown === "string" &&
+    (result.details as { planMarkdown: string }).planMarkdown.length > 0
+    ? result.details as { planMarkdown: string; approved?: boolean; feedback?: string }
+    : null;
 
   return (
     <div
@@ -1176,7 +1184,45 @@ function ToolCallBlock({ block, result, duration, onOpenSession }: { block: Tool
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 3h6v6" /><path d="M10 14 21 3" /><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /></svg>
           </button>
         )}
+        {planExit && (
+          <button
+            type="button"
+            onClick={() => { void import("@/lib/open-plan-event").then((m) => m.openPlanPanel()); }}
+            title={t("chat.planCardOpen")}
+            aria-label={t("chat.planCardOpen")}
+            style={{ width: 32, display: "grid", placeItems: "center", border: "none", borderLeft: "1px solid var(--border)", background: "none", color: "var(--text-muted)", cursor: "pointer", flexShrink: 0 }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 4h6a2 2 0 0 1 2 2v14H7V6a2 2 0 0 1 2-2Z" /><path d="M7 20h10" /><path d="M10 8h4" /></svg>
+          </button>
+        )}
       </div>
+
+      {/* ── exit_plan_mode: submitted plan preview (fade + panel link) ── */}
+      {planExit && (
+        <div style={{ borderTop: "1px solid var(--border)", background: "var(--bg)" }}>
+          <div style={{ position: "relative", maxHeight: 220, overflow: "hidden" }}>
+            <div style={{ padding: "8px 12px" }}>
+              <MarkdownBody className="markdown-file-preview" cwd={cwd}>{planExit.planMarkdown}</MarkdownBody>
+            </div>
+            <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 64, background: "linear-gradient(transparent, var(--bg))", pointerEvents: "none" }} />
+          </div>
+          <div style={{ display: "flex", justifyContent: "flex-end", padding: "4px 10px 8px" }}>
+            <button
+              type="button"
+              onClick={() => { void import("@/lib/open-plan-event").then((m) => m.openPlanPanel()); }}
+              style={{
+                display: "flex", alignItems: "center", gap: 5,
+                padding: "4px 10px", fontSize: 11,
+                border: "1px solid var(--border)", borderRadius: 7,
+                background: "transparent", color: "var(--text-muted)", cursor: "pointer",
+              }}
+            >
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 4h6a2 2 0 0 1 2 2v14H7V6a2 2 0 0 1 2-2Z" /><path d="M7 20h10" /><path d="M10 8h4" /></svg>
+              {t("chat.planCardOpen")}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── Expanded: input args (only when no richer view exists) ── */}
       {expanded && (isStreamingInput || !isEditTool) && !patchFiles && (

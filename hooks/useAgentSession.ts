@@ -136,9 +136,11 @@ export interface SubagentCall {
   status: string;
   agentId?: string;
   durationMs?: number;
+  /** Child session id (from the tool-result details) — live readonly view. */
+  subagentSessionId?: string;
 }
 
-function subagentDetailsOf(raw: unknown): { status?: string; agentId?: string; durationMs?: number } {
+function subagentDetailsOf(raw: unknown): { status?: string; agentId?: string; durationMs?: number; subagentSessionId?: string } {
   if (raw === null || typeof raw !== "object") return {};
   const d = raw as { status?: unknown; agentId?: unknown; durationMs?: unknown };
   return {
@@ -167,7 +169,7 @@ function deriveSubagentCalls(messages: AgentMessage[]): SubagentCall[] {
     } else if (message.role === "toolResult") {
       const call = calls.get(message.toolCallId);
       if (!call) continue;
-      const { status, agentId, durationMs } = subagentDetailsOf(message.details);
+      const { status, agentId, durationMs, subagentSessionId } = subagentDetailsOf(message.details);
       const ended = message.timestamp ?? Date.now();
       // "background" means the spawn succeeded and the tool call returned
       // while the agent keeps running — keep it looking live.
@@ -177,7 +179,8 @@ function deriveSubagentCalls(messages: AgentMessage[]): SubagentCall[] {
         ...(isBackground ? {} : { endedAt: ended }),
         status: status ?? (message.isError ? "error" : "completed"),
         ...(agentId ? { agentId } : {}),
-        ...(durationMs !== undefined ? { durationMs } : {}),
+        ...(durationMs !== undefined ? { durationMs: durationMs } : {}),
+        ...(subagentSessionId ? { subagentSessionId } : {}),
       });
     }
   }
@@ -1424,14 +1427,15 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         if (event.toolName === "Agent") {
           // result is { content: [...], details: AgentDetails }
           const result = event.result as { details?: unknown } | undefined;
-          const { status, agentId, durationMs } = subagentDetailsOf(result?.details);
+          const { status, agentId, durationMs, subagentSessionId } = subagentDetailsOf(result?.details);
           const isBackground = status === "background";
           setSubagentCalls((prev) => prev.map((c) => c.key !== id ? c : {
             ...c,
             ...(isBackground ? {} : { endedAt: Date.now() }),
             status: status ?? ((event as { isError?: boolean }).isError ? "error" : "completed"),
             ...(agentId ? { agentId } : {}),
-            ...(durationMs !== undefined ? { durationMs } : {}),
+            ...(durationMs !== undefined ? { durationMs: durationMs } : {}),
+            ...(subagentSessionId ? { subagentSessionId } : {}),
           }));
         }
         break;

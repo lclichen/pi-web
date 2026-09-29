@@ -396,6 +396,10 @@ export function makePlanModeExtension(): InlineExtension {
             },
           };
         }
+        // The submitted plan rides along in the details so the WebUI tool
+        // card can render a preview + panel link without a server round-trip.
+        const planContent = (() => { try { return readFileSync(planPath, "utf8"); } catch { return ""; } })();
+        const planMarkdown = planContent.length > 20_000 ? `${planContent.slice(0, 20_000)}\n…(truncated)` : planContent;
         if (choice !== APPROVAL_CHOICE_IMPLEMENT && choice !== APPROVAL_CHOICE_FRESH) {
           return {
             content: [
@@ -404,7 +408,7 @@ export function makePlanModeExtension(): InlineExtension {
                   `exit_plan_mode）；用户也可随时用 /plan-exit 手动切换到执行模式。计划文件：${planPath}`,
               ),
             ],
-            details: { mode: "plan", approved: false, reason: "declined" },
+            details: { mode: "plan", approved: false, reason: "declined", planPath, planMarkdown },
           };
         }
         setMode("execute", pi, ctx);
@@ -420,12 +424,12 @@ export function makePlanModeExtension(): InlineExtension {
           }
           return {
             content: [textBlock(FRESH_CONTEXT_HANDOFF(planPath))],
-            details: { mode: "execute", approved: true, freshContext: true, planPath },
+            details: { mode: "execute", approved: true, freshContext: true, planPath, planMarkdown },
           };
         }
         return {
           content: [textBlock(note ? `${APPROVED_HANDOFF}${note}` : APPROVED_HANDOFF)],
-          details: { mode: "execute", approved: true, planPath, ...(note ? { autoApproved: true } : {}) },
+          details: { mode: "execute", approved: true, planPath, planMarkdown, ...(note ? { autoApproved: true } : {}) },
         };
       },
     }));

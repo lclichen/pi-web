@@ -1108,6 +1108,13 @@ export class AgentSessionWrapper {
         return this.inner.clearQueue();
       }
 
+      case "stop_bg": {
+        // Background-shell stop bridge: the bg-shell extension's registry
+        // lives on globalThis in this same process (amedac-core).
+        const { stopBgTask } = await import("./extensions/bg-shell");
+        return stopBgTask(this.inner.sessionId, String(command.taskId ?? ""));
+      }
+
       case "update_queue": {
         // Single-item queue op (edit/delete/convert/interrupt). Drain → pure
         // transform (lib/queue-ops) → requeue all run within this microtask

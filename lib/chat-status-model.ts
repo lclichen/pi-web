@@ -25,6 +25,8 @@ export interface CapsuleInputs {
   endedSubagents: number;
   bashRunning: boolean;
   agentRunning: boolean;
+  /** Background-shell tasks running (dev servers etc.). */
+  bgRunning: number;
   hasPlan: boolean;
 }
 
@@ -61,14 +63,14 @@ export function buildCollapsedSummary(inputs: CapsuleInputs): CollapsedSummary {
     return { kind: "git", additions: git.additions, deletions: git.deletions };
   }
   if (inputs.hasPlan) return { kind: "plan" };
-  if (inputs.runningSubagents > 0 || inputs.bashRunning || inputs.agentRunning) {
+  if (inputs.runningSubagents > 0 || inputs.bashRunning || inputs.agentRunning || inputs.bgRunning > 0) {
     return {
       kind: "activity",
       subagents: inputs.runningSubagents,
       bash: inputs.bashRunning,
       agent: inputs.agentRunning,
       mixed:
-        [inputs.runningSubagents > 0, inputs.bashRunning, inputs.agentRunning].filter(Boolean).length > 1,
+        [inputs.runningSubagents > 0, inputs.bashRunning || inputs.bgRunning > 0, inputs.agentRunning].filter(Boolean).length > 1,
     };
   }
   return { kind: "idle" };

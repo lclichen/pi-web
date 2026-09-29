@@ -1091,5 +1091,7 @@ export const zhTWLocale: LocalePlugin = {
     "chat.status.activityMixed": "{count} 項進行中",
     "chat.status.endedCollapsed": "已結束 {count}",
     "chat.status.hiddenSteps": "已摺疊 {count} 步",
+    "chat.status.bgTasks": "任務",
+    "chat.status.activityBg": "{count} 個背景任務執行中",
   },
 };

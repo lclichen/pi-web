@@ -90,7 +90,7 @@ X-Platform-API-Key: sk-...
 
   // 可选：交互等待超时毫秒数（默认 300000 = 5分钟）
   // 超时后自动应答：ask_user_question → 选推荐选项；exit_plan_mode → 自动批准
-  "inputTimeoutMs": 300000,
+  "inputTimeoutMs": 60000,
 
   // 可选：工具白名单（字符串数组；不指定则会话默认）
   // 评测保真场景用它关掉宿主侧有网工具（deep-swe 假设 agent 断网）：
@@ -397,7 +397,7 @@ X-Platform-API-Key: sk-...
 
 ## 交互任务自动应答机制
 
-当 Agent 调用需要用户交互的工具时（`ask_user_question`、`exit_plan_mode`），任务进入 `waiting_input` 状态。在 `inputTimeoutMs`（默认 5 分钟）内无人应答：
+当 Agent 调用需要用户交互的工具时（`ask_user_question`、`exit_plan_mode`），任务进入 `waiting_input` 状态。在 `inputTimeoutMs`（默认 1 分钟）内无人应答（须显著小于对话框自身超时——exit_plan_mode 为 300s，超时按“未批准”处理，等长默认曾致 agent 陷入规划循环）：
 
 | 工具 | 自动应答行为 |
 |---|---|

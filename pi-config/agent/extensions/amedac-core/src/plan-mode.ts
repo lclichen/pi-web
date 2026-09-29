@@ -346,7 +346,11 @@ export function makePlanModeExtension(): InlineExtension {
         // now / implement in a fresh context (compact; the plan file becomes
         // the source of intent — codex's clear-context handoff) / give
         // feedback (decline-with-revision-notes, ZCode-style) / keep
-        // planning. Timeout / abort / exceptions resolve to "keep planning".
+        // planning. NO timeout: the dialog waits for the user indefinitely
+        // (codex/CC/ZCode semantics — an absent user is not a rejection; the
+        // old 300s expiry fed "not approved" back to the model and trapped
+        // agents in a re-planning loop). Abort / dialog-dismissal keep
+        // planning, but the message says the user was ABSENT, not rejecting.
         // A headless host (bench, print mode) has no human to ask — detect it
         // via ctx.hasUI === false (the SDK's no-op UI still exposes callable
         // select/confirm that silently decline, so checking for the method
@@ -362,7 +366,7 @@ export function makePlanModeExtension(): InlineExtension {
             choice = await ctx.ui.select(
               "实施此计划？",
               [APPROVAL_CHOICE_IMPLEMENT, APPROVAL_CHOICE_FRESH, APPROVAL_CHOICE_FEEDBACK, APPROVAL_CHOICE_STAY],
-              { timeout: 300_000, signal },
+              { signal },
             );
           } catch {
             choice = undefined;
@@ -375,7 +379,7 @@ export function makePlanModeExtension(): InlineExtension {
           let feedback = "";
           if (typeof ctx.ui?.input === "function") {
             try {
-              feedback = ((await ctx.ui.input("对计划的修改意见：", "例如：第 2 步不要改公共接口，改用适配器…", { timeout: 300_000, signal })) ?? "").trim();
+              feedback = ((await ctx.ui.input("对计划的修改意见：", "例如：第 2 步不要改公共接口，改用适配器…", { signal })) ?? "").trim();
             } catch {
               feedback = "";
             }
@@ -401,14 +405,20 @@ export function makePlanModeExtension(): InlineExtension {
         const planContent = (() => { try { return readFileSync(planPath, "utf8"); } catch { return ""; } })();
         const planMarkdown = planContent.length > 20_000 ? `${planContent.slice(0, 20_000)}\n…(truncated)` : planContent;
         if (choice !== APPROVAL_CHOICE_IMPLEMENT && choice !== APPROVAL_CHOICE_FRESH) {
+          // choice undefined = the dialog was dismissed or the run aborted —
+          // the user did NOT answer, so say exactly that. Attributing an
+          // absent user to rejection sent models into pointless re-planning.
+          const dismissed = choice === undefined;
           return {
             content: [
               textBlock(
-                `用户未批准计划${note}。仍在 PLAN 模式：根据对话中的反馈修订计划（plan_save 更新后可再次调用 ` +
-                  `exit_plan_mode）；用户也可随时用 /plan-exit 手动切换到执行模式。计划文件：${planPath}`,
+                (dismissed
+                  ? `用户关闭了确认框、尚未作出选择（这不代表拒绝）${note}。仍在 PLAN 模式：等待用户回复后再次调用 exit_plan_mode，或根据对话上下文完善计划`
+                  : `用户选择继续规划${note}。仍在 PLAN 模式：根据对话中的反馈修订计划`) +
+                  `（plan_save 更新后可再次调用 exit_plan_mode）；用户也可随时用 /plan-exit 手动切换到执行模式。计划文件：${planPath}`,
               ),
             ],
-            details: { mode: "plan", approved: false, reason: "declined", planPath, planMarkdown },
+            details: { mode: "plan", approved: false, reason: dismissed ? "dismissed" : "declined", planPath, planMarkdown },
           };
         }
         setMode("execute", pi, ctx);

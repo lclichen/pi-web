@@ -348,19 +348,42 @@ export async function runBatchTask(options: RunTaskOptions): Promise<void> {
       });
     }, options.timeoutMs);
 
-    // 6. Send the prompt (this blocks until the agent settles). Field is
-    // `message` — the same wire shape the WebUI sends; a `content` field is
-    // silently undefined here and dies inside the SDK's message parsing
-    // (found live: undefined.startsWith in inner.prompt).
+    // 6. Send the prompt and wait for the agent to SETTLE. Field is `message`
+    // (the WebUI wire shape; a `content` field dies inside the SDK's message
+    // parsing). send(prompt) resolves at ADMISSION (preflight), not at run
+    // completion — the WebUI tracks agent_settled events instead — so poll
+    // get_state until the run finishes (found live: collecting results right
+    // after send() saw an empty transcript and disposed a mid-flight run).
     await wrapper.send({ type: "prompt", message: options.prompt });
+    const settleDeadline = Date.now() + options.timeoutMs + 300_000;
+    for (;;) {
+      await new Promise((r) => setTimeout(r, 2000));
+      const st = (await wrapper.send({ type: "get_state" }).catch(() => null)) as {
+        isPromptRunning?: boolean; isStreaming?: boolean; isCompacting?: boolean; isBashRunning?: boolean;
+      } | null;
+      if (!st) break; // session gone — treat as settled, result collection below runs best-effort
+      const busy = st.isPromptRunning || st.isStreaming || st.isCompacting || st.isBashRunning;
+      if (!busy) break;
+      if (Date.now() > settleDeadline) {
+        // The abort timer should have fired long before this; last resort.
+        await wrapper.send({ type: "abort" }).catch(() => {});
+        break;
+      }
+    }
 
     // 7. Collect results — use the wrapper's inner session for stats/messages
     clearTimeout(timeoutTimer);
     responder.stop();
 
-    const inner = (wrapper as unknown as { inner: { getSessionStats(): { tokens: { input: number; output: number; total: number }; toolCalls: number }; sessionManager: { getBranch(): unknown[] }; sessionFile?: string; dispose(): void } }).inner;
+    const inner = (wrapper as unknown as { inner: { getSessionStats(): { tokens: { input: number; output: number; total: number }; toolCalls: number }; messages: MinimalMessage[]; sessionManager: { getBranch(): Array<{ type?: string; message?: MinimalMessage }>; sessionFile?: string }; sessionFile?: string; dispose(): void } }).inner;
     const stats = inner.getSessionStats();
-    const messages = inner.sessionManager.getBranch();
+    // inner.messages is the agent transcript (role/content/stopReason); the
+    // session file's raw entries nest it under {type:"message",message} —
+    // reading the entry tree directly yields no roles (v1.2 bug, only visible
+    // once a real model run was wired through).
+    const messages: MinimalMessage[] = Array.isArray(inner.messages)
+      ? inner.messages
+      : inner.sessionManager.getBranch().map((e) => e.message).filter((m): m is MinimalMessage => Boolean(m));
     const lastAssistant = [...messages].reverse().find((m) => (m as { role?: string }).role === "assistant");
     const finalText =
       (lastAssistant as { content?: Array<{ type?: string; text?: string }> } | undefined)?.content

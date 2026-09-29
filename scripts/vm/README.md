@@ -28,6 +28,36 @@ node scripts/vm/vm.cjs test <auth|todo|pkg-layout|firstrun>
 deploy 的 `git reset --hard origin/dev` 会**覆盖**热同步过的文件——这是特性（回到
 git 事实源），也是用后必须转正的原因。
 
+## 标准 VM 测试流程（按此顺序，勿跳步）
+
+1. **本机先行**：`npm test`（全绿）+ 涉及路由的改动用本机 dev 服务器真跑一遍
+   （`PI_WEB_AUTH=off npx next dev -p 31999`，curl 打真实 HTTP——源码契约测试
+   不走中间件，挡不住 proxy/env 类问题）。
+2. **提交并推送**：`git commit` → `git -c http.proxy=http://127.0.0.1:7890 push origin dev`。
+   **不要用 hot-sync 部署未提交代码做"正式"验证**——VM 树一旦混杂（热同步 +
+   reset + 手改），出现的任何问题都不可信（2026-09-29 教训：被污染的树被误判为
+   "上游回归"，干净部署后消失）。
+3. **部署**：`node scripts/vm/vm.cjs deploy`（fetch+reset origin/dev → typescript
+   缺失时 npm install → build → restart → 冒烟）。依赖变更（package-lock 有 diff）
+   时手动 `vm.cjs npm-install`。
+4. **pong 验证**（会话/模型链路健康检查，几秒钟出结果；口令走 VM_APP_ADMIN_PASSWORD
+   环境变量或 scripts/vm-credentials.cjs，勿写进命令/文档）：
+   ```bash
+   export VM_APP_ADMIN_PASSWORD='<从 vm-credentials.cjs 取>' # secret-scan:allow（占位符，非真实凭据）
+   node scripts/vm/vm.cjs probe '
+   curl -s -m 10 -c /tmp/pw.ck -X POST http://127.0.0.1:30141/api/webauth/login \
+     -H "Content-Type: application/json" -d "{\"username\":\"admin\",\"password\":\"'"\$VM_APP_ADMIN_PASSWORD"'\"}" >/dev/null
+   curl -s -m 120 -b /tmp/pw.ck -X POST http://127.0.0.1:30141/api/agent/new \
+     -H "Content-Type: application/json" -d "{\"cwd\":\"/tmp\",\"type\":\"prompt\",\"message\":\"Say the single word: pong\"}" >/dev/null
+   F=$(ls -t /home/llmx/.pi/agent/sessions/users/u1/*.jsonl | head -1)
+   grep -c "\"role\":\"assistant\"" "$F"   # 输出 1 = 模型链路通
+   '
+   ```
+5. **批量 API 专项**（需要平台 key）：`POST /api/batch/tasks` host 模式小任务，
+   确认 usage.totalTokens > 0（=0 即空转，立刻排查而不是换任务重试）。
+6. 出问题时先区分**部署问题 vs 开发问题**：干净 deploy 后复现 = 开发问题；
+   只在热同步/混杂树上出现 = 部署问题，重走 2-3 步。
+
 ## 环境事实（踩过的坑，执行前自查）
 
 - **磁盘 ~19G 常年 85-95%**：构建约需 1G+，完整打包周期约需 4G 空闲。清理配方：

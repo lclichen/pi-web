@@ -68,7 +68,8 @@ if [ ! -d node_modules/typescript ]; then echo "== typescript 缺失，先 npm i
 if npm run build > /tmp/vm-build.log 2>&1; then echo BUILD-OK; else echo BUILD-FAIL; tail -30 /tmp/vm-build.log; exit 1; fi
 ${restartScript()}
 echo "== 冒烟"
-curl -s -o /dev/null -w "templates-api: %{http_code}\\n" -m 10 http://127.0.0.1:30141/api/quick-templates
+# /api/webauth/config 是 pre-session 路由（proxy 白名单），无需登录即可探活
+curl -s -o /dev/null -w "webauth-config: %{http_code}\\n" -m 10 http://127.0.0.1:30141/api/webauth/config
 `, { timeoutSec: 600 }));
     }
 

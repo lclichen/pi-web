@@ -19,7 +19,7 @@
  * degradation; remote processes may still be alive and are killable by pid.
  */
 import { spawn, type ChildProcess } from "node:child_process";
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
+import { closeSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { defineTool, type ExtensionAPI, type ExtensionContext, type InlineExtension } from "@earendil-works/pi-coding-agent";
@@ -73,7 +73,6 @@ interface BgRegistry {
   children: Map<string, ChildProcess>;
 }
 declare global {
-  // eslint-disable-next-line no-var
   var __amedacBgShell: BgRegistry | undefined;
 }
 
@@ -214,6 +213,32 @@ export function makeBgShellExtension(): InlineExtension {
       }
     };
 
+    /**
+     * Terminal-state wake-up (ZCode <task-notification> parity): when a task
+     * the model started exits on its own, deliver a user message so the agent
+     * starts a new turn and can react (check the tail, continue verification).
+     * deliverAs "followUp" queues while the agent is busy and fires when idle.
+     * Manual bg_stop / shutdown cleanup do NOT notify — the user already knows.
+     */
+    const notifyTaskExit = async (task: BgTask, ctx: ExtensionContext) => {
+      try {
+        const send = (ctx as ExtensionContext & {
+          sendUserMessage?: (content: string, options?: { deliverAs?: "steer" | "followUp" }) => void;
+        }).sendUserMessage;
+        if (typeof send !== "function") return; // headless host without the channel
+        const tail = await tailLog(task, task.sessionId ?? "");
+        const tailTrimmed = tail.length > 2048 ? `\n${tail.slice(-2048)}\n(tailed)` : tail ? `\n${tail}` : "";
+        send(
+          `<task-notification>Background task "${task.name}" (${task.taskId}) has ${task.status}` +
+            `${task.exitCode != null ? ` with exit code ${task.exitCode}` : ""}.` +
+            ` Output file: ${task.outputFile}.${tailTrimmed}</task-notification>`,
+          { deliverAs: "followUp" },
+        );
+      } catch {
+        // best-effort — the task state itself is already recorded
+      }
+    };
+
     const monitor = (task: BgTask, ctx: ExtensionContext) => {
       const reg = registry();
       const child = reg.children.get(task.taskId);
@@ -224,6 +249,7 @@ export function makeBgShellExtension(): InlineExtension {
           task.endedAt = Date.now();
           reg.children.delete(task.taskId);
           publish(ctx);
+          void notifyTaskExit(task, ctx);
         });
         return;
       }
@@ -246,6 +272,7 @@ export function makeBgShellExtension(): InlineExtension {
             clearInterval(timer);
             reg.timers.delete(task.taskId);
             publish(ctx);
+            void notifyTaskExit(task, ctx);
           }
         } catch {
           // channel hiccup — keep polling
@@ -284,11 +311,12 @@ export function makeBgShellExtension(): InlineExtension {
       description:
         "Start a LONG-RUNNING command as a background task that keeps running across turns (dev servers, build watchers, " +
         "compilers in watch mode). Returns a taskId, the pid and the output file path — read that file with the `read` tool to " +
-        "check progress (e.g. wait for the \"listening on\" line). Do NOT use this for one-shot commands; use bash for those.",
-      promptSnippet: "bg_run — start a long-running background task (dev server / watcher)",
+        "check progress (e.g. wait for the \"listening on\" line). When the task exits on its own you receive a " +
+        "<task-notification> message with the exit code and output tail. Do NOT use this for one-shot commands; use bash for those.",
+      promptSnippet: "bg_run — start a long-running background task (dev server / watcher); you are notified when it exits",
       promptGuidelines: [
         "When a task needs a long-running process (dev server, build --watch, API mock), start it with bg_run instead of blocking bash; then read the output file to confirm it is ready (look for the port/ready line) before testing against it.",
-        "Clean up with bg_stop when the verification is done; check bg_list when unsure which tasks are still running.",
+        "You will receive a <task-notification> when a background task exits — react to it (inspect the tail, verify, continue) instead of polling forever. Clean up remaining tasks with bg_stop when the verification is done.",
       ],
       parameters: Type.Object({
         command: Type.String({ description: "Shell command to run detached (it keeps running across turns)." }),

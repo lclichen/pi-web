@@ -135,6 +135,7 @@ export const zhCNLocale: LocalePlugin = {
     "sessions.project": "项目：{name}",
     "sessions.ungrouped": "未分组",
     "sessions.container2": "无容器",
+    "sessions.unboundSuffix": "未绑定项目",
     "sessions.sandbox": "沙盒",
     "sessions.local": "本地",
     "sessions.runInsideContainer": "项目会话在容器 /workspace 内执行",

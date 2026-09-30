@@ -285,10 +285,13 @@ export function ProjectSessionTree({
   // 管理员通过"打开服务器目录"（host 模式）建的会话没有 projectId，按目录
   // 动态分组显示——不区分 mine/host 空间（UI 没有空间切换入口，之前 gate
   // 在 sessionSpace==="host" 上导致这些会话永远不显示）。
+  // 非宿主模式的未绑定会话（API 直建的 pre-project sandbox 会话等）单独成组、
+  // 带各自模式徽标——混进 Host 目录组会让"项目=Host / 会话=沙箱"两个徽标打架。
   const hostGroups = useMemo(() => {
     if (!isAdmin) return [];
     const groups = new Map<string, SessionInfo[]>();
     for (const s of byProject.ungrouped) {
+      if (s.mode && s.mode !== "host") continue;
       const key = s.projectRoot ?? s.cwd;
       const list = groups.get(key) ?? [];
       list.push(s);
@@ -299,6 +302,19 @@ export function ProjectSessionTree({
       return latest(b).localeCompare(latest(a));
     });
   }, [byProject.ungrouped, isAdmin]);
+
+  // 未绑定项目的非宿主模式会话，按 mode 聚成一组（沙箱/本机/SSH 各一组）。
+  const unboundModeGroups = useMemo(() => {
+    const groups = new Map<string, SessionInfo[]>();
+    for (const s of byProject.ungrouped) {
+      if (!s.mode || s.mode === "host") continue;
+      const list = groups.get(s.mode) ?? [];
+      list.push(s);
+      groups.set(s.mode, list);
+    }
+    for (const list of groups.values()) list.sort((a, b) => b.modified.localeCompare(a.modified));
+    return [...groups.entries()];
+  }, [byProject.ungrouped]);
 
   const renderItem = (s: SessionInfo, project: ProjectRecord | null) => {
     const selected = s.id === selectedSessionId;
@@ -563,6 +579,36 @@ export function ProjectSessionTree({
                 {t("sessions.showAllSessions", { n: list.length })}
               </button>
             )}
+          </div>
+        );
+      })}
+
+      {/* 未绑定项目的非宿主模式会话（如 API 直建的 pre-project 沙箱会话）：
+          按模式成组、带正确徽标——之前被 Host 目录组吞掉，会话徽标与项目
+          徽标各说各话。 */}
+      {sessionSpace !== "quick" && unboundModeGroups.map(([mode, list]) => {
+        const key = `unbound:${mode}`;
+        const isCollapsed = collapsed.has(key);
+        const badge = mode === "sandbox"
+          ? { label: t("sessions.sandbox"), color: "#38bdf8", bg: "rgba(56,189,248,0.12)" }
+          : mode === "ssh"
+            ? { label: t("SSH"), color: "#34d399", bg: "rgba(52,211,153,0.14)" }
+            : { label: t("sessions.local"), color: "#a78bfa", bg: "rgba(167,139,250,0.12)" };
+        const visible = isCollapsed ? [] : list;
+        return (
+          <div key={key} style={{ marginBottom: 2 }}>
+            <div
+              onClick={() => toggleCollapsed(key)}
+              style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 6px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontWeight: 600, color: "var(--text-muted)", background: "transparent" }}
+            >
+              <span style={{ fontSize: 9, color: "var(--text-dim)", width: 10 }}>{isCollapsed ? "▸" : "▾"}</span>
+              <span style={{ flexShrink: 0, padding: "0 5px", borderRadius: 3, fontSize: 9, fontWeight: 700, color: badge.color, background: badge.bg }}>{badge.label}</span>
+              <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {t("sessions.unboundSuffix")}
+              </span>
+              <span style={{ fontSize: 10, color: "var(--text-dim)" }}>{list.length}</span>
+            </div>
+            {visible.map((s) => renderItem(s, null))}
           </div>
         );
       })}

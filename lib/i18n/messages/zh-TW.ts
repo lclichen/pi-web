@@ -806,6 +806,7 @@ export const zhTWLocale: LocalePlugin = {
     "remote.localMachineModePairedPer": "本机模式按用户配对：一个 Agent 连接可以承载多个项目，各项目使用不同的工作目录。",
     "remote.creatingContainer": "正在创建容器并准备项目环境…",
     "app.fileUnsavedChangesCloseDiscard": "此文件有未保存的修改，关闭将丢弃。确定关闭吗？",
+    "sessions.unboundSuffix": "未綁定項目",
     "sessions.sandbox": "沙盒",
     "remote.sandboxDirFixedHint": "沙盒项目的目录固定为容器 /workspace——项目会话、终端与文件面板都在其中执行。",
     "app.sandbox": "沙箱",

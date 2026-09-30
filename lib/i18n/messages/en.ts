@@ -114,6 +114,7 @@ export const enLocale: LocalePlugin = {
     "sessions.project": "Project: {name}",
     "sessions.ungrouped": "Ungrouped",
     "sessions.container2": "No container",
+    "sessions.unboundSuffix": "unbound",
     "sessions.sandbox": "Sandbox",
     "sessions.local": "Local",
     "sessions.runInsideContainer": "Project sessions run inside the container /workspace",

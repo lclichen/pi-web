@@ -274,6 +274,8 @@ export interface RunTaskOptions {
   username?: string;
   /** Active tool allowlist (eval fidelity: disable host-side web tools etc.). */
   toolNames?: string[];
+  /** Reasoning effort for the session (off…max), pinned at start. */
+  thinkingLevel?: string;
   /** Resume after a pi-web restart: reopen the persisted session file and skip
    * dir preparation / file materialization (state already on disk). */
   resume?: boolean;
@@ -328,6 +330,7 @@ export async function runBatchTask(options: RunTaskOptions): Promise<void> {
       mode: options.mode,
       ...(options.model ? { initialModel: options.model } : {}),
       ...(options.toolNames ? { toolNames: options.toolNames } : {}),
+      ...(options.thinkingLevel ? { thinkingLevel: options.thinkingLevel as "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" } : {}),
     };
     const { session } = await startRpcSession(
       sessionId,

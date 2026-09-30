@@ -38,6 +38,7 @@ export async function POST(req: Request) {
     containerId?: unknown;
     projectId?: unknown;
     toolNames?: unknown;
+    thinkingLevel?: unknown;
     stream?: unknown;
   };
   try {
@@ -85,6 +86,10 @@ export async function POST(req: Request) {
   ) {
     return NextResponse.json({ error: "toolNames must be an array of strings" }, { status: 400 });
   }
+  const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
+  if (body.thinkingLevel !== undefined && !THINKING_LEVELS.includes(body.thinkingLevel as typeof THINKING_LEVELS[number])) {
+    return NextResponse.json({ error: "thinkingLevel must be one of: " + THINKING_LEVELS.join(", ") }, { status: 400 });
+  }
   const num = (v: unknown, def: number, min: number, max: number): number => {
     const n = typeof v === "number" && Number.isFinite(v) ? v : def;
     return Math.min(Math.max(n, min), max);
@@ -116,6 +121,7 @@ export async function POST(req: Request) {
     containerId: typeof body.containerId === "number" ? body.containerId : undefined,
     projectId: typeof body.projectId === "number" ? body.projectId : undefined,
     toolNames: Array.isArray(body.toolNames) ? body.toolNames as string[] : undefined,
+    thinkingLevel: typeof body.thinkingLevel === "string" ? body.thinkingLevel as typeof THINKING_LEVELS[number] : undefined,
   });
 
   // Fire-and-forget: the task runs in the background; the caller polls or
@@ -137,6 +143,7 @@ export async function POST(req: Request) {
     platformApiKey: mode === "sandbox" ? auth.identity.apiKey : undefined,
     username: auth.identity.user.username,
     toolNames: task.toolNames,
+    thinkingLevel: task.thinkingLevel,
   });
 
   // Streaming mode: same task lifecycle, SSE view instead of 202 + polling.

@@ -92,6 +92,9 @@ X-Platform-API-Key: sk-...
   // 超时后自动应答：ask_user_question → 选推荐选项；exit_plan_mode → 自动批准
   "inputTimeoutMs": 60000,
 
+  // 可选：推理强度 off|minimal|low|medium|high|xhigh|max（不指定则模型默认）
+  "thinkingLevel": "high",
+
   // 可选：工具白名单（字符串数组；不指定则会话默认）
   // 评测保真场景用它关掉宿主侧有网工具（deep-swe 假设 agent 断网）：
   // "toolNames": ["bash","read","write","edit","glob","grep"]

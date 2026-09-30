@@ -86,6 +86,8 @@ export interface BatchTask {
   projectId?: number;
   /** Active tool allowlist for the session (eval fidelity). */
   toolNames?: string[];
+  /** Reasoning effort pinned for the session (eval variable control). */
+  thinkingLevel?: string;
   /** Sandbox mode: per-task stub home carrying .pi/sandbox-platform.json. */
   homeDir?: string;
   /** Set when the process died mid-task; cleared on resume. */

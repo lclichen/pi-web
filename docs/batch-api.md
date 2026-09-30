@@ -1,6 +1,6 @@
 # pi-web 批量测试 API
 
-> 版本 1.3 · 2026-09-29 · 认证方式：X-Platform-API-Key
+> 版本 1.4 · 2026-09-29 · 认证方式：X-Platform-API-Key
 
 ## 概述
 

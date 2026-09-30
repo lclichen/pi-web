@@ -655,11 +655,15 @@ export function AppShell() {
   const [activeCwd, setActiveCwd] = useState<string | null>(null);
   // Session plan (per-session file first, legacy workspace plans as fallback).
   // Single probe shared by the 计划 tab (visibility), PlanPanel and the status
-  // capsule — hidden entirely while no plan exists.
+  // capsule — hidden entirely while no plan exists. planActivityTick bumps on
+  // plan_save tool events (lifted from ChatWindow) so a fresh plan shows up
+  // instantly instead of waiting on the idle backoff.
+  const [planActivityTick, setPlanActivityTick] = useState(0);
   const { plan: sessionPlan } = useSessionPlan({
     sessionId: selectedSession?.id ?? null,
     cwd: (activeCwd ?? selectedSession?.cwd ?? newSessionCwd) ?? undefined,
     remote: remoteSessionCtx,
+    reprobeSignal: planActivityTick,
   });
   // 计划 tab appears only once a plan actually exists (no flash on load).
   const planTabVisible = sessionPlan !== null;
@@ -2871,6 +2875,7 @@ export function AppShell() {
               terminalPanelActive={terminalDrawerOpen}
               remoteSession={remoteSessionCtx}
               onSubagentCallsChange={setSubagentCalls}
+              onPlanActivity={() => setPlanActivityTick((n) => n + 1)}
               sendCommandRef={sendCommandRef}
               onOpenSession={handleOpenSession}
               onAskInNewChat={handleAskInNewChat}

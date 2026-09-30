@@ -227,6 +227,10 @@ export interface UseAgentSessionOptions {
   modelsRefreshKey?: number;
   chatInputRef?: React.RefObject<ChatInputHandle | null>;
   onBranchDataChange?: (tree: SessionTreeNode[], activeLeafId: string | null, onLeafChange: (leafId: string | null) => void) => void;
+  /** Fired when a tool ends that may have changed the session plan
+   * (plan_save, or write/edit touching a plan-ish path) — AppShell uses it
+   * to re-probe the plan file instantly instead of waiting on the backoff. */
+  onPlanActivity?: () => void;
   onSystemPromptChange?: (prompt: string | null) => void;
   onSystemToolsChange?: (tools: ToolEntry[] | null) => void;
   /** Registers an action that lazily starts the session and loads its prompt and tools. */
@@ -361,7 +365,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     newSessionTemplateId: optsNewSessionTemplateId,
     onAgentEnd, onAttentionNeeded, onSessionCreated, onSessionForked,
     modelsRefreshKey, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onSessionStatsPanelOpen,
+    onPlanActivity,
   } = opts;
+  const onPlanActivityRef = useRef(onPlanActivity);
+  onPlanActivityRef.current = onPlanActivity;
 
   const isNew = session === null && newSessionCwd !== null;
   const newSessionModeRef = useRef(newSessionMode);
@@ -1412,6 +1419,15 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       }
       case "tool_execution_end": {
         const id = event.toolCallId as string;
+        // Plan-affecting tool ends re-probe the plan file immediately
+        // (AppShell's useSessionPlan backoff would otherwise delay the 计划 tab).
+        {
+          const tn = event.toolName as string | undefined;
+          const tp = String((event as { args?: { path?: unknown } }).args?.path ?? "");
+          if (tn === "plan_save" || ((tn === "write" || tn === "edit") && /(^|\/)(\.pi\/)?plans?[-/]|plan\.md|PLAN\.md/i.test(tp))) {
+            onPlanActivityRef.current?.();
+          }
+        }
         setActiveToolResults((prev) => {
           if (!prev.has(id)) return prev;
           const next = new Map(prev);

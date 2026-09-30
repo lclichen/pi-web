@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { encodeFilePathForApi } from "@/lib/file-paths";
 
 export interface SessionPlan {
@@ -39,13 +39,22 @@ export function useSessionPlan({
   sessionId,
   cwd,
   remote,
+  reprobeSignal,
 }: {
   sessionId?: string | null;
   cwd?: string;
   remote?: RemoteCtx | null;
+  /** Incremented by the AppShell when a plan-affecting tool event lands
+   * (plan_save, or write/edit touching a plan path) — triggers an immediate
+   * probe so a freshly saved plan appears instantly instead of waiting for
+   * the backoff timer; idle sessions then poll at the 8→60s backoff only. */
+  reprobeSignal?: number;
 }): UseSessionPlanResult {
   const [plan, setPlan] = useState<SessionPlan | null>(null);
   const [loading, setLoading] = useState(true);
+  // Set by the main effect: re-probe NOW (detach watchers, probe, restart the
+  // backoff on a miss). Default no-op so the signal effect is inert pre-mount.
+  const probeNowRef = useRef<() => void>(() => {});
 
   useEffect(() => {
     if (!cwd || cwd === "") {
@@ -176,12 +185,27 @@ export function useSessionPlan({
       if (!found) startReprobe();
     })();
 
+    probeNowRef.current = () => {
+      if (cancelled) return;
+      detachRefresh();
+      if (reprobeTimer) clearTimeout(reprobeTimer);
+      reprobeTimer = null;
+      void probe().then((ok) => {
+        if (!cancelled && !ok) startReprobe();
+      });
+    };
+
     return () => {
       cancelled = true;
       detachRefresh();
       if (reprobeTimer) clearTimeout(reprobeTimer);
     };
   }, [sessionId, cwd, remote?.sessionId, remote?.label]);
+
+  useEffect(() => {
+    if (reprobeSignal === undefined) return;
+    probeNowRef.current();
+  }, [reprobeSignal]);
 
   return { plan, loading };
 }

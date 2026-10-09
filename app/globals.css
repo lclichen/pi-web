@@ -1,5 +1,7 @@
 @import "@xterm/xterm/css/xterm.css";
 @import "tailwindcss";
+/* demo/ is a separate project; keep its sources out of this app's class scan. */
+@source not "../demo";
 
 /* Self-hosted Noto Sans Mono (variable 100-900, latin + cyrillic subsets).
    Committed under public/fonts/ (OFL license, see OFL.txt) so that builds and
@@ -40,17 +42,20 @@
   --font-mono-font: var(--font-mono);
 }
 
-:root {
+:root,
+[data-theme="light"] {
+  color-scheme: light;
   --bg: #ffffff;
   --bg-panel: #f5f5f5;
   --bg-hover: #eeeeee;
   --bg-selected: #e8e8e8;
   --border: #e0e0e0;
   --text: #1a1a1a;
-  --text-muted: #6b7280;
-  --text-dim: #9ca3af;
-  --accent: #2563eb;
+  --text-muted: #515c6b;
+  --text-dim: #5e6673;
+  --accent: #245bce;
   --accent-hover: #1d4ed8;
+  --accent-contrast: #ffffff;
   --user-bg: #eff6ff;
   --assistant-bg: #ffffff;
   --tool-bg: #f9fafb;
@@ -62,22 +67,83 @@
   --chat-content-font-size: 14px;
 }
 
-html.dark {
+html.dark,
+[data-theme="dark"] {
+  color-scheme: dark;
   --bg: #1a1a1a;
   --bg-panel: #242424;
   --bg-hover: #2e2e2e;
   --bg-selected: #383838;
-  --border: #3a3a3a;
+  --border: #454545;
   --text: #e8e8e8;
-  --text-muted: #9ca3af;
-  --text-dim: #6b7280;
-  --accent: #60a5fa;
-  --accent-hover: #93c5fd;
-  --user-bg: #1e293b;
+  --text-muted: #b7b7b7;
+  --text-dim: #a4a4a4;
+  --accent: #a4c2f4;
+  --accent-hover: #c3d8fa;
+  --accent-contrast: #182234;
+  --user-bg: #292929;
   --assistant-bg: #1a1a1a;
-  --tool-bg: #1f2937;
+  --tool-bg: #222222;
   --bg-subtle: rgba(255,255,255,0.04);
   --success: #22c55e;
+}
+
+[data-theme="mist"] {
+  color-scheme: light;
+  --bg: #f4f8f7;
+  --bg-panel: #e9f0ee;
+  --bg-hover: #e0eae7;
+  --bg-selected: #d7e4df;
+  --border: #afc4ba;
+  --text: #202e2b;
+  --text-muted: #455f56;
+  --text-dim: #52685f;
+  --accent: #1e6559;
+  --accent-hover: #174f46;
+  --accent-contrast: #ffffff;
+  --user-bg: #e0efeb;
+  --assistant-bg: #f4f8f7;
+  --tool-bg: #ecf3f0;
+  --bg-subtle: rgba(24,65,50,0.04);
+}
+
+[data-theme="rose"] {
+  color-scheme: light;
+  --bg: #fcf7f8;
+  --bg-panel: #f3edef;
+  --bg-hover: #eee3e7;
+  --bg-selected: #e8dce1;
+  --border: #cdb5bf;
+  --text: #34282e;
+  --text-muted: #65505a;
+  --text-dim: #705b65;
+  --accent: #914360;
+  --accent-hover: #76324d;
+  --accent-contrast: #ffffff;
+  --user-bg: #f3e4eb;
+  --assistant-bg: #fcf7f8;
+  --tool-bg: #f7eef2;
+  --bg-subtle: rgba(89,39,62,0.04);
+}
+
+html[data-theme="pine"],
+[data-theme="pine"] {
+  color-scheme: dark;
+  --bg: #19201f;
+  --bg-panel: #212b28;
+  --bg-hover: #2b3632;
+  --bg-selected: #35433c;
+  --border: #4a5f52;
+  --text: #e6ede8;
+  --text-muted: #c3d0c6;
+  --text-dim: #afc2b5;
+  --accent: #acccb7;
+  --accent-hover: #d0e2d3;
+  --accent-contrast: #182b20;
+  --user-bg: #25382f;
+  --assistant-bg: #19201f;
+  --tool-bg: #222d29;
+  --bg-subtle: rgba(210,236,219,0.04);
 }
 
 /* WebKit reports dvh/innerHeight without the status-bar strip for installed
@@ -259,16 +325,75 @@ body {
   background-color: #111318;
 }
 
+/*
+ * Chromium-only scrollbars. Firefox renders its native ones, which the standard
+ * `scrollbar-width` / `scrollbar-color` properties would only make thinner and
+ * flatter, so this block stays webkit-prefixed on purpose.
+ * The 10px box remains the grab target, but subtle scrollbars stay transparent
+ * until their scroll container is active. This keeps long panels usable without
+ * leaving a permanent rule down the side of every panel.
+ */
 ::-webkit-scrollbar {
-  width: 4px;
-  height: 4px;
+  width: 10px;
+  height: 10px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 2px;
+  background-color: color-mix(in srgb, var(--text-dim) 45%, transparent);
+  background-clip: padding-box;
+  border: 2px solid transparent;
+  border-radius: 5px;
+}
+/* Only ever set background-color here: the `background` shorthand resets
+   background-clip and would snap the thumb to the full 10px on hover. */
+::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in srgb, var(--text-dim) 72%, transparent);
+}
+::-webkit-scrollbar-thumb:active {
+  background-color: var(--text-dim);
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.scrollbar-subtle::-webkit-scrollbar-thumb {
+  background-color: transparent;
+}
+.scrollbar-subtle.scrollbar-visible::-webkit-scrollbar-thumb {
+  background-color: color-mix(in srgb, var(--text-dim) 45%, transparent);
+}
+.scrollbar-subtle.scrollbar-visible::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in srgb, var(--text-dim) 72%, transparent);
+}
+.scrollbar-subtle.scrollbar-visible::-webkit-scrollbar-thumb:active {
+  background-color: var(--text-dim);
+}
+
+/* A touch screen scrolls by dragging the content, so the extra width buys
+   nothing there and a phone has none to spare. */
+@media (pointer: coarse) {
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-thumb {
+    border-width: 1px;
+    border-radius: 3px;
+  }
+}
+
+/* The terminal keeps its dark surface in every theme, so --text-dim (a dark
+   grey in the light themes) would disappear against it. */
+.terminal-xterm .xterm-viewport::-webkit-scrollbar-thumb {
+  background-color: rgba(156, 163, 175, 0.45);
+}
+.terminal-xterm .xterm-viewport::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(156, 163, 175, 0.72);
+}
+.terminal-xterm .xterm-viewport::-webkit-scrollbar-thumb:active {
+  background-color: rgb(156, 163, 175);
 }
 
 
@@ -314,26 +439,34 @@ body {
   white-space: nowrap;
 }
 
-.extension-widget-triggers {
+/* The widget triggers and the status line are one row that scrolls sideways as a
+   whole. The expanded panel sits above it and stays put. */
+.extension-status-row {
   display: flex;
   flex: 1 1 100%;
   align-items: stretch;
   min-width: 0;
-  height: 35px;
   overflow-x: auto;
   overflow-y: hidden;
   overscroll-behavior-x: contain;
-  scrollbar-width: none;
+  scrollbar-width: thin;
 }
 
-.extension-widget-triggers::-webkit-scrollbar {
-  display: none;
+.extension-widget-triggers {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: stretch;
+  height: 35px;
 }
 
 .extension-status-shelf.has-widgets.has-status .extension-widget-triggers {
   flex: 0 0 auto;
   max-width: 70%;
   border-right: 1px solid var(--border);
+}
+
+.extension-status-row > .extension-status-line {
+  flex: 0 0 auto;
 }
 
 .extension-widget-trigger {
@@ -461,7 +594,7 @@ button.extension-widget-trigger:focus-visible {
   min-width: 0;
   min-height: 35px;
   max-height: min(144px, 18dvh);
-  padding: 8px 12px;
+  padding: 0;
   overflow: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
@@ -469,13 +602,71 @@ button.extension-widget-trigger:focus-visible {
 }
 
 .extension-status-text {
+  display: flex;
   flex: 1;
+  align-items: stretch;
   min-width: 0;
+  min-height: 35px;
   color: var(--text-muted);
   font-family: var(--font-mono);
   font-size: 11px;
   line-height: 1.45;
   white-space: pre;
+}
+
+/* Every status is a cell of the status line, told apart from its neighbours by a
+   vertical rule like the widget triggers. A `command:` status is a button cell, as
+   tall as the line, so the whole cell can be clicked. */
+.extension-status-item {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  padding: 8px 12px;
+  border-right: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+}
+
+.extension-status-item:last-child {
+  border-right: 0;
+}
+
+.extension-status-command {
+  border-top: 0;
+  border-bottom: 0;
+  border-left: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  line-height: 1.45;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.extension-status-command:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.extension-status-command:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.extension-status-command:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* Touch screens get taller cells when there is something to tap, widget triggers
+   included, so the row stays level. */
+@media (pointer: coarse) {
+  .extension-status-shelf.has-commands .extension-status-text {
+    min-height: 44px;
+  }
+
+  .extension-status-shelf.has-commands .extension-widget-triggers,
+  .extension-status-shelf.has-commands .extension-widget-trigger {
+    height: 44px;
+  }
 }
 
 /* Queued message rows: per-message actions (convert/edit/interrupt/delete)
@@ -637,6 +828,7 @@ pre, code {
 }
 .markdown-table-wrap > table { width: max-content; }
 .markdown-body th, .markdown-body td {
+  max-width: 240px;
   border: 0;
   border-bottom: 1px solid var(--border);
   padding: 6px 10px;
@@ -1419,6 +1611,26 @@ span.token.table {
   to { transform: rotate(360deg); }
 }
 
+/* Compositor-friendly ping for the unread-activity ring: animating only
+   opacity keeps the ripple on the compositor thread, unlike SMIL <animate>
+   on geometry attributes (r / opacity inside SVG), which forces a main-
+   thread repaint of the whole page every frame while it runs. */
+@keyframes unread-ping {
+  0%, 100% { opacity: 0.28; }
+  50% { opacity: 0.04; }
+}
+
+.unread-ping {
+  animation: unread-ping 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .unread-ping {
+    animation: none;
+    opacity: 0.16;
+  }
+}
+
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.5; }
@@ -1827,4 +2039,24 @@ span.token.table {
 @keyframes chat-status-pulse-anim {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.35; }
+}
+
+/* While the software keyboard is up (set by useViewportHeight), only a few
+   hundred pixels remain above it. Hand them to the conversation: collapse the
+   model/controls row and the extension status shelf, and drop the home
+   indicator inset the keyboard already covers. Both come back when the
+   keyboard closes. Phone landscape is wider than the mobile breakpoint but
+   leaves the least room of all, so short touch screens opt in too; tablets
+   keep their controls because the keyboard leaves them enough height. */
+@media (max-width: 640px), (pointer: coarse) and (max-height: 500px) {
+  html[data-keyboard-open] .chat-input-controls,
+  html[data-keyboard-open] .extension-status-shelf {
+    display: none !important;
+  }
+  html[data-keyboard-open] .chat-content {
+    padding-bottom: 0 !important;
+  }
+  html[data-keyboard-open] .chat-input-shell {
+    padding-bottom: 6px !important;
+  }
 }

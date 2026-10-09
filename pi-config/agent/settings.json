@@ -1,0 +1,6 @@
+{
+  "extensions": [
+    "-builtin:mcp",
+    "-builtin:codemode"
+  ]
+}

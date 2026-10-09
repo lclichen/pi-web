@@ -397,12 +397,21 @@ export function projectConfigCwd(project: ProjectRecord): string {
  *  The SDK's normal extension discovery scans this directory for ANY session
  *  created with this cwd — including subagents, restored sessions, plan mode.
  *  Uses a symlink so extension code updates propagate automatically; falls
- *  back to a copy on systems where symlinks need elevated privileges. */
+ *  back to a copy on systems where symlinks need elevated privileges.
+ *
+ *  2026-10 integration: the extension moved into the package's
+ *  pi-config/agent/extensions/amedac-sandbox (implementation in
+ *  amedac-core/src/sandbox); the link name follows. Stale links under the old
+ *  name are removed so a home never carries both. */
 export function ensureSandboxExtensionLink(home: string): void {
   const extPath = process.env.PI_WEB_SANDBOX_EXTENSION_PATH;
   if (!extPath || !existsSync(extPath)) return;
   const extDir = join(home, ".pi", "extensions");
-  const linkPath = join(extDir, "pi-sandbox-extension");
+  const legacyPath = join(extDir, "pi-sandbox-extension");
+  if (existsSync(legacyPath)) {
+    try { rmSync(legacyPath, { recursive: true, force: true }); } catch { /* stale link left behind; it targets a directory the new package no longer ships, so the SDK skips it */ }
+  }
+  const linkPath = join(extDir, "amedac-sandbox");
   if (existsSync(linkPath)) return;
   try {
     mkdirSync(extDir, { recursive: true });

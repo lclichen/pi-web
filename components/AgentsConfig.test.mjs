@@ -2,10 +2,30 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
+import ts from "typescript";
+import vm from "node:vm";
+
 const source = await readFile(new URL("./AgentsConfig.tsx", import.meta.url), "utf8");
 const cssSource = await readFile(new URL("../app/settings.css", import.meta.url), "utf8");
 const chatInputSource = await readFile(new URL("./ChatInput.tsx", import.meta.url), "utf8");
 const modelSelectorSource = await readFile(new URL("./ModelSelector.tsx", import.meta.url), "utf8");
+
+test("editor draft preserves named and empty selections independently of activation", () => {
+  const declaration = source.slice(source.indexOf("function editableProfile("), source.indexOf("function profileKey("));
+  const code = ts.transpileModule(declaration, { compilerOptions: { target: ts.ScriptTarget.ES2020 } }).outputText;
+  const editable = vm.runInNewContext(`${code}; editableProfile`);
+  for (const skills of [["review", "audit"], []]) {
+    const draft = editable({ name: "reviewer", tools: [], loadSkills: false, skills });
+    assert.equal(draft.loadSkills, false);
+    assert.deepEqual(Array.from(draft.skills ?? ["LOST"]), skills);
+    draft.skills.push("new");
+    assert.notEqual(draft.skills.length, skills.length);
+  }
+  for (const extensions of [["codegraph"], []]) {
+    const draft = editable({ name: "reviewer", tools: [], loadExtensions: true, extensions });
+    assert.deepEqual(Array.from(draft.extensions ?? ["LOST"]), extensions);
+  }
+});
 
 test("keeps same-name profiles selectable by scope and groups writable sources first", () => {
   assert.match(source, /return `\$\{profile\.scope\}:\$\{profile\.name\}`/);
@@ -25,7 +45,10 @@ test("offers a persisted built-in sub-agent switch with explicit session reload"
   assert.match(source, /<ConfigSwitch[\s\S]*?checked=\{builtInEnabled\}[\s\S]*?t\("agents\.builtInTitle"\)/);
   assert.match(source, /sendAgentCommand\(sessionId, \{ type: "reload" \}\)/);
   assert.match(source, /reloadNeeded && sessionId/);
+  assert.match(source, /className="agents-concurrency-control"[\s\S]*?t\("agents\.maxConcurrent"\)/);
+  assert.equal((source.match(/className="agents-feature-setting"/g) ?? []).length, 1);
   assert.match(cssSource, /\.agents-feature-setting \{[\s\S]*?border-bottom: 1px solid var\(--border\)/);
+  assert.match(cssSource, /\.agents-concurrency-control \{[\s\S]*?white-space: nowrap;/);
 });
 
 test("marks profiles shadowed by a higher-precedence source", () => {
@@ -41,8 +64,10 @@ test("treats global and project profiles as directly editable", () => {
 });
 
 test("offers both writable scopes when creating a profile", () => {
-  assert.match(source, /\{creating && \(/);
-  assert.match(source, /\["global", "project"\] as const/);
+  // In the header, where a saved profile shows its scope tag.
+  assert.match(source, /\{creating \? \(\s*<ConfigSaveTarget\s+value=\{targetScope\}/);
+  // Both, whatever the folder's trust: profiles are not project resources that wait for it.
+  assert.match(source, /\(\["global", "project"\] as const\)\.map\(\(scope\) => \(\{\s*value: scope,\s*label: t\(`agents\.scope\.\$\{scope\}`\),\s*disabled: saving,\s*\}\)\)/);
   assert.doesNotMatch(source, /beginOverride|mode === "override"|agents\.readOnly|agents\.override/);
 });
 
@@ -60,9 +85,17 @@ test("shows a Skills-style path row with the same switch in editable and readonl
   assert.match(source, /function displayProfilePath\(profile: SubagentProfile, cwd: string\)/);
   assert.match(source, /profile\.scope === "project" \|\| profile\.scope === "workspace"/);
   assert.match(source, /`~\/\.pi\/agent\/agents\/\$\{draft\.name \|\| "\.\.\."\}\.md`/);
-  assert.match(source, /<ConfigSwitch checked=\{draft\.enabled\} disabled=\{disabled\}/);
+  assert.match(source, /<ConfigSwitch checked=\{draft\.enabled\} disabled=\{switchDisabled\}/);
   assert.doesNotMatch(source, /agents-readonly-status/);
   assert.doesNotMatch(source, /<Toggle label=\{t\("agents\.enabled"\)\}/);
+});
+
+test("keeps the enabled switch live for built-ins whose fields stay read-only", () => {
+  assert.match(source, /function isTogglableScope\(scope: SubagentScope\): boolean \{\s*return isWritableScope\(scope\) \|\| scope === "builtin";/);
+  assert.match(source, /const switchDisabled = creating\s*\? disabled\s*: !selected \|\| !isTogglableScope\(selected\.scope\) \|\| saving \|\| toggling;/);
+  assert.match(source, /if \(!selected \|\| !isTogglableScope\(selected\.scope\)\) return;/);
+  // Everything else on a built-in stays read-only: only the switch has somewhere to write.
+  assert.match(source, /setMode\(isWritableScope\(profile\.scope\) \? "edit" : "view"\)/);
 });
 
 test("persists existing profile toggles immediately without submitting unsaved fields", () => {
@@ -104,6 +137,28 @@ test("uses the same form controls for editable and readonly profiles", () => {
   assert.match(source, /<Toggle label=\{t\("agents\.loadSkills"\)\} disabled=\{disabled\}/);
   assert.match(source, /<Toggle label=\{t\("agents\.loadExtensions"\)\} disabled=\{disabled\}/);
   assert.doesNotMatch(source, /ReadonlyValue|readonlyPromptStyle|agents-readonly/);
+});
+
+test("shows a profile file's skills and extensions lists read-only under the switches", async () => {
+  const messages = {};
+  for (const locale of ["en", "zh-CN", "zh-TW"]) {
+    messages[locale] = await readFile(new URL(`../lib/i18n/messages/${locale}.ts`, import.meta.url), "utf8");
+  }
+  assert.match(source, /\{draft\.loadSkills && draft\.skills !== undefined && \(/);
+  assert.match(source, /t\("agents\.skillsOnly", \{ skills: draft\.skills\.join\(", "\) \}\)/);
+  assert.match(source, /: t\("agents\.skillsNone"\)/);
+  assert.match(source, /\{draft\.loadExtensions && draft\.extensions !== undefined && \(/);
+  assert.match(source, /t\("agents\.extensionsOnly", \{ extensions: draft\.extensions\.join\(", "\) \}\)/);
+  assert.match(source, /: t\("agents\.extensionsNone"\)/);
+  for (const text of Object.values(messages)) {
+    assert.match(text, /"agents\.skillsOnly": "[^"]*\{skills\}[^"]*"/);
+    assert.match(text, /"agents\.skillsNone": "/);
+    assert.match(text, /"agents\.extensionsOnly": "[^"]*\{extensions\}[^"]*"/);
+    assert.match(text, /"agents\.extensionsNone": "/);
+  }
+  // The two lines sit side by side, so each names what it lists.
+  assert.match(messages["zh-CN"], /"agents\.skillsOnly": "只加载这些技能：\{skills\}"/);
+  assert.match(messages["zh-CN"], /"agents\.extensionsOnly": "只加载这些扩展：\{extensions\}"/);
 });
 
 test("shows disabled controls with a gray background", () => {

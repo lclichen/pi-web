@@ -4,11 +4,15 @@ import test from "node:test";
 
 const panelSource = await readFile(new URL("./SettingsPanel.tsx", import.meta.url), "utf8");
 const cssSource = await readFile(new URL("../app/settings.css", import.meta.url), "utf8");
+const globalCssSource = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 const shellSource = await readFile(new URL("./AppShell.tsx", import.meta.url), "utf8");
 const sidebarSource = await readFile(new URL("./SessionSidebar.tsx", import.meta.url), "utf8");
 const themeSource = await readFile(new URL("../hooks/useTheme.ts", import.meta.url), "utf8");
+const themeOptionsSource = await readFile(new URL("../lib/theme.ts", import.meta.url), "utf8");
 const enSource = await readFile(new URL("../lib/i18n/messages/en.ts", import.meta.url), "utf8");
 const zhSource = await readFile(new URL("../lib/i18n/messages/zh-CN.ts", import.meta.url), "utf8");
+const loginSource = await readFile(new URL("../app/login/page.tsx", import.meta.url), "utf8");
+const stackedDialogSource = await readFile(new URL("../lib/stacked-dialog.ts", import.meta.url), "utf8");
 
 test("opens one settings panel from direct sidebar shortcuts", () => {
   assert.match(shellSource, /<SettingsPanel/);
@@ -54,16 +58,74 @@ test("keeps visited settings sections mounted and contains nested Escape handlin
   const modelsSource = await readFile(new URL("./ModelsConfig.tsx", import.meta.url), "utf8");
   assert.match(panelSource, /mountedSections\.has\(id\)/);
   assert.match(panelSource, /hidden=\{section !== id\}/);
-  assert.match(panelSource, /event\.defaultPrevented/);
+  // Settings closes on an Escape nothing nearer handled (lib/stacked-dialog.test.mjs pins the phases).
+  assert.match(panelSource, /useEffect\(\(\) => listenForPanelEscape\(document, onClose\), \[onClose\]\);/);
+  assert.doesNotMatch(panelSource, /addEventListener\("keydown"/);
+  // An Escape that cancels an IME composition is the input method's, not a request to close.
+  assert.match(stackedDialogSource, /if \(event\.key !== "Escape" \|\| event\.defaultPrevented \|\| cancelsComposition\(event\)\) return;/);
   assert.match(modelsSource, /e\.preventDefault\(\);\s*e\.stopPropagation\(\);\s*onClose\(\);/);
 });
 
-test("offers direct light, dark, and system theme selection", () => {
-  for (const preference of ["light", "dark", "auto"]) {
-    assert.match(panelSource, new RegExp(`id: "${preference}"`));
+test("focus moves into Settings as it opens and back to its opener as it closes", () => {
+  // Left on the composer a bare /mcp opened Settings from, Escape stopped a running agent
+  // and Settings stayed open (lib/stacked-dialog.test.mjs runs focusModalPanel()).
+  assert.match(panelSource, /const dialogRef = useRef<HTMLDivElement>\(null\);\n\s*useLayoutEffect\(\(\) => focusModalPanel\(document, dialogRef\.current, \{\n\s*restoreTextEntry: !window\.matchMedia\?\.\("\(pointer: coarse\)"\)\.matches,\n\s*\}\), \[\]\);/);
+  assert.match(panelSource, /<div\n\s*ref=\{dialogRef\}\n\s*role="dialog"\n\s*aria-modal="true"\n\s*aria-label=\{t\("settings\.title"\)\}\n\s*tabIndex=\{-1\}/);
+  // The dialog element is not a control: no focus ring around the whole page.
+  assert.match(cssSource, /\.settings-dialog-backdrop:focus \{\n\s*outline: none;\n\}/);
+});
+
+test("hands the page's trust to the settings sections whose answer follows it", () => {
+  // This fork keeps its own MCP section (McpServersConfig); Skills and Plugins
+  // are the sections that take the page's trust status. AppShell owns trust and
+  // renders its ProjectTrustDialog above Settings.
+  assert.match(shellSource, /<SettingsPanel[\s\S]*?projectTrust=\{projectTrust\}[\s\S]*?\/>/);
+  assert.match(panelSource, /<SkillsConfig embedded key=\{cwd\} cwd=\{cwd\} trust=\{projectTrust\} onClose=\{onClose\} \/>/);
+  assert.match(panelSource, /<PluginsConfig embedded key=\{cwd\} cwd=\{cwd\} sessionId=\{sessionId\} trust=\{projectTrust\} onClose=\{onClose\} onReloaded=\{onSessionReloaded\} \/>/);
+  assert.match(shellSource, /<ProjectTrustDialog\n\s*cwd=\{projectTrustCwd\}/);
+  // Rendered after Settings and stacked above it.
+  assert.ok(shellSource.indexOf("<ProjectTrustDialog") > shellSource.indexOf("<SettingsPanel"));
+  const zIndex = (selector) => Number(cssSource.match(new RegExp(`\\${selector} \\{[^}]*z-index: (\\d+);`))?.[1]);
+  assert.ok(zIndex(".project-trust-backdrop") > zIndex(".settings-dialog-backdrop"));
+  // Escape there closes only the dialog: ProjectTrustDialog.test.mjs and lib/stacked-dialog.test.mjs.
+});
+
+test("trusting reloads, in place, the mounted sections whose answer depends on trust", async () => {
+  // Visited sections stay mounted (hidden), so each one that reads trust takes the page's
+  // status. Still keyed by cwd alone: a remount would drop an install under way or a draft.
+  for (const name of ["SkillsConfig", "PluginsConfig"]) {
+    assert.match(panelSource, new RegExp(`<${name} embedded key=\\{cwd\\} cwd=\\{cwd\\}[^\\n]*? trust=\\{projectTrust\\} `), name);
   }
+  const read = (name) => readFile(new URL(`./${name}.tsx`, import.meta.url), "utf8");
+  const [skills, plugins] = await Promise.all(["SkillsConfig", "PluginsConfig"].map(read));
+  // Skills and Plugins report "not loaded" and disable the Project scope from the trust at load
+  // time: a new decision loads the list again, keeping the selection and update checks; the
+  // first load stays the cwd effect's.
+  for (const [src, load] of [[skills, "loadSkills"], [plugins, "loadPlugins"]]) {
+    assert.match(src, new RegExp(
+      "const trustKey = projectTrustReloadKey\\(trust\\);\\n\\s*const loadedTrustKeyRef = useRef\\(trustKey\\);\\n\\s*useEffect\\(\\(\\) => \\{\\n"
+      + "\\s*if \\(loadedTrustKeyRef\\.current === trustKey\\) return;\\n\\s*loadedTrustKeyRef\\.current = trustKey;\\n"
+      + `\\s*void ${load}\\(\\);\\n\\s*\\}, \\[trustKey, ${load}\\]\\);`,
+    ), load);
+  }
+  // Models reads models.json, auth and enabledModels, none of which follows trust.
+  assert.match(panelSource, /sectionHost\("models", <ModelsConfig embedded cwd=\{cwd\} onClose=\{onClose\} \/>\)/);
+});
+
+test("offers five palettes and system theme selection with native radios", () => {
+  for (const preference of ["light", "dark", "mist", "rose", "pine", "auto"]) {
+    assert.match(themeOptionsSource, new RegExp(`id: "${preference}"`));
+  }
+  assert.match(panelSource, /THEME_OPTIONS\.map/);
+  assert.match(panelSource, /type="radio"/);
   assert.match(panelSource, /setThemePreference\(option\.id\)/);
   assert.match(themeSource, /const setThemePreference = useCallback/);
+});
+
+test("keeps language selection in General settings", () => {
+  assert.match(panelSource, /t\("common\.language"\)/);
+  assert.match(panelSource, /className="settings-language-options"/);
+  assert.match(panelSource, /setLocale\(plugin\.id/);
 });
 
 test("groups chat display controls together without row backgrounds", () => {
@@ -78,9 +140,9 @@ test("groups chat display controls together without row backgrounds", () => {
 
   assert.doesNotMatch(appearanceSection, /settings-chat-content/);
   assert.match(chatSection, /className="settings-chat-options"/);
-  assert.equal((chatSection.match(/className="settings-chat-option(?: |")/g) ?? []).length, 4);
+  assert.equal((chatSection.match(/className="settings-chat-option(?: |")/g) ?? []).length, 5);
   assert.equal((chatSection.match(/<ConfigSwitch/g) ?? []).length, 2);
-  for (const key of ["thinkingExpandedDefault", "chatContentWidth", "chatContentFontSize", "quoteSelection"]) {
+  for (const key of ["thinkingExpandedDefault", "chatContentWidth", "chatContentFontSize", "quoteSelection", "enterSendMode", "enterSendModeEnter", "enterSendModeCtrlEnter"]) {
     assert.match(chatSection, new RegExp(`t\\("settings\\.${key}"\\)`));
   }
   assert.doesNotMatch(panelSource, /ThinkingIcon|settings-thinking-/);
@@ -132,4 +194,15 @@ test("uses the child-session robot glyph for the sub-agents tab", () => {
 
 test("uses the compact controls glyph for General", () => {
   assert.match(panelSource, /section === "general"[\s\S]*?<path d="M20 7h-9M14 17H5" \/>[\s\S]*?<circle cx="7" cy="7" r="3" \/>[\s\S]*?<circle cx="17" cy="17" r="3" \/>/);
+});
+
+test("keeps password authentication to one login field and one settings action", () => {
+  assert.equal((loginSource.match(/type="password"/g) ?? []).length, 1);
+  assert.doesNotMatch(loginSource, /type="(?:text|email)"/);
+  assert.match(loginSource, /autoComplete="current-password"/);
+  assert.match(loginSource, /safeLoginDestination\(destination, window\.location\.origin\)/);
+  assert.match(panelSource, /fetch\("\/api\/web-auth", \{ method: "DELETE" \}\)/);
+  assert.match(panelSource, /t\("auth\.logOut"\)/);
+  assert.match(loginSource, /className="web-login-composer"[\s\S]*?type="password"[\s\S]*?<button type="submit"/);
+  assert.match(globalCssSource, /\.web-login-composer \{[\s\S]*?display: flex;[\s\S]*?border-radius: 14px/);
 });

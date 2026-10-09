@@ -3,7 +3,7 @@ import {
   getAgentDir,
   type SessionInfo as PiSessionInfo,
 } from "@earendil-works/pi-coding-agent";
-import { closeSync, type Dirent, fstatSync, openSync, readSync } from "fs";
+import { closeSync, type Dirent, fstatSync, openSync, readSync, readFileSync } from "fs";
 import { readdir } from "fs/promises";
 import { isAbsolute, join, normalize as normalizePath, relative, resolve as resolvePath, sep } from "path";
 import type { AgentMessage, ImageContent, SessionEntry, SessionHeader, SessionInfo, SessionContext } from "./types";
@@ -741,9 +741,13 @@ function entryToUiMessage(
   // normalizeToolCalls is a secondary guard (returns non-assistant messages as-is).
   switch (entry.type) {
     case "message": {
+      // pi 1.0+ writes the system prompt and tool declarations into the
+      // transcript as role:"system" message entries (mid-conversation prompt
+      // changes). They are loadout, not conversation — never render them.
+      if ((entry.message as { role?: string }).role === "system") return null;
       let message = options.deferToolResultImages
-        ? deferToolResultBase64Images(normalizeToolCalls(entry.message), options.sessionId, entry.id)
-        : normalizeToolCalls(entry.message);
+        ? deferToolResultBase64Images(normalizeToolCalls(entry.message as unknown as AgentMessage), options.sessionId, entry.id)
+        : normalizeToolCalls(entry.message as unknown as AgentMessage);
       const legacyContent = message.role === "assistant" ? (message as { content: unknown }).content : undefined;
       if (typeof legacyContent === "string") {
         message = { ...message, content: [{ type: "text", text: legacyContent }] } as AgentMessage;
@@ -790,4 +794,41 @@ function entryToUiMessage(
     default:
       return null;
   }
+}
+
+/**
+ * Id of the newest entry in a session JSONL, or undefined when the file is
+ * absent (a wrapper that has not flushed its first message yet) or unreadable.
+ *
+ * Used only on ?force=1 session reads (mount / page refresh). An id the
+ * in-memory wrapper never saw means another pi process appended to the file.
+ * The header carries the session id rather than an entry id, and the SDK's
+ * entry index excludes it — treating it as an entry would evict a fresh wrapper.
+ */
+const SESSION_TAIL_PROBE_MAX_BYTES = 64 * 1024;
+
+function readEntryId(line: string): string | undefined {
+  try {
+    const entry = JSON.parse(line) as { type?: unknown; id?: unknown };
+    if (entry.type === "session") return undefined;
+    return typeof entry.id === "string" && entry.id ? entry.id : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function readLatestSessionEntryId(filePath: string | undefined): string | undefined {
+  if (!filePath) return undefined;
+  let lines: string[];
+  try {
+    lines = readBoundedTailLines(filePath, SESSION_TAIL_PROBE_MAX_BYTES);
+  } catch {
+    return undefined;
+  }
+  // Walk backwards so a torn trailing line falls back to the previous entry.
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const entryId = readEntryId(lines[index]);
+    if (entryId) return entryId;
+  }
+  return undefined;
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useId, useRef } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import type { ModelCatalogPreset, ModelCatalogRecommendation } from "@/lib/model-catalog";
 import type { DiscoveredModel } from "@/lib/model-discovery";
@@ -12,8 +12,12 @@ import {
   hasModelCostDraftValue,
   modelCostToDraft,
   parseCompleteModelCost,
+  savedModelIds,
   serializeHeaderRows,
   setCompatBool,
+  trackAddedModels,
+  collectModelRenames,
+  renameProviderEntry,
   updateHeaderRow,
   type HeaderRow,
   type ModelCostDraft,
@@ -22,6 +26,9 @@ import {
 import {
   ConfigButton,
   ConfigDetail,
+  ConfigDetailActions,
+  ConfigDetailHeader,
+  ConfigDetailHeaderInfo,
   ConfigDetailStack,
   ConfigEmptyState,
   ConfigField,
@@ -35,7 +42,18 @@ import {
   ConfigSidebarText,
   ConfigSplitView,
 } from "./SettingsUi";
+import {
+  EnabledModelsBanner,
+  EnabledModelsProviderSwitch,
+  EnabledModelsProviderSwitchNote,
+  EnabledModelsSection,
+  useEnabledModels,
+  type EnabledModelsController,
+} from "./EnabledModelsSection";
+import { providerBadgeLabel } from "./enabled-models-helpers";
+import { OAuthPastePanel } from "./OAuthPastePanel";
 import { ProviderIcon } from "./ProviderIcon";
+import { ProviderUsageSummary } from "./ProviderUsageSummary";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -288,25 +306,20 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
 
 // ── Provider detail ───────────────────────────────────────────────────────────
 
-function ProviderDetail({ name, provider, onChange, onRename, onDelete, onAddModels }: {
-  name: string; provider: ProviderEntry;
-  onChange: (p: ProviderEntry) => void; onRename: (n: string) => void; onDelete: () => void;
-  onAddModels: (models: DiscoveredModel[]) => void;
+function ProviderDetail({ name, editingName, provider, onChange, onEditingNameChange, onRename, onDelete, onAddModels, enabledModels }: {
+  name: string; editingName: string; provider: ProviderEntry;
+  onChange: (p: ProviderEntry) => void; onEditingNameChange: (n: string) => void;
+  onRename: (n: string) => void; onDelete: () => void;
+  onAddModels: (models: DiscoveredModel[]) => void; enabledModels: EnabledModelsController;
 }) {
   const { t } = useI18n();
-  const [editingName, setEditingName] = useState(name);
   const [discoveryState, setDiscoveryState] = useState<ModelDiscoveryState>({ phase: "idle" });
   const [discoveryQuery, setDiscoveryQuery] = useState("");
   const [selectedModelIds, setSelectedModelIds] = useState<string[]>([]);
   const discoveryRequestIdRef = useRef(0);
   const selectShownRef = useRef<HTMLInputElement>(null);
-  useEffect(() => setEditingName(name), [name]);
+  const switchNoteId = useId();
   const set = <K extends keyof ProviderEntry>(k: K, v: ProviderEntry[K]) => onChange({ ...provider, [k]: v });
-
-  useEffect(() => {
-    if (!provider.api) onChange({ ...provider, api: "openai-completions" });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [provider.api]);
 
   useEffect(() => {
     discoveryRequestIdRef.current += 1;
@@ -316,7 +329,7 @@ function ProviderDetail({ name, provider, onChange, onRename, onDelete, onAddMod
   }, [name, provider.baseUrl, provider.api, provider.apiKey]);
 
   const handleDiscoverModels = useCallback(async () => {
-    if (!provider.baseUrl?.trim() || discoveryState.phase === "loading") return;
+    if (discoveryState.phase === "loading") return;
     const requestId = ++discoveryRequestIdRef.current;
     setDiscoveryState({ phase: "loading" });
     setSelectedModelIds([]);
@@ -332,7 +345,7 @@ function ProviderDetail({ name, provider, onChange, onRename, onDelete, onAddMod
         setDiscoveryState({ phase: "error", message: data.error ?? `HTTP ${res.status}` });
         return;
       }
-      setDiscoveryState({ phase: "success", models: data.models, endpoint: data.endpoint ?? provider.baseUrl });
+      setDiscoveryState({ phase: "success", models: data.models, endpoint: data.endpoint ?? provider.baseUrl ?? "" });
     } catch (error) {
       if (requestId !== discoveryRequestIdRef.current) return;
       setDiscoveryState({ phase: "error", message: error instanceof Error ? error.message : String(error) });
@@ -383,19 +396,24 @@ function ProviderDetail({ name, provider, onChange, onRename, onDelete, onAddMod
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-         <SectionTitle>{t("i18n.provider")}</SectionTitle>
-        <button onClick={onDelete}
-          style={{ padding: "3px 8px", background: "none", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 4, color: "#ef4444", cursor: "pointer", fontSize: 11 }}>
-           {t("i18n.delete")}
-        </button>
+      <div className="config-detail-heading">
+        <ConfigDetailHeader>
+          <ConfigDetailHeaderInfo>
+            <SectionTitle>{t("i18n.provider")}</SectionTitle>
+          </ConfigDetailHeaderInfo>
+          <ConfigDetailActions>
+            <EnabledModelsProviderSwitch providerId={name} controller={enabledModels} noteId={switchNoteId} />
+            <ConfigButton variant="danger" size="small" onClick={onDelete}>{t("i18n.delete")}</ConfigButton>
+          </ConfigDetailActions>
+        </ConfigDetailHeader>
+        <EnabledModelsProviderSwitchNote providerId={name} controller={enabledModels} id={switchNoteId} />
       </div>
 
        <Field label={t("i18n.providerName")}>
-        <TextInput value={editingName} onChange={setEditingName} placeholder="provider-name" mono />
+        <TextInput value={editingName} onChange={onEditingNameChange} placeholder="provider-name" mono />
         {editingName !== name && editingName.trim() && (
           <button onClick={() => onRename(editingName.trim())}
-            style={{ marginTop: 4, padding: "3px 10px", background: "var(--accent)", border: "none", borderRadius: 4, color: "#fff", cursor: "pointer", fontSize: 11, alignSelf: "flex-start" }}>
+            style={{ marginTop: 4, padding: "3px 10px", background: "var(--accent)", border: "none", borderRadius: 4, color: "var(--accent-contrast)", cursor: "pointer", fontSize: 11, alignSelf: "flex-start" }}>
              {t("i18n.rename")}
           </button>
         )}
@@ -404,6 +422,9 @@ function ProviderDetail({ name, provider, onChange, onRename, onDelete, onAddMod
       <Field label="Base URL">
         <TextInput value={provider.baseUrl ?? ""} onChange={(v) => set("baseUrl", v || undefined)}
           placeholder="https://api.example.com/v1" mono />
+        <span style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 2 }}>
+          Leave empty for a built-in provider to use the endpoint pi ships
+        </span>
       </Field>
 
       <Field label="API Key">
@@ -415,7 +436,7 @@ function ProviderDetail({ name, provider, onChange, onRename, onDelete, onAddMod
       </Field>
 
       <Field label="API">
-        <Select value={provider.api ?? "openai-completions"} onChange={(v) => set("api", v)} options={API_OPTIONS} required />
+        <Select value={provider.api ?? ""} onChange={(v) => set("api", v || undefined)} options={API_OPTIONS} />
       </Field>
 
       <Field label="Headers">
@@ -432,11 +453,11 @@ function ProviderDetail({ name, provider, onChange, onRename, onDelete, onAddMod
         {discoveryState.phase !== "success" && (
           <button
             onClick={handleDiscoverModels}
-            disabled={!provider.baseUrl?.trim() || discoveryState.phase === "loading"}
+            disabled={discoveryState.phase === "loading"}
             style={{
               alignSelf: "flex-start", height: 30, padding: "0 12px", border: "1px solid var(--border)", borderRadius: 5,
-              background: "var(--bg-panel)", color: !provider.baseUrl?.trim() || discoveryState.phase === "loading" ? "var(--text-dim)" : "var(--text-muted)",
-              cursor: !provider.baseUrl?.trim() || discoveryState.phase === "loading" ? "not-allowed" : "pointer", fontSize: 11,
+              background: "var(--bg-panel)", color: discoveryState.phase === "loading" ? "var(--text-dim)" : "var(--text-muted)",
+              cursor: discoveryState.phase === "loading" ? "not-allowed" : "pointer", fontSize: 11,
             }}
           >
             {discoveryState.phase === "loading" ? t("models.discoveryFetching") : t("models.discoveryFetch")}
@@ -518,7 +539,7 @@ function ProviderDetail({ name, provider, onChange, onRename, onDelete, onAddMod
               <button
                 onClick={addSelectedModels}
                 disabled={selectedCount === 0}
-                style={{ height: 28, padding: "0 11px", border: "none", borderRadius: 5, background: selectedCount ? "var(--accent)" : "var(--bg-panel)", color: selectedCount ? "#fff" : "var(--text-dim)", cursor: selectedCount ? "pointer" : "not-allowed", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap" }}
+                style={{ height: 28, padding: "0 11px", border: "none", borderRadius: 5, background: selectedCount ? "var(--accent)" : "var(--bg-panel)", color: selectedCount ? "var(--accent-contrast)" : "var(--text-dim)", cursor: selectedCount ? "pointer" : "not-allowed", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap" }}
               >
                 {selectedCount
                   ? t("models.discoveryAddSelectedCount", { count: selectedCount })
@@ -528,6 +549,7 @@ function ProviderDetail({ name, provider, onChange, onRename, onDelete, onAddMod
           </>
         )}
       </div>
+
     </div>
   );
 }
@@ -588,7 +610,7 @@ function ThinkingLevelMapEditor({
         };
         const btnActive: React.CSSProperties = {
           background: "var(--accent)",
-          color: "#fff",
+          color: "var(--accent-contrast)",
           fontWeight: 600,
         };
         const btnActiveDisabled: React.CSSProperties = {
@@ -1016,15 +1038,17 @@ function ModelDetail({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-         <SectionTitle>{t("i18n.model")}</SectionTitle>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <ConfigDetailHeader>
+        <ConfigDetailHeaderInfo>
+          <SectionTitle>{t("i18n.model")}</SectionTitle>
+        </ConfigDetailHeaderInfo>
+        <ConfigDetailActions>
           {testSummary && (
             <span
               title={testSummary}
               style={{
                 maxWidth: 260,
-                height: 24,
+                height: 28,
                 padding: "0 8px",
                 border: `1px solid ${testState.phase === "error" ? "#fecaca" : testState.phase === "success" ? "#bbf7d0" : "var(--border)"}`,
                 borderRadius: 4,
@@ -1042,25 +1066,13 @@ function ModelDetail({
               {testSummary}
             </span>
           )}
-          <button
-            onClick={handleTest}
+          <ConfigButton
+            size="small"
+            variant={testState.phase === "success" ? "primary" : "secondary"}
+            onClick={testState.phase === "success" ? () => setTestState({ phase: "idle" }) : handleTest}
             disabled={!model.id.trim() || testState.phase === "testing"}
-             title={t("i18n.testConnection")}
-            style={{
-              height: 24,
-              padding: "0 8px",
-              background: testState.phase === "success" ? "#16a34a" : "none",
-              border: `1px solid ${testState.phase === "success" ? "#16a34a" : "var(--border)"}`,
-              borderRadius: 4,
-              color: testState.phase === "success" ? "#fff" : (!model.id.trim() || testState.phase === "testing") ? "var(--text-dim)" : "var(--text-muted)",
-              cursor: (!model.id.trim() || testState.phase === "testing") ? "not-allowed" : "pointer",
-              fontSize: 11,
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              boxSizing: "border-box",
-              gap: 5,
-            }}
+            title={t("i18n.testConnection")}
+            className={testState.phase === "success" ? "is-success" : undefined}
           >
             {testState.phase === "success" && (
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
@@ -1068,13 +1080,10 @@ function ModelDetail({
               </svg>
             )}
              {testState.phase === "testing" ? t("i18n.checking") : testState.phase === "success" ? t("common.ok") : t("i18n.test")}
-          </button>
-          <button onClick={onDelete}
-            style={{ height: 24, padding: "0 8px", background: "none", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 4, color: "#ef4444", cursor: "pointer", fontSize: 11, boxSizing: "border-box" }}>
-             {t("i18n.remove")}
-          </button>
-        </div>
-      </div>
+          </ConfigButton>
+          <ConfigButton variant="danger" size="small" onClick={onDelete}>{t("i18n.remove")}</ConfigButton>
+        </ConfigDetailActions>
+      </ConfigDetailHeader>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
         <Field label="ID *"><TextInput value={model.id} onChange={(v) => set("id", v)} placeholder="model-id" mono /></Field>
@@ -1292,7 +1301,9 @@ function ModelDetail({
 
 // ── OAuth detail ──────────────────────────────────────────────────────────────
 
-function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefresh: () => void }) {
+function OAuthDetail({ provider, onRefresh, enabledModels }: {
+  provider: OAuthProvider; onRefresh: () => void; enabledModels: EnabledModelsController;
+}) {
   const [loginState, setLoginState] = useState<OAuthLoginState>({ phase: "idle" });
   const { t } = useI18n();
   const [inputValue, setInputValue] = useState("");
@@ -1417,23 +1428,56 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
     loginState.phase === "prompt" || loginState.phase === "select";
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-           <SectionTitle>{t("i18n.subscription")}</SectionTitle>
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ width: 7, height: 7, borderRadius: "50%", background: provider.loggedIn ? "#4ade80" : "var(--border)", display: "inline-block" }} />
-          <span style={{ fontSize: 11, color: provider.loggedIn ? "#4ade80" : "var(--text-dim)" }}>
-             {provider.loggedIn ? t("i18n.connected") : t("i18n.notConnected")}
-          </span>
-        </div>
-      </div>
+    <div style={{ display: "flex", flexDirection: "column", gap: provider.loggedIn && loginState.phase === "idle" ? 0 : 16 }}>
+      <ConfigDetailHeader>
+        <ConfigDetailHeaderInfo>
+          <SectionTitle>{t("i18n.subscription")}</SectionTitle>
+        </ConfigDetailHeaderInfo>
+        <ConfigDetailActions>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ width: 7, height: 7, borderRadius: "50%", background: provider.loggedIn ? "#4ade80" : "var(--border)", display: "inline-block" }} />
+            <span style={{ fontSize: 11, color: provider.loggedIn ? "#4ade80" : "var(--text-dim)" }}>
+               {provider.loggedIn ? t("i18n.connected") : t("i18n.notConnected")}
+            </span>
+          </div>
+          {isWorking ? (
+            <ConfigButton
+              size="small"
+              onClick={() => { eventSourceRef.current?.close(); setLoginState({ phase: "idle" }); }}
+            >
+              {t("i18n.cancel")}
+            </ConfigButton>
+          ) : (
+            <>
+              <ConfigButton
+                variant="primary"
+                size="small"
+                onClick={handleLogin}
+              >
+                 {provider.loggedIn ? t("i18n.relogin") : t("i18n.login")}
+              </ConfigButton>
+              {provider.loggedIn && (
+                <ConfigButton
+                  variant="danger"
+                  size="small"
+                  onClick={handleLogout}
+                >
+                   {t("i18n.disconnect")}
+                </ConfigButton>
+              )}
+            </>
+          )}
+        </ConfigDetailActions>
+      </ConfigDetailHeader>
 
       {/* Status */}
-      <div style={{ minHeight: 48 }}>
+      <div style={{ minHeight: provider.loggedIn && loginState.phase === "idle" ? 0 : 48 }}>
         {loginState.phase === "idle" && (
-          <p style={{ margin: 0, fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5 }}>
-             {provider.loggedIn ? "Already connected. You can re-login or disconnect." : `Connect your ${provider.name} account.`}
-          </p>
+          !provider.loggedIn && (
+            <p style={{ margin: 0, fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5 }}>
+              Connect your {provider.name} account.
+            </p>
+          )
         )}
         {loginState.phase === "connecting" && (
             <p style={{ margin: 0, fontSize: 12, color: "var(--text-muted)" }}>{t("i18n.openingBrowser")}</p>
@@ -1457,39 +1501,26 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
           </div>
         )}
         {(loginState.phase === "auth" || loginState.phase === "prompt") && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            <p style={{ margin: 0, fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5 }}>
-              {loginState.phase === "auth"
-                ? "Complete sign-in in the browser, then copy the redirect URL from the address bar and paste it below."
-                : loginState.message}
-            </p>
-            {loginState.phase === "auth" && (
-              <p style={{ margin: 0, fontSize: 11, color: "var(--text-dim)", lineHeight: 1.5 }}>
+          <OAuthPastePanel
+            message={loginState.phase === "auth"
+              ? "Complete sign-in in the browser, then copy the redirect URL from the address bar and paste it below."
+              : loginState.message}
+            hint={loginState.phase === "auth" ? (
+              <>
                 If the browser window did not open,{" "}
-                <a href={loginState.url} target="_blank" rel="noopener noreferrer" style={{ color: "var(--accent)", wordBreak: "break-all" }}>
+                <a href={loginState.url} target="_blank" rel="noopener noreferrer">
                   click here to open the login page
                 </a>
                 .
-              </p>
-            )}
-            <div style={{ display: "flex", gap: 6 }}>
-              <input
-                ref={inputRef}
-                value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") submitCode(loginState.token, inputValue); }}
-                placeholder={loginState.phase === "auth" ? "http://localhost:1455/auth/callback?code=…" : (loginState.placeholder ?? "Enter value…")}
-                style={{ flex: 1, padding: "6px 9px", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 5, color: "var(--text)", fontSize: 12, outline: "none", fontFamily: "var(--font-mono)", boxSizing: "border-box" }}
-              />
-              <button
-                onClick={() => submitCode(loginState.token, inputValue)}
-                disabled={!inputValue.trim()}
-                style={{ padding: "6px 12px", background: inputValue.trim() ? "var(--accent)" : "var(--bg-panel)", border: "none", borderRadius: 5, color: inputValue.trim() ? "#fff" : "var(--text-dim)", cursor: inputValue.trim() ? "pointer" : "not-allowed", fontSize: 12, fontWeight: 600, flexShrink: 0 }}
-              >
-                 {t("i18n.submit")}
-              </button>
-            </div>
-          </div>
+              </>
+            ) : undefined}
+            value={inputValue}
+            placeholder={loginState.phase === "auth" ? "http://localhost:1455/auth/callback?code=…" : (loginState.placeholder ?? "Enter value…")}
+            submitLabel={t("i18n.submit")}
+            inputRef={inputRef}
+            onValueChange={setInputValue}
+            onSubmit={() => void submitCode(loginState.token, inputValue)}
+          />
         )}
         {loginState.phase === "device_code" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -1518,41 +1549,18 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
         )}
       </div>
 
-      {/* Actions */}
-      <div style={{ display: "flex", gap: 8 }}>
-        {isWorking ? (
-          <button
-            onClick={() => { eventSourceRef.current?.close(); setLoginState({ phase: "idle" }); }}
-            style={{ padding: "5px 12px", background: "none", border: "1px solid var(--border)", borderRadius: 5, color: "var(--text-muted)", cursor: "pointer", fontSize: 12 }}
-          >
-             {t("i18n.cancel")}
-          </button>
-        ) : (
-          <>
-            <button
-              onClick={handleLogin}
-              style={{ padding: "5px 14px", background: "var(--accent)", border: "none", borderRadius: 5, color: "#fff", cursor: "pointer", fontSize: 12, fontWeight: 600 }}
-            >
-               {provider.loggedIn ? t("i18n.relogin") : t("i18n.login")}
-            </button>
-            {provider.loggedIn && (
-              <button
-                onClick={handleLogout}
-                style={{ padding: "5px 12px", background: "none", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 5, color: "#ef4444", cursor: "pointer", fontSize: 12 }}
-              >
-                 {t("i18n.disconnect")}
-              </button>
-            )}
-          </>
-        )}
-      </div>
+      <ProviderUsageSummary providerId={provider.id} enabled={provider.loggedIn} />
+
+      {provider.loggedIn && <EnabledModelsSection providerId={provider.id} controller={enabledModels} />}
     </div>
   );
 }
 
 // ── API Key detail ────────────────────────────────────────────────────────────
 
-function ApiKeyDetail({ provider, onRefresh }: { provider: ApiKeyProvider; onRefresh: () => void }) {
+function ApiKeyDetail({ provider, onRefresh, enabledModels }: {
+  provider: ApiKeyProvider; onRefresh: () => void; enabledModels: EnabledModelsController;
+}) {
   const [apiKey, setApiKey] = useState("");
   const [saving, setSaving] = useState(false);
   const [removing, setRemoving] = useState(false);
@@ -1611,73 +1619,74 @@ function ApiKeyDetail({ provider, onRefresh }: { provider: ApiKeyProvider; onRef
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-         <SectionTitle>API Key</SectionTitle>
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ width: 7, height: 7, borderRadius: "50%", background: provider.configured ? "#4ade80" : "var(--border)", display: "inline-block" }} />
-          <span style={{ fontSize: 11, color: provider.configured ? "#4ade80" : "var(--text-dim)" }}>
-             {provider.configured ? t("i18n.configured") : t("i18n.notConfigured")}
-          </span>
-        </div>
+      <ConfigDetailHeader>
+        <ConfigDetailHeaderInfo>
+          <SectionTitle>API Key</SectionTitle>
+        </ConfigDetailHeaderInfo>
+        <ConfigDetailActions>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ width: 7, height: 7, borderRadius: "50%", background: provider.configured ? "#4ade80" : "var(--border)", display: "inline-block" }} />
+            <span style={{ fontSize: 11, color: provider.configured ? "#4ade80" : "var(--text-dim)" }}>
+               {provider.configured ? t("i18n.configured") : t("i18n.notConfigured")}
+            </span>
+          </div>
+          {provider.configured && (
+            <ConfigButton
+              variant="danger"
+              size="small"
+              onClick={handleRemove}
+              disabled={removing}
+            >
+               {removing ? t("i18n.removing") : t("i18n.disconnect")}
+            </ConfigButton>
+          )}
+        </ConfigDetailActions>
+      </ConfigDetailHeader>
+
+      {!provider.configured && (
+        <p style={{ margin: 0, fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5 }}>
+          Enter your {provider.displayName} API key to enable {provider.modelCount} model{provider.modelCount !== 1 ? "s" : ""}.
+        </p>
+      )}
+
+      <div style={{ display: "flex", gap: 6 }}>
+        <SecretTextInput
+          value={apiKey}
+          onChange={setApiKey}
+          onKeyDown={(e) => { if (e.key === "Enter" && apiKey.trim()) handleSave(); }}
+          placeholder={provider.configured ? "Enter new key to replace…" : "sk-…"}
+          style={{ flex: 1 }}
+          autoComplete="off"
+          spellCheck={false}
+          mono
+        />
+        <button
+          onClick={handleSave}
+          disabled={saving || !apiKey.trim() || savedOk}
+          style={{
+            padding: "6px 12px",
+            background: savedOk ? "#16a34a" : apiKey.trim() ? "var(--accent)" : "var(--bg-panel)",
+            border: "none", borderRadius: 5,
+            color: savedOk ? "#fff" : apiKey.trim() ? "var(--accent-contrast)" : "var(--text-dim)",
+            cursor: (saving || !apiKey.trim() || savedOk) ? "not-allowed" : "pointer",
+            fontSize: 12, fontWeight: 600, flexShrink: 0,
+            display: "flex", alignItems: "center", gap: 5,
+          }}
+        >
+          {savedOk && (
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
+          )}
+           {savedOk ? t("i18n.saved") : saving ? t("i18n.saving") : t("i18n.save")}
+        </button>
       </div>
-
-      <p style={{ margin: 0, fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5 }}>
-        {provider.configured
-          ? `API key is stored. Enter a new key below to replace it, or disconnect to remove it.`
-          : `Enter your ${provider.displayName} API key to enable ${provider.modelCount} model${provider.modelCount !== 1 ? "s" : ""}.`}
-      </p>
-
-      <Field label="API Key">
-        <div style={{ display: "flex", gap: 6 }}>
-          <SecretTextInput
-            value={apiKey}
-            onChange={setApiKey}
-            onKeyDown={(e) => { if (e.key === "Enter" && apiKey.trim()) handleSave(); }}
-            placeholder={provider.configured ? "Enter new key to replace…" : "sk-…"}
-            style={{ flex: 1 }}
-            autoComplete="off"
-            spellCheck={false}
-            mono
-          />
-          <button
-            onClick={handleSave}
-            disabled={saving || !apiKey.trim() || savedOk}
-            style={{
-              padding: "6px 12px",
-              background: savedOk ? "#16a34a" : apiKey.trim() ? "var(--accent)" : "var(--bg-panel)",
-              border: "none", borderRadius: 5,
-              color: (apiKey.trim() || savedOk) ? "#fff" : "var(--text-dim)",
-              cursor: (saving || !apiKey.trim() || savedOk) ? "not-allowed" : "pointer",
-              fontSize: 12, fontWeight: 600, flexShrink: 0,
-              display: "flex", alignItems: "center", gap: 5,
-            }}
-          >
-            {savedOk && (
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="20 6 9 17 4 12" />
-              </svg>
-            )}
-             {savedOk ? t("i18n.saved") : saving ? t("i18n.saving") : t("i18n.save")}
-          </button>
-        </div>
-      </Field>
 
       {error && <p style={{ margin: 0, fontSize: 12, color: "#f87171" }}>{error}</p>}
 
-      {provider.configured && (
-        <button
-          onClick={handleRemove}
-          disabled={removing}
-          style={{
-            alignSelf: "flex-start", padding: "5px 12px",
-            background: "none", border: "1px solid rgba(239,68,68,0.3)",
-            borderRadius: 5, color: "#ef4444",
-            cursor: removing ? "not-allowed" : "pointer", fontSize: 12,
-          }}
-        >
-           {removing ? t("i18n.removing") : t("i18n.disconnect")}
-        </button>
-      )}
+      <ProviderUsageSummary providerId={provider.id} enabled={provider.configured} />
+
+      {provider.configured && <EnabledModelsSection providerId={provider.id} controller={enabledModels} />}
     </div>
   );
 }
@@ -1825,17 +1834,39 @@ function AddProviderPicker({
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function ModelsConfig({ onClose, embedded = false }: { onClose: () => void; embedded?: boolean }) {
+export function ModelsConfig({ onClose, embedded = false, cwd = null }: {
+  onClose: () => void; embedded?: boolean; cwd?: string | null;
+}) {
   const { t } = useI18n();
+  // `enabledModels` lives in pi's settings, not models.json, so these switches
+  // apply immediately instead of waiting for this panel's Save button.
+  const enabledModels = useEnabledModels(cwd);
   const [config, setConfig] = useState<ModelsJson>({ providers: {} });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  // Set when models.json could not be read. Saving stays disabled: the draft
+  // would not contain the file's providers, and a save replaces the whole file.
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [savedOk, setSavedOk] = useState(false);
   const [selection, setSelection] = useState<Selection | null>(readRememberedSelection);
   const [oauthProviders, setOauthProviders] = useState<OAuthProvider[]>([]);
   const [apiKeyProviders, setApiKeyProviders] = useState<ApiKeyProvider[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
+  /** Provider ids as models.json has them on disk, and where renames moved them. */
+  const savedProvidersRef = useRef<Set<string>>(new Set());
+  const renamesRef = useRef<Map<string, string>>(new Map());
+  /**
+   * Per provider, the model id saved at each slot, or null for a model added
+   * since. Mirroring the draft's array moves is what lets a save tell a rename
+   * from an unrelated edit without guessing.
+   */
+  const savedModelIdsRef = useRef<Map<string, (string | null)[]>>(new Map());
+  /**
+   * The provider name field while it differs from the provider's id. Save
+   * applies it like every other visible edit; Rename applies it right away.
+   */
+  const [providerNameDraft, setProviderNameDraft] = useState<{ provider: string; name: string } | null>(null);
 
   const refreshAuthProviders = useCallback(() => {
     fetch("/api/auth/providers")
@@ -1849,10 +1880,16 @@ export function ModelsConfig({ onClose, embedded = false }: { onClose: () => voi
 
   useEffect(() => {
     fetch("/api/models-config")
-      .then((r) => r.json())
-      .then((d: ModelsJson) => {
+      .then(async (r) => {
+        const d = await r.json() as ModelsJson & { error?: string };
+        if (!r.ok || d.error) throw new Error(d.error ?? `HTTP ${r.status}`);
+        return d;
+      })
+      .then((d) => {
         const normalized = d.providers ? d : { ...d, providers: {} };
         setConfig(normalized);
+        savedProvidersRef.current = new Set(Object.keys(normalized.providers ?? {}));
+        savedModelIdsRef.current = savedModelIds(normalized);
         const keys = Object.keys(normalized.providers ?? {});
         setSelection((current) => current && customSelectionExists(normalized, current)
           ? current
@@ -1860,7 +1897,7 @@ export function ModelsConfig({ onClose, embedded = false }: { onClose: () => voi
             ? { type: "provider", name: keys[0] }
             : null);
       })
-      .catch(() => setConfig({ providers: {} }))
+      .catch((e: unknown) => setLoadError(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoading(false));
     refreshAuthProviders();
   }, [refreshAuthProviders]);
@@ -1881,23 +1918,35 @@ export function ModelsConfig({ onClose, embedded = false }: { onClose: () => voi
     setConfig((prev) => ({ ...prev, providers: { ...(prev.providers ?? {}), [name]: p } }));
   }, []);
 
-  const renameProvider = useCallback((oldName: string, newName: string) => {
-    setConfig((prev) => {
-      const entries = Object.entries(prev.providers ?? {});
-      const idx = entries.findIndex(([k]) => k === oldName);
-      if (idx === -1) return prev;
-      entries[idx] = [newName, entries[idx][1]];
-      return { ...prev, providers: Object.fromEntries(entries) };
-    });
+  /** Moves a provider in `draft`; returns the moved config, or null when the id is taken. */
+  const applyProviderRename = useCallback((draft: ModelsJson, oldName: string, newName: string): ModelsJson | null => {
+    // Remember where each saved provider ended up, so the enabledModels entries
+    // can follow it on save instead of pointing at an id that no longer exists.
+    const next = renameProviderEntry(draft, {
+      savedProviders: savedProvidersRef.current,
+      renames: renamesRef.current,
+      slots: savedModelIdsRef.current,
+    }, oldName, newName);
+    if (!next) return null;
+    setConfig(next);
+    setProviderNameDraft(null);
     setSelection((prev) => {
       if (!prev) return prev;
       if (prev.type === "provider" && prev.name === oldName) return { type: "provider", name: newName };
       if (prev.type === "model" && prev.providerName === oldName) return { ...prev, providerName: newName };
       return prev;
     });
+    return next;
   }, []);
 
+  const renameProvider = useCallback((oldName: string, newName: string) => {
+    if (applyProviderRename(config, oldName, newName)) setSaveError(null);
+    else setSaveError(t("models.providerNameTaken", { name: newName }));
+  }, [applyProviderRename, config, t]);
+
   const deleteProvider = useCallback((name: string) => {
+    savedModelIdsRef.current.delete(name);
+    setProviderNameDraft((prev) => prev?.provider === name ? null : prev);
     setConfig((prev) => {
       const providers = { ...(prev.providers ?? {}) };
       delete providers[name];
@@ -1911,6 +1960,7 @@ export function ModelsConfig({ onClose, embedded = false }: { onClose: () => voi
   }, []);
 
   const addModel = useCallback((providerName: string) => {
+    trackAddedModels(savedModelIdsRef.current, providerName, 1);
     setConfig((prev) => {
       const provider = prev.providers?.[providerName] ?? {};
       const models = [...(provider.models ?? []), { id: "" }];
@@ -1925,6 +1975,12 @@ export function ModelsConfig({ onClose, embedded = false }: { onClose: () => voi
 
   const addDiscoveredModels = useCallback((providerName: string, discovered: DiscoveredModel[]) => {
     setConfig((prev) => {
+      const known = new Set((prev.providers?.[providerName]?.models ?? []).map((model) => model.id));
+      trackAddedModels(
+        savedModelIdsRef.current,
+        providerName,
+        discovered.filter((model) => !known.has(model.id)).length,
+      );
       const provider = prev.providers?.[providerName] ?? {};
       const models = [...(provider.models ?? [])];
       const existingIds = new Set(models.map((model) => model.id));
@@ -1953,6 +2009,7 @@ export function ModelsConfig({ onClose, embedded = false }: { onClose: () => voi
   }, []);
 
   const removeModel = useCallback((providerName: string, index: number) => {
+    savedModelIdsRef.current.get(providerName)?.splice(index, 1);
     setConfig((prev) => {
       const provider = prev.providers?.[providerName] ?? {};
       const models = [...(provider.models ?? [])];
@@ -1963,26 +2020,57 @@ export function ModelsConfig({ onClose, embedded = false }: { onClose: () => voi
   }, []);
 
   const handleSave = useCallback(async () => {
+    if (loadError) return;
     setSaving(true);
     setSaveError(null);
     setSavedOk(false);
+    // A provider name typed but not applied with Rename is still a visible
+    // edit: move the provider before writing, like every other field.
+    let draft = config;
+    const pendingName = providerNameDraft?.name.trim();
+    if (providerNameDraft && pendingName && config.providers?.[providerNameDraft.provider]) {
+      const renamed = applyProviderRename(config, providerNameDraft.provider, pendingName);
+      if (!renamed) {
+        setSaveError(t("models.providerNameTaken", { name: pendingName }));
+        setSaving(false);
+        return;
+      }
+      draft = renamed;
+    }
     try {
       const res = await fetch("/api/models-config", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(config),
+        body: JSON.stringify(draft),
       });
       const d = await res.json() as { success?: boolean; error?: string };
       if (!res.ok || d.error) setSaveError(d.error ?? `HTTP ${res.status}`);
-      else { setSavedOk(true); setTimeout(() => setSavedOk(false), 2000); }
+      else {
+        setSavedOk(true);
+        setTimeout(() => setSavedOk(false), 2000);
+        // models.json just changed under the switches: providers may have been
+        // renamed, models added, deleted or renamed. Re-verify the stored
+        // patterns against the new catalog and re-read.
+        const renames = [...renamesRef.current].map(([from, to]) => ({ from, to }));
+        const modelRenames = collectModelRenames(draft, savedModelIdsRef.current, renamesRef.current);
+        savedProvidersRef.current = new Set(Object.keys(draft.providers ?? {}));
+        savedModelIdsRef.current = savedModelIds(draft);
+        renamesRef.current.clear();
+        enabledModels.resync(renames, modelRenames);
+      }
     } catch (e) {
       setSaveError(String(e));
     } finally {
       setSaving(false);
     }
-  }, [config]);
+  }, [applyProviderRename, config, enabledModels, loadError, providerNameDraft, t]);
 
   const providers = Object.entries(config.providers ?? {});
+  // `12/40` next to a provider makes a narrowed selector visible at a glance.
+  const scopeBadge = (providerId: string) => {
+    const label = providerBadgeLabel(enabledModels.view, providerId);
+    return label ? <span className="models-sidebar-badge">{label}</span> : null;
+  };
   const activeOAuth = oauthProviders.filter((p) => p.loggedIn);
   const activeApiKey = apiKeyProviders.filter((p) => p.configured);
 
@@ -1992,12 +2080,12 @@ export function ModelsConfig({ onClose, embedded = false }: { onClose: () => voi
     if (selection.type === "oauth") {
       const p = oauthProviders.find((p) => p.id === selection.providerId);
       if (!p) return null;
-      return <OAuthDetail key={p.id} provider={p} onRefresh={refreshAuthProviders} />;
+      return <OAuthDetail key={p.id} provider={p} onRefresh={refreshAuthProviders} enabledModels={enabledModels} />;
     }
     if (selection.type === "apikey") {
       const p = apiKeyProviders.find((p) => p.id === selection.providerId);
       if (!p) return null;
-      return <ApiKeyDetail key={p.id} provider={p} onRefresh={refreshAuthProviders} />;
+      return <ApiKeyDetail key={p.id} provider={p} onRefresh={refreshAuthProviders} enabledModels={enabledModels} />;
     }
     if (selection.type === "provider") {
       const provider = config.providers?.[selection.name];
@@ -2006,11 +2094,14 @@ export function ModelsConfig({ onClose, embedded = false }: { onClose: () => voi
         <ProviderDetail
           key={selection.name}
           name={selection.name}
+          editingName={providerNameDraft?.provider === selection.name ? providerNameDraft.name : selection.name}
           provider={provider}
           onChange={(p) => updateProvider(selection.name, p)}
+          onEditingNameChange={(n) => setProviderNameDraft(n === selection.name ? null : { provider: selection.name, name: n })}
           onRename={(n) => renameProvider(selection.name, n)}
           onDelete={() => deleteProvider(selection.name)}
           onAddModels={(models) => addDiscoveredModels(selection.name, models)}
+          enabledModels={enabledModels}
         />
       );
     }
@@ -2033,6 +2124,8 @@ export function ModelsConfig({ onClose, embedded = false }: { onClose: () => voi
     <>
     <ConfigPanelShell embedded={embedded} title={t("common.models")} subtitle="~/.pi/agent/models.json" closeLabel={t("i18n.close")} onClose={onClose}>
 
+        <EnabledModelsBanner controller={enabledModels} />
+
         {/* Body */}
         <ConfigSplitView>
 
@@ -2050,6 +2143,7 @@ export function ModelsConfig({ onClose, embedded = false }: { onClose: () => voi
                   >
                     <ProviderIcon id={p.id} size={16} />
                     <ConfigSidebarText className="is-grow">{p.name}</ConfigSidebarText>
+                    {scopeBadge(p.id)}
                   </ConfigSidebarItem>
                 );
               })}
@@ -2065,6 +2159,7 @@ export function ModelsConfig({ onClose, embedded = false }: { onClose: () => voi
                   >
                     <ProviderIcon id={p.id} size={16} />
                     <ConfigSidebarText className="is-grow">{p.displayName}</ConfigSidebarText>
+                    {scopeBadge(p.id)}
                   </ConfigSidebarItem>
                 );
               })}
@@ -2097,6 +2192,7 @@ export function ModelsConfig({ onClose, embedded = false }: { onClose: () => voi
                       <ConfigSidebarText className="is-grow">
                         {pName}
                       </ConfigSidebarText>
+                      {scopeBadge(pName)}
                     </ConfigSidebarItem>
 
                     {/* Model rows */}
@@ -2146,12 +2242,16 @@ export function ModelsConfig({ onClose, embedded = false }: { onClose: () => voi
         </ConfigSplitView>
 
         {/* Footer */}
-        <ConfigFooter status={saveError && <span style={{ color: "#f87171" }}>{saveError}</span>}>
+        <ConfigFooter status={(loadError || saveError) && (
+          <span style={{ color: "#f87171" }}>
+            {loadError ? t("models.configUnreadable", { error: loadError }) : saveError}
+          </span>
+        )}>
           {!embedded && <ConfigButton onClick={onClose}>{t("i18n.cancel")}</ConfigButton>}
           <ConfigButton
             variant="primary"
             onClick={handleSave}
-            disabled={saving || savedOk}
+            disabled={saving || savedOk || loadError !== null}
             className={savedOk ? "is-success" : undefined}
           >
             {savedOk && (

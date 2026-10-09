@@ -3,8 +3,9 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { useIsMobile } from "@/hooks/useIsMobile";
-import type { SubagentProfilesResponse, SubagentSettingsResponse } from "@/lib/api-types";
+import type { ProjectTrustStatus, SubagentProfilesResponse, SubagentSettingsResponse } from "@/lib/api-types";
 import { sendAgentCommand } from "@/lib/agent-client";
+import { displayPathWithin, shortenPath } from "@/lib/display-path";
 import type { ModelsData } from "@/lib/models-cache";
 import { isSubagentProfileOverridden } from "@/lib/subagent-profile-precedence";
 import type { SubagentProfile, SubagentScope, SubagentWritableScope } from "@/lib/subagents";
@@ -24,6 +25,8 @@ import {
   ConfigFooter,
   ConfigListAction,
   ConfigPanelShell,
+  ConfigSaveTarget,
+  ConfigScopeTag,
   ConfigSidebar,
   ConfigSidebarGroupLabel,
   ConfigSidebarItem,
@@ -34,6 +37,7 @@ import {
   ConfigSwitch,
 } from "./SettingsUi";
 import { ModelSelector } from "./ModelSelector";
+import { projectTrustReloadKey } from "./settings-ui-helpers";
 
 const TOOL_OPTIONS = ["read", "bash", "edit", "write", "grep", "find", "ls"];
 const THINKING_OPTIONS = ["", "off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
@@ -49,6 +53,7 @@ const EMPTY_PROFILE: EditableProfile = {
   tools: ["read", "bash", "edit", "write", "grep", "find", "ls"],
   loadSkills: false,
   loadExtensions: false,
+  promptMode: "append",
   inheritContext: false,
   runInBackground: false,
   enabled: true,
@@ -81,7 +86,10 @@ function editableProfile(profile: SubagentProfile): EditableProfile {
     systemPrompt: profile.systemPrompt,
     tools: [...profile.tools],
     loadSkills: profile.loadSkills,
+    ...(profile.skills !== undefined ? { skills: [...profile.skills] } : {}),
     loadExtensions: profile.loadExtensions,
+    ...(profile.extensions !== undefined ? { extensions: [...profile.extensions] } : {}),
+    promptMode: profile.promptMode,
     ...(profile.model ? { model: profile.model } : {}),
     ...(profile.thinking ? { thinking: profile.thinking } : {}),
     ...(profile.maxTurns ? { maxTurns: profile.maxTurns } : {}),
@@ -108,17 +116,20 @@ function isWritableScope(scope: SubagentScope): scope is SubagentWritableScope {
   return scope === "global" || scope === "project";
 }
 
-function shortenPath(path: string): string {
-  return path.replace(/^\/(?:Users|home)\/[^/]+/, "~");
+/**
+ * A built-in has no file to edit, so its fields stay read-only, but its switch is
+ * live: the server records the name in `agents/settings.json` instead of writing a
+ * copy of the profile to disk.
+ */
+function isTogglableScope(scope: SubagentScope): boolean {
+  return isWritableScope(scope) || scope === "builtin";
 }
 
 function displayProfilePath(profile: SubagentProfile, cwd: string): string | null {
   if (!profile.filePath) return null;
-  if ((profile.scope === "project" || profile.scope === "workspace") && profile.filePath.startsWith(cwd)) {
-    const relative = profile.filePath.slice(cwd.length).replace(/^[/\\]/, "");
-    return `./${relative}`;
-  }
-  return shortenPath(profile.filePath);
+  return profile.scope === "project" || profile.scope === "workspace"
+    ? displayPathWithin(profile.filePath, cwd)
+    : shortenPath(profile.filePath);
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -140,12 +151,15 @@ export function AgentsConfig({
   onClose,
   onReloaded,
   embedded = false,
+  trust,
 }: {
   cwd: string;
   sessionId?: string | null;
   onClose: () => void;
   onReloaded?: () => void;
   embedded?: boolean;
+  /** The page's trust status for `cwd`; a new decision loads the model list again. */
+  trust?: ProjectTrustStatus | null;
 }) {
   const isMobile = useIsMobile();
   const { t } = useI18n();
@@ -163,6 +177,7 @@ export function AgentsConfig({
   const [toggling, setToggling] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [builtInEnabled, setBuiltInEnabled] = useState(false);
+  const [maxConcurrent, setMaxConcurrent] = useState(10);
   const [settingsLoading, setSettingsLoading] = useState(true);
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
@@ -226,6 +241,7 @@ export function AgentsConfig({
           throw new Error(data.error ?? `HTTP ${response.status}`);
         }
         setBuiltInEnabled(data.enabled);
+        if (typeof data.maxConcurrent === "number") setMaxConcurrent(data.maxConcurrent);
       } catch (cause) {
         if (controller.signal.aborted) return;
         setSettingsError(cause instanceof Error ? cause.message : String(cause));
@@ -240,6 +256,12 @@ export function AgentsConfig({
     if (selectedKey) setLastSettingsSelection("agents", selectedKey, cwd);
   }, [cwd, selectedKey]);
 
+  // The model list follows the folder's trust: GET /api/models leaves out an
+  // untrusted project's extensions, which can register providers. Trust can
+  // change while this section stays mounted (hidden) in Settings, by trusting
+  // from Settings › MCP; a new decision loads the list again in place, keeping
+  // any profile draft.
+  const trustKey = projectTrustReloadKey(trust);
   useEffect(() => {
     const controller = new AbortController();
     setModelsLoading(true);
@@ -259,7 +281,7 @@ export function AgentsConfig({
       }
     })();
     return () => controller.abort();
-  }, [cwd]);
+  }, [cwd, trustKey]);
 
   const selectProfile = (profile: SubagentProfile) => {
     setSelectedKey(profileKey(profile));
@@ -358,6 +380,9 @@ export function AgentsConfig({
       : { provider: draft.model.slice(0, separator), modelId: draft.model.slice(separator + 1) };
   })();
   const controlStyle = disabled ? { ...inputStyle, ...disabledInputStyle } : inputStyle;
+  const switchDisabled = creating
+    ? disabled
+    : !selected || !isTogglableScope(selected.scope) || saving || toggling;
   const update = <K extends keyof EditableProfile>(key: K, value: EditableProfile[K]) => {
     setDraft((current) => ({ ...current, [key]: value }));
   };
@@ -367,7 +392,7 @@ export function AgentsConfig({
       update("enabled", enabled);
       return;
     }
-    if (!selected || !isWritableScope(selected.scope)) return;
+    if (!selected || !isTogglableScope(selected.scope)) return;
     setToggling(true);
     setError(null);
     try {
@@ -410,6 +435,23 @@ export function AgentsConfig({
     }
   };
 
+  const updateMaxConcurrent = async (value: number) => {
+    setMaxConcurrent(value);
+    setSettingsError(null);
+    try {
+      const response = await fetch("/api/subagents/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ maxConcurrent: value }),
+      });
+      const data = await response.json() as Partial<SubagentSettingsResponse> & { error?: string };
+      if (!response.ok || data.error || typeof data.maxConcurrent !== "number") throw new Error(data.error ?? `HTTP ${response.status}`);
+      setMaxConcurrent(data.maxConcurrent);
+    } catch (cause) {
+      setSettingsError(cause instanceof Error ? cause.message : String(cause));
+    }
+  };
+
   const reloadSession = async () => {
     if (!sessionId) return;
     setReloading(true);
@@ -439,6 +481,19 @@ export function AgentsConfig({
               {reloading ? t("agents.reloading") : t("agents.reloadSession")}
             </ConfigButton>
           )}
+          <label className="agents-concurrency-control" title={t("agents.maxConcurrentDescription")}>
+            <span>{t("agents.maxConcurrent")}</span>
+            <input
+              aria-label={t("agents.maxConcurrent")}
+              type="number"
+              min={1}
+              max={32}
+              value={maxConcurrent}
+              disabled={settingsLoading || settingsSaving}
+              onChange={(event) => setMaxConcurrent(Number(event.target.value))}
+              onBlur={() => void updateMaxConcurrent(maxConcurrent)}
+            />
+          </label>
           <ConfigSwitch
             checked={builtInEnabled}
             disabled={settingsLoading || reloading}
@@ -493,39 +548,36 @@ export function AgentsConfig({
                 <ConfigDetailStack>
                   <ConfigDetailHeader>
                     <ConfigDetailHeaderInfo>
-                      {displayedScope && (
-                        <span className={`config-scope-tag${displayedScope === "project" ? " is-project" : ""}`}>
-                          {t(`agents.scope.${displayedScope}`)}
-                        </span>
+                      {/* A new profile chooses its scope where a saved one shows it. */}
+                      {creating ? (
+                        <ConfigSaveTarget
+                          value={targetScope}
+                          label={t("config.saveTo")}
+                          options={(["global", "project"] as const).map((scope) => ({
+                            value: scope,
+                            label: t(`agents.scope.${scope}`),
+                            disabled: saving,
+                          }))}
+                          path={displayedPath}
+                          onChange={setTargetScope}
+                        />
+                      ) : (
+                        <>
+                          {displayedScope && (
+                            <ConfigScopeTag scope={displayedScope}>{t(`agents.scope.${displayedScope}`)}</ConfigScopeTag>
+                          )}
+                          <span title={fullPath} className="config-detail-path">
+                            {displayedPath}
+                          </span>
+                        </>
                       )}
-                      <span title={fullPath} className="config-detail-path">
-                        {displayedPath}
-                      </span>
                     </ConfigDetailHeaderInfo>
                     <ConfigDetailActions>
                       {selected && (mode === "view" || mode === "edit") && <ConfigButton size="small" onClick={beginDuplicate} disabled={saving || toggling}>{t("agents.duplicate")}</ConfigButton>}
                       {selected && isWritableScope(selected.scope) && mode === "edit" && <ConfigButton variant="danger" size="small" onClick={() => void remove()} disabled={saving || toggling}>{t("agents.delete")}</ConfigButton>}
-                      <ConfigSwitch checked={draft.enabled} disabled={disabled} label={draft.enabled ? t("agents.disable") : t("agents.enable")} onChange={(checked) => void toggleEnabled(checked)} />
+                      <ConfigSwitch checked={draft.enabled} disabled={switchDisabled} label={draft.enabled ? t("agents.disable") : t("agents.enable")} onChange={(checked) => void toggleEnabled(checked)} />
                     </ConfigDetailActions>
                   </ConfigDetailHeader>
-
-                  {creating && (
-                    <Field label={t("agents.saveScope")}>
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 3, padding: 3, border: "1px solid var(--border)", borderRadius: 5, background: "var(--bg-panel)" }}>
-                        {(["global", "project"] as const).map((scope) => (
-                          <button
-                            key={scope}
-                            type="button"
-                            onClick={() => setTargetScope(scope)}
-                            disabled={saving}
-                            style={{ height: 28, border: "none", borderRadius: 4, background: targetScope === scope ? "var(--bg-selected)" : "transparent", color: targetScope === scope ? "var(--text)" : "var(--text-muted)", cursor: saving ? "default" : "pointer", fontSize: 11, fontWeight: targetScope === scope ? 600 : 400 }}
-                          >
-                            {t(`agents.scope.${scope}`)}
-                          </button>
-                        ))}
-                      </div>
-                    </Field>
-                  )}
 
                   <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(0, 1fr) minmax(0, 1fr)", gap: 12 }}>
                     <Field label={t("agents.name")}>
@@ -561,6 +613,21 @@ export function AgentsConfig({
                       <Toggle label={t("agents.loadSkills")} disabled={disabled} checked={draft.loadSkills} onChange={(checked) => update("loadSkills", checked)} />
                       <Toggle label={t("agents.loadExtensions")} disabled={disabled} checked={draft.loadExtensions} onChange={(checked) => update("loadExtensions", checked)} />
                     </div>
+                    {/* `skills:` and `extensions:` lists are edited in the profile file; show what they load. */}
+                    {draft.loadSkills && draft.skills !== undefined && (
+                      <span style={{ color: "var(--text-dim)", fontSize: 11, lineHeight: 1.4, overflowWrap: "anywhere" }}>
+                        {draft.skills.length > 0
+                          ? t("agents.skillsOnly", { skills: draft.skills.join(", ") })
+                          : t("agents.skillsNone")}
+                      </span>
+                    )}
+                    {draft.loadExtensions && draft.extensions !== undefined && (
+                      <span style={{ color: "var(--text-dim)", fontSize: 11, lineHeight: 1.4, overflowWrap: "anywhere" }}>
+                        {draft.extensions.length > 0
+                          ? t("agents.extensionsOnly", { extensions: draft.extensions.join(", ") })
+                          : t("agents.extensionsNone")}
+                      </span>
+                    )}
                   </Field>
 
                   <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(0, 1.5fr) minmax(120px, 0.75fr) minmax(100px, 0.5fr)", gap: 12 }}>

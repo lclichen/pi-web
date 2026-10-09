@@ -44,6 +44,7 @@
     "dist",
     // 随包分发的 pi 扩展模板（vendored 上游包，含可选 peer 的导入），
     // 由 pi 的 jiti 加载器在目标机加载，不参与本工程类型检查。
-    "pi-config"
+    "pi-config",
+    "demo"
   ]
 }

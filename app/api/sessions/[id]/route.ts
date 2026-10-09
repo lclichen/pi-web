@@ -4,7 +4,10 @@ import { dirname, join } from "path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import {
   attachSessionProjectInfo,
+  listAllSessions,
+  mergeSessionLists,
   resolveSessionIdByPath,
+  resolveSessionPath,
   invalidateSessionPathCache,
   invalidateSessionListCache,
   buildSessionContext,
@@ -12,10 +15,12 @@ import {
 } from "@/lib/session-reader";
 import { resolveSessionAccess } from "@/lib/session-access";
 import { sessionPathKey } from "@/lib/session-path";
-import { getRpcSession } from "@/lib/rpc-manager";
-import { projectTreeForResponse } from "@/lib/project-tree";
+import { abortSubagent, getRpcSession, getRpcSessionInfos } from "@/lib/rpc-manager";
+import { projectTreeForResponse, toSummaryTree } from "@/lib/project-tree";
 import { computeSessionTotalActiveMs } from "@/lib/session-timing";
 import { computeSessionStats } from "@/lib/session-stats";
+import { startServerPerf } from "@/lib/perf";
+import { computeSessionRevision } from "@/lib/session-revision";
 import type { SessionEntry } from "@/lib/types";
 import { readSubagentRun, readSubagentSessionResources, SUBAGENT_META_TYPE } from "@/lib/subagents";
 import { readSessionToolSelection } from "@/lib/session-tool-selection";
@@ -25,16 +30,32 @@ export async function GET(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-    const { id } = await params;
-    try {
+  const { id } = await params;
+  const perf = startServerPerf("GET /api/sessions/[id]");
+  try {
+    perf?.span("resolve");
+    const rpc = getRpcSession(id);
+    const searchParams = new URL(req.url).searchParams;
+    const force = searchParams.get("force") === "1";
+
     // Fast path for live sessions mirrors dev's events route; everything else
     // goes through dev's per-user access fence instead of upstream's global
     // resolveSessionPath (MERGE-NOTE(upgrade/0.84): space-aware lookup).
-    const rpc = getRpcSession(id);
-    const liveRpc = rpc?.isAlive() ? rpc : undefined;
+    // A live wrapper only reflects the appends pi-web itself made. When another
+    // pi process (the TUI) writes the same session file, the in-memory index
+    // stays stale. Only probe on ?force=1 (session mount / page refresh): two
+    // processes writing one JSONL is unsupported, so post-turn reads must not
+    // scan disk. Eviction is idle-only; mid-run the wrapper owns the write path.
+    let liveWrapper = rpc?.isAlive() ? rpc : undefined;
+    let wrapperRebuilt = false;
+    if (force && liveWrapper?.evictIfDiskAhead()) {
+      wrapperRebuilt = true;
+      liveWrapper = undefined;
+    }
+    const liveRpc = liveWrapper;
     let resolvedPath: string | null = null;
     if (!liveRpc) {
-      const access = await resolveSessionAccess(req, id, new URL(req.url).searchParams);
+      const access = await resolveSessionAccess(req, id, searchParams);
       if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
       resolvedPath = access.path;
     }
@@ -43,11 +64,15 @@ export async function GET(
     }
 
     const sm = liveRpc?.inner.sessionManager ?? SessionManager.open(resolvedPath!);
+    perf?.span("open");
     const filePath = liveRpc?.sessionFile || sm.getSessionFile() || resolvedPath || "";
     const entries = sm.getEntries();
     const leafId = sm.getLeafId();
-    const tree = projectTreeForResponse(sm.getTree());
-    const searchParams = new URL(req.url).searchParams;
+    const summaryTree = searchParams.get("tree") === "summary";
+    const tree = summaryTree
+      ? toSummaryTree(projectTreeForResponse(sm.getTree()))
+      : projectTreeForResponse(sm.getTree());
+    perf?.span("tree");
     const deferThinking = searchParams.has("deferThinking");
     const deferToolResultImages = searchParams.has("deferMedia");
     const rawTail = Number(searchParams.get("tail"));
@@ -58,11 +83,24 @@ export async function GET(
       tail,
       sessionId: id, // local: lazy URLs for historical tool-result images
     });
+    perf?.span("context");
     const totalActiveMs = computeSessionTotalActiveMs(entries);
     // Cumulative usage over ALL entries, including history compacted away —
     // the same aggregation the SDK's getSessionStats() uses. Lets the client
     // keep monotonic token/cost counters across compaction and page reloads.
     const stats = computeSessionStats(entries as unknown as SessionEntry[]);
+    perf?.span("stats");
+    // Opaque freshness token for the session view cache. Derived from the
+    // disk fingerprint and the actual read source; null tells the client the
+    // snapshot is unstable and must not be cached as fresh.
+    const latestEntry = entries[entries.length - 1] as { id?: string } | undefined;
+    const snapshotRevision = computeSessionRevision({
+      filePath,
+      sourceId: liveRpc ? `runtime:${String(liveRpc.inner.sessionId)}` : "disk",
+      entryCount: entries.length,
+      latestEntryId: typeof latestEntry?.id === "string" ? latestEntry.id : null,
+      leafId: leafId ?? null,
+    });
     const sessionName = sm.getSessionName();
     const firstUserEntry = entries.find((entry) => entry.type === "message" && entry.message.role === "user");
     const firstUserMessage = firstUserEntry?.type === "message" ? firstUserEntry.message : undefined;
@@ -101,7 +139,7 @@ export async function GET(
       transient: !filePath || !existsSync(filePath),
     }]))[0] : null;
 
-    return jsonResponse(
+    const response = jsonResponse(
       req,
       {
         sessionId: id,
@@ -109,12 +147,16 @@ export async function GET(
         info,
         leafId,
         tree,
+        ...(summaryTree ? { treeFormat: "summary" as const } : {}),
+        snapshotRevision,
         context,
         stats,
         totalActiveMs,
         ...(toolNames !== undefined ? { toolNames } : {}),
+        ...(wrapperRebuilt ? { wrapperRebuilt: true } : {}),
       },
     );
+    return perf ? perf.attach(response) : response;
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
   }
@@ -137,6 +179,8 @@ export async function PATCH(
     if (!filePath) {
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
     }
+
+    // PATCH writes via appendSessionInfo — open fresh, bypassing any cache.
     const sm = SessionManager.open(filePath);
     sm.appendSessionInfo(name.trim());
     invalidateSessionListCache();
@@ -159,6 +203,9 @@ export async function DELETE(
     if (!filePath) {
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
     }
+    // MERGE-NOTE(upgrade/1.0): upstream's recursive subagent cascade delete,
+    // scoped to the caller's session space instead of the global catalogue.
+    const space = access.space;
 
     // Read only the bounded header before deleting.
     let parentSessionPath: string | undefined;
@@ -178,16 +225,77 @@ export async function DELETE(
       }
     }
 
-    // Re-attach all direct children to this session's parent (cascade re-parent)
-    // Scan sibling files in the same directory
     const targetPathKey = sessionPathKey(filePath);
     const dir = dirname(filePath);
+    // Deleting a session also deletes every persisted or live subagent below it.
+    const sessions = mergeSessionLists(
+      await listAllSessions(space, { force: true }),
+      getRpcSessionInfos({ includeTransient: true }),
+    );
+    const childrenByParent = new Map<string, string[]>();
+    for (const session of sessions) {
+      if (session.relation?.kind !== "subagent") continue;
+      const children = childrenByParent.get(session.relation.parentSessionId) ?? [];
+      children.push(session.id);
+      childrenByParent.set(session.relation.parentSessionId, children);
+    }
+    const sessionPaths = new Map(sessions.map((session) => [session.id, session.path]));
+    // Include local files even when the catalogue is stale or incomplete.
+    try {
+      for (const file of readdirSync(dir).filter((name) => name.endsWith(".jsonl"))) {
+        const childPath = join(dir, file);
+        if (sessionPathKey(childPath) === targetPathKey) continue;
+        try {
+          const lines = readFileSync(childPath, "utf8").split("\n");
+          const header = JSON.parse(lines[0]) as { type?: string; id?: string };
+          if (header.type !== "session" || typeof header.id !== "string") continue;
+          const entries = lines.slice(1).flatMap((line) => {
+            try { return [JSON.parse(line) as SessionEntry]; } catch { return []; }
+          });
+          const subagent = readSubagentRun(entries, header.id, childPath);
+          if (!subagent) continue;
+          const children = childrenByParent.get(subagent.parentSessionId) ?? [];
+          children.push(header.id);
+          childrenByParent.set(subagent.parentSessionId, children);
+          sessionPaths.set(header.id, childPath);
+        } catch { /* skip malformed or concurrently removed sessions */ }
+      }
+    } catch { /* skip if dir unreadable */ }
+    const deletedSessionIds = new Set<string>([id]);
+    const pending = [id];
+    while (pending.length > 0) {
+      const parentId = pending.pop()!;
+      for (const childId of childrenByParent.get(parentId) ?? []) {
+        if (deletedSessionIds.has(childId)) continue;
+        deletedSessionIds.add(childId);
+        pending.push(childId);
+      }
+    }
+    const deletedPaths = new Map<string, string>([[id, filePath]]);
+    for (const deletedId of deletedSessionIds) {
+      const sessionPath = sessionPaths.get(deletedId);
+      if (sessionPath) deletedPaths.set(deletedId, sessionPath);
+    }
+    for (const deletedId of deletedSessionIds) {
+      if (deletedPaths.has(deletedId)) continue;
+      const runtimePath = getRpcSession(deletedId)?.sessionFile;
+      if (runtimePath) deletedPaths.set(deletedId, runtimePath);
+      else {
+        const resolvedPath = await resolveSessionPath(deletedId, space);
+        if (resolvedPath) deletedPaths.set(deletedId, resolvedPath);
+      }
+    }
+    const deletedPathKeys = new Set([...deletedPaths.values()].map((path) => sessionPathKey(path)));
+
+    // Re-attach all direct children to this session's parent (cascade re-parent)
+    // Scan sibling files in the same directory
     try {
       const files = readdirSync(dir).filter(
         (file) => file.endsWith(".jsonl") && sessionPathKey(join(dir, file)) !== targetPathKey,
       );
       for (const file of files) {
         const childPath = join(dir, file);
+        if (deletedPathKeys.has(sessionPathKey(childPath))) continue;
         try {
           const content = readFileSync(childPath, "utf8");
           const lines = content.split("\n");
@@ -230,13 +338,21 @@ export async function DELETE(
       }
     } catch { /* skip if dir unreadable */ }
 
-    await getRpcSession(id)?.shutdown();
-    try {
-      unlinkSync(filePath);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    for (const deletedId of [...deletedSessionIds].reverse()) {
+      if (deletedId === id) continue;
+      try { await abortSubagent(deletedId); } catch { /* idle or completed */ }
+      await getRpcSession(deletedId)?.shutdown();
     }
-    invalidateSessionPathCache(id);
+    try { await abortSubagent(id); } catch { /* ordinary session */ }
+    await getRpcSession(id)?.shutdown();
+    for (const [deletedId, deletedPath] of deletedPaths) {
+      try {
+        unlinkSync(deletedPath);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+      invalidateSessionPathCache(deletedId);
+    }
     invalidateSessionListCache();
     return NextResponse.json({ ok: true });
   } catch (error) {

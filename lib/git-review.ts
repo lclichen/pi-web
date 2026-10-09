@@ -95,7 +95,8 @@ export async function generateGitInsight(
   await sourceAgent.waitForIdle();
 
   const options = buildGitInsightAgentOptions(sourceAgent);
-  options.initialState!.systemPrompt = input.mode === "review" ? REVIEW_SYSTEM : COMMIT_MSG_SYSTEM;
+  // pi 1.0: AgentState.systemPrompt is readonly in the type; the initial-state copy is written once here before the agent runs.
+  (options.initialState as { systemPrompt?: string } | undefined)!.systemPrompt = input.mode === "review" ? REVIEW_SYSTEM : COMMIT_MSG_SYSTEM;
 
   const temporaryAgent = new Agent(options);
   const runPromise = temporaryAgent.prompt(buildPrompt(input));

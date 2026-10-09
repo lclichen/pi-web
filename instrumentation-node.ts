@@ -1,8 +1,12 @@
-import { configureHttpDispatcher } from "@/lib/http-dispatcher";
+import { configureHttpDispatcher, readHttpIdleTimeoutMs } from "@/lib/http-dispatcher";
 import { closeAllAgentEventStreams } from "@/lib/agent-event-stream";
 
 export async function registerNodeInstrumentation(): Promise<void> {
-  configureHttpDispatcher();
+  // The pi CLI applies settings' `httpIdleTimeoutMs` to the same undici
+  // body/header timeouts, so a Web UI session gets the timeout the user
+  // configured. Without it the built-in five minutes aborts a provider stream
+  // that stays quiet for longer, which a CLI session tolerates.
+  configureHttpDispatcher(readHttpIdleTimeoutMs());
 
   // Start the Local-Agent relay (WebSocket on a separate port). Only start in
   // an actual server phase — never during `next build` (which also invokes

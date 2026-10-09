@@ -23,12 +23,16 @@ import {
   buildEntriesFromFiles, buildAtInsertText, extractAtQuery, filterFileEntries,
   type AtQueryMatch, type FileIndexEntry,
 } from "@/lib/file-fuzzy";
+import { getMarkdownListContinuation } from "@/lib/markdown-list-continuation";
+import { isBareMcpCommand, isBuiltinMcpCommand } from "@/lib/mcp-command";
 import { FolderIcon, getFileIcon } from "./FileIcons";
 import { ImagePreview } from "./ImagePreview";
 import { useIsMobile } from "@/hooks/useIsMobile";
+import { useEnterSendMode } from "@/hooks/useEnterSendMode";
 import { useI18n } from "@/hooks/useI18n";
 import { useChatAppearance } from "@/hooks/useChatAppearance";
 import type { ToolPreset } from "@/lib/tool-presets";
+import { SelectorRow } from "./SelectorRow";
 import { ModelSelector, type ModelSelectorOption } from "./ModelSelector";
 
 export { filterModelOptions } from "./ModelSelector";
@@ -57,6 +61,10 @@ interface Props {
   modelScopeWarnings?: string[];
   onModelChange?: (provider: string, modelId: string) => void;
   modelSwitching?: boolean;
+  /** The model new sessions start with, starred in the model selector. */
+  defaultModel?: { provider: string; modelId: string } | null;
+  /** Saves a model as the default for new sessions and selects it here. */
+  onSetDefaultModel?: (provider: string, modelId: string) => void;
   onCompact?: () => void;
   onAbortCompaction?: () => void;
   isCompacting?: boolean;
@@ -70,6 +78,10 @@ interface Props {
   onThinkingLevelChange?: (level: "auto" | "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max") => void;
   availableThinkingLevels?: string[] | null;
   thinkingLevelMap?: Record<string, string | null> | null;
+  /** `defaultThinkingLevel` saved in settings, starred in the reasoning menu. */
+  savedDefaultThinkingLevel?: string | null;
+  /** Saves a reasoning level as the default for new sessions and selects it here. */
+  onSetDefaultThinkingLevel?: (level: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max") => void;
   retryInfo?: { attempt: number; maxAttempts: number; errorMessage?: string } | null;
   queuedMessages?: QueuedMessages | null;
   inputHistory?: string[];
@@ -99,9 +111,11 @@ export interface ChatInputHandle {
   restoreSubmission: (text: string, images?: ChatDraftImage[], targetDraftKey?: string) => void;
 }
 
-const TOOL_PRESETS = ["chat-only", "read-only", "default", "full"] as const;
+// "configured" sends no override, so the session follows settings.json defaultTools.
+const TOOL_PRESETS = ["configured", "chat-only", "read-only", "default", "full"] as const;
 type ToolPresetLabel = typeof TOOL_PRESETS[number];
 const TOOL_PRESET_MAP: Record<ToolPresetLabel, ToolPreset> = {
+  configured: "configured",
   "chat-only": "none",
   "read-only": "read-only",
   default: "default",
@@ -225,6 +239,7 @@ type SlashCommandSource = SlashCommandPaletteItem["source"];
 
 const BUILTIN_SLASH_COMMANDS: BuiltinSlashCommand[] = [
   { name: "compact", description: "chat.commandCompact", source: "builtin" },
+  { name: "auto-compact", description: "chat.commandAutoCompact", source: "builtin" },
   { name: "reload", description: "chat.commandReload", source: "builtin" },
   { name: "name", description: "chat.commandName", source: "builtin" },
   { name: "session", description: "chat.commandSession", source: "builtin", availableWhileStreaming: true },
@@ -242,8 +257,32 @@ export function canRunBuiltinSlashCommandWhileStreaming(message: string): boolea
   return getBuiltinSlashCommand(message)?.availableWhileStreaming === true;
 }
 
+/**
+ * Whether a message sent while a run streams goes to the built-in handler
+ * first: a built-in that may run then, or a bare `/mcp`, which opens
+ * Settings › MCP when pi's built-in MCP extension owns it (useAgentSession)
+ * and is otherwise sent as before.
+ */
+export function offersBuiltinSlashCommandWhileStreaming(message: string): boolean {
+  return canRunBuiltinSlashCommandWhileStreaming(message) || isBareMcpCommand(message);
+}
+
 export function isExactSlashCommand(message: string, command: SlashCommandPaletteItem): boolean {
   return command.source === "builtin" && message.trim() === `/${command.name}`;
+}
+
+/**
+ * Whether Enter on the highlighted palette entry submits the message rather
+ * than completing it to "/name ": a built-in typed in full (while a run
+ * streams, only one that may run then), or a bare `/mcp` on pi's built-in
+ * `/mcp`, which opens Settings › MCP at once, as it does before the command
+ * list has loaded. Every other extension command still takes a second Enter.
+ */
+export function submitsSlashCommandOnEnter(message: string, command: SlashCommandPaletteItem, isStreaming: boolean): boolean {
+  if (command.source === "builtin") {
+    return isExactSlashCommand(message, command) && (!isStreaming || command.availableWhileStreaming === true);
+  }
+  return isBuiltinMcpCommand(command) && isBareMcpCommand(message);
 }
 
 export function canClearBuiltinCommandInput(message: string, imageCount: number, submittedMessage: string): boolean {
@@ -646,8 +685,10 @@ export function ModelScopeWarningBanner({ warnings }: { warnings?: string[] }) {
 
 export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   onSend, onAbort, onSteer, onFollowUp, isStreaming, model, isAutoModelSelection, modelNames, modelList, modelError, modelScopeWarnings, onModelChange, modelSwitching,
+  defaultModel, onSetDefaultModel,
   onCompact, onAbortCompaction, isCompacting, compactError, compactResult, toolPreset, onToolPresetChange,
   thinkingLevel, isAutoThinkingSelection = false, onThinkingLevelChange, availableThinkingLevels, thinkingLevelMap,
+  savedDefaultThinkingLevel, onSetDefaultThinkingLevel,
   retryInfo, queuedMessages, inputHistory = [], onRecallQueue, onQueueOp,
   slashCommands, slashCommandsLoading, onLoadSlashCommands,
   onBuiltinCommand,
@@ -660,6 +701,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const { t } = useI18n();
   const { fontSize } = useChatAppearance();
   const isMobile = useIsMobile();
+  const enterSendMode = useEnterSendMode();
   const [value, setValue] = useState(() => (draftKey ? getDraft(draftKey)?.value ?? "" : ""));
   const [toolDropdownOpen, setToolDropdownOpen] = useState(false);
   const [thinkingDropdownOpen, setThinkingDropdownOpen] = useState(false);
@@ -1016,6 +1058,25 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   }, [resizeTextarea]);
 
   useEffect(() => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    // Shift+Enter on desktop, Enter on mobile keyboards: every newline the
+    // textarea inserts arrives here, while IME confirmations and sends do not.
+    const continueList = (event: InputEvent) => {
+      if (event.inputType !== "insertLineBreak" || event.isComposing) return;
+      const edit = getMarkdownListContinuation(ta.value, ta.selectionStart, ta.selectionEnd);
+      if (!edit) return;
+      event.preventDefault();
+      ta.setSelectionRange(edit.start, edit.end);
+      // insertText keeps the edit on the native undo stack and fires the input
+      // event that updates the controlled value.
+      document.execCommand(edit.text ? "insertText" : "delete", false, edit.text);
+    };
+    ta.addEventListener("beforeinput", continueList);
+    return () => ta.removeEventListener("beforeinput", continueList);
+  }, []);
+
+  useEffect(() => {
     return () => {
       attachedImagesRef.current.forEach(revokeImagePreview);
     };
@@ -1041,7 +1102,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     const msg = value.trim();
     if (!msg && !attachedImages.length) return;
     onAudioUnlock?.();
-    const builtinAllowed = !isStreaming || canRunBuiltinSlashCommandWhileStreaming(msg);
+    const builtinAllowed = !isStreaming || offersBuiltinSlashCommandWhileStreaming(msg);
     if (builtinAllowed && await runBuiltinCommand(msg)) return;
     if (isStreaming) return;
     clearInput();
@@ -1279,22 +1340,34 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     const msg = value.trim();
     if (!msg && !attachedImages.length) return;
     onAudioUnlock?.();
+    const images = attachedImages.length ? attachedImages : undefined;
+    const queue = () => {
+      const streamingBehavior = mode === "steer" ? "steer" : "followUp";
+      if (msg.startsWith("/") && onPromptWithStreamingBehavior) {
+        clearInput();
+        onPromptWithStreamingBehavior(msg, streamingBehavior, images);
+        return;
+      }
+      clearInput();
+      if (mode === "steer" && onSteer) {
+        onSteer(msg, images);
+      } else if (mode === "followup" && onFollowUp) {
+        onFollowUp(msg, images);
+      }
+    };
     if (!attachedImages.length && onBuiltinCommand && canRunBuiltinSlashCommandWhileStreaming(msg)) {
       void runBuiltinCommand(msg);
       return;
     }
-    const streamingBehavior = mode === "steer" ? "steer" : "followUp";
-    if (msg.startsWith("/") && onPromptWithStreamingBehavior) {
-      clearInput();
-      onPromptWithStreamingBehavior(msg, streamingBehavior, attachedImages.length ? attachedImages : undefined);
+    if (!attachedImages.length && onBuiltinCommand && isBareMcpCommand(msg)) {
+      // Settings › MCP opens when pi's built-in MCP extension owns /mcp; another
+      // extension's /mcp is queued as before. The composer is disabled meanwhile.
+      void runBuiltinCommand(msg).then((handled) => {
+        if (!handled) queue();
+      }, () => queue());
       return;
     }
-    clearInput();
-    if (mode === "steer" && onSteer) {
-      onSteer(msg, attachedImages.length ? attachedImages : undefined);
-    } else if (mode === "followup" && onFollowUp) {
-      onFollowUp(msg, attachedImages.length ? attachedImages : undefined);
-    }
+    queue();
   }, [value, attachedImages, onBuiltinCommand, onPromptWithStreamingBehavior, onSteer, onFollowUp, clearInput, onAudioUnlock, runBuiltinCommand]);
 
   const getNextSlashIndex = useCallback((direction: "up" | "down" | "left" | "right") => {
@@ -1343,14 +1416,21 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
       const nativeEvent = e.nativeEvent;
-      const sendShortcut = e.key === "Enter" && !e.shiftKey && (!isMobile || e.ctrlKey || e.metaKey);
+      const enterKey = e.key === "Enter" && !e.shiftKey;
+      const sendShortcut = isMobile || enterSendMode === "ctrlEnter"
+        ? enterKey && (e.ctrlKey || e.metaKey)
+        : enterKey;
+      // Popup menus and the IME guard take plain Enter in either send mode on a
+      // desktop keyboard. Mobile keyboards insert a line break on Enter, so they
+      // keep using the send shortcut there.
+      const acceptShortcut = isMobile ? sendShortcut : enterKey;
       const recentlyComposed = Date.now() - lastCompositionEndAtRef.current < COMPOSITION_END_ENTER_GRACE_MS;
       const isComposing =
         isComposingRef.current ||
         nativeEvent.isComposing ||
         nativeEvent.keyCode === 229;
 
-      if (sendShortcut && (isComposing || recentlyComposed)) {
+      if (acceptShortcut && (isComposing || recentlyComposed)) {
         if (recentlyComposed) e.preventDefault();
         return;
       }
@@ -1371,7 +1451,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           setHistoryMenuOpen(false);
           return;
         }
-        if ((e.key === "Tab" || sendShortcut) && inputHistory[historyActiveIndex]) {
+        if ((e.key === "Tab" || acceptShortcut) && inputHistory[historyActiveIndex]) {
           e.preventDefault();
           applyHistoryInput(inputHistory[historyActiveIndex]);
           return;
@@ -1410,11 +1490,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           applySlashCommand(selectedCommand);
           return;
         }
-        if (sendShortcut && selectedCommand) {
+        if (acceptShortcut && selectedCommand) {
           e.preventDefault();
-          const canSubmitNow = !isStreaming
-            || (selectedCommand.source === "builtin" && selectedCommand.availableWhileStreaming === true);
-          if (canSubmitNow && isExactSlashCommand(value, selectedCommand)) {
+          if (sendShortcut && submitsSlashCommandOnEnter(value, selectedCommand, isStreaming)) {
             setSlashMenuOpen(false);
             void handleSend();
           } else {
@@ -1442,7 +1520,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           setAtMenuOpen(false);
           return;
         }
-        if ((e.key === "Tab" || sendShortcut) && atMatches[atActiveIndex]) {
+        if ((e.key === "Tab" || acceptShortcut) && atMatches[atActiveIndex]) {
           e.preventDefault();
           applyAtCompletion(atMatches[atActiveIndex]);
           return;
@@ -1474,7 +1552,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         }
       }
     },
-    [isMobile, isStreaming, onSteer, onFollowUp, onAbort, slashMenuOpen, slashQuery, displayedSlashCommands, slashActiveIndex, applySlashCommand, sendQueued, handleSend, getNextSlashIndex, atMenuOpen, atQuery, atMatches, atActiveIndex, applyAtCompletion, historyMenuOpen, inputHistory, historyActiveIndex, applyHistoryInput, value]
+    [isMobile, enterSendMode, isStreaming, onSteer, onFollowUp, onAbort, slashMenuOpen, slashQuery, displayedSlashCommands, slashActiveIndex, applySlashCommand, sendQueued, handleSend, getNextSlashIndex, atMenuOpen, atQuery, atMatches, atActiveIndex, applyAtCompletion, historyMenuOpen, inputHistory, historyActiveIndex, applyHistoryInput, value]
   );
 
   const handleInput = useCallback(() => {
@@ -1633,7 +1711,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     if (lvl === "auto" || !thinkingLevelMap) return lvl;
     return thinkingLevelMap[lvl] ?? lvl;
   })();
-  const rawToolPresetLabel = Object.entries(TOOL_PRESET_MAP).find(([, v]) => v === (toolPreset ?? "default"))?.[0] ?? "default";
+  const rawToolPresetLabel = Object.entries(TOOL_PRESET_MAP).find(([, v]) => v === (toolPreset ?? "configured"))?.[0] ?? "configured";
   const toolPresetLabel = rawToolPresetLabel === "chat-only" ? t("chat.chatOnly") : rawToolPresetLabel;
 
   // Close dropdowns on outside click
@@ -1658,7 +1736,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
 
   useEffect(() => {
     if (!isStreaming) return;
-    setThinkingDropdownOpen(false);
     setToolDropdownOpen(false);
   }, [isStreaming]);
 
@@ -1672,6 +1749,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     <fieldset
       disabled={builtinCommandPending}
       aria-busy={builtinCommandPending}
+      className={compact ? undefined : "chat-input-shell"}
       style={{
         flexShrink: 0,
         minWidth: 0,
@@ -2234,7 +2312,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 ? "rgba(234,179,8,0.4)"
                 : "color-mix(in srgb, var(--border) 70%, transparent)"}`,
               borderRadius: compact ? 0 : 14,
-              padding: compact ? 0 : "10px 10px 10px 14px",
+              padding: compact ? 0 : isMobile ? "6px 6px 6px 12px" : "10px 10px 10px 14px",
               boxShadow: compact ? "none" : "0 1px 2px rgba(15,23,42,0.04), 0 8px 24px -12px rgba(15,23,42,0.10)",
               transition: "border-color 0.15s, background 0.15s, box-shadow 0.15s",
             } as React.CSSProperties}
@@ -2346,20 +2424,23 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             <button
               onClick={handleSend}
               disabled={!value.trim() && !attachedImages.length}
+              title={t("chat.send")}
+              aria-label={t("chat.send")}
               style={{
                 flexShrink: 0,
                 alignSelf: "flex-end",
-                display: "flex", alignItems: "center", gap: 6,
-                padding: "7px 14px",
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                // Mobile: icon-only so the placeholder and draft keep the width.
+                ...(isMobile ? { width: 36, height: 36, padding: 0 } : { padding: "7px 14px" }),
                 background: (value.trim() || attachedImages.length) ? "var(--accent)" : "var(--bg-panel)",
                 border: "none",
                 borderRadius: 8,
-                color: (value.trim() || attachedImages.length) ? "#fff" : "var(--text-dim)",
+                color: (value.trim() || attachedImages.length) ? "var(--accent-contrast)" : "var(--text-dim)",
                 cursor: (value.trim() || attachedImages.length) ? "pointer" : "not-allowed",
                 fontSize: 13,
                 fontWeight: 600,
                 letterSpacing: "-0.01em",
-                boxShadow: (value.trim() || attachedImages.length) ? "0 1px 3px rgba(37,99,235,0.25)" : "none",
+                boxShadow: (value.trim() || attachedImages.length) ? "0 1px 3px color-mix(in srgb, var(--accent) 25%, transparent)" : "none",
                 transition: "background 0.15s, box-shadow 0.15s",
               }}
             >
@@ -2367,7 +2448,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 <line x1="2" y1="7" x2="11" y2="7" />
                 <polyline points="7.5 3 12 7 7.5 11" />
               </svg>
-              {t("chat.send")}
+              {!isMobile && t("chat.send")}
             </button>
           )}
           </div>
@@ -2381,8 +2462,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         )}
 
         {/* Bottom bar: left | center (context) | right */}
-        {!compact && <div style={{
-          marginTop: 8,
+        {!compact && <div className="chat-input-controls" style={{
+          marginTop: isMobile ? 4 : 8,
           display: isMobile ? "grid" : "flex",
           gridTemplateColumns: isMobile ? "minmax(0, 1fr) auto" : undefined,
           alignItems: "center",
@@ -2428,6 +2509,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 disabled={isStreaming}
                 busy={modelSwitching}
                 isAutoSelection={isAutoModelSelection}
+                defaultValue={defaultModel}
+                onSetDefault={onSetDefaultModel}
               />
             )}
           </div>
@@ -2511,8 +2594,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             {onThinkingLevelChange && (
               <div ref={thinkingDropdownRef} style={{ position: "relative" }}>
                 <button
-                  onClick={() => !isStreaming && setThinkingDropdownOpen((v) => !v)}
-                  disabled={isStreaming}
+                  onClick={() => setThinkingDropdownOpen((v) => !v)}
                   title={isStreaming
                     ? t("chat.currentReasoning", { level: thinkingDisplayLabel })
                     : t("chat.changeReasoning", { level: thinkingDisplayLabel })}
@@ -2526,13 +2608,11 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                     border: "none",
                     borderRadius: 9,
                     color: "var(--text-muted)",
-                    cursor: isStreaming ? "not-allowed" : "pointer",
+                    cursor: "pointer",
                     fontSize: 12,
-                    opacity: isStreaming ? 0.5 : 1,
                     transition: "background 0.12s, color 0.12s",
                   }}
                   onMouseEnter={(e) => {
-                    if (isStreaming) return;
                     e.currentTarget.style.background = "var(--bg-hover)";
                     e.currentTarget.style.color = "var(--text)";
                   }}
@@ -2569,9 +2649,10 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                       const displayLabel = (mappedVal != null && mappedVal !== lvl) ? mappedVal : lvl;
                       const showOriginal = mappedVal != null && mappedVal !== lvl;
                       return (
-                        <button
+                        <SelectorRow
                           key={lvl}
-                          onClick={() => {
+                          active={isActive}
+                          onSelect={() => {
                             setThinkingDropdownOpen(false);
                             if (lvl === "auto") {
                               if (!isAutoThinkingSelection) onThinkingLevelChange("auto");
@@ -2579,28 +2660,25 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                             }
                             if (!isActive || isAutoThinkingSelection) onThinkingLevelChange(lvl);
                           }}
-                          style={{
-                            display: "flex", alignItems: "center", gap: 8,
-                            width: "100%", padding: "7px 12px",
-                            background: isActive ? "var(--bg-selected)" : "none",
-                            border: "none",
-                            color: isActive ? "var(--text)" : "var(--text-muted)",
-                            cursor: "pointer", fontSize: 12, textAlign: "left",
-                            fontWeight: isActive ? 600 : 400,
-                            whiteSpace: "nowrap",
-                          }}
-                          onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = "var(--bg-hover)"; }}
-                          onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = "none"; }}
+                          gutter={Boolean(onSetDefaultThinkingLevel)}
+                          star={onSetDefaultThinkingLevel && lvl !== "auto"
+                            ? {
+                                isDefault: savedDefaultThinkingLevel === lvl,
+                                saveLabel: t("chat.saveDefaultThinking"),
+                                defaultLabel: t("chat.defaultThinking"),
+                                onSave: () => {
+                                  setThinkingDropdownOpen(false);
+                                  onSetDefaultThinkingLevel(lvl);
+                                },
+                              }
+                            : undefined}
                         >
-                          {isActive
-                            ? <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><polyline points="1.5 5 4 7.5 8.5 2.5" /></svg>
-                            : <span style={{ width: 10, flexShrink: 0 }} />}
                           <span style={{ flex: 1 }}>
                             {displayLabel}
                             {showOriginal && <span style={{ fontSize: 10, color: "var(--text-dim)", fontFamily: "var(--font-mono)", marginLeft: 5 }}>({lvl})</span>}
                           </span>
                           <span style={{ fontSize: 11, color: "var(--text-dim)", marginLeft: 8 }}>{desc}</span>
-                        </button>
+                        </SelectorRow>
                       );
                     })}
                   </div>
@@ -2655,9 +2733,10 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   }}>
                     {TOOL_PRESETS.map((lvl) => {
                       const preset = TOOL_PRESET_MAP[lvl];
-                      const isActive = (toolPreset ?? "default") === preset;
+                      const isActive = (toolPreset ?? "configured") === preset;
                       let desc: string;
-                      if (lvl === "chat-only") desc = t("chat.chatOnly");
+                      if (lvl === "configured") desc = t("chat.configuredTools");
+                      else if (lvl === "chat-only") desc = t("chat.chatOnly");
                       else if (lvl === "read-only") desc = t("chat.readOnlyTools", { count: 4 });
                       else if (lvl === "default") desc = t("chat.builtInTools", { count: 4 });
                       else desc = t("chat.allBuiltInTools");
@@ -2691,11 +2770,10 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               </div>
             )}
 
-            {!isStreaming && onCompact && (
+            {(!isStreaming || isCompacting) && onCompact && (
               <div>
                 <button
                   onClick={isCompacting ? onAbortCompaction : onCompact}
-                  disabled={isStreaming && !isCompacting}
                   style={{
                     display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
                     padding: isMobile ? "0 6px" : "8px 12px",
@@ -2705,12 +2783,11 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                     border: "none",
                     borderRadius: 9,
                     color: isCompacting ? "#ef4444" : "var(--text-muted)",
-                    cursor: (isStreaming && !isCompacting) ? "not-allowed" : "pointer",
-                    fontSize: 12, opacity: (isStreaming && !isCompacting) ? 0.5 : 1,
+                    cursor: "pointer",
+                    fontSize: 12,
                     transition: "background 0.12s, color 0.12s",
                   }}
                   onMouseEnter={(e) => {
-                    if (isStreaming && !isCompacting) return;
                     e.currentTarget.style.background = isCompacting ? "rgba(239,68,68,0.16)" : "var(--bg-hover)";
                     e.currentTarget.style.color = isCompacting ? "#ef4444" : "var(--text)";
                   }}

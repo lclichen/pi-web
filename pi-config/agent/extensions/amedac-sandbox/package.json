@@ -1,0 +1,10 @@
+{
+  "name": "amedac-sandbox",
+  "version": "0.2.0",
+  "description": "Sandbox-platform bridge extension (load entry; implementation lives in amedac-core/src/sandbox)",
+  "type": "module",
+  "private": true,
+  "pi": {
+    "extensions": ["./index.ts"]
+  }
+}

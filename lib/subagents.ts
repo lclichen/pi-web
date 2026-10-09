@@ -1,15 +1,18 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { getAgentDir, type LoadExtensionsResult } from "@earendil-works/pi-coding-agent";
 import { dump as stringifyYaml } from "js-yaml";
 import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync } from "fs";
 import { basename, dirname, join, resolve } from "path";
 import { parseFrontmatter } from "./frontmatter";
+import { parseNpmSource } from "./npm-source";
 import { writePrivateFileAtomicSync } from "./atomic-file";
 import { isExistingPathWithinRoots } from "./path-security";
+import { disabledBuiltInSubagents } from "./subagent-settings";
 import { PRESET_READ_ONLY } from "./tool-presets";
 import type { SessionEntry, SubagentSessionStatus } from "./types";
 
 export const SUBAGENT_META_TYPE = "pi-web:subagent";
+export const SUBAGENT_STATUS_TYPE = "pi-web:subagent-status";
 export const SUBAGENT_RESULT_TYPE = "pi-web:subagent-result";
 export const SUBAGENT_CONTROL_TOOL_NAMES = ["Agent", "get_subagent_result", "steer_subagent"] as const;
 
@@ -23,6 +26,13 @@ export interface SubagentProfile {
   description: string;
   systemPrompt: string;
   tools: string[];
+  extensionTools?: string[];
+  /** Raw `ext:` deny selectors, resolved against the loaded extensions at spawn time. */
+  disallowedExtensionTools?: string[];
+  /** Omitted = SDK on-demand discovery; [] = explicitly no selected skills. */
+  skills?: string[];
+  /** Omitted = every enabled extension; [] = none. Names only, resolved like `ext:` selectors. */
+  extensions?: string[];
   loadSkills: boolean;
   loadExtensions: boolean;
   model?: string;
@@ -30,6 +40,10 @@ export interface SubagentProfile {
   maxTurns?: number;
   inheritContext: boolean;
   runInBackground: boolean;
+  promptMode: "replace" | "append";
+  color?: string;
+  isolation?: "worktree" | "off";
+  persistSession?: boolean;
   enabled: boolean;
   scope: SubagentScope;
   filePath?: string;
@@ -46,29 +60,43 @@ export interface SubagentMetadata {
   runInBackground: boolean;
   createdAt: string;
   resourceSnapshot: SubagentResourceSnapshot;
+  worktreePath?: string;
+  worktreeBranch?: string;
 }
 
 export interface SubagentResourceSnapshot {
   version: 1;
+  skills?: string[];
+  extensions?: string[];
   appendSystemPrompt: string[];
   tools: string[];
   loadSkills: boolean;
   loadExtensions: boolean;
+  exactSystemPrompt?: string;
 }
 
 export interface SubagentSessionResources {
+  skills?: string[];
+  extensions?: string[];
   appendSystemPrompt: string[];
   tools: string[];
   loadSkills: boolean;
   loadExtensions: boolean;
+  exactSystemPrompt?: string;
 }
 
 export interface SubagentResultMetadata {
   version: 1;
-  status: Exclude<SubagentStatus, "starting" | "running" | "interrupted">;
+  status: Exclude<SubagentStatus, "starting" | "running" | "queued" | "interrupted">;
   completedAt: string;
   result?: string;
   error?: string;
+  worktreeCleanupError?: string;
+}
+
+export interface SubagentStatusMetadata {
+  version: 1;
+  status: Extract<SubagentStatus, "queued" | "running">;
 }
 
 export interface SubagentRunInfo {
@@ -85,12 +113,51 @@ export interface SubagentRunInfo {
   completedAt?: string;
   result?: string;
   error?: string;
+  worktreePath?: string;
+  worktreeBranch?: string;
+  worktreeCleanupError?: string;
+  /** Set on a run started by `resume`, which reuses the session ID of an earlier run. Not persisted. */
+  resumed?: boolean;
 }
 
 const DEFAULT_TOOLS = ["read", "bash", "edit", "write", "grep", "find", "ls"];
 const BUILTIN_TOOLS = new Set(DEFAULT_TOOLS);
 const SUBAGENT_CONTROL_TOOLS = new Set<string>(SUBAGENT_CONTROL_TOOL_NAMES);
 const THINKING_LEVELS = new Set<ThinkingLevel>(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
+
+/**
+ * Frontmatter keys the web UI owns. Everything else in a profile file belongs to
+ * whichever runtime reads it (pi-subagents and friends), so a save from this app must
+ * carry those keys through untouched. Dropping them silently changed behaviour:
+ * `allowed_subagents` was lost and an orchestrator could no longer spawn anything,
+ * `exclude_extensions` was lost and an opt-out became an opt-in.
+ */
+const MANAGED_FRONTMATTER_KEYS = new Set([
+  "description",
+  "display_name",
+  "tools",
+  "load_skills",
+  "load_extensions",
+  "enabled",
+  "inherit_context",
+  "run_in_background",
+  "model",
+  "thinking",
+  "max_turns",
+  "prompt_mode",
+  "color",
+  "isolation",
+  "persist_session",
+]);
+
+const FRONTMATTER_OPEN_RE = /^(?:\uFEFF)?---[ \t]*(?:\r\n|\n|\r)/;
+
+/**
+ * The UI exposes two booleans (`load_skills` / `load_extensions`); pi-subagents reads
+ * the aliases `skills` / `extensions`, which also accept a whitelist. Aliases are
+ * carried through by `unmanagedFrontmatter` and only rewritten once we own them.
+ */
+const OWNED_ALIAS_VALUES = new Set(["none", "all", "true", "false"]);
 
 export const BUILTIN_PROFILES: SubagentProfile[] = [
   {
@@ -101,6 +168,7 @@ export const BUILTIN_PROFILES: SubagentProfile[] = [
     tools: DEFAULT_TOOLS,
     loadSkills: false,
     loadExtensions: false,
+    promptMode: "append",
     inheritContext: false,
     runInBackground: false,
     enabled: true,
@@ -114,6 +182,7 @@ export const BUILTIN_PROFILES: SubagentProfile[] = [
     tools: [...PRESET_READ_ONLY],
     loadSkills: false,
     loadExtensions: false,
+    promptMode: "append",
     inheritContext: false,
     runInBackground: false,
     enabled: true,
@@ -127,6 +196,7 @@ export const BUILTIN_PROFILES: SubagentProfile[] = [
     tools: [...PRESET_READ_ONLY],
     loadSkills: false,
     loadExtensions: false,
+    promptMode: "append",
     inheritContext: false,
     runInBackground: false,
     enabled: true,
@@ -142,41 +212,168 @@ function booleanValue(value: unknown, fallback: boolean): boolean {
   return typeof value === "boolean" ? value : fallback;
 }
 
-function parseTools(value: unknown, fallback: string[]): string[] {
+function resourceBoolean(value: unknown, fallback: boolean): boolean {
+  if (typeof value === "boolean") return value;
+  return Array.isArray(value) || typeof value === "string" ? true : fallback;
+}
+
+/**
+ * Skill or extension names from a list or a comma-separated string, trimmed and
+ * deduplicated. Empty and non-string items are dropped, as pi-subagents does: a stray
+ * comma must not make the whole profile unreadable.
+ */
+export function subagentNameList(value: unknown): string[] {
+  const items: unknown[] = Array.isArray(value) ? value : typeof value === "string" ? value.split(",") : [];
+  return [...new Set(items
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter(Boolean))];
+}
+
+/**
+ * The names a profile lists in `skills:` or `extensions:`. `undefined` means no list: the
+ * key is absent or empty, or holds a switch spelling (`true`, `all`, `none`, ...) that
+ * `load_skills` / `load_extensions` fall back to and a save keeps in step with them.
+ */
+function profileNameList(value: unknown): string[] | undefined {
+  if (Array.isArray(value)) return subagentNameList(value);
+  if (typeof value !== "string" || OWNED_ALIAS_VALUES.has(value.trim().toLowerCase())) return undefined;
+  const names = subagentNameList(value);
+  return names.length > 0 ? names : undefined;
+}
+
+/** An `extensions:` list; `*` in it loads every extension, as in pi-subagents. */
+function profileExtensions(value: unknown): string[] | undefined {
+  const names = profileNameList(value);
+  return names?.includes("*") ? undefined : names;
+}
+
+/** `load_skills` / `load_extensions`, else the alias, where `none` and `false` switch it off. */
+function profileResourceSwitch(value: unknown, fallback: boolean): boolean {
+  if (typeof value === "string" && ["none", "false"].includes(value.trim().toLowerCase())) return false;
+  return resourceBoolean(value, fallback);
+}
+
+function stringList(value: unknown): string[] {
   const values = Array.isArray(value)
     ? value
     : typeof value === "string"
       ? value.split(",")
       : [];
-  const tools = values.map((item) => String(item).trim()).filter(Boolean);
+  return values.map((item) => String(item).trim()).filter(Boolean);
+}
+
+function parseTools(value: unknown, fallback: string[]): string[] {
+  const tools = stringList(value);
   if (tools.includes("none")) return [];
   if (tools.includes("all") || tools.includes("*")) return [...DEFAULT_TOOLS];
   if (tools.length === 0) return [...fallback];
   return [...new Set(tools.filter((tool) => BUILTIN_TOOLS.has(tool)))];
 }
 
+function rawToolValues(value: unknown): string[] {
+  return stringList(value);
+}
+
+function parseExtensionToolSelectors(value: unknown): string[] {
+  return [...new Set(rawToolValues(value).filter((tool) => tool.toLowerCase().startsWith("ext:")))];
+}
+
+/** Read existing frontmatter without allowing malformed metadata to be overwritten. */
+function readStoredFrontmatter(filePath: string): Record<string, unknown> {
+  if (!existsSync(filePath)) return {};
+  const source = readFileSync(filePath, "utf8");
+  const { data } = parseFrontmatter(source);
+  if (data) return data;
+  if (FRONTMATTER_OPEN_RE.test(source)) {
+    throw new Error("Cannot save agent profile: existing frontmatter is invalid");
+  }
+  return {};
+}
+
+/** Keys another runtime owns, in file order, so a save round-trips them. */
+function unmanagedFrontmatter(stored: Record<string, unknown>): Record<string, unknown> {
+  const preserved: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(stored)) {
+    if (!MANAGED_FRONTMATTER_KEYS.has(key)) preserved[key] = value;
+  }
+  return preserved;
+}
+
+/**
+ * pi-web filters `tools` down to the built-ins it can dispatch, which would drop
+ * another runtime's `ext:<name>` selectors on every save — carry them through.
+ */
+function composeToolsField(tools: string[], storedTools: unknown): string {
+  const selectors = stringList(storedTools).filter((tool) => tool.toLowerCase().startsWith("ext:"));
+  const combined = [...tools, ...selectors.filter((selector) => !tools.some((tool) => tool.toLowerCase() === selector.toLowerCase()))];
+  return combined.length > 0 ? combined.join(", ") : "none";
+}
+
+/**
+ * Keep the alias in step with the boolean the UI owns. A boolean (or a "none" /
+ * "all" spelling) is ours to rewrite; a whitelist such as `extensions:
+ * pi-advisor-flow` expresses scoping the UI cannot show, so it stays as authored.
+ */
+function syncFlagAlias(
+  frontmatter: Record<string, unknown>,
+  alias: string,
+  storedValue: unknown,
+  flag: boolean,
+): void {
+  const owned = storedValue === undefined
+    || typeof storedValue === "boolean"
+    || (typeof storedValue === "string" && OWNED_ALIAS_VALUES.has(storedValue.trim().toLowerCase()));
+  if (owned) frontmatter[alias] = flag;
+}
 function parseProfileFile(filePath: string, scope: SubagentScope): SubagentProfile | null {
   try {
     const source = readFileSync(filePath, "utf8");
     const { data, rest } = parseFrontmatter(source);
-    const name = basename(filePath, ".md");
+    const name = stringValue(data?.name) ?? basename(filePath, ".md");
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name)) return null;
     const thinkingValue = stringValue(data?.thinking) as ThinkingLevel | undefined;
     const maxTurnsValue = typeof data?.max_turns === "number" ? Math.floor(data.max_turns) : undefined;
     const tools = parseTools(data?.tools, DEFAULT_TOOLS);
+    const skills = profileNameList(data?.skills);
+    const extensions = profileExtensions(data?.extensions);
     const disallowedTools = new Set(parseTools(data?.disallowed_tools, []));
+    // The deny list is also handed to the runtime, which resolves both sides against the
+    // loaded extensions. This parse-time filter is only the cheap literal fast path: it
+    // cannot see extension aliases (`ext:codegraph` vs `ext:@scope/pi-codegraph`), so it
+    // must never be the only gate.
+    const disallowedExtensionTools = parseExtensionToolSelectors(data?.disallowed_tools);
+    const deniedKeys = new Set(
+      disallowedExtensionTools.map((tool) => normalizeExtensionSelector(tool).toLowerCase()),
+    );
+    const extensionTools = parseExtensionToolSelectors(data?.tools)
+      .filter((tool) => {
+        const allowed = normalizeExtensionSelector(tool).toLowerCase();
+        return ![...deniedKeys].some((denied) => (
+          denied === "*" || allowed === denied || allowed.startsWith(`${denied}/`)
+        ));
+      });
     return {
       name,
       displayName: stringValue(data?.display_name) ?? name,
       description: stringValue(data?.description) ?? name,
       systemPrompt: rest.trim(),
       tools: tools.filter((tool) => !disallowedTools.has(tool)),
-      loadSkills: booleanValue(data?.load_skills, false),
-      loadExtensions: booleanValue(data?.load_extensions, false),
+      ...(extensionTools.length > 0 ? { extensionTools } : {}),
+      ...(disallowedExtensionTools.length > 0 ? { disallowedExtensionTools } : {}),
+      ...(skills !== undefined ? { skills } : {}),
+      ...(extensions !== undefined ? { extensions } : {}),
+      loadSkills: profileResourceSwitch(data?.load_skills ?? data?.skills, false),
+      loadExtensions: profileResourceSwitch(data?.load_extensions ?? data?.extensions, extensionTools.length > 0),
       ...(stringValue(data?.model) ? { model: stringValue(data?.model) } : {}),
       ...(thinkingValue && THINKING_LEVELS.has(thinkingValue) ? { thinking: thinkingValue } : {}),
       ...(maxTurnsValue && maxTurnsValue > 0 ? { maxTurns: maxTurnsValue } : {}),
       inheritContext: booleanValue(data?.inherit_context, false),
       runInBackground: booleanValue(data?.run_in_background, false),
+      promptMode: data?.prompt_mode === "replace" ? "replace" : "append",
+      ...(stringValue(data?.color) ? { color: stringValue(data?.color) } : {}),
+      ...(data?.isolation === "worktree" || data?.isolation === "off" ? { isolation: data.isolation } : {}),
+      ...(typeof data?.persist_session === "boolean" ? { persistSession: data.persist_session } : {}),
       enabled: booleanValue(data?.enabled, true),
       scope,
       filePath,
@@ -207,9 +404,24 @@ function profileDirectories(cwd: string): Array<[string, Exclude<SubagentScope, 
   ];
 }
 
+/**
+ * A built-in has no file, so `enabled: false` cannot be written next to it the way
+ * it is for a profile on disk. Its off state is a name in `agents/settings.json`
+ * instead of a copied-out override file, which would otherwise freeze the built-in
+ * prompt at the version it was copied from.
+ */
+function builtInProfiles(): SubagentProfile[] {
+  const disabled = disabledBuiltInSubagents();
+  return BUILTIN_PROFILES.map((profile) => ({
+    ...profile,
+    tools: [...profile.tools],
+    enabled: !disabled.has(profile.name.toLowerCase()),
+  }));
+}
+
 /** Every configured source, including profiles shadowed by a higher-precedence scope. */
 export function listSubagentProfileSources(cwd: string): SubagentProfile[] {
-  const profiles = BUILTIN_PROFILES.map((profile) => ({ ...profile, tools: [...profile.tools] }));
+  const profiles = builtInProfiles();
   for (const [dir, scope] of profileDirectories(cwd)) {
     profiles.push(...readProfileDirectory(dir, scope, cwd));
   }
@@ -217,7 +429,8 @@ export function listSubagentProfileSources(cwd: string): SubagentProfile[] {
 }
 
 export function listSubagentProfiles(cwd: string): SubagentProfile[] {
-  const byName = new Map(BUILTIN_PROFILES.map((profile) => [profile.name.toLowerCase(), { ...profile, tools: [...profile.tools] }]));
+  // A same-name file replaces the built-in outright, its own `enabled` included.
+  const byName = new Map(builtInProfiles().map((profile) => [profile.name.toLowerCase(), profile]));
   for (const [dir, scope] of profileDirectories(cwd)) {
     for (const profile of readProfileDirectory(dir, scope, cwd)) byName.set(profile.name.toLowerCase(), profile);
   }
@@ -265,6 +478,7 @@ export function saveSubagentProfile(
 ): SubagentProfile {
   const name = assertProfileName(profile.name);
   const tools = [...new Set(profile.tools.filter((tool) => BUILTIN_TOOLS.has(tool)))];
+  const extensionTools = [...new Set(profile.extensionTools ?? [])];
   if (profile.thinking && !THINKING_LEVELS.has(profile.thinking)) {
     throw new Error(`Invalid thinking level: ${profile.thinking}`);
   }
@@ -280,25 +494,48 @@ export function saveSubagentProfile(
   const model = profile.model?.trim() || undefined;
   const loadSkills = profile.loadSkills === true;
   const loadExtensions = profile.loadExtensions === true;
+  const promptMode = profile.promptMode === "replace" ? "replace" : "append";
   const dir = assertWritableProfileDirectory(cwd, scope);
   mkdirSync(dir, { recursive: true });
   if (scope === "project" && !isProjectProfilePathAllowed(cwd, dir)) {
     throw new Error("Agent profile directory is outside the project root");
   }
   const filePath = join(dir, `${name}.md`);
-  const frontmatter: Record<string, unknown> = {
+  const stored = readStoredFrontmatter(filePath);
+  const managed: Record<string, unknown> = {
     description,
     display_name: displayName,
-    tools: tools.length > 0 ? tools.join(", ") : "none",
+    tools: composeToolsField([...tools, ...extensionTools], stored.tools),
     load_skills: loadSkills,
     load_extensions: loadExtensions,
     enabled: profile.enabled,
     inherit_context: profile.inheritContext,
     run_in_background: profile.runInBackground,
+    prompt_mode: promptMode,
   };
-  if (model) frontmatter.model = model;
-  if (profile.thinking) frontmatter.thinking = profile.thinking;
-  if (maxTurns) frontmatter.max_turns = maxTurns;
+  const skills = profile.skills === undefined ? profileNameList(stored.skills) : subagentNameList(profile.skills);
+  if (skills !== undefined) {
+    const storedSkills = profileNameList(stored.skills);
+    managed.skills = storedSkills !== undefined && JSON.stringify(storedSkills) === JSON.stringify(skills)
+      ? stored.skills
+      : skills;
+  } else {
+    syncFlagAlias(managed, "skills", stored.skills, loadSkills);
+  }
+  // The panel has no editor for an `extensions:` list, so the file's own list always stays.
+  syncFlagAlias(managed, "extensions", stored.extensions, loadExtensions);
+  const extensions = profileExtensions(stored.extensions);
+  if (model) managed.model = model;
+  if (profile.thinking) managed.thinking = profile.thinking;
+  if (maxTurns) managed.max_turns = maxTurns;
+  if (profile.color?.trim()) managed.color = profile.color.trim();
+  if (profile.isolation) managed.isolation = profile.isolation;
+  if (profile.persistSession !== undefined) managed.persist_session = profile.persistSession;
+  // Managed keys win; keys this app does not own follow in their original order.
+  const frontmatter: Record<string, unknown> = { ...managed };
+  for (const [key, value] of Object.entries(unmanagedFrontmatter(stored))) {
+    if (!(key in frontmatter)) frontmatter[key] = value;
+  }
   const yaml = stringifyYaml(frontmatter, { noRefs: true, lineWidth: 1000 }).trimEnd();
   writePrivateFileAtomicSync(filePath, `---\n${yaml}\n---\n\n${systemPrompt}\n`);
   return {
@@ -308,10 +545,17 @@ export function saveSubagentProfile(
     description,
     systemPrompt,
     tools,
+    ...(skills !== undefined ? { skills } : {}),
+    extensions,
+    ...(extensionTools.length > 0 ? { extensionTools } : {}),
     loadSkills,
     loadExtensions,
     ...(model ? { model } : { model: undefined }),
     ...(maxTurns ? { maxTurns } : { maxTurns: undefined }),
+    promptMode,
+    ...(profile.color ? { color: profile.color } : {}),
+    ...(profile.isolation ? { isolation: profile.isolation } : {}),
+    ...(profile.persistSession !== undefined ? { persistSession: profile.persistSession } : {}),
     scope,
     filePath,
   };
@@ -356,6 +600,9 @@ export function readSubagentSessionResources(
   const data = subagentMetadataData(entries);
   if (!data) return null;
   const snapshot = data.resourceSnapshot;
+  // A malformed list narrows to what it names, never back to the whole catalog.
+  const skills = isRecord(snapshot) && "skills" in snapshot ? subagentNameList(snapshot.skills) : undefined;
+  const extensions = isRecord(snapshot) && "extensions" in snapshot ? subagentNameList(snapshot.extensions) : undefined;
   const loadSkills = isRecord(snapshot) && snapshot.loadSkills === true;
   const loadExtensions = isRecord(snapshot) && snapshot.loadExtensions === true;
   if (
@@ -372,10 +619,13 @@ export function readSubagentSessionResources(
     )
   ) {
     return {
+      ...(skills !== undefined ? { skills } : {}),
+      ...(extensions !== undefined ? { extensions } : {}),
       appendSystemPrompt: [...snapshot.appendSystemPrompt],
       tools: [...new Set(snapshot.tools)],
       loadSkills,
       loadExtensions,
+      ...(typeof snapshot.exactSystemPrompt === "string" ? { exactSystemPrompt: snapshot.exactSystemPrompt } : {}),
     };
   }
   return null;
@@ -391,14 +641,209 @@ export function withSubagentExtensionTools(
   ])];
 }
 
+interface SubagentExtensionLike {
+  path: string;
+  sourceInfo?: { source?: string; origin?: string };
+  tools: Map<string, unknown>;
+}
+
+/**
+ * Normalize one `ext:` selector to its body: a trailing slash and a trailing star-segment
+ * are dropped, so `ext:name`, `ext:name/` and `ext:name/*` are one selector. Shared by the
+ * allow list and the deny list so the two cannot disagree on what a selector means.
+ */
+function normalizeExtensionSelector(selector: string): string {
+  const body = selector.slice(4).trim().replace(/\/+$/, "");
+  return body.endsWith("/*") ? body.slice(0, -2) : body;
+}
+
+function extensionPathParts(extension: SubagentExtensionLike): { parentDir: string; baseName: string } {
+  const segments = extension.path.replaceAll("\\", "/").split("/");
+  return {
+    parentDir: segments.at(-2) ?? extension.path,
+    baseName: (segments.at(-1) ?? "").replace(/\.[^.]+$/, ""),
+  };
+}
+
+/**
+ * The source a file belongs to. Only package resources have a real identity in
+ * `sourceInfo.source`; top-level ones all carry the shared constant `"local"` (settings
+ * entry) or `"auto"` (auto-discovered), so they fall back to their own path — otherwise
+ * every unrelated local extension would look like one unit to the name gate below.
+ */
+function extensionSourceKey(extension: SubagentExtensionLike): string {
+  const info = extension.sourceInfo;
+  const source = info?.source?.trim();
+  return source && info?.origin === "package" ? source : extension.path;
+}
+
+/**
+ * Every spelling an `ext:<name>` selector could use for one extension: the file's parent
+ * directory, its basename, and — for package resources only — the npm source name and that
+ * name without its scope (a pinned `npm:@scope/pkg@1.2.3` contributes `@scope/pkg`, not the
+ * pin). `"local"` / `"auto"` are deliberately never candidates: they are shared constants,
+ * so accepting them would turn `ext:local` into "every local extension".
+ */
+function extensionCandidateNames(extension: SubagentExtensionLike): string[] {
+  const { parentDir, baseName } = extensionPathParts(extension);
+  const names = [parentDir, baseName];
+  const info = extension.sourceInfo;
+  if (info?.origin === "package") {
+    const source = (info.source ?? "").trim();
+    const packageName = parseNpmSource(source)?.name ?? source;
+    names.push(packageName, packageName.replace(/^@[^/]+\//, ""));
+  }
+  return [...new Set(names.map((name) => name.toLowerCase()).filter(Boolean))];
+}
+
+/**
+ * Map each candidate name to the set of sources that can offer it. A name claimed by more
+ * than one source is not addressable: `index.ts`, a shared `extensions/` directory and two
+ * packages collapsing to the same unscoped name (`@a/tool`, `@b/tool`) are all common, and
+ * a selector for one of them would otherwise grant tools from unrelated extensions. Several
+ * files of the `same` source may share a name — they are one unit, not a collision.
+ */
+function extensionNameOwners(extensions: readonly SubagentExtensionLike[]): Map<string, Set<string>> {
+  const owners = new Map<string, Set<string>>();
+  for (const extension of extensions) {
+    const owner = extensionSourceKey(extension);
+    for (const name of extensionCandidateNames(extension)) {
+      const claimed = owners.get(name) ?? new Set<string>();
+      claimed.add(owner);
+      owners.set(name, claimed);
+    }
+  }
+  return owners;
+}
+
+interface ExtensionSelectorMatch {
+  name: string;
+  toolName?: string;
+}
+
+/**
+ * Resolve one selector against the addressable names found across `every` loaded extension,
+ * keeping the longest match, and return the tool name it asked for (if any). Resolving names
+ * per extension instead would let `ext:@scope/pkg` bind to the shorter, unrelated name
+ * `@scope` offered by a different extension. Extension names are case-insensitive; tool
+ * names are matched exactly as authored.
+ */
+function resolveExtensionSelector(
+  selector: string,
+  addressableNames: Iterable<string>,
+): ExtensionSelectorMatch | null {
+  const lower = selector.toLowerCase();
+  let best: string | undefined;
+  for (const name of addressableNames) {
+    if (lower !== name && !lower.startsWith(`${name}/`)) continue;
+    if (best === undefined || name.length > best.length) best = name;
+  }
+  if (best === undefined) return null;
+  const toolName = lower === best ? undefined : selector.slice(best.length + 1) || undefined;
+  return { name: best, ...(toolName === undefined ? {} : { toolName }) };
+}
+
+export function selectSubagentExtensionTools(
+  extensions: Iterable<SubagentExtensionLike>,
+  selectors: readonly string[],
+  deniedSelectors: readonly string[] = [],
+): string[] {
+  const normalizeAll = (values: readonly string[]) => values
+    .filter((selector) => selector.toLowerCase().startsWith("ext:"))
+    .map((selector) => normalizeExtensionSelector(selector))
+    .filter(Boolean);
+  const wanted = normalizeAll(selectors);
+  const denied = normalizeAll(deniedSelectors);
+  if (wanted.length === 0) return [];
+  const loaded = [...extensions];
+  const owners = extensionNameOwners(loaded);
+  const addressable = new Set([...owners].filter(([, claimed]) => claimed.size === 1).map(([name]) => name));
+  const everyExtension = wanted.includes("*");
+  const denyEveryExtension = denied.includes("*");
+  // Allow and deny are resolved with the *same* candidate names, so a deny written with one
+  // alias (`ext:codegraph`) also covers a grant written with another (`ext:@scope/pkg/tool`).
+  const resolveAll = (values: readonly string[]) => values.flatMap((selector) => {
+    if (selector === "*") return [];
+    const match = resolveExtensionSelector(selector, addressable);
+    return match === null ? [] : [match];
+  });
+  const matches = resolveAll(wanted);
+  const denials = resolveAll(denied);
+
+  const selected: string[] = [];
+  for (const extension of loaded) {
+    const toolNames = [...extension.tools.keys()];
+    const owned = new Set(extensionCandidateNames(extension).filter((name) => addressable.has(name)));
+    const ownedMatches = matches.filter((match) => owned.has(match.name));
+    if (!everyExtension && ownedMatches.length === 0) continue;
+    const ownedDenials = denials.filter((match) => owned.has(match.name));
+    const covers = (match: ExtensionSelectorMatch, toolName: string) => (
+      match.toolName === undefined || match.toolName === toolName
+    );
+    selected.push(...toolNames.filter((toolName) => {
+      const granted = everyExtension || ownedMatches.some((match) => covers(match, toolName));
+      if (!granted || denyEveryExtension) return false;
+      return !ownedDenials.some((match) => covers(match, toolName));
+    }));
+  }
+  return [...new Set(selected)];
+}
+
+/**
+ * Keep only the extensions an `extensions:` list names, after the SDK has loaded them, as
+ * pi-subagents does. A dropped extension binds no handlers, tools, commands or providers,
+ * but its factory has already run once: this scopes the child, it is not a sandbox. Names
+ * resolve like `ext:` selectors (directory, file or package name, case-insensitive), so a
+ * name two sources claim keeps neither. pi-web's own inline extensions always stay. The SDK
+ * calls the override on every reload, so the scope holds without further wiring.
+ */
+export function scopeSubagentExtensions(names: readonly string[]) {
+  const wanted = new Set(names.map((name) => name.toLowerCase()));
+  return (base: LoadExtensionsResult): LoadExtensionsResult => {
+    const owners = extensionNameOwners(base.extensions);
+    const extensions = base.extensions.filter((extension) => (
+      extension.path.startsWith("<inline:")
+      || extensionCandidateNames(extension).some((name) => wanted.has(name) && owners.get(name)?.size === 1)
+    ));
+    const kept = new Set(extensions.map((extension) => extension.path));
+    const { runtime } = base;
+    // Registrations queued by a dropped extension's factory would still reach the model runtime.
+    runtime.pendingProviderRegistrations = runtime.pendingProviderRegistrations.filter((item) => kept.has(item.extensionPath));
+    runtime.pendingNativeProviderRegistrations = runtime.pendingNativeProviderRegistrations.filter((item) => kept.has(item.extensionPath));
+    runtime.pendingVirtualModelRegistrations = runtime.pendingVirtualModelRegistrations.filter((item) => kept.has(item.extensionPath));
+    return { ...base, extensions };
+  };
+}
+
+/** The extension half of a child's resource loader options, shared by spawn and reopen. */
+export function subagentExtensionLoaderOptions(resources: { loadExtensions: boolean; extensions?: readonly string[] }) {
+  return {
+    noExtensions: !resources.loadExtensions,
+    ...(resources.loadExtensions && resources.extensions !== undefined
+      ? { extensionsOverride: scopeSubagentExtensions(resources.extensions) }
+      : {}),
+  };
+}
+
 export function readSubagentRun(entries: readonly SessionEntry[], sessionId: string, sessionPath: string): SubagentRunInfo | null {
   const data = subagentMetadataData(entries);
   if (!data) return null;
-  const resultEntry = [...entries].reverse().find((entry) => entry.type === "custom" && entry.customType === SUBAGENT_RESULT_TYPE);
+  const lifecycleEntry = [...entries].reverse().find((entry) =>
+    entry.type === "custom" && (entry.customType === SUBAGENT_RESULT_TYPE || entry.customType === SUBAGENT_STATUS_TYPE)
+  );
+  const resultEntry = lifecycleEntry?.type === "custom" && lifecycleEntry.customType === SUBAGENT_RESULT_TYPE
+    ? lifecycleEntry
+    : undefined;
   const result = resultEntry?.type === "custom" && isRecord(resultEntry.data) ? resultEntry.data : undefined;
+  const statusEntry = lifecycleEntry?.type === "custom" && lifecycleEntry.customType === SUBAGENT_STATUS_TYPE
+    ? lifecycleEntry
+    : undefined;
+  const statusData = statusEntry?.type === "custom" && isRecord(statusEntry.data) ? statusEntry.data : undefined;
   const persistedStatus = result && (result.status === "completed" || result.status === "failed" || result.status === "aborted")
     ? result.status
-    : "interrupted";
+    : statusData?.version === 1 && (statusData.status === "queued" || statusData.status === "running")
+      ? statusData.status
+      : "interrupted";
   return {
     sessionId,
     sessionPath,
@@ -413,5 +858,8 @@ export function readSubagentRun(entries: readonly SessionEntry[], sessionId: str
     ...(result && typeof result.completedAt === "string" ? { completedAt: result.completedAt } : {}),
     ...(result && typeof result.result === "string" ? { result: result.result } : {}),
     ...(result && typeof result.error === "string" ? { error: result.error } : {}),
+    ...(typeof data.worktreePath === "string" ? { worktreePath: data.worktreePath } : {}),
+    ...(typeof data.worktreeBranch === "string" ? { worktreeBranch: data.worktreeBranch } : {}),
+    ...(result && typeof result.worktreeCleanupError === "string" ? { worktreeCleanupError: result.worktreeCleanupError } : {}),
   };
 }

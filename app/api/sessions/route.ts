@@ -15,6 +15,7 @@ import {
 import { requireUserIdentity } from "@/lib/web-session";
 import { spaceForRequest } from "@/lib/session-spaces";
 import { getSessionMetas } from "@/lib/session-metas";
+import { startServerPerf } from "@/lib/perf";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +24,7 @@ export const dynamic = "force-dynamic";
 // Entries carry the pi-web execution mode from the sidecar metas; live (not yet
 // persisted) RPC sessions are merged in, fenced per user.
 export async function GET(req: Request) {
+  const perf = startServerPerf("GET /api/sessions");
   const identity = requireUserIdentity(req);
   if (!identity.ok) return NextResponse.json({ error: "登录已失效" }, { status: 401 });
   const { user } = identity.session;
@@ -35,6 +37,9 @@ export async function GET(req: Request) {
     // listAllSessions(space, { force }) — dev shards the catalogue per user.
     // Runtime (not-yet-persisted) sessions are merged in per upstream, but
     // filtered to the caller's own live sessions (admins see all).
+    // MERGE-NOTE(upgrade/1.0): upstream's `summary=1` fast path rides on its
+    // global listSessionSummaries() cache; dev keeps the per-space full scan.
+    perf?.span("start");
     const [persistedSessions, runtimeSessions, metas] = await Promise.all([
       listAllSessions(space, { force }),
       Promise.resolve(getRpcSessionInfos())
@@ -51,6 +56,7 @@ export async function GET(req: Request) {
     // Capture AFTER the scan: mutations during the scan bump the generation,
     // so the client sees a version it cannot reconcile and refreshes again.
     const sessionListVersion = getSessionListVersion();
+    perf?.span("scan+projects");
     // Live-sessions are per-user unless the caller is an admin on the host space.
     const runningSessionIds = getRunningRpcSessionInfos()
       .filter((r) => (user.role === "admin" ? true : r.ownerId === user.id))
@@ -60,7 +66,7 @@ export async function GET(req: Request) {
     const visibleRunning = new Set(runningSessionIds);
     const completionNotificationSuppressedSessionIds = getCompletionNotificationSuppressedRpcSessionIds()
       .filter((sessionId) => visibleRunning.has(sessionId));
-    return jsonResponse(
+    const response = jsonResponse(
       req,
       {
         sessions,
@@ -70,6 +76,7 @@ export async function GET(req: Request) {
       },
       { headers: { "Cache-Control": "no-store" } },
     );
+    return perf ? perf.attach(response) : response;
   } catch (error) {
     return NextResponse.json(
       { error: String(error) },

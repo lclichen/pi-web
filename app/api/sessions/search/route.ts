@@ -7,9 +7,11 @@ import { searchSessionContents } from "@/lib/session-search";
 export const dynamic = "force-dynamic";
 
 // GET /api/sessions/search?q=… — full-text search over the CALLER's sessions.
-// MERGE-NOTE(upgrade/0.9): upstream scans the global catalogue; this fork
-// shards sessions per user space, so the search rides the same fence as
-// /api/sessions (match snippets must never cross users).
+// MERGE-NOTE(upgrade/0.9): upstream scans the global catalogue with an
+// `allowStale` off-rebuild-path read; this fork shards sessions per user space
+// and its listAllSessions TTL cache already serves stale-with-coalescing
+// reads, so the search simply rides the same fence as /api/sessions (match
+// snippets must never cross users).
 export async function GET(req: Request) {
   const identity = requireUserIdentity(req);
   if (!identity.ok) return NextResponse.json({ error: "登录已失效" }, { status: 401 });

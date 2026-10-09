@@ -88,14 +88,15 @@
 #                         打包内容（包内 sandbox/ 目录 + 一键脚本）:
 #                           sandbox/platform/    容器管理 API（sqlite 零依赖部署，
 #                                                启动自动迁移，端口默认 3000）
-#                           sandbox/extension/   pi-sandbox-extension 桥接扩展
 #                           scripts/start-all.sh 一键启动 平台+WebUI（首次运行自动
 #                                                生成 env、数据落在 data/）
 #                           scripts/stop-all.sh / status-all.sh
 #                         目标机还要求安装 Apptainer（容器执行器），脚本会检测并提示。
 #   SANDBOX_PLATFORM_DIR     sandbox-platform 仓库路径。默认依次探测:
 #                            ../sandbox-platform、../../AgentSandbox/sandbox-platform
-#   SANDBOX_EXTENSION_DIR    pi-sandbox-extension 仓库路径。默认探测: ../pi-sandbox-extension
+#                         （沙盒桥接扩展已并入 pi-config/agent/extensions/amedac-sandbox
+#                          随 pi-config 模板统一打包，不再单独打包 sandbox/extension/，
+#                          原 SANDBOX_EXTENSION_DIR 参数已删除。）
 #                         （管理控制台 SPA 已随 web/ 归档移除——管理界面全部
 #                          迁入 pi-web 的管理面板，平台包不再携带前端静态页；
 #                          原 PLATFORM_WEB_DIST 参数已删除。）
@@ -345,22 +346,17 @@ find_repo_dir() { # <说明> <默认候选...> -> 打印第一个存在的目录
 
 SANDOX_WANTED="${WITH_SANDBOX:-}"
 SANDBOX_PLATFORM_SRC="${SANDBOX_PLATFORM_DIR:-}"
-SANDBOX_EXTENSION_SRC="${SANDBOX_EXTENSION_DIR:-}"
 
 AUTO_PLATFORM="$(find_repo_dir sandbox-platform "$ROOT/../sandbox-platform" "$ROOT/../../AgentSandbox/sandbox-platform" || true)"
-AUTO_EXTENSION="$(find_repo_dir pi-sandbox-extension "$ROOT/../pi-sandbox-extension" "$ROOT/../../LabTrainingProject/pi-sandbox-extension" || true)"
 
 if [ -z "$SANDOX_WANTED" ]; then
-  # 自动模式：两个源都找齐才打包
+  # 自动模式：找得到平台源码就打包（桥接扩展随 pi-config/amedac-sandbox 打包）
   [ -n "$SANDBOX_PLATFORM_SRC" ] || SANDBOX_PLATFORM_SRC="$AUTO_PLATFORM"
-  [ -n "$SANDBOX_EXTENSION_SRC" ] || SANDBOX_EXTENSION_SRC="$AUTO_EXTENSION"
   WITH_SANDBOX=1
-  [ -d "$SANDBOX_PLATFORM_SRC" ] && [ -d "$SANDBOX_EXTENSION_SRC" ] || WITH_SANDBOX=0
+  [ -d "$SANDBOX_PLATFORM_SRC" ] || WITH_SANDBOX=0
 elif [ "$SANDOX_WANTED" = "1" ]; then
-  [ -d "$SANDBOX_PLATFORM_SRC" ] || SANDBOX_PLATFORM_SRC="$AUTO_PLATFORM"
-  [ -d "$SANDBOX_EXTENSION_SRC" ] || SANDBOX_EXTENSION_SRC="$AUTO_EXTENSION"
+  [ -n "$SANDBOX_PLATFORM_SRC" ] || SANDBOX_PLATFORM_SRC="$AUTO_PLATFORM"
   [ -d "$SANDBOX_PLATFORM_SRC" ] || die "WITH_SANDBOX=1 但找不到 sandbox-platform（设 SANDBOX_PLATFORM_DIR=/路径）"
-  [ -d "$SANDBOX_EXTENSION_SRC" ] || die "WITH_SANDBOX=1 但找不到 pi-sandbox-extension（设 SANDBOX_EXTENSION_DIR=/路径）"
 else
   WITH_SANDBOX=0
 fi
@@ -413,13 +409,9 @@ if [ "$WITH_SANDBOX" = "1" ]; then
   echo "$PLATFORM_VERSION" > "$SBX/platform/.shipped-version"
   log "sandbox-platform 版本: $PLATFORM_VERSION"
 
-  # 扩展：pi-sandbox-extension（自带 node_modules 离线可用）
-  log "打包 pi-sandbox-extension: $SANDBOX_EXTENSION_SRC -> sandbox/extension"
-  mkdir -p "$SBX/extension"
-  (cd "$SANDBOX_EXTENSION_SRC" && tar \
-    --exclude='./.git' --exclude='./node_modules' --exclude='./data' \
-    --exclude='*.log' -cf - .) | (cd "$SBX/extension" && tar -xf -)
-  (cd "$SBX/extension" && npm install --omit=dev --legacy-peer-deps --no-audit --no-fund)
+  # 桥接扩展已并入 pi-config/agent/extensions/amedac-sandbox（随 pi-config
+  # 模板打包，start-all.sh 的 PI_WEB_SANDBOX_EXTENSION_PATH 指向它），
+  # 不再单独拷贝外部仓库、也不需要 npm install。
 
   # 首次部署说明落在包内
   cat > "$SBX/README.txt" <<'EOF'
@@ -427,7 +419,8 @@ if [ "$WITH_SANDBOX" = "1" ]; then
 ================
 sandbox/platform/   容器管理 API —— sqlite 存储、启动自动迁移、默认
                     监听 127.0.0.1:3000。
-sandbox/extension/  pi 的沙盒桥接扩展（bash/read/write 工具走容器 API）。
+（沙盒桥接扩展位于包内 pi-config/agent/extensions/amedac-sandbox，
+由 start-all.sh 经 PI_WEB_SANDBOX_EXTENSION_PATH 注入沙盒会话。）
                     pi-web 通过 PI_WEB_SANDBOX_EXTENSION_PATH 加载它。
 
 一键使用（在包根目录）:

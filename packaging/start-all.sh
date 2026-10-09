@@ -79,7 +79,10 @@ fi
 mkdir -p "$RUN_DIR" "$LOG_DIR" "$DATA_DIR" "$CONFIG_DIR"
 
 PLATFORM_DIR="$PKG/sandbox/platform"
-EXTENSION_DIR="$PKG/sandbox/extension"
+# 沙盒桥接扩展：新版随 pi-config 模板打包（amedac-sandbox 薄入口 + amedac-core
+# 内实现）；旧包的 sandbox/extension/ 作为回落（增量更新过渡期）。
+EXTENSION_DIR="$PKG/pi-config/agent/extensions/amedac-sandbox"
+[ -d "$EXTENSION_DIR" ] || EXTENSION_DIR="$PKG/sandbox/extension"
 PLATFORM_ENV_FILE="$CONFIG_DIR/platform.env"
 WEB_ENV_FILE="$CONFIG_DIR/piweb.env"
 ADMIN_PW_FILE="$CONFIG_DIR/admin-password.txt"
@@ -339,6 +342,9 @@ PI_WEB_LAB_TRAINING=off
 # 非登录态。0=禁用空闲关闭）。代码默认 10 分钟对整日使用的工作会话太激进，
 # 部署默认放宽为 7 天。
 PI_WEB_IDLE_TIMEOUT_MS=604800000
+# pi 0.99+ 内置 MCP 与现役 pi-mcp-adapter 冲突（同一批 mcp.json 双读双连），
+# Web 端整体关闭内置 MCP（运营级开关；adapter 继续服务 MCP）。置空/0 恢复内置。
+PI_WEB_DISABLE_MCP=1
 # 自有更新源（catalog.json，http(s) URL 或本地文件路径）——配置后设置页可
 # 检查/下载/自动应用更新；产物相对路径以 catalog 所在目录为基准解析。
 # AMEDAC_UPDATE_CATALOG_URL=http://updates.internal/amedac/catalog.json
@@ -352,6 +358,14 @@ EOF
   if [ -f "$WEB_ENV_FILE" ] && ! grep -q "^PI_WEB_IDLE_TIMEOUT_MS=" "$WEB_ENV_FILE" 2>/dev/null; then
     printf '# （start-all 升级：旧版缺失此变量，默认 10 分钟过短，补写为 7 天；0=禁用）\nPI_WEB_IDLE_TIMEOUT_MS=604800000\n' >> "$WEB_ENV_FILE"
     log "piweb.env 已补写 PI_WEB_IDLE_TIMEOUT_MS=604800000（旧版缺失）"
+  fi
+
+  # pi 1.x 起 pi-web 会加载 pi 内置 MCP 扩展，与部署内的 pi-mcp-adapter 冲突
+  # （同读 ~/.pi/agent/mcp.json 与 .pi/mcp.json、/mcp 命令撞名）。升级补写运营级
+  # 关闭开关；用户手写过该行的不覆盖。
+  if [ -f "$WEB_ENV_FILE" ] && ! grep -q "^PI_WEB_DISABLE_MCP=" "$WEB_ENV_FILE" 2>/dev/null; then
+    printf '# （pi 1.x 升级：内置 MCP 与 pi-mcp-adapter 冲突，默认关闭内置；0/空=恢复）\nPI_WEB_DISABLE_MCP=1\n' >> "$WEB_ENV_FILE"
+    log "piweb.env 已补写 PI_WEB_DISABLE_MCP=1（关闭 pi 内置 MCP，保留 adapter）"
   fi
 
   mkdir -p "$DATA_DIR/piweb"

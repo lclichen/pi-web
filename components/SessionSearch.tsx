@@ -20,6 +20,10 @@ export function SessionSearch({ open, query, refreshKey, children, selectedSessi
   const response = state.query === search ? state.response : undefined;
   const failed = state.query === search && state.failed;
 
+  // Re-runs only when the query changes, or when the sidebar explicitly bumps
+  // refreshKey. It deliberately does not depend on the session-list version:
+  // ordinary agent activity bumps that version every few seconds, which used to
+  // refetch (and re-order) results while they were being read.
   useEffect(() => {
     if (!open || !search) return;
     const controller = new AbortController();

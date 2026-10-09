@@ -9,7 +9,9 @@ export const filePanelFixture = `<!doctype html><html><body style="margin:20px;m
 export async function checkFilePanel(page, filePath) {
   const showSidebar = page.getByRole("button", { name: "Show sidebar", exact: true });
   if (await showSidebar.isVisible()) await showSidebar.click();
-  await page.locator(`[title="${filePath}"]`).click();
+  // The DOM title normalizes Windows paths to forward slashes
+  // (lib/file-paths.ts normalizeFilePathSlashes), so match in that form.
+  await page.getByTitle(filePath.replace(/\\/g, "/"), { exact: true }).click();
   const panel = page.locator("#file-panel");
   const iframe = panel.locator("iframe");
   await iframe.waitFor();

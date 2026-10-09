@@ -114,8 +114,10 @@ run() {
   fi
 }
 
-# 用 node 做 settings.json 的 packages 字段级合并: 目标已有条目优先，
-# 模板里新增的条目按"源字符串"（npm:xxx / git:... 等）去重追加，
+# 用 node 做 settings.json 的字段级合并:
+#   packages —— 目标已有条目优先，模板里新增的条目按"源字符串"去重追加；
+#   extensions —— 字符串数组并集（携带模板的 -builtin:<name> 等开关项，
+#     与用户自有的扩展条目互不覆盖）。
 # 其余字段一律不动。返回 0 = 合并完成（可能无新增）；1 = 无法执行
 # （本机无可用 node 或 JSON 解析失败），调用方跳过合并、保持现状。
 # node 查找顺序: $PI_NODE > 包内 runtime/bin/node > PATH 中的 node。
@@ -134,26 +136,45 @@ merge_settings_packages() {
 const fs = require("fs");
 const targetPath = process.env.PI_MERGE_TARGET;
 const bundledPath = process.env.PI_MERGE_BUNDLED;
-const key = (e) => e && typeof e === "object" ? String(e.source ?? "") : String(e ?? "").trim();
 let bundled;
 try { bundled = JSON.parse(fs.readFileSync(bundledPath, "utf8")); }
 catch { process.exit(1); }
-if (!bundled || !Array.isArray(bundled.packages)) process.exit(0);
+if (!bundled || typeof bundled !== "object") process.exit(0);
+const hasPackages = Array.isArray(bundled.packages);
+const hasExtensions = Array.isArray(bundled.extensions);
+if (!hasPackages && !hasExtensions) process.exit(0);
 let target;
 try { target = JSON.parse(fs.readFileSync(targetPath, "utf8")); }
 catch { process.exit(1); }
-if (!Array.isArray(target.packages)) target.packages = [];
-const seen = new Set(target.packages.map(key));
+const key = (e) => e && typeof e === "object" ? String(e.source ?? "") : String(e ?? "").trim();
 let added = 0;
-for (const e of bundled.packages) {
-  const k = key(e);
-  if (k && !seen.has(k)) { target.packages.push(e); seen.add(k); added++; }
+if (hasPackages) {
+  if (!Array.isArray(target.packages)) target.packages = [];
+  const seen = new Set(target.packages.map(key));
+  for (const e of bundled.packages) {
+    const k = key(e);
+    if (k && !seen.has(k)) { target.packages.push(e); seen.add(k); added++; }
+  }
 }
-if (added > 0) {
+let addedExtensions = 0;
+if (hasExtensions) {
+  if (!Array.isArray(target.extensions)) target.extensions = [];
+  const seenExt = new Set(target.extensions.map((e) => typeof e === "string" ? e.trim() : ""));
+  for (const e of bundled.extensions) {
+    const k = typeof e === "string" ? e.trim() : "";
+    if (k && !seenExt.has(k)) { target.extensions.push(e); seenExt.add(k); addedExtensions++; }
+  }
+}
+const messages = [];
+if (added > 0) messages.push(`packages 新增 ${added} 个条目`);
+else if (hasPackages) messages.push("packages 已包含模板全部条目");
+if (addedExtensions > 0) messages.push(`extensions 新增 ${addedExtensions} 个条目`);
+else if (hasExtensions) messages.push("extensions 已包含模板全部条目");
+if (added > 0 || addedExtensions > 0) {
   fs.writeFileSync(targetPath, JSON.stringify(target, null, 2) + "\n", "utf8");
-  console.log(`    settings.json packages 新增 ${added} 个条目`);
+  console.log(`    settings.json ${messages.join("，")}`);
 } else {
-  console.log("    settings.json packages 已包含模板全部条目，无新增");
+  console.log(`    settings.json ${messages.join("，")}，无变更`);
 }
 NODE
 }

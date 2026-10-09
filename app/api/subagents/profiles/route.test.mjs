@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { after } from "node:test";
@@ -16,6 +17,7 @@ const jiti = createJiti(import.meta.url, {
 });
 const { GET, PUT, PATCH, DELETE } = await jiti.import("./route.ts");
 const { allowFileRoot } = await jiti.import("../../../../lib/file-access.ts");
+const { parseFrontmatter } = await jiti.import("../../../../lib/frontmatter.ts");
 
 after(async () => {
   if (originalAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
@@ -46,6 +48,46 @@ function jsonRequest(method, body) {
     body: JSON.stringify(body),
   });
 }
+
+test("profile PUT and PATCH retain authored named/empty skills, activation and foreign fields", async (t) => {
+  const cwd = await mkdtemp(join(tmpdir(), "skill-route-"));
+  allowFileRoot(cwd);
+  t.after(() => rm(cwd, { recursive: true, force: true }));
+  await mkdir(join(cwd, ".pi", "agents"), { recursive: true });
+  const file = join(cwd, ".pi", "agents", "api-test-agent.md");
+  for (const authored of ['"review, audit"', '[review, audit]', '[]', 'none']) {
+    await writeFile(file, `---\nskills: ${authored}\nload_skills: false\nextensions: custom-extension\nforeign: retain-me\n---\nPrompt`);
+    for (const enabled of [false, true]) {
+      const response = await PATCH(jsonRequest("PATCH", { cwd, scope: "project", name: "api-test-agent", enabled }));
+      assert.equal(response.status, 200);
+      const saved = (await response.json()).profile;
+      // `none` is a switch spelling, kept in step with load_skills like main does, not a list.
+      assert.deepEqual(saved.skills, authored === '[]' ? [] : authored === 'none' ? undefined : ["review", "audit"]);
+      assert.equal(saved.loadSkills, false);
+      const put = await PUT(jsonRequest("PUT", { cwd, scope: "project", profile: { ...saved, description: "Unrelated edit" } }));
+      assert.equal(put.status, 200);
+      const text = await readFile(file, "utf8");
+      assert.match(text, /foreign: retain-me/);
+      assert.match(text, /extensions: custom-extension/);
+      const stored = parseFrontmatter(text).data.skills;
+      if (authored === '"review, audit"') assert.equal(stored, "review, audit");
+      if (authored === '[review, audit]') assert.deepEqual(stored, ["review", "audit"]);
+      if (authored === 'none') assert.equal(stored, false);
+      if (authored === '[]') assert.deepEqual(stored, []);
+    }
+  }
+});
+
+test("profile PUT narrows malformed skill lists instead of enabling all skills", async (t) => {
+  const cwd = await mkdtemp(join(tmpdir(), "skill-route-invalid-"));
+  allowFileRoot(cwd);
+  t.after(() => rm(cwd, { recursive: true, force: true }));
+  for (const [skills, want] of [["review", ["review"]], [[42], []], [[""], []], [["review", "", " audit "], ["review", "audit"]]]) {
+    const response = await PUT(jsonRequest("PUT", { cwd, scope: "project", profile: profile({ skills }) }));
+    assert.equal(response.status, 200);
+    assert.deepEqual((await response.json()).profile.skills, want);
+  }
+});
 
 test("profiles route creates, lists, and deletes a project profile", async (t) => {
   const cwd = await mkdtemp(join(tmpdir(), "pi-web-subagent-route-"));
@@ -137,6 +179,45 @@ test("profiles route keeps same-name global and project profiles independently e
   assert.equal(response.status, 200);
 });
 
+test("profiles route toggles a built-in through settings.json without writing a profile file", async (t) => {
+  const cwd = await mkdtemp(join(tmpdir(), "pi-web-subagent-route-"));
+  allowFileRoot(cwd);
+  t.after(async () => {
+    await PATCH(jsonRequest("PATCH", { cwd, scope: "builtin", name: "explore", enabled: true }));
+    await rm(cwd, { recursive: true, force: true });
+  });
+
+  let response = await PATCH(jsonRequest("PATCH", { cwd, scope: "builtin", name: "Explore", enabled: false }));
+  assert.equal(response.status, 200);
+  let body = await response.json();
+  assert.equal(body.profile.scope, "builtin");
+  assert.equal(body.profile.enabled, false);
+  assert.equal(body.profile.filePath, undefined);
+  assert.deepEqual(
+    JSON.parse(await readFile(join(testAgentDir, "agents", "settings.json"), "utf8")).disabledBuiltIns,
+    ["explore"],
+  );
+  assert.equal(existsSync(join(testAgentDir, "agents", "explore.md")), false);
+
+  response = await GET(new Request(`http://localhost/api/subagents/profiles?cwd=${encodeURIComponent(cwd)}`));
+  const builtIns = (await response.json()).profiles.filter((item) => item.scope === "builtin");
+  assert.equal(builtIns.find((item) => item.name === "explore").enabled, false);
+  assert.equal(builtIns.filter((item) => item.enabled).length, builtIns.length - 1);
+
+  response = await PATCH(jsonRequest("PATCH", { cwd, scope: "builtin", name: "explore", enabled: true }));
+  assert.equal(response.status, 200);
+  body = await response.json();
+  assert.equal(body.profile.enabled, true);
+  assert.deepEqual(
+    JSON.parse(await readFile(join(testAgentDir, "agents", "settings.json"), "utf8")).disabledBuiltIns,
+    [],
+  );
+
+  response = await PATCH(jsonRequest("PATCH", { cwd, scope: "builtin", name: "not-a-built-in", enabled: false }));
+  assert.equal(response.status, 404);
+  assert.deepEqual(await response.json(), { error: "Agent profile not found" });
+});
+
 test("profiles route rejects missing paths, malformed profiles, and unsafe names", async (t) => {
   const cwd = await mkdtemp(join(tmpdir(), "pi-web-subagent-route-"));
   allowFileRoot(cwd);
@@ -164,6 +245,14 @@ test("profiles route rejects missing paths, malformed profiles, and unsafe names
   response = await PUT(jsonRequest("PUT", { cwd, scope: "workspace", profile: profile() }));
   assert.equal(response.status, 400);
   assert.deepEqual(await response.json(), { error: "scope must be global or project" });
+
+  response = await PUT(jsonRequest("PUT", { cwd, scope: "builtin", profile: profile() }));
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), { error: "scope must be global or project" });
+
+  response = await PATCH(jsonRequest("PATCH", { cwd, scope: "workspace", name: "explore", enabled: false }));
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), { error: "scope must be global, project, or builtin" });
 
   response = await DELETE(jsonRequest("DELETE", { cwd, scope: "builtin", name: "Explore" }));
   assert.equal(response.status, 400);

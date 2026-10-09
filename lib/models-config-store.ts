@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { writePrivateFileAtomicSync } from "./atomic-file";
+import { stripJsonComments } from "./jsonc";
 import { invalidateModelsCache } from "./models-cache";
 
 const MODEL_COST_KEYS = ["input", "output", "cacheRead", "cacheWrite"] as const;
@@ -61,21 +62,49 @@ export function getModelsConfigPath(): string {
   return join(getAgentDir(), "models.json");
 }
 
+/** models.json exists but its contents cannot be used, so it must not be replaced. */
+export class ModelsConfigReadError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ModelsConfigReadError";
+  }
+}
+
+/**
+ * Reads models.json with the same leniency as pi's loader (BOM, `//` comments,
+ * trailing commas). `stripJsonComments` also drops block comments, which pi
+ * rejects, and returns pi's own result for every file pi accepts. A file pi
+ * accepts must never read as empty here: the panel saves its whole draft, so
+ * an empty read would delete every provider on the next save. Unusable
+ * contents throw instead.
+ */
 export function readModelsConfig(
   modelsPath = getModelsConfigPath(),
 ): Record<string, unknown> {
   if (!existsSync(modelsPath)) return { providers: {} };
+  let parsed: unknown;
   try {
-    return JSON.parse(readFileSync(modelsPath, "utf8")) as Record<string, unknown>;
-  } catch {
-    return { providers: {} };
+    const content = readFileSync(modelsPath, "utf8").replace(/^\uFEFF/, "");
+    if (!content.trim()) return { providers: {} };
+    parsed = JSON.parse(stripJsonComments(content));
+  } catch (error) {
+    throw new ModelsConfigReadError(
+      `Failed to read ${modelsPath}: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
+  if (!isRecord(parsed)) {
+    throw new ModelsConfigReadError(`Failed to read ${modelsPath}: expected a JSON object`);
+  }
+  return parsed;
 }
 
 export function writeModelsConfig(
   data: Record<string, unknown>,
   modelsPath = getModelsConfigPath(),
 ): void {
+  // Refuse to replace a file this panel could not read: the draft being saved
+  // was not built from it, so writing would silently discard its contents.
+  readModelsConfig(modelsPath);
   const dir = dirname(modelsPath);
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   const normalized = normalizeModelsConfigCosts(sanitizeModelsConfig(data));

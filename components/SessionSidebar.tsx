@@ -13,7 +13,9 @@ import { workspaceKeyOf } from "@/lib/workspace-memory";
 import { formatRelativeTime } from "@/lib/i18n/format";
 import { useI18n } from "@/hooks/useI18n";
 import { useResizablePanel } from "@/hooks/useResizablePanel";
+import { useScrollbarVisibility } from "@/hooks/useScrollbarVisibility";
 import { DirectoryPicker } from "./DirectoryPicker";
+import { DismissButton } from "./DismissButton";
 import { RemoteConnectWizard } from "./RemoteConnectWizard";
 import { FileExplorer, type FileExplorerHandle } from "./FileExplorer";
 import { SessionSearch } from "./SessionSearch";
@@ -21,6 +23,18 @@ import { SessionSearch } from "./SessionSearch";
 // Fixed row height for the session list. SessionItem renders at exactly this
 // height, so the list can be windowed (only the visible slice is mounted).
 const SESSION_LIST_ITEM_HEIGHT = 54;
+
+interface FileManagerAvailability {
+  supported: boolean;
+  reason: string | null;
+  platform: string;
+}
+
+// Server error codes with a translation; any other code is shown verbatim.
+const FILE_MANAGER_ERROR_KEYS: Record<string, string> = {
+  remote: "sidebar.openInExplorerRemoteOnly",
+  "unsupported-platform": "sidebar.openInExplorerUnsupported",
+};
 
 export function getSessionListIndices(count: number, scrollTop: number, viewportHeight: number, focusedIndex = -1): number[] {
   const overscan = 8;
@@ -192,6 +206,7 @@ interface ValidatedProject {
 const UNREAD_SESSIONS_STORAGE_KEY = "pi-web:unread-session-ids";
 const LAST_CUSTOM_CWD_STORAGE_KEY = "pi-web:last-custom-cwd";
 const RUNNING_SESSIONS_POLL_MS = 2500;
+const SESSION_DETAILS_HYDRATION_DELAY_MS = 750;
 const SESSION_PANE_DEFAULT_HEIGHT = 320;
 const SESSION_PANE_MIN_HEIGHT = 80;
 const EXPLORER_PANE_MIN_HEIGHT = 120;
@@ -486,6 +501,8 @@ useEffect(() => {
   const [changesCount, setChangesCount] = useState(0);
   const [changesCollapsed, setChangesCollapsed] = useState(true);
   const [explorerRefreshDone, setExplorerRefreshDone] = useState(false);
+  const [fileManager, setFileManager] = useState<FileManagerAvailability | null>(null);
+  const [fileManagerError, setFileManagerError] = useState<string | null>(null);
   const [runningSessionIds, setRunningSessionIds] = useState<Set<string>>(() => new Set());
   const [unreadSessionIds, setUnreadSessionIds] = useState<Set<string>>(() => loadUnreadSessionIds());
   const previousRunningSessionIdsRef = useRef<Set<string>>(new Set());
@@ -501,6 +518,9 @@ useEffect(() => {
 
   // Virtualized session list: only the visible window of rows is mounted.
   const listScrollRef = useRef<HTMLDivElement>(null);
+  const explorerScrollRef = useRef<HTMLDivElement>(null);
+  useScrollbarVisibility(listScrollRef);
+  useScrollbarVisibility(explorerScrollRef, explorerOpen && Boolean(selectedCwdProp || selectedCwd));
   const sessionPaneRef = useRef<HTMLDivElement>(null);
   const explorerSectionRef = useRef<HTMLDivElement>(null);
   const sessionPaneHeightRef = useRef(SESSION_PANE_DEFAULT_HEIGHT);
@@ -538,12 +558,17 @@ useEffect(() => {
   const [listScrollTop, setListScrollTop] = useState(0);
   const [focusedSessionId, setFocusedSessionId] = useState<string | null>(null);
   const listScrollRafRef = useRef<number | null>(null);
+  const listScrollTopRef = useRef(0);
+  const renderedListScrollTopRef = useRef(0);
   const handleListScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
-    const top = e.currentTarget.scrollTop;
+    listScrollTopRef.current = e.currentTarget.scrollTop;
     if (listScrollRafRef.current != null) return;
     listScrollRafRef.current = requestAnimationFrame(() => {
       listScrollRafRef.current = null;
-      setListScrollTop(top);
+      const nextTop = Math.floor(listScrollTopRef.current / SESSION_LIST_ITEM_HEIGHT) * SESSION_LIST_ITEM_HEIGHT;
+      if (renderedListScrollTopRef.current === nextTop) return;
+      renderedListScrollTopRef.current = nextTop;
+      setListScrollTop(nextTop);
     });
   }, []);
   useLayoutEffect(() => {
@@ -554,7 +579,9 @@ useEffect(() => {
     });
     ro.observe(el);
     setListViewportH(el.clientHeight);
-    setListScrollTop(el.scrollTop);
+    listScrollTopRef.current = el.scrollTop;
+    renderedListScrollTopRef.current = Math.floor(el.scrollTop / SESSION_LIST_ITEM_HEIGHT) * SESSION_LIST_ITEM_HEIGHT;
+    setListScrollTop(renderedListScrollTopRef.current);
     return () => ro.disconnect();
   }, [sessionSearchActive]);
 
@@ -630,6 +657,55 @@ useEffect(() => {
   useEffect(() => {
     setExplorerOpen(loadExplorerOpen());
   }, []);
+
+  // Only the server can raise a file-manager window, and only when the browser
+  // runs on that same machine. Ask it once so the button can pick the right
+  // label (Explorer / Finder / generic) and disable itself when unavailable.
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/open-in-explorer")
+      .then((res) => res.ok ? res.json() as Promise<FileManagerAvailability> : null)
+      .then((data) => { if (!cancelled && data) setFileManager(data); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  // A failure belongs to the project it happened on.
+  useEffect(() => {
+    setFileManagerError(null);
+  }, [selectedCwd, selectedCwdProp]);
+
+  const openInFileManager = useCallback(async () => {
+    const dir = selectedCwd ?? selectedCwdProp;
+    if (!dir) return;
+    try {
+      const res = await fetch("/api/open-in-explorer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cwd: dir }),
+      });
+      if (res.ok) {
+        setFileManagerError(null);
+        return;
+      }
+      const data = await res.json().catch(() => ({})) as { error?: string };
+      setFileManagerError(data.error ?? `HTTP ${res.status}`);
+    } catch (error) {
+      setFileManagerError(error instanceof Error ? error.message : String(error));
+    }
+  }, [selectedCwd, selectedCwdProp]);
+
+  const fileManagerLabel = t(
+    fileManager?.platform === "darwin"
+      ? "sidebar.openInFinder"
+      : fileManager?.platform === "win32"
+        ? "sidebar.openInExplorer"
+        : "sidebar.openInFileManager",
+  );
+  const fileManagerUnavailable = fileManager?.supported === false;
+  const fileManagerErrorMessage = fileManagerError
+    ? t(FILE_MANAGER_ERROR_KEYS[fileManagerError] ?? fileManagerError)
+    : null;
 
   // Persist unread markers so they survive a browser refresh before the user
   // has actually opened the completed session.
@@ -918,7 +994,7 @@ useEffect(() => {
     : undefined;
   const currentWorktreePath = currentWorktree?.path ?? null;
 
-  const commitCustomPath = useCallback(async (candidate?: string) => {
+  const commitCustomPath = useCallback(async (candidate?: string, { remember = true } = {}) => {
     const path = (candidate ?? customPathValue).trim();
     if (!path || customPathValidating) return;
 
@@ -980,7 +1056,7 @@ useEffect(() => {
     } catch {
       // ignore
     }
-  }, []);
+  }, [commitCustomPath]);
 
   const handleCreateWorktree = useCallback(async () => {
     const branch = wtNewBranch.trim();
@@ -1081,7 +1157,7 @@ useEffect(() => {
 
   const [newSessionMode, setNewSessionMode] = useState<"host" | "sandbox" | "local-machine" | "ssh" | "quick">("host");
 
-  const recentProjects = getRecentProjects(allSessions);
+  const recentProjects = useMemo(() => getRecentProjects(allSessions), [allSessions]);
   const showProjectFilter = recentProjects.length > 8;
   // 新建项目入口对所有人开放（user/admin 均可建项目，auth-off 单用户同）。
   const showTopNewButton = true;
@@ -1089,12 +1165,15 @@ useEffect(() => {
   // auth-on 下仅 admin 可见；auth-off（单用户）保持原有自定义路径用法。
   const isAdminUser = !(authInfo?.enabled && authInfo.user && authInfo.user.role !== "admin");
   const showCwdPicker = isAdminUser;
-  const visibleProjects = projectFilter.trim()
-    ? recentProjects.filter((project) => project.root.toLowerCase().includes(projectFilter.trim().toLowerCase()))
-    : recentProjects;
+  const visibleProjects = useMemo(() => {
+    const query = projectFilter.trim().toLowerCase();
+    return query
+      ? recentProjects.filter((project) => project.root.toLowerCase().includes(query))
+      : recentProjects;
+  }, [projectFilter, recentProjects]);
 
   // Sessions of every worktree in the selected project are shown together
-  const selectedProject = projectFor(selectedCwd);
+  const selectedProject = useMemo(() => projectFor(selectedCwd), [projectFor, selectedCwd]);
 
   // Per-project activity counts (running / unread) for the workspace selector.
   // Uses the same stable server key as the project list and filtering.
@@ -1113,9 +1192,10 @@ useEffect(() => {
     [projectActivity, selectedProject],
   );
 
-  const filteredSessions = selectedProject
-    ? sessionsForProject(allSessions, selectedProject.key)
-    : allSessions;
+  const filteredSessions = useMemo(
+    () => selectedProject ? sessionsForProject(allSessions, selectedProject.key) : allSessions,
+    [allSessions, selectedProject],
+  );
   const showWorktreeSwitcher = Boolean(
     worktreeState?.isGit
     && worktreeState.isTopLevel
@@ -1145,14 +1225,14 @@ useEffect(() => {
         }
       : null);
 
-  const sessionFamilies = listSessionFamilies(filteredSessions);
+  const sessionFamilies = useMemo(() => listSessionFamilies(filteredSessions), [filteredSessions]);
 
-  const virtualIndices = getSessionListIndices(
+  const virtualIndices = useMemo(() => getSessionListIndices(
     sessionFamilies.length,
     listScrollTop,
     listViewportH,
     sessionFamilies.findIndex((family) => family.root.id === focusedSessionId),
-  );
+  ), [focusedSessionId, listScrollTop, listViewportH, sessionFamilies]);
 
   return (
     <div
@@ -1618,6 +1698,26 @@ useEffect(() => {
           />
         )}
 
+        {sessionSearchOpen && (
+          <input
+            id="session-search-input"
+            type="search"
+            autoFocus
+            value={sessionSearchQuery}
+            maxLength={200}
+            aria-label={t("sidebar.searchSessions")}
+            placeholder={t("sidebar.searchSessions")}
+            onChange={(event) => setSessionSearchQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.stopPropagation();
+                setSessionSearchQuery("");
+              }
+            }}
+            className="mt-[6px] block h-[29px] w-full min-w-0 rounded-[7px] border border-border bg-bg px-[10px] text-xs text-text focus:outline-2 focus:outline-accent"
+          />
+        )}
+
         {/* Worktree switcher — shown only for git projects at a checkout top
             level (repo subdirs keep their own project identity, so switching
             from them would jump projects). Rendered whenever the selected cwd
@@ -1891,7 +1991,7 @@ useEffect(() => {
                             background: "var(--accent)",
                             border: "none",
                             borderRadius: 5,
-                            color: "#fff",
+                            color: "var(--accent-contrast)",
                             fontSize: 11,
                             fontWeight: 600,
                             cursor: wtBusy || !wtNewBranch.trim() ? "not-allowed" : "pointer",
@@ -1988,6 +2088,7 @@ useEffect(() => {
         <div
           ref={listScrollRef}
           onScroll={handleListScroll}
+          className="scrollbar-subtle"
           style={{
             flex: "1 1 auto",
             minHeight: 0,
@@ -2155,6 +2256,18 @@ useEffect(() => {
               </svg>
               {t("files.explorer")}
             </button>
+            <ToolbarIconButton
+              onClick={() => { void openInFileManager(); }}
+              disabled={fileManagerUnavailable}
+              title={fileManagerUnavailable
+                ? t(fileManager?.reason === "remote" ? "sidebar.openInExplorerRemoteOnly" : "sidebar.openInExplorerUnsupported")
+                : fileManagerLabel}
+              color="var(--text-dim)"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M3 8a2 2 0 0 1 2-2h3.4l1.9 1.9H19a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
+              </svg>
+            </ToolbarIconButton>
             {onOpenTerminal && (
               <ToolbarIconButton
                 onClick={() => onOpenTerminal(selectedCwd ?? selectedCwdProp!)}
@@ -2236,12 +2349,18 @@ useEffect(() => {
               )}
             </ToolbarIconButton>
           </div>
+          {fileManagerErrorMessage && (
+            <div role="alert" style={{ display: "flex", alignItems: "flex-start", gap: 6, padding: "0 10px 6px", fontSize: 10, lineHeight: 1.35, color: "#f87171" }}>
+              <span style={{ minWidth: 0, flex: 1, overflowWrap: "anywhere" }}>{fileManagerErrorMessage}</span>
+              <DismissButton onClick={() => setFileManagerError(null)} title={t("files.dismissError")} />
+            </div>
+          )}
           {explorerOpen && pendingRemoteMode && pendingRemoteMode !== "host" && !remoteSession ? (
             <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-dim)", fontSize: 12, padding: 16, textAlign: "center" }}>
               {pendingRemoteMode === "sandbox" ? "沙盒" : pendingRemoteMode === "ssh" ? "SSH" : pendingRemoteMode === "quick" ? "快速" : "本机"}会话创建后（发送第一条消息）即可浏览远端文件
             </div>
           ) : explorerOpen && (
-            <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden" }}>
+            <div ref={explorerScrollRef} className="scrollbar-subtle" style={{ flex: 1, overflowY: "auto", overflowX: "hidden" }}>
               <FileExplorer
                 ref={fileExplorerRef}
                 cwd={remoteSession ? "/" : (selectedCwd ?? selectedCwdProp!)}
@@ -2326,23 +2445,21 @@ function RunningSessionIndicator() {
         color: "var(--accent)",
       }}
     >
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{ display: "block" }}>
-        <g>
-          <path
-            d="M21 12a9 9 0 1 1-3.8-7.4"
-            stroke="currentColor"
-            strokeWidth="2.8"
-            strokeLinecap="round"
-          />
-          <animateTransform
-            attributeName="transform"
-            type="rotate"
-            from="0 12 12"
-            to="360 12 12"
-            dur="0.9s"
-            repeatCount="indefinite"
-          />
-        </g>
+      <svg
+        width="14"
+        height="14"
+        viewBox="0 0 24 24"
+        fill="none"
+        aria-hidden="true"
+        className="animate-spin"
+        style={{ display: "block" }}
+      >
+        <path
+          d="M21 12a9 9 0 1 1-3.8-7.4"
+          stroke="currentColor"
+          strokeWidth="2.8"
+          strokeLinecap="round"
+        />
       </svg>
     </span>
   );
@@ -2366,10 +2483,7 @@ function UnreadSessionIndicator() {
     >
       <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true" style={{ display: "block" }}>
         <circle cx="7" cy="7" r="2.5" fill="currentColor" />
-        <circle cx="7" cy="7" r="3" stroke="currentColor" strokeWidth="1.4" opacity="0.32">
-          <animate attributeName="r" values="3;6;3" dur="1.6s" repeatCount="indefinite" />
-          <animate attributeName="opacity" values="0.32;0;0.32" dur="1.6s" repeatCount="indefinite" />
-        </circle>
+        <circle cx="7" cy="7" r="4.5" stroke="currentColor" strokeWidth="1.4" opacity="0.16" className="unread-ping" />
       </svg>
     </span>
   );
@@ -2394,11 +2508,16 @@ function showProjectActivity(
           aria-label={`${t("sidebar.agentRunning")} (${activity.running})`}
           style={{ display: "inline-flex", alignItems: "center", gap: 3, color: "var(--accent)", fontSize: 10, fontFamily: "var(--font-mono)" }}
         >
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{ display: "block" }}>
-            <g>
-              <path d="M21 12a9 9 0 1 1-3.8-7.4" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" />
-              <animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="0.9s" repeatCount="indefinite" />
-            </g>
+          <svg
+            width="10"
+            height="10"
+            viewBox="0 0 24 24"
+            fill="none"
+            aria-hidden="true"
+            className="animate-spin"
+            style={{ display: "block" }}
+          >
+            <path d="M21 12a9 9 0 1 1-3.8-7.4" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" />
           </svg>
           {activity.running}
         </span>
@@ -2665,7 +2784,9 @@ function SessionItem({
               ) : (
                 <span title={session.modified}>{formatRelativeTime(session.modified, locale)}</span>
               )}
-              <span>{t("sidebar.messagesCount", { count: session.messageCount })}</span>
+              <span>
+                {session.detailsPending ? "…" : t("sidebar.messagesCount", { count: session.messageCount })}
+              </span>
               {session.mode && session.mode !== "host" && (
                 <span title={session.mode === "sandbox" ? "沙箱模式（容器执行）" : session.mode === "quick" ? "快速会话（无工作区）" : "本机模式（relay 执行）"} style={{ color: session.mode === "sandbox" ? "#38bdf8" : session.mode === "quick" ? "#fbbf24" : "#a78bfa", fontWeight: 600 }}>
                   {session.mode === "sandbox" ? "沙箱" : session.mode === "quick" ? "快速" : "本机"}

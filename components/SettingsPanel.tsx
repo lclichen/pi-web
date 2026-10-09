@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { useI18n } from "@/hooks/useI18n";
-import { useTheme, type ThemePreference } from "@/hooks/useTheme";
+import { useTheme } from "@/hooks/useTheme";
+import { THEME_OPTIONS } from "@/lib/theme";
+import { ThemeIcon } from "./ThemeIcon";
 import {
   CHAT_CONTENT_WIDTH_DEFAULT,
   CHAT_CONTENT_WIDTH_MAX,
@@ -12,18 +14,22 @@ import {
   CHAT_CONTENT_FONT_SIZE_MIN,
   useChatAppearance,
 } from "@/hooks/useChatAppearance";
+import { useEnterSendMode, setEnterSendMode } from "@/hooks/useEnterSendMode";
 import { sendAgentCommand } from "@/lib/agent-client";
-import type { ShellToolSettingsResponse } from "@/lib/api-types";
+import type { ProjectTrustStatus, ToolSettingsResponse } from "@/lib/api-types";
 import {
   setLastSettingsSection,
+  settingsSectionRequiresProject,
   type SettingsSection,
 } from "@/lib/settings-navigation";
+import { focusModalPanel, listenForPanelEscape } from "@/lib/stacked-dialog";
 import {
   isThinkingExpandedByDefault,
   setThinkingExpandedByDefault,
 } from "@/lib/thinking-expansion-preference";
 import { ModelsConfig } from "./ModelsConfig";
 import { AccountSettings } from "./AccountSettings";
+import { setupPushSubscription } from "@/lib/push-client";
 import { SkillsConfig } from "./SkillsConfig";
 import { PluginsConfig } from "./PluginsConfig";
 import { McpServersConfig } from "./McpServersConfig";
@@ -43,6 +49,12 @@ interface Props {
   onQuoteSelectionChange: (enabled: boolean) => void;
   /** Admin-only sections (quick-templates) render only for admins. */
   isAdmin?: boolean;
+  /** The page's trust status for `cwd`; Settings › MCP reloads when it changes, as after trusting. */
+  projectTrust?: ProjectTrustStatus | null;
+  /** Opens the page's trust dialog for `cwd`, above Settings; Settings › MCP's trust notice offers it. */
+  onOpenTrustDialog?: () => void;
+  /** Settings › MCP added a project server, which changed `cwd`'s trust (and may have trusted a fresh folder). */
+  onProjectTrustChanged?: (cwd: string, status: ProjectTrustStatus) => void;
 }
 
 export function SettingsSectionIcon({ section, size = 16, strokeWidth = 1.8 }: { section: SettingsSection; size?: number; strokeWidth?: number }) {
@@ -70,39 +82,48 @@ export function SettingsSectionIcon({ section, size = 16, strokeWidth = 1.8 }: {
   return <svg {...common}><path d="M9 7V2M15 7V2M6 13V8a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v5a6 6 0 0 1-12 0ZM12 19v3" /></svg>;
 }
 
-function ThemeIcon({ preference }: { preference: ThemePreference }) {
-  if (preference === "light") {
-    return <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.42-1.41M17.66 6.34l1.41-1.41" /></svg>;
-  }
-  if (preference === "dark") {
-    return <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z" /></svg>;
-  }
-  return <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2" /><path d="M8 21h8M12 17v4" /></svg>;
-}
-
 function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, onQuoteSelectionChange, isAdmin }: Pick<Props, "sessionId" | "onSessionReloaded" | "quoteSelectionEnabled" | "onQuoteSelectionChange" | "isAdmin">) {
   const { locale, setLocale, supportedLocales, t } = useI18n();
   const { preference, setThemePreference } = useTheme();
   const { width: chatContentWidth, setWidth: setChatContentWidth, fontSize, setFontSize } = useChatAppearance();
-  const [shellSettings, setShellSettings] = useState<ShellToolSettingsResponse | null>(null);
+  const enterSendMode = useEnterSendMode();
+  const [shellSettings, setShellSettings] = useState<ToolSettingsResponse | null>(null);
   const [shellSaving, setShellSaving] = useState(false);
   const [shellError, setShellError] = useState<string | null>(null);
   const [thinkingExpanded, setThinkingExpanded] = useState(false);
+  const [pushRegistering, setPushRegistering] = useState(false);
+  const [pushStatus, setPushStatus] = useState<{ kind: "ok" | "error"; message: string } | null>(null);
+  const [webAuthEnabled, setWebAuthEnabled] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
+  const [logoutError, setLogoutError] = useState("");
 
   useEffect(() => {
     setThinkingExpanded(isThinkingExpandedByDefault());
+    void fetch("/api/web-auth")
+      .then((response) => response.ok ? response.json() : null)
+      .then((data: { enabled?: boolean } | null) => setWebAuthEnabled(data?.enabled === true))
+      .catch(() => {});
   }, []);
-  const themeOptions: { id: ThemePreference; label: string }[] = [
-    { id: "light", label: t("settings.themeLight") },
-    { id: "dark", label: t("settings.themeDark") },
-    { id: "auto", label: t("settings.themeSystem") },
-  ];
+
+  const logOut = async () => {
+    setLoggingOut(true);
+    setLogoutError("");
+    try {
+      const response = await fetch("/api/web-auth", { method: "DELETE" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      window.location.replace("/login");
+    } catch {
+      setLogoutError(t("auth.logoutFailed"));
+    } finally {
+      setLoggingOut(false);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
     void fetch("/api/tools/settings")
       .then(async (response) => {
-        const data = await response.json() as ShellToolSettingsResponse & { error?: string };
+        const data = await response.json() as ToolSettingsResponse & { error?: string };
         if (!response.ok || data.error) throw new Error(data.error ?? `HTTP ${response.status}`);
         if (!cancelled) setShellSettings(data);
       })
@@ -121,7 +142,7 @@ function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ enabled }),
       });
-      const data = await response.json() as ShellToolSettingsResponse & { error?: string };
+      const data = await response.json() as ToolSettingsResponse & { error?: string };
       if (!response.ok || data.error) throw new Error(data.error ?? `HTTP ${response.status}`);
       setShellSettings(data);
       if (sessionId) {
@@ -135,6 +156,28 @@ function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, 
     }
   };
 
+  const registerPush = async () => {
+    if (pushRegistering) return;
+    setPushRegistering(true);
+    setPushStatus(null);
+    try {
+      if (typeof window === "undefined" || !("Notification" in window)) {
+        throw new Error("unsupported or not permitted");
+      }
+      const permission = Notification.permission === "default"
+        ? await Notification.requestPermission()
+        : Notification.permission;
+      if (permission !== "granted") throw new Error("unsupported or not permitted");
+      const ok = await setupPushSubscription(locale);
+      if (!ok) throw new Error("unsupported or not permitted");
+      setPushStatus({ kind: "ok", message: t("settings.pushRegistered") });
+    } catch (cause) {
+      setPushStatus({ kind: "error", message: `${t("settings.pushRegisterFailed")} ${cause instanceof Error ? cause.message : String(cause)}` });
+    } finally {
+      setPushRegistering(false);
+    }
+  };
+
   return (
     <div className="settings-general">
       <h2 className="settings-general-title">{t("settings.general")}</h2>
@@ -142,20 +185,24 @@ function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, 
       <section className="settings-general-section">
         <h3 className="settings-general-heading">{t("settings.appearance")}</h3>
         <div role="radiogroup" aria-label={t("settings.appearance")} className="settings-theme-options">
-          {themeOptions.map((option) => {
+          {THEME_OPTIONS.map((option) => {
             const selected = preference === option.id;
             return (
-              <button
+              <label
                 key={option.id}
-                type="button"
-                role="radio"
-                aria-checked={selected}
-                onClick={() => setThemePreference(option.id)}
                 className="settings-theme-option"
               >
+                <input
+                  type="radio"
+                  name="theme"
+                  value={option.id}
+                  checked={selected}
+                  onChange={() => setThemePreference(option.id)}
+                  className="sr-only"
+                />
                 <ThemeIcon preference={option.id} />
-                <span className="settings-theme-option-label">{option.label}</span>
-              </button>
+                <span className="settings-theme-option-label">{t(option.label)}</span>
+              </label>
             );
           })}
         </div>
@@ -239,6 +286,33 @@ function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, 
               onChange={onQuoteSelectionChange}
             />
           </div>
+          <div className="settings-chat-option settings-chat-switch-option" role="radiogroup" aria-label={t("settings.enterSendMode")}>
+            <span>{t("settings.enterSendMode")}</span>
+            <div className="settings-send-mode-options">
+              <label className="settings-send-mode-option">
+                <input
+                  type="radio"
+                  name="enter-send-mode"
+                  value="enter"
+                  checked={enterSendMode === "enter"}
+                  onChange={() => setEnterSendMode("enter")}
+                  className="sr-only"
+                />
+                <span className="settings-send-mode-label">{t("settings.enterSendModeEnter")}</span>
+              </label>
+              <label className="settings-send-mode-option">
+                <input
+                  type="radio"
+                  name="enter-send-mode"
+                  value="ctrlEnter"
+                  checked={enterSendMode === "ctrlEnter"}
+                  onChange={() => setEnterSendMode("ctrlEnter")}
+                  className="sr-only"
+                />
+                <span className="settings-send-mode-label">{t("settings.enterSendModeCtrlEnter")}</span>
+              </label>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -258,6 +332,31 @@ function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, 
           {shellError && <p role="alert" className="settings-general-error">{shellError}</p>}
         </section>
       )}
+
+      <section className="settings-general-section">
+        <h3 className="settings-general-heading">{t("settings.pushPermission")}</h3>
+        <p className="settings-general-description">{t("settings.pushPermissionDescription")}</p>
+        <div className="settings-shell-option">
+          <span>{t("settings.pushPermission")}</span>
+          <button
+            type="button"
+            className="config-button config-button-small config-button-secondary"
+            disabled={pushRegistering}
+            onClick={() => void registerPush()}
+          >
+            {pushRegistering ? t("settings.pushRegisterLoading") : t("settings.pushRegister")}
+          </button>
+        </div>
+        {pushStatus && (
+          <p
+            role="status"
+            className="settings-general-error"
+            style={pushStatus.kind === "ok" ? { color: "var(--accent)" } : undefined}
+          >
+            {pushStatus.message}
+          </p>
+        )}
+      </section>
 
       <section className="settings-general-section">
         <h3 className="settings-general-heading">{t("common.language")}</h3>
@@ -287,11 +386,35 @@ function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, 
       <section className="settings-general-section">
         <UpdateCard isAdmin={isAdmin} />
       </section>
+
+      {webAuthEnabled && (
+        <section className="settings-general-section">
+          <ConfigButton variant="secondary" disabled={loggingOut} onClick={() => void logOut()}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M10 17l5-5-5-5M15 12H3M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+            </svg>
+            {loggingOut ? t("auth.loggingOut") : t("auth.logOut")}
+          </ConfigButton>
+          {logoutError && <p role="alert" className="settings-general-error">{logoutError}</p>}
+        </section>
+      )}
     </div>
   );
 }
 
-export function SettingsPanel({ cwd, sessionId, initialSection, onClose, onSessionReloaded, quoteSelectionEnabled, onQuoteSelectionChange, isAdmin = false }: Props) {
+export function SettingsPanel({
+  cwd,
+  sessionId,
+  initialSection,
+  onClose,
+  onSessionReloaded,
+  quoteSelectionEnabled,
+  onQuoteSelectionChange,
+  isAdmin = false,
+  projectTrust,
+  onOpenTrustDialog,
+  onProjectTrustChanged,
+}: Props) {
   const { t } = useI18n();
   const [section, setSection] = useState<SettingsSection>(initialSection);
   const [mountedSections, setMountedSections] = useState<ReadonlySet<SettingsSection>>(
@@ -312,25 +435,30 @@ export function SettingsPanel({ cwd, sessionId, initialSection, onClose, onSessi
       { id: "bundles" as const, label: t("bundles.configBundles"), requiresProject: false },
     ] : []),
   ];
+  const sectionRequiresProject = settingsSectionRequiresProject(section);
 
   useEffect(() => setLastSettingsSection(initialSection), [initialSection]);
 
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || event.defaultPrevented) return;
-      event.preventDefault();
-      onClose();
-    };
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [onClose]);
+  // Bubble phase, unless something nearer handled the key. The trust dialog,
+  // which opens above Settings, takes Escape in the capture phase and stops it,
+  // so one Escape closes that dialog and leaves Settings open.
+  useEffect(() => listenForPanelEscape(document, onClose), [onClose]);
+
+  // Focus moves into Settings as it opens and back to what had it once it closes. Left
+  // on the chat composer (a bare /mcp opens Settings from there), Escape would reach the
+  // composer first and stop a running agent, which also kept Settings open. A layout
+  // effect, so the opener is read before a section focuses its own search box.
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => focusModalPanel(document, dialogRef.current, {
+    restoreTextEntry: !window.matchMedia?.("(pointer: coarse)").matches,
+  }), []);
 
   useEffect(() => {
     if (cwd || (section !== "skills" && section !== "agents" && section !== "plugins")) return;
     setSection("general");
     setMountedSections((current) => new Set(current).add("general"));
     setLastSettingsSection("general");
-  }, [cwd, section]);
+  }, [cwd, sectionRequiresProject]);
 
   // 恢复的上次分区是管理员专属而当前用户不是管理员（同源 localStorage 在
   // 多用户间共享）→ 面板会渲染成空白，重置到通用分区。
@@ -359,9 +487,11 @@ export function SettingsPanel({ cwd, sessionId, initialSection, onClose, onSessi
 
   return (
     <div
+      ref={dialogRef}
       role="dialog"
       aria-modal="true"
       aria-label={t("settings.title")}
+      tabIndex={-1}
       onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}
       className="settings-dialog-backdrop"
     >
@@ -406,13 +536,15 @@ export function SettingsPanel({ cwd, sessionId, initialSection, onClose, onSessi
         <main className="settings-dialog-main">
           {sectionHost("general", <GeneralSettings sessionId={sessionId} onSessionReloaded={onSessionReloaded} quoteSelectionEnabled={quoteSelectionEnabled} onQuoteSelectionChange={onQuoteSelectionChange} isAdmin={isAdmin} />)}
           {sectionHost("account", <AccountSettings onClose={onClose} />)}
-          {sectionHost("models", <ModelsConfig embedded onClose={onClose} />)}
-          {cwd && sectionHost("skills", <SkillsConfig embedded key={cwd} cwd={cwd} onClose={onClose} />)}
+          {sectionHost("models", <ModelsConfig embedded cwd={cwd} onClose={onClose} />)}
+          {/* Visited sections stay mounted, so the ones whose answer depends on trust take the page's
+              status and load again in place when trusting from Settings › MCP changes it. */}
+          {cwd && sectionHost("skills", <SkillsConfig embedded key={cwd} cwd={cwd} trust={projectTrust} onClose={onClose} />)}
           {cwd && sectionHost("agents", <SubagentsConfig embedded key={cwd} cwd={cwd} onClose={onClose} />)}
           {cwd && sectionHost("mcp", <McpServersConfig embedded key={cwd} cwd={cwd} onClose={onClose} />)}
           {isAdmin && sectionHost("quick-templates", <QuickTemplatesConfig embedded />)}
           {isAdmin && sectionHost("bundles", <BundlesConfig embedded />)}
-          {cwd && sectionHost("plugins", <PluginsConfig embedded key={cwd} cwd={cwd} sessionId={sessionId} onClose={onClose} onReloaded={onSessionReloaded} />)}
+          {cwd && sectionHost("plugins", <PluginsConfig embedded key={cwd} cwd={cwd} sessionId={sessionId} trust={projectTrust} onClose={onClose} onReloaded={onSessionReloaded} />)}
         </main>
       </div>
     </div>

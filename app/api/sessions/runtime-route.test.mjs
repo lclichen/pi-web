@@ -144,6 +144,7 @@ test("deleting an unpersisted session shuts down its runtime and invalidates cac
     assert.deepEqual(await response.json(), { ok: true });
     assert.equal(shutdownCalled, true);
     assert.equal(globalThis.__piSessions.has(id), false);
+    // MERGE-NOTE(upgrade/1.0): dev shards the path caches per session space.
     assert.equal(spaceBundle("host").pathCache.has(id), false);
     assert.equal([...spaceBundle("host").idToPathCache.values()].includes(id), false);
     assert.ok((await (await getRunningSessions()).json()).sessionListVersion > before);
@@ -151,7 +152,10 @@ test("deleting an unpersisted session shuts down its runtime and invalidates cac
   }
 });
 
-test("session listing merges live registry snapshots and honors force refresh", () => {
+// MERGE-NOTE(upgrade/1.0): upstream's `summary=1` fast path rides on its
+// global listSessionSummaries() cache; dev keeps the per-space full scan, so
+// only the force-refresh and owner-fence parts of this source check apply.
+test("session listing honors force refresh with per-space owner fencing", () => {
   assert.match(listRoute, /searchParams\.get\("force"\) === "1"/);
   // Space-aware listing (multi-user shards) replaced the bare force call.
   assert.match(listRoute, /listAllSessions\(space, \{ force \}\)/);
@@ -169,8 +173,17 @@ test("session reads use the live SessionManager before requiring a JSONL path", 
     const pathLookup = source.indexOf("resolveSessionAccess(");
     assert.ok(liveLookup >= 0);
     assert.ok(pathLookup > liveLookup);
-    assert.match(source, /liveRpc\?\.inner\.sessionManager \?\? SessionManager\.open/);
+    // The live wrapper's manager must still win over any disk read. Dev opens
+    // the SDK SessionManager directly (no upstream openSessionManager cache in
+    // the fork's session-reader).
+    assert.match(source, /liveRpc\?\.inner\.sessionManager \?\? SessionManager\.open\(/);
   }
+});
+
+test("detail reads probe disk only on force/mount and evict a stale idle wrapper", () => {
+  assert.match(detailRoute, /searchParams\.get\("force"\) === "1"/);
+  assert.match(detailRoute, /force && liveWrapper\?\.evictIfDiskAhead\(\)/);
+  assert.doesNotMatch(contextRoute, /evictIfDiskAhead|readLatestSessionEntryId/);
 });
 
 test("live agent state is available before the session file is persisted", () => {
@@ -181,12 +194,15 @@ test("live agent state is available before the session file is persisted", () =>
   assert.match(stateRoute, /if \(rpc\?\.isAlive\(\)\)/);
 });
 
-test("deleting an intermediate subagent reparents both relation representations", async (t) => {
+test("deleting a session removes all persisted subagent descendants", async (t) => {
   const dir = await mkdtemp(join(tmpdir(), "pi-web-delete-reparent-"));
   const grandparentPath = join(dir, "grandparent.jsonl");
   const parentPath = join(dir, "parent.jsonl");
   const childPath = join(dir, "child.jsonl");
+  const grandchildPath = join(dir, "grandchild.jsonl");
   const parentId = "delete-reparent-parent";
+  const childId = "delete-reparent-child";
+  const grandchildId = "delete-reparent-grandchild";
   const header = (id, parentSession) => JSON.stringify({
     type: "session",
     version: 3,
@@ -198,7 +214,7 @@ test("deleting an intermediate subagent reparents both relation representations"
   await writeFile(grandparentPath, `${header("delete-reparent-grandparent")}\n`);
   await writeFile(parentPath, `${header(parentId, grandparentPath)}\n`);
   await writeFile(childPath, [
-    header("delete-reparent-child", parentPath),
+    header(childId, parentPath),
     JSON.stringify({
       type: "custom",
       customType: "pi-web:subagent",
@@ -211,6 +227,24 @@ test("deleting an intermediate subagent reparents both relation representations"
         parentSessionPath: parentPath,
         profile: "Explore",
         description: "Inspect parser",
+      },
+    }),
+    "",
+  ].join("\n"));
+  await writeFile(grandchildPath, [
+    header(grandchildId, childPath),
+    JSON.stringify({
+      type: "custom",
+      customType: "pi-web:subagent",
+      id: "grandchild-meta",
+      parentId: null,
+      timestamp: "2026-01-01T00:00:00.000Z",
+      data: {
+        version: 1,
+        parentSessionId: childId,
+        parentSessionPath: childPath,
+        profile: "Review",
+        description: "Review parser",
       },
     }),
     "",
@@ -228,15 +262,8 @@ test("deleting an intermediate subagent reparents both relation representations"
 
   assert.equal(response.status, 200);
   await assert.rejects(readFile(parentPath), { code: "ENOENT" });
-  const [childHeaderLine, childMetadataLine] = (await readFile(childPath, "utf8")).trim().split("\n");
-  assert.equal(JSON.parse(childHeaderLine).parentSession, grandparentPath);
-  assert.deepEqual(JSON.parse(childMetadataLine).data, {
-    version: 1,
-    parentSessionId: "delete-reparent-grandparent",
-    parentSessionPath: grandparentPath,
-    profile: "Explore",
-    description: "Inspect parser",
-  });
+  await assert.rejects(readFile(childPath), { code: "ENOENT" });
+  await assert.rejects(readFile(grandchildPath), { code: "ENOENT" });
 });
 
 test("live detail and state routes work without a persisted JSONL file", async (t) => {

@@ -3,7 +3,7 @@ import {
   getAgentDir,
   type SessionInfo as PiSessionInfo,
 } from "@earendil-works/pi-coding-agent";
-import { closeSync, type Dirent, fstatSync, openSync, readSync } from "fs";
+import { closeSync, type Dirent, fstatSync, openSync, readSync, readFileSync } from "fs";
 import { readdir } from "fs/promises";
 import { isAbsolute, join, normalize as normalizePath, relative, resolve as resolvePath, sep } from "path";
 import type { AgentMessage, ImageContent, SessionEntry, SessionHeader, SessionInfo, SessionContext } from "./types";
@@ -741,9 +741,13 @@ function entryToUiMessage(
   // normalizeToolCalls is a secondary guard (returns non-assistant messages as-is).
   switch (entry.type) {
     case "message": {
+      // pi 1.0+ writes the system prompt and tool declarations into the
+      // transcript as role:"system" message entries (mid-conversation prompt
+      // changes). They are loadout, not conversation — never render them.
+      if ((entry.message as { role?: string }).role === "system") return null;
       let message = options.deferToolResultImages
-        ? deferToolResultBase64Images(normalizeToolCalls(entry.message), options.sessionId, entry.id)
-        : normalizeToolCalls(entry.message);
+        ? deferToolResultBase64Images(normalizeToolCalls(entry.message as unknown as AgentMessage), options.sessionId, entry.id)
+        : normalizeToolCalls(entry.message as unknown as AgentMessage);
       const legacyContent = message.role === "assistant" ? (message as { content: unknown }).content : undefined;
       if (typeof legacyContent === "string") {
         message = { ...message, content: [{ type: "text", text: legacyContent }] } as AgentMessage;
@@ -789,5 +793,25 @@ function entryToUiMessage(
       };
     default:
       return null;
+  }
+}
+
+/**
+ * Id of the last entry in a session JSONL, or null when unreadable/empty.
+ * The wrapper's evictIfDiskAhead() compares it against the in-memory index to
+ * drop idle wrappers whose file another pi process appended to.
+ */
+export function readLatestSessionEntryId(sessionFile: string): string | null {
+  try {
+    const text = readFileSync(sessionFile, "utf8");
+    const lines = text.trimEnd().split("\n");
+    for (let i = lines.length - 1; i >= 0; i--) {
+      if (!lines[i].trim()) continue;
+      const id = (JSON.parse(lines[i]) as { id?: unknown }).id;
+      return typeof id === "string" ? id : null;
+    }
+    return null;
+  } catch {
+    return null;
   }
 }

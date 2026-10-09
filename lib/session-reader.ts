@@ -797,21 +797,38 @@ function entryToUiMessage(
 }
 
 /**
- * Id of the last entry in a session JSONL, or null when unreadable/empty.
- * The wrapper's evictIfDiskAhead() compares it against the in-memory index to
- * drop idle wrappers whose file another pi process appended to.
+ * Id of the newest entry in a session JSONL, or undefined when the file is
+ * absent (a wrapper that has not flushed its first message yet) or unreadable.
+ *
+ * Used only on ?force=1 session reads (mount / page refresh). An id the
+ * in-memory wrapper never saw means another pi process appended to the file.
+ * The header carries the session id rather than an entry id, and the SDK's
+ * entry index excludes it — treating it as an entry would evict a fresh wrapper.
  */
-export function readLatestSessionEntryId(sessionFile: string): string | null {
+const SESSION_TAIL_PROBE_MAX_BYTES = 64 * 1024;
+
+function readEntryId(line: string): string | undefined {
   try {
-    const text = readFileSync(sessionFile, "utf8");
-    const lines = text.trimEnd().split("\n");
-    for (let i = lines.length - 1; i >= 0; i--) {
-      if (!lines[i].trim()) continue;
-      const id = (JSON.parse(lines[i]) as { id?: unknown }).id;
-      return typeof id === "string" ? id : null;
-    }
-    return null;
+    const entry = JSON.parse(line) as { type?: unknown; id?: unknown };
+    if (entry.type === "session") return undefined;
+    return typeof entry.id === "string" && entry.id ? entry.id : undefined;
   } catch {
-    return null;
+    return undefined;
   }
+}
+
+export function readLatestSessionEntryId(filePath: string | undefined): string | undefined {
+  if (!filePath) return undefined;
+  let lines: string[];
+  try {
+    lines = readBoundedTailLines(filePath, SESSION_TAIL_PROBE_MAX_BYTES);
+  } catch {
+    return undefined;
+  }
+  // Walk backwards so a torn trailing line falls back to the previous entry.
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const entryId = readEntryId(lines[index]);
+    if (entryId) return entryId;
+  }
+  return undefined;
 }

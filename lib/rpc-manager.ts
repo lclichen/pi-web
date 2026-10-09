@@ -134,6 +134,8 @@ type AgentSessionWrapperOptions = {
    * exact prompts untouched.
    */
   webUiPrompt?: boolean;
+  /** Shared with the session's prompt extension; created by startRpcSession for normal sessions. */
+  promptPolicy?: RpcPromptPolicy;
   onAgentRunComplete?: AgentRunCompleteListener;
   suppressCompletionNotifications?: boolean;
   /** Connects the session's MCP servers before a prompt starts a run, and lets go of them when it closes (lib/mcp-host.ts). */
@@ -309,60 +311,8 @@ const CUSTOM_UI_KEYBINDINGS = new TuiKeybindingsManager(TUI_KEYBINDINGS);
 // session. Navigation keeps them although the target branch was recorded without them.
 const SESSION_TOOL_NAMES = new Set<string>(["codemode", "tool_search", ...SUBAGENT_CONTROL_TOOL_NAMES]);
 
-// ---------------------------------------------------------------------------
-// System-prompt patches against pi 1.0's transcript context
-// ---------------------------------------------------------------------------
 
-type LooseSystemMessage = { role: "system"; content: string | Array<unknown>; [key: string]: unknown };
 
-/**
- * Patch the BASE PROMPT of the transcript's leading system message. `patch`
- * receives the prompt text (the leading message's string content, or its text
- * blocks flattened) and returns the replacement; the message list is returned
- * unchanged when there is no leading system message or the patch is a no-op.
- * Sections and every later system message are left untouched.
- */
-function patchLeadingSystemMessage(
-  messages: AgentMessage[],
-  patch: (current: string) => string,
-): AgentMessage[] {
-  const index = messages.findIndex((m) => (m as { role?: string } | null)?.role === "system");
-  if (index === -1) return messages;
-  const message = messages[index] as unknown as LooseSystemMessage;
-  const current = typeof message.content === "string"
-    ? message.content
-    : (message.content as Array<{ type?: string; text?: string }>)
-        .filter((block) => block?.type === "text" && typeof block.text === "string")
-        .map((block) => block.text)
-        .join("\n\n");
-  const patched = patch(current);
-  if (patched === current) return messages;
-  const copy: AgentMessage[] = [...messages];
-  copy[index] = {
-    ...message,
-    content: typeof message.content === "string" ? patched : [{ type: "text", text: patched }],
-  } as unknown as AgentMessage;
-  return copy;
-}
-
-/**
- * Force the transcript's system prompt to `prompt` exactly: the leading system
- * message is replaced (base prompt AND sections — "exact" means exact), or
- * prepended when the transcript carries none yet.
- */
-function replaceTranscriptSystemPrompt(messages: AgentMessage[], prompt: string): AgentMessage[] {
-  const index = messages.findIndex((m) => (m as { role?: string } | null)?.role === "system");
-  const replacement: LooseSystemMessage = { role: "system", content: prompt };
-  if (index === -1) {
-    // pi builds the leading system message for a request itself; only when the
-    // transcript already has one does a replacement make sense. Prepending here
-    // would race pi's own prompt assembly, so an empty transcript stays as-is.
-    return messages;
-  }
-  const copy: AgentMessage[] = [...messages];
-  copy[index] = { ...(messages[index] as object), ...replacement } as unknown as AgentMessage;
-  return copy;
-}
 
 /**
  * The active tools for a coding tool selection. The selection replaces only the coding
@@ -418,6 +368,46 @@ function quickToolSet(session: AgentSessionLike, mcpAllowlist?: string[]): strin
   return [...allowed];
 }
 
+// ---------------------------------------------------------------------------
+// Session prompt policy (pi >= 0.86 host path)
+// ---------------------------------------------------------------------------
+
+/**
+ * Mutable prompt policy the wrapper owns and the session's before_agent_start
+ * extension reads. Since pi 0.86 the supported way for a host to shape the
+ * prompt is a before_agent_start handler returning `systemPrompt`;
+ * `agent.state.systemPrompt` is replayed from the transcript and read-only.
+ */
+export interface RpcPromptPolicy {
+  /** Append the web-UI output addendum (images / PDF page links) to the run's prompt. */
+  webUiPrompt: boolean;
+  /** Send an empty prompt (quick templates with every tool disabled). */
+  forceEmpty: boolean;
+  /** Replace the whole prompt (quick templates); appended addendum still applies. */
+  exactPrompt?: () => string;
+}
+
+export function createRpcPromptExtension(policy: RpcPromptPolicy): InlineExtension {
+  return {
+    name: "pi-web-prompt-policy",
+    hidden: true,
+    factory: (pi) => {
+      pi.on("before_agent_start", (event: { systemPrompt?: string }) => {
+        if (policy.forceEmpty) return { systemPrompt: "" };
+        const exact = policy.exactPrompt?.();
+        if (exact !== undefined) {
+          return { systemPrompt: policy.webUiPrompt ? appendWebUiAddendum(exact) : exact };
+        }
+        if (!policy.webUiPrompt) return undefined;
+        const base = event.systemPrompt ?? "";
+        if (!base) return undefined;
+        const patched = appendWebUiAddendum(base);
+        return patched === base ? undefined : { systemPrompt: patched };
+      });
+    },
+  };
+}
+
 // ============================================================================
 // AgentSessionWrapper
 // Wraps AgentSession with the same interface the rest of the app expects
@@ -447,6 +437,8 @@ export class AgentSessionWrapper {
   private extensionBindingPromise: Promise<void> | null = null;
   private extensionBindingError: unknown = null;
   private forceEmptySystemPrompt = false;
+  /** Shared prompt policy; the session prompt extension reads it every run (pi >= 0.86 path). */
+  private promptPolicy?: RpcPromptPolicy;
   private exactSystemPrompt?: () => string;
   private readonly webUiPrompt: boolean;
   private readonly chatOnly: boolean;
@@ -486,11 +478,8 @@ export class AgentSessionWrapper {
     this.onAgentRunComplete = options.onAgentRunComplete;
     this.suppressCompletionNotifications = options.suppressCompletionNotifications ?? false;
     this.mcpHost = options.mcpHost;
-    this.installExactSystemPromptContinuation();
-    // Installed after the exact-prompt continuation so the addendum wraps it
-    // (runs last) and appends to the final prompt, whatever produced it.
-    this.installWebUiAddendumContinuation();
-    this.applyExactSystemPrompt();
+    this.promptPolicy = options.promptPolicy;
+    this.syncPromptPolicy();
   }
 
   /** Owning web user id (0 = implicit host identity when auth is off). */
@@ -604,7 +593,10 @@ export class AgentSessionWrapper {
   }
 
   beginExtensionBinding(options: ExtensionBindingOptions = {}): void {
-    if (options.forceEmptySystemPrompt) this.forceEmptySystemPrompt = true;
+    if (options.forceEmptySystemPrompt) {
+      this.forceEmptySystemPrompt = true;
+      this.syncPromptPolicy();
+    }
     void this.ensureExtensionsBound().catch((err) => {
       console.error("[pi-web] failed to dispatch session_start to extensions:", err instanceof Error ? err.message : err);
     });
@@ -612,7 +604,7 @@ export class AgentSessionWrapper {
 
   setForceEmptySystemPrompt(force: boolean): void {
     this.forceEmptySystemPrompt = force;
-    this.applyForcedEmptySystemPrompt();
+    this.syncPromptPolicy();
   }
 
   async waitUntilReady(): Promise<void> {
@@ -738,76 +730,29 @@ export class AgentSessionWrapper {
     }
   }
 
-  private applyExactSystemPrompt(): void {
-    const state = this.inner.agent?.state;
-    if (state && this.exactSystemPrompt) {
-      (state as { systemPrompt?: string }).systemPrompt = this.exactSystemPrompt();
-    }
-    this.applyForcedEmptySystemPrompt();
-    this.applyWebUiAddendumToState();
+  /** Mirror the wrapper's prompt flags into the shared policy the session's
+   *  before_agent_start extension reads (there is no writable prompt state
+   *  since pi 0.86). */
+  private syncPromptPolicy(): void {
+    if (!this.promptPolicy) return;
+    this.promptPolicy.forceEmpty = this.forceEmptySystemPrompt;
+    this.promptPolicy.exactPrompt = this.exactSystemPrompt;
   }
 
-  private applyForcedEmptySystemPrompt(): void {
-    if (this.forceEmptySystemPrompt && this.inner.agent?.state) {
-      (this.inner.agent.state as { systemPrompt?: string }).systemPrompt = "";
-    }
-  }
 
-  private installExactSystemPromptContinuation(): void {
-    if (!this.exactSystemPrompt) return;
-    const previous = this.inner.agent.prepareNextTurnWithContext;
-    this.inner.agent.prepareNextTurnWithContext = async (turn, signal) => {
-      const prepared = await previous?.(turn, signal);
-      const source = prepared?.context ?? turn.context;
-      const messages = replaceTranscriptSystemPrompt(source.messages, this.exactSystemPrompt!());
-      return {
-        ...prepared,
-        context: { ...source, messages },
-      };
-    };
-  }
 
-  /**
-   * Append the web-UI output addendum to every turn's system prompt — the
-   * model-visible copy flows through here even when the display state is
-   * rebuilt. Appending is idempotent and skipped for forced-empty prompts.
-   * Since pi 1.0 the prompt lives in the transcript's leading system message
-   * (AgentContext no longer carries `systemPrompt`), so the patch rides there.
-   */
-  private installWebUiAddendumContinuation(): void {
-    if (!this.webUiPrompt) return;
-    const previous = this.inner.agent.prepareNextTurnWithContext;
-    this.inner.agent.prepareNextTurnWithContext = async (turn, signal) => {
-      const prepared = await previous?.(turn, signal);
-      if (this.forceEmptySystemPrompt) return prepared;
-      const source = prepared?.context ?? turn.context;
-      const messages = patchLeadingSystemMessage(source.messages, (current) => appendWebUiAddendum(current));
-      if (messages === source.messages) return prepared;
-      return {
-        ...prepared,
-        context: { ...source, messages },
-      };
-    };
-  }
 
-  /** Mirror the addendum into the prompt shown by the UI, after pi rebuilds it. */
-  private applyWebUiAddendumToState(): void {
-    if (!this.webUiPrompt || this.forceEmptySystemPrompt) return;
-    const state = this.inner.agent?.state;
-    if (state?.systemPrompt) (state as { systemPrompt?: string }).systemPrompt = appendWebUiAddendum(state.systemPrompt);
-  }
 
   /** Quick mode template switch: re-pin the exact system prompt. */
   setExactSystemPrompt(prompt: string): void {
     this.exactSystemPrompt = () => prompt;
     this.forceEmptySystemPrompt = false;
-    this.installExactSystemPromptContinuation();
+    this.syncPromptPolicy();
   }
 
   /** Apply a coding tool selection; `carry` defaults to the tools active now. */
   setActiveToolSelection(toolNames: string[], carry: readonly string[] = this.inner.getActiveToolNames()): void {
     this.inner.setActiveToolsByName(resolveActiveToolNames(this.inner, toolNames, carry));
-    this.applyExactSystemPrompt();
   }
 
   /**
@@ -1269,8 +1214,9 @@ export class AgentSessionWrapper {
       }
 
       case "fork_branch": {
-        if (this.isSessionRunningForReplacement()) {
-          throw new Error("Cannot fork while the session is running");        }
+        if (this.inner.isBashRunning) {
+          throw new Error("Cannot fork while a shell command is running");
+        }
         const entryId = command.entryId as string;
         const sessionManager = this.inner.sessionManager;
         const currentSessionFile = this.inner.sessionFile;
@@ -1540,7 +1486,6 @@ export class AgentSessionWrapper {
           if (typeof this.inner.bindExtensions !== "function") {
             this.inner.extensionRunner.setUIContext?.(this.createExtensionUiContext(), "rpc");
           }
-          this.applyForcedEmptySystemPrompt();
         }
         this.applyToolPreferences(prefCwd);
         return { success: true };
@@ -1666,7 +1611,7 @@ export class AgentSessionWrapper {
       case "abort_bash": {
         this.forceShutdownOnIdle = true;
         this.resetIdleTimer();
-        this.inner.abortBash();
+        this.inner.abortBash?.();
         return null;
       }
 
@@ -1701,7 +1646,7 @@ export class AgentSessionWrapper {
     // EventSource errors and reconnects instead of staying OPEN on a dead wrapper.
     this.emit({ type: "session_shutdown" });
     if (this.idleTimer) clearTimeout(this.idleTimer);
-    if (this.inner.isBashRunning) this.inner.abortBash();
+    if (this.inner.isBashRunning) this.inner.abortBash?.();
     this.unsubscribe?.();
     for (const pending of this.pendingUiResponses.values()) pending.cancel();
     for (const id of Array.from(this.activeCustomUis.keys())) this.closeCustomUi(id, undefined);
@@ -2788,7 +2733,14 @@ export async function startRpcSession(
     ? readSubagentSessionResources(
         sessionManager.getEntries() as unknown as SessionEntry[],
       )
-    : null;
+    : null;  // Shared with the prompt extension registered for normal sessions below; the
+  // wrapper mutates it (quick templates, forced-empty) and every run reads it.
+  const promptPolicy: RpcPromptPolicy = {
+    webUiPrompt: !subagentResources && !quick,
+    forceEmpty: false,
+    ...(quick?.systemPrompt ? { exactPrompt: () => quick.systemPrompt as string } : {}),
+  };
+
   const persistedToolNames = subagentResources
     ? undefined
     : readSessionToolSelection(sessionManager.getEntries() as unknown as SessionEntry[]);
@@ -2901,6 +2853,9 @@ export async function startRpcSession(
         : {
             ...platformResourceLoaderOptions,
             extensionFactories: [
+              // Prompt policy (exact / empty / web addendum) rides the pi >= 0.86
+              // before_agent_start path; see createRpcPromptExtension.
+              ...(promptPolicy ? [createRpcPromptExtension(promptPolicy)] : []),
               ...(builtins?.extensions ?? []),
               createReadOnlyMcpPolicyExtension(),
               ...(platformResourceLoaderOptions.extensionFactories ?? []),              createProjectCommandBashExtension({
@@ -2985,6 +2940,12 @@ export async function startRpcSession(
           ? () => quick.systemPrompt as string
           : undefined;
     exactSystemPromptRef.current = exactSystemPrompt;
+    // Chat-only exact prompts also learn the web output addendum (the wrapper
+    // policy covers normal sessions; subagents keep their exact prompt bare).
+    if (exactSystemPrompt && promptPolicy.webUiPrompt && !promptPolicy.exactPrompt) {
+      const base = exactSystemPrompt;
+      exactSystemPromptRef.current = () => appendWebUiAddendum(base());
+    }
     const wrapper = new AgentSessionWrapper(inner, {
       exactSystemPrompt,
       chatOnly,
@@ -2997,6 +2958,7 @@ export async function startRpcSession(
         });
       },
       suppressCompletionNotifications: Boolean(subagentResources),
+      ...(promptPolicy && !subagentResources && !chatOnly ? { promptPolicy } : {}),
       ...(builtins?.mcpHost ? { mcpHost: builtins.mcpHost } : {}),
     });
     const realSessionId = inner.sessionId as string;

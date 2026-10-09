@@ -48,6 +48,9 @@ A grouped turn's Process details start collapsed only when the answer shown unde
 ## Compaction summary card (`CompactionMessageView`, `components/MessageView.tsx`)
 Collapsed by default, as pi's TUI `CompactionSummaryMessageComponent` (#1026): the header, "Conversation compacted" and pi's "Compacted from N tokens" (`details.tokensBefore`, set by the reader). The title is the toggle (a button with `aria-expanded`); the description, the summary Markdown and the file lists mount only when expanded. Session search indexes only user and assistant `message` entries (`lib/session-search.ts`), so no hit lands inside a summary and the card needs no `reveal` like Process details.
 
+## Compaction summary card (`CompactionMessageView`, `components/MessageView.tsx`)
+Collapsed by default, as pi's TUI `CompactionSummaryMessageComponent` (#1026): the header, "Conversation compacted" and pi's "Compacted from N tokens" (`details.tokensBefore`, set by the reader). The title is the toggle (a button with `aria-expanded`); the description, the summary Markdown and the file lists mount only when expanded. Session search indexes only user and assistant `message` entries (`lib/session-search.ts`), so no hit lands inside a summary and the card needs no `reveal` like Process details.
+
 ## Streaming token rate
 The streaming reply's `t/s` counts estimated tokens from when its first ones showed. That start lives in `lib/stream-token-rate.ts`, keyed by the reply (provider, model and request `timestamp`), not in `MessageView`: switching sessions remounts the chat, and a start taken at the remount divided every token streamed so far by a fraction of a second. A reply joined with no record (a reload) counts only the tokens that follow.
 

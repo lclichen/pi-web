@@ -1022,7 +1022,14 @@ export function AppShell() {
     setSystemInfoLoading(false);
     setActiveTopPanel(null);
     if (isMobile) setSidebarOpen(false);
-    router.replace(typeof window !== "undefined" ? window.location.pathname : "/", { scroll: false });
+    // Per-tab memory (#887): the URL carries the composer's cwd so a reload
+    // reopens this tab's new-session view instead of the previous chat. Quick
+    // sessions have no workspace — clear the param instead of writing "quick".
+    if (mode === "quick") {
+      router.replace(typeof window !== "undefined" ? window.location.pathname : "/", { scroll: false });
+    } else {
+      router.replace(`?cwd=${encodeURIComponent(cwd)}`, { scroll: false });
+    }
   }, [invalidateWorkspaceRestore, router, isMobile]);
 
   // Global keyboard shortcuts (handles Esc, Ctrl+Alt+N etc.)

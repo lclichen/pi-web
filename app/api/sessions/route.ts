@@ -13,7 +13,7 @@ import {
   getRunningRpcSessionInfos,
 } from "@/lib/rpc-manager";
 import { requireUserIdentity } from "@/lib/web-session";
-import { spaceForRequest } from "@/lib/session-spaces";
+import { spaceForRequest, isPathInSpace } from "@/lib/session-spaces";
 import { getSessionMetas } from "@/lib/session-metas";
 import { startServerPerf } from "@/lib/perf";
 
@@ -45,7 +45,11 @@ export async function GET(req: Request) {
       Promise.resolve(getRpcSessionInfos())
         .then((infos) => attachSessionProjectInfo(infos.filter((s) => {
           const owner = getRpcSessionOwner(s.id);
-          return user.role === "admin" || !owner || owner.ownerId === user.id;
+          if (user.role !== "admin" && owner && owner.ownerId !== user.id) return false;
+          // Space fence: a live wrapper whose session file lives outside the
+          // requested space belongs to the other tab — merging it into both
+          // made the same session appear under "我的会话" AND "Host (CLI)".
+          return !s.path || isPathInSpace(s.path, space);
         }))),
       Promise.resolve(getSessionMetas()),
     ]);

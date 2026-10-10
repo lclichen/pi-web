@@ -1855,7 +1855,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     let promptRequestStarted = false;
 
     try {
-      if (isNew && newSessionCwd) {
+      if (isNew && (newSessionCwd || newSessionModeRef.current === "quick")) {
         const selectedModel = newSessionModel;
         const existingSid = sessionIdRef.current ?? await ensuringNewSessionRef.current;
         const sid = existingSid ?? await ensureNewSession();

@@ -145,11 +145,18 @@ export function QuickTemplatesConfig({ embedded = false }: { embedded?: boolean 
     setFormError(null);
     setFormMsg(null);
     try {
+      // 模型引用必须成对：只填了一半时显式报错，而不是静默丢弃 model 字段
+      // （此前"模型ID存不下"的根因——payload 的条件展开悄悄省略了 model）。
+      const providerFilled = draft.modelProvider.trim().length > 0;
+      const modelFilled = draft.modelId.trim().length > 0;
+      if (providerFilled !== modelFilled) {
+        throw new Error(t("quickTemplates.modelPairRequired"));
+      }
       const payload: Record<string, unknown> = {
         name: draft.name,
         description: draft.description,
         systemPrompt: draft.systemPrompt,
-        ...(draft.modelProvider.trim() && draft.modelId.trim()
+        ...(providerFilled && modelFilled
           ? { model: { provider: draft.modelProvider.trim(), modelId: draft.modelId.trim() } }
           : {}),
         ...(draft.mcpServers.trim()

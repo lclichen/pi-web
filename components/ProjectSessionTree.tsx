@@ -283,15 +283,17 @@ export function ProjectSessionTree({
   );
 
   // 管理员通过"打开服务器目录"（host 模式）建的会话没有 projectId，按目录
-  // 动态分组显示——不区分 mine/host 空间（UI 没有空间切换入口，之前 gate
-  // 在 sessionSpace==="host" 上导致这些会话永远不显示）。
+  // 动态分组显示。仅 mode==="host" 的会话进 Host 目录组——mode 未知（fork/
+  // 克隆/子智能体会话不写 sidecar meta）的会话默认落"未知来源"组，不再被
+  // 吞进 Host（此前 `!s.mode` 也放行，导致子会话/丢失 meta 的项目会话全部
+  // 显示为 Host，与项目模式徽标打架）。
   // 非宿主模式的未绑定会话（API 直建的 pre-project sandbox 会话等）单独成组、
-  // 带各自模式徽标——混进 Host 目录组会让"项目=Host / 会话=沙箱"两个徽标打架。
+  // 带各自模式徽标。
   const hostGroups = useMemo(() => {
     if (!isAdmin) return [];
     const groups = new Map<string, SessionInfo[]>();
     for (const s of byProject.ungrouped) {
-      if (s.mode && s.mode !== "host") continue;
+      if (s.mode !== "host") continue;
       const key = s.projectRoot ?? s.cwd;
       const list = groups.get(key) ?? [];
       list.push(s);
@@ -303,14 +305,17 @@ export function ProjectSessionTree({
     });
   }, [byProject.ungrouped, isAdmin]);
 
-  // 未绑定项目的非宿主模式会话，按 mode 聚成一组（沙箱/本机/SSH 各一组）。
+  // 未绑定项目的非宿主模式会话，按 mode 聚成一组（沙箱/本机/SSH 各一组）；
+  // mode 未知的会话（无 sidecar meta：子智能体/fork/克隆）归入 "unknown" 组，
+  // 不与任何模式徽标绑定。
   const unboundModeGroups = useMemo(() => {
     const groups = new Map<string, SessionInfo[]>();
     for (const s of byProject.ungrouped) {
-      if (!s.mode || s.mode === "host") continue;
-      const list = groups.get(s.mode) ?? [];
+      if (s.mode === "host") continue;
+      const key = s.mode ?? "unknown";
+      const list = groups.get(key) ?? [];
       list.push(s);
-      groups.set(s.mode, list);
+      groups.set(key, list);
     }
     for (const list of groups.values()) list.sort((a, b) => b.modified.localeCompare(a.modified));
     return [...groups.entries()];
@@ -534,7 +539,7 @@ export function ProjectSessionTree({
 
       {/* Host 空间动态分组（admin）。快速空间是纯 quick 列表——Host 目录组
           只属于 mine/host 视图，混进来会稀释快速会话（用户明确要求剔除）。 */}
-      {sessionSpace !== "quick" && hostGroups.map(([root, list]) => {
+      {sessionSpace === "host" && hostGroups.map(([root, list]) => {
         const key = `host:${root}`;
         const isCollapsed = collapsed.has(key);
         // Mirrors the project branch: "show all" must widen `visible` — this
@@ -593,7 +598,9 @@ export function ProjectSessionTree({
           ? { label: t("sessions.sandbox"), color: "#38bdf8", bg: "rgba(56,189,248,0.12)" }
           : mode === "ssh"
             ? { label: t("SSH"), color: "#34d399", bg: "rgba(52,211,153,0.14)" }
-            : { label: t("sessions.local"), color: "#a78bfa", bg: "rgba(167,139,250,0.12)" };
+            : mode === "local-machine"
+              ? { label: t("sessions.local"), color: "#a78bfa", bg: "rgba(167,139,250,0.12)" }
+              : { label: t("sessions.unknownSource"), color: "var(--text-dim)", bg: "var(--bg-selected)" };
         const visible = isCollapsed ? [] : list;
         return (
           <div key={key} style={{ marginBottom: 2 }}>

@@ -3,9 +3,15 @@
  *
  * After the user logs into the sandbox platform, this wires up the agent's LLM
  * provider automatically: it checks whether the platform has granted the user
- * LLM access, fetches (or reuses a cached) LiteLLM virtual key, and registers
- * the provider with pi via `pi.registerProvider`. The user never has to copy a
+ * LLM access, fetches (or reuses a cached) gateway API key, and registers the
+ * provider with pi via `pi.registerProvider`. The user never has to copy a
  * key by hand.
+ *
+ * Since the 2026-10 agentgateway migration the platform brokers agentgateway
+ * keys (path b). A `llmGateway` block in the extension config bypasses the
+ * platform entirely (self-managed gateway / local testing), and registered
+ * models send pi's session-affinity headers (compat) so the gateway can
+ * attribute requests per pi session.
  *
  * Flow (called from session_start, after ensureAuthenticated):
  *   1. GET /llm/me          -> binding present? no  -> silent skip (not granted)
@@ -22,25 +28,10 @@
 import type { ExtensionAPI, ExtensionContext, ProviderConfig, ProviderModelConfig } from "@earendil-works/pi-coding-agent";
 import { PlatformClient, PlatformError } from "./client.ts";
 import { saveConfig, type PlatformConfig } from "./config.ts";
-import { getState } from "./auth.ts";
 
 /** The provider name we register. Defaults to "amedac.ai", overridable in config. */
 function providerName(config: PlatformConfig): string {
   return config.llmProvider ?? "amedac.ai";
-}
-
-/**
- * The provider names whose requests should carry litellm_session_id. Resolved
- * from the live connection state (set by session_start) so it reflects the
- * actually-loaded config; before a session starts, falls back to the documented
- * default. Always includes the bare "litellm" alias for compatibility.
- *
- * Reads ONLY from getState(undefined) — never calls loadConfig — so it cannot poison the
- * cwd-sensitive config cache that session_start owns.
- */
-export function providerNameForSessionTracking(): ReadonlySet<string> {
-  const name = getState(undefined)?.config.llmProvider ?? "amedac.ai";
-  return new Set([name, "litellm"]);
 }
 
 /**
@@ -53,10 +44,16 @@ function normalizeBaseUrl(raw: string): string {
 }
 
 /**
- * Map LiteLLM's model list ({id}) into pi's ProviderModelConfig. LiteLLM doesn't
- * expose context windows or costs, so we apply conservative defaults — the user
- * can override per-model in pi's models.json if needed. `compat` is omitted so
- * pi auto-detects OpenAI-compatibility from the base URL.
+ * Map the gateway's model list ({id}) into pi's ProviderModelConfig. The
+ * gateway doesn't expose context windows or costs, so we apply conservative
+ * defaults — the user can override per-model in pi's models.json if needed.
+ *
+ * `compat.sendSessionAffinityHeaders` is the load-bearing piece: pi only sends
+ * its session headers (`session_id` / `x-session-affinity`, format "openai")
+ * when the MODEL opts in, and they are off by default for non-OpenRouter
+ * endpoints. agentgateway's session-attribution CEL reads exactly those
+ * headers; they are harmless on any other OpenAI-compatible backend (and help
+ * prompt-cache affinity). Replaces the old litellm_session_id body injection.
  */
 function toProviderModels(models: Array<{ id: string }>): ProviderModelConfig[] {
   const DEFAULT_CONTEXT = 128_000;
@@ -69,6 +66,7 @@ function toProviderModels(models: Array<{ id: string }>): ProviderModelConfig[] 
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: DEFAULT_CONTEXT,
     maxTokens: DEFAULT_CONTEXT,
+    compat: { sendSessionAffinityHeaders: true, sessionAffinityFormat: "openai" },
   }));
 }
 
@@ -93,6 +91,49 @@ export async function ensureLlmProvider(
 ): Promise<LlmSetupResult> {
   const config = client.config;
   const name = providerName(config);
+
+  // 0. Direct gateway mode: a llmGateway block in the extension config
+  //    (~/.pi/agent/extensions/sandbox-platform.json) bypasses the platform's
+  //    LLM brokerage entirely — self-managed agentgateway deployments and local
+  //    testing. The model list is fetched from the gateway itself when not
+  //    pinned in config; session attribution rides the compat headers.
+  if (config.llmGateway) {
+    const gateway = config.llmGateway;
+    let models = (gateway.models ?? []).map((id) => ({ id }));
+    if (models.length === 0) {
+      try {
+        const res = await fetch(`${normalizeBaseUrl(gateway.endpoint)}/models`, {
+          headers: { Authorization: `Bearer ${gateway.apiKey}` },
+        });
+        if (res.ok) {
+          const data = await res.json() as { data?: Array<{ id: string }> };
+          models = data.data?.map((m) => ({ id: m.id })) ?? [];
+        }
+      } catch {
+        // register with an empty list; /sandbox-llm refresh can retry
+      }
+    }
+    pi.registerProvider(name, {
+      name,
+      baseUrl: normalizeBaseUrl(gateway.endpoint),
+      apiKey: gateway.apiKey,
+      api: "openai-completions",
+      authHeader: true,
+      models: toProviderModels(models),
+    });
+    if (models.length === 0) {
+      ctx.ui.notify(
+        `LLM provider "${name}" registered in direct-gateway mode, but the model list is empty (gateway unreachable or no models). Re-run /sandbox-llm once it's back.`,
+        "warning",
+      );
+    } else {
+      ctx.ui.notify(
+        `LLM ready (direct gateway): ${name} (${models.length} models). Use /model to select.`,
+        "info",
+      );
+    }
+    return { ok: true, provider: name, modelCount: models.length };
+  }
 
   // 1. Is LLM enabled for me at all? R4: a platform without the gateway answers
   //    501 LLM_NOT_ENABLED (legacy: 503). Both mean "feature absent" — skip
@@ -214,7 +255,7 @@ export async function ensureLlmProvider(
 
   if (modelsUnreachable || models.length === 0) {
     ctx.ui.notify(
-      `LLM provider "${name}" registered, but the model list is empty (LiteLLM may be unreachable). Re-run /sandbox-llm once it's back.`,
+      `LLM provider "${name}" registered, but the model list is empty (gateway may be unreachable). Re-run /sandbox-llm once it's back.`,
       "warning",
     );
   } else {

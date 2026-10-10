@@ -30,6 +30,15 @@ export interface PlatformConfig {
   // ---- LLM (LiteLLM) integration ----
   /** Provider name to register with pi (what shows in /model). Defaults to "amedac.ai". */
   llmProvider?: string;
+  /**
+   * Direct gateway mode (2026-10 agentgateway migration): when present, LLM
+   * provider registration bypasses the platform brokerage entirely and uses
+   * this block verbatim — self-managed agentgateway deployments or local
+   * testing. endpoint is the OpenAI-compatible base (with or without /v1);
+   * apiKey is the gateway key (keep this file 0600 — it already holds secrets);
+   * models optionally pins the catalogue, else it is fetched from the gateway.
+   */
+  llmGateway?: { endpoint: string; apiKey: string; models?: string[] };
   /** Cached LiteLLM virtual-key plaintext, so we don't reveal on every startup. */
   llmVirtualKey?: string;
   /** Platform-side id of the cached virtual key (for revocation/refresh). */

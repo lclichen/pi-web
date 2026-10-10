@@ -186,10 +186,30 @@ export function registerCommands(pi: ExtensionAPI): void {
   });
 
   pi.registerCommand("sandbox-llm", {
-    description: "Check or refresh the auto-provisioned LLM provider (LiteLLM)",
+    description: "Check or refresh the auto-provisioned LLM provider (platform-brokered or direct gateway)",
     handler: async (_args, ctx) => {
       const { client, config } = makeClient(ctx.cwd);
       if (!(await ensureAuthenticated(client, ctx))) return;
+
+      // Direct gateway mode: no platform brokerage to consult — show the config
+      // block and offer re-registration only.
+      if (config.llmGateway) {
+        const g = config.llmGateway;
+        const action0 = await ctx.ui.select(
+          `LLM (direct gateway) — provider: ${config.llmProvider ?? "amedac.ai"} | endpoint: ${g.endpoint} | key: ${g.apiKey.slice(0, 12)}… | models: ${g.models?.length ? g.models.join(", ") : "(fetched from gateway)"}`,
+          ["Re-register provider", "Force refresh (re-fetch model list)"],
+        );
+        if (!action0) return;
+        try {
+          const res = action0.startsWith("Force")
+            ? await refreshLlmProvider(pi, ctx, client)
+            : await ensureLlmProvider(pi, ctx, client);
+          ctx.ui.notify(res.ok ? `LLM provider ready (${res.modelCount} models). Use /model to select.` : `LLM setup skipped: ${res.reason}`, res.ok ? "info" : "warning");
+        } catch (err) {
+          ctx.ui.notify(`LLM setup failed: ${err instanceof Error ? err.message : String(err)}`, "error");
+        }
+        return;
+      }
 
       // Show current status first.
       let statusLines: string[];

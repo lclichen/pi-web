@@ -32,12 +32,11 @@ import {
   createWriteTool,
   type GrepToolInput,
   truncateHead,
-  type BeforeProviderRequestEvent,
 } from "@earendil-works/pi-coding-agent";
-import { makeClient, ensureAuthenticated, ensureContainer, getState, setState } from "./lib/auth.ts";
-import { ensureLlmProvider, providerNameForSessionTracking } from "./lib/llm.ts";
-import { createContainerAutocompleteProvider } from "./lib/autocomplete.ts";
-import { containerPathToLocal } from "./lib/paths.ts";
+import { makeClient, ensureAuthenticated, ensureContainer, getState, setState } from "./auth.ts";
+import { ensureLlmProvider } from "./llm.ts";
+import { createContainerAutocompleteProvider } from "./autocomplete.ts";
+import { containerPathToLocal } from "./paths.ts";
 import {
   createPlatformBashOps,
   createPlatformEditOps,
@@ -48,8 +47,8 @@ import {
   GUEST_WORKSPACE,
   platformFind,
   platformGrep,
-} from "./lib/operations.ts";
-import { registerCommands } from "./lib/commands.ts";
+} from "./operations.ts";
+import { registerCommands } from "./commands.ts";
 
 export default function (pi: ExtensionAPI) {
   // A CLI flag to pin a container id on startup.
@@ -86,30 +85,11 @@ export default function (pi: ExtensionAPI) {
     return null;
   };
 
-  // add session_id key for tracking. Applies to whichever LLM provider this
-  // extension registered (default "amedac.ai"), plus the bare "litellm" name
-  // for setups that register under that name.
-  pi.on(
-    "before_provider_request",
-    (event: BeforeProviderRequestEvent, ctx: ExtensionContext) => {
-      const payload = event.payload as Record<string, unknown>;
-      if (!payload) return;
-
-      const provider = ctx.model?.provider;
-      if (!provider || !providerNameForSessionTracking().has(provider)) return payload;
-
-      const sessionId = ctx.sessionManager?.getSessionId();
-      if (!sessionId) {
-        console.warn("missing session id");
-        return payload;
-      }
-
-      return {
-        ...payload,
-        litellm_session_id: sessionId,
-      };
-    },
-  );
+  // NOTE (2026-10 agentgateway migration): per-session request attribution no
+  // longer injects litellm_session_id into the request body. The gateway reads
+  // pi's session headers instead; toProviderModels() opts every registered
+  // model in via compat.sendSessionAffinityHeaders. See
+  // pi-web/docs/dev/gateway-session-id-config-dependency.md.
 
   // Resolve the client/container on session_start so the first user prompt can
   // use the routed tools.

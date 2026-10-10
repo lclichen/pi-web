@@ -8,6 +8,7 @@ import { ensureLocalHome, ensureSandboxHome, ensureQuickHome } from "./mode-home
 import { spaceDir } from "./session-spaces";
 import { makeRelayToolsExtension } from "./extensions/relay-tools";
 import { makeRemoteVerifyExtension } from "./extensions/remote-verify";
+import { isTeachingEnabled } from "./teaching";
 import { makeEnvironmentInfoExtension } from "./extensions/environment-info";
 import { makeSshToolsExtension } from "./extensions/ssh-tools";
 import { makeBgTasksExtension } from "./extensions/bg-tasks";
@@ -63,7 +64,7 @@ export async function restoreSessionOptions(req: Request, sessionId: string): Pr
       }
       additionalExtensionPaths = [extPath];
       extensionFactories = [
-        makeRemoteVerifyExtension("sandbox", meta?.ownerId ?? user.id),
+        ...(isTeachingEnabled() ? [makeRemoteVerifyExtension("sandbox", meta?.ownerId ?? user.id)] : []),
         makeEnvironmentInfoExtension({
           mode: "sandbox",
           username: identity.session.user.username,
@@ -96,7 +97,7 @@ export async function restoreSessionOptions(req: Request, sessionId: string): Pr
       }
       extensionFactories = [
         makeRelayToolsExtension(meta?.ownerId ?? user.id, project ? effectiveCwd : undefined),
-        makeRemoteVerifyExtension("local-machine", meta?.ownerId ?? user.id),
+        ...(isTeachingEnabled() ? [makeRemoteVerifyExtension("local-machine", meta?.ownerId ?? user.id)] : []),
         makeEnvironmentInfoExtension({
           mode: "local-machine",
           username: identity.session.user.username,

@@ -154,13 +154,10 @@ lib/
   mcp-json-error.ts         JSON.parse error messages that never quote the source
   mcp-undo.ts               removed mcp.json entries kept 60 s for undo; only a token reaches the browser
   mcp-status.ts             last known connection state per mcp.json entry (tests and sessions)
-  mcp-test.ts               Settings › MCP Test: one bounded, masked SDK connection (sign-in reuses its steps)
-  mcp-entry-request.ts      route checks before connecting one mcp.json entry (Test, sign-in); guards /api/mcp and /api/project-trust share
-  mcp-sign-in.ts            Settings › MCP OAuth sign-in flows (as pi mcp login), polled by id
+  mcp-test.ts               masking library for one bounded SDK connection (mcp-host and settings share it)
   mcp-sign-out.ts           OAuth store keys (name + URL); guard barring token writes by runs started before a sign-out
   mcp-secrets.ts            pure secret classification and masking for MCP config values
-  mcp-add.ts                POST /api/mcp add's checks before it writes
-  mcp-import.ts             pure paste importer (+ mcp-import-core/json/cli/links.ts)
+  teaching.ts               teaching-mode single source: isTeachingEnabled() gate + LAB_* constants (lab panel / remote-verify bridge / turn marker); quick sessions are NOT teaching
   mcp-server-display.ts     client-safe display helpers for McpServerInfo (hidden-character escapes, labels)
   mcp-tool-display.ts       server/tool label of an mcp__ call from its result details, never the name
 
@@ -182,13 +179,12 @@ components/
   PluginsConfig.tsx        Settings › Plugins: installed package plugins
   SkillsConfig.tsx         Settings › Skills: loaded, search, install
   McpServersConfig.tsx         Settings › MCP: pi-mcp-adapter servers (add/edit/disable, probe tools)
-  mcp-sign-in-helpers.ts   pure helpers and requests for McpSignIn
-  McpAddServer.tsx         Settings › MCP add pane: paste, preview, values, name, scope
-  mcp-add-helpers.ts       pure helpers and the add request for McpAddServer
   FileExplorer.tsx         file tree in the sidebar
   FileIcons.tsx            file icon helpers
   FileViewer.tsx           file content in a tab
   TabBar.tsx               file panel tab bar (file and terminal tabs)
+  teaching/
+    LabTrainingSidePanel.tsx  the Lab Training side panel (teaching mode; gated by lib/teaching.ts)
 
 hooks/
   useAgentSession.ts       messages, streaming, SSE, fork/navigate, reconciliation; built-in slash commands (/session, bare /mcp)

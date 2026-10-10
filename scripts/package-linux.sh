@@ -104,6 +104,14 @@
 #                            路径，打包时拷入平台 node_modules 对应位置。
 #   NATIVE_BINDING_FIX       通用原生绑定补拷，"包内相对路径=来源文件" 空格分隔
 #                            （BCRYPT_BINDING_LOCAL 是它的便捷别名）。
+#   WITH_TEACHING            "1"（默认）= 教学部署形态：start-all 生成的
+#                            piweb.env 播种 PI_WEB_LAB_TRAINING=on，品牌文案
+#                            保留教学表述；"0" = 通用 AI 应用形态：env 播种
+#                            off（教学面板/remote-verify 桥等全部关闭，管理员
+#                            仍可在部署后运行时打开），包内 README 与 AppImage
+#                            desktop 的教学字样中性化。两形态共用同一构建产物
+#                            （运行时开关，见 lib/teaching.ts），仅默认值与
+#                            文案不同。标记落包内 pkg-teaching 文件。
 #
 # 构建机要求: Linux（或 WSL）、bash、curl（或 wget）、tar、Node.js >= 22
 #            （用于安装依赖和执行 next build；产物本身不需要）。
@@ -117,6 +125,13 @@ NODE_VERSION="${NODE_VERSION:-22.23.0}"
 OUT_DIR="${OUT_DIR:-$ROOT/dist}"
 SMOKE_TEST="${SMOKE_TEST:-1}"
 LOCAL="${PI_CODING_AGENT_LOCAL:-}"
+
+# 教学形态开关（详见文件头 WITH_TEACHING 说明）。非法值按默认 1 处理。
+TEACHING_WANTED="${WITH_TEACHING:-1}"
+case "$TEACHING_WANTED" in
+  0|off|false|no) TEACHING_WANTED=0 ;;
+  *) TEACHING_WANTED=1 ;;
+esac
 
 # CentOS 7 / glibc-2.17 兼容打包开关（当前仅支持 217）：产物加 -glibc-217
 # 后缀；配合 NODE_RUNTIME_LOCAL（glibc-2.17 Node）与 NODE_PTY_LOCAL
@@ -234,6 +249,11 @@ for f in "$ROOT"/packaging/*; do
     *)            cp -a "$f" "$PKG/scripts/" ;;
   esac
 done
+
+# 通用形态（WITH_TEACHING=0）：包内 README 副本的教学表述中性化（只改产物副本）。
+if [ "$TEACHING_WANTED" = "0" ] && [ -f "$PKG/scripts/README.txt" ]; then
+  sed -i 's/沙盒教学平台/沙盒平台/g' "$PKG/scripts/README.txt"
+fi
 # 自有版本体系：version.json（更新器对账的事实源）随包分发——包根与 app/ 各一份
 # （运行时 WebUI 的 cwd 是 app/，两处都放确保读得到）；pkg-kind 标记部署形态。
 # 缺失时用 npm version 生成等价物（channel 按预发布后缀推导），正式发布前应提交 version.json。
@@ -245,6 +265,9 @@ else
 fi
 cp -a "$PKG/version.json" "$PKG/app/version.json"
 echo tarball > "$PKG/pkg-kind"
+# 教学形态标记：start-all.sh 读取它决定 PI_WEB_LAB_TRAINING 播种值与文案
+# （AppImage 构建复用本包产物，标记随之携带）。缺失视为 1（教学形态）。
+echo "$TEACHING_WANTED" > "$PKG/pkg-teaching"
 if [ "$GLIBC_COMPAT" = "217" ]; then
   # 兼容包标记：目标机/更新源据此区分（version.json 相同版本号的 glibc-217
   # 包与常规包不可交叉升级——更新源务必分开托管或过滤）。

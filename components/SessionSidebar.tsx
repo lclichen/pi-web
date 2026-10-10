@@ -2397,7 +2397,7 @@ useEffect(() => {
           <div style={{ display: "flex", alignItems: "center", flexShrink: 0 }}>
             <button
               onClick={toggleLabSection}
-              title={labSectionOpen ? "收起教学训练" : "展开教学训练"}
+              title={labSectionOpen ? t("app.teachingSectionCollapse") : t("app.teachingSectionExpand")}
               aria-pressed={labSectionOpen}
               style={{
                 display: "flex", alignItems: "center", gap: 6, flex: 1,
@@ -2417,7 +2417,7 @@ useEffect(() => {
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
                 <path d="M22 10v6M2 10l10-5 10 5-10 5z" /><path d="M6 12v5c3 3 9 3 12 0v-5" />
               </svg>
-              教学训练
+              {t("app.teachingSection")}
             </button>
           </div>
           {labSectionOpen && (

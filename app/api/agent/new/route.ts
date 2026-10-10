@@ -18,6 +18,7 @@ import { ensureSandboxHome, ensureLocalHome, ensureQuickHome } from "@/lib/mode-
 import { recordSessionMeta } from "@/lib/session-metas";
 import { makeRelayToolsExtension } from "@/lib/extensions/relay-tools";
 import { makeRemoteVerifyExtension } from "@/lib/extensions/remote-verify";
+import { isTeachingEnabled } from "@/lib/teaching";
 import { makeEnvironmentInfoExtension } from "@/lib/extensions/environment-info";
 import { ensureProjectHome, ensureSandboxExtensionLink, getOwnedProject, writeSandboxConfig, type ProjectRecord } from "@/lib/projects";
 import { getAgentForUser } from "@/lib/relay/registry";
@@ -146,7 +147,7 @@ export async function POST(req: Request) {
           if (containerId) writeSandboxConfig(home, { containerId });
         }
         extensionFactories = [
-          makeRemoteVerifyExtension("sandbox", user.id),
+          ...(isTeachingEnabled() ? [makeRemoteVerifyExtension("sandbox", user.id)] : []),
           makeEnvironmentInfoExtension({
             mode: "sandbox",
             username: user.username,
@@ -173,7 +174,7 @@ export async function POST(req: Request) {
         }
         extensionFactories = [
           makeRelayToolsExtension(user.id, home),
-          makeRemoteVerifyExtension("local-machine", user.id),
+          ...(isTeachingEnabled() ? [makeRemoteVerifyExtension("local-machine", user.id)] : []),
           makeEnvironmentInfoExtension({ mode: "local-machine", username: user.username, projectName: project.name }),
         ];
       }
@@ -211,7 +212,7 @@ export async function POST(req: Request) {
       }
       ensureSandboxExtensionLink(effectiveCwd!);
       extensionFactories = [
-        makeRemoteVerifyExtension("sandbox", user.id),
+        ...(isTeachingEnabled() ? [makeRemoteVerifyExtension("sandbox", user.id)] : []),
         makeEnvironmentInfoExtension({ mode: "sandbox", username: user.username }),
       ];
     } else if (mode === "local-machine") {
@@ -221,7 +222,7 @@ export async function POST(req: Request) {
       effectiveCwd = ensureLocalHome(user.id);
       extensionFactories = [
         makeRelayToolsExtension(user.id),
-        makeRemoteVerifyExtension("local-machine", user.id),
+        ...(isTeachingEnabled() ? [makeRemoteVerifyExtension("local-machine", user.id)] : []),
         makeEnvironmentInfoExtension({ mode: "local-machine", username: user.username }),
       ];
     } else {

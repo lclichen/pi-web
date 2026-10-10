@@ -214,9 +214,6 @@ export function SessionToolbar({ cwd, sessionId, hasLabTraining, onSendCommand, 
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ cwd, ...next }),
         });
-        if (key === "labVerifyEnabled" && sessionId) {
-          onSendCommand("/lab verify");
-        }
         if (key === "mcpEnabled" || key === "subagentsEnabled") {
           onApplyPreferences();
         }

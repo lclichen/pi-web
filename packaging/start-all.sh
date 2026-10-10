@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# start-all.sh — 一键启动沙盒教学平台全套服务：
+# start-all.sh — 一键启动沙盒平台全套服务：
 #
 #   1. sandbox-platform （容器管理 API，默认 127.0.0.1:3000）
 #   2. pi-web           （WebUI，默认 0.0.0.0:30141）
@@ -83,6 +83,15 @@ PLATFORM_DIR="$PKG/sandbox/platform"
 # 内实现）；旧包的 sandbox/extension/ 作为回落（增量更新过渡期）。
 EXTENSION_DIR="$PKG/pi-config/agent/extensions/amedac-sandbox"
 [ -d "$EXTENSION_DIR" ] || EXTENSION_DIR="$PKG/sandbox/extension"
+# 教学形态标记（package-linux.sh 的 WITH_TEACHING 写入；缺失视为教学形态=1）。
+# 1 = 教学部署：piweb.env 播种 PI_WEB_LAB_TRAINING=on；
+# 0 = 通用 AI 应用：播种 off（教学面板/remote-verify 桥关闭，管理员可运行时打开）。
+# 注意 env 只在 data/server-settings.json 缺失时播种默认值；已落盘的设置优先。
+TEACHING_PKG="$(cat "$PKG/pkg-teaching" 2>/dev/null || echo 1)"
+case "$TEACHING_PKG" in
+  0|off|false|no) LAB_TRAINING_DEFAULT=off ;;
+  *)              LAB_TRAINING_DEFAULT=on ;;
+esac
 PLATFORM_ENV_FILE="$CONFIG_DIR/platform.env"
 WEB_ENV_FILE="$CONFIG_DIR/piweb.env"
 ADMIN_PW_FILE="$CONFIG_DIR/admin-password.txt"
@@ -337,7 +346,10 @@ PI_WEB_DATA_DIR=$DATA_DIR/piweb
 # PI_WEB_SANDBOX_EXTENSION_PATH 默认每次启动按当前包目录注入（AppImage 挂载点
 # 每次启动都会变化）；如需指向自建扩展目录，取消注释并改为你的绝对路径。
 # PI_WEB_SANDBOX_EXTENSION_PATH=/abs/path/to/pi-sandbox-extension
-PI_WEB_LAB_TRAINING=off
+# 教学模式（lab-training 面板与 remote-verify 桥）：随包形态（pkg-teaching）
+# 播种默认值——教学包=on，通用包=off。管理员可随时在 WebUI 顶栏切换
+# （落盘 data/server-settings.json，优先于本 env）。quick 快速会话不受此开关影响。
+PI_WEB_LAB_TRAINING=$LAB_TRAINING_DEFAULT
 # agent 会话空闲多久后自动关闭（运行时会话驱逐，会话文件保留、重开可恢复；
 # 非登录态。0=禁用空闲关闭）。代码默认 10 分钟对整日使用的工作会话太激进，
 # 部署默认放宽为 7 天。
@@ -366,6 +378,15 @@ EOF
   if [ -f "$WEB_ENV_FILE" ] && ! grep -q "^PI_WEB_DISABLE_MCP=" "$WEB_ENV_FILE" 2>/dev/null; then
     printf '# （pi 1.x 升级：内置 MCP 与 pi-mcp-adapter 冲突，默认关闭内置；0/空=恢复）\nPI_WEB_DISABLE_MCP=1\n' >> "$WEB_ENV_FILE"
     log "piweb.env 已补写 PI_WEB_DISABLE_MCP=1（关闭 pi 内置 MCP，保留 adapter）"
+  fi
+
+  # 教学形态播种（WITH_TEACHING，2026-10 起）：旧版 env 缺此变量的按包形态补写，
+  # 让全新数据目录的 server-settings 播种值正确（env 缺失时代码默认 on）。
+  # 已落盘的 data/server-settings.json 优先于 env，已有部署行为不变；
+  # 用户手写过该行的不覆盖。
+  if [ -f "$WEB_ENV_FILE" ] && ! grep -q "^PI_WEB_LAB_TRAINING=" "$WEB_ENV_FILE" 2>/dev/null; then
+    printf '# （教学模式默认值，随包形态 pkg-teaching=%s 播种；管理员可在 WebUI 切换）\nPI_WEB_LAB_TRAINING=%s\n' "$TEACHING_PKG" "$LAB_TRAINING_DEFAULT" >> "$WEB_ENV_FILE"
+    log "piweb.env 已补写 PI_WEB_LAB_TRAINING=$LAB_TRAINING_DEFAULT（随包形态）"
   fi
 
   mkdir -p "$DATA_DIR/piweb"

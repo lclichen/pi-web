@@ -67,6 +67,11 @@ echo appimage > "$APPDIR/usr/share/amedac/pkg-kind"
 cp -a "$ROOT/packaging/appimage/AppRun" "$APPDIR/AppRun"
 chmod +x "$APPDIR/AppRun"
 cp -a "$ROOT/packaging/appimage/amedac.ai.desktop" "$APPDIR/amedac.ai.desktop"
+# 通用形态（pkg-teaching=0，标记随 package-linux 产物携带）：desktop 的
+# 教学 Keywords 中性化（只改产物副本）。
+if [ "$(cat "$APPDIR/usr/share/amedac/pkg-teaching" 2>/dev/null || echo 1)" = "0" ]; then
+  sed -i 's/;lab//g; s/;教学//g' "$APPDIR/amedac.ai.desktop"
+fi
 
 # ---- 图标 -----------------------------------------------------------------
 # 默认用 gen-icon.mjs 现生成的占位图标；提供了自己的 logo 时优先使用：

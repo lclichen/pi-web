@@ -4,6 +4,7 @@ import Image from "next/image";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import type { AgentMessage, AssistantContentBlock, AssistantMessage, BashExecutionMessage, BlockingExtensionUiRequest, ExtensionUiRequest, SessionInfo, SessionTreeNode, ToolResultMessage, UserMessage } from "@/lib/types";
+import { LAB_CUSTOM_TYPE, LAB_WIDGET_KEY } from "@/lib/teaching";
 import { normalizeCustomPanelLines } from "@/lib/ansi";
 import { EXTENSION_DIALOG_BASE_WIDTH, fitExtensionDialogWidth } from "@/lib/extension-dialog-fit";
 import { asBracketedPaste, toTerminalKeyData } from "@/lib/terminal-input";
@@ -814,7 +815,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
     setVisibleCount((current) => Math.max(current, messages.length * 2));
   }, [messages.length]);
 
-  const labWidget = extensionWidgets.find((w) => w.key === "lab-training");
+  const labWidget = extensionWidgets.find((w) => w.key === LAB_WIDGET_KEY);
   const hasLabPanel = !!labWidget && !!labWidget.metadata;
   const hasLabTraining = slashCommands.some((c) => c.name === "lab" || c.name === "/lab");
 
@@ -1309,7 +1310,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
                 if (
                   (hasLabPanel || hasLabTraining) &&
                   msg.role === "custom" &&
-                  (msg as { customType?: string }).customType === "lab-training"
+                  (msg as { customType?: string }).customType === LAB_CUSTOM_TYPE
                 ) {
                   idx += 1;
                   continue;

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
-import { MarkdownBody } from "./MarkdownBody";
+import { MarkdownBody } from "../MarkdownBody";
 
 interface StepView {
   stepId: string;

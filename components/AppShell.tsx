@@ -8,7 +8,7 @@ import { ChatWindow } from "./ChatWindow";
 import type { ChatScrollPosition } from "@/lib/chat-scroll-position";
 import { FileViewer } from "./FileViewer";
 import { GitPanel } from "./GitPanel";
-import { LabTrainingSidePanel, type WidgetState as LabWidgetState } from "./LabTrainingSidePanel";
+import { LabTrainingSidePanel, type WidgetState as LabWidgetState } from "./teaching/LabTrainingSidePanel";
 import { TabBar, type Tab } from "./TabBar";
 import { SubagentsConfig } from "./SubagentsConfig";
 import { McpServersConfig } from "./McpServersConfig";

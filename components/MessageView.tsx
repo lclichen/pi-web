@@ -7,6 +7,7 @@ import { ImagePreview } from "./ImagePreview";
 import { MessageFeedback } from "./MessageFeedback";
 import { ThinkingIcon } from "./ThinkingIcon";
 import { copyText } from "@/lib/clipboard";
+import { LAB_TURN_MARKER } from "@/lib/teaching";
 import { useI18n } from "@/hooks/useI18n";
 import { parseCompactionSummary } from "@/lib/compaction-summary";
 import { getAssistantErrorMessage, getThinkingPreview, hasAssistantAnswer, isAssistantTruncated, isEmptyThinkingBlock } from "@/lib/message-display";
@@ -373,7 +374,7 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
 
   // lab-training 教学轮：完整上下文前置在用户消息里（模型需要），对学习者是
   // 噪音——默认只显示「本步用户输入」一行，完整内容收进可展开详情。
-  const isTeachingTurn = content.includes("【本轮教学信息】");
+  const isTeachingTurn = content.includes(LAB_TURN_MARKER);
   const teachingInput = isTeachingTurn
     ? (/本步用户输入：([^\n]*)/.exec(content)?.[1] ?? "").trim()
     : "";

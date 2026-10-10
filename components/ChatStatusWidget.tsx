@@ -105,13 +105,18 @@ export function ChatStatusWidget({
     [subagentCalls],
   );
 
-  // Elapsed-time ticker: only live while the panel is open with active runs.
+  // Elapsed-time ticker: live whenever anything is running (subagents or bg
+  // tasks), regardless of panel state. The previous panelOpen gate froze `now`
+  // while collapsed — reopening jumped the minute digits while the seconds
+  // ticked ("秒增加时上一位也自增"), and bg-only runs never ticked at all.
   const panelOpen = (variantOverride ?? (wide ? "panel" : "mini")) === "panel";
+  const anythingRunning = runningCount > 0 || bgTasks.some((x) => x.status === "running");
   useEffect(() => {
-    if (!panelOpen || runningCount === 0) return;
+    if (!anythingRunning) return;
+    setNow(Date.now());
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
-  }, [panelOpen, runningCount]);
+  }, [anythingRunning]);
   useEffect(() => { setAgentsOpen(runningCount > 0); }, [runningCount]);
 
   // ---- git summary poll (collapsed-chain input #3) ----------------------
@@ -206,15 +211,6 @@ export function ChatStatusWidget({
   const visible = capsuleVisible(summary, planMode === "plan");
 
   const todoDone = todos.filter((x) => x.status === "completed").length;
-  const formatElapsed = (startedAt: number): string => {
-    const s = Math.max(0, Math.floor((now - startedAt) / 1000));
-    const h = Math.floor(s / 3600);
-    const m = Math.floor(s % 3600);
-    const sec = s % 60;
-    return h > 0
-      ? `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`
-      : `${m}:${String(sec).padStart(2, "0")}`;
-  };
 
   const handleStop = async (call: SubagentCall) => {
     if (!sessionId || !call.agentId) return;

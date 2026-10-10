@@ -12,9 +12,10 @@
  *
  * 交换语义（均可回滚，见各分支）：
  *   tarball/electron：appRoot → appRoot.bak-<ts>，staging 新根 → appRoot，随后把
- *     run/logs/config/data 四个用户数据目录从 .bak **mv 回**新根（同文件系统 O(1)，
- *     会话/容器 overlay/管理员密码全保住），重启 = start-all.sh（electron 形态同样
- *     只重启后端——存活的窗口会自动重连，避免撞单实例锁）。失败回滚 .bak。
+ *     run/logs/data 用户数据目录（config 仅其中 platform.env/piweb.env/
+ *     admin-password.txt 三个文件，不碰新包的 config/pi 模板）从 .bak **mv 回**新根
+ *     （同文件系统 O(1)，会话/容器 overlay/管理员密码全保住），重启 = start-all.sh
+ *     （electron 形态同样只重启后端——存活的窗口会自动重连，避免撞单实例锁）。失败回滚 .bak。
  *   appimage：新文件经二次 sha 校验后原子替换 $APPIMAGE（旧件留 .bak，保留 1 份），
  *     停服用 $APPDIR（挂载点内的 stop-all.sh），重启新文件带 --web。
  */
@@ -95,8 +96,12 @@ const EXTRACT_DIR = config.pkgKind === "appimage"
   : `${config.appRoot}.update-staging-${Date.now()}`;
 const STATUS_FILE = path.join(config.dataDir, "update-status.json");
 const LOG_FILE = path.join(config.dataDir, "update.log");
-/** 用户数据目录（仅老布局包"外置失败"兜底时交换后回迁；v3 起数据在包外）。 */
+/** 用户数据目录（仅老布局包"外置失败"兜底时交换后回迁；v3 起数据在包外）。
+ *  config 不整目录回迁：它还含随包模板 config/pi，整目录 mv 会用旧模板覆盖
+ *  新包的模板（migrateDataDirs 内对 config 特判，只回迁用户数据文件）。 */
 const DATA_DIRS = ["run", "logs", "config", "data"];
+/** config/ 下的用户数据文件（兜底回迁只回迁这些，模板保持新包版本）。 */
+const CONFIG_DATA_FILES = ["platform.env", "piweb.env", "admin-password.txt"];
 
 function log(line) {
   try {
@@ -184,9 +189,25 @@ function stopServices(stopAllDir) {
   }
 }
 
-/** 目录交换后把用户数据从旧根 mv 回新根（同文件系统 O(1)）。 */
+/** 目录交换后把用户数据从旧根 mv 回新根（同文件系统 O(1)）。
+ *  config 特判：只回迁其中的用户数据文件，绝不动新根自带的 config/pi 模板。 */
 function migrateDataDirs(fromRoot, toRoot) {
   for (const dir of DATA_DIRS) {
+    if (dir === "config") {
+      for (const f of CONFIG_DATA_FILES) {
+        const from = path.join(fromRoot, "config", f);
+        const to = path.join(toRoot, "config", f);
+        if (!existsSync(from) || existsSync(to)) continue;
+        try {
+          mkdirSync(path.dirname(to), { recursive: true });
+          renameSync(from, to);
+          log(`数据回迁: config/${f}`);
+        } catch (e) {
+          throw new Error(`回迁 config/${f} 失败: ${e.message}`);
+        }
+      }
+      continue;
+    }
     const from = path.join(fromRoot, dir);
     const to = path.join(toRoot, dir);
     if (!existsSync(from)) continue;

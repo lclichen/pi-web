@@ -53,9 +53,38 @@ mkdir -p "$BACKUP"
 [ -d "$PKG/sandbox" ] && cp -a "$PKG/sandbox" "$BACKUP/sandbox-legacy"
 
 # 4. 解压新包（数据在包外 $AMEDAC_HOME，不会触碰；排除仅兜底旧包残留）
+#    排除项必须锚定到包内顶层目录名：不含斜杠的 pattern 在 GNU tar 的
+#    --no-anchored（排除默认）下会匹配任意深度的同名尾巴——app/node_modules
+#    下的 data/config 同名目录会被整体误排除；而整体排除 config/ 又会连
+#    随包模板 config/pi 一起挡掉，原地升级将永远更新不了配置模板。
+#    注意：顶层目录探测用 sed -n '1p' 而非 head —— head 提前退出会让 tar
+#    收到 SIGPIPE，在 set -o pipefail 下命令替换非零、脚本误报失败。
 log "解压 $TARBALL …"
-EXCL=(--exclude='config' --exclude='data' --exclude='run' --exclude='logs')
+TOPD="$(tar -tzf "$TARBALL" | sed -n '1p' | cut -d/ -f1)"
+case "$TOPD" in
+  */*|"") echo "无法从 tarball 解析顶层目录名: [$TOPD]" >&2; exit 1 ;;
+esac
+EXCL=(
+  --exclude="$TOPD/config/platform.env"
+  --exclude="$TOPD/config/piweb.env"
+  --exclude="$TOPD/config/admin-password.txt"
+  --exclude="$TOPD/data"
+  --exclude="$TOPD/run"
+  --exclude="$TOPD/logs"
+)
 tar -xzf "$TARBALL" -C "$PKG" --strip-components=1 "${EXCL[@]}"
+
+# 4b. 配置模板属包内容：整体重同步 config/pi（覆盖解压对模板中已移除的旧
+#     扩展目录无能为力的问题；新包未带模板时保持现状不动）。
+TPL_TMP="$(mktemp -d)"
+tar -xzf "$TARBALL" -C "$TPL_TMP" --strip-components=1 --wildcards '*/config/pi' 2>/dev/null || true
+if [ -d "$TPL_TMP/config/pi" ]; then
+  mkdir -p "$PKG/config"
+  rm -rf "$PKG/config/pi"
+  mv "$TPL_TMP/config/pi" "$PKG/config/pi"
+  log "配置模板 config/pi 已同步为新版"
+fi
+rm -rf "$TPL_TMP"
 
 # 6. 旧布局迁移（配置曾在 sandbox/）+ .v1 备份保留
 if [ -f "$PKG/sandbox/platform.env" ] && [ ! -f "$CONFIG_DIR/platform.env" ]; then

@@ -147,14 +147,65 @@ let target;
 try { target = JSON.parse(fs.readFileSync(targetPath, "utf8")); }
 catch { process.exit(1); }
 const key = (e) => e && typeof e === "object" ? String(e.source ?? "") : String(e ?? "").trim();
+
+// npm:name@version 的版本升级会留下同名旧条目（字符串去重挡不住
+// "npm:x@0.2.0" 与 "npm:x@0.1.38" 共存）。按包名归并，保留最高版本；
+// 非 npm 条目与不可解析版本按原字符串去重。合并模板前先清理存量重复。
+const npmSpec = (k) => {
+  const m = /^npm:(@?[^@]+(?:\/[^@]+)?)@(\d+(?:\.\d+)*)$/.exec(k);
+  return m ? { name: m[1], version: m[2].split(".").map(Number) } : null;
+};
+const cmpVer = (a, b) => {
+  const n = Math.max(a.length, b.length);
+  for (let i = 0; i < n; i++) {
+    const d = (a[i] ?? 0) - (b[i] ?? 0);
+    if (d !== 0) return d;
+  }
+  return 0;
+};
+const dedupePackages = (list) => {
+  const byPlainKey = new Map();   // 非npm / 无版本 → 按字符串
+  const byName = new Map();       // npm:name@ver → 按包名保最高版本
+  const dropped = [];
+  for (const e of list) {
+    const k = key(e);
+    const spec = npmSpec(k);
+    if (spec) {
+      const prev = byName.get(spec.name);
+      if (!prev || cmpVer(spec.version, prev.version) > 0) {
+        if (prev) dropped.push(prev.k);
+        byName.set(spec.name, { version: spec.version, entry: e, k });
+      } else {
+        dropped.push(k);
+      }
+    } else {
+      if (byPlainKey.has(k)) dropped.push(k);
+      byPlainKey.set(k, e);
+    }
+  }
+  // 目标数组顺序尽量稳定：非 npm 按原顺序，npm 去重后追加在尾部。
+  const out = [...byPlainKey.values()];
+  for (const { entry } of byName.values()) out.push(entry);
+  return { out, dropped };
+};
+
 let added = 0;
+let droppedDup = [];
 if (hasPackages) {
   if (!Array.isArray(target.packages)) target.packages = [];
-  const seen = new Set(target.packages.map(key));
-  for (const e of bundled.packages) {
-    const k = key(e);
-    if (k && !seen.has(k)) { target.packages.push(e); seen.add(k); added++; }
-  }
+  const originalKeys = target.packages.map(key);
+  const { out } = dedupePackages([...target.packages, ...(bundled.packages ?? [])]);
+  target.packages = out;
+  // 差额按多重集计算：新增 = 结果里比原多出的键，清理 = 原里比结果少的键。
+  const countKeys = (keys) => {
+    const c = new Map();
+    for (const k of keys) c.set(k, (c.get(k) ?? 0) + 1);
+    return c;
+  };
+  const before = countKeys(originalKeys);
+  const after = countKeys(out.map(key));
+  for (const [k, c] of after) { const d = c - (before.get(k) ?? 0); if (d > 0) added += d; }
+  for (const [k, c] of before) { const d = c - (after.get(k) ?? 0); if (d > 0) droppedDup.push(k); }
 }
 let addedExtensions = 0;
 if (hasExtensions) {
@@ -168,9 +219,10 @@ if (hasExtensions) {
 const messages = [];
 if (added > 0) messages.push(`packages 新增 ${added} 个条目`);
 else if (hasPackages) messages.push("packages 已包含模板全部条目");
+if (droppedDup.length > 0) messages.push(`清理同名旧版本 ${droppedDup.length} 条（${droppedDup.slice(0, 3).join(" ")}${droppedDup.length > 3 ? " …" : ""}）`);
 if (addedExtensions > 0) messages.push(`extensions 新增 ${addedExtensions} 个条目`);
 else if (hasExtensions) messages.push("extensions 已包含模板全部条目");
-if (added > 0 || addedExtensions > 0) {
+if (added > 0 || addedExtensions > 0 || droppedDup.length > 0) {
   fs.writeFileSync(targetPath, JSON.stringify(target, null, 2) + "\n", "utf8");
   console.log(`    settings.json ${messages.join("，")}`);
 } else {
@@ -208,9 +260,10 @@ if [ "$LINK_MODE" = "1" ]; then
   }
 
   # 上一轮运行残留清理：悬空软链（旧挂载已随进程退出消失、或旧包路径
-  # 已被移动/删除）一律删除；指向包内路径（本工具历史产物）但当前模板
-  # 已不再包含的同名扩展链接也删除（多个包并存时旧包路径仍存活才会遇到）；
-  # 用户自建且存活的外置软链保留不动。
+  # 已被移动/删除）一律删除；指向**本包** config/pi 路径（本工具历史产物）
+  # 但当前模板已不再包含的同名扩展链接也删除。指向**其它包**但目标仍存活
+  # 的链接保留：多包并存（pi 与 pi-web 各自的离线包）时，另一个包可能仍在
+  # 依赖它——删掉会让对方启动时丢失该扩展（amedac-core 双端共用场景）。
   if [ -d "$AGENT_DIR/extensions" ]; then
     for entry in "$AGENT_DIR/extensions"/*; do
       [ -L "$entry" ] || continue
@@ -219,7 +272,7 @@ if [ "$LINK_MODE" = "1" ]; then
         continue
       fi
       case "$(readlink "$entry")" in
-        */config/pi/extensions/*)
+        "$BUNDLED_ROOT"/config/pi/extensions/*)
           [ -d "$BUNDLED/extensions/$(basename "$entry")" ] \
             || link_rm "$entry" "当前模板已不含 $(basename "$entry")"
           ;;
@@ -258,6 +311,12 @@ if [ "$LINK_MODE" = "1" ]; then
           ln -s "$src" "$dst"
           note "$(basename "$dst"): 受管拷贝已改由包内软链接管（零拷贝，本地改动不保留）"
         fi
+      elif [ "$dst" = "$AGENT_DIR/npm" ]; then
+        note "npm/ 已是真实目录（pi install 自维护或历史手工安装），随包 npm 扩展未接管。"
+        note "  如需改由包管理：pi uninstall 旧包后删除 $dst，或手动处理；保留现状不影响已装扩展。"
+      else
+        note "$(basename "$dst"): 已存在同名真实目录（无版本标记，疑为手工安装），保留并跳过软链接管。"
+        note "  如需改由包管理（随包更新），请确认目录内无本地改动后手动删除：$dst"
       fi
       return 0
     else

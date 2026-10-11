@@ -1,5 +1,5 @@
 import { getRpcSessionOwner } from "./rpc-manager";
-import { getSessionMeta } from "./session-metas";
+import { resolveSessionMode } from "./session-metas";
 import { requireUserIdentity } from "./web-session";
 import { getAgentForUser } from "./relay/registry";
 import { platformGet, platformPost } from "./platform/client";
@@ -45,7 +45,7 @@ export async function resolveRemoteSession(
 
   // Registry first (live), sidecar metas second (reloaded sessions).
   const owner = getRpcSessionOwner(sessionId);
-  const meta = getSessionMeta(sessionId);
+  const meta = resolveSessionMode(sessionId);
   const mode = owner?.mode ?? meta?.mode ?? "host";
   if (mode === "host") {
     return { ok: false, status: 400, error: "该会话是 Host 模式，请使用本地文件/终端面板" };

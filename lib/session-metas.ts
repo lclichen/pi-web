@@ -85,3 +85,19 @@ export function metaVisibleTo(meta: SessionMeta | undefined, ownerId: number, ro
   if (viewingHostSpace) return role === "admin" || meta.ownerId === ownerId;
   return meta.ownerId === ownerId;
 }
+
+/** A session's effective execution mode: sidecar meta first, but a project's
+ *  mode outranks a disagreeing meta (stale sidecars recorded "host" before
+ *  the project-decides fix would flip remote panels onto host APIs and drop
+ *  relay/ssh routing). Mirrors the override in /api/sessions. */
+export function resolveSessionMode(sessionId: string): SessionMeta | undefined {
+  const meta = getSessionMeta(sessionId);
+  if (!meta) return undefined;
+  if (meta.projectId) {
+    // Lazy require: projects.ts may import this module (cycle-safe at runtime).
+    const { getProject } = require("./projects") as typeof import("./projects");
+    const mode = getProject(meta.projectId)?.mode;
+    if (mode && mode !== meta.mode) return { ...meta, mode };
+  }
+  return meta;
+}

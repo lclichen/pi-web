@@ -2,7 +2,7 @@ import { existsSync } from "fs";
 import { join } from "path";
 import { getAgentDir, type InlineExtension } from "@earendil-works/pi-coding-agent";
 import type { RpcSessionStartOptions } from "./rpc-manager";
-import { getSessionMeta } from "./session-metas";
+import { resolveSessionMode } from "./session-metas";
 import { ensureProjectHome, getOwnedProject, projectHome, writeSandboxConfig } from "./projects";
 import { ensureLocalHome, ensureSandboxHome, ensureQuickHome } from "./mode-homes";
 import { spaceDir } from "./session-spaces";
@@ -36,7 +36,7 @@ export async function restoreSessionOptions(req: Request, sessionId: string): Pr
   if (!identity.ok) return {};
   const { user } = identity.session;
 
-  const meta = getSessionMeta(sessionId);
+  const meta = resolveSessionMode(sessionId);
   const mode = meta?.mode ?? "host";
   const project = meta?.projectId ? getOwnedProject(meta.projectId, meta.ownerId ?? user.id, user.role === "admin") : undefined;
 

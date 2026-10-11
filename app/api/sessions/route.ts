@@ -14,6 +14,7 @@ import {
 } from "@/lib/rpc-manager";
 import { requireUserIdentity } from "@/lib/web-session";
 import { spaceForRequest, isPathInSpace } from "@/lib/session-spaces";
+import { allProjects } from "@/lib/projects";
 import { getSessionMetas } from "@/lib/session-metas";
 import { startServerPerf } from "@/lib/perf";
 
@@ -53,10 +54,23 @@ export async function GET(req: Request) {
         }))),
       Promise.resolve(getSessionMetas()),
     ]);
-    const sessions = mergeSessionLists(persistedSessions, runtimeSessions).map((s) => ({
-      ...s,
-      ...(metas[s.id] ? { mode: metas[s.id].mode, ...(metas[s.id].projectId ? { projectId: metas[s.id].projectId } : {}) } : {}),
-    }));
+    // A project is the source of truth for its sessions' execution mode: an
+    // entry whose sidecar mode disagrees with the owning project's mode (stale
+    // metas recorded as "host" before the project-decides fix, or lost metas)
+    // must not surface as Host — that flips the file/terminal panels onto the
+    // host APIs and drops the relay/ssh routing the session actually needs.
+    const projectModes = new Map(allProjects().map((p) => [p.id, p.mode]));
+    const sessions = mergeSessionLists(persistedSessions, runtimeSessions).map((s) => {
+      const meta = metas[s.id];
+      if (!meta) return s;
+      const projectId = meta.projectId;
+      const projectMode = projectId ? projectModes.get(projectId) : undefined;
+      return {
+        ...s,
+        mode: projectMode ?? meta.mode,
+        ...(projectId ? { projectId } : {}),
+      };
+    });
     // Capture AFTER the scan: mutations during the scan bump the generation,
     // so the client sees a version it cannot reconcile and refreshes again.
     const sessionListVersion = getSessionListVersion();

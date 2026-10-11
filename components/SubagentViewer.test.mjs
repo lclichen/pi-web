@@ -95,7 +95,8 @@ test("closing a tab falls back without a ?? chain swallowed by a ternary", () =>
   // `a ?? b ?? c ? x : null` parses as `(a ?? b ?? c) ? x : null`: closing a
   // file tab with another one open read `.sessionId` of a missing agent tab.
   assert.doesNotMatch(appShell, /\?\? \w+\.at\(-1\) \?/);
-  assert.equal((appShell.match(/lastAgentTabId\(/g) ?? []).length, 4);
+  // Fork keeps 3 call sites: the terminal-tab branch was not taken (WorkspaceTerminal drawer).
+  assert.equal((appShell.match(/lastAgentTabId\(/g) ?? []).length, 3);
 });
 
 test("the subagent card in a tool call opens the side tab with a label", () => {

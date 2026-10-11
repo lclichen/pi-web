@@ -159,6 +159,19 @@ async function loadAllSessions(space: SessionSpace = { kind: "host" }): Promise<
       try {
         subagent = readSubagentRun(readSessionRelationEntries(s.path), s.id, s.path);
       } catch { /* malformed or concurrently removed session */ }
+      // tintinweb/pi-subagents spawns persist child sessions with only the SDK
+      // `parentSession` header — no `pi-web:subagent` meta entry (that is the
+      // locked-off built-in runtime's convention). Recognize them by the
+      // naming convention (`Type#agentId8`) so they nest as subagents in the
+      // sidebar instead of surfacing as top-level forks.
+      if (!subagent && originSessionId && s.name && /^.+#.{8}$/.test(s.name)) {
+        subagent = {
+          parentSessionId: originSessionId,
+          profile: s.name.slice(0, s.name.lastIndexOf("#")),
+          description: "",
+          status: "completed" as const,
+        };
+      }
     }
     return {
       path: s.path,

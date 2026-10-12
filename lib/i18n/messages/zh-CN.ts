@@ -922,6 +922,8 @@ export const zhCNLocale: LocalePlugin = {
     "quickTemplates.systemPrompt": "系统提示词",
     "quickTemplates.modelProviderOptionalEG": "模型 Provider（可选，如 modelscope）",
     "quickTemplates.modelIdOptional": "模型 ID（可选）",
+    "quickTemplates.modelOptionalPick": "模型（可选——从已配置的模型列表中选择）",
+    "quickTemplates.modelFollowDefault": "跟随用户当前默认模型",
     "quickTemplates.defaultsUsersCurrentModel": "默认用用户当前模型",
     "quickTemplates.mcpAllowlistHint": "MCP 服务器允许列表（可选，逗号分隔服务器名；留空 = 用户配置的全部服务器）",
     "quickTemplates.default": "默认",

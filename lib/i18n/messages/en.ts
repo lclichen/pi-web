@@ -915,6 +915,8 @@ export const enLocale: LocalePlugin = {
     "quickTemplates.systemPrompt": "System prompt",
     "quickTemplates.modelProviderOptionalEG": "Model provider (optional, e.g. modelscope)",
     "quickTemplates.modelIdOptional": "Model ID (optional)",
+    "quickTemplates.modelOptionalPick": "Model (optional — pick from the configured model list)",
+    "quickTemplates.modelFollowDefault": "Follow the user's current default model",
     "quickTemplates.defaultsUsersCurrentModel": "Defaults to the user's current model",
     "quickTemplates.mcpAllowlistHint": "MCP server allowlist (optional, comma-separated; empty = all user-configured servers)",
     "quickTemplates.default": "Default",

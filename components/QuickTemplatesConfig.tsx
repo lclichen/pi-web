@@ -38,6 +38,12 @@ interface QuickTemplate {
   builtin?: boolean;
 }
 
+interface ModelOption {
+  id: string;
+  name: string;
+  provider: string;
+}
+
 interface Draft {
   name: string;
   description: string;
@@ -45,6 +51,11 @@ interface Draft {
   modelProvider: string;
   modelId: string;
   mcpServers: string;
+}
+
+// 选项值用 JSON 编码 [provider, modelId]——两者都可能含 "/"，不能用拼接分隔。
+function modelOptionValue(provider: string, modelId: string): string {
+  return JSON.stringify([provider, modelId]);
 }
 
 const emptyDraft: Draft = { name: "", description: "", systemPrompt: "", modelProvider: "", modelId: "", mcpServers: "" };
@@ -84,6 +95,7 @@ const textareaStyle: React.CSSProperties = {
 
 export function QuickTemplatesConfig({ embedded = false }: { embedded?: boolean }) {
   const { t } = useI18n();
+  const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
   const [templates, setTemplates] = useState<QuickTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -112,6 +124,26 @@ export function QuickTemplatesConfig({ embedded = false }: { embedded?: boolean 
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+
+  // 可选模型列表：从全局模型配置拉取，模板编辑用下拉直接选择，
+  // 取代手填 provider/modelId（手填拼写对不上时保存报错，是"模型ID
+  // 存不下"反复出现的直接原因）。不阻塞模板加载——失败仅退回手填。
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch("/api/models", { cache: "no-store" });
+        if (!res.ok) return;
+        const data = (await res.json()) as { modelList?: ModelOption[] };
+        if (!cancelled && Array.isArray(data.modelList)) {
+          setModelOptions(data.modelList.filter((m) => m && typeof m.id === "string" && typeof m.provider === "string"));
+        }
+      } catch {
+        // 列表拉不到时下面仍渲染手填输入，功能不回退
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const selectTemplate = (tpl: QuickTemplate) => {
     setCreating(false);
@@ -250,14 +282,44 @@ export function QuickTemplatesConfig({ embedded = false }: { embedded?: boolean 
                 <ConfigField label={t("quickTemplates.systemPrompt")}>
                   <textarea value={draft.systemPrompt} onChange={(e) => setDraft({ ...draft, systemPrompt: e.target.value })} style={textareaStyle} />
                 </ConfigField>
-                <div style={{ display: "flex", gap: 10 }}>
-                  <ConfigField label={t("quickTemplates.modelProviderOptionalEG")} style={{ flex: 1 }}>
-                    <input value={draft.modelProvider} onChange={(e) => setDraft({ ...draft, modelProvider: e.target.value })} style={monoStyle} placeholder={t("quickTemplates.defaultsUsersCurrentModel")} />
+                {modelOptions.length > 0 ? (
+                  <ConfigField label={t("quickTemplates.modelOptionalPick")}>
+                    <select
+                      value={draft.modelProvider && draft.modelId ? modelOptionValue(draft.modelProvider, draft.modelId) : ""}
+                      onChange={(e) => {
+                        if (!e.target.value) {
+                          setDraft({ ...draft, modelProvider: "", modelId: "" });
+                          return;
+                        }
+                        try {
+                          const [provider, modelId] = JSON.parse(e.target.value) as [string, string];
+                          setDraft({ ...draft, modelProvider: provider, modelId });
+                        } catch { /* 非法选项值按清空处理 */ }
+                      }}
+                      style={{ ...inputStyle, fontFamily: "var(--font-mono)" }}
+                    >
+                      <option value="">{t("quickTemplates.modelFollowDefault")}</option>
+                      {((draft.modelProvider.trim() && draft.modelId.trim()
+                        && !modelOptions.some((m) => m.provider === draft.modelProvider && m.id === draft.modelId))
+                        ? ([{ id: draft.modelId, name: draft.modelId, provider: draft.modelProvider }] as ModelOption[]).concat(modelOptions)
+                        : modelOptions
+                      ).map((m) => (
+                        <option key={`${m.provider}/${m.id}`} value={modelOptionValue(m.provider, m.id)}>
+                          {m.name === m.id ? `${m.provider} / ${m.id}` : `${m.name}（${m.provider} / ${m.id}）`}
+                        </option>
+                      ))}
+                    </select>
                   </ConfigField>
-                  <ConfigField label={t("quickTemplates.modelIdOptional")} style={{ flex: 1 }}>
-                    <input value={draft.modelId} onChange={(e) => setDraft({ ...draft, modelId: e.target.value })} style={monoStyle} placeholder="Qwen/Qwen3.5-27B" />
-                  </ConfigField>
-                </div>
+                ) : (
+                  <div style={{ display: "flex", gap: 10 }}>
+                    <ConfigField label={t("quickTemplates.modelProviderOptionalEG")} style={{ flex: 1 }}>
+                      <input value={draft.modelProvider} onChange={(e) => setDraft({ ...draft, modelProvider: e.target.value })} style={monoStyle} placeholder={t("quickTemplates.defaultsUsersCurrentModel")} />
+                    </ConfigField>
+                    <ConfigField label={t("quickTemplates.modelIdOptional")} style={{ flex: 1 }}>
+                      <input value={draft.modelId} onChange={(e) => setDraft({ ...draft, modelId: e.target.value })} style={monoStyle} placeholder="Qwen/Qwen3.5-27B" />
+                    </ConfigField>
+                  </div>
+                )}
                 <ConfigField label={t("quickTemplates.mcpAllowlistHint")}>
                   <input value={draft.mcpServers} onChange={(e) => setDraft({ ...draft, mcpServers: e.target.value })} style={monoStyle} placeholder="weather, db-query" />
                 </ConfigField>

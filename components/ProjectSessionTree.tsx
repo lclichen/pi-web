@@ -258,11 +258,15 @@ export function ProjectSessionTree({
   // Quick sessions (no workspace, no project) are partitioned out entirely —
   // they render in their own "quick" space tab and must never leak into
   // project groups or admin host-directory groups.
+  // Subagent children are partitioned out too: they carry no projectId/mode
+  // meta, so the unbound grouping would file them as "unknown source" — they
+  // render nested under their parent instead (subagentChildren).
   const byProject = useMemo(() => {
     const map = new Map<string, SessionInfo[]>();
     const ungrouped: SessionInfo[] = [];
     for (const s of sessions) {
       if (s.mode === "quick") continue;
+      if (s.relation?.kind === "subagent") continue;
       if (s.projectId) {
         const list = map.get(s.projectId) ?? [];
         list.push(s);
@@ -274,6 +278,23 @@ export function ProjectSessionTree({
     for (const list of map.values()) list.sort((a, b) => b.modified.localeCompare(a.modified));
     ungrouped.sort((a, b) => b.modified.localeCompare(a.modified));
     return { map, ungrouped };
+  }, [sessions]);
+
+  // Subagent children by parent session id — rendered indented under the
+  // parent row wherever the parent lands (project group, host directory
+  // group, unbound group). A parent outside the current list hides its
+  // children; they are one family, not standalone sessions.
+  const subagentChildren = useMemo(() => {
+    const map = new Map<string, SessionInfo[]>();
+    for (const s of sessions) {
+      if (s.relation?.kind !== "subagent") continue;
+      const parent = s.relation.parentSessionId;
+      const list = map.get(parent) ?? [];
+      list.push(s);
+      map.set(parent, list);
+    }
+    for (const list of map.values()) list.sort((a, b) => b.modified.localeCompare(a.modified));
+    return map;
   }, [sessions]);
 
   // Quick-space flat list: newest first, no grouping (no projects to group by).
@@ -325,19 +346,36 @@ export function ProjectSessionTree({
     const selected = s.id === selectedSessionId;
     const running = runningSessionIds.has(s.id);
     const pinned = project?.pinnedSessions.includes(s.id) ?? false;
+    const children = subagentChildren.get(s.id);
     return (
-      <ProjectSessionRow
-        key={s.id}
-        session={s}
-        selected={selected}
-        running={running}
-        pinned={pinned}
-        canPin={Boolean(project)}
-        onSelect={() => onSelectSession(s)}
-        onRename={(name) => void onRenameSession(s.id, name)}
-        onDelete={() => void onDeleteSession(s.id)}
-        onTogglePin={() => { if (project) void pin(project, s.id, pinned); }}
-      />
+      <div key={s.id}>
+        <ProjectSessionRow
+          session={s}
+          selected={selected}
+          running={running}
+          pinned={pinned}
+          canPin={Boolean(project)}
+          onSelect={() => onSelectSession(s)}
+          onRename={(name) => void onRenameSession(s.id, name)}
+          onDelete={() => void onDeleteSession(s.id)}
+          onTogglePin={() => { if (project) void pin(project, s.id, pinned); }}
+        />
+        {children?.map((child) => (
+          <ProjectSessionRow
+            key={child.id}
+            session={child}
+            nested
+            selected={child.id === selectedSessionId}
+            running={runningSessionIds.has(child.id)}
+            pinned={false}
+            canPin={false}
+            onSelect={() => onSelectSession(child)}
+            onRename={(name) => void onRenameSession(child.id, name)}
+            onDelete={() => void onDeleteSession(child.id)}
+            onTogglePin={() => {}}
+          />
+        ))}
+      </div>
     );
   };
 
@@ -795,13 +833,15 @@ function MenuItem({ label, onClick, danger }: { label: string; onClick: () => vo
  * 删除先在行内显示 红色确认/取消（Shift+点击跳过确认）。
  */
 function ProjectSessionRow({
-  session, selected, running, pinned, canPin, onSelect, onRename, onDelete, onTogglePin,
+  session, selected, running, pinned, canPin, nested = false, onSelect, onRename, onDelete, onTogglePin,
 }: {
   session: SessionInfo;
   selected: boolean;
   running: boolean;
   pinned: boolean;
   canPin: boolean;
+  /** Subagent child row: extra indent + agent marker instead of the dot. */
+  nested?: boolean;
   onSelect: () => void;
   onRename: (name: string) => void;
   onDelete: () => void;
@@ -879,6 +919,7 @@ function ProjectSessionRow({
         cursor: busyRow ? "default" : "pointer",
         background: selected ? "var(--bg-selected)" : hovered ? "var(--bg-hover)" : "transparent",
         transition: "background 0.1s",
+        ...(nested ? { paddingLeft: 46 } : {}),
       }}
     >
       {renaming ? (
@@ -901,6 +942,9 @@ function ProjectSessionRow({
         />
       ) : (
         <>
+          {nested && !running && (
+            <span title={t("sessions.subagentSession")} style={{ fontSize: 10, lineHeight: 1, color: "var(--text-dim)", flexShrink: 0 }}>⌘</span>
+          )}
           {running && <span style={{ width: 6, height: 6, borderRadius: 999, background: "#4ade80", flexShrink: 0 }} />}
           <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12, color: "var(--text)" }} title={title}>
             {title}

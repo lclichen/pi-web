@@ -1489,6 +1489,7 @@ export const zhTWLocale: LocalePlugin = {
     "app.fileUnsavedChangesCloseDiscard": "此文件有未保存的修改，关闭将丢弃。确定关闭吗？",
     "sessions.unboundSuffix": "未綁定項目",
     "sessions.unknownSource": "未知來源",
+    "sessions.subagentSession": "子智能體會話",
     "sessions.sandbox": "沙盒",
     "remote.sandboxDirFixedHint": "沙盒项目的目录固定为容器 /workspace——项目会话、终端与文件面板都在其中执行。",
     "app.sandbox": "沙箱",

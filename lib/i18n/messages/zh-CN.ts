@@ -140,6 +140,7 @@ export const zhCNLocale: LocalePlugin = {
     "sessions.container2": "无容器",
     "sessions.unboundSuffix": "未绑定项目",
     "sessions.unknownSource": "未知来源",
+    "sessions.subagentSession": "子智能体会话",
     "sessions.sandbox": "沙盒",
     "sessions.local": "本地",
     "sessions.runInsideContainer": "项目会话在容器 /workspace 内执行",

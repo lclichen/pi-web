@@ -119,6 +119,7 @@ export const enLocale: LocalePlugin = {
     "sessions.container2": "No container",
     "sessions.unboundSuffix": "unbound",
     "sessions.unknownSource": "Unknown source",
+    "sessions.subagentSession": "Subagent session",
     "sessions.sandbox": "Sandbox",
     "sessions.local": "Local",
     "sessions.runInsideContainer": "Project sessions run inside the container /workspace",

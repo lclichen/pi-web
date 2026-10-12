@@ -123,15 +123,17 @@ export function WorkspaceTerminal({ cwd, visible, remote = null, onClose }: Prop
             ? { sessionId: remote.sessionId, cols: term.cols, rows: term.rows }
             : { cwd, cols: term.cols, rows: term.rows, shell: shellId }),
         });
-        const body = (await res.json()) as {
+        const body = (await res.json().catch(() => null)) as {
           success?: boolean;
           data?: { sessionId?: string };
           error?: string;
-        };
-        if (!res.ok || !body.success || !body.data?.sessionId) {
+        } | null;
+        if (!res.ok || !body?.success || !body.data?.sessionId) {
           // The platform caps concurrent PTYs per container and rejects the
           // WebSocket upgrade with HTTP 429 (ws surfaces it verbatim).
-          const raw = body.error ?? `HTTP ${res.status}`;
+          // Empty body = an uncaught route crash (production next start sends
+          // no body) — surface the status instead of a JSON parse error.
+          const raw = body?.error ?? `HTTP ${res.status}（响应无内容，服务器路由可能崩溃）`;
           const msg = /429|PTY_LIMIT/.test(raw)
             ? "容器终端数量已达上限，旧连接将在约 1 分钟内自动释放，请稍后重试"
             : raw;

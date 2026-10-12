@@ -1,6 +1,7 @@
 import { readFileSync, statSync, writeFileSync } from "fs";
 import { join } from "path";
 import { dataDir } from "./mode-homes";
+import { getProject } from "./projects";
 import type { SessionMode } from "./session-modes";
 
 /**
@@ -94,8 +95,6 @@ export function resolveSessionMode(sessionId: string): SessionMeta | undefined {
   const meta = getSessionMeta(sessionId);
   if (!meta) return undefined;
   if (meta.projectId) {
-    // Lazy require: projects.ts may import this module (cycle-safe at runtime).
-    const { getProject } = require("./projects") as typeof import("./projects");
     const mode = getProject(meta.projectId)?.mode;
     if (mode && mode !== meta.mode) return { ...meta, mode };
   }

@@ -520,7 +520,10 @@ export function ProjectSessionTree({
         <div style={{ padding: "8px 6px", fontSize: 11, color: "var(--text-dim)" }}>{t("sessions.projectsYetUseButtonAbove")}</div>
       )}
 
-      {sessionSpace === "host" && hostGroups.length === 0 && (
+      {/* Host(CLI) 视图的全部内容就是未分组会话（CLI 会话无 projectId）：
+          空态判据是 unboundModeGroups 而非 hostGroups——host 空间的会话没有
+          sidecar meta，永远不会进 hostGroups。 */}
+      {sessionSpace === "host" && unboundModeGroups.length === 0 && (
         <div style={{ padding: "8px 6px", fontSize: 11, color: "var(--text-dim)" }}>{t("sessions.hostSessionsYetSessionsOpened")}</div>
       )}
 
@@ -537,9 +540,11 @@ export function ProjectSessionTree({
         </>
       )}
 
-      {/* Host 空间动态分组（admin）。快速空间是纯 quick 列表——Host 目录组
-          只属于 mine/host 视图，混进来会稀释快速会话（用户明确要求剔除）。 */}
-      {sessionSpace === "host" && hostGroups.map(([root, list]) => {
+      {/* Host 目录动态分组（admin）。Web 端"打开服务器目录"建的 host 会话落
+          在管理员自己的用户分片，随"我的会话"视图拉取——组也必须渲染在这里；
+          Host(CLI) 视图拉的是 host 空间（CLI 会话，mode 未知走 unknown 组），
+          在那边渲染只会永远空转。快速空间保持纯 quick 列表（用户明确要求剔除）。 */}
+      {sessionSpace === "mine" && hostGroups.map(([root, list]) => {
         const key = `host:${root}`;
         const isCollapsed = collapsed.has(key);
         // Mirrors the project branch: "show all" must widen `visible` — this

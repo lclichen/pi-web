@@ -10,6 +10,7 @@ export const enLocale: LocalePlugin = {
     "common.models": "Models",
     "common.skills": "Skills",
     "sessions.container": "Container: {info}",
+    "sessions.subagentSession": "Subagent session",
     "sessions.restoreSave": "↩ Restore save · {time}",
     "files.newFile": "New file",
     "files.newFolder": "New folder",

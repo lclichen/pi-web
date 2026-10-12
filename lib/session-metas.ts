@@ -1,6 +1,7 @@
 import { readFileSync, statSync, writeFileSync } from "fs";
 import { join } from "path";
 import { dataDir } from "./mode-homes";
+import { getProject } from "./projects";
 import type { SessionMode } from "./session-modes";
 
 /**
@@ -84,4 +85,24 @@ export function metaVisibleTo(meta: SessionMeta | undefined, ownerId: number, ro
   if (!meta) return viewingHostSpace || role === "admin"; // unknown provenance: only host/admin view
   if (viewingHostSpace) return role === "admin" || meta.ownerId === ownerId;
   return meta.ownerId === ownerId;
+}
+
+/**
+ * 会话模式解析：注册表（live）之外，项目记录的模式**高于**过期 sidecar
+ * meta——项目从 local 迁到 host 等场景下，旧 meta 记录的 mode 会把会话
+ * 误标成 host（文件面板/终端因此路由到 host 后端）。
+ * getProject 用静态导入：此前曾在函数内 require("./projects")，webpack
+ * 服务端打包后跨 chunk 解析拿到残缺模块，运行时抛 "X is not a
+ * function"，把所有带 projectId 会话的 remotefs/remoteterminal 一起炸成
+ * 空响应体 500。require 的类型断言还会绕过 tsc 检查——静态导入两端都
+ * 安全（projects.ts 不回依赖本模块，无循环）。
+ */
+export function resolveSessionMode(sessionId: string): SessionMeta | undefined {
+  const meta = getSessionMeta(sessionId);
+  if (!meta) return undefined;
+  if (meta.projectId) {
+    const mode = getProject(meta.projectId)?.mode;
+    if (mode && mode !== meta.mode) return { ...meta, mode };
+  }
+  return meta;
 }

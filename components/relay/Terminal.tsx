@@ -78,14 +78,14 @@ export function Terminal({ cwd, onClose, machineId }: Props) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ cwd, cols: term.cols, rows: term.rows, ...(machineId ? { machineId } : {}) }),
         });
-        const body = (await res.json()) as {
+        const body = (await res.json().catch(() => null)) as {
           success?: boolean;
           data?: { sessionId?: string };
           error?: string;
         };
-        if (!res.ok || !body.success || !body.data?.sessionId) {
-          term.writeln(`\x1b[31m无法启动终端：${body.error ?? `HTTP ${res.status}`}\x1b[0m`);
-          if (body.error?.includes("not supported on this build")) {
+        if (!res.ok || !body?.success || !body.data?.sessionId) {
+          term.writeln(`\x1b[31m无法启动终端：${body?.error ?? `HTTP ${res.status}（响应无内容，服务器路由可能崩溃）`}\x1b[0m`);
+          if (body?.error?.includes("not supported on this build")) {
             term.writeln("PTY 仅在 Linux/macOS Agent 上可用。请在 CentOS 7 等目标机上运行 Agent。");
           }
           return;

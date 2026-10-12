@@ -263,6 +263,9 @@ export function ProjectSessionTree({
     const ungrouped: SessionInfo[] = [];
     for (const s of sessions) {
       if (s.mode === "quick") continue;
+      // 子智能体会话不带 projectId/mode 元数据，未绑定分组会把它们归进
+      // "未知来源"——排除后经 subagentChildren 嵌套在父行下渲染。
+      if (s.relation?.kind === "subagent") continue;
       if (s.projectId) {
         const list = map.get(s.projectId) ?? [];
         list.push(s);
@@ -274,6 +277,22 @@ export function ProjectSessionTree({
     for (const list of map.values()) list.sort((a, b) => b.modified.localeCompare(a.modified));
     ungrouped.sort((a, b) => b.modified.localeCompare(a.modified));
     return { map, ungrouped };
+  }, [sessions]);
+
+  // 子会话按父会话 id 索引——父行落在哪个组（项目/Host 目录/未绑定），
+  // 子行就缩进渲染在它下面。父会话不在当前列表时子会话随之隐藏：它们
+  // 是一个家族，不是独立会话。
+  const subagentChildren = useMemo(() => {
+    const map = new Map<string, SessionInfo[]>();
+    for (const s of sessions) {
+      if (s.relation?.kind !== "subagent") continue;
+      const parent = s.relation.parentSessionId;
+      const list = map.get(parent) ?? [];
+      list.push(s);
+      map.set(parent, list);
+    }
+    for (const list of map.values()) list.sort((a, b) => b.modified.localeCompare(a.modified));
+    return map;
   }, [sessions]);
 
   // Quick-space flat list: newest first, no grouping (no projects to group by).
@@ -320,19 +339,36 @@ export function ProjectSessionTree({
     const selected = s.id === selectedSessionId;
     const running = runningSessionIds.has(s.id);
     const pinned = project?.pinnedSessions.includes(s.id) ?? false;
+    const children = subagentChildren.get(s.id);
     return (
-      <ProjectSessionRow
-        key={s.id}
-        session={s}
-        selected={selected}
-        running={running}
-        pinned={pinned}
-        canPin={Boolean(project)}
-        onSelect={() => onSelectSession(s)}
-        onRename={(name) => void onRenameSession(s.id, name)}
-        onDelete={() => void onDeleteSession(s.id)}
-        onTogglePin={() => { if (project) void pin(project, s.id, pinned); }}
-      />
+      <div key={s.id}>
+        <ProjectSessionRow
+          session={s}
+          selected={selected}
+          running={running}
+          pinned={pinned}
+          canPin={Boolean(project)}
+          onSelect={() => onSelectSession(s)}
+          onRename={(name) => void onRenameSession(s.id, name)}
+          onDelete={() => void onDeleteSession(s.id)}
+          onTogglePin={() => { if (project) void pin(project, s.id, pinned); }}
+        />
+        {children?.map((child) => (
+          <ProjectSessionRow
+            key={child.id}
+            session={child}
+            nested
+            selected={child.id === selectedSessionId}
+            running={runningSessionIds.has(child.id)}
+            pinned={false}
+            canPin={false}
+            onSelect={() => onSelectSession(child)}
+            onRename={(name) => void onRenameSession(child.id, name)}
+            onDelete={() => void onDeleteSession(child.id)}
+            onTogglePin={() => {}}
+          />
+        ))}
+      </div>
     );
   };
 
@@ -783,13 +819,15 @@ function MenuItem({ label, onClick, danger }: { label: string; onClick: () => vo
  * 删除先在行内显示 红色确认/取消（Shift+点击跳过确认）。
  */
 function ProjectSessionRow({
-  session, selected, running, pinned, canPin, onSelect, onRename, onDelete, onTogglePin,
+  session, selected, running, pinned, canPin, nested = false, onSelect, onRename, onDelete, onTogglePin,
 }: {
   session: SessionInfo;
   selected: boolean;
   running: boolean;
   pinned: boolean;
   canPin: boolean;
+  /** 子智能体行：更深缩进 + ⌘ 标记（非运行态）。 */
+  nested?: boolean;
   onSelect: () => void;
   onRename: (name: string) => void;
   onDelete: () => void;
@@ -823,7 +861,8 @@ function ProjectSessionRow({
         onClick={(e) => e.stopPropagation()}
         style={{
           display: "flex", alignItems: "center", gap: 7,
-          height: 34, padding: "0 6px 0 26px", borderRadius: 5, cursor: "default",
+          height: 34, padding: "0 6px 0 26px", borderRadius: 5,
+        ...(nested ? { paddingLeft: 46 } : {}), cursor: "default",
           background: "rgba(239,68,68,0.06)", borderLeft: "2px solid #ef4444",
         }}
       >
@@ -889,6 +928,9 @@ function ProjectSessionRow({
         />
       ) : (
         <>
+          {nested && !running && (
+            <span title={t("sessions.subagentSession")} style={{ fontSize: 10, lineHeight: 1, color: "var(--text-dim)", flexShrink: 0 }}>⌘</span>
+          )}
           {running && <span style={{ width: 6, height: 6, borderRadius: 999, background: "#4ade80", flexShrink: 0 }} />}
           <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12, color: "var(--text)" }} title={title}>
             {title}

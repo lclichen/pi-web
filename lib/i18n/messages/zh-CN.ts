@@ -10,6 +10,7 @@ export const zhCNLocale: LocalePlugin = {
     "common.models": "模型",
     "common.skills": "技能",
     "sessions.container": "容器：{info}",
+    "sessions.subagentSession": "子智能体会话",
     "sessions.restoreSave": "↩ 恢复存档 · {time}",
     "files.newFile": "新建文件",
     "files.newFolder": "新建文件夹",

@@ -744,6 +744,7 @@ export const zhTWLocale: LocalePlugin = {
     "sessions.saves2MostRecent2": "存档 {n}/2（游戏存档制，保留最近 2 个）",
     "common.finish": "完成",
     "sessions.container": "容器：{info}",
+    "sessions.subagentSession": "子智能體會話",
     "sessions.importProjectConfig": "导入项目配置…",
     "projects.importProjectConfig": "导入项目配置",
     "sessions.exportConfigBundle": "导出配置包…",

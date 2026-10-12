@@ -160,6 +160,17 @@ async function loadAllSessions(space: SessionSpace = { kind: "host" }): Promise<
         subagent = readSubagentRun(readSessionRelationEntries(s.path), s.id, s.path);
       } catch { /* malformed or concurrently removed session */ }
     }
+    // tintinweb 子会话命名约定：<Type>#<agentId8>，不写 pi-web 的
+    // pi-web:subagent meta。按命名识别补上 relation，侧栏才能把它们嵌套在
+    // 父会话下而不是落入"未知来源"组。
+    if (!subagent && originSessionId && s.name && /^.+#.{8}$/.test(s.name)) {
+      subagent = {
+        parentSessionId: originSessionId,
+        profile: s.name.slice(0, s.name.lastIndexOf("#")),
+        description: "",
+        status: "completed" as const,
+      };
+    }
     return {
       path: s.path,
       id: s.id,

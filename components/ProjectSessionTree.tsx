@@ -861,8 +861,7 @@ function ProjectSessionRow({
         onClick={(e) => e.stopPropagation()}
         style={{
           display: "flex", alignItems: "center", gap: 7,
-          height: 34, padding: "0 6px 0 26px", borderRadius: 5,
-        ...(nested ? { paddingLeft: 46 } : {}), cursor: "default",
+          height: 34, padding: "0 6px 0 26px", borderRadius: 5, cursor: "default",
           background: "rgba(239,68,68,0.06)", borderLeft: "2px solid #ef4444",
         }}
       >
@@ -906,6 +905,7 @@ function ProjectSessionRow({
         cursor: busyRow ? "default" : "pointer",
         background: selected ? "var(--bg-selected)" : hovered ? "var(--bg-hover)" : "transparent",
         transition: "background 0.1s",
+        ...(nested ? { paddingLeft: 46 } : {})
       }}
     >
       {renaming ? (

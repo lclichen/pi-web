@@ -58,3 +58,8 @@ e2e_*.mjs
 # 本地凭据 — 绝不入库（模板见 scripts/vm-credentials.example.cjs）
 scripts/vm-credentials.cjs
 bench-results/
+
+# qa-batch 本地配置与报告（含密钥）
+qa-batch/config.json
+qa-batch/reports/
+__pycache__/

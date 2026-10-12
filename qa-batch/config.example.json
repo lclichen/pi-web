@@ -1,0 +1,74 @@
+{
+  "_说明": "复制为 config.json 后填写。凡 REPLACE_/null 占位未填的模式自动跳过对应用例。并发固定建议 4（与服务端 PI_WEB_BATCH_MAX_CONCURRENT 对齐）。",
+
+  "base_url": "http://10.99.9.7:30141",
+
+  "batch": {
+    "_说明": "host/sandbox 走 batch API，需平台管理员 API 密钥（sk_…）。管理员在 Web 设置或平台侧铸造。",
+    "platform_api_key": "sk_REPLACE_ME"
+  },
+
+  "web": {
+    "_说明": "ssh/local-machine/quick 走标准会话 API + 证物查询（子会话检测也用它）。管理员账号。",
+    "username": "admin",
+    "password": "REPLACE_ME"
+  },
+
+  "concurrency": 4,
+  "poll_interval_s": 5,
+  "task_timeout_s": 900,
+
+  "defaults": {
+    "model": { "provider": "Modelscope-Free", "modelId": "Qwen/Qwen3.8-27B" },
+    "thinking_level": "medium"
+  },
+
+  "models": [
+    { "label": "qwen38-med",  "model": { "provider": "Modelscope-Free", "modelId": "Qwen/Qwen3.8-27B" }, "thinking_level": "medium" },
+    { "label": "qwen38-off",  "model": { "provider": "Modelscope-Free", "modelId": "Qwen/Qwen3.8-27B" }, "thinking_level": "off" },
+    { "label": "qwen38-high", "model": { "provider": "Modelscope-Free", "modelId": "Qwen/Qwen3.8-27B" }, "thinking_level": "high" },
+    { "label": "alt-model",   "model": { "provider": "REPLACE_PROVIDER", "modelId": "REPLACE_MODEL_ID" }, "thinking_level": "medium", "_说明": "第二个模型的组合位；不需要就删掉这条" }
+  ],
+
+  "modes": {
+    "host": {
+      "_说明": "batch API host 模式的工作目录（服务器绝对路径）。目录不存在会由用例 files 注入创建内容，建议独立目录。",
+      "work_dir": "/home/llmx/qa-batch-workspace"
+    },
+    "sandbox": {
+      "_说明": "batch API sandbox 模式必填：预建平台容器 id（数字）。填 null=跳过全部沙盒用例。",
+      "container_id": null
+    },
+    "ssh": {
+      "_说明": "占位：SSH 模式项目 id（向导②创建后从项目菜单/URL 取）。保持 REPLACE 前缀=跳过。",
+      "project_id": "REPLACE_SSH_PROJECT_ID"
+    },
+    "local-machine": {
+      "_说明": "占位：本地模式项目 id（向导④绑定你机器的项目）。保持 REPLACE 前缀=跳过。",
+      "project_id": "REPLACE_LOCAL_PROJECT_ID"
+    },
+    "quick": {
+      "_说明": "快速会话：enabled=true 启用；template_id=null 用服务端默认模板，或填模板 id。",
+      "enabled": false,
+      "template_id": null
+    }
+  },
+
+  "features": {
+    "mcp": {
+      "_说明": "占位：已配置 MCP 服务器的工具名（pi-mcp-adapter 注册后的工具名）与服务器名。保持 REPLACE=跳过 MCP 用例。",
+      "tool_name": "REPLACE_MCP_TOOL_NAME",
+      "server_name": "REPLACE_MCP_SERVER_NAME"
+    }
+  },
+
+  "matrix": {
+    "features": {
+      "host": ["sanity", "plan", "todo", "subagent", "mcp"],
+      "sandbox": ["sanity", "todo"],
+      "ssh": ["sanity", "todo", "subagent"],
+      "local-machine": ["sanity", "todo", "subagent"]
+    },
+    "max_cases": 0
+  }
+}

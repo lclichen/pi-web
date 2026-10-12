@@ -6,6 +6,7 @@ import { existsSync, realpathSync, writeFileSync } from "fs";
 import { join, resolve } from "path";
 import { validateAgentImages } from "./image-attachments";
 import { applyQueueOp, describeQueueOpError, type QueueOp } from "./queue-ops";
+import { installSubagentBridge } from "./subagent-bridge";
 import { hasActiveSessionLivenessProvider } from "./session-liveness";
 import { invalidateModelsCache } from "./models-cache";
 import { resolveVisibleModels, selectInitialModelScope } from "./model-scope";
@@ -2463,6 +2464,17 @@ export function getRpcSessionOwner(sessionId: string): { ownerId: number; mode: 
   if (!session) return undefined;
   return { ownerId: session.ownerId, mode: session.mode };
 }
+
+// 子智能体内联扩展桥（lib/subagent-bridge.ts）：tintinweb 建子会话时经
+// globalThis.__piWebChildExtensions(父会话id) 取回父会话的模式扩展，子智能体
+// 与父会话在同一后端执行。进程内一次性安装；CLI 侧（无本模块）不受影响。
+installSubagentBridge((parentSessionId) => {
+  const owner = getRpcSessionOwner(parentSessionId);
+  if (!owner) return undefined;
+  const wrapper = getRpcSession(parentSessionId);
+  if (!wrapper?.cwd) return undefined;
+  return { mode: owner.mode, ownerId: owner.ownerId, cwd: wrapper.cwd };
+});
 
 /** Running sessions with ownership, for per-user live status. */
 export function getRunningRpcSessionInfos(): Array<{ sessionId: string; ownerId: number }> {

@@ -49,7 +49,7 @@
 - 账号：`admin`（管理员）/ `test`（普通）；密码在凭据文件。
 - 磁盘 ~19G 常年紧张，打包周期需 **≥4G 空闲**（§2.1 清理可回收 ~3.5G）。
 - tintinweb 子智能体包安装于 `~/.pi/agent/npm/node_modules/@tintinweb/pi-subagents`
-  （上游 npm 版）；测 fork 改动需按 §6 F-05 同步 dist。
+  （上游 npm 版）；测 fork 改动需按 §7 F-05 同步 dist。
 
 ## 1. 范围与触发集
 
@@ -111,7 +111,7 @@ npm test                                           # ⚠ 会并行挂死，禁�
 for f in $(git ls-files '*.test.mjs'); do node --experimental-strip-types --test "$f" || echo "FAIL: $f"; done
 ```
 
-判据：tsc 0 错误；失败文件集合 ⊆ §10.2 基线。**新增失败=回归**，报 P1。
+判据：tsc 0 错误；失败文件集合 ⊆ §11.2 基线。**新增失败=回归**，报 P1。
 
 ## 4. DEP 部署阶段
 
@@ -137,7 +137,21 @@ DEP-04 说明：脚本流程 = admin 登录 → `POST /api/agent/new`（host 模
 assistant 文本非空。**它依赖 VM 上可用的真实模型配置**；模型不可用时报 P0 并
 在报告注明（环境问题与产品问题分开标注）。
 
-## 5. FUNC 核心功能实机用例（需 DEP 全过）
+## 5. PKG 打包与升级链
+
+| 编号 | 用例 | 命令 | 判据 |
+|---|---|---|---|
+| PKG-01 | tarball 构建 | `node scripts/vm-build-pkg.cjs` | BUILD-OK；dist 新 tarball；version.json/pkg-kind 输出正确；apply-update.cjs 与 app/version.json 存在 |
+| PKG-02 | 布局与数据落位 | `node scripts/vm-pkg-layout-test.cjs`（glob 取最新 tarball，独立端口 32100/32141） | start-exit 0；config/run/logs/data 落 `$HOME/.local/share/amedac`；PKG/data 干净；二跑 start-all 幂等；web 200 或 307（未登录重定向） |
+| PKG-03 | catalog 自更新循环 | `node scripts/vm-update-e2e.cjs` | updateAvailable → apply → 版本变新；admin 密码不变（数据回迁成功） |
+| PKG-04 | WITH_TEACHING 双形态（磁盘≥6G） | `WITH_TEACHING=0` 与 `=1` 各跑一次 package-linux.sh | 包内 pkg-teaching 标记与 piweb.env 播种行随参数翻转 |
+
+注意：PKG 阶段会 git reset 主树并在 `build/package-linux` 暂存构建（约占
+2G）；跑完 PKG-01/03 后主树 node_modules 可能缺 devDeps——**DEP-01 必须先于
+DEP-02**。tarball 文件名取 package.json 版本（0.9.0），与 version.json
+（0.0.1-alpha）不同源，布局脚本已按 glob 取最新，勿按文件名硬编码。
+
+## 6. FUNC 核心功能实机用例（需 DEP 全过）
 
 登录态拿取（后续复用）：
 
@@ -162,24 +176,38 @@ F-06 可观测点：off 时创建的会话文件中不应出现 `__piWebRemoteVe
 （`grep -c __piWebRemoteVerify <session-file>` = 0），on 时 ≥1。开关操作前后
 都要 `GET /api/server-settings` 留证。
 
-## 6. F-05 子智能体 e2e（tintinweb fork）
+## 7. F-05 子智能体 e2e（tintinweb fork）
 
 前置：本用例测的是 **fork**（`lclichen/tintinweb-pi-subagents`，分支
 `port/206-on-v0.19`）的行为——上游 npm 包没有 sessionId 透传与会话目录对齐。
 
-### 6.1 fork 同步到 VM（每次跑前做一次）
+### 7.1 fork 同步到 VM（每次跑前做一次）
 
 ```bash
-# 本地（fork 仓库，已 npm run build 产出 dist/）：
-scp -r dist/* vm:/home/llmx/.pi/agent/npm/node_modules/@tintinweb/pi-subagents/dist/
-# VM：重启 pi-web（jiti 进程内缓存会保留旧代码）
-#   杀 :30141 进程后按 DEP-02 的启动段重启（无需重新 build）
+# 本地（fork 仓库，npm run build 已产出 dist/；tsc 的 1 个既有报错不影响产物）：
+cd tintinweb-pi-subagents && tar czf /tmp/tt.tgz dist src package.json
+# 上传（scp/sftp 均可，密钥同 VM）后解到安装位：
+scp /tmp/tt.tgz llmx@10.99.9.7:/tmp/
+ssh llmx@10.99.9.7 'tar -xzf /tmp/tt.tgz -C ~/.pi/agent/npm/node_modules/@tintinweb/pi-subagents'
+# 重启 pi-web（jiti 进程内缓存会保留旧代码）——DEP-02 的重启段即可，无需 build
 ```
 
-### 6.2 用例步骤
+**必须同步 `src/`，不能只覆盖 `dist/`**（2026-10-12 实测踩坑）：该包没有
+`main`/`pi.extensions` 入口声明，pi 的包加载器做目录发现时 **`<pkg>/src/index.ts`
+（jiti 现场编译）优先于 `<pkg>/dist/index.js`**——只换 dist 时运行时仍编译旧
+src，所有 fork 改动静默失效（工具照常工作，行为却是上游的）。
+
+注意：fork 与上游同名同版本（`@tintinweb/pi-subagents@0.19.0`），`npm update` 会
+把 fork 覆盖回上游——同步以整包覆盖为准，勿在 VM 上重装该包。同目录下的
+`pi-subagents.upstream-bak` 是历史备份，不会被加载（node_modules 内不做自动
+发现），留着无害。
+
+### 7.2 用例步骤
 
 1. admin 登录，host 模式新会话（cwd=~/lab-demo-web）。
-2. prompt 诱导 spawn：`请用 Agent 工具启动一个 general-purpose 子智能体，
+2. prompt 诱导 spawn（subagent_type 显式给 general-purpose，否则模型可能
+   自选 Explore 等 profile——断言 A 与 profile 无关，但复现要稳定）：
+   `请用 Agent 工具启动一个 subagent_type=general-purpose 的子智能体，
    任务：列出当前目录的文件并在最后回复"DONE"。等待它完成并汇报结果。`
 3. 轮询 `/api/agent/running` 直至缺席（≤5min）。
 4. **断言 A（嵌套）**：`GET /api/sessions` 中出现子会话——
@@ -193,12 +221,12 @@ scp -r dist/* vm:/home/llmx/.pi/agent/npm/node_modules/@tintinweb/pi-subagents/d
 7. （有视觉能力时）UI 断言：侧栏子会话嵌套在父会话下、Agent 卡片可开右面板
    viewer 标签页——截图两判定为 P2。
 
-### 6.3 清理
+### 7.3 清理
 
 子会话与父会话都是测试产物：测完通过 UI/API 删除，或在报告中列出 sessionId
 交由调用方决定（默认保留供人工复核时，须注明）。
 
-## 7. SEC 安全实机子集
+## 8. SEC 安全实机子集
 
 | 编号 | 用例 | 判据 |
 |---|---|---|
@@ -209,7 +237,7 @@ scp -r dist/* vm:/home/llmx/.pi/agent/npm/node_modules/@tintinweb/pi-subagents/d
 完整 S 系列（含 relay/平台项）在 L1 执行，见《全流程测试方案》§5a；触及对应
 改动面时补跑。
 
-## 8. UI 视觉抽检（V 系列）
+## 9. UI 视觉抽检（V 系列）
 
 > 无视觉能力的 Agent 全部记 SKIP（不算失败），报告注明。有视觉能力则截图必存
 > `evidence/V-xx.png`，判读标准对照《平台功能检查手册》对应节。
@@ -225,9 +253,9 @@ scp -r dist/* vm:/home/llmx/.pi/agent/npm/node_modules/@tintinweb/pi-subagents/d
 本地 Playwright e2e（`npm run test:e2e`，自起服务+临时目录，不碰 VM）可作为
 无视觉 Agent 的替代 UI 门——发布集建议两者其一必跑。
 
-## 9. 证据与报告规范
+## 10. 证据与报告规范
 
-### 9.1 证据目录
+### 10.1 证据目录
 
 ```
 <evidence>/
@@ -237,7 +265,7 @@ scp -r dist/* vm:/home/llmx/.pi/agent/npm/node_modules/@tintinweb/pi-subagents/d
   report.md               # 人读报告
 ```
 
-### 9.2 results.json
+### 10.2 results.json
 
 ```json
 { "env": { "vm": "10.99.9.7", "rev": "<origin/dev SHA>", "version": "0.x.y",
@@ -249,7 +277,7 @@ scp -r dist/* vm:/home/llmx/.pi/agent/npm/node_modules/@tintinweb/pi-subagents/d
   ] }
 ```
 
-### 9.3 report.md 骨架
+### 10.3 report.md 骨架
 
 ```
 # 测试报告 <日期> <范围>@VM
@@ -257,27 +285,36 @@ scp -r dist/* vm:/home/llmx/.pi/agent/npm/node_modules/@tintinweb/pi-subagents/d
 结论: PASS | PASS(含已知基线) | FAIL          — P0=0 且新失败=0 才可 PASS
 ## 结果总表（编号/结果/严重度/证据）
 ## 失败详情（每条：严重度/复现步骤/期望 vs 实际(证据摘录)/疑似层级/建议）
-## 基线差异（与 §10.2 对照：新增失败、已修复基线项）
+## 基线差异（与 §11.2 对照：新增失败、已修复基线项）
 ## 跳过项与原因（环境缺项/无视觉/磁盘不足…）
 ```
 
 严重度沿用方案 §7：P0 主流程不可用/越权/数据丢失；P1 主流程有损有绕行；
 P2 次要；P3 文案样式。
 
-## 10. 运维事实卡（Agent 必读，防重复踩坑）
+## 11. 运维事实卡（Agent 必读，防重复踩坑）
 
-### 10.1 VM 操作
+### 11.1 VM 操作
 
 - SSH 长任务挂通道：一律 `timeout NNN bash x.sh > /tmp/log 2>&1; cat /tmp/log`。
-- 杀 pi-web：`ss -tlnp | grep :30141 | grep -oP 'pid=\K[0-9]'` 后 kill；
-  pkill 用 `next[-]server` 防自匹配。
+- 杀 pi-web：`ss -tlnp | grep :30141` 取 PID 后 kill；pkill 用
+  `next[-]server` 防自匹配。**SSH 远程脚本里经 JS 模板串嵌 shell 时，
+  `\K` 这类转义会被吃掉一层**——PID 提取用
+  `grep -oP 'pid=[0-9]+' | grep -oP '[0-9]+'` 两段式，别用 `\K`。
+- **远程脚本第一行必须 `export PATH=/home/llmx/tools/node/bin:$PATH`**：
+  不带 PATH 的 `setsid nohup node …` 会静默失败（nohup: node not found），
+  而老进程还在听端口，表现为"重启了但改动不生效"——**用
+  `ss -tlnp` 里的 PID 前后对比确认真的换了进程**。
 - **同步任何扩展源码到 VM 后必须重启 pi-web**（jiti 进程内缓存）。
+- **pi 包加载器入口偏好**：无 `main`/`pi.extensions` 声明的包做目录发现时
+  `src/index.ts`（jiti 编译）优先于 `dist/index.js`——给已安装包打补丁必须
+  src+dist 一起覆盖（§7.1 的坑）。
 - 平台 `data/` 是真实数据（1.7G），**永不清理**；lab-training 实测目录
   `~/lab-demo-web`；会话在 `~/.pi/agent/sessions/users/u{id}/`（host 在根）。
 - git push 从本地走代理：`git -c http.proxy=http://127.0.0.1:7890
   -c http.version=HTTP/1.1 push`。
 
-### 10.2 已知基线（更新于 2026-10-12，跑完发布集后维护）
+### 11.2 已知基线（更新于 2026-10-12，跑完发布集后维护）
 
 | 项 | 现状 |
 |---|---|
@@ -286,7 +323,7 @@ P2 次要；P3 文案样式。
 | 管理面板 LlmTab | 字段名仍为 LiteLLM 时代的标签（契约未变，功能正常） |
 | zh-TW | 部分简体占位未转繁体 |
 
-### 10.3 本地（Windows）坑
+### 11.3 本地（Windows）坑
 
 - CRLF：仓库文件多为 CRLF；脚本改文件勿用 heredoc 拼接（字节错配）。
 - **本机（8GB 内存）跑不动 `npm run build`**：webpack 在 4G 默认堆与

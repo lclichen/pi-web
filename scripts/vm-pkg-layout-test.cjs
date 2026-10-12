@@ -10,7 +10,10 @@ OUT=/tmp/pkg-layout-results.txt
 : > $OUT
 T=/tmp/pkg-layout-test
 rm -rf $T && mkdir -p $T/home $T/pkg
-tar -xzf /home/llmx/amedac/pi-web/dist/amedac.ai-pi-linux-x64-0.9.0.tar.gz -C $T/pkg --strip-components=1
+TARBALL=$(ls -t /home/llmx/amedac/pi-web/dist/amedac.ai-pi-linux-x64-*.tar.gz | head -1)
+[ -z "$TARBALL" ] && { echo "NO-TARBALL"; exit 1; }
+echo "tarball: $TARBALL"
+tar -xzf "$TARBALL" -C $T/pkg --strip-components=1
 PKG=$T/pkg/amedac.ai-pi-linux-x64
 [ -d "$T/pkg/scripts" ] && PKG=$T/pkg
 

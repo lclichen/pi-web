@@ -17,6 +17,7 @@ import { spaceDir } from "@/lib/session-spaces";
 import { ensureSandboxHome, ensureLocalHome, ensureQuickHome } from "@/lib/mode-homes";
 import { recordSessionMeta } from "@/lib/session-metas";
 import { makeRelayToolsExtension } from "@/lib/extensions/relay-tools";
+import { sessionDirsForProject } from "@/lib/session-context";
 import { makeRemoteVerifyExtension } from "@/lib/extensions/remote-verify";
 import { makeEnvironmentInfoExtension } from "@/lib/extensions/environment-info";
 import { ensureProjectHome, ensureSandboxExtensionLink, getOwnedProject, writeSandboxConfig, type ProjectRecord } from "@/lib/projects";
@@ -101,6 +102,9 @@ export async function POST(req: Request) {
     let effectiveCwd: string | undefined = typeof cwd === "string" ? cwd : undefined;
     let extensionFactories: InlineExtension[] | undefined;
     let sessionDir: string | undefined;
+    // 工作区目录（lib/session-context.ts 契约）：提示词告知模型用；绝不
+    // 作为会话 cwd。
+    let workspaceDirForEnv: string | undefined;
 
     // Project-scoped session (sandbox / local-machine): the project record —
     // not the client — decides mode and home directory.
@@ -113,6 +117,8 @@ export async function POST(req: Request) {
       if (!project) return NextResponse.json({ error: "项目不存在" }, { status: 404 });
       projectRef = project;
       const home = ensureProjectHome(project);
+      const dirs = sessionDirsForProject(project, home);
+      workspaceDirForEnv = dirs.workspaceDir;
       if (project.mode === "sandbox") {
         if (!process.env.PI_WEB_PLATFORM_URL) {
           return NextResponse.json({ error: "沙箱模式未配置（缺少 PI_WEB_PLATFORM_URL）" }, { status: 400 });
@@ -165,7 +171,7 @@ export async function POST(req: Request) {
         }
         extensionFactories = [
           makeSshToolsExtension({ projectId: project.id, sshConfig, workdir: project.workdir ?? "/", projectHome: home }),
-          makeEnvironmentInfoExtension({ mode: "ssh", username: user.username, projectName: project.name }),
+          makeEnvironmentInfoExtension({ mode: "ssh", username: user.username, projectName: project.name, workspaceDir: dirs.workspaceDir }),
         ];
       } else {
         if (!getAgentForUser(user.id)?.info) {
@@ -174,14 +180,15 @@ export async function POST(req: Request) {
         extensionFactories = [
           makeRelayToolsExtension(user.id, home),
           makeRemoteVerifyExtension("local-machine", user.id),
-          makeEnvironmentInfoExtension({ mode: "local-machine", username: user.username, projectName: project.name }),
+          makeEnvironmentInfoExtension({ mode: "local-machine", username: user.username, projectName: project.name, workspaceDir: dirs.workspaceDir }),
         ];
       }
-      // 本机项目：向导"选择目录"步骤绑定的本机工作目录优先。该路径在用户
-      // 机器上（relay 端），服务端不做存在性校验；未绑定时回落到默认本机
-      // 工作区（relay 端懒创建）。
-      const boundWorkdir = project.mode === "local-machine" ? project.workdir : undefined;
-      effectiveCwd = boundWorkdir || home;
+      // 目录契约（lib/session-context.ts）：SDK 会话 cwd 一律 = 服务器侧
+      // 项目目录（projectDir）。project.workdir 是工作区路径（用户机器/
+      // 远端），只进提示词与工具映射层——此前误用作会话 cwd，SDK 在服务
+      // 器上把它 resolve 成 `<repo>/D:\…` 混合路径写进会话头，恢复时模型
+      // 路由按 cwd 找目录直接报 Directory does not exist。
+      effectiveCwd = home;
     } else if (mode === "sandbox") {
       if (!process.env.PI_WEB_PLATFORM_URL) {
         return NextResponse.json({ error: "沙箱模式未配置（缺少 PI_WEB_PLATFORM_URL）" }, { status: 400 });

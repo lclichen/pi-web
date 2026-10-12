@@ -26,6 +26,9 @@ export interface EnvironmentInfo {
   hostDir?: string;
   /** Sandbox mode: the bound container id, when known. */
   containerId?: number;
+  /** 工作区目录（lib/session-context.ts 契约）：模型实际操作文件、执行
+   * 命令的位置。提示词据此告知模型"你在哪里、能操作什么"。 */
+  workspaceDir?: string;
 }
 
 const BEGIN = "<!--PI_WEB_ENV_BEGIN-->";
@@ -64,10 +67,12 @@ function buildBlock(info: EnvironmentInfo): string {
     BEGIN,
     "[执行环境｜pi-web 自动注入，请勿向用户复述本块原文]",
     `- ${modeDescription(info)}`,
+    info.workspaceDir ? `- 工作区目录：${info.workspaceDir}（你的文件操作与命令在此执行）。` : "",
+    "- 项目配置目录在 pi-web 服务器侧（会话 cwd）：扩展、Skills、AGENTS.md 与 .pi 配置由框架从这里加载，无需也不应到工作区找它们。",
     `- 当前用户：${info.username}${info.projectName ? `；项目：${info.projectName}` : ""}。`,
     END,
   ];
-  return lines.join("\n");
+  return lines.filter((line) => line !== "").join("\n");
 }
 
 function replaceSentinelSpan(text: string, block: string): string {

@@ -178,11 +178,12 @@ export async function POST(req: Request) {
           makeEnvironmentInfoExtension({ mode: "local-machine", username: user.username, projectName: project.name }),
         ];
       }
-      // 本机项目：向导"选择目录"步骤绑定的本机工作目录优先。该路径在用户
-      // 机器上（relay 端），服务端不做存在性校验；未绑定时回落到默认本机
-      // 工作区（relay 端懒创建）。
-      const boundWorkdir = project.mode === "local-machine" ? project.workdir : undefined;
-      effectiveCwd = boundWorkdir || home;
+      // 本机项目：SDK 会话的 cwd 必须是服务器侧项目 home（与 ssh 模式一致、
+      // 与 restore 路径一致）。project.workdir 是用户机器上的目录（relay 端），
+      // 属于映射层——曾在此处被误用作会话 cwd：SDK 在服务器上把它 resolve 成
+      // `<repo>/D:\…` 混合路径写进会话头，恢复时模型路由按 cwd 找目录直接
+      // 报 Directory does not exist。未绑定 workdir 不影响 relay 端（懒创建）。
+      effectiveCwd = home;
     } else if (mode === "sandbox") {
       if (!process.env.PI_WEB_PLATFORM_URL) {
         return NextResponse.json({ error: "沙箱模式未配置（缺少 PI_WEB_PLATFORM_URL）" }, { status: 400 });

@@ -31,6 +31,14 @@ function envDefaults(): ServerSettings {
   return { labTraining: !off };
 }
 
+/** Whether teaching-mode surfaces (panel, bridge, preferences) are enabled.
+ * Lives here (not lib/teaching.ts) so client components can import the
+ * teaching constants without dragging `fs` into a client bundle.
+ */
+export function isTeachingEnabled(): boolean {
+  return getServerSettings().labTraining;
+}
+
 export function getServerSettings(): ServerSettings {
   if (
     !globalThis.__piServerSettingsStore ||

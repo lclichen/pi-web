@@ -1,7 +1,10 @@
-import { getServerSettings } from "./server-settings";
-
 /**
- * Teaching mode (lab-training integration) — single server-side source.
+ * Teaching mode (lab-training integration) — shared constants.
+ *
+ * Client-safe by design: components (ChatWindow, MessageView) import the
+ * marker/keys from here, so this module must never pull `fs`-using server
+ * modules into a client bundle. The server-side gate lives in
+ * `lib/server-settings.ts` (`isTeachingEnabled()`).
  *
  * Scope decision (2026-10-09): "teaching" means the Lab Training panel and
  * everything that exists only to serve the pi-lab-training extension — the
@@ -11,11 +14,11 @@ import { getServerSettings } from "./server-settings";
  * the lab panel only consumes.
  *
  * Everything teaching-specific that a session or route touches must consult
- * `isTeachingEnabled()` first, so a deployment with the flag off (the packaged
- * default for general-purpose installs) carries no reachable teaching surface.
- * The extension itself is installed into the agent dir by teaching
- * deployments; a general install simply has none, and the checks below keep
- * the leftover wiring inert.
+ * `isTeachingEnabled()` (server-settings) first, so a deployment with the
+ * flag off (the packaged default for general-purpose installs) carries no
+ * reachable teaching surface. The extension itself is installed into the
+ * agent dir by teaching deployments; a general install simply has none, and
+ * the gate keeps the leftover wiring inert.
  */
 
 /** Widget key the lab-training extension publishes its panel state under. */
@@ -29,8 +32,3 @@ export const LAB_CUSTOM_TYPE = "lab-training";
  * the message renderer folds any custom message that carries it.
  */
 export const LAB_TURN_MARKER = "【本轮教学信息】";
-
-/** Whether teaching-mode surfaces (panel, bridge, preferences) are enabled. */
-export function isTeachingEnabled(): boolean {
-  return getServerSettings().labTraining;
-}

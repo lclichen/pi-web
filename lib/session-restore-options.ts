@@ -8,7 +8,7 @@ import { ensureLocalHome, ensureSandboxHome, ensureQuickHome } from "./mode-home
 import { spaceDir } from "./session-spaces";
 import { makeRelayToolsExtension } from "./extensions/relay-tools";
 import { makeRemoteVerifyExtension } from "./extensions/remote-verify";
-import { isTeachingEnabled } from "./teaching";
+import { isTeachingEnabled } from "./server-settings";
 import { makeEnvironmentInfoExtension } from "./extensions/environment-info";
 import { makeSshToolsExtension } from "./extensions/ssh-tools";
 import { makeBgTasksExtension } from "./extensions/bg-tasks";

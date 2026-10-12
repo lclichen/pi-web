@@ -18,7 +18,7 @@ import { ensureSandboxHome, ensureLocalHome, ensureQuickHome } from "@/lib/mode-
 import { recordSessionMeta } from "@/lib/session-metas";
 import { makeRelayToolsExtension } from "@/lib/extensions/relay-tools";
 import { makeRemoteVerifyExtension } from "@/lib/extensions/remote-verify";
-import { isTeachingEnabled } from "@/lib/teaching";
+import { isTeachingEnabled } from "@/lib/server-settings";
 import { makeEnvironmentInfoExtension } from "@/lib/extensions/environment-info";
 import { ensureProjectHome, ensureSandboxExtensionLink, getOwnedProject, writeSandboxConfig, type ProjectRecord } from "@/lib/projects";
 import { getAgentForUser } from "@/lib/relay/registry";

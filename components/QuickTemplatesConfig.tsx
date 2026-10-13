@@ -50,7 +50,7 @@ interface Draft {
   systemPrompt: string;
   modelProvider: string;
   modelId: string;
-  mcpServers: string;
+  mcpServers: string[];
 }
 
 // 选项值用 JSON 编码 [provider, modelId]——两者都可能含 "/"，不能用拼接分隔。
@@ -58,7 +58,7 @@ function modelOptionValue(provider: string, modelId: string): string {
   return JSON.stringify([provider, modelId]);
 }
 
-const emptyDraft: Draft = { name: "", description: "", systemPrompt: "", modelProvider: "", modelId: "", mcpServers: "" };
+const emptyDraft: Draft = { name: "", description: "", systemPrompt: "", modelProvider: "", modelId: "", mcpServers: [] };
 
 function toDraft(t: QuickTemplate): Draft {
   return {
@@ -67,7 +67,7 @@ function toDraft(t: QuickTemplate): Draft {
     systemPrompt: t.systemPrompt,
     modelProvider: t.model?.provider ?? "",
     modelId: t.model?.modelId ?? "",
-    mcpServers: (t.mcpServers ?? []).join(", "),
+    mcpServers: [...(t.mcpServers ?? [])],
   };
 }
 
@@ -96,6 +96,8 @@ const textareaStyle: React.CSSProperties = {
 export function QuickTemplatesConfig({ embedded = false }: { embedded?: boolean }) {
   const { t } = useI18n();
   const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
+  // 已配置的 MCP 服务器名——白名单多选数据源（见下方 /api/mcp 拉取）。
+  const [mcpServerNames, setMcpServerNames] = useState<string[]>([]);
   const [templates, setTemplates] = useState<QuickTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -145,6 +147,25 @@ export function QuickTemplatesConfig({ embedded = false }: { embedded?: boolean 
     return () => { cancelled = true; };
   }, []);
 
+  // 已配置的 MCP 服务器名（/api/mcp 的 servers 列表）——白名单多选数据源；
+  // 拉取失败时下方退回手填输入，功能不回退。
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch("/api/mcp", { cache: "no-store" });
+        if (!res.ok) return;
+        const data = (await res.json()) as { servers?: Array<{ name?: string }> };
+        if (!cancelled && Array.isArray(data.servers)) {
+          setMcpServerNames(data.servers
+            .map((s) => (typeof s?.name === "string" ? s.name : ""))
+            .filter((n) => n.length > 0));
+        }
+      } catch { /* 忽略：退回手填 */ }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   const selectTemplate = (tpl: QuickTemplate) => {
     setCreating(false);
     setSelectedId(tpl.id);
@@ -184,9 +205,7 @@ export function QuickTemplatesConfig({ embedded = false }: { embedded?: boolean 
         ...(draft.modelProvider.trim() && draft.modelId.trim()
           ? { model: { provider: draft.modelProvider.trim(), modelId: draft.modelId.trim() } }
           : {}),
-        ...(draft.mcpServers.trim()
-          ? { mcpServers: draft.mcpServers.split(",").map((s) => s.trim()).filter(Boolean) }
-          : {}),
+        ...(draft.mcpServers.length > 0 ? { mcpServers: draft.mcpServers } : {}),
       };
       const res = creating
         ? await fetch("/api/quick-templates", {
@@ -320,8 +339,49 @@ export function QuickTemplatesConfig({ embedded = false }: { embedded?: boolean 
                     </ConfigField>
                   </div>
                 )}
-                <ConfigField label={t("quickTemplates.mcpAllowlistHint")}>
-                  <input value={draft.mcpServers} onChange={(e) => setDraft({ ...draft, mcpServers: e.target.value })} style={monoStyle} placeholder="weather, db-query" />
+                <ConfigField label={t("quickTemplates.mcpAllowlistPick")}>
+                  {mcpServerNames.length > 0 ? (
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                      {mcpServerNames.map((server) => {
+                        const checked = draft.mcpServers.includes(server);
+                        return (
+                          <label
+                            key={server}
+                            style={{
+                              display: "inline-flex", alignItems: "center", gap: 5, cursor: "pointer",
+                              padding: "4px 10px", borderRadius: 6, fontSize: 12,
+                              border: `1px solid ${checked ? "var(--accent)" : "var(--border)"}`,
+                              background: checked ? "var(--bg-selected)" : "var(--bg)",
+                              color: checked ? "var(--accent)" : "var(--text)",
+                              fontFamily: "var(--font-mono)",
+                            }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => {
+                                setDraft({
+                                  ...draft,
+                                  mcpServers: checked
+                                    ? draft.mcpServers.filter((s) => s !== server)
+                                    : [...draft.mcpServers, server],
+                                });
+                              }}
+                            />
+                            {server}
+                          </label>
+                        );
+                      })}
+                      <span style={{ alignSelf: "center", fontSize: 11, color: "var(--text-dim)" }}>{t("quickTemplates.mcpAllowlistEmptyMeansAll")}</span>
+                    </div>
+                  ) : (
+                    <input
+                      value={draft.mcpServers.join(", ")}
+                      onChange={(e) => setDraft({ ...draft, mcpServers: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) })}
+                      style={monoStyle}
+                      placeholder="weather, db-query"
+                    />
+                  )}
                 </ConfigField>
               </>
             )}

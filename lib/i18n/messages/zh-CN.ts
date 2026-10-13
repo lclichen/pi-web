@@ -961,6 +961,7 @@ export const zhCNLocale: LocalePlugin = {
     "quickTemplates.modelIdOptional": "模型 ID（可选）",
     "quickTemplates.modelOptionalPick": "模型（可选——从已配置的模型列表中选择）",
     "quickTemplates.modelFollowDefault": "跟随用户当前默认模型",
+    "quickTemplates.mcpAllowlistPick": "MCP 服务器白名单（从已配置的服务器选择）", "quickTemplates.mcpAllowlistEmptyMeansAll": "未勾选 = 允许全部",
     "quickTemplates.defaultsUsersCurrentModel": "默认用用户当前模型",
     "quickTemplates.mcpAllowlistHint": "MCP 服务器允许列表（可选，逗号分隔服务器名；留空 = 用户配置的全部服务器）",
     "quickTemplates.default": "默认",

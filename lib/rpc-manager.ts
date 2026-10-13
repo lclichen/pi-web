@@ -122,7 +122,7 @@ type AgentSessionWrapperOptions = {
   /**
    * Append the web-UI output addendum (images / PDF page links) to whatever
    * system prompt this session ends up using. Enabled for regular and
-   * chat-only sessions; quick templates and subagent sessions keep their
+   * chat-only sessions; subagent sessions keep their
    * exact prompts untouched.
    */
   webUiPrompt?: boolean;
@@ -2488,6 +2488,12 @@ export async function startRpcSession(
           ? CHAT_ONLY_RESOURCE_LOADER_OPTIONS
         : {
             ...platformResourceLoaderOptions,
+            // 快速会话模板的"系统提示词"以附加（append）方式进入最终系统提示词
+            // ——与 AGENTS.md 的装配位置一致：pi 基础提示词 + 活动工具使用说明
+            //（含 MCP 工具文档，与普通会话相同）之后附加模板内容。此前走
+            // exactSystemPrompt 全量替换，而该猴子补丁路径在 RPC 回合中实际
+            // 未生效（模板内容从未到达模型）。
+            ...(quick?.systemPrompt ? { appendSystemPrompt: [quick.systemPrompt] } : {}),
             extensionFactories: [
               ...(platformResourceLoaderOptions.extensionFactories ?? []),
               createProjectCommandBashExtension({
@@ -2578,15 +2584,15 @@ export async function startRpcSession(
       ? subagentResources
         ? () => subagentResources.appendSystemPrompt[0] ?? ""
         : () => contextFilesSystemPrompt(inner.resourceLoader.getAgentsFiles().agentsFiles)
-      : quick?.systemPrompt
-        ? () => quick.systemPrompt as string
-        : undefined;
+      : undefined;
     const wrapper = new AgentSessionWrapper(inner, {
       exactSystemPrompt,
       chatOnly,
-      // Regular and chat-only web sessions learn the web output capabilities;
-      // quick teaching templates and subagent sessions keep their exact prompts.
-      webUiPrompt: !subagentResources && !quick,
+      // Web sessions (incl. quick) learn the web output capabilities; only
+      // subagent sessions keep their exact prompts. Quick template content now
+      // rides the append path, so it composes with the addendum instead of
+      // conflicting with it.
+      webUiPrompt: !subagentResources,
       onAgentRunComplete: (completedSessionId) => {
         void notifySessionComplete(completedSessionId).catch((error) => {
           console.error("[pi-web] failed to send completion push:", error instanceof Error ? error.message : error);

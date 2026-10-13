@@ -217,6 +217,12 @@ rm -rf "$PKG"
 mkdir -p "$PKG/app"
 log "组装 $PKG"
 cp -a "$SRC/bin" "$SRC/.next" "$SRC/public" "$SRC/next.config.ts" "$SRC/package.json" "$PKG/app/"
+
+# NO_SOURCE_LEAK: 客户包只含编译产物——不得出现 TS 源码、sourcemap 或 lib/ 目录。
+if find "$PKG/app" -name "*.map" -o -name "lib" -type d 2>/dev/null | grep -q .; then
+  log "打包检查失败：app/ 内发现 sourcemap 或 lib/ 源码目录"
+  exit 1
+fi
 cp -a "$SRC/node_modules" "$PKG/app/"
 VERSION="$(node -p "require('$SRC/package.json').version")"
 

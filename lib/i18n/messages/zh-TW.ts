@@ -1096,7 +1096,6 @@ export const zhTWLocale: LocalePlugin = {
     "bundles.applying": "套用中…",
     "bundles.applyTitle": "套用配置模板",
     "bundles.applyMenu": "套用配置模板…",
-    "bundles.openPackager": "加密設定包打包工作台（.apkg）",
     "bundles.applied": "已套用模板「{name}」",
     "bundles.noneAvailable": "暫無可用模板。管理員可在 設定 → 配置模板 上傳。",
     "bundles.uploadNew": "上傳新模板",

@@ -10,18 +10,11 @@
 
 ### 格式：`.apkg`（加密配置包）
 
-在现有 zip 明文包外再包一层信封加密：
+在现有 zip 明文包外再做信封加密（每包随机 DEK 加密内容，发布方持有的
+KEK 代际包装 DEK，密文含明文展示元信息；导入侧按指纹计数、按代吊销）。
 
-```
-[16B magic "APKG1"] [2B ver] [16B keyId] [12B nonce] [AES-256-GCM ciphertext] [16B tag]
-```
-
-- **明文 zip 内容**：与现有 config bundle 完全一致（.pi/ + labs/ + manifest.json）。
-- **信封加密**：每包随机生成 256-bit 包密钥（DEK）加密内容；DEK 用主密钥（KEK，
-  发布方持有，存放于打包机/发布服务，绝不进分发包）做 AES-GCM 包装，`keyId`
-  标识用的是哪一代 KEK——支持轮换与吊销。
-- **元信息**：ciphertext 的前 4KB 预留明文 JSON（版本、项目名、允许的导入次数、
-  过期时间、channel），便于导入界面展示与授权判断（不可信，仅展示）。
+> **格式细节（字节布局、密码学参数、打包流程）已移至内部项目** `apkg-publisher`（私有）。
+> 本公开仓只保留导入侧实现；请勿在此补充可指导解密的配方描述。
 
 ### 导入侧（pi-web）
 
@@ -143,23 +136,19 @@ Electron 需要）。**先上 License**：它是唯一能把「复制整个部�
 | `.bundle-lock.json` 禁再导出（项目与 Host 两条导出路由 403；锁文件列入双向 DENIED 清单，明文包无法携带/覆盖锁） | `lib/apkg.ts` + 两个导出路由 |
 | 预置模板密文存储（`.apkg` 原件落盘，套用时内存解密；列表展示 加密·版本 徽标） | `lib/config-bundles-store.ts` + `BundlesConfig.tsx` |
 | manifest v2：`package`（name/title/description/version/channel）规范化说明块，明文包同样携带；导入统计返回给 UI | `lib/project-config-bundle.ts` |
-| 发布侧 CLI | `scripts/pack-apkg.ts` |
+| 发布侧工具 | 内部项目 `apkg-publisher`（Go 二进制 + WebUI；pi-web 仓不再携带打包实现） |
 
 ### 发布方打包流程
 
-```bash
-# 1) 用现有界面导出明文 zip（项目菜单 → 导出配置包）
-# 2) 加密打包（首次运行自动生成 KEK 并写入 data/apkg-keys.json）
-node --experimental-strip-types scripts/pack-apkg.ts \
-  --in course-lab-config.zip \
-  --name course-lab --title "课程实验包" --version 1.2.0 \
-  --desc "2026 秋季学期" --channel stable \
-  --expires 2027-09-01 --max-imports 50
-# → course-lab-config.apkg + 打印指纹（导入计数与锁文件的包标识）
+发布侧已抽离为内部项目 `apkg-publisher`（Go，含 CLI 与 Web 工作台）：
 
-# 3) 把 data/apkg-keys.json 部署到每台要开包的 pi-web 服务器
-#    <数据目录>/apkg-keys.json（tar.gz 部署 = ~/.local/share/amedac）；
-#    容器化部署可用 PI_WEB_APKG_KEYS 环境变量注入同构 JSON。
+```bash
+# 内部打包机
+apkg-publisher pack --in course-lab-config.zip ${NL}    --name course-lab --title "课程实验包" --version 1.2.0 ${NL}    --buyer cust-acme --key-id cust-acme ${NL}    --expires 2027-09-01 --max-imports 50
+
+# 把密钥仓部署到每台要开包的 pi-web 服务器
+# <数据目录>/apkg-keys.json（tar.gz 部署 = ~/.local/share/amedac）；
+# 容器化部署可用 PI_WEB_APKG_KEYS 环境变量注入同构 JSON。
 ```
 
 ### 版本管理与配置包说明规范

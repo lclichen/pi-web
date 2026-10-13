@@ -15,6 +15,7 @@ import { requireUserIdentity } from "@/lib/web-session";
 import { isSessionMode, modeAllowedForUser, type SessionMode } from "@/lib/session-modes";
 import { spaceDir } from "@/lib/session-spaces";
 import { ensureSandboxHome, ensureLocalHome, ensureQuickHome } from "@/lib/mode-homes";
+import { syncQuickMcpConfig } from "@/lib/quick-mcp";
 import { recordSessionMeta } from "@/lib/session-metas";
 import { makeRelayToolsExtension } from "@/lib/extensions/relay-tools";
 import { sessionDirsForProject } from "@/lib/session-context";
@@ -264,6 +265,9 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: `快速会话模板不存在：${templateId}` }, { status: 400 });
       }
       effectiveCwd = ensureQuickHome(user.id);
+      // 部署级快速会话专用 MCP（lib/quick-mcp.ts）：物化进 quick home 的
+      // .pi/mcp.json——project-scope 语义使其只在 quick 会话可见。
+      syncQuickMcpConfig(user.id);
       quickOptions = {
         systemPrompt: template.systemPrompt,
         ...(template.model ? { model: template.model } : {}),

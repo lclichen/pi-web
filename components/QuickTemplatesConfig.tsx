@@ -98,6 +98,9 @@ export function QuickTemplatesConfig({ embedded = false }: { embedded?: boolean 
   const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
   // 已配置的 MCP 服务器名——白名单多选数据源（见下方 /api/mcp 拉取）。
   const [mcpServerNames, setMcpServerNames] = useState<string[]>([]);
+  // 仅快速会话可见的服务器（dataDir/mcp-quick.json 物化到 quick home）——
+  // 模板白名单同样可以引用它们，chip 上加 ⚡ 标记区分。
+  const [quickOnlyServers, setQuickOnlyServers] = useState<Set<string>>(new Set());
   const [templates, setTemplates] = useState<QuickTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -157,9 +160,25 @@ export function QuickTemplatesConfig({ embedded = false }: { embedded?: boolean 
         if (!res.ok) return;
         const data = (await res.json()) as { servers?: Array<{ name?: string }> };
         if (!cancelled && Array.isArray(data.servers)) {
-          setMcpServerNames(data.servers
+          const globalNames = data.servers
             .map((s) => (typeof s?.name === "string" ? s.name : ""))
-            .filter((n) => n.length > 0));
+            .filter((n) => n.length > 0);
+          // quick 作用域（?quick=1）：并集展示，quick-only 的记入集合供徽标
+          try {
+            const rq = await fetch("/api/mcp?quick=1", { cache: "no-store" });
+            if (rq.ok) {
+              const dq = (await rq.json()) as { servers?: Array<{ name?: string }> };
+              const quickNames = (dq.servers ?? [])
+                .map((s) => (typeof s?.name === "string" ? s.name : ""))
+                .filter((n) => n.length > 0);
+              setQuickOnlyServers(new Set(quickNames.filter((n) => !globalNames.includes(n))));
+              setMcpServerNames([...new Set([...globalNames, ...quickNames])]);
+            } else {
+              setMcpServerNames(globalNames);
+            }
+          } catch {
+            setMcpServerNames(globalNames);
+          }
         }
       } catch { /* 忽略：退回手填 */ }
     })();
@@ -368,7 +387,7 @@ export function QuickTemplatesConfig({ embedded = false }: { embedded?: boolean 
                                 });
                               }}
                             />
-                            {server}
+                            {server}{quickOnlyServers.has(server) ? " ⚡" : ""}
                           </label>
                         );
                       })}

@@ -982,6 +982,9 @@ export function AppShell() {
     if (mode === "quick") {
       setNewSessionTemplateId(projectId ?? null);
       setNewSessionProjectId(null);
+      // quick 无工作区：清掉草稿 cwd，防下一个 quick 会话继承上一会话的目录
+      //（ensure payload 已不发送；此处是状态层兜底）。
+      setNewSessionCwd("");
     } else {
       setNewSessionTemplateId(null);
       setNewSessionProjectId(projectId ?? null);

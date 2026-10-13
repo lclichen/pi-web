@@ -2488,19 +2488,31 @@ export async function startRpcSession(
               : {}),
             appendSystemPrompt: subagentResources.appendSystemPrompt,
           }
+        : quick
+          ? {
+              // 快速会话的装载面（参考 subagentResources 的隔离方式，2026-10-13 修订）：
+              // - noContextFiles：AGENTS.md 等上下文文件绝不进 quick 提示词——
+              //   此前 quick home 或过期 cwd 里的上下文文件会泄漏进来。
+              // - 不设 noExtensions：MCP 适配器必须加载（quick 工具面 = MCP）；
+              //   子代理等其余工具由 quickToolSet 过滤出活动集。
+              // - 不设 systemPrompt 占位符：它走 customPrompt 路径，会跳过工具
+              //   列表/准则装配（用户实测"环境提示与 MCP 工具消失"的根因）。
+              //   基础段照常构建后经 systemPromptOverride 适配（身份段替换 +
+              //   pi 文档块移除，lib/quick-prompt.ts），模板提示词走 appendSystemPrompt。
+              noSkills: true,
+              noPromptTemplates: true,
+              noThemes: true,
+              noContextFiles: true,
+              ...(quick?.systemPrompt ? { appendSystemPrompt: [quick.systemPrompt] } : {}),
+              systemPromptOverride: (base: string | undefined) => (typeof base === "string" ? adaptQuickBasePrompt(base) : base),
+              // 抑制"发现式"附加段（context-file append 等）；选项式
+              // appendSystemPrompt 不经此 override（用户实测组合）。
+              appendSystemPromptOverride: () => [],
+            }
         : chatOnly
           ? CHAT_ONLY_RESOURCE_LOADER_OPTIONS
         : {
             ...platformResourceLoaderOptions,
-            // 快速会话模板的"系统提示词"以附加（append）方式进入最终系统提示词
-            // ——与 AGENTS.md 的装配位置一致：pi 基础提示词 + 活动工具使用说明
-            //（含 MCP 工具文档，与普通会话相同）之后附加模板内容。此前走
-            // exactSystemPrompt 全量替换，而该猴子补丁路径在 RPC 回合中实际
-            // 未生效（模板内容从未到达模型）。
-            ...(quick?.systemPrompt ? { appendSystemPrompt: [quick.systemPrompt] } : {}),
-            // quick 专属基础段适配：身份段换成 quick 语义、pi 文档索引块移除
-            //（lib/quick-prompt.ts，锚点防漂移测试在 lib/quick-prompt.test.mjs）。
-            ...(quick ? { systemPromptOverride: (base: string | undefined) => (typeof base === "string" ? adaptQuickBasePrompt(base) : base) } : {}),
             extensionFactories: [
               ...(platformResourceLoaderOptions.extensionFactories ?? []),
               createProjectCommandBashExtension({

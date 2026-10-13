@@ -762,7 +762,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          cwd: newSessionCwd || (newSessionModeRef.current === "quick" ? "quick" : newSessionCwd),
+          // quick 不带 cwd：会话目录由服务端强制为独立 quick home（防继承上一会话目录）
+          ...(newSessionModeRef.current === "quick" ? {} : { cwd: newSessionCwd }),
           ...(newSessionModeRef.current ? { mode: newSessionModeRef.current } : {}),
           ...(newSessionModeRef.current === "quick" && newSessionTemplateIdRef.current ? { templateId: newSessionTemplateIdRef.current } : {}),
           ...(newSessionProjectIdRef.current ? { projectId: newSessionProjectIdRef.current } : {}),

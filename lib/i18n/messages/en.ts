@@ -1094,6 +1094,7 @@ export const enLocale: LocalePlugin = {
     "bundles.applying": "Applying…",
     "bundles.applyTitle": "Apply config bundle",
     "bundles.applyMenu": "Apply config bundle…",
+    "bundles.openPackager": "Encrypted package (.apkg) packager",
     "bundles.applied": "Bundle “{name}” applied",
     "bundles.noneAvailable": "No bundles available. Admins can upload under Settings → Config bundles.",
     "bundles.uploadNew": "Upload new bundle",

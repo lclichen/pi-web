@@ -169,6 +169,13 @@ export function BundlesConfig({ embedded = false }: { embedded?: boolean }) {
 
   return (
     <ConfigPanelShell embedded={embedded} title={t("bundles.configBundles")} closeLabel={t("i18n.close")} onClose={() => {}}>
+      {/* 发布方入口：加密配置包打包工作台（页面自带管理员门，非管理员点击会得到提示） */}
+      <a
+        href="/packager"
+        target="_blank"
+        rel="noreferrer"
+        style={{ display: "block", fontSize: 11.5, color: "var(--accent)", textDecoration: "none", padding: "2px 2px 8px" }}
+      >📦 {t("bundles.openPackager")} ↗</a>
       {/* Body */}
       <ConfigSplitView>
         {/* Left: bundle list（与模型页同构：列表 + 左下角上传） */}

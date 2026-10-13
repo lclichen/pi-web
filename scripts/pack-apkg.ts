@@ -25,6 +25,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
 import { randomBytes } from "node:crypto";
 import { packApkg, type ApkgLicense } from "../lib/apkg-format.ts";
+import { apkgKeysStorePath, getOrCreateApkgKek } from "../lib/apkg-keys.ts";
 
 interface Args {
   in?: string;
@@ -67,44 +68,18 @@ function parseArgs(argv: string[]): Args {
   return args;
 }
 
-function resolveKeysStore(explicit?: string): string {
-  if (explicit) return resolve(explicit);
-  const dataDir = process.env.PI_WEB_DATA_DIR ?? resolve("data");
-  return resolve(dataDir, "apkg-keys.json");
-}
-
-function loadOrCreateKek(storePath: string, keyId?: string): { keyId: string; kek: Buffer } {
-  let store: Record<string, string> = {};
-  if (existsSync(storePath)) {
-    store = JSON.parse(readFileSync(storePath, "utf8")) as Record<string, string>;
-  }
-  if (keyId) {
-    if (keyId.length > 16) throw new Error(`--key-id 过长（≤16 字节）: ${keyId}`);
-    const b64 = store[keyId];
-    if (b64) {
-      const kek = Buffer.from(b64, "base64");
-      if (kek.length !== 32) throw new Error(`密钥 ${keyId} 长度异常，请重新生成`);
-      return { keyId, kek };
-    }
-  }
-  // Provision a fresh generation (explicit id, or dated default).
-  const id = keyId ?? `k${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${randomBytes(2).toString("hex")}`;
-  const kek = randomBytes(32);
-  store[id] = kek.toString("base64");
-  mkdirSync(dirname(storePath), { recursive: true });
-  writeFileSync(storePath, JSON.stringify(store, null, 2), { mode: 0o600 });
-  console.log(`已生成新密钥代 ${id} 并写入 ${storePath}`);
-  console.log(`⚠ 请将此文件部署为每台需要导入该包的 pi-web 服务器的 <数据目录>/apkg-keys.json`);
-  return { keyId: id, kek };
-}
-
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   if (!args.in) throw new Error("缺少 --in <zip 路径>（先用界面导出的明文 zip）");
   if (!existsSync(args.in)) throw new Error(`输入文件不存在: ${args.in}`);
 
   const name = args.name ?? basename(args.in).replace(/\.zip$/i, "").replace(/[^\w.-]+/g, "-");
-  const { keyId, kek } = loadOrCreateKek(resolveKeysStore(args.keys), args.keyId);
+  const storePath = apkgKeysStorePath(args.keys ?? undefined);
+  const { keyId, kek, isNew } = getOrCreateApkgKek(storePath, args.keyId ?? undefined);
+  if (isNew) {
+    console.log(`已生成新密钥代 ${keyId} 并写入 ${storePath}`);
+    console.log(`⚠ 请将此文件部署为每台需要导入该包的 pi-web 服务器的 <数据目录>/apkg-keys.json`);
+  }
 
   const license: ApkgLicense = {};
   if (args.expires) {

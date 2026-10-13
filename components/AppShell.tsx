@@ -9,6 +9,7 @@ import type { ChatScrollPosition } from "@/lib/chat-scroll-position";
 import { FileViewer } from "./FileViewer";
 import { GitPanel } from "./GitPanel";
 import { LabTrainingSidePanel, type WidgetState as LabWidgetState } from "./LabTrainingSidePanel";
+import { WebUIGuide } from "./WebUIGuide";
 import { TabBar, type Tab } from "./TabBar";
 import { SubagentsConfig } from "./SubagentsConfig";
 import { McpServersConfig } from "./McpServersConfig";
@@ -192,8 +193,19 @@ export function AppShell() {
   // Web identity (PI_WEB_AUTH): null while loading, {user} when logged in.
   const [webUser, setWebUser] = useState<{ id: number; username: string; role: "admin" | "user" } | null | "loading">("loading");
   // Deployment-wide Lab Training toggle (PI_WEB_LAB_TRAINING seeds the
-  // default; admins can flip it at runtime via /api/server-settings).
+  // default, seeded from the PI_WEB_LAB_TRAINING startup parameter).
   const [labTrainingEnabled, setLabTrainingEnabled] = useState(true);
+  // WebUI 操作教学（新手向导）：常驻按钮随时打开；首次访问自动弹出一次。
+  const [webGuideOpen, setWebGuideOpen] = useState(false);
+  useEffect(() => {
+    try {
+      if (!window.localStorage.getItem("webui-guide-done")) setWebGuideOpen(true);
+    } catch { /* localStorage 不可用则不自动弹出 */ }
+  }, []);
+  const closeWebGuide = useCallback(() => {
+    setWebGuideOpen(false);
+    try { window.localStorage.setItem("webui-guide-done", "1"); } catch { /* 忽略 */ }
+  }, []);
   const [authEnabled, setAuthEnabled] = useState(true);
   // In-app platform admin panel (all management pages migrated; the legacy
   // external console link is retired).
@@ -2469,38 +2481,26 @@ export function AppShell() {
               {renderProjectTrustWarning(false)}
               {renderChatToolbarActions(false)}
               {renderSessionStatsButton(false)}
-              {/* Platform controls: lab-training master switch + logout (multi-user). */}
-              {webUser && webUser !== "loading" && webUser.role === "admin" && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    const next = !labTrainingEnabled;
-                    setLabTrainingEnabled(next);
-                    fetch("/api/server-settings", {
-                      method: "PATCH",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ labTraining: next }),
-                    }).then((r) => { if (!r.ok) setLabTrainingEnabled(!next); }).catch(() => setLabTrainingEnabled(!next));
-                  }}
-                  title={labTrainingEnabled ? translate("app.teachingPanelClickDisableEveryone") : translate("app.teachingPanelOffClickEnable")}
-                  aria-pressed={labTrainingEnabled}
-                  style={{
-                    display: "flex", alignItems: "center", gap: 6, height: "100%",
-                    padding: "0 10px", background: "none",
-                    border: "none", borderLeft: "1px solid var(--border)",
-                    color: labTrainingEnabled ? "var(--accent)" : "var(--text-muted)",
-                    cursor: "pointer", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", flexShrink: 0,
-                    transition: "color 0.1s, background 0.1s",
-                  }}
-                  onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-hover)"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.background = "none"; }}
-                >
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
-                    <path d="M22 10v6M2 10l10-5 10 5-10 5z" /><path d="M6 12v5c3 3 9 3 12 0v-5" />
-                  </svg>
-                  <span>{translate("app.teaching")}</span>
-                </button>
-              )}
+              {/* Platform controls: WebUI 操作教学 + logout。教学面板显隐已改为启动参数
+                  （PI_WEB_LAB_TRAINING，server-settings env 播种），不再由顶栏按钮运行时切换。 */}
+              <button
+                type="button"
+                onClick={() => setWebGuideOpen(true)}
+                title={translate("guide.buttonTitle")}
+                style={{
+                  display: "flex", alignItems: "center", gap: 6, height: "100%",
+                  padding: "0 10px", background: "none",
+                  border: "none", borderLeft: "1px solid var(--border)",
+                  color: "var(--text-muted)",
+                  cursor: "pointer", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", flexShrink: 0,
+                  transition: "color 0.1s, background 0.1s",
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-hover)"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = "none"; }}
+              >
+                <span style={{ fontSize: 13, lineHeight: 1 }}>🎓</span>
+                <span>{translate("guide.button")}</span>
+              </button>
               {webUser && webUser !== "loading" && (
                 <button
                   type="button"
@@ -3223,6 +3223,12 @@ export function AppShell() {
       />
     )}
     {myWorkspaceOpen && <MyWorkspaceDialog onClose={() => setMyWorkspaceOpen(false)} />}
+    <WebUIGuide
+      open={webGuideOpen}
+      onClose={closeWebGuide}
+      onOpenSettings={(section) => setSettingsSection(section)}
+      onStartQuickSession={() => handleNewSession(`guide-${Date.now()}`, "", "quick")}
+    />
     <PlatformAdminDialog
       open={platformAdminOpen}
       onClose={() => setPlatformAdminOpen(false)}

@@ -14,6 +14,7 @@ import { cacheSessionPath, getLatestModelChange, invalidateSessionListCache, res
 import { appendWebUiAddendum } from "./web-system-prompt";
 import { readPreferences } from "./preferences-service";
 import { readMcpConfig } from "./mcp-config";
+import { adaptQuickBasePrompt } from "./quick-prompt";
 import { getProjectTrustStatus, projectTrustReloadOptions } from "./project-trust";
 import { persistExplicitStartupPreferences } from "./startup-preferences";
 import {
@@ -280,11 +281,14 @@ function withExtensionTools(session: AgentSessionLike, toolNames: string[]): str
 /**
  * Quick-mode active tool set: the harmless session extensions (todo, plan_save)
  * plus MCP tools. Coding built-ins, the subagent Agent tool, and every other
- * extension tool stay off — a quick session has no workspace to operate on.
+ * extension tool stay off — a quick session has no workspace to operate on, and
+ * todo/plan stay off too (quick is MCP-only).
  * An optional server-name allowlist narrows which MCP servers contribute.
  */
 function quickToolSet(session: AgentSessionLike, mcpAllowlist?: string[]): string[] {
-  const allowed = new Set(["todo", "plan_save"]);
+  // 2026-10-13 修订：quick 是无工作区的轻量对话——todo/plan 一并移除，
+  // 工具面=纯 MCP（白名单可选）。零 MCP 时就是纯聊天会话。
+  const allowed = new Set<string>();
   const allowlist = mcpAllowlist && mcpAllowlist.length > 0 ? new Set(mcpAllowlist) : null;
   for (const tool of session.getAllTools()) {
     const name = tool.name;
@@ -2494,6 +2498,9 @@ export async function startRpcSession(
             // exactSystemPrompt 全量替换，而该猴子补丁路径在 RPC 回合中实际
             // 未生效（模板内容从未到达模型）。
             ...(quick?.systemPrompt ? { appendSystemPrompt: [quick.systemPrompt] } : {}),
+            // quick 专属基础段适配：身份段换成 quick 语义、pi 文档索引块移除
+            //（lib/quick-prompt.ts，锚点防漂移测试在 lib/quick-prompt.test.mjs）。
+            ...(quick ? { systemPromptOverride: (base: string | undefined) => (typeof base === "string" ? adaptQuickBasePrompt(base) : base) } : {}),
             extensionFactories: [
               ...(platformResourceLoaderOptions.extensionFactories ?? []),
               createProjectCommandBashExtension({

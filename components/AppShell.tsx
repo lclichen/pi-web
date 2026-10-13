@@ -9,7 +9,7 @@ import type { ChatScrollPosition } from "@/lib/chat-scroll-position";
 import { FileViewer } from "./FileViewer";
 import { GitPanel } from "./GitPanel";
 import { LabTrainingSidePanel, type WidgetState as LabWidgetState } from "./LabTrainingSidePanel";
-import { WebUIGuide } from "./WebUIGuide";
+import { WebUIGuide, WebUIGuideResumePill } from "./WebUIGuide";
 import { TabBar, type Tab } from "./TabBar";
 import { SubagentsConfig } from "./SubagentsConfig";
 import { McpServersConfig } from "./McpServersConfig";
@@ -197,9 +197,14 @@ export function AppShell() {
   const [labTrainingEnabled, setLabTrainingEnabled] = useState(true);
   // WebUI 操作教学（新手向导）：常驻按钮随时打开；首次访问自动弹出一次。
   const [webGuideOpen, setWebGuideOpen] = useState(false);
+  // "继续操作教学"胶囊：仅向导经配置卡片送用户去设置页时出现（见 WebUIGuide）。
+  const [guideResumeVisible, setGuideResumeVisible] = useState(false);
   useEffect(() => {
     try {
-      if (!window.localStorage.getItem("webui-guide-done")) setWebGuideOpen(true);
+      // 首次访问（既没完成过、也没中途进度）才自动弹出；有进度的回访者
+      // 不再打扰，顶栏按钮或胶囊负责续读。
+      if (!window.localStorage.getItem("webui-guide-done")
+        && !window.localStorage.getItem("webui-guide-step")) setWebGuideOpen(true);
     } catch { /* localStorage 不可用则不自动弹出 */ }
   }, []);
   const closeWebGuide = useCallback(() => {
@@ -3228,7 +3233,15 @@ export function AppShell() {
       onClose={closeWebGuide}
       onOpenSettings={(section) => setSettingsSection(section)}
       onStartQuickSession={() => handleNewSession(`guide-${Date.now()}`, "", "quick")}
+      onJumpOut={() => setGuideResumeVisible(true)}
+      onFinished={() => setGuideResumeVisible(false)}
     />
+    {guideResumeVisible && !webGuideOpen && (
+      <WebUIGuideResumePill
+        onResume={() => setWebGuideOpen(true)}
+        onDismiss={() => setGuideResumeVisible(false)}
+      />
+    )}
     <PlatformAdminDialog
       open={platformAdminOpen}
       onClose={() => setPlatformAdminOpen(false)}

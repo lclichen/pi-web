@@ -780,6 +780,7 @@ export const zhTWLocale: LocalePlugin = {
     "guide.prev": "上一步",
     "guide.next": "下一步",
     "guide.finish": "開始使用",
+    "guide.resumePill": "繼續操作教學", "guide.resumePillTitle": "回到嚮導上次進度繼續",
     "sessions.subagentSession": "子智能體會話",
     "sessions.importProjectConfig": "导入项目配置…",
     "projects.importProjectConfig": "导入项目配置",

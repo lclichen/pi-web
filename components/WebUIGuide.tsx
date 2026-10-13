@@ -24,6 +24,10 @@ export interface WebUIGuideProps {
   onOpenSettings: (section: SettingsSection) => void;
   /** 结业动作：直接新建一个快速会话（也可能被用户跳过）。 */
   onStartQuickSession?: () => void;
+  /** 经配置卡片跳出（向导主动送用户去设置页）——宿主据此显示"继续"胶囊。 */
+  onJumpOut?: () => void;
+  /** 走完"完成"步正常结束——宿主据此收起胶囊。 */
+  onFinished?: () => void;
 }
 
 const STEP_KEYS = ["welcome", "language", "agentConfig", "workspace", "firstSession", "done"] as const;
@@ -41,17 +45,41 @@ const CONFIG_LINKS: Array<{ section: SettingsSection; key: string; icon: string 
   { section: "mcp", key: "guide.configMcp", icon: "🔌" },
 ];
 
-export function WebUIGuide({ open, onClose, onOpenSettings, onStartQuickSession }: WebUIGuideProps) {
+const STEP_STORAGE_KEY = "webui-guide-step";
+
+export function WebUIGuide({ open, onClose, onOpenSettings, onStartQuickSession, onJumpOut, onFinished }: WebUIGuideProps) {
   const { t, locale, setLocale } = useI18n();
   const [step, setStep] = useState(0);
 
+  // 打开时续到上次进度（"完成"步会清除存储；首次访问无存储 → 第 0 步）。
   useEffect(() => {
-    if (open) setStep(0);
+    if (!open) return;
+    let next = 0;
+    try {
+      const saved = Number(window.localStorage.getItem(STEP_STORAGE_KEY));
+      if (Number.isInteger(saved) && saved >= 0 && saved < STEP_KEYS.length - 1) next = saved;
+    } catch { /* localStorage 不可用则从头开始 */ }
+    setStep(next);
   }, [open]);
+
+  // 步进持久化：任意方式离开（✕/跳过/卡片跳出）都保留进度，只有走完
+  // "完成"步才清除——重开即续，无需重走。
+  useEffect(() => {
+    if (!open || step >= STEP_KEYS.length - 1) return;
+    try { window.localStorage.setItem(STEP_STORAGE_KEY, String(step)); } catch { /* 忽略 */ }
+  }, [open, step]);
 
   if (!open) return null;
   const key = STEP_KEYS[step];
   const isLast = step === STEP_KEYS.length - 1;
+  const finish = () => {
+    try {
+      window.localStorage.removeItem(STEP_STORAGE_KEY);
+      window.localStorage.setItem("webui-guide-done", "1");
+    } catch { /* 忽略 */ }
+    onFinished?.();
+    onClose();
+  };
 
   return (
     <div
@@ -141,7 +169,7 @@ export function WebUIGuide({ open, onClose, onOpenSettings, onStartQuickSession 
                   <button
                     key={section}
                     type="button"
-                    onClick={() => { onOpenSettings(section); onClose(); }}
+                    onClick={() => { onOpenSettings(section); onJumpOut?.(); onClose(); }}
                     style={{
                       display: "flex", alignItems: "center", gap: 8, textAlign: "left",
                       padding: "9px 12px", borderRadius: 8, cursor: "pointer", fontSize: 12.5,
@@ -214,7 +242,7 @@ export function WebUIGuide({ open, onClose, onOpenSettings, onStartQuickSession 
           )}
           <button
             type="button"
-            onClick={() => (isLast ? onClose() : setStep((s) => Math.min(STEP_KEYS.length - 1, s + 1)))}
+            onClick={() => (isLast ? finish() : setStep((s) => Math.min(STEP_KEYS.length - 1, s + 1)))}
             style={{
               padding: "7px 16px", borderRadius: 7, cursor: "pointer", fontSize: 12.5, fontWeight: 600,
               border: "1px solid var(--accent)", background: "var(--accent)", color: "#fff",
@@ -222,6 +250,42 @@ export function WebUIGuide({ open, onClose, onOpenSettings, onStartQuickSession 
           >{isLast ? t("guide.finish") : t("guide.next")}</button>
         </div>
       </div>
+    </div>
+  );
+}
+
+
+/**
+ * "继续操作教学"悬浮胶囊：只在向导经配置卡片把用户送去设置页时出现
+ * （教学流自己造成的中断，有义务给回程路）。✕/跳过等主动退出不显示；
+ * 手动关闭后本次会话不再出现。由 AppShell 控制可见性。
+ */
+export function WebUIGuideResumePill({ onResume, onDismiss }: { onResume: () => void; onDismiss: () => void }) {
+  const { t } = useI18n();
+  return (
+    <div
+      style={{
+        position: "fixed", right: 18, bottom: 18, zIndex: 1100,
+        display: "flex", alignItems: "center", gap: 4,
+        background: "var(--bg-panel)", border: "1px solid var(--accent)", borderRadius: 999,
+        padding: "5px 7px 5px 13px", boxShadow: "0 4px 16px rgba(0,0,0,0.28)",
+        fontSize: 12, fontWeight: 600,
+      }}
+    >
+      <button
+        type="button"
+        onClick={onResume}
+        title={t("guide.resumePillTitle")}
+        style={{ background: "none", border: "none", cursor: "pointer", color: "var(--accent)", fontSize: 12, fontWeight: 600, padding: "3px 4px" }}
+      >
+        ▶ {t("guide.resumePill")}
+      </button>
+      <button
+        type="button"
+        onClick={onDismiss}
+        aria-label="dismiss"
+        style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-dim)", fontSize: 11, padding: "3px 5px" }}
+      >✕</button>
     </div>
   );
 }

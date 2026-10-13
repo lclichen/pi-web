@@ -46,6 +46,7 @@ export const zhCNLocale: LocalePlugin = {
     "guide.prev": "上一步",
     "guide.next": "下一步",
     "guide.finish": "开始使用",
+    "guide.resumePill": "继续操作教学", "guide.resumePillTitle": "回到向导上次进度继续",
     "sessions.subagentSession": "子智能体会话",
     "sessions.restoreSave": "↩ 恢复存档 · {time}",
     "files.newFile": "新建文件",

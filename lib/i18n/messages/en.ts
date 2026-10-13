@@ -46,6 +46,7 @@ export const enLocale: LocalePlugin = {
     "guide.prev": "Back",
     "guide.next": "Next",
     "guide.finish": "Start using",
+    "guide.resumePill": "Resume guide", "guide.resumePillTitle": "Continue the guide where you left off",
     "sessions.subagentSession": "Subagent session",
     "sessions.restoreSave": "↩ Restore save · {time}",
     "files.newFile": "New file",

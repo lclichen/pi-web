@@ -14,7 +14,7 @@ import { cacheSessionPath, getLatestModelChange, invalidateSessionListCache, res
 import { appendWebUiAddendum } from "./web-system-prompt";
 import { readPreferences } from "./preferences-service";
 import { readMcpConfig } from "./mcp-config";
-import { adaptQuickBasePrompt } from "./quick-prompt";
+import { composeQuickSystemPrompt, createQuickPromptExtension } from "./quick-prompt";
 import { getProjectTrustStatus, projectTrustReloadOptions } from "./project-trust";
 import { persistExplicitStartupPreferences } from "./startup-preferences";
 import {
@@ -127,6 +127,13 @@ type AgentSessionWrapperOptions = {
    * exact prompts untouched.
    */
   webUiPrompt?: boolean;
+  /**
+   * Quick sessions: mirror the per-turn prompt composition (adapt + template
+   * append, lib/quick-prompt.ts) into the DISPLAY state, so get_state / the
+   * system-prompt panel shows what the model actually receives even before
+   * the first turn has run the before_agent_start hook.
+   */
+  quickPrompt?: { template?: string };
   onAgentRunComplete?: AgentRunCompleteListener;
   suppressCompletionNotifications?: boolean;
 };
@@ -334,6 +341,7 @@ export class AgentSessionWrapper {
   private forceEmptySystemPrompt = false;
   private exactSystemPrompt?: () => string;
   private readonly webUiPrompt: boolean;
+  private readonly quickPrompt?: { template?: string };
   private readonly chatOnly: boolean;
   private readonly onAgentRunComplete?: AgentRunCompleteListener;
   private readonly suppressCompletionNotifications: boolean;
@@ -356,6 +364,7 @@ export class AgentSessionWrapper {
   ) {
     this.exactSystemPrompt = options.exactSystemPrompt;
     this.webUiPrompt = options.webUiPrompt ?? false;
+    this.quickPrompt = options.quickPrompt;
     this.chatOnly = options.chatOnly ?? false;
     this.onAgentRunComplete = options.onAgentRunComplete;
     this.suppressCompletionNotifications = options.suppressCompletionNotifications ?? false;
@@ -572,6 +581,7 @@ export class AgentSessionWrapper {
       state.systemPrompt = this.exactSystemPrompt();
     }
     this.applyForcedEmptySystemPrompt();
+    this.applyQuickPromptToState();
     this.applyWebUiAddendumToState();
   }
 
@@ -618,6 +628,15 @@ export class AgentSessionWrapper {
   }
 
   /** Mirror the addendum into the prompt shown by the UI, after pi rebuilds it. */
+  /** 显示镜像：与 before_agent_start 的每回合改写保持一致（幂等）。 */
+  private applyQuickPromptToState(): void {
+    if (!this.quickPrompt) return;
+    const state = this.inner.agent?.state;
+    if (state && typeof state.systemPrompt === "string") {
+      state.systemPrompt = composeQuickSystemPrompt(state.systemPrompt, this.quickPrompt.template);
+    }
+  }
+
   private applyWebUiAddendumToState(): void {
     if (!this.webUiPrompt || this.forceEmptySystemPrompt) return;
     const state = this.inner.agent?.state;
@@ -2490,24 +2509,26 @@ export async function startRpcSession(
           }
         : quick
           ? {
-              // 快速会话的装载面（参考 subagentResources 的隔离方式，2026-10-13 修订）：
-              // - noContextFiles：AGENTS.md 等上下文文件绝不进 quick 提示词——
-              //   此前 quick home 或过期 cwd 里的上下文文件会泄漏进来。
+              // 快速会话的装载面（2026-10-13 二次修订，dev 实测驱动）：
+              // - noContextFiles：AGENTS.md 等上下文文件绝不进 quick 提示词。
               // - 不设 noExtensions：MCP 适配器必须加载（quick 工具面 = MCP）；
-              //   子代理等其余工具由 quickToolSet 过滤出活动集。
-              // - 不设 systemPrompt 占位符：它走 customPrompt 路径，会跳过工具
-              //   列表/准则装配（用户实测"环境提示与 MCP 工具消失"的根因）。
-              //   基础段照常构建后经 systemPromptOverride 适配（身份段替换 +
-              //   pi 文档块移除，lib/quick-prompt.ts），模板提示词走 appendSystemPrompt。
+              //   其余工具由 quickToolSet 过滤出活动集。
+              // - 提示词改写不走 loader 选项——实测 systemPromptOverride 只作用于
+              //   "发现的 prompt 文件/customPrompt 输入"、appendSystemPrompt 数组会被
+              //   当文件路径解析后过滤，两者都够不到装配后的基础段。改由
+              //   createQuickPromptExtension（before_agent_start，与
+              //   environment-info 同一 SDK 钩子）做身份替换/文档块移除/模板附加。
               noSkills: true,
               noPromptTemplates: true,
               noThemes: true,
               noContextFiles: true,
-              ...(quick?.systemPrompt ? { appendSystemPrompt: [quick.systemPrompt] } : {}),
-              systemPromptOverride: (base: string | undefined) => (typeof base === "string" ? adaptQuickBasePrompt(base) : base),
-              // 抑制"发现式"附加段（context-file append 等）；选项式
-              // appendSystemPrompt 不经此 override（用户实测组合）。
+              // 抑制发现式附加段（.pi/append-system-prompt.md 等）
               appendSystemPromptOverride: () => [],
+              // 提示词改写扩展（创建与恢复共用此臂）：before_agent_start 上
+              // adapt 基础段 + 幂等附加模板。
+              ...(quick && !subagentResources
+                ? { extensionFactories: [createQuickPromptExtension(quick.systemPrompt)] }
+                : {}),
             }
         : chatOnly
           ? CHAT_ONLY_RESOURCE_LOADER_OPTIONS
@@ -2612,6 +2633,7 @@ export async function startRpcSession(
       // rides the append path, so it composes with the addendum instead of
       // conflicting with it.
       webUiPrompt: !subagentResources,
+      ...(quick && !subagentResources ? { quickPrompt: { template: quick.systemPrompt } } : {}),
       onAgentRunComplete: (completedSessionId) => {
         void notifySessionComplete(completedSessionId).catch((error) => {
           console.error("[pi-web] failed to send completion push:", error instanceof Error ? error.message : error);

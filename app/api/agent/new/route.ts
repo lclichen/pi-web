@@ -101,6 +101,7 @@ export async function POST(req: Request) {
     }
 
     let effectiveCwd: string | undefined = typeof cwd === "string" ? cwd : undefined;
+    let templateIdForMeta: string | undefined;
     let extensionFactories: InlineExtension[] | undefined;
     let sessionDir: string | undefined;
     // 工作区目录（lib/session-context.ts 契约）：提示词告知模型用；绝不
@@ -268,6 +269,7 @@ export async function POST(req: Request) {
       // 部署级快速会话专用 MCP（lib/quick-mcp.ts）：物化进 quick home 的
       // .pi/mcp.json——project-scope 语义使其只在 quick 会话可见。
       syncQuickMcpConfig(user.id);
+      templateIdForMeta = templateId;
       quickOptions = {
         systemPrompt: template.systemPrompt,
         ...(template.model ? { model: template.model } : {}),
@@ -314,7 +316,7 @@ export async function POST(req: Request) {
       ...(projectRef ? { projectCredentialDir: effectiveCwd } : {}),
     });
 
-    recordSessionMeta(realSessionId, { mode: effectiveMode, ownerId: user.id, ownerName: user.username, ...(projectRef ? { projectId: projectRef.id } : {}) });
+    recordSessionMeta(realSessionId, { mode: effectiveMode, ownerId: user.id, ownerName: user.username, ...(projectRef ? { projectId: projectRef.id } : {}), ...(templateIdForMeta ? { templateId: templateIdForMeta } : {}) });
     invalidateSessionListCache();
 
     // Host-mode sessions keep the files-route allowed-roots cache in sync so

@@ -41,6 +41,7 @@ export async function restoreSessionOptions(req: Request, sessionId: string): Pr
   const project = meta?.projectId ? getOwnedProject(meta.projectId, meta.ownerId ?? user.id, user.role === "admin") : undefined;
 
   let additionalExtensionPaths: string[] | undefined;
+  let quickForRestore: { systemPrompt?: string; model?: { provider: string; modelId: string }; mcpServers?: string[] } | undefined;
   let extensionFactories: InlineExtension[] | undefined;
   let effectiveCwd: string | undefined;
 
@@ -129,11 +130,25 @@ export async function restoreSessionOptions(req: Request, sessionId: string): Pr
         registerBgChannel(sessionId, makeSshBgChannel(project.id, sshConfig, project.workdir ?? "/"));
       }
     }
-  } else if (mode === "quick") {
-    // Quick mode on restore: same scratch home, same tool policy. The system
-    // prompt rides the session file itself (persisted as a model_change-adjacent
-    // context), so only the tool set needs rebuilding.
+  } else if (mode === "quick") {
+    // Quick mode on restore: same scratch home, same tool policy. The system
+    // prompt rides the session file itself (persisted as a model_change-adjacent
+    // context), so only the tool set needs rebuilding.
     effectiveCwd = ensureQuickHome(user.id);
+    // 恢复时按 meta.templateId 重建 quick 选项：quickToolSet（MCP 白名单）与
+    // 提示词扩展（模板附加）都挂在 quick 选项上——不重建则恢复的快速会话
+    // 丢工具策略与模板提示词。
+    if (meta?.templateId) {
+      const { getQuickTemplate } = await import("./quick-templates");
+      const template = getQuickTemplate(meta.templateId);
+      if (template) {
+        quickForRestore = {
+          ...(template.systemPrompt ? { systemPrompt: template.systemPrompt } : {}),
+          ...(template.model ? { model: template.model } : {}),
+          ...(template.mcpServers && template.mcpServers.length > 0 ? { mcpServers: template.mcpServers } : {}),
+        };
+      }
+    }
   } else {
     extensionFactories = [makeEnvironmentInfoExtension({ mode: "host", username: identity.session.user.username })];
   }
@@ -152,7 +167,7 @@ export async function restoreSessionOptions(req: Request, sessionId: string): Pr
     extensionFactories: [makeBgTasksExtension(), ...(extensionFactories ?? [])],
     ...(ownerId !== 0 ? { ownerId } : {}),
     mode,
-    ...(mode === "quick" ? { quick: {} } : {}),
+    ...(mode === "quick" ? { quick: quickForRestore ?? {} } : {}),
     // Project-scoped model credentials live in the project home's .pi/.
     ...(effectiveCwd && project ? { projectCredentialDir: effectiveCwd } : {}),
   };

@@ -50,3 +50,50 @@ export function adaptQuickBasePrompt(base: string): string {
   }
   return out;
 }
+
+// ---------------------------------------------------------------------------
+// before_agent_start 扩展：quick 提示词改写的正确挂点。
+//
+// 为什么不是 loader 选项（2026-10-13 dev 实测推翻）：resourceLoader 的
+// systemPromptOverride 只作用于"发现的 prompt 文件/customPrompt 输入"，
+// appendSystemPrompt 数组会被当文件路径解析（不存在即被过滤）——两者都
+// 够不到 agent-session 装配后的基础段（工具列表/准则/文档块）。而
+// before_agent_start 收到的 event.systemPrompt 正是装配后的完整提示词
+//（environment-info 同款机制），在每回合上做改写并返回 { systemPrompt }。
+// ---------------------------------------------------------------------------
+
+import type { ExtensionAPI, InlineExtension } from "@earendil-works/pi-coding-agent";
+
+/** 幂等地把模板提示词附加到（已适配的）提示词尾部——每回合触发也不重复。 */
+export function appendTemplateOnce(prompt: string, template: string): string {
+  if (!template.trim()) return prompt;
+  if (prompt.includes(template)) return prompt;
+  const base = prompt.trimEnd();
+  return base ? `${base}\n\n${template}` : template;
+}
+
+/** 组合变换：基础段适配（身份/文档块）→ 模板附加。纯函数，单测直接钉。 */
+export function composeQuickSystemPrompt(base: string, template?: string): string {
+  let out = adaptQuickBasePrompt(base);
+  if (template) out = appendTemplateOnce(out, template);
+  return out;
+}
+
+/**
+ * quick 会话的提示词扩展：每回合 before_agent_start 上改写 systemPrompt。
+ * webUiPrompt 的附加段经 wrapper 的 continuation 在更外层追加，最终顺序：
+ * 适配后基础段 → 模板 → Web 输出附加段。
+ */
+export function createQuickPromptExtension(template?: string): InlineExtension {
+  return {
+    name: "pi-web-quick-prompt",
+    hidden: true,
+    factory: (pi: ExtensionAPI): void => {
+      pi.on("before_agent_start", async (event: { systemPrompt?: string }) => {
+        const base = event.systemPrompt ?? "";
+        const next = composeQuickSystemPrompt(base, template);
+        return next === base ? undefined : { systemPrompt: next };
+      });
+    },
+  };
+}

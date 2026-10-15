@@ -144,9 +144,10 @@ export async function attachSessionProjectInfo(sessions: SessionInfo[]): Promise
             : { detached: true as const }),
         }
       : undefined;
+    const quickGroupKey = snapshot ? `${snapshot.id}@${snapshot.hash}` : undefined;
     return {
       ...session,
-      ...(quickTemplate ? { quickTemplate } : {}),
+      ...(quickTemplate ? { quickTemplate, quickGroupKey } : {}),
       projectRoot,
       projectKey: projectIdentityKey(projectRoot),
       ...(project?.branch ? { branch: project.branch } : {}),

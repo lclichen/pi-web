@@ -17,6 +17,8 @@ interface Props {
   onNewSessionInProject: (project: ProjectRecord) => void;
   /** Host 空间：在指定服务器目录创建/打开会话。 */
   onNewSessionInDirectory?: (directory: string) => void;
+  /** 快速会话空间：从指定模板新建会话（模板组头部的 ＋ 按钮）。 */
+  onNewSessionFromTemplate?: (templateId: string, templateName: string) => void;
   onDeleteSession: (sessionId: string) => void | Promise<void>;
   onRenameSession: (sessionId: string, name: string) => void | Promise<void>;
   refreshSessions: () => void;
@@ -48,7 +50,9 @@ export function ProjectSessionTree({
   selectedSessionId,
   onSelectSession,
   onNewSessionInProject,
-  onNewSessionInDirectory,  onDeleteSession,
+  onNewSessionInDirectory,
+  onNewSessionFromTemplate,
+  onDeleteSession,
   onRenameSession,
   refreshSessions,
   isAdmin,
@@ -295,11 +299,49 @@ export function ProjectSessionTree({
     return map;
   }, [sessions]);
 
-  // Quick-space flat list: newest first, no grouping (no projects to group by).
-  const quickSessions = useMemo(
-    () => sessions.filter((s) => s.mode === "quick").sort((a, b) => b.modified.localeCompare(a.modified)),
-    [sessions],
-  );
+  // Quick-space two-level tree: group by template VERSION (quickGroupKey =
+  // "<templateId>@<hash>", derived server-side from the workspace snapshot).
+  // Same template at different content versions = different groups, mirroring
+  // how the workspace directories are laid out. Detached groups (template
+  // deleted, snapshot remains) keep their sessions and refuse new ones.
+  // Sessions predating the snapshot metadata fall into one legacy bucket.
+  const quickGroups = useMemo(() => {
+    const groups = new Map<string, {
+      key: string;
+      name: string;
+      hash?: string;
+      templateId?: string;
+      detached: boolean;
+      sessions: SessionInfo[];
+    }>();
+    for (const s of sessions) {
+      if (s.mode !== "quick") continue;
+      const key = s.quickGroupKey ?? "__unassigned";
+      let group = groups.get(key);
+      if (!group) {
+        const meta = s.quickTemplate;
+        group = {
+          key,
+          name: meta?.name ?? "",
+          hash: meta?.hash,
+          templateId: meta?.id,
+          detached: Boolean(meta?.detached),
+          sessions: [],
+        };
+        groups.set(key, group);
+      }
+      // Meta comes from the same snapshot for the whole group; prefer a
+      // non-detached reading only for robustness against mixed snapshots.
+      if (!group.name && s.quickTemplate?.name) group.name = s.quickTemplate.name;
+      group.sessions.push(s);
+    }
+    return [...groups.values()]
+      .map((group) => ({
+        ...group,
+        sessions: group.sessions.sort((a, b) => b.modified.localeCompare(a.modified)),
+      }))
+      .sort((a, b) => b.sessions[0]?.modified.localeCompare(a.sessions[0]?.modified ?? "") ?? 0);
+  }, [sessions]);
 
   // 管理员通过"打开服务器目录"（host 模式）建的会话没有 projectId，按目录
   // 动态分组显示——不区分 mine/host 空间（UI 没有空间切换入口，之前 gate
@@ -555,12 +597,76 @@ export function ProjectSessionTree({
         <div style={{ padding: "8px 6px", fontSize: 11, color: "var(--text-dim)" }}>{t("sessions.hostSessionsYetSessionsOpened")}</div>
       )}
 
-      {/* 快速会话空间：无项目/工作区，扁平列表按最近排序；不分组。
-          创建入口就是侧栏顶部的 ⚡ 按钮（视图内不再放重复按钮）。 */}
+      {/* 快速会话空间：按模板版本两级分组（模板名 (hash) → 会话），组织方式
+          对齐"项目 → 会话"。模板已删除的组（快照仍在工作区）显示"模板已删除"
+          徽标且不提供 ＋ 新建；旧会话永远留在自己的组里，不会因删模板而混堆。
+          创建入口仍是侧栏顶部的 ⚡ 按钮，组头部的 ＋ 是就近快捷方式。 */}
       {sessionSpace === "quick" && (
         <>
-          {quickSessions.map((s) => renderItem(s, null))}
-          {quickSessions.length === 0 && (
+          {quickGroups.map((group) => {
+            const key = `quick:${group.key}`;
+            const isCollapsed = collapsed.has(key);
+            const expandedAll = showAll.has(key);
+            const visible = isCollapsed ? [] : expandedAll ? group.sessions : group.sessions.slice(0, RECENT_COUNT);
+            const focusInGroup = Boolean(selectedSessionId && group.sessions.some((s) => s.id === selectedSessionId));
+            return (
+              <div key={key} style={{ marginBottom: 2 }}>
+                <div
+                  onClick={() => toggleCollapsed(key)}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 6, padding: "5px 6px",
+                    borderRadius: 6, cursor: "pointer", fontSize: 12, fontWeight: 600,
+                    color: "var(--text)",
+                    background: focusInGroup ? "var(--bg-selected)" : "var(--bg-panel)",
+                  }}
+                  onMouseEnter={(e) => { if (!focusInGroup) e.currentTarget.style.background = "var(--bg-selected)"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = focusInGroup ? "var(--bg-selected)" : "var(--bg-panel)"; }}
+                >
+                  <span style={{ fontSize: 9, color: "var(--text-dim)", width: 10 }}>{isCollapsed ? "▸" : "▾"}</span>
+                  <span
+                    title={group.detached ? t("sessions.quickDetachedHint") : t("sessions.quickSessionsHint")}
+                    style={{ flexShrink: 0, padding: "0 5px", borderRadius: 3, fontSize: 9, fontWeight: 700, color: "#fbbf24", background: "rgba(251,191,36,0.12)" }}
+                  >
+                    ⚡
+                  </span>
+                  <span
+                    style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                    title={group.hash ? `${group.name} (${group.hash})` : group.name}
+                  >
+                    {group.hash ? `${group.name} (${group.hash})` : (group.name || t("sessions.quickUnassignedGroup"))}
+                  </span>
+                  {group.detached && (
+                    <span
+                      title={t("sessions.quickDetachedHint")}
+                      style={{ flexShrink: 0, padding: "0 5px", borderRadius: 3, fontSize: 9, fontWeight: 700, color: "var(--text-dim)", background: "rgba(128,128,128,0.16)" }}
+                    >
+                      {t("sessions.quickTemplateDeleted")}
+                    </span>
+                  )}
+                  <span style={{ fontSize: 10, color: "var(--text-dim)" }}>{group.sessions.length}</span>
+                  {!group.detached && group.templateId && onNewSessionFromTemplate && (
+                    <button
+                      type="button"
+                      title={t("sessions.newSession")}
+                      onClick={(e) => { e.stopPropagation(); onNewSessionFromTemplate(group.templateId!, group.name); }}
+                      style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--text-dim)", fontSize: 13, padding: "0 3px" }}
+                    >＋</button>
+                  )}
+                </div>
+                {visible.map((s) => renderItem(s, null))}
+                {!isCollapsed && !expandedAll && group.sessions.length > RECENT_COUNT && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAll((prev) => new Set(prev).add(key))}
+                    style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--accent)", fontSize: 11, padding: "2px 6px 2px 26px" }}
+                  >
+                    {t("sessions.showAllSessions", { n: group.sessions.length })}
+                  </button>
+                )}
+              </div>
+            );
+          })}
+          {quickGroups.length === 0 && (
             <div style={{ padding: "8px 6px", fontSize: 11, color: "var(--text-dim)", lineHeight: 1.7 }}>
               {t("sessions.quickSessionsYetPickTemplate")}
             </div>

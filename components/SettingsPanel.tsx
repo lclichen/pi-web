@@ -88,6 +88,11 @@ function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, 
   const [shellSaving, setShellSaving] = useState(false);
   const [shellError, setShellError] = useState<string | null>(null);
   const [thinkingExpanded, setThinkingExpanded] = useState(false);
+  // 提问自动继续：按登录用户保存在服务端（/api/user-settings），一个用户
+  // 的开关只影响他自己；默认关闭。
+  const [askSettings, setAskSettings] = useState<{ askAutoContinue: boolean; askTimeoutMinutes: number } | null>(null);
+  const [askSaving, setAskSaving] = useState(false);
+  const [askError, setAskError] = useState<string | null>(null);
 
   useEffect(() => {
     setThinkingExpanded(isThinkingExpandedByDefault());
@@ -111,6 +116,45 @@ function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, 
       });
     return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetch("/api/user-settings")
+      .then(async (response) => {
+        const data = await response.json() as { askAutoContinue?: boolean; askTimeoutMinutes?: number; error?: string };
+        if (!response.ok || data.error) throw new Error(data.error ?? `HTTP ${response.status}`);
+        if (!cancelled) {
+          setAskSettings({
+            askAutoContinue: Boolean(data.askAutoContinue),
+            askTimeoutMinutes: data.askTimeoutMinutes ?? 5,
+          });
+        }
+      })
+      .catch(() => {
+        // 用户设置暂不可达（如登录失效）——隐藏该节，不打扰其他设置。
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  const toggleAskAutoContinue = async (enabled: boolean) => {
+    setAskSaving(true);
+    setAskError(null);
+    try {
+      const response = await fetch("/api/user-settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ askAutoContinue: enabled }),
+      });
+      const data = await response.json() as { askAutoContinue: boolean; askTimeoutMinutes: number; error?: string };
+      if (!response.ok || data.error) throw new Error(data.error ?? `HTTP ${response.status}`);
+      // 无需重载会话：服务端在 PUT 后对等待中的提问重新武装/取消倒计时。
+      setAskSettings(data);
+    } catch (cause) {
+      setAskError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setAskSaving(false);
+    }
+  };
 
   const togglePowerShell = async (enabled: boolean) => {
     setShellSaving(true);
@@ -256,6 +300,25 @@ function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, 
             />
           </div>
           {shellError && <p role="alert" className="settings-general-error">{shellError}</p>}
+        </section>
+      )}
+
+      {askSettings && (
+        <section className="settings-general-section">
+          <h3 className="settings-general-heading">{t("settings.askAutoContinue")}</h3>
+          <p className="settings-general-description">
+            {t("settings.askAutoContinueDescription", { minutes: askSettings.askTimeoutMinutes })}
+          </p>
+          <div className="settings-chat-option settings-chat-switch-option">
+            <span>{t("settings.askAutoContinue")}</span>
+            <ConfigSwitch
+              checked={askSettings.askAutoContinue}
+              loading={askSaving}
+              label={t("settings.askAutoContinue")}
+              onChange={(enabled) => void toggleAskAutoContinue(enabled)}
+            />
+          </div>
+          {askError && <p role="alert" className="settings-general-error">{askError}</p>}
         </section>
       )}
 

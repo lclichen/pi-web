@@ -47,6 +47,7 @@ import {
 import { createSubagentController } from "./subagent-runtime";
 import { isBuiltInSubagentsEnabled } from "./subagent-settings";
 import { resolveShellTools } from "./powershell-settings";
+import { askAutoContinueMsFor } from "./user-settings";
 import { stopSubagentRun } from "./extensions/bg-tasks";
 import { CHAT_ONLY_RESOURCE_LOADER_OPTIONS, contextFilesSystemPrompt } from "./chat-only";
 import {
@@ -70,6 +71,9 @@ type AgentRunCompleteListener = (sessionId: string) => void;
 type PendingUiResponse = {
   resolve: (response: ExtensionUiResponse) => void;
   cancel: () => void;
+  /** Present only for dialogs without an extension-supplied timeout: swaps
+   *  the auto-continue countdown (undefined = stop waiting on a timer). */
+  rearmTimeout?: (duration: number | undefined) => void;
 };
 
 type CustomUiComponent = {
@@ -1893,7 +1897,7 @@ export class AgentSessionWrapper {
     request: ExtensionUiRequestBody,
     defaultValue: T,
     parseResponse: (response: ExtensionUiResponse) => T,
-    timeout?: number,
+    extensionTimeout: number | undefined,
     signal?: AbortSignal,
   ): Promise<T> {
     if (signal?.aborted) return Promise.resolve(defaultValue);
@@ -1901,17 +1905,45 @@ export class AgentSessionWrapper {
     if (stopSignal.aborted) return Promise.reject(stopSignal.reason);
     const abortSignal = signal ? AbortSignal.any([signal, stopSignal]) : stopSignal;
 
+    // 提问自动继续（按用户开关，lib/user-settings.ts）：扩展未自带 timeout 的
+    // 交互对话框（ask_user_question、exit_plan_mode 确认等）到期按默认值结算，
+    // Agent 收到"未作答"信号后继续。开关关闭（默认）→ 无限等待。
+    // 扩展显式传入的 timeout 语义优先，不受开关影响。
+    const timeout = extensionTimeout || askAutoContinueMsFor(this.ownerId);
+
     const id = randomUUID();
-    const fullRequest = {
+    const currentRequest: AgentEvent = {
       type: "extension_ui_request",
       id,
       ...request,
-      ...(timeout ? { timeout, expiresAt: Date.now() + timeout } : {}),
     };
 
     return new Promise((resolve, reject) => {
       let settled = false;
       let timeoutId: ReturnType<typeof setTimeout> | undefined;
+      // Emit a fresh copy each publish: the client keeps the last event object
+      // as React state, so an in-place mutate + emit would skip re-renders
+      // (stale countdown) via Object.is equality.
+      const publish = () => {
+        const event = { ...currentRequest };
+        this.pendingUiRequests.set(id, event);
+        this.emit(event);
+      };
+      const armTimeout = (duration: number | undefined, republish: boolean) => {
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+          timeoutId = undefined;
+        }
+        if (duration) {
+          currentRequest.timeout = duration;
+          currentRequest.expiresAt = Date.now() + duration;
+          timeoutId = setTimeout(() => settle(defaultValue), duration);
+        } else {
+          delete currentRequest.timeout;
+          delete currentRequest.expiresAt;
+        }
+        if (republish) publish();
+      };
       const cleanup = () => {
         if (timeoutId) clearTimeout(timeoutId);
         abortSignal.removeEventListener("abort", onAbort);
@@ -1928,16 +1960,30 @@ export class AgentSessionWrapper {
       };
       const onAbort = () => settle(defaultValue);
 
-      if (timeout) timeoutId = setTimeout(() => settle(defaultValue), timeout);
+      armTimeout(timeout || undefined, false);
       abortSignal.addEventListener("abort", onAbort, { once: true });
 
-      this.pendingUiRequests.set(id, fullRequest as AgentEvent);
       this.pendingUiResponses.set(id, {
         resolve: (response) => settle(parseResponse(response)),
         cancel: () => settle(defaultValue),
+        // Only switch-following dialogs can re-arm; extension-owned timeouts
+        // (extensionTimeout truthy) keep their original semantics.
+        ...(extensionTimeout
+          ? {}
+          : { rearmTimeout: (duration: number | undefined) => armTimeout(duration, true) }),
       });
-      this.emit(fullRequest as AgentEvent);
+      publish();
     });
+  }
+
+  /** Re-evaluate the ask-auto-continue countdown of every pending dialog.
+   *  Called when the owner flips their per-user switch: waiting questions
+   *  stop counting down (off) or restart their countdown (on). */
+  refreshAskTimeouts(): void {
+    if (!this._alive) return;
+    for (const pending of this.pendingUiResponses.values()) {
+      pending.rearmTimeout?.(askAutoContinueMsFor(this.ownerId));
+    }
   }
 
   private createExtensionUiContext(): ExtensionUiContextLike {
@@ -2400,6 +2446,15 @@ export function getRunningRpcSessionIds(): string[] {
     if (session.isRunning()) ids.add(session.sessionId || sessionId);
   }
   return [...ids];
+}
+
+/** Re-arm the ask-auto-continue countdown of every live session's pending
+ *  dialogs (called after a user-settings PUT). Each wrapper resolves its own
+ *  owner's switch, so one user's flip never touches another user's dialogs. */
+export function refreshRpcAskTimeouts(): void {
+  for (const session of getRegistry().values()) {
+    if (session.isAlive()) session.refreshAskTimeouts();
+  }
 }
 
 export function getCompletionNotificationSuppressedRpcSessionIds(): string[] {

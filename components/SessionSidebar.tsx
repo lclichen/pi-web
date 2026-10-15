@@ -1316,7 +1316,6 @@ useEffect(() => {
                       // 侧栏切到「快速会话」空间让新会话立刻可见。
                       onSessionSpaceChange?.("quick");
                       const tempId = typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now()}`;
-                      console.log(tempId,tpl);
                       onNewSession?.(tempId, "", "quick", tpl.id, tpl.name);
                     }}
                     title={tpl.description || tpl.name}
@@ -2027,6 +2026,13 @@ useEffect(() => {
               const tempId = typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now()}`;
               switchHostDir(dir);
               onNewSession?.(tempId, dir, "host", undefined, dir.split("/").filter(Boolean).pop() ?? dir);
+            }}
+            onNewSessionFromTemplate={(templateId: string, templateName: string) => {
+              // 快速空间模板组的 ＋：与 ⚡ 菜单同一条新建链路（模板 id 走
+              // projectId 槽），切到 quick 空间让新会话在自己的模板组里出现。
+              onSessionSpaceChange?.("quick");
+              const tempId = typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now()}`;
+              onNewSession?.(tempId, "", "quick", templateId, templateName);
             }}
             onDeleteSession={async (id) => {
               await fetch(`/api/sessions/${encodeURIComponent(id)}`, { method: "DELETE" }).catch(() => {});

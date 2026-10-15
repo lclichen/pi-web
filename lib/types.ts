@@ -333,6 +333,11 @@ export interface SessionInfo {
     stale?: true;
     detached?: true;
   };
+  /** Quick sessions: stable grouping key `<templateId>@<hash>` — the
+   *  template-VERSION identity the sidebar's two-level quick tree groups by.
+   *  Derived from the workspace snapshot, so it survives template deletion
+   *  (orphan groups keep their sessions instead of merging together). */
+  quickGroupKey?: string;
     relation?:
     | { kind: "fork"; originSessionId?: string }
     | {

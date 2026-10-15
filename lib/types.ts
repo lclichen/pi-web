@@ -322,7 +322,18 @@ export interface SessionInfo {
   parentSessionId?: string; // source session for a fork, or parent session for a subagent
   /** How this session relates to another session. Forks remain top-level in the
    *  UI; only subagent relations form a visible parent/child tree. */
-  relation?:
+  /** Quick sessions: the template snapshot that shaped this session
+   * (lib/quick-session.ts) — id/name/hash/capturedAt plus stale/detached
+   * flags when the live template has changed or been deleted. */
+  quickTemplate?: {
+    id: string;
+    name: string;
+    hash: string;
+    capturedAt: string;
+    stale?: true;
+    detached?: true;
+  };
+    relation?:
     | { kind: "fork"; originSessionId?: string }
     | {
         kind: "subagent";

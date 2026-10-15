@@ -35,12 +35,16 @@ function readDeploymentServers(): Record<string, unknown> | null {
   }
 }
 
-/** 把部署级 quick MCP 条目物化进用户 quick home（幂等；quick 会话创建时调用）。 */
-export function syncQuickMcpConfig(userId: number): void {
+/**
+ * 把部署级 quick MCP 条目物化进目标目录的 .pi/mcp.json（幂等）。
+ * targetDir 缺省 = 用户共享 quick home（旧路径）；新会话传入各自的
+ * 独立工作区目录（lib/quick-session.ts），会话间互不干涉。
+ */
+export function syncQuickMcpConfig(userId: number, targetDir?: string): void {
   const deployment = readDeploymentServers();
   if (!deployment || Object.keys(deployment).length === 0) return;
 
-  const piDir = join(quickHomeDir(userId), ".pi");
+  const piDir = join(targetDir ?? quickHomeDir(userId), ".pi");
   const target = join(piDir, "mcp.json");
   let doc: { mcpServers?: Record<string, unknown> } & Record<string, unknown> = {};
   try {

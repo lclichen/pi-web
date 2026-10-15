@@ -74,6 +74,7 @@ interface Props {
   planPanelActive?: boolean;
   /** The active/new session runs in quick mode (template switcher shows). */
   quickMode?: boolean;
+  onNewSessionTemplateChange?: (templateId: string) => void;
   onToggleTerminalPanel?: () => void;
   terminalPanelActive?: boolean;
   /** Session plan (probed by AppShell via useSessionPlan; feeds the capsule). */
@@ -271,7 +272,7 @@ function ProcessDetailsGroup({ messageCount, toolCallCount, defaultExpanded = fa
   );
 }
 
-export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initialScrollPosition, onScrollPositionChange, sessionRunning, newSessionCwd, newSessionDraftKey, newSessionMode, newSessionTemplateId, newSessionProjectId, onAgentEnd, onAttentionNeeded, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onOpenSession, onLabStateChange, sendCommandRef, onAskInNewChat, quoteSelectionEnabled = false, initialPrompt, onInitialPromptConsumed, soundEnabled = true, onSoundToggle, playDoneSound = () => {}, unlockAudio, onOpenAgentsPanel, onOpenPlanPanel, planPanelActive, quickMode = false, onToggleTerminalPanel, terminalPanelActive, plan, remoteSession, onSubagentCallsChange, onPlanActivity }: Props) {
+export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initialScrollPosition, onScrollPositionChange, sessionRunning, newSessionCwd, newSessionDraftKey, newSessionMode, newSessionTemplateId, newSessionProjectId, onAgentEnd, onAttentionNeeded, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onOpenSession, onLabStateChange, sendCommandRef, onAskInNewChat, quoteSelectionEnabled = false, initialPrompt, onInitialPromptConsumed, soundEnabled = true, onSoundToggle, playDoneSound = () => {}, unlockAudio, onOpenAgentsPanel, onOpenPlanPanel, planPanelActive, quickMode = false, onNewSessionTemplateChange, onToggleTerminalPanel, terminalPanelActive, plan, remoteSession, onSubagentCallsChange, onPlanActivity }: Props) {
   const { t } = useI18n();
   const isMobile = useIsMobile();
   const completionNotificationsEnabled = session?.relation?.kind !== "subagent";
@@ -1122,6 +1123,8 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
             <SessionToolbar
               cwd={messageCwd ?? ""}
               quickMode={quickMode || session?.mode === "quick" || (!session && newSessionMode === "quick")}
+              newSessionTemplateId={newSessionTemplateId}
+              onNewSessionTemplateChange={onNewSessionTemplateChange}
               sessionId={session?.id ?? null}
               hasLabTraining={hasLabTraining}
               onSendCommand={(cmd) => handleSend(cmd)}
@@ -1564,6 +1567,8 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
             <SessionToolbar
               cwd={messageCwd ?? ""}
               quickMode={quickMode || session?.mode === "quick" || (!session && newSessionMode === "quick")}
+              newSessionTemplateId={newSessionTemplateId}
+              onNewSessionTemplateChange={onNewSessionTemplateChange}
               sessionId={session?.id ?? null}
               hasLabTraining={hasLabTraining}
               onSendCommand={(cmd) => handleSend(cmd)}

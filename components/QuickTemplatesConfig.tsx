@@ -97,10 +97,10 @@ export function QuickTemplatesConfig({ embedded = false }: { embedded?: boolean 
   const { t } = useI18n();
   const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
   // 已配置的 MCP 服务器名——白名单多选数据源（见下方 /api/mcp 拉取）。
-  const [mcpServerNames, setMcpServerNames] = useState<string[]>([]);
+  const [mcpServerNames, setMcpServerNames] = useState<string[] | null>(null);
   // 仅快速会话可见的服务器（dataDir/mcp-quick.json 物化到 quick home）——
   // 模板白名单同样可以引用它们，chip 上加 ⚡ 标记区分。
-  const [quickOnlyServers, setQuickOnlyServers] = useState<Set<string>>(new Set());
+  const [quickScopedServers, setQuickScopedServers] = useState<Set<string>>(new Set());
   const [templates, setTemplates] = useState<QuickTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -156,29 +156,15 @@ export function QuickTemplatesConfig({ embedded = false }: { embedded?: boolean 
     let cancelled = false;
     void (async () => {
       try {
-        const res = await fetch("/api/mcp", { cache: "no-store" });
+        const res = await fetch("/api/mcp?quick=1", { cache: "no-store" });
         if (!res.ok) return;
         const data = (await res.json()) as { servers?: Array<{ name?: string }> };
         if (!cancelled && Array.isArray(data.servers)) {
-          const globalNames = data.servers
-            .map((s) => (typeof s?.name === "string" ? s.name : ""))
-            .filter((n) => n.length > 0);
-          // quick 作用域（?quick=1）：并集展示，quick-only 的记入集合供徽标
-          try {
-            const rq = await fetch("/api/mcp?quick=1", { cache: "no-store" });
-            if (rq.ok) {
-              const dq = (await rq.json()) as { servers?: Array<{ name?: string }> };
-              const quickNames = (dq.servers ?? [])
-                .map((s) => (typeof s?.name === "string" ? s.name : ""))
-                .filter((n) => n.length > 0);
-              setQuickOnlyServers(new Set(quickNames.filter((n) => !globalNames.includes(n))));
-              setMcpServerNames([...new Set([...globalNames, ...quickNames])]);
-            } else {
-              setMcpServerNames(globalNames);
-            }
-          } catch {
-            setMcpServerNames(globalNames);
-          }
+          const all = data.servers
+            .map((s: { name?: string; scope?: string }) => ({ name: typeof s?.name === "string" ? s.name : "", scope: typeof s?.scope === "string" ? s.scope : "" }))
+            .filter((x) => x.name.length > 0);
+          setMcpServerNames(all.map((x) => x.name));
+          setQuickScopedServers(new Set(all.filter((x) => x.scope === "quick").map((x) => x.name)));
         }
       } catch { /* 忽略：退回手填 */ }
     })();
@@ -273,6 +259,7 @@ export function QuickTemplatesConfig({ embedded = false }: { embedded?: boolean 
 
   return (
     <ConfigPanelShell embedded={embedded} title={t("quickTemplates.quickSessionTemplates")} closeLabel={t("i18n.close")} onClose={() => {}}>
+
       {/* Body */}
       <ConfigSplitView>
         {/* Left: template list（与模型页同构：列表 + 左下角新建） */}
@@ -359,9 +346,9 @@ export function QuickTemplatesConfig({ embedded = false }: { embedded?: boolean 
                   </div>
                 )}
                 <ConfigField label={t("quickTemplates.mcpAllowlistPick")}>
-                  {mcpServerNames.length > 0 ? (
+                  {mcpServerNames !== null ? (
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                      {mcpServerNames.map((server) => {
+                      {mcpServerNames.map((server: string) => {
                         const checked = draft.mcpServers.includes(server);
                         return (
                           <label
@@ -387,10 +374,13 @@ export function QuickTemplatesConfig({ embedded = false }: { embedded?: boolean 
                                 });
                               }}
                             />
-                            {server}{quickOnlyServers.has(server) ? " ⚡" : ""}
+                            {server}{quickScopedServers.has(server) ? " ⚡" : ""}
                           </label>
                         );
                       })}
+                      {mcpServerNames.length === 0 && (
+                        <span style={{ alignSelf: "center", fontSize: 11, color: "var(--text-dim)" }}>{t("quickTemplates.mcpNoServers")}</span>
+                      )}
                       <span style={{ alignSelf: "center", fontSize: 11, color: "var(--text-dim)" }}>{t("quickTemplates.mcpAllowlistEmptyMeansAll")}</span>
                     </div>
                   ) : (

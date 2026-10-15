@@ -362,7 +362,7 @@ type SlashCommandsResponse = {
 export function useAgentSession(opts: UseAgentSessionOptions) {
   const {
     session, sessionRunning, newSessionCwd, newSessionMode, newSessionProjectId, newSessionDraftKey,
-    newSessionTemplateId: optsNewSessionTemplateId,
+    newSessionTemplateId,
     onAgentEnd, onAttentionNeeded, onSessionCreated, onSessionForked,
     modelsRefreshKey, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onSessionStatsPanelOpen,
     onPlanActivity,
@@ -371,12 +371,16 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   onPlanActivityRef.current = onPlanActivity;
 
   const isNew = session === null && newSessionCwd !== null;
+  console.log("isNew? "+isNew);
+  console.log("newSessionCwd?"+newSessionCwd);
   const newSessionModeRef = useRef(newSessionMode);
   newSessionModeRef.current = newSessionMode;
-  const newSessionTemplateIdRef = useRef(optsNewSessionTemplateId);
-  newSessionTemplateIdRef.current = optsNewSessionTemplateId;
+  const newSessionTemplateIdRef = useRef(newSessionTemplateId);
+  newSessionTemplateIdRef.current = newSessionTemplateId;
   const newSessionProjectIdRef = useRef(newSessionProjectId);
   newSessionProjectIdRef.current = newSessionProjectId;
+  console.log(newSessionTemplateId);
+  console.log(newSessionProjectId);
 
   const [data, setData] = useState<SessionData | null>(null);
   const [loading, setLoading] = useState(!isNew);
@@ -763,7 +767,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           // quick 不带 cwd：会话目录由服务端强制为独立 quick home（防继承上一会话目录）
-          ...(newSessionModeRef.current === "quick" ? {} : { cwd: newSessionCwd }),
+          cwd: newSessionCwd ?? undefined,
+          // cwd: newSessionCwd,
           ...(newSessionModeRef.current ? { mode: newSessionModeRef.current } : {}),
           ...(newSessionModeRef.current === "quick" && newSessionTemplateIdRef.current ? { templateId: newSessionTemplateIdRef.current } : {}),
           ...(newSessionProjectIdRef.current ? { projectId: newSessionProjectIdRef.current } : {}),
@@ -1544,7 +1549,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     let promptRequestStarted = false;
 
     try {
-      if (isNew && newSessionCwd) {
+      if ((isNew && newSessionCwd) || (isNew && newSessionModeRef.current === "quick")) {
         const selectedModel = newSessionModel;
         const existingSid = sessionIdRef.current ?? await ensuringNewSessionRef.current;
         const sid = existingSid ?? await ensureNewSession();

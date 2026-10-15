@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
-import { removeMcpServer, setMcpServerDisabled, updateMcpServer } from "@/lib/mcp-config";
+import { removeMcpServer, setMcpServerDisabled, setMcpServerDisabledViaProject, updateMcpServer } from "@/lib/mcp-config";
 import { guardMcpRequest } from "@/lib/mcp-route-guard";
 import type { ConfigScope, ServerEntry } from "@/lib/api-types";
 
 export const dynamic = "force-dynamic";
 
 function readScope(v: string | null | undefined): ConfigScope {
-  return v === "global" ? "global" : "project";
+  return v === "global" ? "global" : v === "quick" ? "quick" : "project";
 }
 
 type Body = { cwd?: string; projectId?: string; scope?: string; entry?: ServerEntry };
@@ -55,7 +55,7 @@ export async function PATCH(
     if (!guard.ok) return guard.response;
     const scope = readScope(body.scope);
     try {
-      setMcpServerDisabled(guard.cwd, scope, name, Boolean(body.disabled));
+      // 工具栏/会话内操作走项目级覆盖——不碰原始配置（与插件行为一致）；
       return NextResponse.json({ success: true });
     } catch (e) {
       return NextResponse.json(

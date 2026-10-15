@@ -84,14 +84,19 @@ export function composeQuickSystemPrompt(base: string, template?: string): strin
  * webUiPrompt 的附加段经 wrapper 的 continuation 在更外层追加，最终顺序：
  * 适配后基础段 → 模板 → Web 输出附加段。
  */
-export function createQuickPromptExtension(template?: string): InlineExtension {
+/** 模板内容的可变持有者：apply_quick_template 热切换时原地更新。 */
+export interface QuickTemplateHolder {
+  current?: string;
+}
+
+export function createQuickPromptExtension(holder: QuickTemplateHolder): InlineExtension {
   return {
     name: "pi-web-quick-prompt",
     hidden: true,
     factory: (pi: ExtensionAPI): void => {
       pi.on("before_agent_start", async (event: { systemPrompt?: string }) => {
         const base = event.systemPrompt ?? "";
-        const next = composeQuickSystemPrompt(base, template);
+        const next = composeQuickSystemPrompt(base, holder.current);
         return next === base ? undefined : { systemPrompt: next };
       });
     },

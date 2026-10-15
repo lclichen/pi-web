@@ -16,6 +16,8 @@ export interface SessionMeta {
   ownerId: number;
   /** Owning project (project-scoped sessions). */
   projectId?: string;
+  /** Quick sessions: the per-session workspace slug (lib/quick-session.ts). */
+  quickDir?: string;
   /** Quick sessions: the template that shaped the prompt/toolset (restore 用). */
   templateId?: string;
   ownerName?: string;

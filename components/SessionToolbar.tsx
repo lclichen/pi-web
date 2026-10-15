@@ -12,6 +12,10 @@ interface Props {
   disabled?: boolean;
   /** Quick mode: show the template switcher (reads /api/quick-templates). */
   quickMode?: boolean;
+  /** 新建 quick 会话（未发首条消息）时切换模板：写回 newSessionTemplateId。 */
+  onNewSessionTemplateChange?: (templateId: string) => void;
+  /** 新建 quick 会话的模板 id（显示当前模板；会话建立后用快照）。 */
+  newSessionTemplateId?: string | null;
 }
 
 function chipStyle(active: boolean): React.CSSProperties {
@@ -145,7 +149,7 @@ function ToggleRow({
   );
 }
 
-export function SessionToolbar({ cwd, sessionId, hasLabTraining, onSendCommand, onApplyPreferences, disabled, quickMode = false }: Props) {
+export function SessionToolbar({ cwd, sessionId, hasLabTraining, onSendCommand, onApplyPreferences, disabled, quickMode = false, onNewSessionTemplateChange, newSessionTemplateId }: Props) {
   const [prefs, setPrefs] = useState<WebPreferences>({ mcpEnabled: true, subagentsEnabled: true, labVerifyEnabled: true });
   const [mcpOpen, setMcpOpen] = useState(false);
   const [agentsOpen, setAgentsOpen] = useState(false);
@@ -154,6 +158,9 @@ export function SessionToolbar({ cwd, sessionId, hasLabTraining, onSendCommand, 
   const [quickTemplates, setQuickTemplates] = useState<Array<{ id: string; name: string }>>([]);
   const [quickOpen, setQuickOpen] = useState(false);
   const [applyingTemplate, setApplyingTemplate] = useState<string | null>(null);
+  // 当前会话的模板快照（SessionInfo.quickTemplate）：显示"当前模板·版本"，
+  // 模板事后变更/删除给出 stale/detached 提示。
+  const [activeTemplate, setActiveTemplate] = useState<{ id: string; name: string; hash: string; capturedAt: string; stale?: true; detached?: true } | null>(null);
 
   // Quick mode: template list for mid-session switching.
   useEffect(() => {
@@ -163,6 +170,18 @@ export function SessionToolbar({ cwd, sessionId, hasLabTraining, onSendCommand, 
       .then((d: { templates?: Array<{ id: string; name: string }> }) => setQuickTemplates(d.templates ?? []))
       .catch(() => {});
   }, [quickMode]);
+
+  // 当前模板快照：首次打开与恢复后都可见（模板名 + 8 位版本指纹）。
+  useEffect(() => {
+    if (!quickMode) return;
+    if (!sessionId) { setActiveTemplate(null); return; }
+    fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { quickTemplate?: { id: string; name: string; hash: string; capturedAt: string; stale?: true; detached?: true } } | null) => {
+        setActiveTemplate(d?.quickTemplate ?? null);
+      })
+      .catch(() => setActiveTemplate(null));
+  }, [quickMode, sessionId]);
 
   const applyQuickTemplate = useCallback(async (templateId: string) => {
     if (!sessionId) return;
@@ -186,7 +205,10 @@ export function SessionToolbar({ cwd, sessionId, hasLabTraining, onSendCommand, 
   }, [cwd]);
 
   const loadMcp = useCallback(() => {
-    fetch(`/api/mcp?cwd=${encodeURIComponent(cwd)}`)
+    // 按模式分 scope：quick 只看工作区 project 层（只读展示）；
+    // 非 quick 排除 quick 专用层（模板白名单与普通会话无关）
+    const toolbarScopes = quickMode ? "project" : "project,global";
+    fetch(`/api/mcp?cwd=${encodeURIComponent(cwd)}&scopes=${toolbarScopes}`)
       .then((r) => r.json())
       .then((d: { servers: McpServerInfo[] }) => setMcpServers(d.servers ?? []))
       .catch(() => {});
@@ -230,6 +252,7 @@ export function SessionToolbar({ cwd, sessionId, hasLabTraining, onSendCommand, 
   const toggleMcpServer = useCallback(
     async (name: string, scope: string, currentlyDisabled: boolean) => {
       try {
+                if (quickMode) return; // quick 模式 MCP 只读（模板白名单决定）
         await fetch(`/api/mcp/servers/${encodeURIComponent(name)}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
@@ -259,21 +282,54 @@ export function SessionToolbar({ cwd, sessionId, hasLabTraining, onSendCommand, 
 
   const buttons: React.ReactNode[] = [];
 
-  // Quick mode: template switcher chip (mid-session template change).
-  if (quickMode && sessionId) {
+  // Quick mode: template chip。新建会话（session 尚未建立）时允许选择模板
+  //（onNewSessionTemplateChange 写回草稿）；首条消息发出后（session 存在）
+  // 只显示不可切换——模板快照已定，中途换模板语义上等于换会话。
+  const isNewQuick = quickMode && !sessionId;
+  const conversationStarted = Boolean(sessionId);
+  if (quickMode) {
     buttons.push(
       <div key="quick-template" style={{ position: "relative" }}>
         <button
           onClick={() => { setQuickOpen((v) => !v); }}
-          disabled={disabled}
+          disabled={disabled || conversationStarted}
           style={chipStyle(quickOpen)}
-          title="切换快速会话模板（模型 / 系统提示词 / MCP）"
+          title={conversationStarted ? "当前会话模板（对话开始后不可切换）" : isNewQuick ? "选择快速会话模板（模型 / 系统提示词 / MCP）——发送首条消息前可切换" : "切换快速会话模板（模型 / 系统提示词 / MCP）"}
         >
           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
           </svg>
           模板
         </button>
+        {isNewQuick && !activeTemplate && newSessionTemplateId && quickTemplates.find((x) => x.id === newSessionTemplateId) && (
+          <span
+            title={`当前模板：${quickTemplates.find((x) => x.id === newSessionTemplateId)!.name}（尚未发送消息，可切换）`}
+            style={{
+              display: "inline-flex", alignItems: "center", gap: 4, height: 20,
+              padding: "0 7px", borderRadius: 999, fontSize: 10, fontWeight: 600,
+              color: "var(--text-dim)", background: "var(--bg-panel)",
+              border: "1px solid var(--border)", fontFamily: "var(--font-mono)", whiteSpace: "nowrap",
+            }}
+          >
+            {quickTemplates.find((x) => x.id === newSessionTemplateId)!.name}
+          </span>
+        )}
+        {activeTemplate && (
+          <span
+            title={`模板快照：${activeTemplate.name}（版本 ${activeTemplate.hash}，${activeTemplate.capturedAt || "时间未知"}）${activeTemplate.stale ? "——模板内容已变更，切换模板可应用新版" : activeTemplate.detached ? "——模板已被删除" : ""}`}
+            style={{
+              display: "inline-flex", alignItems: "center", gap: 4, height: 20,
+              padding: "0 7px", borderRadius: 999, fontSize: 10, fontWeight: 600,
+              color: activeTemplate.stale || activeTemplate.detached ? "#f59e0b" : "var(--text-dim)",
+              background: activeTemplate.stale || activeTemplate.detached ? "rgba(245,158,11,0.12)" : "var(--bg-panel)",
+              border: `1px solid ${activeTemplate.stale || activeTemplate.detached ? "rgba(245,158,11,0.4)" : "var(--border)"}`,
+              fontFamily: "var(--font-mono)", whiteSpace: "nowrap",
+            }}
+          >
+            {activeTemplate.name}·{activeTemplate.hash}
+            {activeTemplate.stale ? " ↻" : activeTemplate.detached ? " ✕" : ""}
+          </span>
+        )}
         {quickOpen && (
           <Popover onClose={() => setQuickOpen(false)}>
             {quickTemplates.length === 0 ? (
@@ -284,7 +340,10 @@ export function SessionToolbar({ cwd, sessionId, hasLabTraining, onSendCommand, 
                   key={tpl.id}
                   type="button"
                   disabled={applyingTemplate !== null}
-                  onClick={() => { void applyQuickTemplate(tpl.id); }}
+                  onClick={() => {
+                    if (isNewQuick) { onNewSessionTemplateChange?.(tpl.id); setQuickOpen(false); return; }
+                    void applyQuickTemplate(tpl.id);
+                  }}
                   style={{
                     display: "block", width: "100%", padding: "6px 12px", border: "none",
                     background: "transparent", color: "var(--text)", fontSize: 11.5,
@@ -349,7 +408,8 @@ export function SessionToolbar({ cwd, sessionId, hasLabTraining, onSendCommand, 
 
   const agentList = Array.isArray(agents) ? agents : [];
   const agentEnabledCount = agentList.filter((a) => a.enabled !== false).length;
-  buttons.push(
+  // quick 会话不显示 Agents 按钮——quick 无子智能体（模板即全部配置面）
+  if (!quickMode) buttons.push(
     <div key="subagents" style={{ position: "relative" }}>
       <button
         onClick={() => { setAgentsOpen((v) => !v); setMcpOpen(false); }}

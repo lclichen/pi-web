@@ -982,9 +982,20 @@ export function AppShell() {
     if (mode === "quick") {
       setNewSessionTemplateId(projectId ?? null);
       setNewSessionProjectId(null);
-      // quick 无工作区：清掉草稿 cwd，防下一个 quick 会话继承上一会话的目录
-      //（ensure payload 已不发送；此处是状态层兜底）。
-      setNewSessionCwd("");
+      // 类似 host 模式：前端解析工作区路径作为 cwd——服务端直接用（不再
+      // 靠哨兵/服务端覆写）。模板+版本决定目录（同版本复用），与
+      // ensureQuickSessionWorkspace 的 slug 约定一致。
+      const tplId = projectId ?? "default";
+      setNewSessionCwd(`/api/quick-workspace/${tplId}`);
+      // 异步解析真实路径（slug 含 hash 需服务端算）
+      void fetch(`/api/quick-workspace/${encodeURIComponent(tplId)}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d: { cwd?: string } | null) => {
+          if (d?.cwd) setNewSessionCwd(d.cwd);
+        })
+        .catch(() => {
+          // 解析失败保持占位 URL——服务端 quick 分支会兜底
+        });
     } else {
       setNewSessionTemplateId(null);
       setNewSessionProjectId(projectId ?? null);
@@ -1286,6 +1297,8 @@ export function AppShell() {
   }, [newSessionDraftKey]);
   const showChat = selectedSession !== null || effectiveNewSessionCwd !== null;
   const projectTrustCwd = selectedSession?.cwd ?? effectiveNewSessionCwd;
+  // quick 会话的设置页不用工作区 cwd——那是模板产生的影子 MCP 配置，
+  // 不是用户可编辑的"项目"。quick 的设置走全局（undefined cwd）。
   // While restoring initial session from URL, don't show the placeholder
   const showPlaceholder = initialSessionRestored && !showChat;
 
@@ -2854,6 +2867,18 @@ export function AppShell() {
               sessionRunning={Boolean(selectedSession && runningSessionIds.has(selectedSession.id))}
               newSessionCwd={effectiveNewSessionCwd}
               newSessionMode={newSessionMode}
+              newSessionTemplateId={newSessionTemplateId}
+              onNewSessionTemplateChange={(id) => {
+                setNewSessionTemplateId(id);
+                // 模板切换 = 工作区切换：fetch 新模板的工作区路径并更新 cwd，
+                // 工具栏 MCP / 提示词的 cwd 随之变化。
+                void fetch(`/api/quick-workspace/${encodeURIComponent(id)}`)
+                  .then((r) => (r.ok ? r.json() : null))
+                  .then((d: { cwd?: string } | null) => {
+                    if (d?.cwd) setNewSessionCwd(d.cwd);
+                  })
+                  .catch(() => { /* 解析失败保持当前 cwd */ });
+              }}
               newSessionProjectId={newSessionProjectId}
               newSessionDraftKey={newSessionDraftKey}
               onAgentEnd={handleAgentEnd}
@@ -3216,7 +3241,7 @@ export function AppShell() {
     </div>
     {settingsSection && (
       <SettingsPanel
-        cwd={projectTrustCwd}
+        cwd={activeSessionMode === "quick" ? null : projectTrustCwd}
         sessionId={selectedSession?.id ?? null}
         initialSection={settingsSection}
         isAdmin={!authEnabled /* auth-off 单用户模式 = 隐式 host 管理员，后端同样放行管理面 */

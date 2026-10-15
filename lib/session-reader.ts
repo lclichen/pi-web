@@ -114,14 +114,39 @@ export async function attachSessionProjectInfo(sessions: SessionInfo[]): Promise
   const uniqueCwds = [...new Set(sessions.map((s) => s.cwd).filter(Boolean))];
   const projectByCwd = new Map<string, ProjectInfo>();
   await Promise.all(uniqueCwds.map(async (cwd) => {
-    projectByCwd.set(cwd, await resolveProject(cwd));
+      projectByCwd.set(cwd, await resolveProject(cwd));
   }));
+
+  // quick 会话附带模板快照信息（id/name/hash/capturedAt/stale）——前端显示
+  // "当前模板·版本"，模板事后变更可对比出 stale。
+  const { getSessionMeta } = await import("./session-metas");
+  const { readQuickTemplateSnapshot, quickSessionDir, quickTemplateHash } = await import("./quick-session");
+  const { getQuickTemplate } = await import("./quick-templates");
 
   return sessions.map((session) => {
     const project = session.cwd ? projectByCwd.get(session.cwd) : undefined;
     const projectRoot = project?.projectRoot ?? session.cwd;
+    const meta = getSessionMeta(session.id);
+    const quickSlug = (meta as { quickDir?: string } | undefined)?.quickDir;
+    const snapshot = meta?.mode === "quick" && quickSlug
+      ? readQuickTemplateSnapshot(quickSessionDir(meta.ownerId, quickSlug))
+      : null;
+    const live = snapshot ? getQuickTemplate(snapshot.id) : undefined;
+    const quickTemplate = snapshot
+      ? {
+          id: snapshot.id,
+          name: snapshot.name,
+          hash: snapshot.hash,
+          capturedAt: snapshot.capturedAt,
+          // 活模板仍在且内容指纹与快照不一致 → 已变更；模板被删 = detached
+          ...(live
+            ? (quickTemplateHash(live) !== snapshot.hash ? { stale: true as const } : {})
+            : { detached: true as const }),
+        }
+      : undefined;
     return {
       ...session,
+      ...(quickTemplate ? { quickTemplate } : {}),
       projectRoot,
       projectKey: projectIdentityKey(projectRoot),
       ...(project?.branch ? { branch: project.branch } : {}),

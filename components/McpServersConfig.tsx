@@ -147,7 +147,7 @@ export function McpServersConfig({ cwd, onClose, embedded = false }: { cwd: stri
 
   const servers = useMemo(() => doc?.servers ?? [], [doc]);
   const grouped = useMemo(() => {
-    return (["project", "global"] as ConfigScope[])
+    return (["project", "quick", "global"] as ConfigScope[])
       .map((scope) => ({ scope, servers: servers.filter((s) => s.scope === scope) }))
       .filter((g) => g.servers.length > 0);
   }, [servers]);
@@ -155,7 +155,7 @@ export function McpServersConfig({ cwd, onClose, embedded = false }: { cwd: stri
   const loadDoc = useCallback(async () => {
     setLoading(true); setError(null);
     try {
-      const res = await fetch(`/api/mcp?cwd=${encodeURIComponent(cwd)}`);
+      const res = await fetch(`/api/mcp?cwd=${encodeURIComponent(cwd)}&all=1`);
       const data = (await res.json()) as McpConfigDocument & { error?: string };
       if (!res.ok || data.error) throw new Error(data.error ?? `HTTP ${res.status}`);
       setDoc(data);
@@ -271,7 +271,7 @@ export function McpServersConfig({ cwd, onClose, embedded = false }: { cwd: stri
 
   const showForm = creating || selectedKey !== null;
   const diagnostics = doc?.diagnostics ?? [];
-  const scopeGroupLabel = (scope: string) => scope === "project" ? t("agents.scope.project") : t("agents.scope.global");
+  const scopeGroupLabel = (scope: string) => scope === "project" ? t("agents.scope.project") : scope === "quick" ? t("mcp.scopeQuick") : t("agents.scope.global");
 
   return (
     <ConfigPanelShell embedded={embedded} title={t("mcp.mcpServers")} subtitle={shortenPath(cwd)} closeLabel={t("i18n.close")} onClose={onClose}>
@@ -305,7 +305,7 @@ export function McpServersConfig({ cwd, onClose, embedded = false }: { cwd: stri
               <div key={group.scope} className="config-sidebar-group">
                 <ConfigSidebarGroupLabel>{scopeGroupLabel(group.scope)}</ConfigSidebarGroupLabel>
                 {group.servers.map((srv) => {
-                  const key = `${srv.scope}\0${srv.name}`;
+                  const key = `${srv.scope}\0${srv.name}{srv.shadowed ? " (被项目覆盖)" : ""}`;
                   const isSelected = !creating && selectedKey === key;
                   const isExpanded = expandedServers.has(key);
                   const toolInfo = toolMap.get(key);
@@ -317,7 +317,7 @@ export function McpServersConfig({ cwd, onClose, embedded = false }: { cwd: stri
                         <ConfigSidebarItem active={isSelected} onClick={() => selectServer(srv)} style={{ flex: 1, minWidth: 0 }}>
                           <span style={{ fontSize: 11, fontWeight: isSelected ? 600 : 400, display: "flex", alignItems: "center", gap: 4, minWidth: 0, overflow: "hidden" }}>
                             <span style={{ fontSize: 8, padding: "1px 4px", borderRadius: 3, background: srv.transport === "http" ? "#2563eb33" : "#16a34a33", color: srv.transport === "http" ? "#60a5fa" : "#4ade80", flexShrink: 0 }}>{srv.transport}</span>
-                            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{srv.name}</span>
+                            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{srv.name}{srv.shadowed ? " (被项目覆盖)" : ""}</span>
                             {srv.directToolsOn && <span style={{ fontSize: 8, color: "var(--accent)" }}>DT</span>}
                             {toolInfo?.error && <span style={{ fontSize: 8, color: "#f59e0b" }}>!</span>}
                             {!toolInfo?.error && toolCount > 0 && <span style={{ fontSize: 8, color: "var(--text-dim)" }}>{toolCount}</span>}
@@ -330,7 +330,7 @@ export function McpServersConfig({ cwd, onClose, embedded = false }: { cwd: stri
                             <div style={{ fontSize: 10, color: toolInfo.needsAuth ? "#f59e0b" : "#ef4444", padding: "2px 0" }}>{toolInfo.needsAuth ? "Auth required" : toolInfo.error.slice(0, 60)}</div>
                           ) : toolCount > 0 ? toolInfo!.tools.map((tool) => (
                             <div key={tool.name} style={{ fontSize: 10, padding: "1px 0", display: "flex", gap: 4, alignItems: "baseline" }}>
-                              <code style={{ fontFamily: "var(--font-mono)", color: "var(--accent)", fontSize: 10 }}>{srv.name}_{tool.name}</code>
+                              <code style={{ fontFamily: "var(--font-mono)", color: "var(--accent)", fontSize: 10 }}>{srv.name}{srv.shadowed ? " (被项目覆盖)" : ""}_{tool.name}</code>
                               {tool.description && <span style={{ color: "var(--text-dim)", fontSize: 9, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{tool.description.slice(0, 50)}</span>}
                             </div>
                           )) : probingAll ? <div style={{ fontSize: 10, color: "var(--text-dim)", padding: "2px 0" }}>probing...</div> : <div style={{ fontSize: 10, color: "var(--text-dim)", padding: "2px 0" }}>No tools</div>}
@@ -366,7 +366,7 @@ export function McpServersConfig({ cwd, onClose, embedded = false }: { cwd: stri
 
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                   <div style={{ flex: "1 1 140px" }}><ConfigField label="Name"><input style={inputStyle} value={form.name} disabled={!creating} onChange={(e) => set("name", e.target.value)} placeholder="LithoChat" /></ConfigField></div>
-                  <div style={{ width: 110 }}><ConfigField label="Scope"><select style={inputStyle} value={form.scope} disabled={!creating} onChange={(e) => set("scope", e.target.value as ConfigScope)}><option value="project">project</option><option value="global">global</option></select></ConfigField></div>
+                  <div style={{ width: 110 }}><ConfigField label="Scope"><select style={inputStyle} value={form.scope} disabled={!creating} onChange={(e) => set("scope", e.target.value as ConfigScope)}><option value="project">project</option><option value="quick">quick（仅快速会话）</option><option value="global">global</option></select></ConfigField></div>
                   <div style={{ width: 110 }}><ConfigField label="Connection"><select style={inputStyle} value={form.transport} onChange={(e) => set("transport", e.target.value as "stdio" | "http")}><option value="stdio">stdio</option><option value="http">http</option></select></ConfigField></div>
                 </div>
 

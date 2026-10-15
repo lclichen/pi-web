@@ -14,7 +14,14 @@ import type {
 }  from "./api-types";
 
 export function mcpConfigPath(cwd: string, scope: ConfigScope): string {
-  return scope === "project" ? join(cwd, ".pi", "mcp.json") : join(getAgentDir(), "mcp.json");
+  if (scope === "project") return join(cwd, ".pi", "mcp.json");
+  if (scope === "quick") {
+    // 部署级快速会话专用：复用 dataDir/mcp-quick.json 作为唯一存储
+    //（lib/quick-mcp.ts 的 syncQuickMcpConfig 在会话创建时物化到工作区）。
+    const { deploymentQuickMcpPath } = require("./quick-mcp") as typeof import("./quick-mcp");
+    return deploymentQuickMcpPath();
+  }
+  return join(getAgentDir(), "mcp.json");
 }
 
 interface RawMcpConfig {
@@ -123,7 +130,15 @@ function toServerInfo(
   };
 }
 
-export function readMcpConfig(cwd: string): McpConfigDocument {
+export interface ReadMcpOptions {
+  /** 限定输出的 scope 集合（默认全部）。quick 工具栏只看 project；
+   * 非工具栏排除 quick；设置页看全部并标注覆盖。 */
+  scopes?: ConfigScope[];
+  /** 保留被高优先级遮蔽的低层条目（设置页用——附带 overridden 标记）。 */
+  includeShadowed?: boolean;
+}
+
+export function readMcpConfig(cwd: string, options?: ReadMcpOptions): McpConfigDocument {
   const diagnostics: McpConfigDiagnostic[] = [];
   const servers: McpServerInfo[] = [];
   let settings: McpSettings | undefined;
@@ -137,10 +152,18 @@ export function readMcpConfig(cwd: string): McpConfigDocument {
     join(agentsDir, "mcp.json"),
     join(agentsDir, "mcp", "mcp.json"),
   ];
+  const quickCandidates = [
+    mcpConfigPath(cwd, "quick"),
+    join(agentsDir, "mcp-quick.json"),
+  ];
 
-  for (const scope of ["project", "global"] as ConfigScope[]) {
+  const activeScopes = options?.scopes ?? (["project", "quick", "global"] as ConfigScope[]);
+
+  for (const scope of activeScopes) {
     const candidates = scope === "project"
       ? [mcpConfigPath(cwd, scope)]
+      : scope === "quick"
+        ? quickCandidates
       : globalCandidates;
 
     for (const path of candidates) {
@@ -152,7 +175,15 @@ export function readMcpConfig(cwd: string): McpConfigDocument {
         for (const [name, entry] of Object.entries(mcpServers)) {
           if (!entry || typeof entry !== "object") continue;
           // Skip disabled servers in the listing (still show in config diagnostics)
-          servers.push(toServerInfo(name, entry as ServerEntry, scope, path));
+          const info = toServerInfo(name, entry as ServerEntry, scope, path);
+          if (!options?.includeShadowed) {
+            // 正常模式：已被高优先级同名条目占据时跳过（去重在后面统一做）
+            servers.push(info);
+          } else {
+            // 设置页模式：保留所有层——后面去重时低层条目标记 shadowed
+            (info as McpServerInfo & { shadowed?: boolean }).shadowed = false;
+            servers.push(info);
+          }
         }
       }
       if (config.settings && !settings) {
@@ -162,7 +193,21 @@ export function readMcpConfig(cwd: string): McpConfigDocument {
     }
   }
 
-  return { servers, settings, settingsScope, diagnostics };
+  // Deduplicate by server name with scope priority (pi-mcp-adapter chain:
+  // .pi/mcp.json [project] > mcp-quick.json [quick] > agent mcp.json [global]).
+  // Higher-priority scope wins; its disabled flag is respected (a project-level
+  // { disabled: true } shadows an enabled global entry of the same name).
+  const scopeRank: Record<ConfigScope, number> = { project: 0, quick: 1, global: 2 };
+  const byName = new Map<string, McpServerInfo>();
+  for (const s of servers) {
+    const existing = byName.get(s.name);
+    if (!existing || scopeRank[s.scope] < scopeRank[existing.scope]) {
+      byName.set(s.name, s);
+    }
+  }
+  const deduped = [...byName.values()];
+
+  return { servers: deduped, settings, settingsScope, diagnostics };
 }
 
 function loadWritable(path: string): RawMcpConfig {
@@ -214,6 +259,37 @@ export function removeMcpServer(cwd: string, scope: ConfigScope, name: string): 
   }
   delete cfg.mcpServers[name];
   persist(path, cfg);
+}
+
+/**
+ * 工具栏/会话内的禁用切换：写项目级覆盖（.pi/mcp.json 中 { disabled: true }），
+ * 不碰原始配置（全局 mcp.json 等）。与 pi-mcp-adapter 的行为一致——
+ * 原始配置的禁用只允许在设置页操作。
+ * 如果服务器已在项目层有定义，直接改其中的 disabled；否则新建同名覆盖条目。
+ */
+export function setMcpServerDisabledViaProject(
+  cwd: string,
+  name: string,
+  disabled: boolean,
+): void {
+  const projectPath = mcpConfigPath(cwd, "project");
+  const cfg = loadWritable(projectPath);
+  if (!cfg.mcpServers) cfg.mcpServers = {};
+  const existing = cfg.mcpServers[name] as ServerEntry | undefined;
+  if (existing) {
+    if (disabled) {
+      existing.disabled = true;
+    } else {
+      delete existing.disabled;
+      // 如果条目只剩 disabled（无实际配置），删掉整个条目恢复透明
+      const keys = Object.keys(existing).filter((k) => k !== "disabled");
+      if (keys.length === 0) delete cfg.mcpServers[name];
+    }
+  } else if (disabled) {
+    // 新建覆盖条目（只有 disabled 标记，不含原始凭据）
+    cfg.mcpServers[name] = { disabled: true } as ServerEntry;
+  }
+  persist(projectPath, cfg);
 }
 
 export function setMcpServerDisabled(

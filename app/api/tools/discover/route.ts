@@ -9,7 +9,7 @@ const BUILTIN_TOOLS = ["bash", "edit", "find", "grep", "ls", "read", "write"];
 
 export interface McpServerTools {
   server: string;
-  scope: "project" | "global";
+  scope: "project" | "global" | "quick";
   transport: "stdio" | "http";
   tools: McpTool[];
   error?: string;

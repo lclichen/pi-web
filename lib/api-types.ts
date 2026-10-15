@@ -183,7 +183,9 @@ export interface PluginsResponse {
 
 // ---- Subagents & MCP management ----
 
-export type ConfigScope = "project" | "global";
+/** MCP 配置作用域：project = 项目 .pi/mcp.json；global = ~/.pi/agent/mcp.json；
+ * quick = 部署级快速会话专用（dataDir/mcp-quick.json，仅快速会话可见）。 */
+export type ConfigScope = "project" | "global" | "quick";
 
 export interface AgentInfo {
   name: string;
@@ -271,6 +273,8 @@ export type McpTransport = "stdio" | "http";
 export interface McpServerInfo {
   name: string;
   scope: ConfigScope;
+  /** Lower-priority entry shadowed by a higher-priority scope (settings page display). */
+  shadowed?: boolean;
   entry: ServerEntry;
   transport: McpTransport;
   summary: string;

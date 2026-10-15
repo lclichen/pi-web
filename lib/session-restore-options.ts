@@ -5,6 +5,8 @@ import type { RpcSessionStartOptions } from "./rpc-manager";
 import { resolveSessionMode } from "./session-metas";
 import { ensureProjectHome, getOwnedProject, projectHome, writeSandboxConfig } from "./projects";
 import { ensureLocalHome, ensureSandboxHome, ensureQuickHome } from "./mode-homes";
+import { quickSessionDir, readQuickTemplateSnapshot } from "./quick-session";
+import { syncQuickMcpConfig } from "./quick-mcp";
 import { spaceDir } from "./session-spaces";
 import { makeRelayToolsExtension } from "./extensions/relay-tools";
 import { makeRemoteVerifyExtension } from "./extensions/remote-verify";
@@ -134,21 +136,26 @@ export async function restoreSessionOptions(req: Request, sessionId: string): Pr
     // Quick mode on restore: same scratch home, same tool policy. The system
     // prompt rides the session file itself (persisted as a model_change-adjacent
     // context), so only the tool set needs rebuilding.
-    effectiveCwd = ensureQuickHome(user.id);
+    // 每会话独立工作区（meta.quickDir → lib/quick-session.ts）；旧会话回落
+    // 共享 quick home。恢复优先用模板快照（创建时的确切内容），而非活模板。
+    const quickSlug = (meta as { quickDir?: string } | undefined)?.quickDir;
+    effectiveCwd = quickSlug ? quickSessionDir(user.id, quickSlug) : ensureQuickHome(user.id);
+    const snapshot = quickSlug ? readQuickTemplateSnapshot(effectiveCwd) : null;
+    const { getQuickTemplate } = await import("./quick-templates");
+    const template = snapshot ?? (meta?.templateId ? getQuickTemplate(meta.templateId) : undefined);
+    if (template) {
+      quickForRestore = {
+        ...(template.systemPrompt ? { systemPrompt: template.systemPrompt } : {}),
+        ...(template.model ? { model: template.model } : {}),
+        ...(template.mcpServers && template.mcpServers.length > 0 ? { mcpServers: template.mcpServers } : {}),
+      };
+    }
+    // 部署级 quick MCP 变更后，恢复时刷新会话工作区里的物化副本
+    if (quickSlug) syncQuickMcpConfig(user.id, effectiveCwd);
     // 恢复时按 meta.templateId 重建 quick 选项：quickToolSet（MCP 白名单）与
     // 提示词扩展（模板附加）都挂在 quick 选项上——不重建则恢复的快速会话
     // 丢工具策略与模板提示词。
-    if (meta?.templateId) {
-      const { getQuickTemplate } = await import("./quick-templates");
-      const template = getQuickTemplate(meta.templateId);
-      if (template) {
-        quickForRestore = {
-          ...(template.systemPrompt ? { systemPrompt: template.systemPrompt } : {}),
-          ...(template.model ? { model: template.model } : {}),
-          ...(template.mcpServers && template.mcpServers.length > 0 ? { mcpServers: template.mcpServers } : {}),
-        };
-      }
-    }
+
   } else {
     extensionFactories = [makeEnvironmentInfoExtension({ mode: "host", username: identity.session.user.username })];
   }

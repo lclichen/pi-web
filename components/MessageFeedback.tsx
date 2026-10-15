@@ -40,8 +40,8 @@ export function MessageFeedback({ sessionId, entryId, snippet, visible }: {
   const btn = (kind: FeedbackValue): React.ButtonHTMLAttributes<HTMLButtonElement> & { type: "button" } => ({
     type: "button",
     onClick: () => apply(kind),
-    title: t(kind === "up" ? "这条回复有帮助" : "这条回复没有帮助"),
-    "aria-label": t(kind === "up" ? "这条回复有帮助" : "这条回复没有帮助"),
+    title: t(kind === "up" ? "feedback.up" : "feedback.down"),
+    "aria-label": t(kind === "up" ? "feedback.up" : "feedback.down"),
     "aria-pressed": value === kind,
     style: {
       display: "flex", alignItems: "center", justifyContent: "center",

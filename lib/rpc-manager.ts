@@ -14,7 +14,7 @@ import { cacheSessionPath, getLatestModelChange, invalidateSessionListCache, res
 import { appendWebUiAddendum } from "./web-system-prompt";
 import { readPreferences } from "./preferences-service";
 import { readMcpConfig } from "./mcp-config";
-import { composeQuickSystemPrompt, createQuickPromptExtension } from "./quick-prompt";
+import { composeQuickSystemPrompt, createQuickPromptExtension, type QuickTemplateHolder } from "./quick-prompt";
 import { getProjectTrustStatus, projectTrustReloadOptions } from "./project-trust";
 import { persistExplicitStartupPreferences } from "./startup-preferences";
 import {
@@ -133,7 +133,7 @@ type AgentSessionWrapperOptions = {
    * system-prompt panel shows what the model actually receives even before
    * the first turn has run the before_agent_start hook.
    */
-  quickPrompt?: { template?: string };
+  quickPrompt?: QuickTemplateHolder;
   onAgentRunComplete?: AgentRunCompleteListener;
   suppressCompletionNotifications?: boolean;
 };
@@ -293,24 +293,21 @@ function withExtensionTools(session: AgentSessionLike, toolNames: string[]): str
  * An optional server-name allowlist narrows which MCP servers contribute.
  */
 function quickToolSet(session: AgentSessionLike, mcpAllowlist?: string[]): string[] {
-  // 2026-10-13 修订：quick 是无工作区的轻量对话——todo/plan 一并移除，
-  // 工具面=纯 MCP（白名单可选）。零 MCP 时就是纯聊天会话。
-  const allowed = new Set<string>();
-  const allowlist = mcpAllowlist && mcpAllowlist.length > 0 ? new Set(mcpAllowlist) : null;
+  // 封闭世界（2026-10-14）：模板白名单是唯一放行面。
+  // - 未配置白名单 → 纯聊天（一个 MCP 工具都不放行——白名单语义，
+  //   与 chat-only 一致，而非默认允许全部）；
+  // - 配置了 → 只放行名单内服务器的工具（前缀匹配 <server>_）。
+  // todo/plan/编码/子智能体工具一律不放行（quick 无工作区）。
+  if (!mcpAllowlist || mcpAllowlist.length === 0) return [];
+  const allow = new Set(mcpAllowlist);
+  const out: string[] = [];
   for (const tool of session.getAllTools()) {
     const name = tool.name;
-    if (allowed.has(name)) continue;
-    if (SUBAGENT_TOOL_NAMES.has(name)) continue;
-    if (CODING_TOOL_NAMES.includes(name)) continue;
-    // Everything else must look like an MCP tool (`<server>_<tool>`), with the
-    // server part inside the allowlist when one is set.
     const sep = name.indexOf("_");
     if (sep <= 0) continue;
-    const server = name.slice(0, sep);
-    if (allowlist && !allowlist.has(server)) continue;
-    allowed.add(name);
+    if (allow.has(name.slice(0, sep))) out.push(name);
   }
-  return [...allowed];
+  return out;
 }
 
 // ============================================================================
@@ -341,7 +338,9 @@ export class AgentSessionWrapper {
   private forceEmptySystemPrompt = false;
   private exactSystemPrompt?: () => string;
   private readonly webUiPrompt: boolean;
-  private readonly quickPrompt?: { template?: string };
+  private readonly quickPrompt?: QuickTemplateHolder;
+  /** Quick sessions: MCP server allowlist — applied after MCP tools register. */
+  private quickToolAllowlist?: string[];
   private readonly chatOnly: boolean;
   private readonly onAgentRunComplete?: AgentRunCompleteListener;
   private readonly suppressCompletionNotifications: boolean;
@@ -633,7 +632,7 @@ export class AgentSessionWrapper {
     if (!this.quickPrompt) return;
     const state = this.inner.agent?.state;
     if (state && typeof state.systemPrompt === "string") {
-      state.systemPrompt = composeQuickSystemPrompt(state.systemPrompt, this.quickPrompt.template);
+      state.systemPrompt = composeQuickSystemPrompt(state.systemPrompt, this.quickPrompt.current);
     }
   }
 
@@ -644,6 +643,40 @@ export class AgentSessionWrapper {
   }
 
   /** Quick mode template switch: re-pin the exact system prompt. */
+  /**
+   * Quick 工具面延迟过滤：MCP 适配器在 session_start 异步注册工具——
+   * 创建时同步调 quickToolSet 只会拿到空集。挂在 ensureExtensionsBound
+   * 的 promise 之后，此时 MCP 工具已注册、前缀匹配可命中。
+   */
+  /**
+   * Quick 工具面：在扩展绑定（session_start）完成后排除编码工具。
+   * noTools=builtin 在创建时生效但会被 session_start 的工具重建覆盖
+   *（适配器注册 mcp 工具时重置了活动集）——所以必须在绑定后再排除一次。
+   * MCP/扩展工具不受影响（CODING_TOOL_NAMES 只含内置七件套）。
+   */
+  setQuickToolAllowlist(_allowlist: string[] | undefined): void {
+    const apply = () => {
+      const allNames = this.inner.getAllTools().map((t) => t.name);
+      const filtered = allNames.filter((n) => !CODING_TOOL_NAMES.includes(n));
+      if (filtered.length !== allNames.length) {
+        this.inner.setActiveToolsByName(filtered);
+        this.applyExactSystemPrompt(); // 刷新提示词中的工具列表
+      }
+    };
+    if (this.extensionsBound) {
+      apply();
+    } else {
+      void this.ensureExtensionsBound().then(apply).catch(() => {/* 工具过滤失败不阻断 */});
+    }
+  }
+
+  /** 热切换快速模板：更新 holder（每回合钩子与显示镜像共用）并立即刷新显示。 */
+  updateQuickTemplate(template: string | undefined): void {
+    if (!this.quickPrompt) return;
+    this.quickPrompt.current = template;
+    this.applyQuickPromptToState();
+  }
+
   setExactSystemPrompt(prompt: string): void {
     this.exactSystemPrompt = () => prompt;
     this.forceEmptySystemPrompt = false;
@@ -1264,11 +1297,24 @@ export class AgentSessionWrapper {
         const { getQuickTemplate } = await import("./quick-templates");
         const template = getQuickTemplate(templateId);
         if (!template) throw new Error(`快速会话模板不存在：${templateId}`);
-        this.setExactSystemPrompt(template.systemPrompt);
-        this.inner.setActiveToolsByName(quickToolSet(this.inner, template.mcpServers));
+        // 提示词经 before_agent_start 扩展改写（holder 热更新）——不再走
+        // setExactSystemPrompt（全量替换会丢工具列表/准则）。
+        this.updateQuickTemplate(template.systemPrompt);
+        // 工具面由 noTools=builtin + 配置级过滤决定，无需运行时切换。
         if (template.model) {
           await this.send({ type: "set_model", provider: template.model.provider, modelId: template.model.modelId });
         }
+        // 快照与 meta 同步：会话工作区记录切换后的模板版本
+        try {
+          const { ensureQuickSessionWorkspace } = await import("./quick-session");
+          const { recordSessionMeta, getSessionMeta } = await import("./session-metas");
+          const meta = getSessionMeta(this.sessionId);
+          // 切换模板 = 换到新模板版本的工作区（ensure：同版本复用/新建）
+          const ws = ensureQuickSessionWorkspace(this.ownerId, template);
+          if (meta?.templateId !== template.id || (meta as { quickDir?: string } | undefined)?.quickDir !== ws.slug) {
+            recordSessionMeta(this.sessionId, { ...meta, mode: "quick", ownerId: this.ownerId, templateId: template.id, ...(ws.slug ? { quickDir: ws.slug } : {}) } as never);
+          }
+        } catch { /* 快照失败不阻断切换 */ }
         return { success: true, template: { id: template.id, name: template.name } };
       }
 
@@ -2463,6 +2509,10 @@ export async function startRpcSession(
     // Per-session extension injection (sandbox/local-machine modes): the SDK
     // spreads these into its DefaultResourceLoader on top of the normal
     // user/project extension discovery.
+    // quick 模板 holder：loader 扩展（每回合改写）与 wrapper（显示镜像）共享，
+    // apply_quick_template 热切换时原地更新（updateQuickTemplate）。
+    const quickTemplateHolder: import("./quick-prompt").QuickTemplateHolder | undefined
+      = quick && !subagentResources ? { current: quick.systemPrompt } : undefined;
     const platformResourceLoaderOptions: {
       additionalExtensionPaths?: string[];
       extensionFactories?: InlineExtension[];
@@ -2527,7 +2577,7 @@ export async function startRpcSession(
               // 提示词改写扩展（创建与恢复共用此臂）：before_agent_start 上
               // adapt 基础段 + 幂等附加模板。
               ...(quick && !subagentResources
-                ? { extensionFactories: [createQuickPromptExtension(quick.systemPrompt)] }
+                ? { extensionFactories: [createQuickPromptExtension(quickTemplateHolder!)] }
                 : {}),
             }
         : chatOnly
@@ -2588,6 +2638,9 @@ export async function startRpcSession(
       ...(scope.scopedModels.length > 0 ? { scopedModels: [...scope.scopedModels] } : {}),
       ...(toolsOption !== undefined ? { tools: toolsOption } : {}),
       ...(subagentResources ? { excludeTools: [...SUBAGENT_CONTROL_TOOL_NAMES] } : {}),
+      // quick：内置工具不激活（noTools 在 session 层不在 services 层）；
+      // MCP 扩展工具不受影响，配置级过滤已限定只连白名单服务器。
+      ...(quick && !subagentResources ? { noTools: "builtin" as const } : {}),
     });
 
     const persistedPreferences = await persistExplicitStartupPreferences(
@@ -2617,7 +2670,9 @@ export async function startRpcSession(
     // the harmless session extensions (todo / plan_save) plus MCP tools, the
     // latter optionally narrowed to the template's server allowlist.
     if (quick && !subagentResources) {
-      inner.setActiveToolsByName(quickToolSet(inner, quick.mcpServers));
+      // MCP 工具在 session_start 异步注册——同步过滤拿到空集。改为延迟：
+      // wrapper 创建后经 setQuickToolAllowlist 挂到 ensureExtensionsBound 之后。
+      // 此处暂不 setActiveToolsByName（避免先禁全部再恢复的闪烁）。
     }
 
     const exactSystemPrompt = chatOnly
@@ -2633,7 +2688,7 @@ export async function startRpcSession(
       // rides the append path, so it composes with the addendum instead of
       // conflicting with it.
       webUiPrompt: !subagentResources,
-      ...(quick && !subagentResources ? { quickPrompt: { template: quick.systemPrompt } } : {}),
+      ...(quick && !subagentResources ? { quickPrompt: quickTemplateHolder } : {}),
       onAgentRunComplete: (completedSessionId) => {
         void notifySessionComplete(completedSessionId).catch((error) => {
           console.error("[pi-web] failed to send completion push:", error instanceof Error ? error.message : error);
@@ -2649,12 +2704,16 @@ export async function startRpcSession(
     // Quick mode keeps its own tool policy — the template allowlist is
     // authoritative for MCP (user-level mcpEnabled prefs still apply below
     // only when they DISABLE things globally).
-    if (!quick) wrapper.applyToolPreferences(sessionCwd);
+    // quick 的工具面只由模板白名单决定：全局偏好（mcpEnabled 等）不透传，
+    // 防止把会话级开关施加到封闭世界。
     // When the platform explicitly disables every tool, keep the system prompt
     // empty (pi's buildSystemPrompt is non-empty even with no tools). Forced
     // empty wins over the chat-only context-files prompt.
     if (!subagentResources && requestedToolNames?.length === 0) {
       wrapper.setForceEmptySystemPrompt(true);
+    }
+    if (quick && !subagentResources) {
+      wrapper.setQuickToolAllowlist(quick?.mcpServers);
     }
     registerRpcWrapper(wrapper);
 

@@ -15,7 +15,7 @@ import { requireUserIdentity } from "@/lib/web-session";
 import { isSessionMode, modeAllowedForUser, type SessionMode } from "@/lib/session-modes";
 import { spaceDir } from "@/lib/session-spaces";
 import { ensureSandboxHome, ensureLocalHome, ensureQuickHome } from "@/lib/mode-homes";
-import { syncQuickMcpConfig } from "@/lib/quick-mcp";
+import { ensureQuickSessionWorkspace } from "@/lib/quick-session";
 import { recordSessionMeta } from "@/lib/session-metas";
 import { makeRelayToolsExtension } from "@/lib/extensions/relay-tools";
 import { sessionDirsForProject } from "@/lib/session-context";
@@ -102,6 +102,7 @@ export async function POST(req: Request) {
 
     let effectiveCwd: string | undefined = typeof cwd === "string" ? cwd : undefined;
     let templateIdForMeta: string | undefined;
+    let quickSlugForMeta: string | undefined;
     let extensionFactories: InlineExtension[] | undefined;
     let sessionDir: string | undefined;
     // 工作区目录（lib/session-context.ts 契约）：提示词告知模型用；绝不
@@ -265,10 +266,11 @@ export async function POST(req: Request) {
       if (!template) {
         return NextResponse.json({ error: `快速会话模板不存在：${templateId}` }, { status: 400 });
       }
-      effectiveCwd = ensureQuickHome(user.id);
-      // 部署级快速会话专用 MCP（lib/quick-mcp.ts）：物化进 quick home 的
-      // .pi/mcp.json——project-scope 语义使其只在 quick 会话可见。
-      syncQuickMcpConfig(user.id);
+      // 每会话独立工作区（lib/quick-session.ts）：独立目录 + quick MCP 物化
+      // + 模板快照——会话间配置互不干涉，模板版本可追溯。
+      const ws = ensureQuickSessionWorkspace(user.id, template);
+      quickSlugForMeta = ws.slug;
+      effectiveCwd = ws.dir;
       templateIdForMeta = templateId;
       quickOptions = {
         systemPrompt: template.systemPrompt,
@@ -316,13 +318,16 @@ export async function POST(req: Request) {
       ...(projectRef ? { projectCredentialDir: effectiveCwd } : {}),
     });
 
-    recordSessionMeta(realSessionId, { mode: effectiveMode, ownerId: user.id, ownerName: user.username, ...(projectRef ? { projectId: projectRef.id } : {}), ...(templateIdForMeta ? { templateId: templateIdForMeta } : {}) });
+    recordSessionMeta(realSessionId, { mode: effectiveMode, ownerId: user.id, ownerName: user.username, ...(projectRef ? { projectId: projectRef.id } : {}), ...(templateIdForMeta ? { templateId: templateIdForMeta } : {}), ...(quickSlugForMeta ? { quickDir: quickSlugForMeta } : {}) });
     invalidateSessionListCache();
 
     // Host-mode sessions keep the files-route allowed-roots cache in sync so
     // the cwd is immediately readable via /api/files (sandbox/local sessions
     // don't expose server-local files at all).
     if (mode === "host" && effectiveCwd) {
+      allowFileRoot(effectiveCwd);
+    }
+    if (mode === "quick" && effectiveCwd) {
       allowFileRoot(effectiveCwd);
     }
 

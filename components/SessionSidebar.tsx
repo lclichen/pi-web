@@ -1316,6 +1316,7 @@ useEffect(() => {
                       // 侧栏切到「快速会话」空间让新会话立刻可见。
                       onSessionSpaceChange?.("quick");
                       const tempId = typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now()}`;
+                      console.log(tempId,tpl);
                       onNewSession?.(tempId, "", "quick", tpl.id, tpl.name);
                     }}
                     title={tpl.description || tpl.name}
@@ -1387,16 +1388,16 @@ useEffect(() => {
                   return (
                     <span
                       style={{ flex: 1, display: "flex", alignItems: "center", gap: 6, minWidth: 0, fontSize: 11 }}
-                      title={mode === "sandbox" ? "任务在容器 /workspace 内执行" : mode === "ssh" ? "任务通过 SSH 在远程主机的工作目录内执行" : "任务在本机配对的工作区内执行"}
+                      title={mode === "sandbox" ? "任务在容器 /workspace 内执行" : mode === "ssh" ? "任务通过 SSH 在远程主机的工作目录内执行" : mode === "quick" ? "轻量对话（无工作区，模板决定工具面）" : "任务在本机配对的工作区内执行"}
                     >
                       <span
                         style={{
                           flexShrink: 0, padding: "1px 6px", borderRadius: 4, fontSize: 10, fontWeight: 700,
-                          color: mode === "sandbox" ? "#38bdf8" : mode === "ssh" ? "#34d399" : "#a78bfa",
-                          background: mode === "sandbox" ? "rgba(56,189,248,0.12)" : mode === "ssh" ? "rgba(52,211,153,0.14)" : "rgba(167,139,250,0.12)",
+                          color: mode === "sandbox" ? "#38bdf8" : mode === "ssh" ? "#34d399" : mode === "quick" ? "#fbbf24" : "#a78bfa",
+                          background: mode === "sandbox" ? "rgba(56,189,248,0.12)" : mode === "ssh" ? "rgba(52,211,153,0.14)" : mode === "quick" ? "rgba(251,191,36,0.12)" : "rgba(167,139,250,0.12)",
                         }}
                       >
-                        {mode === "sandbox" ? "沙盒" : mode === "ssh" ? "SSH" : "本地"}
+                        {mode === "sandbox" ? "沙盒" : mode === "ssh" ? "SSH" : mode === "quick" ? "⚡快速" : "本地"}
                       </span>
                       <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text)" }}>
                         {pendingProjectLabel ?? ""}

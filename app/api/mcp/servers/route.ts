@@ -27,7 +27,7 @@ export async function POST(req: Request) {
     }
     const guard = guardMcpRequest(req, body, { mutating: true });
     if (!guard.ok) return guard.response;
-    const scope = body.scope === "global" ? "global" : "project";
+    const scope = body.scope === "global" || body.scope === "quick" ? body.scope : "project";
     try {
       createMcpServer(guard.cwd, scope, body.name.trim(), body.entry);
       return NextResponse.json({ success: true });

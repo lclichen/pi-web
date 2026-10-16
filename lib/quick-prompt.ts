@@ -89,12 +89,21 @@ export interface QuickTemplateHolder {
   current?: string;
 }
 
-export function createQuickPromptExtension(holder: QuickTemplateHolder): InlineExtension {
+/**
+ * 每回合工具钳制回调：pi-mcp-adapter 的 syncProxyTool 会在输入收敛时把
+ * 网关工具 mcp 主动加回活动集（pi.setActiveTools([...activeTools, "mcp"])），
+ * 创建后一次性的过滤拦不住——每回合 before_agent_start 上必须重钳一次。
+ */
+export function createQuickPromptExtension(
+  holder: QuickTemplateHolder,
+  onTurnStart?: () => void,
+): InlineExtension {
   return {
     name: "pi-web-quick-prompt",
     hidden: true,
     factory: (pi: ExtensionAPI): void => {
       pi.on("before_agent_start", async (event: { systemPrompt?: string }) => {
+        onTurnStart?.();
         const base = event.systemPrompt ?? "";
         const next = composeQuickSystemPrompt(base, holder.current);
         return next === base ? undefined : { systemPrompt: next };

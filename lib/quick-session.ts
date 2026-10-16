@@ -106,9 +106,12 @@ export function writeQuickTemplateSnapshot(dir: string, snapshot: QuickTemplateS
 
 /**
  * 配置级 MCP 过滤：工作区 .pi/mcp.json 只写模板白名单内的服务器。
- * 这样 MCP 适配器只连接/注册白名单服务器的工具——工具列表自然正确，
- * 无需事后过滤（quickToolSet 的时序问题从根源消除）。
- * 同时也从全局 mcp.json 拉取白名单内的服务器定义（模板可引用全局 MCP）。
+ * 从全局 mcp.json 拉取白名单内的服务器定义（模板可引用全局 MCP）。
+ *
+ * 注意：这只约束 adapter 的会话级初始化（ctx.cwd）——direct tools 走
+ * adapter 的 earlyConfig（进程 cwd，无 shadow）仍会注册，所以工具层
+ * 的 quickToolSet 封闭世界过滤不可省（lib/rpc-manager.ts，
+ * 2026-10-16 实测：只靠配置级过滤时全局 MCP 工具泄漏进快速会话）。
  */
 function writeWorkspaceMcp(userId: number, dir: string, allowlist: string[] | undefined): void {
   const readMcpFromFile = (path: string): Record<string, unknown> => {
@@ -146,7 +149,13 @@ function writeWorkspaceMcp(userId: number, dir: string, allowlist: string[] | un
 
   const target = join(dir, '.pi', 'mcp.json');
   mkdirSync(join(dir, '.pi'), { recursive: true });
-  writeFileSync(target, JSON.stringify({ mcpServers: filtered }, null, 2), 'utf8');
+  // settings.disableProxyTool：quick 封闭世界只经直接工具（<server>_ 前缀）
+  // 暴露白名单服务器；网关元工具 mcp/mcpScript 不该出现——adapter 的
+  // syncProxyTool 每回合可能把它加回活动集，配置层先让它自我抑制。
+  writeFileSync(target, JSON.stringify({
+    settings: { disableProxyTool: true },
+    mcpServers: filtered,
+  }, null, 2), 'utf8');
 }
 /**
  * 取得（或复用）快速会话工作区：目录名 = 模板 id + 内容 hash——同模板同

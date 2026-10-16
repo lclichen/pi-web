@@ -297,19 +297,25 @@ function withExtensionTools(session: AgentSessionLike, toolNames: string[]): str
  * An optional server-name allowlist narrows which MCP servers contribute.
  */
 function quickToolSet(session: AgentSessionLike, mcpAllowlist?: string[]): string[] {
-  // 封闭世界（2026-10-14）：模板白名单是唯一放行面。
+  // 封闭世界（2026-10-14 定策，2026-10-16 修正前缀匹配）：模板白名单是
+  // 唯一放行面。
   // - 未配置白名单 → 纯聊天（一个 MCP 工具都不放行——白名单语义，
   //   与 chat-only 一致，而非默认允许全部）；
-  // - 配置了 → 只放行名单内服务器的工具（前缀匹配 <server>_）。
-  // todo/plan/编码/子智能体工具一律不放行（quick 无工作区）。
+  // - 配置了 → 只放行名单内服务器的直接工具。前缀必须整段匹配
+  //   <server>_：服务器名可含下划线（mcd_tool_1 的工具是
+  //   mcd_tool_1_now-time-info），截到第一个下划线会错切成 "mcd"，
+  //   带下划线的服务器名全部失配。
+  // 网关元工具（mcp/mcpScript，无 <server>_ 前缀）、todo/plan、编码/
+  // 子智能体工具一律不放行（quick 无工作区）。
   if (!mcpAllowlist || mcpAllowlist.length === 0) return [];
-  const allow = new Set(mcpAllowlist);
   const out: string[] = [];
   for (const tool of session.getAllTools()) {
-    const name = tool.name;
-    const sep = name.indexOf("_");
-    if (sep <= 0) continue;
-    if (allow.has(name.slice(0, sep))) out.push(name);
+    for (const server of mcpAllowlist) {
+      if (tool.name.startsWith(server + "_")) {
+        out.push(tool.name);
+        break;
+      }
+    }
   }
   return out;
 }
@@ -648,30 +654,33 @@ export class AgentSessionWrapper {
 
   /** Quick mode template switch: re-pin the exact system prompt. */
   /**
-   * Quick 工具面延迟过滤：MCP 适配器在 session_start 异步注册工具——
-   * 创建时同步调 quickToolSet 只会拿到空集。挂在 ensureExtensionsBound
-   * 的 promise 之后，此时 MCP 工具已注册、前缀匹配可命中。
+   * Quick 工具面封闭世界：扩展绑定（session_start）完成后一次性收敛活动集。
+   * 三层原因叠加，工具层过滤不可省：
+   * 1. noTools=builtin 创建时生效，但 session_start 的工具重建会覆盖；
+   * 2. 配置级 shadow（工作区 .pi/mcp.json 只写 {disabled:true}）只约束
+   *    adapter 的会话级初始化（ctx.cwd）——direct tools 注册走 adapter 的
+   *    earlyConfig（loadMcpConfig 未传 cwd → 服务器进程 cwd，无 shadow），
+   *    全局服务器的直接工具照样注册，配置层拦不住（2026-10-16 实测泄漏）；
+   * 3. 白名单语义必须在工具层兜底：空名单 → 零工具；非空 → 仅名单内
+   *    服务器的前缀工具（quickToolSet）。编码工具由 CODING_TOOL_NAMES 双保险。
    */
-  /**
-   * Quick 工具面：在扩展绑定（session_start）完成后排除编码工具。
-   * noTools=builtin 在创建时生效但会被 session_start 的工具重建覆盖
-   *（适配器注册 mcp 工具时重置了活动集）——所以必须在绑定后再排除一次。
-   * MCP/扩展工具不受影响（CODING_TOOL_NAMES 只含内置七件套）。
-   */
-  setQuickToolAllowlist(_allowlist: string[] | undefined): void {
+  setQuickToolAllowlist(allowlist: string[] | undefined): void {
+    this.quickToolAllowlist = allowlist;
     const apply = () => {
-      const allNames = this.inner.getAllTools().map((t) => t.name);
-      const filtered = allNames.filter((n) => !CODING_TOOL_NAMES.includes(n));
-      if (filtered.length !== allNames.length) {
-        this.inner.setActiveToolsByName(filtered);
-        this.applyExactSystemPrompt(); // 刷新提示词中的工具列表
-      }
+      this.enforceQuickTools();
     };
     if (this.extensionsBound) {
       apply();
     } else {
       void this.ensureExtensionsBound().then(apply).catch(() => {/* 工具过滤失败不阻断 */});
     }
+  }
+
+  /** 收敛 quick 活动工具集到模板白名单（每回合重钳的钳体，见 setQuickToolAllowlist 注释）。 */
+  private enforceQuickTools(): void {
+    const filtered = quickToolSet(this.inner, this.quickToolAllowlist)
+      .filter((n) => !CODING_TOOL_NAMES.includes(n));
+    this.inner.setActiveToolsByName(filtered);
   }
 
   /** 热切换快速模板：更新 holder（每回合钩子与显示镜像共用）并立即刷新显示。 */
@@ -688,7 +697,16 @@ export class AgentSessionWrapper {
   }
 
   setActiveToolSelection(toolNames: string[]): void {
-    this.inner.setActiveToolsByName(withExtensionTools(this.inner, toolNames));
+    if (this.quickPrompt) {
+      // Quick 会话：工具面由模板白名单决定，用户工具选择只能在白名单
+      // 内收窄——withExtensionTools 会把全部扩展工具加回来（重开世界），
+      // quick 会话不能走。
+      const allowed = quickToolSet(this.inner, this.quickToolAllowlist);
+      const clamped = toolNames.filter((n) => allowed.includes(n));
+      this.inner.setActiveToolsByName(clamped);
+    } else {
+      this.inner.setActiveToolsByName(withExtensionTools(this.inner, toolNames));
+    }
     this.applyExactSystemPrompt();
   }
 
@@ -964,6 +982,11 @@ export class AgentSessionWrapper {
         }
 
       case "get_state": {
+        // quick 显示镜像的读取时重放：恢复路径上 SDK 的模型恢复/工具重建
+        // 会重写 state.systemPrompt（绑定时的镜像被冲掉）。组合变换幂等
+        //（身份替换/文档块删除/模板附加都只生效一次），读前重放保证前端
+        // 看到的与 before_agent_start 每回合改写的一致。
+        this.applyQuickPromptToState();
         const model = this.inner.model;
         const contextUsage = this.inner.getContextUsage();
         return {
@@ -1304,7 +1327,9 @@ export class AgentSessionWrapper {
         // 提示词经 before_agent_start 扩展改写（holder 热更新）——不再走
         // setExactSystemPrompt（全量替换会丢工具列表/准则）。
         this.updateQuickTemplate(template.systemPrompt);
-        // 工具面由 noTools=builtin + 配置级过滤决定，无需运行时切换。
+        // 工具面跟随新模板白名单（空名单=纯聊天；前缀匹配见 quickToolSet）。
+        // noTools/配置级 shadow 都兜不住 adapter 的 direct-tools 注册路径。
+        this.setQuickToolAllowlist(template.mcpServers);
         if (template.model) {
           await this.send({ type: "set_model", provider: template.model.provider, modelId: template.model.modelId });
         }
@@ -2522,13 +2547,16 @@ export async function startRpcSession(
     ? undefined
     : readSessionToolSelection(sessionManager.getEntries() as unknown as SessionEntry[]);
   const selectedToolNames = subagentResources?.tools ?? persistedToolNames ?? requestedToolNames;
-  if (!subagentResources && persistedToolNames === undefined && requestedToolNames !== undefined) {
+  // quick 的工具面由模板白名单唯一决定：持久化的工具选择（历史版本 quick
+  // 会话落过 read/bash/edit/write 甚至空集——空集还会误判 chat-only）既不
+  // 读取应用，也不再为新会话追加持久化条目。
+  if (!subagentResources && !quick && persistedToolNames === undefined && requestedToolNames !== undefined) {
     appendSessionToolSelection(sessionManager, requestedToolNames);
   }
   const subagentLoadsResources = Boolean(
     subagentResources?.loadExtensions || subagentResources?.loadSkills,
   );
-  const chatOnly = selectedToolNames?.length === 0 && !subagentLoadsResources;
+  const chatOnly = !quick && selectedToolNames?.length === 0 && !subagentLoadsResources;
   const finishStartingSession = trackStartingSession(sessionCwd);
   const starting = (async () => {
     // Some extensions access the SDK's global theme even outside the terminal UI.
@@ -2568,6 +2596,9 @@ export async function startRpcSession(
     // apply_quick_template 热切换时原地更新（updateQuickTemplate）。
     const quickTemplateHolder: import("./quick-prompt").QuickTemplateHolder | undefined
       = quick && !subagentResources ? { current: quick.systemPrompt } : undefined;
+    // 每回合工具钳制的间接引用：扩展工厂先于 wrapper 构造，经 ref 回连
+    //（adapter 的 syncProxyTool 每回合可能把网关工具加回活动集）。
+    const quickTurnClampRef: { current: (() => void) | undefined } = { current: undefined };
     const platformResourceLoaderOptions: {
       additionalExtensionPaths?: string[];
       extensionFactories?: InlineExtension[];
@@ -2630,9 +2661,9 @@ export async function startRpcSession(
               // 抑制发现式附加段（.pi/append-system-prompt.md 等）
               appendSystemPromptOverride: () => [],
               // 提示词改写扩展（创建与恢复共用此臂）：before_agent_start 上
-              // adapt 基础段 + 幂等附加模板。
+              // adapt 基础段 + 幂等附加模板；同一钩子先重钳一次工具面。
               ...(quick && !subagentResources
-                ? { extensionFactories: [createQuickPromptExtension(quickTemplateHolder!)] }
+                ? { extensionFactories: [createQuickPromptExtension(quickTemplateHolder!, () => quickTurnClampRef.current?.())] }
                 : {}),
             }
         : chatOnly
@@ -2717,7 +2748,10 @@ export async function startRpcSession(
     // If specific tool names were requested (non-empty), set the active tools to the
     // requested builtin coding tools PLUS all extension/package tools, so installed
     // extensions stay usable in Pi Web just like in the `pi` CLI.
-    if (!subagentResources && !chatOnly) {
+    // quick 跳过：恢复的旧 quick 会话带着历史持久化选择（read/bash/...），
+    // 重新应用既重开封闭世界、又触发提示词重建冲掉显示镜像——quick 的
+    // 活动集由 setQuickToolAllowlist（绑定后钳制）唯一决定。
+    if (!subagentResources && !chatOnly && !quick) {
       inner.setActiveToolsByName(withExtensionTools(inner, selectedToolNames ?? inner.getActiveToolNames()));
     }
 

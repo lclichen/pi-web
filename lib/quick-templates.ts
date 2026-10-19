@@ -5,14 +5,16 @@
  * a quick session starts with. One built-in template (id "default") is seeded
  * on first use: editable, never deletable — the one-click entry point.
  *
- * Storage: data/quick-templates.json (server-side, atomic writes).
+ * Storage: <dataDir>/quick-templates.json (server-side, atomic writes)——跟随
+ * 部署数据目录（PI_WEB_DATA_DIR / AMEDAC 布局，lib/mode-homes.ts）。
  */
-import { existsSync, readFileSync } from "fs";
+import { existsSync, readFileSync, copyFileSync } from "fs";
 import { dirname, join } from "path";
 import { randomUUID } from "crypto";
 import { writePrivateFileAtomicSync } from "./atomic-file";
 import { mkdirSync } from "fs";
 import { atomicWriteFile } from "./atomic-write";
+import { dataDir } from "./mode-homes";
 
 export interface QuickTemplate {
   id: string;
@@ -54,10 +56,28 @@ function defaultTemplate(): QuickTemplate {
 }
 
 function storePath(): string {
+  // 跟随部署数据目录（lib/mode-homes.ts dataDir：PI_WEB_DATA_DIR 优先，
+  // dev 无 env 时回落 <cwd>/data 与旧行为一致）。此前硬编码 process.cwd()/data，
+  // 打包部署里落进包内目录——多用户共享同一份只读包时互相冲突。
+  return join(dataDir(), "quick-templates.json");
+}
+
+/** 旧位置（进程 cwd 相对）。仅用于一次性迁移：打包部署此前误写进包目录的
+ *  模板数据归位到 dataDir；dev 两路径相同自然跳过。 */
+function legacyStorePath(): string {
   return join(process.cwd(), "data", "quick-templates.json");
 }
 
 function readStore(): TemplateStore {
+  const path = storePath();
+  if (path !== legacyStorePath() && !existsSync(path) && existsSync(legacyStorePath())) {
+    try {
+      mkdirSync(dirname(path), { recursive: true });
+      copyFileSync(legacyStorePath(), path);
+    } catch {
+      // 迁移失败按全新存储处理（default 模板重新播种，不阻断）
+    }
+  }
   try {
     const raw = readFileSync(storePath(), "utf8");
     const parsed = JSON.parse(raw) as Partial<TemplateStore>;

@@ -175,6 +175,7 @@ export const enLocale: LocalePlugin = {
     "sessions.hostSessionsCreatedPiCli": "Host sessions: created by the pi CLI or server directories (global sessions dir)",
     "sessions.myProjectSessions": "My project sessions",
     "sessions.hostSessionsYetSessionsOpened": "No host sessions yet — sessions opened via the pi CLI on the server appear here",
+    "skills.hubUrlLabel": "SkillHub URL",
     "skills.offlineSharingUnpacksIntoProject": "Offline sharing: unpacks into the project .pi/skills/ (each skill folder has a SKILL.md)",
     "skills.importedSkillFiles": "Imported skill {skill} ({n} files)",
     "projects.clickChooseDropZipConfig": "Click to choose or drop a .zip config bundle",

@@ -18,6 +18,13 @@ export interface SkillSearchResult {
   package: string;
   installs: string;
   url: string;
+  /** "skillhub" = 内网 SkillHub 结果（安装走 zip 下载，不走 npx skills）。 */
+  source?: "skillhub";
+  /** SkillHub 结果的定位字段（namespace+slug 唯一）。 */
+  namespace?: string;
+  slug?: string;
+  version?: string;
+  summary?: string;
 }
 
 export type SkillInstallScope = "global" | "project";

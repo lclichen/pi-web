@@ -796,6 +796,7 @@ export const zhTWLocale: LocalePlugin = {
     "sessions.hostSessionsCreatedPiCli": "Host 会话：CLI 与服务器目录产生的会话（全局 sessions 目录）",
     "sessions.myProjectSessions": "我的项目会话",
     "sessions.hostSessionsYetSessionsOpened": "Host 空间暂无会话——在服务器上用 pi CLI 打开的会话会出现在这里",
+    "skills.hubUrlLabel": "SkillHub 位址",
     "skills.offlineSharingUnpacksIntoProject": "离线分发：解压到项目 .pi/skills/（每个技能目录含 SKILL.md）",
     "skills.importedSkillFiles": "已导入技能 {skill}（{n} 个文件）",
     "projects.clickChooseDropZipConfig": "点击选择或拖入 .zip 配置包",

@@ -390,6 +390,11 @@ export async function importSkillsZip(
   cwd: string,
   data: Buffer,
   zipName: string,
+  options?: {
+    /** 覆盖技能写入根目录（默认 <cwd>/.pi/skills）。SkillHub 全局安装传
+     *  <agentDir>/skills——pi 的全局技能发现目录（resource-loader.js:623）。 */
+    skillsRoot?: string;
+  },
 ): Promise<SkillsImportStats> {
   let archive: JSZip;
   try {
@@ -430,7 +435,7 @@ export async function importSkillsZip(
   });
   if (!hasSkillMd) throw new Error("包内没有 SKILL.md（每个技能目录需包含一个）");
 
-  const skillsRoot = join(resolve(cwd), ".pi", "skills");
+  const skillsRoot = options?.skillsRoot ?? join(resolve(cwd), ".pi", "skills");
   await mkdir(skillsRoot, { recursive: true });
 
   let files = 0;

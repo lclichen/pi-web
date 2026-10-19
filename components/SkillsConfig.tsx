@@ -251,10 +251,21 @@ function AddSkillPanel({
     new Set(),
   );
   const [scope, setScope] = useState<"global" | "project">("global");
+  // 内网 SkillHub 地址（空 = skills.sh 外网流程）。默认取部署级配置
+  // （server-settings.skillhubUrl，经 /api/webauth/me 下发），可临时改写。
+  const [hubUrl, setHubUrl] = useState("");
+  const [resultsFromHub, setResultsFromHub] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const uploadRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadMsg, setUploadMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/webauth/me")
+      .then(async (r) => (r.ok ? (await r.json()) as { skillhubUrl?: string } : null))
+      .then((d) => { if (d?.skillhubUrl) setHubUrl(d.skillhubUrl); })
+      .catch(() => {});
+  }, []);
 
 
   useEffect(() => {
@@ -270,10 +281,11 @@ function AddSkillPanel({
       const res = await fetch("/api/skills/search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: q.trim() }),
+        body: JSON.stringify({ query: q.trim(), ...(hubUrl.trim() ? { baseUrl: hubUrl.trim() } : {}) }),
       });
       const d = (await res.json()) as {
         results?: SkillSearchResult[];
+        source?: string;
         error?: string;
       };
       if (d.error) {
@@ -281,23 +293,37 @@ function AddSkillPanel({
         return;
       }
       setResults(d.results ?? []);
+      setResultsFromHub(d.source === "skillhub");
       if ((d.results ?? []).length === 0) setSearchError("No skills found");
     } catch (e) {
       setSearchError(String(e));
     } finally {
       setSearching(false);
     }
-  }, []);
+  }, [hubUrl]);
 
   const install = useCallback(
-    async (pkg: string) => {
-      setInstalling(pkg);
+    async (r: SkillSearchResult) => {
+      setInstalling(r.package);
       setInstallError(null);
       try {
         const res = await fetch("/api/skills/install", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ package: pkg, scope, cwd }),
+          body: JSON.stringify(
+            r.source === "skillhub"
+              ? {
+                  skillhub: {
+                    ...(hubUrl.trim() ? { baseUrl: hubUrl.trim() } : {}),
+                    namespace: r.namespace,
+                    slug: r.slug,
+                    version: r.version,
+                  },
+                  scope,
+                  cwd,
+                }
+              : { package: r.package, scope, cwd },
+          ),
         });
         const d = (await res.json()) as { success?: boolean; error?: string };
         if (!res.ok || d.error) {
@@ -305,7 +331,7 @@ function AddSkillPanel({
           return;
         }
         setNewlyInstalledPkgs((prev) =>
-          new Set(prev).add(`${scope}:${pkg}`),
+          new Set(prev).add(`${scope}:${r.package}`),
         );
         onInstalled();
       } catch (e) {
@@ -314,7 +340,7 @@ function AddSkillPanel({
         setInstalling(null);
       }
     },
-    [onInstalled, scope, cwd],
+    [onInstalled, scope, cwd, hubUrl],
   );
 
   const uploadZip = async (f: File | null) => {
@@ -383,6 +409,31 @@ function AddSkillPanel({
           >
              {searching ? t("i18n.searching") : t("i18n.search")}
           </ConfigButton>
+        </div>
+
+        {/* SkillHub 源：内网部署把搜索/安装切到内网 hub（docs/skillhub-api.md） */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 12, color: "var(--text-dim)", flexShrink: 0 }}>{t("skills.hubUrlLabel")}</span>
+          <input
+            value={hubUrl}
+            onChange={(e) => setHubUrl(e.target.value)}
+            placeholder="http://skillhub.internal:39088/skillhub"
+            spellCheck={false}
+            style={{
+              flex: 1,
+              padding: "5px 8px",
+              fontSize: 11,
+              fontFamily: "var(--font-mono)",
+              background: "var(--bg-panel)",
+              border: "1px solid var(--border)",
+              borderRadius: 6,
+              color: "var(--text)",
+              outline: "none",
+            }}
+          />
+          {resultsFromHub && (
+            <span style={{ fontSize: 10, color: "var(--accent)", flexShrink: 0, fontFamily: "var(--font-mono)" }}>SkillHub</span>
+          )}
         </div>
 
         {/* Offline import: unpack a skills zip into the project */}
@@ -472,10 +523,14 @@ function AddSkillPanel({
               installedPackages[scope].has(r.package) ||
               newlyInstalledPkgs.has(`${scope}:${r.package}`);
             const isInstalling = installing === r.package;
-            // split "owner/repo@skill" for cleaner display
+            // split "owner/repo@skill" for cleaner display; SkillHub rows are ns/slug
             const atIdx = r.package.indexOf("@");
             const repopart = atIdx > -1 ? r.package.slice(0, atIdx) : r.package;
             const skillpart = atIdx > -1 ? r.package.slice(atIdx + 1) : null;
+            const displayName = r.source === "skillhub" ? r.slug : skillpart ?? repopart;
+            const subLabel = r.source === "skillhub"
+              ? [r.namespace, r.version, r.installs].filter(Boolean).join(" · ")
+              : repopart;
             return (
               <div
                 key={r.package}
@@ -497,8 +552,22 @@ function AddSkillPanel({
                       marginBottom: 3,
                     }}
                   >
-                    {skillpart ?? repopart}
+                    {displayName}
                   </div>
+                  {r.source === "skillhub" && r.summary && (
+                    <div
+                      style={{
+                        fontSize: 11.5,
+                        color: "var(--text-dim)",
+                        marginBottom: 3,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {r.summary}
+                    </div>
+                  )}
                   {/* repo + installs + link row */}
                   <div
                     style={{
@@ -515,17 +584,19 @@ function AddSkillPanel({
                         color: "var(--text-dim)",
                       }}
                     >
-                      {repopart}
+                      {subLabel}
                     </span>
-                    <span
-                      style={{
-                        fontSize: 12,
-                        color: "var(--text-muted)",
-                        fontWeight: 500,
-                      }}
-                    >
-                      {r.installs}
-                    </span>
+                    {r.source !== "skillhub" && (
+                      <span
+                        style={{
+                          fontSize: 12,
+                          color: "var(--text-muted)",
+                          fontWeight: 500,
+                        }}
+                      >
+                        {r.installs}
+                      </span>
+                    )}
                     {r.url && (
                       <a
                         href={r.url}
@@ -537,7 +608,7 @@ function AddSkillPanel({
                           textDecoration: "none",
                         }}
                       >
-                        skills.sh ↗
+                        {r.source === "skillhub" ? "SkillHub ↗" : "skills.sh ↗"}
                       </a>
                     )}
                   </div>
@@ -545,7 +616,7 @@ function AddSkillPanel({
                 <ConfigButton
                   size="small"
                   onClick={() =>
-                    !isInstalled && !isInstalling && install(r.package)
+                    !isInstalled && !isInstalling && install(r)
                   }
                   disabled={isInstalled || isInstalling || installing !== null}
                   style={{

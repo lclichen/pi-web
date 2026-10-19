@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { runNpx } from "@/lib/npx";
 import type { SkillSearchResult } from "@/lib/api-types";
+import { normalizeSkillhubBase, searchSkillhub, skillhubItemToSearchResult } from "@/lib/skillhub";
+import { getServerSettings } from "@/lib/server-settings";
 
 export const dynamic = "force-dynamic";
 
@@ -87,12 +89,42 @@ function parseInstallCount(installs: string): number {
   return value * multiplier;
 }
 
-// POST /api/skills/search  body: { query: string, limit?: number }
+// POST /api/skills/search  body: { query: string, limit?: number, baseUrl?: string }
+// 源选择：baseUrl（请求级覆盖）> server-settings.skillhubUrl（PI_WEB_SKILLHUB_URL
+// 播种）> 默认 skills.sh 流程。配置了 SkillHub 即走内网搜索（内网无外联）。
 export async function POST(req: Request) {
   try {
-    const { query, limit: rawLimit } = await req.json() as { query?: string; limit?: unknown };
+    const { query, limit: rawLimit, baseUrl } = await req.json() as { query?: string; limit?: unknown; baseUrl?: unknown };
     if (!query?.trim()) return NextResponse.json({ error: "query required" }, { status: 400 });
     const limit = parseLimit(rawLimit);
+
+    let hubBase: string | undefined;
+    if (typeof baseUrl === "string" && baseUrl.trim()) {
+      try {
+        hubBase = normalizeSkillhubBase(baseUrl);
+      } catch (e) {
+        return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 400 });
+      }
+    } else {
+      const settings = getServerSettings();
+      if (settings.skillhubUrl) hubBase = settings.skillhubUrl;
+    }
+    if (hubBase) {
+      // 前端把 "@ns 词" 拆成 namespace + q（与 hub 前端行为一致）
+      let q = query.trim();
+      let namespace: string | undefined;
+      const nsMatch = q.match(/^@([\w.\-]+)\s+(.*)$/);
+      if (nsMatch) {
+        namespace = nsMatch[1];
+        q = nsMatch[2].trim();
+      }
+      const items = await searchSkillhub(hubBase, { q, namespace, size: limit });
+      return NextResponse.json({
+        source: "skillhub",
+        baseUrl: hubBase,
+        results: items.map((item) => skillhubItemToSearchResult(hubBase, item)),
+      });
+    }
 
     try {
       const results = await searchSkillsApi(query.trim(), limit);

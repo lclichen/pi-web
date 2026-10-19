@@ -27,16 +27,21 @@ export async function PATCH(req: Request) {
   if (identity.session.user.role !== "admin") {
     return NextResponse.json({ error: "服务器设置仅管理员可修改" }, { status: 403 });
   }
-  let body: { labTraining?: unknown };
+  let body: { labTraining?: unknown; skillhubUrl?: unknown };
   try {
     body = (await req.json()) as typeof body;
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
-  const patch: { labTraining?: boolean } = {};
+  const patch: { labTraining?: boolean; skillhubUrl?: string } = {};
   if (typeof body.labTraining === "boolean") patch.labTraining = body.labTraining;
+  if (typeof body.skillhubUrl === "string") patch.skillhubUrl = body.skillhubUrl;
   if (Object.keys(patch).length === 0) {
     return NextResponse.json({ error: "没有可更新的设置字段" }, { status: 400 });
   }
-  return NextResponse.json(updateServerSettings(patch));
+  try {
+    return NextResponse.json(updateServerSettings(patch));
+  } catch (e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 400 });
+  }
 }

@@ -63,6 +63,16 @@ export function adaptQuickBasePrompt(base: string): string {
 // ---------------------------------------------------------------------------
 
 import type { ExtensionAPI, InlineExtension } from "@earendil-works/pi-coding-agent";
+import { createHash } from "crypto";
+
+/**
+ * 提示词一致性探针（PI_WEB_LOG_PROMPT_HASH=1 开启）：每回合记录 SDK base
+ * 与合成后提示词的 sha1 前 12 位。base 哈希跨回合变化 = 模型前缀缓存被打断
+ *（系统提示词位于前缀最前端，一个字节的变化使全部历史的缓存失效）。
+ */
+function promptHash(text: string): string {
+  return createHash("sha1").update(text).digest("hex").slice(0, 12);
+}
 
 /** 幂等地把模板提示词附加到（已适配的）提示词尾部——每回合触发也不重复。 */
 export function appendTemplateOnce(prompt: string, template: string): string {
@@ -93,19 +103,25 @@ export interface QuickTemplateHolder {
  * 每回合工具钳制回调：pi-mcp-adapter 的 syncProxyTool 会在输入收敛时把
  * 网关工具 mcp 主动加回活动集（pi.setActiveTools([...activeTools, "mcp"])），
  * 创建后一次性的过滤拦不住——每回合 before_agent_start 上必须重钳一次。
+ * 返回值 = 钳制后重建的实时 base（钳制同步重建 _baseSystemPrompt 并写入
+ * state，紧接读取无 await 无并发窗口）；事件的 systemPrompt 是发射前快照，
+ * 两回合之间被 adapter 重激活污染时快照已脏——优先用返回值，当回合即净。
  */
 export function createQuickPromptExtension(
   holder: QuickTemplateHolder,
-  onTurnStart?: () => void,
+  onTurnStart?: () => string | undefined,
 ): InlineExtension {
   return {
     name: "pi-web-quick-prompt",
     hidden: true,
     factory: (pi: ExtensionAPI): void => {
       pi.on("before_agent_start", async (event: { systemPrompt?: string }) => {
-        onTurnStart?.();
-        const base = event.systemPrompt ?? "";
+        const liveBase = onTurnStart?.();
+        const base = liveBase ?? event.systemPrompt ?? "";
         const next = composeQuickSystemPrompt(base, holder.current);
+        if (process.env.PI_WEB_LOG_PROMPT_HASH) {
+          console.log(`[pi-web] prompt-hash base=${promptHash(base)}(${base.length}) out=${promptHash(next)}(${next.length})${liveBase !== undefined && liveBase !== event.systemPrompt ? " [live]" : ""}`);
+        }
         return next === base ? undefined : { systemPrompt: next };
       });
     },

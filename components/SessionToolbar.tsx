@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { WebPreferences, McpServerInfo, AgentInfo } from "@/lib/api-types";
+import { useI18n } from "@/hooks/useI18n";
 
 interface Props {
   cwd: string;
@@ -150,6 +151,7 @@ function ToggleRow({
 }
 
 export function SessionToolbar({ cwd, sessionId, hasLabTraining, onSendCommand, onApplyPreferences, disabled, quickMode = false, onNewSessionTemplateChange, newSessionTemplateId }: Props) {
+  const { t } = useI18n();
   const [prefs, setPrefs] = useState<WebPreferences>({ mcpEnabled: true, subagentsEnabled: true, labVerifyEnabled: true });
   const [mcpOpen, setMcpOpen] = useState(false);
   const [agentsOpen, setAgentsOpen] = useState(false);
@@ -355,6 +357,12 @@ export function SessionToolbar({ cwd, sessionId, hasLabTraining, onSendCommand, 
                   {applyingTemplate === tpl.id ? `${tpl.name} · 应用中…` : tpl.name}
                 </button>
               ))
+            )}
+            {/* 切换已有会话的模板 = 显式提示词变化（缓存重置）；新建草稿切换无代价（提示词一致性研究 #2）。 */}
+            {!isNewQuick && (
+              <div style={{ padding: "6px 12px", fontSize: 10.5, color: "var(--text-dim)", borderTop: "1px solid var(--border)", maxWidth: 300, whiteSpace: "normal" }}>
+                {t("chat.cacheResetHint")}
+              </div>
             )}
           </Popover>
         )}

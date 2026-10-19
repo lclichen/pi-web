@@ -15,6 +15,8 @@ import { appendWebUiAddendum } from "./web-system-prompt";
 import { readPreferences } from "./preferences-service";
 import { readMcpConfig } from "./mcp-config";
 import { composeQuickSystemPrompt, createQuickPromptExtension, type QuickTemplateHolder } from "./quick-prompt";
+import { createPromptConsistencyExtension, describePromptDrift, type PromptPin } from "./prompt-consistency";
+import { getSessionMeta, recordSessionMeta, type SessionMeta } from "./session-metas";
 import { getProjectTrustStatus, projectTrustReloadOptions } from "./project-trust";
 import { persistExplicitStartupPreferences } from "./startup-preferences";
 import {
@@ -676,11 +678,91 @@ export class AgentSessionWrapper {
     }
   }
 
-  /** 收敛 quick 活动工具集到模板白名单（每回合重钳的钳体，见 setQuickToolAllowlist 注释）。 */
-  private enforceQuickTools(): void {
+  /** 收敛 quick 活动工具集到模板白名单（每回合重钳的钳体，见 setQuickToolAllowlist 注释）。
+   *  非 private：startRpcSession 装配后经 quickTurnClampRef 接到每回合钩子上。
+   *  输出排序：SDK 提示词的工具列表/准则段顺序 = 激活序（新注册工具按注册
+   *  时序追加），跨进程不确定——同长度不同字节照样打断前缀缓存。排序后
+   *  base 成为工具集合的纯函数，跨重启字节一致。 */
+  enforceQuickTools(): void {
     const filtered = quickToolSet(this.inner, this.quickToolAllowlist)
-      .filter((n) => !CODING_TOOL_NAMES.includes(n));
+      .filter((n) => !CODING_TOOL_NAMES.includes(n))
+      .sort();
     this.inner.setActiveToolsByName(filtered);
+  }
+
+  /** 每回合钩子的钳制+取 base：钳制同步重建 _baseSystemPrompt 并写入
+   *  state.systemPrompt，紧接读取之间无 await——单线程下无并发窗口，
+   *  返回的一定是钳后的净 base（display 镜像的写入也插不进来）。 */
+  quickTurnBase(): string | undefined {
+    this.enforceQuickTools();
+    return this.inner.agent?.state?.systemPrompt;
+  }
+
+  /** 非 quick：仅排序活动集（不改集合）。SDK 提示词的工具列表/准则段顺序
+   *  = 激活序（新注册工具按注册时序追加），跨进程不确定；排序后 base 是
+   *  工具集合的纯函数，跨重启字节一致。已有序时零开销跳过。
+   *  getActiveToolNames 为可选探测（AgentSessionLike 测试桩可能未实现）。 */
+  normalizeActiveToolOrder(): void {
+    const inner = this.inner as AgentSessionLike & { getActiveToolNames?: () => string[] };
+    if (typeof inner.getActiveToolNames !== "function") return;
+    const current = inner.getActiveToolNames();
+    if (current.length < 2) return;
+    const sorted = [...current].sort();
+    let differs = false;
+    for (let i = 0; i < sorted.length; i += 1) {
+      if (sorted[i] !== current[i]) { differs = true; break; }
+    }
+    if (differs) this.inner.setActiveToolsByName(sorted);
+  }
+
+  // -------------------------------------------------------------------------
+  // 提示词一致性观测（lib/prompt-consistency.ts 的 pin 扩展每回合上报）
+  // -------------------------------------------------------------------------
+
+  private promptPin?: PromptPin;
+
+  /** 首观测钉住（读 meta 跨进程延续，无则写回）；漂移告警一次后重钉。
+   *  稳态是纯内存比对——fs 只发生在钉住/漂移时刻。 */
+  observePrompt(hash: string, len: number, tools: number): void {
+    const current: PromptPin = { hash, len, tools };
+    if (!this.promptPin) {
+      let meta: SessionMeta | undefined;
+      try {
+        meta = getSessionMeta(this.sessionId);
+      } catch {
+        // meta 读失败按无钉处理（观测性增强，不阻断）
+      }
+      const pinned = meta?.promptPin;
+      if (pinned && pinned.hash !== hash) {
+        console.warn(
+          `[pi-web] prompt drift on restore (session ${this.sessionId.slice(0, 13)}): pinned=${pinned.hash} now=${hash} (${describePromptDrift(pinned, current)}) — 供应商前缀缓存将失效一次`,
+        );
+      }
+      this.promptPin = current;
+      if (!pinned || pinned.hash !== hash) this.persistPromptPin(current);
+      return;
+    }
+    const pin = this.promptPin;
+    if (pin.hash !== hash) {
+      console.warn(
+        `[pi-web] system prompt drift (session ${this.sessionId.slice(0, 13)}): ${pin.hash} -> ${hash} (${describePromptDrift(pin, current)}) — 若非显式切换（工具预设/模板），这是缓存打断源`,
+      );
+      this.promptPin = current;
+      this.persistPromptPin(current);
+    }
+  }
+
+  private persistPromptPin(pin: PromptPin): void {
+    try {
+      const meta = getSessionMeta(this.sessionId);
+      recordSessionMeta(this.sessionId, {
+        ...(meta ?? { mode: this.mode ?? "host", ownerId: this.ownerId ?? 0 }),
+        ...meta,
+        promptPin: pin,
+      } as SessionMeta);
+    } catch {
+      // 持久化失败只损失跨重启延续，不阻断会话
+    }
   }
 
   /** 热切换快速模板：更新 holder（每回合钩子与显示镜像共用）并立即刷新显示。 */
@@ -705,7 +787,9 @@ export class AgentSessionWrapper {
       const clamped = toolNames.filter((n) => allowed.includes(n));
       this.inner.setActiveToolsByName(clamped);
     } else {
-      this.inner.setActiveToolsByName(withExtensionTools(this.inner, toolNames));
+      // 排序：显式切换工具是合法的提示词变化（缓存重置，UI 有提示），
+      // 但切换后的新状态自身要字节确定（排序），不再随注册序漂移。
+      this.inner.setActiveToolsByName(withExtensionTools(this.inner, toolNames).sort());
     }
     this.applyExactSystemPrompt();
   }
@@ -917,6 +1001,17 @@ export class AgentSessionWrapper {
           };
 
           this.pendingPromptCount += 1;
+          // 提示词缓存一致性（2026-10-19 研究，详见 lib/prompt-consistency.ts）：
+          // quick → 派发前钳制（adapter 重激活会扩大活动集并重建 base，事件
+          // base 是发射前快照，钩子内钳制救不了当回合；此处与 inner.prompt()
+          // 之间无 await，无再污染窗口）；非 quick → 排序化活动集（工具段
+          // 顺序 = 激活序 = 注册时序，跨进程不确定，同长度不同字节照样打断
+          // 前缀缓存；排序使 base 成为集合的纯函数）。
+          if (this.quickPrompt) {
+            this.enforceQuickTools();
+          } else {
+            this.normalizeActiveToolOrder();
+          }
           let prompt: Promise<void>;
           try {
             prompt = this.inner.prompt(command.message as string, {
@@ -2598,7 +2693,9 @@ export async function startRpcSession(
       = quick && !subagentResources ? { current: quick.systemPrompt } : undefined;
     // 每回合工具钳制的间接引用：扩展工厂先于 wrapper 构造，经 ref 回连
     //（adapter 的 syncProxyTool 每回合可能把网关工具加回活动集）。
-    const quickTurnClampRef: { current: (() => void) | undefined } = { current: undefined };
+    const quickTurnClampRef: { current: (() => string | undefined) | undefined } = { current: undefined };
+    // 提示词一致性钉住扩展的上报回调（同样经 ref 回连 wrapper.observePrompt）。
+    const promptPinRef: { current?: (hash: string, len: number, tools: number) => void } = {};
     const platformResourceLoaderOptions: {
       additionalExtensionPaths?: string[];
       extensionFactories?: InlineExtension[];
@@ -2662,8 +2759,14 @@ export async function startRpcSession(
               appendSystemPromptOverride: () => [],
               // 提示词改写扩展（创建与恢复共用此臂）：before_agent_start 上
               // adapt 基础段 + 幂等附加模板；同一钩子先重钳一次工具面。
+              // 末位追加一致性钉住扩展（钩子链式，末位看到最终合成提示词）。
               ...(quick && !subagentResources
-                ? { extensionFactories: [createQuickPromptExtension(quickTemplateHolder!, () => quickTurnClampRef.current?.())] }
+                ? {
+                    extensionFactories: [
+                      createQuickPromptExtension(quickTemplateHolder!, () => quickTurnClampRef.current?.()),
+                      createPromptConsistencyExtension((h, l, t) => promptPinRef.current?.(h, l, t)),
+                    ],
+                  }
                 : {}),
             }
         : chatOnly
@@ -2681,6 +2784,8 @@ export async function startRpcSession(
                 () => listSubagentProfiles(sessionCwd),
                 isBuiltInSubagentsEnabled,
               ),
+              // 末位：一致性钉住（钩子链式，末位看到最终合成提示词）。
+              createPromptConsistencyExtension((h, l, t) => promptPinRef.current?.(h, l, t)),
             ],
             extensionsOverride: (base) => preferUserBashExtension(preferPiWebSubagentExtension(base)),
           },
@@ -2751,8 +2856,9 @@ export async function startRpcSession(
     // quick 跳过：恢复的旧 quick 会话带着历史持久化选择（read/bash/...），
     // 重新应用既重开封闭世界、又触发提示词重建冲掉显示镜像——quick 的
     // 活动集由 setQuickToolAllowlist（绑定后钳制）唯一决定。
+    // 排序：恢复时的初始 base 也要求字节确定（缓存前缀从首回合起稳定）。
     if (!subagentResources && !chatOnly && !quick) {
-      inner.setActiveToolsByName(withExtensionTools(inner, selectedToolNames ?? inner.getActiveToolNames()));
+      inner.setActiveToolsByName(withExtensionTools(inner, selectedToolNames ?? inner.getActiveToolNames()).sort());
     }
 
     // Quick mode: no workspace — coding tools are hard-off. The active set is
@@ -2802,8 +2908,14 @@ export async function startRpcSession(
       wrapper.setForceEmptySystemPrompt(true);
     }
     if (quick && !subagentResources) {
+      // 每回合钳制回调在此接线（扩展工厂先于 wrapper 构造，经 ref 回连）。
+      // 返回钳制后实时重建的 base——事件的 systemPrompt 是发射前快照，
+      // 恢复后首回合的快照可能带着 adapter 重激活的污染（哈希实测 6051→10253）。
+      quickTurnClampRef.current = () => wrapper.quickTurnBase();
       wrapper.setQuickToolAllowlist(quick?.mcpServers);
     }
+    // 提示词一致性钉住：quick/非 quick 两臂的末位扩展每回合上报。
+    promptPinRef.current = (hash, len, tools) => wrapper.observePrompt(hash, len, tools);
     registerRpcWrapper(wrapper);
 
     return { session: wrapper, realSessionId };

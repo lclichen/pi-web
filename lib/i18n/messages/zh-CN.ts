@@ -618,6 +618,7 @@ export const zhCNLocale: LocalePlugin = {
     "terminal.exitCode": "进程已退出，退出码 {code}",
     "chat.outputLocal": "输出保留在本地",
     "chat.outputModel": "输出发送给模型",
+    "chat.cacheResetHint": "切换会改变系统提示词并重置模型缓存（重建完成前响应变慢）。",
     "chat.chatOnly": "仅聊天",
     "chat.readOnlyTools": "{count} 个只读内置工具",
     "chat.builtInTools": "{count} 个内置工具",

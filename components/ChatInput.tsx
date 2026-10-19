@@ -2686,6 +2686,10 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                         </button>
                       );
                     })}
+                    {/* 显式切换工具 = 合法的提示词变化，但用户应知道缓存代价（提示词一致性研究 #2）。 */}
+                    <div style={{ padding: "6px 12px", fontSize: 10.5, color: "var(--text-dim)", borderTop: "1px solid var(--border)", maxWidth: 280, whiteSpace: "normal" }}>
+                      {t("chat.cacheResetHint")}
+                    </div>
                   </div>
                 )}
               </div>

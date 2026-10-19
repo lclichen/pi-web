@@ -20,6 +20,9 @@ export interface SessionMeta {
   quickDir?: string;
   /** Quick sessions: the template that shaped the prompt/toolset (restore 用). */
   templateId?: string;
+  /** 提示词一致性钉住值（lib/prompt-consistency.ts）：首回合合成提示词的
+   *  哈希——恢复后首回合比对，不符即告警（前缀缓存打断可观测）。 */
+  promptPin?: { hash: string; len: number; tools: number };
   ownerName?: string;
   createdAt?: number;
 }

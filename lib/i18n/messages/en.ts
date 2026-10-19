@@ -597,6 +597,7 @@ export const enLocale: LocalePlugin = {
     "terminal.exitCode": "Process exited with code {code}",
     "chat.outputLocal": "output stays local",
     "chat.outputModel": "output sent to model",
+    "chat.cacheResetHint": "Switching changes the system prompt and resets the model cache (slower until it rebuilds).",
     "chat.chatOnly": "Chat only",
     "chat.readOnlyTools": "{count} read-only built-in tools",
     "chat.builtInTools": "{count} built-in tools",

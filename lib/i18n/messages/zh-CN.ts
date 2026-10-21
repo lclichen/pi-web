@@ -244,6 +244,7 @@ export const zhCNLocale: LocalePlugin = {
     "apiKeys.created": "创建于",
     "apiKeys.lastUsed": "最近使用",
     "apiKeys.notRevealable": "此密钥不是经 pi-web 创建的，明文无法回显（平台只保存哈希）。如需可回显的密钥，请在此页面重新创建。",
+    "apiKeys.listHeading": "我的密钥",
     "apiKeys.notRevealableShort": "无法回显",
     "settings.account": "用户",
     "account.infoHeading": "账号信息",

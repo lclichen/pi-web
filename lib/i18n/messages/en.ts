@@ -223,6 +223,7 @@ export const enLocale: LocalePlugin = {
     "apiKeys.created": "Created",
     "apiKeys.lastUsed": "Last used",
     "apiKeys.notRevealable": "This key was not created via pi-web, so its plaintext cannot be revealed (the platform stores only a hash). Create a new key here for reveal support.",
+    "apiKeys.listHeading": "My keys",
     "apiKeys.notRevealableShort": "not revealable",
     "settings.account": "Account",
     "account.infoHeading": "Account",

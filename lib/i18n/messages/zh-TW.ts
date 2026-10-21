@@ -34,6 +34,7 @@ export const zhTWLocale: LocalePlugin = {
     "apiKeys.created": "建立於",
     "apiKeys.lastUsed": "最近使用",
     "apiKeys.notRevealable": "此金鑰不是經 pi-web 建立的，明文無法回顯（平台只保存雜湊）。如需可回顯的金鑰，請在此頁面重新建立。",
+    "apiKeys.listHeading": "我的金鑰",
     "apiKeys.notRevealableShort": "無法回顯",
     "settings.account": "使用者",
     "account.infoHeading": "帳號資訊",

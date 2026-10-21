@@ -8,14 +8,12 @@
  * 经此处创建的密钥可随时查看与复制，平台侧直建的密钥只显示前缀。
  * 批量测试接口（/api/batch/tasks）要求管理员密钥，非管理员创建的密钥
  * 可用于其他 X-Platform-API-Key 场景。
+ *
+ * 外壳与"常规/用户"页同款（settings-general 样式族，app/settings.css）。
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
-import {
-  ConfigButton,
-  ConfigDetailStack,
-  ConfigDetailTitle,
-} from "./SettingsUi";
+import { ConfigButton } from "./SettingsUi";
 
 interface ApiKeyRow {
   id: number;
@@ -29,12 +27,7 @@ interface ApiKeyRow {
   canReveal: boolean;
 }
 
-interface Props {
-  embedded?: boolean;
-  onClose?: () => void;
-}
-
-export function ApiKeysConfig({ embedded = false, onClose }: Props) {
+export function ApiKeysConfig() {
   const { t } = useI18n();
   const [keys, setKeys] = useState<ApiKeyRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -153,129 +146,122 @@ export function ApiKeysConfig({ embedded = false, onClose }: Props) {
   };
 
   return (
-    <ConfigDetailStack className="is-full-height">
-      <ConfigDetailTitle>{t("settings.apiKeys")}</ConfigDetailTitle>
-      <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.7 }}>
-        {t("apiKeys.desc")}
-        <div style={{ marginTop: 4 }}>{t("apiKeys.batchAdminNote")}</div>
-      </div>
-
-      {/* 创建行 */}
-      <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") void create(); }}
-          placeholder={t("apiKeys.namePlaceholder")}
-          maxLength={128}
-          style={{
-            flex: 1,
-            padding: "7px 10px",
-            fontSize: 12,
-            background: "var(--bg-panel)",
-            border: "1px solid var(--border)",
-            borderRadius: 6,
-            color: "var(--text)",
-            outline: "none",
-          }}
-        />
-        <ConfigButton variant="primary" onClick={() => void create()} disabled={creating || !name.trim()}>
-          {creating ? t("apiKeys.creating") : t("apiKeys.create")}
-        </ConfigButton>
-      </div>
-      {createError && <div style={{ fontSize: 12, color: "#f87171", wordBreak: "break-word" }}>{createError}</div>}
-      {revealNew !== null && (
-        <div style={{ fontSize: 12, color: "#22c55e" }}>{t("apiKeys.createdHint")}</div>
-      )}
-
-      {/* 列表 */}
-      {loading ? (
-        <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{t("apiKeys.loading")}</div>
-      ) : loadError ? (
-        <div style={{ fontSize: 12, color: "#f87171", wordBreak: "break-word" }}>{loadError}</div>
-      ) : keys.length === 0 ? (
-        <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{t("apiKeys.empty")}</div>
+    <div className="settings-general">
+      <h2 className="settings-general-title">{t("settings.apiKeys")}</h2>
+      {loadError ? (
+        <p role="alert" className="settings-general-error">{loadError}</p>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 2, marginTop: 6 }}>
-          {keys.map((row) => {
-            const isRevealed = revealed.has(row.id) || revealNew === row.id;
-            return (
-              <div
-                key={row.id}
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 6,
-                  padding: "10px 0",
-                  borderBottom: "1px solid var(--border)",
-                  opacity: row.revokedAt ? 0.55 : 1,
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--text)" }}>{row.name}</div>
-                    <div style={{ fontSize: 11, color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>
-                      {row.keyPrefix ?? ""}
-                      {row.revokedAt ? ` · ${t("apiKeys.revoked")}` : ""}
-                      {` · ${t("apiKeys.created")} ${fmtDate(row.createdAt)}`}
-                      {row.lastUsedAt ? ` · ${t("apiKeys.lastUsed")} ${fmtDate(row.lastUsedAt)}` : ""}
-                    </div>
-                  </div>
-                  {row.canReveal ? (
-                    <>
-                      <ConfigButton size="small" onClick={() => toggleReveal(row.id)}>
-                        {isRevealed ? t("apiKeys.hide") : t("apiKeys.show")}
-                      </ConfigButton>
-                      <ConfigButton size="small" onClick={() => void copyKey(row)} disabled={!row.key}>
-                        {copied === row.id ? t("apiKeys.copied") : t("apiKeys.copy")}
-                      </ConfigButton>
-                    </>
-                  ) : (
-                    <span style={{ fontSize: 10.5, color: "var(--text-dim)" }} title={t("apiKeys.notRevealable")}>
-                      {t("apiKeys.notRevealableShort")}
-                    </span>
-                  )}
-                  <ConfigButton
-                    size="small"
-                    disabled={Boolean(row.revokedAt) || revoking !== null}
-                    onClick={() => void revoke(row)}
-                    style={{ color: "#f87171" }}
-                  >
-                    {revoking === row.id ? t("apiKeys.revoking") : t("apiKeys.revoke")}
-                  </ConfigButton>
-                </div>
-                {row.canReveal && isRevealed && row.key && (
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                      padding: "6px 8px",
-                      background: "var(--bg-panel)",
-                      border: "1px solid var(--border)",
-                      borderRadius: 6,
-                    }}
-                  >
-                    <code style={{ flex: 1, fontSize: 11, fontFamily: "var(--font-mono)", color: "var(--text)", wordBreak: "break-all" }}>
-                      {row.key}
-                    </code>
-                    <ConfigButton size="small" onClick={() => void copyKey(row)}>
-                      {copied === row.id ? t("apiKeys.copied") : t("apiKeys.copy")}
-                    </ConfigButton>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-      {revokeError && <div style={{ fontSize: 12, color: "#f87171" }}>{revokeError}</div>}
+        <>
+          <section className="settings-general-section">
+            <p className="settings-general-description">
+              {t("apiKeys.desc")}
+              <br />
+              {t("apiKeys.batchAdminNote")}
+            </p>
+            <form
+              className="account-password-form"
+              style={{ display: "flex", gap: 8, margin: 0, maxWidth: 480, gridTemplateColumns: "none" }}
+              onSubmit={(e) => { e.preventDefault(); void create(); }}
+            >
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder={t("apiKeys.namePlaceholder")}
+                maxLength={128}
+                style={{ flex: 1, height: 32 }}
+              />
+              <ConfigButton variant="primary" onClick={() => void create()} disabled={creating || !name.trim()}>
+                {creating ? t("apiKeys.creating") : t("apiKeys.create")}
+              </ConfigButton>
+            </form>
+            {createError && <p role="alert" className="settings-general-error">{createError}</p>}
+            {revealNew !== null && (
+              <p style={{ margin: "8px 0 0", fontSize: 12, color: "#22c55e" }}>{t("apiKeys.createdHint")}</p>
+            )}
+          </section>
 
-      {!embedded && (
-        <div style={{ marginTop: 16 }}>
-          <ConfigButton onClick={onClose}>{t("i18n.close")}</ConfigButton>
-        </div>
+          <section className="settings-general-section">
+            <h3 className="settings-general-heading">{t("apiKeys.listHeading")}</h3>
+            {loading ? (
+              <p className="settings-general-description">{t("apiKeys.loading")}</p>
+            ) : keys.length === 0 ? (
+              <p className="settings-general-description">{t("apiKeys.empty")}</p>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column" }}>
+                {keys.map((row) => {
+                  const isRevealed = revealed.has(row.id) || revealNew === row.id;
+                  return (
+                    <div
+                      key={row.id}
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 6,
+                        padding: "10px 0",
+                        borderBottom: "1px solid var(--border)",
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--text)" }}>{row.name}</div>
+                          <div style={{ fontSize: 11, color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>
+                            {row.keyPrefix ?? ""}
+                            {` · ${t("apiKeys.created")} ${fmtDate(row.createdAt)}`}
+                            {row.lastUsedAt ? ` · ${t("apiKeys.lastUsed")} ${fmtDate(row.lastUsedAt)}` : ""}
+                          </div>
+                        </div>
+                        {row.canReveal ? (
+                          <>
+                            <ConfigButton size="small" onClick={() => toggleReveal(row.id)}>
+                              {isRevealed ? t("apiKeys.hide") : t("apiKeys.show")}
+                            </ConfigButton>
+                            <ConfigButton size="small" onClick={() => void copyKey(row)} disabled={!row.key}>
+                              {copied === row.id ? t("apiKeys.copied") : t("apiKeys.copy")}
+                            </ConfigButton>
+                          </>
+                        ) : (
+                          <span style={{ fontSize: 10.5, color: "var(--text-dim)" }} title={t("apiKeys.notRevealable")}>
+                            {t("apiKeys.notRevealableShort")}
+                          </span>
+                        )}
+                        <ConfigButton
+                          size="small"
+                          disabled={revoking !== null}
+                          onClick={() => void revoke(row)}
+                          style={{ color: "#f87171" }}
+                        >
+                          {revoking === row.id ? t("apiKeys.revoking") : t("apiKeys.revoke")}
+                        </ConfigButton>
+                      </div>
+                      {row.canReveal && isRevealed && row.key && (
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                            padding: "6px 8px",
+                            background: "var(--bg-panel)",
+                            border: "1px solid var(--border)",
+                            borderRadius: 6,
+                          }}
+                        >
+                          <code style={{ flex: 1, fontSize: 11, fontFamily: "var(--font-mono)", color: "var(--text)", wordBreak: "break-all" }}>
+                            {row.key}
+                          </code>
+                          <ConfigButton size="small" onClick={() => void copyKey(row)}>
+                            {copied === row.id ? t("apiKeys.copied") : t("apiKeys.copy")}
+                          </ConfigButton>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {revokeError && <p role="alert" className="settings-general-error">{revokeError}</p>}
+          </section>
+        </>
       )}
-    </ConfigDetailStack>
+    </div>
   );
 }

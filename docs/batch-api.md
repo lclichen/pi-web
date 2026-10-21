@@ -18,7 +18,52 @@ pi-web 批量测试 API 允许通过 HTTP 请求自动化执行 Agent 测试任�
 X-Platform-API-Key: sk-xxxxxxxxxxxxxxxx
 ```
 
-管理员在 pi-web 管理面板 → 用户 → 选择目标用户 → 创建 API Key（或用平台的 `/api/v1/auth/api-keys` 接口铸造）。
+获取途径（按部署版本选择）：
+
+- **新版 pi-web（含"API 密钥"设置页）**：登录后打开 设置 → API 密钥 → 创建。
+  经该页面创建的密钥可在页面上随时查看明文与复制；批量测试要求**管理员**
+  账号的密钥。
+- **旧版前端（无密钥管理页）**：用下方 curl 直接调平台接口铸造。
+- ~~pi-web 管理面板 → 用户 → 创建 API Key~~（该路径已不存在，保留删除线
+  以免旧文档误导）。
+
+#### 用平台接口创建 Key（curl，适用于任何前端版本）
+
+平台按用户隔离密钥（长效不过期，明文只在创建响应里出现一次）。
+`<PLATFORM>` 为沙盒平台地址（如 `http://10.99.9.7:3000`）：
+
+```bash
+# 1) 登录拿会话 cookie（换成目标用户自己的账号——密钥归属该用户）
+curl -s -c /tmp/plat.c.txt -X POST <PLATFORM>/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"<密码>"}'
+
+# 2) 创建个人 API Key（name 仅作备注；明文 sk_... 只在本次响应出现，立即保存）
+curl -s -b /tmp/plat.c.txt -X POST <PLATFORM>/api/v1/auth/api-keys \
+  -H "Content-Type: application/json" \
+  -d '{"name":"批量测试"}'
+# → {"id":1,"name":"批量测试","key_prefix":"sk_ab12…","key":"sk_<完整明文>",…}
+
+# 3) 验证 Key 有效（应返回该用户身份；批量接口要求 role=admin）
+curl -s -H "X-API-Key: sk_<完整明文>" <PLATFORM>/api/v1/auth/me
+
+# 4) 用 Key 调批量接口（认证头二选一：X-Platform-API-Key 或 Bearer）
+curl -s -H "X-Platform-API-Key: sk_<完整明文>" \
+  http://<PI_WEB>:30141/api/batch/tasks
+```
+
+管理已有密钥（同一会话 cookie）：
+
+```bash
+# 列表（只含前缀与元数据，明文不可再取——平台只存哈希）
+curl -s -b /tmp/plat.c.txt <PLATFORM>/api/v1/auth/api-keys
+# 吊销（立即失效；id 来自列表）
+curl -s -b /tmp/plat.c.txt -X DELETE <PLATFORM>/api/v1/auth/api-keys/<id>
+```
+
+> 注意：批量测试接口要求**管理员**密钥（非管理员 403）；密钥创建在平台侧
+> 直做时，明文遗失只能吊销重建。新版 pi-web 的"API 密钥"页在创建时会额外
+> 保管明文以支持随时回显——平台直建的密钥在页面上显示"无法回显"。
 
 > 1.3 修复说明：此前 `PI_WEB_AUTH=on` 部署下，中央会话门（proxy.ts）会在批量路由
 > 之前把所有无 cookie 的请求 401 掉，平台 Key 方式**实际不可用**；且批量鉴权按平铺

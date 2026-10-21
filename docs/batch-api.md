@@ -30,16 +30,35 @@ X-Platform-API-Key: sk-xxxxxxxxxxxxxxxx
 #### 用平台接口创建 Key（curl，适用于任何前端版本）
 
 平台按用户隔离密钥（长效不过期，明文只在创建响应里出现一次）。
-`<PLATFORM>` 为沙盒平台地址（如 `http://10.99.9.7:3000`）：
+`<PLATFORM>` 为沙盒平台地址（如 `http://10.99.9.7:3000`）。
+
+**首选：仓库自带脚本**（标准库零依赖，密码交互输入不进 shell 历史，
+创建后可顺手验证批量接口连通）：
 
 ```bash
-# 1) 登录拿会话 cookie（换成目标用户自己的账号——密钥归属该用户）
-curl -s -c /tmp/plat.c.txt -X POST <PLATFORM>/api/v1/auth/login \
+# 创建（密码不传则交互输入）
+python scripts/create-api-key.py --platform http://<PLATFORM>:3000 \
+    --username admin --name 批量测试 \
+    --pi-web http://<PI_WEB>:30141   # 可选：创建后验证批量接口
+
+# 列出我的 key / 吊销（id 来自 --list）
+python scripts/create-api-key.py --platform ... --username admin --list
+python scripts/create-api-key.py --platform ... --username admin --revoke 12
+```
+
+**手工 curl**（注意：平台登录返回的是 body 里的 `accessToken`，**不是
+cookie 会话**——后续请求带 `Authorization: Bearer`）：
+
+```bash
+# 1) 登录换 accessToken（换成目标用户自己的账号——密钥归属该用户）
+TOKEN=$(curl -s -X POST <PLATFORM>/api/v1/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"username":"admin","password":"<密码>"}'
+  -d '{"username":"admin","password":"<密码>"}' \
+  | python3 -c 'import json,sys;print(json.load(sys.stdin)["accessToken"])')
 
 # 2) 创建个人 API Key（name 仅作备注；明文 sk_... 只在本次响应出现，立即保存）
-curl -s -b /tmp/plat.c.txt -X POST <PLATFORM>/api/v1/auth/api-keys \
+curl -s -X POST <PLATFORM>/api/v1/auth/api-keys \
+  -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"name":"批量测试"}'
 # → {"id":1,"name":"批量测试","key_prefix":"sk_ab12…","key":"sk_<完整明文>",…}
@@ -52,13 +71,13 @@ curl -s -H "X-Platform-API-Key: sk_<完整明文>" \
   http://<PI_WEB>:30141/api/batch/tasks
 ```
 
-管理已有密钥（同一会话 cookie）：
+管理已有密钥（同一 accessToken）：
 
 ```bash
 # 列表（只含前缀与元数据，明文不可再取——平台只存哈希）
-curl -s -b /tmp/plat.c.txt <PLATFORM>/api/v1/auth/api-keys
+curl -s -H "Authorization: Bearer $TOKEN" <PLATFORM>/api/v1/auth/api-keys
 # 吊销（立即失效；id 来自列表）
-curl -s -b /tmp/plat.c.txt -X DELETE <PLATFORM>/api/v1/auth/api-keys/<id>
+curl -s -X DELETE -H "Authorization: Bearer $TOKEN" <PLATFORM>/api/v1/auth/api-keys/<id>
 ```
 
 > 注意：批量测试接口要求**管理员**密钥（非管理员 403）；密钥创建在平台侧

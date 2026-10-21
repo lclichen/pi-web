@@ -274,6 +274,35 @@ export function AppShell() {
   const [sidebarOpen, setSidebarOpen] = useState(() => !initialNavigation.sidebarCollapsed);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
   const [rightPanelExpanded, setRightPanelExpanded] = useState(false);
+  // 右列上下分栏（2026-10-20 布局地基 C）：上=文件预览常驻（标签栏可见，
+  // 切到其它子面板不再丢失已打开文件的快速切换），下=git/agents/plan/lab
+  // 切换组。分栏态由主 tab 栏驱动（files tab = 退出分栏）。
+  const [rightPanelSplit, setRightPanelSplit] = useState(() => {
+    try {
+      return window.localStorage.getItem("pi-right-panel-split") === "1";
+    } catch {
+      return false;
+    }
+  });
+  const toggleRightPanelSplit = useCallback(() => {
+    setRightPanelSplit((prev) => {
+      const next = !prev;
+      try {
+        window.localStorage.setItem("pi-right-panel-split", next ? "1" : "0");
+      } catch { /* 存储不可用时仅本次会话生效 */ }
+      return next;
+    });
+  }, []);
+  /** 强制退出分栏并持久化（files tab 的语义：回到整栏文件视图）。 */
+  const exitRightPanelSplit = useCallback(() => {
+    setRightPanelSplit((prev) => {
+      if (!prev) return prev;
+      try {
+        window.localStorage.setItem("pi-right-panel-split", "0");
+      } catch { /* 同上 */ }
+      return false;
+    });
+  }, []);
   const rightPanelFullWidth = rightPanelOpen && rightPanelExpanded && !isMobile;
   useEffect(() => {
     if (!rightPanelOpen || isMobile) setRightPanelExpanded(false);
@@ -330,6 +359,25 @@ export function AppShell() {
     minWidth: RIGHT_PANEL_MIN_WIDTH,
     storageKey: "pi-right-panel-width",
     widthRef: rightPanelWidthRef,
+  });
+  // 分栏上栏（文件预览）的高度——垂直轴拖拽，复用同一 resizer hook。
+  const rightSplitHeightRef = useRef(420);
+  const rightSplitResizer = useResizablePanel({
+    ariaLabel: translate("layout.splitFilePanel"),
+    axis: "vertical",
+    cssVariable: "--right-split-height",
+    defaultWidth: 420,
+    getDefaultWidth: () => (typeof window === "undefined"
+      ? 420
+      : Math.round((window.innerHeight - 120) * 0.55)),
+    getMaxWidth: () => (typeof window === "undefined"
+      ? 2000
+      : Math.max(240, window.innerHeight - 220)),
+    growthDirection: "down",
+    maxWidth: 4000,
+    minWidth: 120,
+    storageKey: "pi-right-split-height",
+    widthRef: rightSplitHeightRef,
   });
   const reclampSidebarWidth = sidebarResizer.reclampWidth;
   const reclampRightPanelWidth = rightPanelResizer.reclampWidth;
@@ -567,7 +615,8 @@ export function AppShell() {
   // Files unmount when inactive; workspace terminals stay mounted until closed.
   const [fileTabs, setFileTabs] = useState<Tab[]>([]);
   const [activeFileTabId, setActiveFileTabId] = useState<string | null>(null);
-  const [rightPanelMode, setRightPanelMode] = useState<"files" | "git" | "agents" | "plan">("files");
+  const [rightPanelMode, setRightPanelMode] = useState<"files" | "git" | "agents" | "plan" | "lab">("files");
+  const splitViewActive = rightPanelSplit && !isMobile && !rightPanelFullWidth;
   // Terminal bottom drawer: mounts on first open per terminal key (session /
   // cwd), then toggles via height so the PTY survives collapse. Resizable by
   // dragging the handle above it.
@@ -684,6 +733,14 @@ export function AppShell() {
   });
   // 计划 tab appears only once a plan actually exists (no flash on load).
   const planTabVisible = sessionPlan !== null;
+  // 开启分栏时若右列停在 files，自动切到有内容的下栏面板（plan 优先，否则
+  // agents）——下栏没有 files 位，files tab 在分栏态的语义是"退出分栏"。
+  useEffect(() => {
+    if (rightPanelSplit && rightPanelMode === "files") {
+      setRightPanelMode(planTabVisible ? "plan" : "agents");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rightPanelSplit]);
   // Terminal bottom drawer — keys to the session/cwd exactly like the old
   // right-panel terminal did: switching key unmounts (and closes) the drawer.
   const terminalDrawerKey = remoteSessionCtx
@@ -1431,15 +1488,6 @@ export function AppShell() {
             ? newSessionProjectLabel ?? translate("app.newSession")
             : (selectedSession?.mode && selectedSession.mode !== "host" ? (selectedSession.name ? translate("app.session", { name: selectedSession.name }) : translate("app.remoteSession")) : null)
         }
-        labPanelNode={labTrainingEnabled ? (
-          <LabTrainingSidePanel
-            hideHeader
-            widgetState={(labWidget?.metadata as LabWidgetState | undefined) ?? null}
-            hasLabTraining={hasLabTraining}
-            onSendCommand={handleSendCommand}
-            onStartLabTraining={handleStartLabTraining}
-          />
-        ) : undefined}
         onBackgroundTaskDone={handleBackgroundTaskDone}
         onRunningSessionIdsChange={handleRunningSessionIdsChange}
         onSessionsChange={handleSessionsChange}
@@ -3056,7 +3104,8 @@ export function AppShell() {
                   <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><polyline points="13 2 13 9 20 9" />
                 </svg>
               ),
-              activate: () => setRightPanelMode("files"),
+              // 分栏态下 files tab 的语义是"退出分栏回到整栏文件视图"。
+              activate: () => { exitRightPanelSplit(); setRightPanelMode("files"); },
             },
             // 快速会话没有工作区，也就没有仓库——Git tab 不出现。
             ...(activeSessionMode === "quick" ? [] : [{
@@ -3080,6 +3129,18 @@ export function AppShell() {
               ),
               activate: () => { setRightPanelMode("agents"); setRightPanelOpen(true); },
             },
+            // 教学训练 tab（2026-10-20 迁自侧栏底部分节）：部署开关
+            // （server-settings.labTraining，经 webauth/me 下发）关闭时不出现。
+            ...(labTrainingEnabled ? [{
+              id: "lab" as const,
+              label: translate("app.teachingSection"),
+              icon: (
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M22 10v6M2 10l10-5 10 5-10 5z" /><path d="M6 12v5c3 3 9 3 12 0v-5" />
+                </svg>
+              ),
+              activate: () => { setRightPanelMode("lab"); setRightPanelOpen(true); },
+            }] : []),
             // 计划 tab: only when a plan exists (per-session file or legacy).
             ...(planTabVisible
               ? [{
@@ -3131,7 +3192,9 @@ export function AppShell() {
             );
           })}
           <div style={{ flex: 1, overflow: "hidden" }}>
-            {rightPanelMode === "files" && (
+            {/* 分栏态文件标签栏常驻（上=文件预览）——切到其它子面板不再丢失
+                已打开文件的快速切换入口。 */}
+            {(rightPanelMode === "files" || splitViewActive) && (
               <TabBar
                 tabs={fileTabs}
                 activeTabId={activeFileTabId ?? ""}
@@ -3140,6 +3203,30 @@ export function AppShell() {
               />
             )}
           </div>
+          {/* 上下分栏开关：上=文件预览常驻（多文件标签始终可见可切），
+              下=Git/子智能体/计划/教学训练切换组。 */}
+          <button
+            type="button"
+            onClick={toggleRightPanelSplit}
+            aria-pressed={rightPanelSplit}
+            disabled={isMobile || rightPanelFullWidth}
+            title={translate(rightPanelSplit ? "layout.splitFilePanelOff" : "layout.splitFilePanel")}
+            aria-label={translate(rightPanelSplit ? "layout.splitFilePanelOff" : "layout.splitFilePanel")}
+            style={{
+              display: "flex", alignItems: "center", justifyContent: "center",
+              width: TOP_BAR_ICON_BUTTON_SIZE, height: TOP_BAR_ICON_BUTTON_SIZE, padding: 0,
+              background: rightPanelSplit ? "var(--bg-selected)" : "transparent",
+              border: "none", borderLeft: "1px solid var(--border)",
+              color: rightPanelSplit ? "var(--accent)" : "var(--text)",
+              cursor: isMobile || rightPanelFullWidth ? "not-allowed" : "pointer",
+              opacity: isMobile || rightPanelFullWidth ? 0.4 : 1,
+              flexShrink: 0, transition: "color 0.12s",
+            }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <rect x="3" y="3" width="18" height="18" rx="2" /><line x1="3" y1="12" x2="21" y2="12" />
+            </svg>
+          </button>
           <button
             type="button"
             className="file-panel-expand-button"
@@ -3179,63 +3266,107 @@ export function AppShell() {
 
         {/* Only the active viewer is mounted. Lightweight per-tab state is restored on activation. */}
         <div style={{ flex: 1, minHeight: 0, overflow: "hidden", paddingBottom: "env(safe-area-inset-bottom)" }}>
-          {/* Subagent directory: stays mounted while the panel is open so its
-              5s record polling keeps the finished list fresh for the widget;
-              keyed by session, hidden via display:none.
-              （0.9.0 合并时此块连同 git/plan 挂载一起丢失，tab 切过去渲染空白——恢复。） */}
-          {selectedSession?.id ? (
-            <div style={{ display: rightPanelMode === "agents" ? "flex" : "none", height: "100%", flexDirection: "column" }}>
-              <SubagentDirectoryPanel
-                key={selectedSession.id}
-                sessionId={selectedSession.id}
-                subagentCalls={subagentCalls}
+          {(() => {
+            /* 布局地基 C（2026-10-20）：分栏态 = 上（文件预览，高度可拖拽）
+               + 下（git/agents/plan/lab 切换组）；整栏态维持单内容区。
+               FileViewer 切换形态会重挂载——per-tab viewerState 已持久化，
+               激活时恢复（与模式切换一致）。 */
+            const filesContent = activeFileTab?.filePath ? (
+              <FileViewer
+                key={`${activeFileTab.id}:${activeFileTab.viewerRevision ?? 0}`}
+                filePath={activeFileTab.filePath}
+                cwd={activeCwd ?? undefined}
+                sourceSessionId={activeFileTab.sourceSessionId}
+                gitRefreshKey={explorerRefreshKey}
+                initialDisplayMode={activeFileTab.initialDisplayMode}
+                initialPage={activeFileTab.page}
+                onDirtyChange={setActiveFileDirty}
+                remote={remoteSessionCtx}
+                initialState={activeFileTab.viewerState}
+                watchEnabled={rightPanelOpen}
+                onStateChange={(viewerState) => handleFileViewerStateChange(
+                  activeFileTab.id,
+                  activeFileTab.viewerRevision ?? 0,
+                  viewerState,
+                )}
+                onMentionLines={rightPanelOpen ? handleFileLineMention : undefined}
+                onAtMention={handleAtMention}
+                onOpenFile={(filePath, page) => handleOpenFile(
+                  filePath,
+                  getFileName(filePath),
+                  { sourceSessionId: activeFileTab.sourceSessionId, page },
+                )}
               />
-            </div>
-          ) : null}
-          {rightPanelMode === "plan" ? (
-            <PlanPanel plan={sessionPlan} sessionId={selectedSession?.id ?? null} />
-          ) : rightPanelMode === "agents" && !selectedSession?.id ? (
-            <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-dim)", fontSize: 12 }}>
-              {translate("app.selectCreateSessionViewSubagent")}
-            </div>
-          ) : (rightPanelMode === "git" && activeSessionMode !== "quick") ? (
-            <GitPanel
-              cwd={(activeCwd ?? selectedSession?.cwd ?? newSessionCwd) ?? ""}
-              sessionId={selectedSession?.id ?? null}
-              refreshKey={explorerRefreshKey}
-              onClose={() => { setRightPanelMode("files"); }}
-            />
-          ) : rightPanelMode === "files" && activeFileTab?.filePath ? (
-            <FileViewer
-              key={`${activeFileTab.id}:${activeFileTab.viewerRevision ?? 0}`}
-              filePath={activeFileTab.filePath}
-              cwd={activeCwd ?? undefined}
-              sourceSessionId={activeFileTab.sourceSessionId}
-              gitRefreshKey={explorerRefreshKey}
-              initialDisplayMode={activeFileTab.initialDisplayMode}
-              initialPage={activeFileTab.page}
-              onDirtyChange={setActiveFileDirty}
-              remote={remoteSessionCtx}
-              initialState={activeFileTab.viewerState}
-              watchEnabled={rightPanelOpen}
-              onStateChange={(viewerState) => handleFileViewerStateChange(
-                activeFileTab.id,
-                activeFileTab.viewerRevision ?? 0,
-                viewerState,
-              )}
-              onMentionLines={rightPanelOpen ? handleFileLineMention : undefined}
-              onAtMention={handleAtMention}
-              onOpenFile={(filePath, page) => handleOpenFile(
-                filePath,
-                getFileName(filePath),
-                { sourceSessionId: activeFileTab.sourceSessionId, page },
-              )}
-            />
-          ) : rightPanelMode === "files" ? (
-            <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-dim)", fontSize: 12 }}>
-               {translate("files.noneOpen")}
-            </div>
-          ) : null}
+            ) : (
+              <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-dim)", fontSize: 12 }}>
+                 {translate("files.noneOpen")}
+              </div>
+            );
+            /* Subagent directory: stays mounted while the panel is open so its
+               5s record polling keeps the finished list fresh for the widget;
+               keyed by session, hidden via display:none.
+               （0.9.0 合并时此块连同 git/plan 挂载一起丢失，tab 切过去渲染空白——恢复。） */
+            const agentsMounted = selectedSession?.id ? (
+              <div style={{ display: rightPanelMode === "agents" ? "flex" : "none", height: "100%", flexDirection: "column" }}>
+                <SubagentDirectoryPanel
+                  key={selectedSession.id}
+                  sessionId={selectedSession.id}
+                  subagentCalls={subagentCalls}
+                />
+              </div>
+            ) : null;
+            const bottomContent = rightPanelMode === "plan" ? (
+              <PlanPanel plan={sessionPlan} sessionId={selectedSession?.id ?? null} />
+            ) : rightPanelMode === "agents" && !selectedSession?.id ? (
+              <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-dim)", fontSize: 12 }}>
+                {translate("app.selectCreateSessionViewSubagent")}
+              </div>
+            ) : (rightPanelMode === "git" && activeSessionMode !== "quick") ? (
+              <GitPanel
+                cwd={(activeCwd ?? selectedSession?.cwd ?? newSessionCwd) ?? ""}
+                sessionId={selectedSession?.id ?? null}
+                refreshKey={explorerRefreshKey}
+                onClose={() => { setRightPanelMode("files"); }}
+              />
+            ) : rightPanelMode === "lab" ? (
+              <LabTrainingSidePanel
+                hideHeader
+                widgetState={(labWidget?.metadata as LabWidgetState | undefined) ?? null}
+                hasLabTraining={hasLabTraining}
+                onSendCommand={handleSendCommand}
+                onStartLabTraining={handleStartLabTraining}
+              />
+            ) : null;
+
+            if (splitViewActive) {
+              return (
+                <>
+                  <div
+                    ref={rightSplitResizer.panelRef}
+                    style={{ height: "var(--right-split-height)", flexShrink: 0, minHeight: 0, overflow: "hidden" }}
+                  >
+                    {filesContent}
+                  </div>
+                  <div
+                    {...rightSplitResizer.separatorProps}
+                    className={`panel-resize-handle right-split-resize-handle${rightSplitResizer.isResizing ? " is-resizing" : ""}`}
+                    data-resize-handle="right-split"
+                    title={`${translate("layout.splitFilePanel")}: ${translate("layout.resizeHint")}`}
+                  />
+                  <div style={{ flex: 1, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+                    {agentsMounted}
+                    {bottomContent}
+                  </div>
+                </>
+              );
+            }
+            return (
+              <>
+                {agentsMounted}
+                {rightPanelMode === "files" ? filesContent : bottomContent}
+              </>
+            );
+          })()}
         </div>
       </div>
     </div>

@@ -1828,3 +1828,21 @@ span.token.table {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.35; }
 }
+
+/* 右列上下分栏的垂直拖拽条（2026-10-20 布局地基 C）：与水平 panel-resize-handle
+   同款视觉（2px 高亮线 + 悬停/聚焦/拖拽中着色），方向转置。 */
+.right-split-resize-handle {
+  width: auto;
+  margin: 0;
+  flex: 0 0 12px;
+  height: 12px;
+  cursor: row-resize;
+}
+.right-split-resize-handle::after {
+  top: 5px;
+  bottom: auto;
+  left: 0;
+  right: 0;
+  width: auto;
+  height: 2px;
+}

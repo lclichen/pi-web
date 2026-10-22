@@ -48,15 +48,15 @@ export async function POST(req: Request) {
   }
 
   // Validate required fields
-  const mode = body.mode === "host" || body.mode === "sandbox" ? body.mode : null;
+  const mode = body.mode === "host" || body.mode === "sandbox" || body.mode === "local-machine" ? body.mode : null;
   if (!mode) {
-    return NextResponse.json({ error: "mode must be 'host' or 'sandbox' (ssh/local-machine not yet supported)" }, { status: 400 });
+    return NextResponse.json({ error: "mode must be 'host', 'sandbox' or 'local-machine' (ssh not yet supported)" }, { status: 400 });
   }
   if (typeof body.prompt !== "string" || body.prompt.trim().length === 0) {
     return NextResponse.json({ error: "prompt is required" }, { status: 400 });
   }
-  // Host mode requires an explicit workDir; sandbox mode derives a per-task
-  // home server-side, so workDir stays empty there.
+  // Host mode requires an explicit workDir; sandbox/local-machine derive a
+  // per-task home server-side, so workDir stays empty there.
   let workDir = "";
   if (mode === "host") {
     if (typeof body.workDir !== "string" || body.workDir.trim().length === 0) {
@@ -78,6 +78,17 @@ export async function POST(req: Request) {
     }
     if (body.files !== undefined || body.filePackagePath !== undefined) {
       return NextResponse.json({ error: "files/filePackagePath are not supported in sandbox mode — the workspace lives inside the container image" }, { status: 400 });
+    }
+  }
+  if (mode === "local-machine") {
+    // 任务在密钥归属用户的配对机器上执行——提交时校验一次（runner 内还有
+    // 兜底：排队期间掉线以失败终态呈现，而不是挂死）。
+    const { getAgentForUser } = await import("@/lib/relay/registry");
+    if (!getAgentForUser(auth.identity.user.id)?.info) {
+      return NextResponse.json({ error: "本机模式需要密钥归属用户先配对电脑（WebUI → 本机面板 → 连接本机）且当前在线" }, { status: 400 });
+    }
+    if (body.files !== undefined || body.filePackagePath !== undefined) {
+      return NextResponse.json({ error: "files/filePackagePath are not supported in local-machine mode — the workspace lives on the paired machine" }, { status: 400 });
     }
   }
   if (

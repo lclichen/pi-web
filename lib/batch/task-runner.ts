@@ -28,7 +28,9 @@ import { makeRemoteVerifyExtension } from "../extensions/remote-verify.ts";
 import { makeEnvironmentInfoExtension } from "../extensions/environment-info.ts";
 import { makeBgTasksExtension } from "../extensions/bg-tasks.ts";
 import { registerBgChannel } from "../extensions/bg-shell.ts";
-import { makeSandboxBgChannel } from "../extensions/bg-channels.ts";
+import { makeSandboxBgChannel, makeRelayBgChannel } from "../extensions/bg-channels.ts";
+import { getAgentForUser } from "../relay/registry.ts";
+import { makeRelayToolsExtension } from "../extensions/relay-tools.ts";
 import { countActiveTasks, getTask, publishTaskEvent, updateTask, type BatchTask, type BatchStopReason } from "./task-store.ts";
 
 // ---------------------------------------------------------------------------
@@ -258,7 +260,7 @@ export interface RunTaskOptions {
   workDir: string;
   files?: Record<string, string>;
   filePackagePath?: string;
-  mode: "host" | "sandbox";
+  mode: "host" | "sandbox" | "local-machine";
   model?: { provider: string; modelId: string };
   timeoutMs: number;
   inputTimeoutMs: number;
@@ -297,6 +299,10 @@ export async function runBatchTask(options: RunTaskOptions): Promise<void> {
     //    - sandbox: per-task stub home whose .pi/sandbox-platform.json binds
     //      the bridge extension to the caller's container; the repo lives in
     //      the container image, files/filePackagePath are rejected at the route
+    //    - local-machine: cwd stays the per-task stub home (session file
+    //      layout only); the seven coding tools route to the OWNER's paired
+    //      machine via the relay tools extension — same wiring as product
+    //      local-machine sessions. The machine's own workspace is the target.
     let sessionCwd: string;
     if (options.mode === "sandbox") {
       const extPath = process.env.PI_WEB_SANDBOX_EXTENSION_PATH;
@@ -306,6 +312,12 @@ export async function runBatchTask(options: RunTaskOptions): Promise<void> {
       if (!options.platformApiKey) throw new Error("sandbox mode requires platformApiKey");
       sessionCwd = ensureBatchHome(taskId);
       writeSandboxConfig(sessionCwd, { apiKey: options.platformApiKey, containerId: options.containerId });
+      updateTask(taskId, { homeDir: sessionCwd });
+    } else if (options.mode === "local-machine") {
+      // 配对机器在线性前置校验（任务提交时也查，这里兜底：排队期间掉线）。
+      const agent = getAgentForUser(options.ownerId);
+      if (!agent?.info) throw new Error("本机模式需要先配对电脑（本机面板 → 连接本机）且当前在线");
+      sessionCwd = ensureBatchHome(taskId);
       updateTask(taskId, { homeDir: sessionCwd });
     } else if (options.resume) {
       // Resume (host): reuse the previously prepared directory as-is.
@@ -317,7 +329,7 @@ export async function runBatchTask(options: RunTaskOptions): Promise<void> {
     updateTask(taskId, { actualWorkDir: sessionCwd });
 
     // 2. Materialize files (host mode, fresh runs only)
-    if (!options.resume && options.mode !== "sandbox") {
+    if (!options.resume && options.mode === "host") {
       if (options.files) materializeFiles(sessionCwd, options.files);
       if (options.filePackagePath) copyPathPackage(sessionCwd, options.filePackagePath);
     }
@@ -332,11 +344,13 @@ export async function runBatchTask(options: RunTaskOptions): Promise<void> {
       ...(options.toolNames ? { toolNames: options.toolNames } : {}),
       ...(options.thinkingLevel ? { thinkingLevel: options.thinkingLevel as "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" } : {}),
     };
+    const isSandbox = options.mode === "sandbox";
+    const isLocal = options.mode === "local-machine";
     const { session } = await startRpcSession(
       sessionId,
       resumeFile ?? "",
       resumeFile ? undefined : sessionCwd,
-      options.mode === "sandbox"
+      isSandbox
         ? {
             ...coreOptions,
             additionalExtensionPaths: resolveCoreExtensionPaths([process.env.PI_WEB_SANDBOX_EXTENSION_PATH!]),
@@ -350,13 +364,26 @@ export async function runBatchTask(options: RunTaskOptions): Promise<void> {
               }),
             ],
           }
-        : {
-            ...coreOptions,
-            extensionFactories: [
-              makeBgTasksExtension(),
-              makeEnvironmentInfoExtension({ mode: "host", username: options.username ?? "batch" }),
-            ],
-          },
+        : isLocal
+          ? {
+              // 与产品 local-machine 会话同构（session-restore-options.ts）：
+              // 编码七件套经 relay 扩展路由到配对机器；cwd 是 per-task 存根
+              // home（会话文件层），真实工作区 = 配对机器侧。
+              ...coreOptions,
+              extensionFactories: [
+                makeBgTasksExtension(),
+                makeRelayToolsExtension(options.ownerId),
+                makeRemoteVerifyExtension("local-machine", options.ownerId),
+                makeEnvironmentInfoExtension({ mode: "local-machine", username: options.username ?? "batch" }),
+              ],
+            }
+          : {
+              ...coreOptions,
+              extensionFactories: [
+                makeBgTasksExtension(),
+                makeEnvironmentInfoExtension({ mode: "host", username: options.username ?? "batch" }),
+              ],
+            },
     );
     wrapper = session;
     const realSessionId = wrapper.sessionId;
@@ -377,6 +404,11 @@ export async function runBatchTask(options: RunTaskOptions): Promise<void> {
       // bg-shell channel: sandbox tasks run INSIDE the container via the
       // platform tools/bash API — never a server-side local spawn.
       registerBgChannel(realSessionId, makeSandboxBgChannel(options.platformApiKey!, options.containerId!));
+    }
+    if (isLocal) {
+      // bg-shell channel: local-machine tasks run on the paired machine via
+      // relay exec.run（与产品 local-machine 会话同一条通道）。
+      registerBgChannel(realSessionId, makeRelayBgChannel(options.ownerId));
     }
 
     // 4. Attach auto-responder for interactive tools

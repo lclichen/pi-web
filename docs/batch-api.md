@@ -1,6 +1,6 @@
 # pi-web 批量测试 API
 
-> 版本 1.4 · 2026-09-29 · 认证方式：X-Platform-API-Key
+> 版本 1.5 · 2026-10-21 · 认证方式：X-Platform-API-Key（1.5：local-machine 模式 + 嵌入指南）
 
 ## 概述
 
@@ -115,12 +115,12 @@ X-Platform-API-Key: sk-...
 ```jsonc
 {
   // 必填：执行模式
-  "mode": "host",              // "host" | "sandbox"（ssh/local-machine 暂不支持）
+  "mode": "host",              // "host" | "sandbox" | "local-machine"（ssh 暂不支持）
 
   // 必填（host 模式）：工作目录（服务器上的绝对路径或相对 pi-web 的路径）
   // 不存在则自动创建 + 自动信任
   // 已存在则自动加后缀（-2, -3, ...）确保干净环境
-  // sandbox 模式忽略此字段——工作区在容器镜像内（见下）
+  // sandbox / local-machine 模式忽略此字段（见下）
   "workDir": "/data/tests/my-project",
 
   // 必填（sandbox 模式）：预创建的平台容器 ID
@@ -129,6 +129,14 @@ X-Platform-API-Key: sk-...
   // 也不停止它。要求部署已配置 PI_WEB_PLATFORM_URL +
   // PI_WEB_SANDBOX_EXTENSION_PATH，否则 400。
   "containerId": 42,
+
+  // local-machine 模式：不需要 workDir/containerId——任务在**密钥归属
+  // 用户的配对电脑**上执行（WebUI → 本机面板 → 连接本机，agent 在线）。
+  // 七个编码工具经 relay 扩展路由到该机器（与产品本机会话同一条代码
+  // 路径），后台任务经 relay exec.run 也在该机器上跑。工作区就是配对
+  // 机器自己的文件系统——prompt 里用机器上的绝对路径引用工作目录，
+  // 免去每次为任务准备服务器工作区。files/filePackagePath 在该模式下
+  // 拒绝（400）。提交时校验配对在线（排队期间掉线由 runner 兜底失败）。
 
   // 必填：初始提示词（一次性请求，无交互）
   "prompt": "Read the test files in tests/ and fix any bugs you find. Run the test suite to verify.",
@@ -532,9 +540,105 @@ curl -s http://localhost:30141/api/batch/tasks/$TASK_ID/result \
 
 ## 限制与 TODO
 
-- **SSH / Local-machine 模式**：暂不支持（需要 relay 配置，V2 计划）
+- **SSH 模式**：暂不支持（需要按项目绑定连接配置，V2 计划）
 - **交互式多轮测试**：当前仅支持一次性 prompt；多轮对话需 V2 的 follow-up 接口
 - **SSE 断点续传**：重连从缓冲区头重放（客户端按 `seq` 去重），不支持 `Last-Event-ID` 式按序号续传（V2 候选）
 - **任务持久化**：当前任务状态在 pi-web 内存中（globalThis），重启后运行中任务丢失；终态任务结果可通过 sessionFile 回溯
 - **并发限制**：无内置限制（依赖系统资源自然约束）；生产环境建议外部队列控制并发数
 - **沙盒自动创建**：sandbox 模式下如未指定 containerId，将自动创建容器（使用默认镜像）
+- **回调推送**：pi-web 不会主动回调外部系统（无 webhook）——结果由调用方拉取（轮询 / SSE / result）
+
+---
+
+## 嵌入指南：把 Agent 嵌进你自己的软件/工作流（1.5 起）
+
+适用场景：外部系统想把 Agent 作为一个能力嵌入自身流程——典型如
+**把日志推给 Agent 分析，再把分析结果传回来**。批量任务 API 就是为此
+设计的程序化通道（评测框架、CI 已在用），不需要动 pi-web 代码。
+
+### 典型模式：推日志 → 分析 → 取结果
+
+```
+你的系统                              pi-web
+   │ POST /api/batch/tasks              │
+   │ { mode, prompt: <日志+分析要求> }   │    （host: 服务器工作区）
+   ├──────────────────────────────────→ │    （sandbox: 平台容器）
+   │ ← 202 { taskId }                   │    （local-machine: 你的配对电脑）
+   │                                     │
+   │ GET /tasks/{id}        轮询，或     │
+   │ "stream": true         SSE 流式     │
+   │                                     │
+   │ GET /tasks/{id}/result              │
+   ├──────────────────────────────────→ │
+   │ ← { finalResponse, stopReason,     │
+   │     tokens, artifacts }             │
+   │ GET /tasks/{id}/artifacts/<path>    │  ← Agent 生成的报告文件（可选）
+```
+
+- **日志输入**：小体量直接放 `prompt`；大文件用 host 模式的 `files`
+  （内联写入工作区）或把文件落到工作目录后让 Agent 读。
+- **结果输出**：`finalResponse` 是最终文本；要求 Agent 产出结构化报告
+  （Markdown/JSON 文件）时经 artifacts 端点取回。
+- **语义对照**（评测框架如 deepeval）：`input → prompt`、
+  `actual_output → finalResponse`。
+
+### 三种执行模式怎么选
+
+| 需求 | 模式 | 说明 |
+|---|---|---|
+| 服务器上有现成工作区 / 要上传文件 | `host` | pi-web 服务器目录执行；`files` 可内联写入 |
+| 隔离环境跑不可信代码 | `sandbox` | 平台容器执行，调用方预建容器并传 `containerId` |
+| **工作区在用户自己电脑上** | `local-machine` | 在**密钥归属用户**的配对电脑上执行，prompt 用机器上的绝对路径；免去每次准备服务器工作区 |
+
+### 接入清单（三步）
+
+1. **拿密钥**：管理员账号的平台密钥（新版 UI：设置 → API 密钥；
+   任何版本：`python scripts/create-api-key.py --platform ... --username admin`）。
+2. **放行网络**：pi-web 的 API 请求门只信任回环/IP 直连或显式配置的主机名。
+   跨机器用**域名**调用时，需在部署侧设置 `PI_WEB_ALLOWED_HOSTS`
+   放行（IP 直连不需要）。
+3. **提交并取结果**：轮询（`GET /tasks/{id}` 直到终态）或 `"stream": true`
+   一次 SSE 到底；终态后 `GET /tasks/{id}/result`。
+
+### 最小可用示例（Python，零依赖）
+
+```python
+import json, time, urllib.request
+
+PI_WEB = "http://10.99.9.7:30141"
+KEY = "sk_..."   # 管理员平台密钥
+
+def post(path, body):
+    req = urllib.request.Request(PI_WEB + path, data=json.dumps(body).encode(),
+                                 headers={"Content-Type": "application/json",
+                                          "X-Platform-API-Key": KEY})
+    return json.loads(urllib.request.urlopen(req, timeout=30).read())
+
+task = post("/api/batch/tasks", {
+    "mode": "host",
+    "workDir": "/data/log-analysis/nightly",
+    "prompt": "分析 app.log 中的错误模式，输出 TOP5 异常原因到 report.md",
+    "files": {"app.log": "<日志内容>"},
+})
+while True:
+    state = json.loads(urllib.request.urlopen(urllib.request.Request(
+        f"{PI_WEB}/api/batch/tasks/{task['taskId']}",
+        headers={"X-Platform-API-Key": KEY})).read())["state"]
+    if state in ("completed", "failed", "cancelled"): break
+    time.sleep(5)
+result = json.loads(urllib.request.urlopen(urllib.request.Request(
+    f"{PI_WEB}/api/batch/tasks/{task['taskId']}/result",
+    headers={"X-Platform-API-Key": KEY})).read())
+print(result["finalResponse"])
+```
+
+### 边界与注意
+
+- **认证按人**：批量接口要求**管理员**密钥；非管理员 403。嵌入式集成对
+  普通用户程序开放时，需要产品层决策（密钥即授权 / 任务模式收紧）。
+- **无回调**：结果由你拉取；工作流需要 webhook 推送的话是 pi-web 侧的
+  待开发项（任务终态 + callbackUrl 字段）。
+- **任务粒度**：一个 prompt 跑到底，无多轮追问；需要对话式嵌入时提
+  需求（batch/sessions 方案已评估）。
+- **local-machine 的配对机器是私有的**：任务在密钥归属用户的机器上执行
+  ——服务账号共用密钥时，所有任务会打到同一个配对机器上。

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { readFile, stat } from "node:fs/promises";
 import { extname } from "node:path";
-import { requireBatchIdentity } from "@/lib/batch/batch-auth";
+import { requireBatchIdentity, canAccessBatchTask } from "@/lib/batch/batch-auth";
 import { isApiRequestAllowed } from "@/lib/request-security";
 import { getTask, isTerminal } from "@/lib/batch/task-store";
 import { resolveArtifactPath } from "@/lib/batch/batch-utils";
@@ -54,6 +54,9 @@ export async function GET(
   if (!task) {
     return NextResponse.json({ error: "Task not found" }, { status: 404 });
   }
+    if (!canAccessBatchTask(auth.identity.user, task.ownerId)) {
+      return NextResponse.json({ error: "Task not found" }, { status: 404 });
+    }
   if (!isTerminal(task.state)) {
     return NextResponse.json(
       { error: "Task is still running", state: task.state, statusUrl: `/api/batch/tasks/${id}` },

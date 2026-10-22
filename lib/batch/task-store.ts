@@ -72,6 +72,9 @@ export interface BatchTask {
   state: BatchTaskState;
   stopReason?: BatchStopReason;
   error?: string;
+  /** Task ownership: platform user id of the key/cookie that submitted it.
+   *  Pre-open tasks (admin-only era) default to 0 = 归属未知，仅管理员可见。 */
+  ownerId?: number;
 
   // Request context
   mode: string;
@@ -317,8 +320,9 @@ export function updateTask(taskId: string, patch: Partial<BatchTask>): BatchTask
   return task;
 }
 
-export function listTasks(limit = 50): BatchTask[] {
+export function listTasks(limit = 50, ownerId?: number): BatchTask[] {
   return [...store().values()]
+    .filter((t) => ownerId === undefined ? true : t.ownerId === ownerId)
     .sort((a, b) => b.createdAt - a.createdAt)
     .slice(0, limit);
 }
@@ -328,6 +332,16 @@ export function countActiveTasks(): number {
   let n = 0;
   for (const t of store().values()) {
     if (t.state === "running" || t.state === "waiting_input") n++;
+  }
+  return n;
+}
+
+/** Per-user concurrency: queued + running + waiting_input tasks of one owner.
+ *  （含 queued：排队也占用户配额——否则用户可以无限堆队把全局闸堵死。） */
+export function countUserActiveTasks(ownerId: number): number {
+  let n = 0;
+  for (const t of store().values()) {
+    if (t.ownerId === ownerId && (t.state === "queued" || t.state === "running" || t.state === "waiting_input")) n++;
   }
   return n;
 }

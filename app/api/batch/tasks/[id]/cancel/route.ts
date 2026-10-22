@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireBatchIdentity } from "@/lib/batch/batch-auth";
+import { requireBatchIdentity, canAccessBatchTask } from "@/lib/batch/batch-auth";
 import { isApiRequestAllowed } from "@/lib/request-security";
 import { getTask, isTerminal, updateTask } from "@/lib/batch/task-store";
 import { removeQueuedTask } from "@/lib/batch/task-runner";
@@ -22,6 +22,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!task) {
     return NextResponse.json({ error: "Task not found" }, { status: 404 });
   }
+    if (!canAccessBatchTask(auth.identity.user, task.ownerId)) {
+      return NextResponse.json({ error: "Task not found" }, { status: 404 });
+    }
   if (isTerminal(task.state)) {
     return NextResponse.json({ taskId: id, state: task.state, message: "Task already in terminal state" });
   }

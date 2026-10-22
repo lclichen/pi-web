@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireBatchIdentity } from "@/lib/batch/batch-auth";
+import { requireBatchIdentity, canAccessBatchTask } from "@/lib/batch/batch-auth";
 import { isApiRequestAllowed } from "@/lib/request-security";
 import { getTask, updateTask } from "@/lib/batch/task-store";
 import { scheduleBatchTask } from "@/lib/batch/task-runner";
@@ -27,6 +27,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!task) {
     return NextResponse.json({ error: "Task not found" }, { status: 404 });
   }
+    if (!canAccessBatchTask(auth.identity.user, task.ownerId)) {
+      return NextResponse.json({ error: "Task not found" }, { status: 404 });
+    }
   if (task.state !== "interrupted") {
     return NextResponse.json(
       { error: `Task is '${task.state}' — only interrupted tasks can be resumed` },

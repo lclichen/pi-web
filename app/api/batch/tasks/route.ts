@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
-import { requireBatchIdentity } from "@/lib/batch/batch-auth";
+import { requireBatchIdentity, checkBatchUserQuota } from "@/lib/batch/batch-auth";
 import { isApiRequestAllowed, hasJsonContentType } from "@/lib/request-security";
 import { createTaskRecord, listTasks, toSummary } from "@/lib/batch/task-store";
 import { scheduleBatchTask } from "@/lib/batch/task-runner";
@@ -110,9 +110,21 @@ export async function POST(req: Request) {
   const MAX_TIMEOUT_MS = 1_814_400_000;
 
   const taskId = randomUUID();
+  // 用户级并发闸（开放普通用户，2026-10-22）：非管理员超限 429；含排队任务。
+  const quota = checkBatchUserQuota(auth.identity.user);
+  if (!quota.ok) {
+    return NextResponse.json(
+      { error: quota.error },
+      {
+        status: quota.status,
+        headers: { "retry-after": String(Math.ceil(quota.retryAfterMs / 1000)) },
+      },
+    );
+  }
   const task = createTaskRecord({
     taskId,
     sessionId: "",
+    ownerId: auth.identity.user.id,
     mode,
     requestedWorkDir: workDir,
     actualWorkDir: "",
@@ -185,5 +197,8 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
   const limit = Math.min(Number(new URL(req.url).searchParams.get("limit") ?? 50), 200);
-  return NextResponse.json({ tasks: listTasks(limit).map(toSummary) });
+  // 归属隔离（开放普通用户）：非管理员只见自己的任务；管理员见全部
+  // （含 admin-only 时代的旧任务 ownerId=undefined）。
+  const ownerId = auth.identity.user.role === "admin" ? undefined : auth.identity.user.id;
+  return NextResponse.json({ tasks: listTasks(limit, ownerId).map(toSummary) });
 }

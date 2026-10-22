@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireBatchIdentity } from "@/lib/batch/batch-auth";
+import { requireBatchIdentity, canAccessBatchTask } from "@/lib/batch/batch-auth";
 import { isApiRequestAllowed } from "@/lib/request-security";
 import { getTask, toSummary } from "@/lib/batch/task-store";
 import { getBatchVersionInfo } from "@/lib/batch/version-info";
@@ -18,6 +18,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const { id } = await params;
   const task = getTask(id);
   if (!task) {
+    return NextResponse.json({ error: "Task not found" }, { status: 404 });
+  }
+  if (!canAccessBatchTask(auth.identity.user, task.ownerId)) {
     return NextResponse.json({ error: "Task not found" }, { status: 404 });
   }
   return NextResponse.json({ ...toSummary(task), versions: getBatchVersionInfo() });

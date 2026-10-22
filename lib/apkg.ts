@@ -1,6 +1,12 @@
 /**
- * Server-side .apkg support — key store, import counters, bundle locks.
- * Byte format + envelope encryption lives in lib/apkg-format.ts.
+ * Server-side .apkg support — key store, import counters, bundle locks, and
+ * the display-only header parse.
+ *
+ * This module is deliberately free of envelope cryptography: the decrypt
+ * implementation lives in the internal `apkg-publisher` binary, invoked as a
+ * subprocess by lib/apkg-open.ts (decryption oracle). What remains here is
+ * the plaintext header region (magic + display metadata + keyId) and the
+ * policy layer around imports.
  *
  * Key store: <dataDir>/apkg-keys.json maps keyId → base64 KEK (0600). The
  * PI_WEB_APKG_KEYS env var accepts the same JSON and is merged over the file
@@ -22,10 +28,74 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "n
 import { join } from "node:path";
 import { dataDir } from "./mode-homes.ts";
 import { projectIdentityKey } from "./project-identity.ts";
-import { randomBytes } from "node:crypto";
-import type { ApkgHeader, ApkgLicense } from "./apkg-format.ts";
 
 export const LOCK_BASENAME = ".bundle-lock.json";
+
+// ---------------------------------------------------------------------------
+// Display-only header (plaintext region of the envelope)
+// ---------------------------------------------------------------------------
+
+const APKG_MAGIC = Buffer.concat([Buffer.from("APKG1", "utf8"), Buffer.alloc(11)]);
+const APKG_FORMAT_VERSION = 1;
+const KEY_ID_BYTES = 16;
+
+/** Display + authorization metadata carried by a package. */
+export interface ApkgPackageMeta {
+  /** Stable slug (bundle/preset name). */
+  name: string;
+  /** Human title shown in import UI. */
+  title: string;
+  description: string;
+  /** Content version (semver-ish string, e.g. "1.2.0") — NOT the format version. */
+  version: string;
+  channel: "stable" | "alpha" | "beta" | string;
+}
+
+/** Authoritative license terms (inside the encrypted manifest). */
+export interface ApkgLicense {
+  /** ISO date — imports rejected after this moment. */
+  expiresAt?: string;
+  /** Max imports per pi-web server (anti-casual-redistribution counter). */
+  maxImports?: number;
+}
+
+export interface ApkgHeader extends ApkgPackageMeta {
+  keyId: string;
+  license: ApkgLicense;
+}
+
+/** Quick magic check — cheap enough for upload routing decisions. */
+export function isApkgBytes(data: Buffer): boolean {
+  return data.length > APKG_MAGIC.length && data.subarray(0, APKG_MAGIC.length).equals(APKG_MAGIC);
+}
+
+/**
+ * Parse the plaintext header (display-only, untrusted; throws on malformed
+ * files). The authoritative license copy lives inside the encrypted
+ * manifest, tamper-proof under publisher key secrecy.
+ */
+export function readApkgHeader(data: Buffer): ApkgHeader {
+  if (!isApkgBytes(data)) throw new Error("不是 .apkg 加密配置包");
+  let offset = APKG_MAGIC.length;
+  const formatVersion = data.readUInt16LE(offset);
+  if (formatVersion !== APKG_FORMAT_VERSION) {
+    throw new Error(`不支持的 .apkg 格式版本: ${formatVersion}`);
+  }
+  offset += 2;
+  const headerLength = data.readUInt16LE(offset);
+  offset += 2;
+  const headerJson = data.subarray(offset, offset + headerLength).toString("utf8");
+  offset += headerLength;
+  const keyIdBuf = data.subarray(offset, offset + KEY_ID_BYTES);
+  const keyId = keyIdBuf.subarray(0, keyIdBuf.indexOf(0)).toString("utf8");
+  let header: ApkgHeader;
+  try {
+    header = JSON.parse(headerJson) as ApkgHeader;
+  } catch {
+    throw new Error("包元信息损坏");
+  }
+  return { ...header, keyId };
+}
 
 export interface BundleLock {
   apkg: true;
@@ -68,20 +138,6 @@ export function getApkgKeys(): Record<string, Buffer> {
     }
   }
   return out;
-}
-
-/** Generate a fresh KEK and persist it as the given (or a dated) keyId. Publisher-CLI helper. */
-export function provisionApkgKey(keyId?: string): { keyId: string; kek: Buffer } {
-  const id = keyId ?? `k${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${randomBytes(2).toString("hex")}`;
-  const kek = randomBytes(32);
-  const existing = existsSync(keysFilePath())
-    ? (() => { try { return JSON.parse(readFileSync(keysFilePath(), "utf8")) as Record<string, string>; } catch { return {}; } })()
-    : {};
-  existing[id] = kek.toString("base64");
-  mkdirSync(dataDir(), { recursive: true });
-  writeFileSync(keysFilePath(), JSON.stringify(existing, null, 2), { mode: 0o600 });
-  try { chmodSync(keysFilePath(), 0o600); } catch { /* fs without chmod */ }
-  return { keyId: id, kek };
 }
 
 // ---------------------------------------------------------------------------

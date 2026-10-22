@@ -1012,7 +1012,7 @@ export const zhTWLocale: LocalePlugin = {
     "bundles.type": "類型",
     "bundles.notes": "說明",
     "bundles.apkgApplyNote": "套用時記憶體解密；套用後該專案禁止再匯出配置（防二次散布）。",
-    "bundles.apkgBadgeTip": "加密配置包：套用時記憶體解密；套用後專案禁止再匯出配置。",
+    "bundles.apkgBadgeTip": "加密配置包：套用時經伺服端解密元件解密；套用後專案禁止再匯出配置。",
     "quickTemplates.templatesDriveHint": "模板決定快速會話的系統提示詞、模型與 MCP 白名單；default 可編輯不可刪除。選擇左側模板，或點擊左下角「新增模板」。",
     "remote.template": "不使用模板",
     "remote.testing": "测试中…",

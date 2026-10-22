@@ -11,14 +11,14 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, unl
 import { join } from "node:path";
 import { dataDir } from "./mode-homes.ts";
 import { importProjectConfigBundle } from "./project-config-bundle.ts";
-import { isApkgBytes, readApkgHeader } from "./apkg-format.ts";
+import { isApkgBytes, readApkgHeader } from "./apkg.ts";
 
 export interface BundleMeta {
   name: string;
   description: string;
   size: number;
   createdAt: number;
-  /** "apkg" = encrypted package (apply decrypts in memory; imports lock). */
+  /** "apkg" = encrypted package (apply decrypts via the external tool; imports lock). */
   kind: "zip" | "apkg";
   /** Content version from the package (manifest v2 / .apkg header). */
   version: string;

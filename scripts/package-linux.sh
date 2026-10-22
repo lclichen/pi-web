@@ -217,11 +217,35 @@ rm -rf "$PKG"
 mkdir -p "$PKG/app"
 log "组装 $PKG"
 cp -a "$SRC/bin" "$SRC/.next" "$SRC/public" "$SRC/next.config.ts" "$SRC/package.json" "$PKG/app/"
+# 构建机 checkout 的 bin/ 可能带着本地调试用的解密组件（含 Windows exe）——
+# 先剔掉，下面按 APKG_PUBLISHER_BIN 统一注入正确的一份。
+rm -f "$PKG/app/bin/"apkg-publisher*
 
 # NO_SOURCE_LEAK: 客户包只含编译产物——不得出现 TS 源码、sourcemap 或 lib/ 目录。
 if find "$PKG/app" -name "*.map" -o -name "lib" -type d 2>/dev/null | grep -q .; then
   log "打包检查失败：app/ 内发现 sourcemap 或 lib/ 源码目录"
   exit 1
+fi
+# NO_SOURCE_LEAK（apkg）：解密实现已外置到内部二进制——仓内不得残留
+# 信封加解密源码（apkg-format.ts 已删；lib/ 内不得出现对称密码原语）。
+if [ -e "$SRC/lib/apkg-format.ts" ] \
+   || grep -rlE "create(De)?cipheriv|generateKeyPair|scryptSync" "$SRC/lib/" --include="*.ts" 2>/dev/null | grep -v "\.test\." | grep -q .; then
+  log "打包检查失败：lib/ 内发现 apkg 加解密实现残留（应仅经 bin/apkg-publisher 外部解密）"
+  exit 1
+fi
+# 内部解密组件注入：bin/apkg-publisher（构建机放置，或 APKG_PUBLISHER_BIN 指定）。
+# 纯开源构建可缺省——.apkg 导入会明确报"未配备解密组件"，其余功能不受影响。
+APKG_BIN="${APKG_PUBLISHER_BIN:-"$SRC/bin/apkg-publisher"}"
+if [ -n "$APKG_BIN" ] && [ -f "$APKG_BIN" ]; then
+  mkdir -p "$PKG/app/bin"
+  cp -a "$APKG_BIN" "$PKG/app/bin/apkg-publisher"
+  chmod +x "$PKG/app/bin/apkg-publisher"
+  log "已注入 apkg 解密组件: $APKG_BIN"
+elif [ "${APKG_PUBLISHER_REQUIRED:-0}" = "1" ]; then
+  log "打包检查失败：要求注入解密组件但未找到（APKG_PUBLISHER_BIN 未设置且 bin/apkg-publisher 缺失）"
+  exit 1
+else
+  warn "未注入 apkg 解密组件——该包不支持 .apkg 导入（如需支持：放置 bin/apkg-publisher 或设 APKG_PUBLISHER_BIN）"
 fi
 cp -a "$SRC/node_modules" "$PKG/app/"
 VERSION="$(node -p "require('$SRC/package.json').version")"

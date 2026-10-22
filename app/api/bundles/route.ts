@@ -3,7 +3,7 @@ import JSZip from "jszip";
 import { requireUserIdentity } from "@/lib/web-session";
 import { isApiRequestAllowed } from "@/lib/request-security";
 import { deleteBundle, listBundles, isValidBundleName, saveBundle } from "@/lib/config-bundles-store";
-import { isApkgBytes, readApkgHeader } from "@/lib/apkg-format";
+import { isApkgBytes, readApkgHeader } from "@/lib/apkg";
 
 export const dynamic = "force-dynamic";
 

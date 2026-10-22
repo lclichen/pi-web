@@ -1009,7 +1009,7 @@ export const enLocale: LocalePlugin = {
     "bundles.type": "Type",
     "bundles.notes": "Notes",
     "bundles.apkgApplyNote": "Decrypted in memory on apply; the project can no longer export its config afterwards (anti-redistribution).",
-    "bundles.apkgBadgeTip": "Encrypted package: decrypted in memory on apply; re-export is blocked after applying.",
+    "bundles.apkgBadgeTip": "Encrypted package: decrypted by the server-side component on apply; re-export is blocked after applying.",
     "quickTemplates.templatesDriveHint": "Templates drive a quick session’s system prompt, model and MCP allowlist; default is editable but not deletable. Select a template on the left, or click “New template” at the bottom left.",
     "quickTemplates.deleteTemplate": "Delete template “{name}”?",
     "bundles.deleteBundleProjectsAlreadyUsing": "Delete bundle “{name}”? Projects already using it are unaffected.",

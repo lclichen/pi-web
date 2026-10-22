@@ -14,7 +14,8 @@
 KEK 代际包装 DEK，密文含明文展示元信息；导入侧按指纹计数、按代吊销）。
 
 > **格式细节（字节布局、密码学参数、打包流程）已移至内部项目** `apkg-publisher`（私有）。
-> 本公开仓只保留导入侧实现；请勿在此补充可指导解密的配方描述。
+> **解密实现也已外置（2026-10-22）**：公开仓不含任何信封加解密代码，导入时经
+> 子进程调用内部二进制（见"导入侧"第 5 条）；请勿在此补充可指导解密的配方描述。
 
 ### 导入侧（pi-web）
 
@@ -28,7 +29,13 @@ KEK 代际包装 DEK，密文含明文展示元信息；导入侧按指纹计数
    `.bundle-lock.json` 即 403（响应明确提示「加密配置包不允许再导出」）。
    发布方内部流转用服务端命令行工具解除（不走 Web API）。
 4. 同理 `/api/bundles` 的「预置模板」若由加密包上传，落盘保存密文原件，
-   每次套用走内存解密，不落明文。
+   每次套用时经解密组件解密，不落明文。
+5. **解密组件外置**：`lib/apkg-open.ts` 以子进程调用 `apkg-publisher open
+   --in --keys --out`（纯解密预言机——密文进、明文 zip 出）。头部解析、指纹
+   （sha256）、许可校验、锁全部留在 pi-web 进程内。组件查找顺序：
+   `PI_WEB_APKG_TOOL`（显式指定，坏路径报错不回退）→ `<cwd>/bin/apkg-publisher`
+   （随包分发）→ `<数据目录>/bin/apkg-publisher`（升级不丢）→ PATH。
+   无组件的部署仅 `.apkg` 导入报"未配备解密组件"，其余功能不受影响。
 
 ### 密钥管理
 
@@ -129,12 +136,12 @@ Electron 需要）。**先上 License**：它是唯一能把「复制整个部�
 
 | 能力 | 位置 |
 |---|---|
-| `.apkg` 信封加密格式（AES-256-GCM 双层：DEK 加密内容、KEK 包装 DEK、keyId 分代、明文头部仅展示） | `lib/apkg-format.ts` |
+| `.apkg` 信封加密格式（AES-256-GCM 双层：DEK 加密内容、KEK 包装 DEK、keyId 分代、明文头部仅展示） | 内部项目 `apkg-publisher`（**公开仓无加解密实现**；`lib/apkg.ts` 仅保留明文展示头解析+策略层，`lib/apkg-open.ts` 负责子进程桥接） |
 | 服务端密钥存储（`<数据目录>/apkg-keys.json`，0600，env `PI_WEB_APKG_KEYS` 可合并覆盖；删 key 即吊销该代全部包） | `lib/apkg.ts` |
 | 导入链路全量接入（项目导入 / Host 导入 / 预置模板套用自动识别 `.apkg`；GCM tag 校验；**授权（过期/导入上限）在写盘前强制**） | `lib/project-config-bundle.ts` |
 | 导入计数器（`<数据目录>/apkg-imports.json`，按包指纹；**单服务器口径**，见诚实边界） | `lib/apkg.ts` |
 | `.bundle-lock.json` 禁再导出（项目与 Host 两条导出路由 403；锁文件列入双向 DENIED 清单，明文包无法携带/覆盖锁） | `lib/apkg.ts` + 两个导出路由 |
-| 预置模板密文存储（`.apkg` 原件落盘，套用时内存解密；列表展示 加密·版本 徽标） | `lib/config-bundles-store.ts` + `BundlesConfig.tsx` |
+| 预置模板密文存储（`.apkg` 原件落盘，套用时经外部解密组件解密；列表展示 加密·版本 徽标） | `lib/config-bundles-store.ts` + `BundlesConfig.tsx` |
 | manifest v2：`package`（name/title/description/version/channel）规范化说明块，明文包同样携带；导入统计返回给 UI | `lib/project-config-bundle.ts` |
 | 发布侧工具 | 内部项目 `apkg-publisher`（Go 二进制 + WebUI；pi-web 仓不再携带打包实现） |
 
@@ -149,6 +156,12 @@ apkg-publisher pack --in course-lab-config.zip ${NL}    --name course-lab --titl
 # 把密钥仓部署到每台要开包的 pi-web 服务器
 # <数据目录>/apkg-keys.json（tar.gz 部署 = ~/.local/share/amedac）；
 # 容器化部署可用 PI_WEB_APKG_KEYS 环境变量注入同构 JSON。
+#
+# 解密组件部署（三选一，缺省则 .apkg 导入报"未配备解密组件"）：
+#   1) 客户包注入：package-linux.sh 打包时设 APKG_PUBLISHER_BIN=<linux 二进制路径>
+#      （或放构建机 $SRC/bin/apkg-publisher），组件进 app/bin/；
+#   2) 数据目录：cp apkg-publisher <数据目录>/bin/（app 升级不丢）；
+#   3) 环境变量：PI_WEB_APKG_TOOL=<绝对路径>。
 ```
 
 ### 版本管理与配置包说明规范

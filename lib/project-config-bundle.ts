@@ -15,8 +15,9 @@
  * source is an uploaded archive instead of another project.
  *
  * Encrypted packages (.apkg, commercial-protection.md §一) are accepted by
- * the same import path: the envelope is decrypted with server-held KEKs
- * (lib/apkg.ts), license terms (expiry / max imports) are enforced before
+ * the same import path: the envelope is decrypted by the external
+ * apkg-publisher binary with server-held KEKs (lib/apkg-open.ts +
+ * lib/apkg.ts), license terms (expiry / max imports) are enforced before
  * any write, and a successful import drops .pi/.bundle-lock.json which makes
  * both export routes refuse to re-export the home.
  *
@@ -27,10 +28,11 @@
  */
 import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
+import { createHash } from "node:crypto";
 import { Readable } from "node:stream";
 import JSZip from "jszip";
-import { isApkgBytes, openApkgBytes, type ApkgHeader } from "./apkg-format.ts";
-import { checkApkgLicense, getApkgKeys, recordApkgImport, recordApkgLockedHome, writeBundleLock, LOCK_BASENAME } from "./apkg.ts";
+import { isApkgBytes, readApkgHeader, getApkgKeys, checkApkgLicense, recordApkgImport, recordApkgLockedHome, writeBundleLock, LOCK_BASENAME, type ApkgHeader } from "./apkg.ts";
+import { openApkgViaTool } from "./apkg-open.ts";
 
 export const BUNDLE_FORMAT = "amedac-project-config";
 export const BUNDLE_VERSION = 2;
@@ -209,6 +211,9 @@ export interface ImportOptions {
  * leaves the project untouched — .apkg license checks (expiry / import
  * counter) likewise run before any file lands. A successful .apkg import
  * writes .pi/.bundle-lock.json, which blocks both export routes.
+ *
+ * Decryption itself runs in the external apkg-publisher binary
+ * (lib/apkg-open.ts); header parsing and the fingerprint stay in-process.
  */
 export async function importProjectConfigBundle(
   home: string,
@@ -219,10 +224,9 @@ export async function importProjectConfigBundle(
   let apkgHeader: ApkgHeader | undefined;
   let apkgFingerprint: string | undefined;
   if (isApkgBytes(data)) {
-    const opened = openApkgBytes(data, options.apkgKeys ?? getApkgKeys());
-    zipData = opened.zip;
-    apkgHeader = opened.header;
-    apkgFingerprint = opened.fingerprint;
+    apkgHeader = readApkgHeader(data);
+    zipData = await openApkgViaTool(data, options.apkgKeys ?? getApkgKeys());
+    apkgFingerprint = createHash("sha256").update(data).digest("hex");
   }
 
   let archive: JSZip;

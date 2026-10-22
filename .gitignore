@@ -59,3 +59,6 @@ e2e_*.mjs
 scripts/vm-credentials.cjs
 bench-results/
 tmp-qtc.cjs
+
+# 内部解密组件（apkg-publisher，经 package-linux.sh 注入客户包；不入库）
+bin/apkg-publisher*

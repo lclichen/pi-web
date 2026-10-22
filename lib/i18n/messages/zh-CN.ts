@@ -1011,7 +1011,7 @@ export const zhCNLocale: LocalePlugin = {
     "bundles.type": "类型",
     "bundles.notes": "说明",
     "bundles.apkgApplyNote": "套用时内存解密；套用后该项目禁止再导出配置（防二次分发）。",
-    "bundles.apkgBadgeTip": "加密配置包：套用时内存解密；套用后项目禁止再导出配置。",
+    "bundles.apkgBadgeTip": "加密配置包：套用时经服务端解密组件解密；套用后项目禁止再导出配置。",
     "quickTemplates.templatesDriveHint": "模板决定快速会话的系统提示词、模型与 MCP 白名单；default 可编辑不可删除。选择左侧模板，或点击左下角「新增模板」。",
     "remote.template": "不使用模板",
     "remote.testing": "测试中…",

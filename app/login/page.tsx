@@ -51,10 +51,21 @@ function LoginForm() {
     fetch("/api/webauth/me")
       .then((r) => (r.status === 401 ? null : r.json()))
       .then((d) => {
-        if (d?.mustChangePassword) setPhase("change-password");
+        if (d?.mustChangePassword) {
+          setPhase("change-password");
+          return;
+        }
+        // 已有有效会话（同浏览器其他窗口登录过——cookie jar 是窗口共享的）：
+        // 直接回主页，而不是展示登录表单。否则随手再登一次会用新会话覆盖
+        // 共享 cookie，把其他窗口"挤掉"（服务端两会话其实都活着，但旧窗口
+        // 的下一个请求会带着新 sid 变成另一个身份/触发跳转）。要换账号请
+        // 先显式退出。带 ?next= 时仍走表单（可能是权限跳转的定向登录）。
+        if (d?.user && !searchParams.get("next")) {
+          router.replace("/");
+        }
       })
       .catch(() => {});
-  }, []);
+  }, [router, searchParams]);
 
   const next = searchParams.get("next") || "/";
 

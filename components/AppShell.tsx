@@ -122,13 +122,44 @@ export function AppShell() {
   // session's idle window on every request and re-issues the session cookie
   // (throttled to ≥1h) on this endpoint — covering users whose page stays
   // open for days with only a long-lived SSE connection, whose headers were
-  // set once at stream open. 401 here is handled by the normal auth flow.
+  // set once at stream open. 401 here is handled by the normal auth flow;
+  // 另一窗口覆盖登录（cookie 换了身份）时 touch 仍 200（新会话有效）——
+  // 由周期性身份比对（见 visibilitychange）负责发现切换。
   useEffect(() => {
     if (typeof window === "undefined") return;
     const id = setInterval(() => {
       void fetch("/api/webauth/touch", { credentials: "same-origin" }).catch(() => {});
     }, 60 * 60 * 1000);
     return () => clearInterval(id);
+  }, []);
+  // 身份切换检测：窗口重新可见（切回标签页/另一窗口操作过）时比对 /me 的
+  // 身份。cookie jar 是浏览器全局的——另一窗口登录别的账号会静默替换本窗口
+  // 的身份；不检测的话本窗口继续用旧身份的界面发请求，逐个 403/看到别人的
+  // 数据边界模糊。发现身份变化 → 整页刷新按新身份重建（项目/会话/设置）。
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    let lastUserId: number | null = null;
+    let initialized = false;
+    const checkIdentity = () => {
+      if (document.visibilityState !== "visible") return;
+      void fetch("/api/webauth/me", { credentials: "same-origin" })
+        .then(async (r) => {
+          if (!r.ok) return; // 401：交给正常认证流程（跳登录页）
+          const d = (await r.json().catch(() => ({}))) as { user?: { id: number } | null };
+          if (!d?.user) return;
+          if (!initialized) {
+            lastUserId = d.user.id;
+            initialized = true;
+            return;
+          }
+          if (lastUserId !== null && d.user.id !== lastUserId) {
+            window.location.reload();
+          }
+        })
+        .catch(() => {});
+    };
+    document.addEventListener("visibilitychange", checkIdentity);
+    return () => document.removeEventListener("visibilitychange", checkIdentity);
   }, []);
   // Audio ownership lives here (not in ChatWindow) so the completion tone can
   // also fire for tasks finishing in a non-active workspace whose ChatWindow
@@ -237,7 +268,21 @@ export function AppShell() {
           return;
         }
         setAuthEnabled(true);
-        setWebUser(d?.user ? { id: d.user.id, username: d.user.username, role: d.user.role } : null);
+        if (d?.user) {
+          // 另一窗口用别的账号登录会覆盖共享 cookie（HttpOnly 单值）——本窗口
+          // 页面加载时读到的可能已是新身份。检测到"加载期间身份被换"就整体
+          // 刷新（项目/会话/设置全按新身份重建），而不是停在旧身份的界面上
+          // 让后续请求逐个 403/404。
+          setWebUser((prev) => {
+            if (prev !== "loading" && prev !== null && prev.id !== d.user!.id) {
+              window.location.reload();
+              return prev;
+            }
+            return { id: d.user!.id, username: d.user!.username, role: d.user!.role };
+          });
+        } else {
+          setWebUser(null);
+        }
       })
       .catch(() => setWebUser(null));
   }, []);

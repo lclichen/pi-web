@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireUserIdentity } from "@/lib/web-session";
 import { isApiRequestAllowed } from "@/lib/request-security";
-import { deleteBundle, isValidBundleName } from "@/lib/config-bundles-store";
+import { deleteBundle, isProtectedBundleName, isValidBundleName } from "@/lib/config-bundles-store";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +21,9 @@ export async function DELETE(
   const { name } = await ctx.params;
   if (!isValidBundleName(name)) {
     return NextResponse.json({ error: "非法模板名" }, { status: 400 });
+  }
+  if (isProtectedBundleName(name)) {
+    return NextResponse.json({ error: "内置 Agent 定义不可删除（agent-builder）" }, { status: 403 });
   }
   const removed = deleteBundle(name);
   if (!removed) return NextResponse.json({ error: "模板不存在" }, { status: 404 });

@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { dataDir } from "./mode-homes.ts";
 import { importProjectConfigBundle } from "./project-config-bundle.ts";
 import { isApkgBytes, readApkgHeader } from "./apkg.ts";
+import { BUILTIN_AGENT_BUILDER_NAME, BUILTIN_AGENT_BUILDER_VERSION, builtinAgentBuilderBytes } from "./builtin-agent-builder.ts";
 
 export interface BundleMeta {
   name: string;
@@ -65,6 +66,26 @@ export function bundleZipPath(name: string): string {
 
 export function isValidBundleName(name: string): boolean {
   return /^[\w][\w.-]{0,63}$/.test(name);
+}
+
+/** 内置 Agent 定义（Agent Builder）——不可删除/覆盖，但可自由套用。 */
+export function isProtectedBundleName(name: string): boolean {
+  return name === BUILTIN_AGENT_BUILDER_NAME;
+}
+
+/** 首次访问时播种内置 Agent Builder 定义（存在即跳过；异步：zip 构建是异步的）。 */
+export async function ensureBuiltinBundles(): Promise<void> {
+  const dir = bundlesDir();
+  if (existsSync(join(dir, `${BUILTIN_AGENT_BUILDER_NAME}.zip`)) || existsSync(join(dir, `${BUILTIN_AGENT_BUILDER_NAME}.apkg`))) return;
+  const bytes = await builtinAgentBuilderBytes();
+  saveBundle(BUILTIN_AGENT_BUILDER_NAME, "内置：套用后在项目内对话式开发 Agent 定义（.pi/ 全流程 + 打包规范）", bytes);
+  // 明文 zip 的版本不在 .apkg 头里——补写 meta 让列表/详情显示版本。
+  const meta = readMeta();
+  meta[BUILTIN_AGENT_BUILDER_NAME] = {
+    ...meta[BUILTIN_AGENT_BUILDER_NAME],
+    version: BUILTIN_AGENT_BUILDER_VERSION,
+  };
+  writeMeta(meta);
 }
 
 export function listBundles(): BundleMeta[] {
@@ -141,6 +162,7 @@ export function saveBundle(name: string, description: string, data: Buffer): voi
 }
 
 export function deleteBundle(name: string): boolean {
+  if (isProtectedBundleName(name)) return false;
   const target = bundleFilePath(name);
   if (!existsSync(target)) return false;
   unlinkSync(target);

@@ -55,7 +55,10 @@ const DENIED_BASENAMES = new Set(["auth.json", "ssh.json", "sandbox-platform.jso
  * state (.pi/plans/plan-sess_*.md) — per-session, not portable config.
  */
 const DENIED_SEGMENTS = new Set(["sessions", "tmp", "bin", "cache", "plans", ".git"]);
-/** Top-level prefixes an import may write into the project home. */
+/** Top-level prefixes an import may write into the project home.
+ * DEPRECATED (2026-10-23): labs/ 不是标准目录——Agent 相关配置统一收敛到
+ * .pi/（方便路径白名单防 Agent 自改运行文件）。导入仍兼容历史包；导出
+ * 侧的移除待现有教学包迁移后执行（Agent Builder 已只写 .pi/）。 */
 const ALLOWED_PREFIXES = [".pi/", "labs/"];
 /** Root files a bundle may carry: archive metadata + shared project files. */
 const ALLOWED_ROOT_FILES = new Set(["manifest.json", "readme.md", "agents.md"]);

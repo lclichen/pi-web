@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import JSZip from "jszip";
 import { requireUserIdentity } from "@/lib/web-session";
 import { isApiRequestAllowed } from "@/lib/request-security";
-import { deleteBundle, listBundles, isValidBundleName, saveBundle } from "@/lib/config-bundles-store";
+import { deleteBundle, ensureBuiltinBundles, isProtectedBundleName, listBundles, isValidBundleName, saveBundle } from "@/lib/config-bundles-store";
 import { isApkgBytes, readApkgHeader } from "@/lib/apkg";
 
 export const dynamic = "force-dynamic";
@@ -10,13 +10,15 @@ export const dynamic = "force-dynamic";
 const MAX_BUNDLE_BYTES = 200 * 1024 * 1024;
 
 // GET /api/bundles — list preset config bundles (any authenticated user; the
-// wizard offers them at project creation).
+// wizard offers them at project creation). Seeds the built-in Agent Builder
+// definition on first access.
 export async function GET(req: Request) {
   if (!isApiRequestAllowed(req)) {
     return NextResponse.json({ error: "Untrusted API request" }, { status: 403 });
   }
   const identity = requireUserIdentity(req);
   if (!identity.ok) return NextResponse.json({ error: "登录已失效" }, { status: identity.status });
+  await ensureBuiltinBundles();
   return NextResponse.json({ bundles: listBundles() });
 }
 
@@ -43,6 +45,9 @@ export async function POST(req: Request) {
   const name = (rawName.trim() || (file instanceof File ? file.name.replace(/\.(zip|apkg)$/i, "") : "")).trim();
   if (!isValidBundleName(name)) {
     return NextResponse.json({ error: "模板名只能包含字母、数字、点、下划线、连字符（≤64 字符）" }, { status: 400 });
+  }
+  if (isProtectedBundleName(name)) {
+    return NextResponse.json({ error: "内置 Agent 定义不可覆盖（agent-builder）" }, { status: 403 });
   }
   if (!(file instanceof File) || file.size === 0) {
     return NextResponse.json({ error: "缺少上传文件（字段名 file）" }, { status: 400 });
@@ -88,6 +93,9 @@ export async function DELETE(req: Request) {
   const name = new URL(req.url).searchParams.get("name") ?? "";
   if (!isValidBundleName(name)) {
     return NextResponse.json({ error: "非法模板名" }, { status: 400 });
+  }
+  if (isProtectedBundleName(name)) {
+    return NextResponse.json({ error: "内置 Agent 定义不可删除（agent-builder）" }, { status: 403 });
   }
   if (!deleteBundle(name)) {
     return NextResponse.json({ error: "模板不存在" }, { status: 404 });

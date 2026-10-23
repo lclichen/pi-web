@@ -6,14 +6,15 @@
  * 密钥的事实源在沙盒平台（/api/v1/auth/api-keys，按用户隔离、长效不过期）；
  * 明文的可重复回显由 pi-web 侧保管文件支撑（lib/api-key-vault.ts）——
  * 经此处创建的密钥可随时查看与复制，平台侧直建的密钥只显示前缀。
- * 批量测试接口（/api/batch/tasks）要求管理员密钥，非管理员创建的密钥
- * 可用于其他 X-Platform-API-Key 场景。
+ * 批量测试接口（/api/batch/tasks）对所有用户开放（每用户并发限额），
+ * 经请求头 X-Platform-API-Key 认证。
  *
  * 外壳与"常规/用户"页同款（settings-general 样式族，app/settings.css）。
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { ConfigButton } from "./SettingsUi";
+import { useConfirm } from "./use-confirm";
 
 interface ApiKeyRow {
   id: number;
@@ -25,10 +26,21 @@ interface ApiKeyRow {
   /** 仅经 pi-web 创建（保管在册）的密钥返回。 */
   key?: string;
   canReveal: boolean;
+  /** manual=经此页创建；auto=登录会话密钥（每次登录铸一个，随会话吊销）；external=平台侧直建。 */
+  source?: "manual" | "auto" | "external";
+  /** 当前浏览器会话正在使用的密钥（吊销 = 立即下线本会话）。 */
+  isCurrent?: boolean;
+}
+
+type KeySource = "manual" | "auto" | "external";
+
+function groupOf(row: ApiKeyRow): KeySource {
+  return row.source ?? (row.canReveal ? "manual" : "external");
 }
 
 export function ApiKeysConfig() {
   const { t } = useI18n();
+  const { confirm, confirmDialog } = useConfirm();
   const [keys, setKeys] = useState<ApiKeyRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -41,7 +53,17 @@ export function ApiKeysConfig() {
   const [copied, setCopied] = useState<number | null>(null);
   const [revoking, setRevoking] = useState<number | null>(null);
   const [revokeError, setRevokeError] = useState<string | null>(null);
+  /** 登录会话密钥组默认折叠——它们是系统凭证，通常无需关注。 */
+  const [autoExpanded, setAutoExpanded] = useState(false);
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const revealNewTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (copyTimer.current) clearTimeout(copyTimer.current);
+      if (revealNewTimer.current) clearTimeout(revealNewTimer.current);
+    };
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -63,9 +85,6 @@ export function ApiKeysConfig() {
 
   useEffect(() => {
     void load();
-    return () => {
-      if (copyTimer.current) clearTimeout(copyTimer.current);
-    };
   }, [load]);
 
   const create = useCallback(async () => {
@@ -87,6 +106,10 @@ export function ApiKeysConfig() {
       setName("");
       setRevealNew(d.key.id);
       setRevealed((prev) => new Set(prev).add(d.key!.id));
+      // "已创建"提示与自动展开只保留一小段时间；之后揭示状态完全由
+      // revealed 集合驱动，隐藏按钮才能立即生效。
+      if (revealNewTimer.current) clearTimeout(revealNewTimer.current);
+      revealNewTimer.current = setTimeout(() => setRevealNew(null), 8000);
     } catch (e) {
       setCreateError(String(e));
     } finally {
@@ -108,6 +131,8 @@ export function ApiKeysConfig() {
   }, []);
 
   const toggleReveal = useCallback((id: number) => {
+    // 同时清掉 revealNew：否则刚创建的密钥点"隐藏"不会收起。
+    setRevealNew((current) => (current === id ? null : current));
     setRevealed((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -118,7 +143,14 @@ export function ApiKeysConfig() {
 
   const revoke = useCallback(async (row: ApiKeyRow) => {
     if (revoking !== null) return;
-    if (!window.confirm(t("apiKeys.revokeConfirm", { name: row.name }))) return;
+    const ok = await confirm({
+      title: t("apiKeys.revoke"),
+      message: t("apiKeys.revokeConfirm", { name: row.name }),
+      confirmLabel: t("apiKeys.revoke"),
+      abortLabel: t("common.cancel"),
+      danger: true,
+    });
+    if (!ok) return;
     setRevoking(row.id);
     setRevokeError(null);
     try {
@@ -134,7 +166,7 @@ export function ApiKeysConfig() {
     } finally {
       setRevoking(null);
     }
-  }, [revoking, t]);
+  }, [revoking, t, confirm]);
 
   const fmtDate = (iso: string | null): string => {
     if (!iso) return "";
@@ -144,6 +176,58 @@ export function ApiKeysConfig() {
       return iso;
     }
   };
+
+  const renderKeyRow = (row: ApiKeyRow, opts: { notRevealableBadge: boolean }) => {
+    const isRevealed = revealed.has(row.id);
+    return (
+      <div key={row.id} className="api-key-row">
+        <div className="api-key-row-main">
+          <div className="api-key-row-ident">
+            <div className="api-key-name">
+              {row.name}
+              {row.isCurrent && <span className="api-key-current-tag">{t("apiKeys.currentSession")}</span>}
+            </div>
+            <div className="api-key-meta">
+              {row.keyPrefix ?? ""}
+              {` · ${t("apiKeys.created")} ${fmtDate(row.createdAt)}`}
+              {row.lastUsedAt ? ` · ${t("apiKeys.lastUsed")} ${fmtDate(row.lastUsedAt)}` : ""}
+            </div>
+          </div>
+          {row.canReveal ? (
+            <>
+              <ConfigButton size="small" onClick={() => toggleReveal(row.id)}>
+                {isRevealed ? t("apiKeys.hide") : t("apiKeys.show")}
+              </ConfigButton>
+              <ConfigButton size="small" onClick={() => void copyKey(row)} disabled={!row.key}>
+                {copied === row.id ? t("apiKeys.copied") : t("apiKeys.copy")}
+              </ConfigButton>
+            </>
+          ) : (
+            opts.notRevealableBadge && (
+              <span className="api-key-not-revealable" title={t("apiKeys.notRevealable")}>
+                {t("apiKeys.notRevealableShort")}
+              </span>
+            )
+          )}
+          <ConfigButton variant="danger" size="small" disabled={revoking !== null} onClick={() => void revoke(row)}>
+            {revoking === row.id ? t("apiKeys.revoking") : t("apiKeys.revoke")}
+          </ConfigButton>
+        </div>
+        {row.canReveal && isRevealed && row.key && (
+          <div className="api-key-secret-box">
+            <code className="api-key-secret">{row.key}</code>
+            <ConfigButton size="small" onClick={() => void copyKey(row)}>
+              {copied === row.id ? t("apiKeys.copied") : t("apiKeys.copy")}
+            </ConfigButton>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const manualKeys = keys.filter((row) => groupOf(row) === "manual");
+  const autoKeys = keys.filter((row) => groupOf(row) === "auto");
+  const externalKeys = keys.filter((row) => groupOf(row) === "external");
 
   return (
     <div className="settings-general">
@@ -159,16 +243,15 @@ export function ApiKeysConfig() {
               {t("apiKeys.batchAdminNote")}
             </p>
             <form
-              className="account-password-form"
-              style={{ display: "flex", gap: 8, margin: 0, maxWidth: 480, gridTemplateColumns: "none" }}
+              className="api-keys-create-form"
               onSubmit={(e) => { e.preventDefault(); void create(); }}
             >
               <input
+                className="config-input"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder={t("apiKeys.namePlaceholder")}
                 maxLength={128}
-                style={{ flex: 1, height: 32 }}
               />
               <ConfigButton variant="primary" onClick={() => void create()} disabled={creating || !name.trim()}>
                 {creating ? t("apiKeys.creating") : t("apiKeys.create")}
@@ -176,7 +259,7 @@ export function ApiKeysConfig() {
             </form>
             {createError && <p role="alert" className="settings-general-error">{createError}</p>}
             {revealNew !== null && (
-              <p style={{ margin: "8px 0 0", fontSize: 12, color: "#22c55e" }}>{t("apiKeys.createdHint")}</p>
+              <p className="api-key-created-hint">{t("apiKeys.createdHint")}</p>
             )}
           </section>
 
@@ -188,80 +271,49 @@ export function ApiKeysConfig() {
               <p className="settings-general-description">{t("apiKeys.empty")}</p>
             ) : (
               <div style={{ display: "flex", flexDirection: "column" }}>
-                {keys.map((row) => {
-                  const isRevealed = revealed.has(row.id) || revealNew === row.id;
-                  return (
-                    <div
-                      key={row.id}
-                      style={{
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: 6,
-                        padding: "10px 0",
-                        borderBottom: "1px solid var(--border)",
-                      }}
+                {manualKeys.length > 0 && (
+                  <>
+                    <div className="api-key-group-heading">{t("apiKeys.groupManual")}</div>
+                    {manualKeys.map((row) => renderKeyRow(row, { notRevealableBadge: false }))}
+                  </>
+                )}
+
+                {autoKeys.length > 0 && (
+                  <div className="api-key-group">
+                    <button
+                      type="button"
+                      className="api-key-group-toggle"
+                      aria-expanded={autoExpanded}
+                      onClick={() => setAutoExpanded((v) => !v)}
                     >
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--text)" }}>{row.name}</div>
-                          <div style={{ fontSize: 11, color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>
-                            {row.keyPrefix ?? ""}
-                            {` · ${t("apiKeys.created")} ${fmtDate(row.createdAt)}`}
-                            {row.lastUsedAt ? ` · ${t("apiKeys.lastUsed")} ${fmtDate(row.lastUsedAt)}` : ""}
-                          </div>
-                        </div>
-                        {row.canReveal ? (
-                          <>
-                            <ConfigButton size="small" onClick={() => toggleReveal(row.id)}>
-                              {isRevealed ? t("apiKeys.hide") : t("apiKeys.show")}
-                            </ConfigButton>
-                            <ConfigButton size="small" onClick={() => void copyKey(row)} disabled={!row.key}>
-                              {copied === row.id ? t("apiKeys.copied") : t("apiKeys.copy")}
-                            </ConfigButton>
-                          </>
-                        ) : (
-                          <span style={{ fontSize: 10.5, color: "var(--text-dim)" }} title={t("apiKeys.notRevealable")}>
-                            {t("apiKeys.notRevealableShort")}
-                          </span>
-                        )}
-                        <ConfigButton
-                          size="small"
-                          disabled={revoking !== null}
-                          onClick={() => void revoke(row)}
-                          style={{ color: "#f87171" }}
-                        >
-                          {revoking === row.id ? t("apiKeys.revoking") : t("apiKeys.revoke")}
-                        </ConfigButton>
-                      </div>
-                      {row.canReveal && isRevealed && row.key && (
-                        <div
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 8,
-                            padding: "6px 8px",
-                            background: "var(--bg-panel)",
-                            border: "1px solid var(--border)",
-                            borderRadius: 6,
-                          }}
-                        >
-                          <code style={{ flex: 1, fontSize: 11, fontFamily: "var(--font-mono)", color: "var(--text)", wordBreak: "break-all" }}>
-                            {row.key}
-                          </code>
-                          <ConfigButton size="small" onClick={() => void copyKey(row)}>
-                            {copied === row.id ? t("apiKeys.copied") : t("apiKeys.copy")}
-                          </ConfigButton>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
+                      <svg
+                        width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
+                        style={{ transform: autoExpanded ? "rotate(90deg)" : "none", transition: "transform 0.12s", flexShrink: 0 }}
+                      >
+                        <polyline points="9 6 15 12 9 18" />
+                      </svg>
+                      <span>{t("apiKeys.groupAuto")}（{autoKeys.length}）</span>
+                    </button>
+                    <p className="settings-general-description" style={{ marginBottom: 0 }}>
+                      {t("apiKeys.groupAutoDesc")}
+                    </p>
+                    {autoExpanded && autoKeys.map((row) => renderKeyRow(row, { notRevealableBadge: false }))}
+                  </div>
+                )}
+
+                {externalKeys.length > 0 && (
+                  <>
+                    <div className="api-key-group-heading">{t("apiKeys.groupExternal")}</div>
+                    {externalKeys.map((row) => renderKeyRow(row, { notRevealableBadge: true }))}
+                  </>
+                )}
               </div>
             )}
             {revokeError && <p role="alert" className="settings-general-error">{revokeError}</p>}
           </section>
         </>
       )}
+      {confirmDialog}
     </div>
   );
 }

@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
+import { registerSettingsDirty } from "@/lib/settings-dirty";
+import { useConfirm } from "./use-confirm";
 import {
   ConfigButton,
   ConfigDetail,
@@ -71,30 +73,25 @@ function toDraft(t: QuickTemplate): Draft {
   };
 }
 
-// 与模型/子代理页同款输入框样式。
-const inputStyle: React.CSSProperties = {
-  width: "100%",
-  height: 30,
-  padding: "3px 9px",
-  background: "var(--bg-panel)",
-  border: "1px solid var(--border)",
-  borderRadius: 5,
-  color: "var(--text)",
-  fontSize: 12,
-  outline: "none",
-};
-const monoStyle: React.CSSProperties = { ...inputStyle, fontFamily: "var(--font-mono)" };
-const textareaStyle: React.CSSProperties = {
-  ...monoStyle,
-  height: "auto",
-  minHeight: 180,
-  resize: "vertical",
-  padding: 8,
-  lineHeight: 1.5,
-};
+// 草稿是否有未保存修改：新建态与任意非空字段比较；编辑态与所选模板快照逐字段比较。
+function isDraftDirty(creating: boolean, draft: Draft, selected: QuickTemplate | null): boolean {
+  if (creating) {
+    return draft.name !== "" || draft.description !== "" || draft.systemPrompt !== ""
+      || draft.modelProvider !== "" || draft.modelId !== "" || draft.mcpServers.length > 0;
+  }
+  if (!selected) return false;
+  const base = toDraft(selected);
+  return draft.name !== base.name
+    || draft.description !== base.description
+    || draft.systemPrompt !== base.systemPrompt
+    || draft.modelProvider !== base.modelProvider
+    || draft.modelId !== base.modelId
+    || draft.mcpServers.join("\n") !== base.mcpServers.join("\n");
+}
 
 export function QuickTemplatesConfig({ embedded = false }: { embedded?: boolean }) {
   const { t } = useI18n();
+  const { confirm, confirmDialog } = useConfirm();
   const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
   // 已配置的 MCP 服务器名——白名单多选数据源（见下方 /api/mcp 拉取）。
   const [mcpServerNames, setMcpServerNames] = useState<string[] | null>(null);
@@ -113,6 +110,12 @@ export function QuickTemplatesConfig({ embedded = false }: { embedded?: boolean 
 
   const selected = templates.find((tpl) => tpl.id === selectedId) ?? null;
   const showForm = creating || selected !== null;
+
+  // 向设置面板外壳报告未保存状态（Esc/遮罩关闭前会请求确认）。
+  useEffect(
+    () => registerSettingsDirty("quick-templates", () => isDraftDirty(creating, draft, selected)),
+    [creating, draft, selected],
+  );
 
   const load = useCallback(async () => {
     try {
@@ -171,7 +174,22 @@ export function QuickTemplatesConfig({ embedded = false }: { embedded?: boolean 
     return () => { cancelled = true; };
   }, []);
 
-  const selectTemplate = (tpl: QuickTemplate) => {
+  // 切换/新建前，若有未保存草稿先请求放弃确认（此前是无声丢弃）。
+  const confirmDiscardIfNeeded = async (): Promise<boolean> => {
+    if (!isDraftDirty(creating, draft, selected)) return true;
+    return confirm({
+      title: t("quickTemplates.discardDraftTitle"),
+      message: t("quickTemplates.discardDraftMessage"),
+      confirmLabel: t("common.discardChanges"),
+      abortLabel: t("common.cancel"),
+      danger: true,
+    });
+  };
+
+  const selectTemplate = async (tpl: QuickTemplate) => {
+    if (tpl.id !== selectedId || creating) {
+      if (!(await confirmDiscardIfNeeded())) return;
+    }
     setCreating(false);
     setSelectedId(tpl.id);
     setDraft(toDraft(tpl));
@@ -179,7 +197,8 @@ export function QuickTemplatesConfig({ embedded = false }: { embedded?: boolean 
     setFormMsg(null);
   };
 
-  const startCreate = () => {
+  const startCreate = async () => {
+    if (!(await confirmDiscardIfNeeded())) return;
     setSelectedId(null);
     setCreating(true);
     setDraft(emptyDraft);
@@ -242,7 +261,14 @@ export function QuickTemplatesConfig({ embedded = false }: { embedded?: boolean 
   };
 
   const remove = async (tpl: QuickTemplate) => {
-    if (!window.confirm(t("quickTemplates.deleteTemplate", { name: tpl.name }))) return;
+    const ok = await confirm({
+      title: t("common.delete"),
+      message: t("quickTemplates.deleteTemplate", { name: tpl.name }),
+      confirmLabel: t("common.delete"),
+      abortLabel: t("common.cancel"),
+      danger: true,
+    });
+    if (!ok) return;
     try {
       const res = await fetch(`/api/quick-templates?id=${encodeURIComponent(tpl.id)}`, { method: "DELETE" });
       const data = (await res.json()) as { error?: string };
@@ -265,18 +291,18 @@ export function QuickTemplatesConfig({ embedded = false }: { embedded?: boolean 
         {/* Left: template list（与模型页同构：列表 + 左下角新建） */}
         <ConfigSidebar>
           <ConfigSidebarList>
-            {loading ? <div className="config-sidebar-message">{t("bundles.loadingTemplates")}</div>
+            {loading ? <div className="config-sidebar-message">{t("quickTemplates.loading")}</div>
             : error ? <div className="config-sidebar-message is-error">{error}</div>
-            : templates.length === 0 ? <div className="config-sidebar-message is-empty">{t("bundles.templatesYet")}</div>
+            : templates.length === 0 ? <div className="config-sidebar-message is-empty">{t("quickTemplates.emptyList")}</div>
             : templates.map((tpl) => (
-              <ConfigSidebarItem key={tpl.id} active={!creating && selectedId === tpl.id} onClick={() => selectTemplate(tpl)}>
+              <ConfigSidebarItem key={tpl.id} active={!creating && selectedId === tpl.id} onClick={() => void selectTemplate(tpl)}>
                 <ConfigSidebarText className="is-grow">{tpl.name}</ConfigSidebarText>
                 {tpl.builtin && <span className="config-scope-tag is-project">{t("quickTemplates.default")}</span>}
               </ConfigSidebarItem>
             ))}
           </ConfigSidebarList>
           {/* 新建入口固定在侧栏左下角（与模型页「添加 Provider」一致） */}
-          <ConfigListAction onClick={startCreate} active={creating}>{t("quickTemplates.newTemplate")}</ConfigListAction>
+          <ConfigListAction onClick={() => void startCreate()} active={creating}>{t("quickTemplates.newTemplate")}</ConfigListAction>
         </ConfigSidebar>
 
         {/* Right: detail / form */}
@@ -299,17 +325,18 @@ export function QuickTemplatesConfig({ embedded = false }: { embedded?: boolean 
                 </ConfigDetailHeader>
 
                 <ConfigField label={t("quickTemplates.templateNameUserVisibleE")}>
-                  <input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} style={inputStyle} maxLength={60} />
+                  <input className="config-input" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} maxLength={60} />
                 </ConfigField>
                 <ConfigField label={t("common.descriptionOptional")}>
-                  <input value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} style={inputStyle} maxLength={300} />
+                  <input className="config-input" value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} maxLength={300} />
                 </ConfigField>
                 <ConfigField label={t("quickTemplates.systemPrompt")}>
-                  <textarea value={draft.systemPrompt} onChange={(e) => setDraft({ ...draft, systemPrompt: e.target.value })} style={textareaStyle} />
+                  <textarea className="config-input is-mono config-textarea" value={draft.systemPrompt} onChange={(e) => setDraft({ ...draft, systemPrompt: e.target.value })} />
                 </ConfigField>
                 {modelOptions.length > 0 ? (
                   <ConfigField label={t("quickTemplates.modelOptionalPick")}>
                     <select
+                      className="config-input is-mono"
                       value={draft.modelProvider && draft.modelId ? modelOptionValue(draft.modelProvider, draft.modelId) : ""}
                       onChange={(e) => {
                         if (!e.target.value) {
@@ -319,9 +346,8 @@ export function QuickTemplatesConfig({ embedded = false }: { embedded?: boolean 
                         try {
                           const [provider, modelId] = JSON.parse(e.target.value) as [string, string];
                           setDraft({ ...draft, modelProvider: provider, modelId });
-                        } catch { /* 非法选项值按清空处理 */ }
-                      }}
-                      style={{ ...inputStyle, fontFamily: "var(--font-mono)" }}
+                      } catch { /* 非法选项值按清空处理 */ }
+                    }}
                     >
                       <option value="">{t("quickTemplates.modelFollowDefault")}</option>
                       {((draft.modelProvider.trim() && draft.modelId.trim()
@@ -338,10 +364,10 @@ export function QuickTemplatesConfig({ embedded = false }: { embedded?: boolean 
                 ) : (
                   <div style={{ display: "flex", gap: 10 }}>
                     <ConfigField label={t("quickTemplates.modelProviderOptionalEG")} style={{ flex: 1 }}>
-                      <input value={draft.modelProvider} onChange={(e) => setDraft({ ...draft, modelProvider: e.target.value })} style={monoStyle} placeholder={t("quickTemplates.defaultsUsersCurrentModel")} />
+                      <input className="config-input is-mono" value={draft.modelProvider} onChange={(e) => setDraft({ ...draft, modelProvider: e.target.value })} placeholder={t("quickTemplates.defaultsUsersCurrentModel")} />
                     </ConfigField>
                     <ConfigField label={t("quickTemplates.modelIdOptional")} style={{ flex: 1 }}>
-                      <input value={draft.modelId} onChange={(e) => setDraft({ ...draft, modelId: e.target.value })} style={monoStyle} placeholder="Qwen/Qwen3.5-27B" />
+                      <input className="config-input is-mono" value={draft.modelId} onChange={(e) => setDraft({ ...draft, modelId: e.target.value })} placeholder="Qwen/Qwen3.5-27B" />
                     </ConfigField>
                   </div>
                 )}
@@ -353,14 +379,8 @@ export function QuickTemplatesConfig({ embedded = false }: { embedded?: boolean 
                         return (
                           <label
                             key={server}
-                            style={{
-                              display: "inline-flex", alignItems: "center", gap: 5, cursor: "pointer",
-                              padding: "4px 10px", borderRadius: 6, fontSize: 12,
-                              border: `1px solid ${checked ? "var(--accent)" : "var(--border)"}`,
-                              background: checked ? "var(--bg-selected)" : "var(--bg)",
-                              color: checked ? "var(--accent)" : "var(--text)",
-                              fontFamily: "var(--font-mono)",
-                            }}
+                            className="quick-mcp-chip"
+                            data-checked={checked}
                           >
                             <input
                               type="checkbox"
@@ -385,9 +405,9 @@ export function QuickTemplatesConfig({ embedded = false }: { embedded?: boolean 
                     </div>
                   ) : (
                     <input
+                      className="config-input is-mono"
                       value={draft.mcpServers.join(", ")}
                       onChange={(e) => setDraft({ ...draft, mcpServers: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) })}
-                      style={monoStyle}
                       placeholder="weather, db-query"
                     />
                   )}
@@ -401,8 +421,8 @@ export function QuickTemplatesConfig({ embedded = false }: { embedded?: boolean 
       {/* Footer：状态 + 右下角操作（与模型页一致） */}
       <ConfigFooter status={
         <>
-          {error && <span style={{ color: "#ef4444" }}>{error}</span>}
-          {formError && <span style={{ color: "#ef4444" }}>{formError}</span>}
+          {error && <span style={{ color: "var(--danger)" }}>{error}</span>}
+          {formError && <span style={{ color: "var(--danger)" }}>{formError}</span>}
           {formMsg && !formError && <span style={{ color: "var(--accent)" }}>{formMsg}</span>}
         </>
       }>
@@ -415,6 +435,7 @@ export function QuickTemplatesConfig({ embedded = false }: { embedded?: boolean 
           </>
         )}
       </ConfigFooter>
+      {confirmDialog}
     </ConfigPanelShell>
   );
 }

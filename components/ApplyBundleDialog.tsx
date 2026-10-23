@@ -4,12 +4,16 @@ import { useEffect, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
 
 /**
- * 套用配置模板 — pick one of the admin-managed preset bundles and apply it
- * to an existing project (POST /api/projects/:id/apply-bundle). Additive:
- * same-named files overwrite, everything else is kept.
+ * 套用配置模板 — pick one of the admin-managed preset bundles and apply it.
+ * 两种目标：
+ *  - projectId：项目（POST /api/projects/:id/apply-bundle）。增量：同名覆
+ *    盖、其余保留。
+ *  - hostDir：Host 模式服务器目录（POST /api/host/apply-bundle）。仅限
+ *    未初始化（无 .pi/）的目录——服务端 409 拒绝，防止覆盖既有配置。
  */
-export function ApplyBundleDialog({ projectId, projectName, onClose, onApplied }: {
-  projectId: string;
+export function ApplyBundleDialog({ projectId, hostDir, projectName, onClose, onApplied }: {
+  projectId?: string;
+  hostDir?: string;
   projectName: string;
   onClose: () => void;
   onApplied: () => void;
@@ -37,11 +41,17 @@ export function ApplyBundleDialog({ projectId, projectName, onClose, onApplied }
     setApplying(true);
     setError(null);
     try {
-      const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/apply-bundle`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: selected }),
-      });
+      const res = hostDir
+        ? await fetch("/api/host/apply-bundle", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ cwd: hostDir, name: selected }),
+          })
+        : await fetch(`/api/projects/${encodeURIComponent(projectId ?? "")}/apply-bundle`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: selected }),
+          });
       const data = (await res.json()) as { error?: string };
       if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
       setDone(selected);

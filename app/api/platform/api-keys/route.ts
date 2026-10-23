@@ -6,10 +6,15 @@ import { vaultListApiKeys, vaultStoreApiKey } from "@/lib/api-key-vault";
 
 export const dynamic = "force-dynamic";
 
+/** 登录流程铸造的会话密钥命名约定（app/api/webauth/login）。 */
+const AUTO_SESSION_KEY_NAME = /^pi-web \d{4}-\d{2}-\d{2}$/;
+
 /**
  * GET /api/platform/api-keys — 当前用户的平台个人密钥列表。
  * 明文字段只对"经 pi-web 创建"（保管文件在册）的密钥返回；平台侧直建的
  * 密钥只有前缀/元数据，UI 标注无法回显。
+ * source 分组：manual=经此页创建（在册可回显）；auto=登录会话密钥
+ * （pi-web YYYY-MM-DD 命名，登出/过期自动吊销）；external=平台侧直建。
  */
 export async function GET(req: Request) {
   if (!isApiRequestAllowed(req)) {
@@ -29,6 +34,7 @@ export async function GET(req: Request) {
       .filter((row) => !row.revoked_at)
       .map((row) => {
         const plaintext = vault.get(String(row.id));
+        const canReveal = Boolean(plaintext);
         return {
           id: row.id,
           name: row.name,
@@ -37,7 +43,9 @@ export async function GET(req: Request) {
           lastUsedAt: row.last_used_at,
           revokedAt: row.revoked_at,
           ...(plaintext ? { key: plaintext } : {}),
-          canReveal: Boolean(plaintext),
+          canReveal,
+          source: canReveal ? ("manual" as const) : AUTO_SESSION_KEY_NAME.test(row.name) ? ("auto" as const) : ("external" as const),
+          ...(String(row.id) === String(session.apiKeyId) ? { isCurrent: true } : {}),
         };
       });
     return NextResponse.json({ keys });
@@ -104,6 +112,7 @@ export async function POST(req: Request) {
         revokedAt: created.revoked_at,
         key: created.key,
         canReveal: vaulted,
+        source: "manual" as const,
       },
       vaulted,
     }, { status: 201 });

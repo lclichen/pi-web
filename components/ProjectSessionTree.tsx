@@ -79,6 +79,8 @@ export function ProjectSessionTree({
   const [importId, setImportId] = useState<string | null>(null);
   const [applyBundleId, setApplyBundleId] = useState<string | null>(null);
   const [hostImportDir, setHostImportDir] = useState<string | null>(null);
+  /** Host 目录套用配置模板（仅未初始化目录；服务端 .pi 预检 409）。 */
+  const [applyHostDir, setApplyHostDir] = useState<string | null>(null);
   const [containers, setContainers] = useState<Array<{ id: number; name: string; status: string; imageName: string }>>([]);
   const [newDialog, setNewDialog] = useState<"sandbox" | "local-machine" | null>(null);
   const [myWorkspaceId, setMyWorkspaceId] = useState<number | null>(null);
@@ -769,6 +771,7 @@ export function ProjectSessionTree({
         >
           <MenuItem label={t("sessions.newSession")} onClick={() => { onNewSessionInDirectory(menu.directory!); setMenu(null); }} />
           <MenuItem label={t("sessions.importProjectConfig")} onClick={() => { setHostImportDir(menu.directory!); setMenu(null); }} />
+          <MenuItem label={t("bundles.applyMenu")} onClick={() => { setApplyHostDir(menu.directory!); setMenu(null); }} />
           <MenuItem label={t("sessions.exportConfigBundle")} onClick={() => { void exportHostConfig(menu.directory!); setMenu(null); }} />
           <MenuItem label={t("sessions.copyPath")} onClick={() => {
             void navigator.clipboard?.writeText(menu.directory!).catch(() => {});
@@ -895,6 +898,14 @@ export function ProjectSessionTree({
           projectName={projects.find((p) => p.id === applyBundleId)?.name ?? applyBundleId}
           onClose={() => setApplyBundleId(null)}
           onApplied={() => { loadProjects(); refreshSessions(); }}
+        />
+      )}
+      {applyHostDir && (
+        <ApplyBundleDialog
+          hostDir={applyHostDir}
+          projectName={applyHostDir.split("/").filter(Boolean).pop() ?? applyHostDir}
+          onClose={() => setApplyHostDir(null)}
+          onApplied={() => refreshSessions()}
         />
       )}
     </div>

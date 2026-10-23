@@ -10,6 +10,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
+import { ConfigButton } from "./SettingsUi";
 
 interface AccountUser {
   id: number;
@@ -20,12 +21,7 @@ interface AccountUser {
   mustChangePassword?: boolean;
 }
 
-interface Props {
-  /** 关闭设置面板（保存成功后由用户手动关闭，此处仅用于可选的关闭按钮） */
-  onClose?: () => void;
-}
-
-export function AccountSettings({ onClose }: Props) {
+export function AccountSettings() {
   const { t } = useI18n();
   const [authEnabled, setAuthEnabled] = useState<boolean | null>(null);
   const [user, setUser] = useState<AccountUser | null>(null);
@@ -83,9 +79,6 @@ export function AccountSettings({ onClose }: Props) {
       <div className="settings-general">
         <h2 className="settings-general-title">{t("settings.account")}</h2>
         <p role="alert" className="settings-general-error">{loadError}</p>
-        {onClose && (
-          <button type="button" className="config-close-button" onClick={onClose} aria-label={t("i18n.close")}>×</button>
-        )}
       </div>
     );
   }
@@ -180,6 +173,20 @@ export function AccountSettings({ onClose }: Props) {
             {busy ? t("account.changing") : t("account.submit")}
           </button>
         </form>
+      </section>
+
+      <section className="settings-general-section">
+        <h3 className="settings-general-heading">{t("account.logoutHeading")}</h3>
+        <p className="settings-general-description">{t("account.logoutDescription")}</p>
+        <ConfigButton
+          variant="danger"
+          onClick={() => {
+            void fetch("/api/webauth/logout", { method: "POST" }).catch(() => {});
+            window.location.href = "/login";
+          }}
+        >
+          {t("app.logOut2")}
+        </ConfigButton>
       </section>
     </div>
   );

@@ -89,6 +89,20 @@ test("groups chat display controls together without row backgrounds", () => {
   assert.doesNotMatch(chatOptionStyles, /background/);
 });
 
+test("standalone feature toggles use the capped card row", () => {
+  // Shell 工具与提问自动继续都是"独立功能开关"节：行样式必须同款
+  // （settings-shell-option，420px 封顶卡片），不混用裸 switch 行。
+  const askSection = panelSource.slice(
+    panelSource.indexOf('{t("settings.askAutoContinue")}'),
+    panelSource.indexOf('{t("common.language")}'),
+  );
+  assert.match(askSection, /className="settings-shell-option"/);
+  assert.doesNotMatch(askSection, /settings-chat-switch-option/);
+  const shellOptionStyles = cssSource.match(/\.settings-shell-option \{[\s\S]*?\}/)?.[0] ?? "";
+  assert.match(shellOptionStyles, /max-width: 420px/);
+  assert.match(shellOptionStyles, /background: var\(--bg-panel\)/);
+});
+
 test("keeps General free of divider rows", () => {
   assert.match(panelSource, /className="settings-dialog-header"/);
   assert.match(cssSource, /\.settings-dialog-header \{[\s\S]*?display: flex[\s\S]*?align-items: center[\s\S]*?min-height: 50px/);
@@ -99,20 +113,44 @@ test("keeps General free of divider rows", () => {
 
 test("uses top navigation on desktop and one compact section picker on mobile", () => {
   assert.match(panelSource, /className="settings-mobile-section-picker"/);
+  assert.match(panelSource, /aria-label=\{t\("settings\.sectionPicker"\)\}/);
   assert.match(panelSource, /className="settings-section-tabs"/);
   assert.match(panelSource, /className="settings-section-tab"/);
-  assert.match(cssSource, /\.settings-section-tab \{[\s\S]*?width: 96px/);
+  // Tabs size to their label (labels like "Quick session templates" must not
+  // clip) and the strip fades its edges when it can scroll.
+  assert.match(cssSource, /\.settings-section-tab \{[\s\S]*?flex: 0 0 auto[\s\S]*?white-space: nowrap/);
+  assert.doesNotMatch(cssSource, /flex: 0 0 96px/);
+  assert.match(panelSource, /settings-tabs-scrollbox/);
+  assert.match(cssSource, /\.settings-tabs-scrollbox\.can-scroll-right::after/);
+  assert.match(cssSource, /\.settings-section-divider/);
+  assert.match(panelSource, /settings-section-divider/);
+  // When the labeled strip cannot fit, tabs collapse to icons only (admin
+  // locales/several tabs) instead of silently cutting off trailing sections.
+  assert.match(panelSource, /is-compact/);
+  assert.match(cssSource, /\.settings-section-tabs\.is-compact \.settings-section-tab > span \{[\s\S]*?display: none/);
+  // Icon-only tabs keep their accessible name.
+  assert.match(panelSource, /aria-label=\{item\.label\}/);
   assert.match(cssSource, /\.settings-section-icon \{[\s\S]*?flex-shrink: 0/);
   assert.match(cssSource, /\.settings-section-tab::after \{[\s\S]*?width: 24px/);
   assert.match(cssSource, /\.settings-section-tab\[aria-current="page"\]::after/);
   assert.match(cssSource, /\.settings-section-tab:focus-visible:not\(\[aria-current="page"\]\)/);
   assert.match(cssSource, /\.settings-section-tab:focus-visible\[aria-current="page"\][\s\S]*?outline: none/);
-  assert.match(cssSource, /@media \(max-width: 640px\)[\s\S]*?\.settings-section-tabs \{[\s\S]*?display: none/);
+  assert.match(cssSource, /@media \(max-width: 640px\)[\s\S]*?\.settings-section-tabs,\s*\.settings-tabs-scrollbox \{[\s\S]*?display: none/);
   assert.match(cssSource, /@media \(max-width: 640px\)[\s\S]*?\.settings-mobile-section-picker \{[\s\S]*?display: block/);
   assert.doesNotMatch(panelSource, /width: isMobile \? "100%" : 188/);
   assert.match(panelSource, /<main className="settings-dialog-main">/);
   assert.doesNotMatch(panelSource, /<style>/);
   assert.doesNotMatch(panelSource, /style=\{\{/);
+});
+
+test("guards closing against unsaved section drafts", () => {
+  assert.match(panelSource, /isAnySettingsDirty\(\)/);
+  assert.match(panelSource, /isConfirmDialogOpen\(\)/);
+  assert.match(panelSource, /requestClose/);
+  // All three close paths (Escape / backdrop / header ×) go through the guard.
+  assert.match(panelSource, /event\.key !== "Escape"[\s\S]*?requestClose\(\)/);
+  assert.match(panelSource, /event\.target === event\.currentTarget\) requestClose\(\)/);
+  assert.match(panelSource, /onClick=\{requestClose\}[^>]*className="config-close-button settings-dialog-close"/);
 });
 
 test("labels agent profiles as sub-agents", () => {

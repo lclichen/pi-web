@@ -13,7 +13,7 @@ import { WebUIGuide, WebUIGuideResumePill } from "./WebUIGuide";
 import { TabBar, type Tab } from "./TabBar";
 import { SubagentsConfig } from "./SubagentsConfig";
 import { McpServersConfig } from "./McpServersConfig";
-import { ConnectLocalMachine } from "./relay/ConnectLocalMachine";
+import { EnvironmentsMenu } from "./EnvironmentsMenu";
 import { SandboxManagerDialog } from "./SandboxManagerDialog";
 import { PlatformAdminDialog } from "./PlatformAdminDialog";
 import { MyWorkspaceDialog } from "./MyWorkspaceDialog";
@@ -786,6 +786,113 @@ export function AppShell() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rightPanelSplit]);
+  // 右列子面板 tab 定义（files/git/agents/lab/plan）：主 tab 条与分栏态
+  // 下栏的子 tab 条共用同一组定义——分栏时 files 独占上栏（主条只剩文件），
+  // Git/智能体/教学训练/计划全部移到下栏切换。
+  const rightPanelTabs: Array<{
+    id: "files" | "git" | "agents" | "lab" | "plan";
+    label: string;
+    title?: string;
+    icon: React.ReactNode;
+    activate: () => void;
+  }> = [
+    {
+      id: "files",
+      label: translate("app.files"),
+      icon: (
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><polyline points="13 2 13 9 20 9" />
+        </svg>
+      ),
+      // 分栏态下主条的 files tab 即"退出分栏回到整栏文件视图"。
+      activate: () => { exitRightPanelSplit(); setRightPanelMode("files"); },
+    },
+    // 快速会话没有工作区，也就没有仓库——Git tab 不出现。
+    ...(activeSessionMode === "quick" ? [] : [{
+      id: "git" as const,
+      label: "Git",
+      icon: (
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <circle cx="6" cy="6" r="3" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="6" r="3" /><path d="M18 9v2c0 2-2 3-4 3H9" /><path d="M6 9v6" />
+        </svg>
+      ),
+      activate: () => { setRightPanelMode("git"); setRightPanelOpen(true); },
+    }]),
+    {
+      id: "agents" as const,
+      label: translate("app.agents"),
+      title: translate("app.subagentDirectory"),
+      icon: (
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <rect x="4" y="8" width="16" height="12" rx="2" /><path d="M12 8V4" /><circle cx="9" cy="14" r="0.5" /><circle cx="15" cy="14" r="0.5" />
+        </svg>
+      ),
+      activate: () => { setRightPanelMode("agents"); setRightPanelOpen(true); },
+    },
+    // 教学训练 tab（2026-10-20 迁自侧栏底部分节）：部署开关
+    // （server-settings.labTraining，经 webauth/me 下发）关闭时不出现。
+    ...(labTrainingEnabled ? [{
+      id: "lab" as const,
+      label: translate("app.teachingSection"),
+      icon: (
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M22 10v6M2 10l10-5 10 5-10 5z" /><path d="M6 12v5c3 3 9 3 12 0v-5" />
+        </svg>
+      ),
+      activate: () => { setRightPanelMode("lab"); setRightPanelOpen(true); },
+    }] : []),
+    // 计划 tab: only when a plan exists (per-session file or legacy).
+    ...(planTabVisible
+      ? [{
+          id: "plan" as const,
+          label: translate("app.plan"),
+          icon: (
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M9 4h6a2 2 0 0 1 2 2v14H7V6a2 2 0 0 1 2-2Z" /><path d="M7 20h10" /><path d="M10 8h4" />
+            </svg>
+          ),
+          activate: () => { setRightPanelMode("plan"); setRightPanelOpen(true); },
+        }]
+      : []),
+  ];
+  const renderRightPanelTab = (
+    tab: (typeof rightPanelTabs)[number],
+    active: boolean,
+  ) => (
+    <button
+      key={tab.id}
+      onClick={tab.activate}
+      title={tab.title ?? tab.label}
+      style={{
+        display: "flex", alignItems: "center", gap: 5,
+        height: "100%", padding: "0 12px", border: "none",
+        background: "transparent",
+        color: active ? "var(--text)" : "var(--text-dim)",
+        fontSize: 11, fontWeight: active ? 700 : 500,
+        letterSpacing: 0.2,
+        cursor: "pointer",
+        borderBottom: `2px solid ${active ? "var(--accent)" : "transparent"}`,
+        borderRadius: "6px 6px 0 0",
+        marginBottom: active ? -1 : 0,
+        transition: "color 0.12s, background 0.12s",
+        flexShrink: 0,
+        whiteSpace: "nowrap",
+      }}
+      onMouseEnter={(event) => {
+        if (!active) {
+          event.currentTarget.style.background = "var(--bg-hover)";
+          event.currentTarget.style.color = "var(--text-muted)";
+        }
+      }}
+      onMouseLeave={(event) => {
+        event.currentTarget.style.background = "transparent";
+        event.currentTarget.style.color = active ? "var(--text)" : "var(--text-dim)";
+      }}
+    >
+      {tab.icon}
+      {tab.label}
+    </button>
+  );
   // Terminal bottom drawer — keys to the session/cwd exactly like the old
   // right-panel terminal did: switching key unmounts (and closes) the drawer.
   const terminalDrawerKey = remoteSessionCtx
@@ -2445,51 +2552,12 @@ export function AppShell() {
             )}
           </button>
           {/* Theme/language toggles moved to renderThemeButton/renderLanguageButton. */}
-          <ConnectLocalMachine />
-          {webUser && webUser !== "loading" && (
-            <button
-              type="button"
-              onClick={() => setMyWorkspaceOpen(true)}
-              title={translate("app.myWorkspaceCloudPersistedFiles")}
-              style={{
-                display: "flex", alignItems: "center", gap: 6, height: "100%",
-                padding: "0 12px", background: "none",
-                border: "none", borderTop: "2px solid transparent", borderRight: "1px solid var(--border)",
-                color: "var(--text-muted)", cursor: "pointer", fontSize: 11,
-                whiteSpace: "nowrap", flexShrink: 0,
-                transition: "color 0.1s, background 0.1s",
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text)"; e.currentTarget.style.background = "var(--bg-hover)"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-muted)"; e.currentTarget.style.background = "none"; }}
-            >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
-                <path d="M20 16.58A5 5 0 0 0 18 7h-1.26A8 8 0 1 0 4 15.25" />
-                <polyline points="8 16 12 12 16 16" />
-                <line x1="12" y1="12" x2="12" y2="21" />
-              </svg>
-              <span>{translate("app.myWorkspace")}</span>
-            </button>
-          )}
-          {webUser && webUser !== "loading" && (
-            <button
-              type="button"
-              onClick={() => setSandboxManager({})}
-              title={translate("app.sandboxContainersCreateStartStop")}
-              style={{
-                display: "flex", alignItems: "center", gap: 6, height: "100%",
-                padding: "0 12px", background: "none",
-                border: "none", borderTop: "2px solid transparent", borderRight: "1px solid var(--border)",
-                color: "var(--text-muted)", cursor: "pointer", fontSize: 11,
-                whiteSpace: "nowrap", flexShrink: 0,
-                transition: "color 0.1s, background 0.1s",
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text)"; e.currentTarget.style.background = "var(--bg-hover)"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-muted)"; e.currentTarget.style.background = "none"; }}
-            >
-              <span style={{ width: 8, height: 8, borderRadius: 2, border: "1.5px solid currentColor", flexShrink: 0 }} />
-              <span>{translate("app.sandboxContainer")}</span>
-            </button>
-          )}
+          {/* 环境：本地机器 / 我的工作区 / 沙箱容器 统一收纳入口（EnvironmentsMenu）。 */}
+          <EnvironmentsMenu
+            signedIn={Boolean(webUser && webUser !== "loading")}
+            onOpenWorkspace={() => setMyWorkspaceOpen(true)}
+            onOpenSandbox={() => setSandboxManager({})}
+          />
           {webUser && webUser !== "loading" && webUser.role === "admin" && (
             <button
               type="button"
@@ -3140,102 +3208,11 @@ export function AppShell() {
           background: "var(--bg-panel)",
           borderBottom: "1px solid var(--border)",
         }}>
-          {([
-            {
-              id: "files" as const,
-              label: translate("app.files"),
-              icon: (
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><polyline points="13 2 13 9 20 9" />
-                </svg>
-              ),
-              // 分栏态下 files tab 的语义是"退出分栏回到整栏文件视图"。
-              activate: () => { exitRightPanelSplit(); setRightPanelMode("files"); },
-            },
-            // 快速会话没有工作区，也就没有仓库——Git tab 不出现。
-            ...(activeSessionMode === "quick" ? [] : [{
-              id: "git" as const,
-              label: "Git",
-              icon: (
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <circle cx="6" cy="6" r="3" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="6" r="3" /><path d="M18 9v2c0 2-2 3-4 3H9" /><path d="M6 9v6" />
-                </svg>
-              ),
-              activate: () => { setRightPanelMode("git"); setRightPanelOpen(true); },
-            }]),
-            {
-              id: "agents" as const,
-              label: translate("app.agents"),
-              title: translate("app.subagentDirectory"),
-              icon: (
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <rect x="4" y="8" width="16" height="12" rx="2" /><path d="M12 8V4" /><circle cx="9" cy="14" r="0.5" /><circle cx="15" cy="14" r="0.5" />
-                </svg>
-              ),
-              activate: () => { setRightPanelMode("agents"); setRightPanelOpen(true); },
-            },
-            // 教学训练 tab（2026-10-20 迁自侧栏底部分节）：部署开关
-            // （server-settings.labTraining，经 webauth/me 下发）关闭时不出现。
-            ...(labTrainingEnabled ? [{
-              id: "lab" as const,
-              label: translate("app.teachingSection"),
-              icon: (
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M22 10v6M2 10l10-5 10 5-10 5z" /><path d="M6 12v5c3 3 9 3 12 0v-5" />
-                </svg>
-              ),
-              activate: () => { setRightPanelMode("lab"); setRightPanelOpen(true); },
-            }] : []),
-            // 计划 tab: only when a plan exists (per-session file or legacy).
-            ...(planTabVisible
-              ? [{
-                  id: "plan" as const,
-                  label: translate("app.plan"),
-                  icon: (
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <path d="M9 4h6a2 2 0 0 1 2 2v14H7V6a2 2 0 0 1 2-2Z" /><path d="M7 20h10" /><path d="M10 8h4" />
-                    </svg>
-                  ),
-                  activate: () => { setRightPanelMode("plan"); setRightPanelOpen(true); },
-                }]
-              : []),
-          ]).map(({ id, label, title, icon, activate }) => {
-            const active = rightPanelMode === id;
-            return (
-              <button
-                key={id}
-                onClick={activate}
-                title={title ?? label}
-                style={{
-                  display: "flex", alignItems: "center", gap: 5,
-                  height: "100%", padding: "0 12px", border: "none",
-                  background: "transparent",
-                  color: active ? "var(--text)" : "var(--text-dim)",
-                  fontSize: 11, fontWeight: active ? 700 : 500,
-                  letterSpacing: 0.2,
-                  cursor: "pointer",
-                  borderBottom: `2px solid ${active ? "var(--accent)" : "transparent"}`,
-                  borderRadius: "6px 6px 0 0",
-                  marginBottom: active ? -1 : 0,
-                  transition: "color 0.12s, background 0.12s",
-                  flexShrink: 0,
-                }}
-                onMouseEnter={(event) => {
-                  if (!active) {
-                    event.currentTarget.style.background = "var(--bg-hover)";
-                    event.currentTarget.style.color = "var(--text-muted)";
-                  }
-                }}
-                onMouseLeave={(event) => {
-                  event.currentTarget.style.background = "transparent";
-                  event.currentTarget.style.color = active ? "var(--text)" : "var(--text-dim)";
-                }}
-              >
-                {icon}
-                {label}
-              </button>
-            );
-          })}
+          {/* 分栏态主条只留文件（其余面板移到下栏子 tab 条）；整栏态显示全部。 */}
+          {(splitViewActive
+            ? rightPanelTabs.filter((tab) => tab.id === "files")
+            : rightPanelTabs
+          ).map((tab) => renderRightPanelTab(tab, splitViewActive ? tab.id === "files" : rightPanelMode === tab.id))}
           <div style={{ flex: 1, overflow: "hidden" }}>
             {/* 分栏态文件标签栏常驻（上=文件预览）——切到其它子面板不再丢失
                 已打开文件的快速切换入口。 */}
@@ -3371,7 +3348,10 @@ export function AppShell() {
                 cwd={(activeCwd ?? selectedSession?.cwd ?? newSessionCwd) ?? ""}
                 sessionId={selectedSession?.id ?? null}
                 refreshKey={explorerRefreshKey}
-                onClose={() => { setRightPanelMode("files"); }}
+                onClose={() => {
+                  // 分栏态下栏没有 files 位，关闭 Git 落回智能体面板。
+                  setRightPanelMode(splitViewActive ? "agents" : "files");
+                }}
               />
             ) : rightPanelMode === "lab" ? (
               <LabTrainingSidePanel
@@ -3399,8 +3379,23 @@ export function AppShell() {
                     title={`${translate("layout.splitFilePanel")}: ${translate("layout.resizeHint")}`}
                   />
                   <div style={{ flex: 1, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-                    {agentsMounted}
-                    {bottomContent}
+                    {/* 下栏子 tab 条：Git/智能体/教学训练/计划（files 独占上栏） */}
+                    <div
+                      role="tablist"
+                      aria-label={translate("layout.splitFilePanel")}
+                      style={{
+                        display: "flex", alignItems: "stretch", flexShrink: 0, height: 32,
+                        background: "var(--bg-panel)", borderBottom: "1px solid var(--border)",
+                        overflowX: "auto", scrollbarWidth: "none",
+                      }}
+                    >
+                      {rightPanelTabs.filter((tab) => tab.id !== "files")
+                        .map((tab) => renderRightPanelTab(tab, rightPanelMode === tab.id))}
+                    </div>
+                    <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+                      {agentsMounted}
+                      {bottomContent}
+                    </div>
                   </div>
                 </>
               );

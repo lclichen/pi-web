@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { useTheme, type ThemePreference } from "@/hooks/useTheme";
 import {
@@ -33,6 +33,8 @@ import { BundlesConfig } from "./BundlesConfig";
 import { SubagentsConfig } from "./SubagentsConfig";
 import { ConfigButton, ConfigSwitch } from "./SettingsUi";
 import { UpdateCard } from "./UpdateCard";
+import { isConfirmDialogOpen, useConfirm } from "./use-confirm";
+import { isAnySettingsDirty } from "@/lib/settings-dirty";
 
 interface Props {
   cwd: string | null;
@@ -311,7 +313,8 @@ function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, 
           <p className="settings-general-description">
             {t("settings.askAutoContinueDescription", { minutes: askSettings.askTimeoutMinutes })}
           </p>
-          <div className="settings-chat-option settings-chat-switch-option">
+          {/* 与 Shell 工具开关同款卡片行（420px 封顶）；裸的 switch 行会撑满整列。 */}
+          <div className="settings-shell-option">
             <span>{t("settings.askAutoContinue")}</span>
             <ConfigSwitch
               checked={askSettings.askAutoContinue}
@@ -358,38 +361,59 @@ function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, 
 
 export function SettingsPanel({ cwd, sessionId, initialSection, onClose, onSessionReloaded, quoteSelectionEnabled, onQuoteSelectionChange, isAdmin = false }: Props) {
   const { t } = useI18n();
+  const { confirm, confirmDialog } = useConfirm();
   const [section, setSection] = useState<SettingsSection>(initialSection);
   const [mountedSections, setMountedSections] = useState<ReadonlySet<SettingsSection>>(
     () => new Set([section]),
   );
-  const sections: Array<{ id: SettingsSection; label: string; requiresProject: boolean }> = [
-    { id: "general", label: t("settings.general"), requiresProject: false },
-    { id: "account", label: t("settings.account"), requiresProject: false },
-    { id: "api-keys", label: t("settings.apiKeys"), requiresProject: false },
-    { id: "models", label: t("common.models"), requiresProject: false },
-    { id: "skills", label: t("common.skills"), requiresProject: true },
-    { id: "agents", label: t("common.agents"), requiresProject: true },
-    { id: "mcp", label: "MCP", requiresProject: true },
-    { id: "plugins", label: t("common.plugins"), requiresProject: true },
+  const tabsScrollboxRef = useRef<HTMLDivElement>(null);
+  // 分组仅驱动分隔线渲染：个人 | 工作区配置 | 管理员。
+  const sections: Array<{ id: SettingsSection; label: string; requiresProject: boolean; group: "personal" | "workspace" | "admin" }> = [
+    { id: "general", label: t("settings.general"), requiresProject: false, group: "personal" },
+    { id: "account", label: t("settings.account"), requiresProject: false, group: "personal" },
+    { id: "api-keys", label: t("settings.apiKeys"), requiresProject: false, group: "personal" },
+    { id: "models", label: t("common.models"), requiresProject: false, group: "workspace" },
+    { id: "skills", label: t("common.skills"), requiresProject: true, group: "workspace" },
+    { id: "agents", label: t("common.agents"), requiresProject: true, group: "workspace" },
+    { id: "mcp", label: "MCP", requiresProject: true, group: "workspace" },
+    { id: "plugins", label: t("common.plugins"), requiresProject: true, group: "workspace" },
     // Admin-only management sections — their rendering is gated on isAdmin
     // below; they must also appear here or there is no way to navigate to them.
     ...(isAdmin ? [
-      { id: "quick-templates" as const, label: t("quickTemplates.quickSessionTemplates"), requiresProject: false },
-      { id: "bundles" as const, label: t("bundles.configBundles"), requiresProject: false },
+      { id: "quick-templates" as const, label: t("quickTemplates.quickSessionTemplates"), requiresProject: false, group: "admin" as const },
+      { id: "bundles" as const, label: t("bundles.agentsAdmin"), requiresProject: false, group: "admin" as const },
     ] : []),
   ];
 
   useEffect(() => setLastSettingsSection(initialSection), [initialSection]);
 
+  // 有未保存草稿（设置分区经 lib/settings-dirty 注册）时，关闭需二次确认。
+  const requestClose = useCallback(() => {
+    if (isAnySettingsDirty()) {
+      void confirm({
+        title: t("settings.dirtyTitle"),
+        message: t("settings.dirtyCloseMessage"),
+        confirmLabel: t("common.discardChanges"),
+        abortLabel: t("common.cancel"),
+        danger: true,
+      }).then((ok) => {
+        if (ok) onClose();
+      });
+      return;
+    }
+    onClose();
+  }, [confirm, onClose, t]);
+
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || event.defaultPrevented) return;
+      if (isConfirmDialogOpen()) return; // 确认对话框自行处理 Escape
       event.preventDefault();
-      onClose();
+      requestClose();
     };
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [onClose]);
+  }, [requestClose]);
 
   useEffect(() => {
     if (cwd || (section !== "skills" && section !== "agents" && section !== "plugins")) return;
@@ -411,7 +435,38 @@ export function SettingsPanel({ cwd, sessionId, initialSection, onClose, onSessi
     setMountedSections((current) => new Set(current).add(nextSection));
     setSection(nextSection);
     setLastSettingsSection(nextSection);
+    // 深链/恢复进入分区时，把激活 tab 滚进可视区（tab 条可横向滚动）。
+    requestAnimationFrame(() => {
+      tabsScrollboxRef.current
+        ?.querySelector('.settings-section-tab[aria-current="page"]')
+        ?.scrollIntoView({ inline: "nearest", block: "nearest" });
+    });
   };
+
+  // tab 条可滚动时在两侧显示渐隐提示（can-scroll-left/right 类）；整体
+  // 放不下时收起文字仅留图标（is-compact），避免末尾分区被静默裁掉。
+  // 紧凑判定按"带文字的自然宽度"测量：临时摘类→量→再决定，同帧完成
+  // 不会产生可见抖动。
+  useEffect(() => {
+    const wrapper = tabsScrollboxRef.current;
+    const scroller = wrapper?.querySelector<HTMLElement>(".settings-section-tabs");
+    if (!wrapper || !scroller) return;
+    const update = () => {
+      if (scroller.classList.contains("is-compact")) scroller.classList.remove("is-compact");
+      const overflow = scroller.scrollWidth - scroller.clientWidth;
+      scroller.classList.toggle("is-compact", overflow > 1);
+      wrapper.classList.toggle("can-scroll-left", scroller.scrollLeft > 4);
+      wrapper.classList.toggle("can-scroll-right", scroller.scrollLeft + scroller.clientWidth < scroller.scrollWidth - 4);
+    };
+    update();
+    scroller.addEventListener("scroll", update, { passive: true });
+    const observer = new ResizeObserver(update);
+    observer.observe(scroller);
+    return () => {
+      scroller.removeEventListener("scroll", update);
+      observer.disconnect();
+    };
+  }, [cwd, isAdmin, section, t]);
 
   const sectionHost = (id: SettingsSection, content: ReactNode) => mountedSections.has(id) ? (
     <div
@@ -428,14 +483,14 @@ export function SettingsPanel({ cwd, sessionId, initialSection, onClose, onSessi
       role="dialog"
       aria-modal="true"
       aria-label={t("settings.title")}
-      onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}
+      onClick={(event) => { if (event.target === event.currentTarget) requestClose(); }}
       className="settings-dialog-backdrop"
     >
       <div className="settings-dialog-surface">
         <div className="settings-dialog-header">
           <strong className="settings-dialog-title">{t("settings.title")}</strong>
           <select
-            aria-label={t("settings.title")}
+            aria-label={t("settings.sectionPicker")}
             value={section}
             onChange={(event) => activateSection(event.target.value as SettingsSection)}
             className="settings-mobile-section-picker"
@@ -446,32 +501,35 @@ export function SettingsPanel({ cwd, sessionId, initialSection, onClose, onSessi
               </option>
             ))}
           </select>
-          <nav aria-label={t("settings.title")} className="settings-section-tabs">
-            {sections.map((item) => {
-              const selected = section === item.id;
-              const disabled = item.requiresProject && !cwd;
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  className="settings-section-tab"
-                  disabled={disabled}
-                  title={disabled ? t("settings.projectRequired") : item.label}
-                  aria-current={selected ? "page" : undefined}
-                  onClick={() => activateSection(item.id)}
-                >
-                  <SettingsSectionIcon section={item.id} />
-                  <span>{item.label}</span>
-                </button>
-              );
-            })}
-          </nav>
-          <button type="button" onClick={onClose} title={t("i18n.close")} aria-label={t("i18n.close")} className="config-close-button settings-dialog-close">×</button>
+          <div className="settings-tabs-scrollbox" ref={tabsScrollboxRef}>
+            <nav aria-label={t("settings.title")} className="settings-section-tabs">
+              {sections.map((item, index) => (
+                <Fragment key={item.id}>
+                  {index > 0 && sections[index - 1].group !== item.group && (
+                    <span aria-hidden="true" className="settings-section-divider" />
+                  )}
+                  <button
+                    type="button"
+                    className="settings-section-tab"
+                    disabled={item.requiresProject && !cwd}
+                    title={item.requiresProject && !cwd ? t("settings.projectRequired") : item.label}
+                    aria-label={item.label}
+                    aria-current={section === item.id ? "page" : undefined}
+                    onClick={() => activateSection(item.id)}
+                  >
+                    <SettingsSectionIcon section={item.id} />
+                    <span>{item.label}</span>
+                  </button>
+                </Fragment>
+              ))}
+            </nav>
+          </div>
+          <button type="button" onClick={requestClose} title={t("i18n.close")} aria-label={t("i18n.close")} className="config-close-button settings-dialog-close">×</button>
         </div>
 
         <main className="settings-dialog-main">
           {sectionHost("general", <GeneralSettings sessionId={sessionId} onSessionReloaded={onSessionReloaded} quoteSelectionEnabled={quoteSelectionEnabled} onQuoteSelectionChange={onQuoteSelectionChange} isAdmin={isAdmin} />)}
-          {sectionHost("account", <AccountSettings onClose={onClose} />)}
+          {sectionHost("account", <AccountSettings />)}
           {sectionHost("api-keys", <ApiKeysConfig />)}
           {sectionHost("models", <ModelsConfig embedded onClose={onClose} />)}
           {cwd && sectionHost("skills", <SkillsConfig embedded key={cwd} cwd={cwd} onClose={onClose} />)}
@@ -482,6 +540,7 @@ export function SettingsPanel({ cwd, sessionId, initialSection, onClose, onSessi
           {cwd && sectionHost("plugins", <PluginsConfig embedded key={cwd} cwd={cwd} sessionId={sessionId} onClose={onClose} onReloaded={onSessionReloaded} />)}
         </main>
       </div>
+      {confirmDialog}
     </div>
   );
 }

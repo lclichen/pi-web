@@ -58,6 +58,8 @@
   /* Status colors. --success must carry white text on a filled badge in light
      mode, so use green-600 (not the brighter green-500) here. */
   --success: #16a34a;
+  --danger: #ef4444;
+  --warning: #d97706;
   --chat-content-max-width: 820px;
   --chat-content-font-size: 14px;
 }
@@ -78,6 +80,8 @@ html.dark {
   --tool-bg: #1f2937;
   --bg-subtle: rgba(255,255,255,0.04);
   --success: #22c55e;
+  --danger: #f87171;
+  --warning: #f59e0b;
 }
 
 /* WebKit reports dvh/innerHeight without the status-bar strip for installed

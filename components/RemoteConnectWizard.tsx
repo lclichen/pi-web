@@ -531,7 +531,7 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
                 </>
               ) : (
                 <div style={{ flex: 1, minHeight: 0, overflow: "auto", border: "1px solid var(--border)", borderRadius: 10, padding: 6 }}>
-                  <ConnectLocalMachine embedded />
+                  <ConnectLocalMachine />
                 </div>
               )}
             </>

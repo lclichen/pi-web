@@ -12,33 +12,43 @@ interface Pairing {
   relayPort: number;
 }
 
-// Renders the top-bar "Connect Local Machine" button (with an online dot) and,
-// when clicked, a machine-management modal: list every paired machine
-// (multi-machine), rename/unpair them, pair additional machines, and open the
-// file/command panel on any of them. Mirrors the Style A modal pattern.
-//
-// `embedded` renders the pairing content INLINE (no top-bar button, no fixed
-// overlay) — used by the remote-connect wizard's pairing step, which needs
-// the actual pairing instructions inside the wizard body.
-export function ConnectLocalMachine({ embedded = false }: { embedded?: boolean } = {}) {
+// Two exports:
+//  - LocalMachinesDialog({ open, onClose }) — the machine-management modal
+//    (paired machines, rename/unpair, pair new, file/command panel). Opened
+//    from the top-bar "环境" menu (components/EnvironmentsMenu.tsx); the old
+//    dedicated top-bar button was consolidated there.
+//  - ConnectLocalMachine() — the INLINE pairing content used by the
+//    remote-connect wizard's pairing step (no button, no fixed overlay).
+
+/** Install/pair info shared by the dialog and the embedded pairing steps. */
+function useAgentInstallInfo() {
+  const { relayPort, advertiseUrl } = useRelayAgent();
+  const port = relayPort;
+  const hasWindow = typeof window !== "undefined";
+  const serverUrl = advertiseUrl ?? (hasWindow ? `${window.location.protocol}//${window.location.hostname}:${port}` : "");
+  const asset = detectAgentAsset();
+  const downloadUrl = hasWindow ? `${window.location.origin}/api/agent-relay/download/${asset.file}` : "";
+  return { serverUrl, asset, downloadUrl };
+}
+
+export function LocalMachinesDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { t } = useI18n();
-  const { online, info, machines, relayPort, advertiseUrl, ready, refresh } = useRelayAgent();
-  const [open, setOpen] = useState(false);
+  const { online, info, machines, ready, refresh } = useRelayAgent();
+  const { serverUrl, asset, downloadUrl } = useAgentInstallInfo();
   const [panel, setPanel] = useState<{ machineId: string } | null>(null);
   const [pairing, setPairing] = useState<Pairing | null>(null);
   const [pairingLoading, setPairingLoading] = useState(false);
   const [pairingLabel, setPairingLabel] = useState("");
   const [pairSectionOpen, setPairSectionOpen] = useState(false);
   const [busyMachine, setBusyMachine] = useState<string | null>(null);
-  // Bump to re-read status after the agent's workspace root changes.
-  const [wsRefresh, setWsRefresh] = useState(0);
 
   const machinesList = machines ?? [];
+  void ready; // 在线点由菜单按钮展示；对话框内不需要
 
-  // Mint a fresh pairing code when the modal opens and no agent is connected
-  // (or when the user starts pairing ANOTHER machine).
+  // Mint a fresh pairing code while the dialog is open and no agent is
+  // connected (or when the user starts pairing ANOTHER machine).
   useEffect(() => {
-    if ((!open && !embedded) || (online && !pairSectionOpen)) {
+    if (!open || (online && !pairSectionOpen)) {
       setPairing(null);
       return;
     }
@@ -62,13 +72,7 @@ export function ConnectLocalMachine({ embedded = false }: { embedded?: boolean }
     };
     void fetchCode();
     return () => { stopped = true; };
-  }, [open, online, pairSectionOpen, pairingLabel, embedded]);
-
-  const port = pairing?.relayPort ?? relayPort;
-  const hasWindow = typeof window !== "undefined";
-  const serverUrl = advertiseUrl ?? (hasWindow ? `${window.location.protocol}//${window.location.hostname}:${port}` : "");
-  const asset = detectAgentAsset();
-  const downloadUrl = hasWindow ? `${window.location.origin}/api/agent-relay/download/${asset.file}` : "";
+  }, [open, online, pairSectionOpen, pairingLabel]);
 
   const renameMachine = async (m: MachineStatus) => {
     const next = window.prompt("新的机器名称", m.label);
@@ -97,169 +101,113 @@ export function ConnectLocalMachine({ embedded = false }: { embedded?: boolean }
     }
   };
 
-  if (embedded) {
-    return (
-      <div style={{ padding: 14, height: "100%", overflowY: "auto", boxSizing: "border-box" }}>
-        {online && info ? (
-          <div style={{ padding: 0 }}>
-            <div style={{ color: "#22c55e", fontSize: 13, marginBottom: 12 }}>{t("relay.connected2")}</div>
-            <Row label={t("relay.hostname")} value={info.hostname} />
-            <Row label={t("relay.os")} value={`${info.os} / ${info.arch}`} />
-            <Row label={t("relay.workingDirectory")} value={info.workspaceRoot} />
-            <Row label={t("relay.agentVersion")} value={info.agentVersion} />
-          </div>
-        ) : (
-          <div style={{ padding: 0 }}>
-            <p style={{ ...muted, marginTop: 0 }}>
-              {t("relay.runFollowingCommandLocalMachine")}
-            </p>
-            <PairingSteps
-              asset={asset}
-              downloadUrl={downloadUrl}
-              serverUrl={serverUrl}
-              pairing={pairing}
-              pairingLoading={pairingLoading}
-              label={pairingLabel}
-              onLabelChange={setPairingLabel}
-            />
-          </div>
-        )}
-      </div>
-    );
-  }
+  if (!open) return null;
 
   return (
     <>
-      <button
-        onClick={() => setOpen(true)}
-        title={online ? t("relay.connected", { host: info?.hostname ?? "", os: info?.os ?? "", arch: info?.arch ?? "" }) : t("relay.connectLocalMachine")}
+      <div
+        onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
         style={{
-          display: "flex", alignItems: "center", gap: 6, height: "100%",
-          padding: "0 12px", background: "none",
-          border: "none", borderTop: "2px solid transparent", borderRight: "1px solid var(--border)",
-          color: online ? "var(--text)" : "var(--text-muted)", cursor: "pointer", fontSize: 11,
-          whiteSpace: "nowrap", flexShrink: 0,
-          transition: "color 0.1s, background 0.1s",
+          // Above the remote-connect wizard (1180) — the wizard's pairing step
+          // shares this module's state and the dialog must cover it.
+          position: "fixed", inset: 0, zIndex: 1200, display: "flex",
+          alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.4)",
         }}
-        onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text)"; e.currentTarget.style.background = "var(--bg-hover)"; }}
-        onMouseLeave={(e) => { e.currentTarget.style.color = online ? "var(--text)" : "var(--text-muted)"; e.currentTarget.style.background = "none"; }}
       >
-        <span style={{
-          width: 8, height: 8, borderRadius: "50%",
-          background: ready ? (online ? "#22c55e" : "#9ca3af") : "#6b7280",
-          boxShadow: online ? "0 0 6px #22c55e" : "none",
-        }} />
-        <span>{online ? t("relay.localMachine") : t("relay.connectLocalMachine")}</span>
-        {machinesList.length > 1 && (
-          <span style={{ fontSize: 10, color: "var(--text-muted)" }}>×{machinesList.length}</span>
-        )}
-      </button>
+        <div role="dialog" aria-modal="true" style={dialogStyle}>
+          <div style={headerStyle}>
+            <span style={{ fontWeight: 600 }}>{t("relay.localMachine")}</span>
+            <button onClick={onClose} style={closeBtnStyle}>×</button>
+          </div>
 
-      {open && (
-        <div
-          onClick={(e) => { if (e.target === e.currentTarget) setOpen(false); }}
-          style={{
-            // Above the remote-connect wizard (1180) — this component is
-            // embedded in its pairing step and the dialog must cover it.
-            position: "fixed", inset: 0, zIndex: 1200, display: "flex",
-            alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.4)",
-          }}
-        >
-          <div role="dialog" aria-modal="true" style={dialogStyle}>
-            <div style={headerStyle}>
-              <span style={{ fontWeight: 600 }}>{t("relay.localMachine")}</span>
-              <button onClick={() => setOpen(false)} style={closeBtnStyle}>×</button>
-            </div>
-
-            <div style={{ padding: 16 }}>
-              {machinesList.length > 0 ? (
-                <>
-                  <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>
-                    {t("relay.pairedMachines")}（{machinesList.length}）
-                  </div>
-                  {machinesList.map((m) => (
-                    <div key={m.machineId} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 0", borderBottom: "1px solid var(--border)" }}>
-                      <span style={{
-                        width: 8, height: 8, borderRadius: "50%", flexShrink: 0,
-                        background: m.online ? "#22c55e" : "#9ca3af",
-                        boxShadow: m.online ? "0 0 6px #22c55e" : "none",
-                      }} />
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 12.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {m.label}
-                          {m.online && m.info && (
-                            <span style={{ ...muted, fontSize: 11, fontFamily: "var(--font-mono)" }}>
-                              {" "}{m.info.hostname} · {m.info.os}/{m.info.arch}
-                            </span>
-                          )}
-                        </div>
-                        <div style={{ ...muted, fontSize: 11 }}>
-                          {m.online
-                            ? (m.info?.workspaceRoot ?? "")
-                            : `离线${m.lastSeenAt ? ` · 上次在线 ${new Date(m.lastSeenAt).toLocaleString()}` : ""}`}
-                        </div>
+          <div style={{ padding: 16 }}>
+            {machinesList.length > 0 ? (
+              <>
+                <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>
+                  {t("relay.pairedMachines")}（{machinesList.length}）
+                </div>
+                {machinesList.map((m) => (
+                  <div key={m.machineId} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 0", borderBottom: "1px solid var(--border)" }}>
+                    <span style={{
+                      width: 8, height: 8, borderRadius: "50%", flexShrink: 0,
+                      background: m.online ? "var(--success)" : "#9ca3af",
+                      boxShadow: m.online ? "0 0 6px var(--success)" : "none",
+                    }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {m.label}
+                        {m.online && m.info && (
+                          <span style={{ ...muted, fontSize: 11, fontFamily: "var(--font-mono)" }}>
+                            {" "}{m.info.hostname} · {m.info.os}/{m.info.arch}
+                          </span>
+                        )}
                       </div>
-                      <button
-                        disabled={!m.online || busyMachine === m.machineId}
-                        onClick={() => { setOpen(false); setPanel({ machineId: m.machineId }); }}
-                        style={{ ...secondaryBtnStyle, opacity: m.online ? 1 : 0.5 }}
-                      >
-                        {t("relay.panel")}
-                      </button>
-                      {m.online && m.info && (
-                        <WorkspaceRootEditor
-                          current={m.info.workspaceRoot}
-                          machineId={m.machineId}
-                          onSaved={() => setWsRefresh((k) => k + 1)}
-                        />
-                      )}
-                      <button
-                        disabled={busyMachine === m.machineId}
-                        onClick={() => void renameMachine(m)}
-                        style={{ ...closeBtnStyle, fontSize: 13 }}
-                        title={t("common.rename")}
-                      >
-                        ✎
-                      </button>
-                      <button
-                        disabled={busyMachine === m.machineId}
-                        onClick={() => void unpairMachine(m)}
-                        style={{ ...closeBtnStyle, fontSize: 13, color: "#ef4444" }}
-                        title={t("relay.unbind")}
-                      >
-                        ⨯
-                      </button>
+                      <div style={{ ...muted, fontSize: 11 }}>
+                        {m.online
+                          ? (m.info?.workspaceRoot ?? "")
+                          : `离线${m.lastSeenAt ? ` · 上次在线 ${new Date(m.lastSeenAt).toLocaleString()}` : ""}`}
+                      </div>
                     </div>
-                  ))}
-                </>
-              ) : (
-                <p style={{ ...muted, marginTop: 0 }}>
-                  {t("relay.runFollowingCommandLocalMachine")}
-                </p>
-              )}
-
-              <div style={{ marginTop: 12, borderTop: machinesList.length > 0 ? "1px solid var(--border)" : "none", paddingTop: 12 }}>
-                <button onClick={() => { setPairSectionOpen((v) => !v); setPairing(null); }} style={secondaryBtnStyle}>
-                  {pairSectionOpen ? t("relay.collapsePairing") : t("relay.pairNewMachine")}
-                </button>
-                {pairSectionOpen && (
-                  <div style={{ marginTop: 10 }}>
-                    <PairingSteps
-                      asset={asset}
-                      downloadUrl={downloadUrl}
-                      serverUrl={serverUrl}
-                      pairing={pairing}
-                      pairingLoading={pairingLoading}
-                      label={pairingLabel}
-                      onLabelChange={setPairingLabel}
-                    />
+                    <button
+                      disabled={!m.online || busyMachine === m.machineId}
+                      onClick={() => { onClose(); setPanel({ machineId: m.machineId }); }}
+                      style={{ ...secondaryBtnStyle, opacity: m.online ? 1 : 0.5 }}
+                    >
+                      {t("relay.panel")}
+                    </button>
+                    {m.online && m.info && (
+                      <WorkspaceRootEditor
+                        current={m.info.workspaceRoot}
+                        machineId={m.machineId}
+                        onSaved={() => refresh()}
+                      />
+                    )}
+                    <button
+                      disabled={busyMachine === m.machineId}
+                      onClick={() => void renameMachine(m)}
+                      style={{ ...closeBtnStyle, fontSize: 13 }}
+                      title={t("common.rename")}
+                    >
+                      ✎
+                    </button>
+                    <button
+                      disabled={busyMachine === m.machineId}
+                      onClick={() => void unpairMachine(m)}
+                      style={{ ...closeBtnStyle, fontSize: 13, color: "var(--danger)" }}
+                      title={t("relay.unbind")}
+                    >
+                      ⨯
+                    </button>
                   </div>
-                )}
-              </div>
+                ))}
+              </>
+            ) : (
+              <p style={{ ...muted, marginTop: 0 }}>
+                {t("relay.runFollowingCommandLocalMachine")}
+              </p>
+            )}
+
+            <div style={{ marginTop: 12, borderTop: machinesList.length > 0 ? "1px solid var(--border)" : "none", paddingTop: 12 }}>
+              <button onClick={() => { setPairSectionOpen((v) => !v); setPairing(null); }} style={secondaryBtnStyle}>
+                {pairSectionOpen ? t("relay.collapsePairing") : t("relay.pairNewMachine")}
+              </button>
+              {pairSectionOpen && (
+                <div style={{ marginTop: 10 }}>
+                  <PairingSteps
+                    asset={asset}
+                    downloadUrl={downloadUrl}
+                    serverUrl={serverUrl}
+                    pairing={pairing}
+                    pairingLoading={pairingLoading}
+                    label={pairingLabel}
+                    onLabelChange={setPairingLabel}
+                  />
+                </div>
+              )}
             </div>
           </div>
         </div>
-      )}
+      </div>
 
       {panel && (
         <LocalMachinePanel
@@ -270,6 +218,71 @@ export function ConnectLocalMachine({ embedded = false }: { embedded?: boolean }
         />
       )}
     </>
+  );
+}
+
+export function ConnectLocalMachine() {
+  const { t } = useI18n();
+  const { online, info } = useRelayAgent();
+  const { serverUrl, asset, downloadUrl } = useAgentInstallInfo();
+  const [pairing, setPairing] = useState<Pairing | null>(null);
+  const [pairingLoading, setPairingLoading] = useState(false);
+  const [pairingLabel, setPairingLabel] = useState("");
+
+  useEffect(() => {
+    if (online) {
+      setPairing(null);
+      return;
+    }
+    let stopped = false;
+    const fetchCode = async () => {
+      setPairingLoading(true);
+      try {
+        const res = await fetch("/api/agent-relay/pair", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          ...(pairingLabel.trim() ? { body: JSON.stringify({ label: pairingLabel.trim() }) } : {}),
+        });
+        if (!res.ok) return;
+        const data = (await res.json()) as Pairing;
+        if (!stopped) setPairing(data);
+      } catch {
+        // ignore
+      } finally {
+        if (!stopped) setPairingLoading(false);
+      }
+    };
+    void fetchCode();
+    return () => { stopped = true; };
+  }, [online, pairingLabel]);
+
+  return (
+    <div style={{ padding: 14, height: "100%", overflowY: "auto", boxSizing: "border-box" }}>
+      {online && info ? (
+        <div style={{ padding: 0 }}>
+          <div style={{ color: "var(--success)", fontSize: 13, marginBottom: 12 }}>{t("relay.connected2")}</div>
+          <Row label={t("relay.hostname")} value={info.hostname} />
+          <Row label={t("relay.os")} value={`${info.os} / ${info.arch}`} />
+          <Row label={t("relay.workingDirectory")} value={info.workspaceRoot} />
+          <Row label={t("relay.agentVersion")} value={info.agentVersion} />
+        </div>
+      ) : (
+        <div style={{ padding: 0 }}>
+          <p style={{ ...muted, marginTop: 0 }}>
+            {t("relay.runFollowingCommandLocalMachine")}
+          </p>
+          <PairingSteps
+            asset={asset}
+            downloadUrl={downloadUrl}
+            serverUrl={serverUrl}
+            pairing={pairing}
+            pairingLoading={pairingLoading}
+            label={pairingLabel}
+            onLabelChange={setPairingLabel}
+          />
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -306,7 +319,7 @@ function PairingSteps({
           />
         </div>
         {pairingLoading && <div style={muted}>生成配对码…</div>}
-        {!pairingLoading && !pairing && <div style={{ ...muted, color: "#ef4444" }}>无法生成配对码，请稍后重试。</div>}
+        {!pairingLoading && !pairing && <div style={{ ...muted, color: "var(--danger)" }}>无法生成配对码，请稍后重试。</div>}
         {pairing && (
           <>
             <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
@@ -368,7 +381,7 @@ function WorkspaceRootEditor({ current, machineId, onSaved }: { current?: string
       >
         {busy ? "应用中…" : "更改…"}
       </button>
-      {msg && <span style={{ fontSize: 11, color: msg === "已更改" ? "#22c55e" : "#f87171" }}>{msg}</span>}
+      {msg && <span style={{ fontSize: 11, color: msg === "已更改" ? "var(--success)" : "var(--danger)" }}>{msg}</span>}
     </div>
   );
 }
@@ -432,10 +445,6 @@ const codeStyle: React.CSSProperties = {
   fontFamily: "var(--font-mono)", fontSize: 22, fontWeight: 700, letterSpacing: 4,
   color: "var(--accent)", background: "var(--bg)", padding: "4px 12px", borderRadius: 4,
   border: "1px solid var(--border)",
-};
-const primaryBtnStyle: React.CSSProperties = {
-  padding: "6px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer",
-  background: "var(--accent)", color: "#fff", border: "none", borderRadius: 4,
 };
 const secondaryBtnStyle: React.CSSProperties = {
   padding: "6px 14px", fontSize: 12, cursor: "pointer",

@@ -14,7 +14,7 @@ import {
 } from "@/lib/rpc-manager";
 import { requireUserIdentity } from "@/lib/web-session";
 import { spaceForRequest } from "@/lib/session-spaces";
-import { getSessionMetas } from "@/lib/session-metas";
+import { getSessionMetas, inferLegacyModeFromCwd } from "@/lib/session-metas";
 
 export const dynamic = "force-dynamic";
 
@@ -44,10 +44,15 @@ export async function GET(req: Request) {
         }))),
       Promise.resolve(getSessionMetas()),
     ]);
-    const sessions = mergeSessionLists(persistedSessions, runtimeSessions).map((s) => ({
-      ...s,
-      ...(metas[s.id] ? { mode: metas[s.id].mode, ...(metas[s.id].projectId ? { projectId: metas[s.id].projectId } : {}) } : {}),
-    }));
+    const sessions = mergeSessionLists(persistedSessions, runtimeSessions).map((s) => {
+      const meta = metas[s.id];
+      // 无 meta 的遗留沙箱会话按 cwd 兜底推断，避免落进 Host 目录组。
+      const mode = meta?.mode ?? inferLegacyModeFromCwd(s.cwd);
+      return {
+        ...s,
+        ...(mode ? { mode, ...(meta?.projectId ? { projectId: meta.projectId } : {}) } : {}),
+      };
+    });
     // Capture AFTER the scan: mutations during the scan bump the generation,
     // so the client sees a version it cannot reconcile and refreshes again.
     const sessionListVersion = getSessionListVersion();

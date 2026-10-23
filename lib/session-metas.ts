@@ -113,3 +113,16 @@ export function resolveSessionMode(sessionId: string): SessionMeta | undefined {
   }
   return meta;
 }
+
+/**
+ * 遗留孤儿推断：metas 机制建立（pre-project 时代，约 2026-08）之前创建的
+ * 沙箱会话没有任何 mode 记录——列表的"无 meta 默认 Host"会把它们塞进
+ * 管理员 Host 目录组（分组名是 sandbox-homes 路径，徽标语义互相矛盾，
+ * 见 1ab1290b 的同类修复）。cwd 落在 <dataDir>/sandbox-homes/u<id>/ 下
+ * 足以判定为沙箱会话，仅供列表展示层兜底。
+ */
+export function inferLegacyModeFromCwd(cwd: string | undefined | null): "sandbox" | null {
+  if (!cwd) return null;
+  const normalized = cwd.replace(/\\/g, "/");
+  return /\/sandbox-homes\/u\d+\//.test(normalized) ? "sandbox" : null;
+}

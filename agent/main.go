@@ -1,13 +1,12 @@
-// Command pi-agent is the local-machine bridge for pi-web's "Connect Local
-// Machine" feature. It runs on the user's machine (e.g. CentOS 7), connects out
-// to the pi-web relay over WebSocket, and serves file + command requests scoped
-// to a workspace root.
+// Command agent-client connects this machine to a pi-web workspace. It runs
+// on the user's machine (e.g. CentOS 7), connects out to the pi-web relay over
+// WebSocket, and serves file + command requests scoped to a workspace root.
 //
 // Usage:
 //
-//	pi-agent pair --code CODE --server URL [--root PATH]
-//	pi-agent run   [--config FILE] [--root PATH]
-//	pi-agent version
+//	agent-client pair --code CODE --server URL [--root PATH]
+//	agent-client run   [--config FILE] [--root PATH]
+//	agent-client version
 package main
 
 import (
@@ -17,7 +16,7 @@ import (
 	"piagent/internal/agent"
 )
 
-const version = "0.1.2"
+const version = "0.3.0"
 
 func main() {
 	args := os.Args[1:]
@@ -27,8 +26,8 @@ func main() {
 			os.Exit(agent.RunPair(args[1:], version))
 		case "run":
 			os.Exit(agent.Run(args[1:], version))
-		case "version", "--version", "-v":
-			fmt.Println("pi-agent", version)
+		case "version", "--version", "-v", "-V":
+			fmt.Println("agent-client", version)
 			return
 		case "help", "--help", "-h":
 			printUsage()
@@ -40,13 +39,14 @@ func main() {
 }
 
 func printUsage() {
-	fmt.Println(`pi-agent — local machine bridge for pi-web
+	fmt.Println(`agent-client — connect this machine to pi-web
 
 Usage:
-  pi-agent pair --code CODE --server URL [--root PATH]   pair with a pi-web relay
-  pi-agent run [--config FILE] [--root PATH]             connect & serve (default)
-  pi-agent version
-  pi-agent help
+  agent-client pair --code CODE --server URL [--root PATH]   pair with a pi-web relay
+  agent-client run [--config FILE] [--root PATH]             connect & serve (default)
+  agent-client version | --version | -V
+  agent-client help
 
-Config is stored at ~/.pi-agent/config.json (mode 0600).`)
+Config is stored at ~/.agent-client/config.json (mode 0600);
+an existing ~/.pi-agent/config.json is used as a fallback.`)
 }

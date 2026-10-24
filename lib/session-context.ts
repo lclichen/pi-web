@@ -15,7 +15,7 @@ import type { SessionMode } from "./session-modes";
  *   host           服务器目录本身（此时项目目录 = 工作区目录）
  *   sandbox        平台容器内 /workspace（文件由项目目录同步）
  *   ssh            远程主机上的项目工作目录（project.workdir）
- *   local-machine  用户本机共享工作区（project.workdir 绑定；未绑定 = 共享根）
+ *   local-machine  用户本机上的项目工作区（project.workdir；未绑定 = agent 共享根）
  *   quick          服务器侧快速会话 scratch home（两者重合）
  *
  * 三个使用点：

@@ -6,6 +6,7 @@ package workspace
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -31,6 +32,37 @@ func (w *Workspace) GetRoot() string {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
 	return w.Root
+}
+
+// For returns the rooted view a request should operate in. A request may name
+// an absolute `base` directory (project workspace on the user's machine);
+// every relative path in that request resolves against it and ".."/symlinks
+// are still fenced inside it. Without `base` the agent-wide Root applies.
+//
+// This is what lets several local-machine projects share one relay
+// connection while each session works in its own folder. It does not widen
+// the trust boundary beyond `workspace.set-root`, which can already point the
+// agent at any directory on the machine.
+func (w *Workspace) For(params map[string]interface{}) (*Workspace, error) {
+	base := paramString(params, "base", "")
+	if base == "" {
+		return w, nil
+	}
+	if !filepath.IsAbs(base) {
+		return nil, fmt.Errorf("base must be an absolute path: %s", base)
+	}
+	abs, err := filepath.Abs(filepath.Clean(base))
+	if err != nil {
+		return nil, err
+	}
+	st, err := os.Stat(abs)
+	if err != nil {
+		return nil, fmt.Errorf("base directory does not exist: %s", base)
+	}
+	if !st.IsDir() {
+		return nil, fmt.Errorf("base is not a directory: %s", base)
+	}
+	return &Workspace{Root: abs}, nil
 }
 
 // resolve enforces that p (absolute or relative to Root) is inside Root after

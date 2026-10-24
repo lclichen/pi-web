@@ -4,6 +4,8 @@ import { platformGet } from "@/lib/platform/client";
 import { requireUserIdentity } from "@/lib/web-session";
 import { isApiRequestAllowed, hasJsonContentType } from "@/lib/request-security";
 import { provisionContainerForProject } from "@/lib/platform/provision";
+import { validateAgentDirectory } from "@/lib/relay/browse";
+import { sshListDirectory } from "@/lib/ssh";
 
 export const dynamic = "force-dynamic";
 
@@ -41,18 +43,11 @@ export async function POST(req: Request) {
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
-  const result = await createProject({
-    name: typeof body.name === "string" ? body.name : "",
-    ownerId: identity.session.user.id,
-    ownerName: identity.session.user.username,
-    mode: typeof body.mode === "string" ? body.mode : "",
-    ...(typeof body.containerId === "number" ? { containerId: body.containerId } : {}),
-    ...(typeof body.imageId === "number" ? { imageId: body.imageId } : {}),
-    ...(typeof body.seedFromProjectId === "string" ? { seedFromProjectId: body.seedFromProjectId } : {}),
-    ...(typeof body.workdir === "string" && body.workdir ? { workdir: body.workdir } : {}),
-    ...(typeof body.machineId === "string" && body.machineId ? { machineId: body.machineId } : {}),
-    ...(body.mode === "ssh" && body.ssh && typeof body.ssh === "object" ? {
-      ssh: {
+
+  const mode = typeof body.mode === "string" ? body.mode : "";
+  const machineId = typeof body.machineId === "string" && body.machineId ? body.machineId : undefined;
+  const sshInput = body.ssh && typeof body.ssh === "object"
+    ? {
         host: typeof body.ssh.host === "string" ? body.ssh.host : "",
         port: typeof body.ssh.port === "number" ? body.ssh.port : undefined,
         username: typeof body.ssh.username === "string" ? body.ssh.username : "",
@@ -60,8 +55,46 @@ export async function POST(req: Request) {
         password: typeof body.ssh.password === "string" ? body.ssh.password : undefined,
         privateKey: typeof body.ssh.privateKey === "string" ? body.ssh.privateKey : undefined,
         passphrase: typeof body.ssh.passphrase === "string" ? body.ssh.passphrase : undefined,
-      },
-    } : {}),
+      }
+    : undefined;
+
+  // Workdirs are real directories on a remote backend — validate them BEFORE
+  // creating the record so a typo cannot yield a project that silently runs
+  // somewhere else (the bug this validation exists to prevent).
+  let workdir = typeof body.workdir === "string" ? body.workdir.trim() : "";
+  if (mode === "local-machine" && workdir) {
+    try {
+      workdir = await validateAgentDirectory(identity.session.user.id, machineId, workdir);
+    } catch (error) {
+      return NextResponse.json(
+        { error: `工作目录不可用：${error instanceof Error ? error.message : String(error)}` },
+        { status: 400 },
+      );
+    }
+  }
+  if (mode === "ssh" && workdir && sshInput?.host && sshInput.username) {
+    try {
+      const listed = await sshListDirectory({ ...sshInput, port: sshInput.port ?? 22 }, workdir);
+      workdir = listed.path;
+    } catch (error) {
+      return NextResponse.json(
+        { error: `远程工作目录不可用：${error instanceof Error ? error.message : String(error)}` },
+        { status: 400 },
+      );
+    }
+  }
+
+  const result = await createProject({
+    name: typeof body.name === "string" ? body.name : "",
+    ownerId: identity.session.user.id,
+    ownerName: identity.session.user.username,
+    mode,
+    ...(typeof body.containerId === "number" ? { containerId: body.containerId } : {}),
+    ...(typeof body.imageId === "number" ? { imageId: body.imageId } : {}),
+    ...(typeof body.seedFromProjectId === "string" ? { seedFromProjectId: body.seedFromProjectId } : {}),
+    ...(workdir ? { workdir } : {}),
+    ...(machineId ? { machineId } : {}),
+    ...(mode === "ssh" && sshInput ? { ssh: sshInput } : {}),
     ...(typeof body.presetBundle === "string" && body.presetBundle ? { presetBundle: body.presetBundle } : {}),
   });
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });

@@ -9,7 +9,7 @@ interface DirectoryEntry {
   path: string;
 }
 
-interface BrowseResponse {
+export interface DirectoryBrowseResult {
   path?: string;
   parentPath?: string | null;
   directories?: DirectoryEntry[];
@@ -17,13 +17,41 @@ interface BrowseResponse {
   error?: string;
 }
 
-async function loadDirectories(directory?: string): Promise<BrowseResponse> {
+/**
+ * Data source for the picker. The default browses the pi-web server (Host
+ * mode); the new-project wizard plugs in a relay-backed source for the user's
+ * machine and an SSH-backed source for remote hosts, so all four connection
+ * modes share the same picker UI.
+ */
+export interface DirectorySource {
+  load: (directory?: string) => Promise<DirectoryBrowseResult>;
+  /** Create one child directory; return its absolute path. Omit to hide the
+   *  "new folder" affordance (e.g. when the backend cannot mkdir). */
+  create?: (parentPath: string, name: string) => Promise<string>;
+}
+
+async function loadServerDirectories(directory?: string): Promise<DirectoryBrowseResult> {
   const query = directory ? `?path=${encodeURIComponent(directory)}` : "";
   const response = await fetch(`/api/cwd/browse${query}`);
-  const data = await response.json() as BrowseResponse;
+  const data = await response.json() as DirectoryBrowseResult;
   if (!response.ok || data.error) throw new Error(data.error ?? `HTTP ${response.status}`);
   return data;
 }
+
+const SERVER_SOURCE: DirectorySource = {
+  load: loadServerDirectories,
+  create: async (parentPath, name) => {
+    const target = `${parentPath.replace(/[\\/]+$/, "")}/${name}`;
+    const res = await fetch("/api/cwd/mkdir", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: target }),
+    });
+    const data = (await res.json().catch(() => ({}))) as { path?: string; error?: string };
+    if (!res.ok || !data.path) throw new Error(data.error ?? `HTTP ${res.status}`);
+    return data.path;
+  },
+};
 
 function FolderIcon() {
   return (
@@ -53,10 +81,17 @@ interface Props {
   initialPath?: string;
   busy?: boolean;
   error?: string | null;
+  /** Where to browse; defaults to the pi-web server filesystem (Host mode). */
+  source?: DirectorySource;
+  /** Dialog title (e.g. "选择本机目录"). */
+  title?: string;
 }
 
-export function DirectoryPicker({ onCancel, onSelect, initialPath, busy = false, error }: Props) {
+export function DirectoryPicker({ onCancel, onSelect, initialPath, busy = false, error, source, title }: Props) {
   const { t } = useI18n();
+  const dialogTitle = title ?? t("directoryPicker.selectDirectory");
+  const sourceRef = useRef<DirectorySource>(source ?? SERVER_SOURCE);
+  sourceRef.current = source ?? SERVER_SOURCE;
   const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null);
   const [currentPath, setCurrentPath] = useState("");
   const [parentDirectory, setParentDirectory] = useState<string | null>(null);
@@ -75,7 +110,7 @@ export function DirectoryPicker({ onCancel, onSelect, initialPath, busy = false,
     setLoading(true);
     setLoadError(null);
     try {
-      const data = await loadDirectories(directory);
+      const data = await sourceRef.current.load(directory);
       const nextPath = data.path ?? directory ?? "/";
       setCurrentPath(nextPath);
       setParentDirectory(data.parentPath ?? null);
@@ -114,21 +149,13 @@ export function DirectoryPicker({ onCancel, onSelect, initialPath, busy = false,
     setNewFolderBusy(true);
     setNewFolderError(null);
     try {
-      const target = `${currentPath.replace(/[\\/]+$/, "")}/${name}`;
-      const res = await fetch("/api/cwd/mkdir", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ path: target }),
-      });
-      const data = await res.json().catch(() => ({})) as { path?: string; error?: string };
-      if (!res.ok || !data.path) {
-        setNewFolderError(data?.error ?? `HTTP ${res.status}`);
-        return;
-      }
+      const create = sourceRef.current.create;
+      if (!create) return;
+      const created = await create(currentPath, name);
       setNewFolderOpen(false);
       setNewFolderName("");
       // 进入新建的文件夹，方便直接选它。
-      await navigateTo(data.path);
+      await navigateTo(created);
     } catch (cause) {
       setNewFolderError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -138,6 +165,7 @@ export function DirectoryPicker({ onCancel, onSelect, initialPath, busy = false,
   const hasUncommittedPath = pathInput.trim() !== currentPath;
   const canSelect = Boolean(currentPath) && !hasUncommittedPath && !busy;
   const canNavigateUp = Boolean(parentDirectory) || isWindowsDriveRoot(currentPath);
+  const canCreateFolder = Boolean((source ?? SERVER_SOURCE).create);
 
   if (!portalTarget) return null;
 
@@ -146,19 +174,19 @@ export function DirectoryPicker({ onCancel, onSelect, initialPath, busy = false,
       className="directory-picker-backdrop"
       role="dialog"
       aria-modal="true"
-      aria-label={t("directoryPicker.selectDirectory")}
+      aria-label={dialogTitle}
       onClick={(event) => {
         if (event.target === event.currentTarget && !busy) onCancel();
       }}
       onKeyDown={(event) => {
         if (event.key === "Escape" && !busy) onCancel();
       }}
-      style={{ position: "fixed", inset: 0, zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.35)" }}
+      style={{ position: "fixed", inset: 0, zIndex: 1300, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.35)" }}
     >
       <div className="directory-picker-panel" style={{ width: 520, maxWidth: "calc(100vw - 16px)", height: "min(620px, calc(100dvh - 16px))", maxHeight: "calc(100dvh - 16px)", display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 10, boxShadow: "0 8px 32px rgba(0,0,0,0.18)" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0, padding: "12px 18px", borderBottom: "1px solid var(--border)" }}>
           <div style={{ minWidth: 0, flex: 1 }}>
-            <div style={{ color: "var(--text)", fontWeight: 700, fontSize: 15 }}>{t("directoryPicker.selectDirectory")}</div>
+            <div style={{ color: "var(--text)", fontWeight: 700, fontSize: 15 }}>{dialogTitle}</div>
           </div>
           <button
             type="button"
@@ -251,7 +279,7 @@ export function DirectoryPicker({ onCancel, onSelect, initialPath, busy = false,
         </div>
 
         <div className="directory-picker-footer" style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0, padding: "10px 18px", borderTop: "1px solid var(--border)" }}>
-          {newFolderOpen ? (
+          {canCreateFolder && (newFolderOpen ? (
             <form
               onSubmit={createFolder}
               style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0 }}
@@ -319,7 +347,7 @@ export function DirectoryPicker({ onCancel, onSelect, initialPath, busy = false,
               </svg>
               {t("directoryPicker.newFolder")}
             </button>
-          )}
+          ))}
           {newFolderError && <span style={{ flexShrink: 0, maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "#dc2626", fontSize: 11 }}>{newFolderError}</span>}
           <div style={{ flex: newFolderOpen ? 0 : 1 }} />
           <button className="directory-picker-action" type="button" onClick={onCancel} disabled={busy} style={{ padding: "6px 14px", border: "1px solid var(--border)", borderRadius: 6, background: "none", color: "var(--text-muted)", cursor: busy ? "default" : "pointer", fontSize: 13 }}>{t("i18n.cancel")}</button>

@@ -62,7 +62,11 @@ export function childExtensionsFor(
         const home = ensureProjectHome(project);
         const dirs = sessionDirsForProject(project, home);
         return [
-          makeRelayToolsExtension(info.ownerId, home),
+          makeRelayToolsExtension(info.ownerId, {
+            projectHome: home,
+            ...(project.workdir ? { workspaceDir: project.workdir } : {}),
+            ...(project.machineId ? { machineId: project.machineId } : {}),
+          }),
           makeRemoteVerifyExtension("local-machine", info.ownerId),
           makeEnvironmentInfoExtension({ mode: "local-machine", username, projectName: project.name, workspaceDir: dirs.workspaceDir }),
         ];

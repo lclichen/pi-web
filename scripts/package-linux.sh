@@ -485,10 +485,10 @@ else
 fi
 
 # 7e. 附带agent-relay 本地桥接二进制(/api/agent-relay/download 用)
-if [ -f "$SRC/agent/dist/pi-agent-linux-amd64" ]; then
+if [ -f "$SRC/agent/dist/agent-client-linux-amd64" ]; then
   mkdir -p "$PKG/app/agent"
   cp -a "$SRC/agent/dist" "$PKG/app/agent/dist"
-  log "附带 pi-agent 二进制: agent/dist/"
+  log "附带 agent-client 二进制: agent/dist/"
 fi
 
 # ---------------------------------------------------------------------------

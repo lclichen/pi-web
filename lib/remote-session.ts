@@ -7,6 +7,8 @@ import { readSandboxHomeConfig } from "./mode-homes";
 import { ensureProjectHome, getOwnedProject, readProjectSandboxConfig } from "./projects";
 import { getSshClient, readSshConfig, type SshConfig } from "./ssh";
 import { relayRpc } from "./relay/forward";
+import { requireCompatibleAgent } from "./relay/agent-gate";
+import { resolveRelayWorkspaceScope, toRelayPath, type RelayWorkspaceScope } from "./relay/workspace-base";
 import type { SessionMode } from "./session-modes";
 
 /**
@@ -22,8 +24,10 @@ export interface RemoteSessionContext {
   /** Sandbox mode: the container tools should target. */
   containerId: number;
   isAdmin: boolean;
-  /** SSH mode: owning project + remote workdir base. */
+  /** SSH mode: owning project id. */
   projectId?: string;
+  /** SSH mode: remote workdir base. Local-machine mode: the project's
+   *  workspace directory on the user's machine (the file panel's UI root). */
   workdir?: string;
   sshConfig?: import("./ssh").SshConfig;
   /** Server-side project home — absolute UI paths under it map to the workdir. */
@@ -71,22 +75,40 @@ export async function resolveRemoteSession(
 
   if (mode === "local-machine") {
     // Project binding wins: a local-machine project may pin one specific
-    // machine (multi-machine support). Sessions without a project binding use
-    // the user's default (most recent) machine.
+    // machine (multi-machine support) and a workspace directory (project
+    // workdir) that becomes the file panel's virtual root. Sessions without a
+    // project binding use the user's default (most recent) machine + its root.
     let machineId: string | undefined;
+    let workdir: string | undefined;
     if (meta?.projectId && (user.role === "admin" || meta.ownerId === user.id || user.id === 0)) {
       const project = getOwnedProject(meta.projectId, meta.ownerId ?? user.id, user.role === "admin");
-      if (project && project.mode === "local-machine" && project.machineId) {
-        machineId = project.machineId;
+      if (project && project.mode === "local-machine") {
+        if (project.machineId) machineId = project.machineId;
+        if (project.workdir) workdir = project.workdir;
       }
     }
-    if (user.id !== 0) {
-      const agent = getAgentForUser(user.id, machineId);
-      if (!agent?.info) {
-        return { ok: false, status: 503, error: machineId ? "项目绑定的机器不在线" : "本机未连接（relay 离线）" };
-      }
+    // Online + version check (outdated clients fail with an upgrade message
+    // instead of silently running file operations in the wrong root).
+    const gate = requireCompatibleAgent(user.id, machineId);
+    if (!gate.ok) return { ok: false, status: gate.status, error: gate.error };
+    // Fail early with an actionable message when the bound workspace cannot be
+    // reached by this agent (legacy agent + directory outside its shared root).
+    if (workdir) {
+      const scope = resolveRelayWorkspaceScope(workdir, gate.info);
+      if (scope.error) return { ok: false, status: 409, error: scope.error };
     }
-    return { ok: true, ctx: { mode, userId: user.id, apiKey: "", containerId: 0, isAdmin: user.role === "admin", ...(machineId ? { machineId } : {}) } };
+    return {
+      ok: true,
+      ctx: {
+        mode,
+        userId: user.id,
+        apiKey: "",
+        containerId: 0,
+        isAdmin: user.role === "admin",
+        machineId: gate.machineId,
+        ...(workdir ? { workdir } : {}),
+      },
+    };
   }
 
   // Sandbox: platform credentials + target container. Prefer the container
@@ -165,8 +187,7 @@ function sftpOf(client: unknown): Promise<{
   });
 }
 
-async function sshRun(ctx: RemoteSessionContext, command: string): Promise<void> {
-  const client = await sshClientFor(ctx);
+async function sshRun(ctx: RemoteSessionContext, command: string): Promise<void> {  const client = await sshClientFor(ctx);
   await new Promise<void>((resolve, reject) => {
     client.exec(command, (err: Error | undefined, stream: { on(ev: "close", cb: (c: number) => void): void; stderr: { on(ev: "data", cb: (d: Buffer) => void): void } }) => {
       if (err) return reject(err);
@@ -179,6 +200,36 @@ async function sshRun(ctx: RemoteSessionContext, command: string): Promise<void>
     });
   });
 }
+/** Local-machine backend helpers: every relay call carries the project
+ *  workspace (`base` for agent >= 0.2.0, root-relative prefix otherwise) and
+ *  every UI path is mapped into that workspace. */
+export function localScope(ctx: RemoteSessionContext): RelayWorkspaceScope {
+  const gate = requireCompatibleAgent(ctx.userId, ctx.machineId);
+  if (!gate.ok) throw new Error(gate.error);
+  const scope = resolveRelayWorkspaceScope(ctx.workdir, gate.info);
+  if (scope.error) throw new Error(scope.error);
+  return scope;
+}
+
+function localRelay<T>(
+  ctx: RemoteSessionContext,
+  method: Parameters<typeof relayRpc>[0],
+  params: Record<string, unknown>,
+  scope: RelayWorkspaceScope,
+): Promise<T> {
+  return relayRpc(
+    method,
+    { ...params, ...(scope.base ? { base: scope.base } : {}) },
+    { userId: ctx.userId, machineId: ctx.machineId },
+  ) as Promise<T>;
+}
+
+/** Map a file-panel path (relative to the workspace root, "/" = root) onto
+ *  the relay wire path used by the agent. */
+function localWirePath(ctx: RemoteSessionContext, path: string, scope: RelayWorkspaceScope): string {
+  return toRelayPath(stripSlash(path), scope, ctx.workdir) || ".";
+}
+
 export async function remoteList(ctx: RemoteSessionContext, path: string): Promise<RemoteEntry[]> {
   if (ctx.mode === "ssh") {
     const client = await sshClientFor(ctx);
@@ -187,9 +238,10 @@ export async function remoteList(ctx: RemoteSessionContext, path: string): Promi
     return list.map((e) => ({ name: e.filename, isDir: e.attrs.isDirectory(), size: e.attrs.size, modified: "" }));
   }
   if (ctx.mode === "local-machine") {
-    const entries = await relayRpc("fs.list", { path: stripSlash(path) }, { userId: ctx.userId, machineId: ctx.machineId }) as Array<{
-      name: string; isDir: boolean; size: number; mtime: number;
-    }>;
+    const scope = localScope(ctx);
+    const entries = await localRelay<Array<{ name: string; isDir: boolean; size: number; mtime: number }>>(
+      ctx, "fs.list", { path: localWirePath(ctx, path, scope) }, scope,
+    );
     return entries.map((e) => ({ name: e.name, isDir: e.isDir, size: e.size, modified: new Date(e.mtime).toISOString() }));
   }
   const res = await platformGet<{ entries?: Array<{ name: string; isDirectory?: boolean; isDir?: boolean; size?: number; mtimeMs?: number }> }>(
@@ -213,7 +265,10 @@ export async function remoteRead(ctx: RemoteSessionContext, path: string): Promi
     return { content: buf.toString("utf8"), size: buf.length };
   }
   if (ctx.mode === "local-machine") {
-    const r = await relayRpc("fs.read", { path: stripSlash(path) }, { userId: ctx.userId, machineId: ctx.machineId }) as { content: string; size: number };
+    const scope = localScope(ctx);
+    const r = await localRelay<{ content: string; size: number }>(
+      ctx, "fs.read", { path: localWirePath(ctx, path, scope) }, scope,
+    );
     return { content: r.content, size: r.size };
   }
   const r = await platformPost<{ contentBase64: string; size: number }>(
@@ -232,7 +287,8 @@ export async function remoteWrite(ctx: RemoteSessionContext, path: string, conte
     return;
   }
   if (ctx.mode === "local-machine") {
-    await relayRpc("fs.write", { path: stripSlash(path), content }, { userId: ctx.userId, machineId: ctx.machineId });
+    const scope = localScope(ctx);
+    await localRelay(ctx, "fs.write", { path: localWirePath(ctx, path, scope), content }, scope);
     return;
   }
   await platformPost(
@@ -252,15 +308,17 @@ export async function remoteCreateEmpty(ctx: RemoteSessionContext, path: string,
     else await sshRun(ctx, `mkdir -p -- $(dirname '${q(target)}') && touch -- '${q(target)}'`);
     return;
   }
-  const target = ctx.mode === "local-machine" ? stripSlash(path) : containerPath(path);
   if (ctx.mode === "local-machine") {
+    const scope = localScope(ctx);
+    const target = localWirePath(ctx, path, scope);
     if (kind === "dir") {
-      await relayRpc("fs.mkdir", { path: target }, { userId: ctx.userId, machineId: ctx.machineId });
+      await localRelay(ctx, "fs.mkdir", { path: target }, scope);
     } else {
-      await relayRpc("fs.write", { path: target, content: "" }, { userId: ctx.userId, machineId: ctx.machineId });
+      await localRelay(ctx, "fs.write", { path: target, content: "" }, scope);
     }
     return;
   }
+  const target = containerPath(path);
   const command = kind === "dir" ? `mkdir -p -- ${shellQuote(target)}` : `mkdir -p -- $(dirname ${shellQuote(target)}) && touch -- ${shellQuote(target)}`;
   await platformPost(
     `/api/v1/containers/${ctx.containerId}/tools/bash`,
@@ -276,7 +334,8 @@ export async function remoteDelete(ctx: RemoteSessionContext, path: string): Pro
     return;
   }
   if (ctx.mode === "local-machine") {
-    await relayRpc("fs.delete", { path: stripSlash(path) }, { userId: ctx.userId, machineId: ctx.machineId });
+    const scope = localScope(ctx);
+    await localRelay(ctx, "fs.delete", { path: localWirePath(ctx, path, scope) }, scope);
     return;
   }
   await platformPost(
@@ -293,7 +352,11 @@ export async function remoteRename(ctx: RemoteSessionContext, path: string, newP
     return;
   }
   if (ctx.mode === "local-machine") {
-    await relayRpc("fs.rename", { from: stripSlash(path), to: stripSlash(newPath) }, { userId: ctx.userId, machineId: ctx.machineId });
+    const scope = localScope(ctx);
+    await localRelay(ctx, "fs.rename", {
+      from: localWirePath(ctx, path, scope),
+      to: localWirePath(ctx, newPath, scope),
+    }, scope);
     return;
   }
   await platformPost(
@@ -360,12 +423,18 @@ export async function remoteFind(ctx: RemoteSessionContext, base: string, query:
 
   if (ctx.mode === "local-machine") {
     // relay exec.run is argv-based (no shell) — wrap with bash -c like relay-tools.
-    const baseRel = stripSlash(base);
-    const r = await relayRpc("exec.run", {
-      argv: ["bash", "-c", findCmd(baseRel || ".")],
-    }, { userId: ctx.userId, machineId: ctx.machineId }) as { stdout?: string };
+    const scope = localScope(ctx);
+    const wireBase = localWirePath(ctx, base, scope);
+    const r = await localRelay<{ stdout?: string }>(ctx, "exec.run", {
+      argv: ["bash", "-c", findCmd(wireBase === "." ? "." : wireBase)],
+      cwd: ".",
+    }, scope);
+    const strip = wireBase === "." ? "" : `${wireBase.replace(/\/+$/, "")}/`;
     return (r.stdout ?? "").split("\n").map((l) => l.trim()).filter(Boolean)
-      .map((p) => p.replace(/^\.\//, "").replace(new RegExp(`^${baseRel}/`), ""));
+      .map((p) => {
+        const clean = p.replace(/^\.\//, "");
+        return strip && clean.startsWith(strip) ? clean.slice(strip.length) : clean;
+      });
   }
 
   const root = containerPath(base);

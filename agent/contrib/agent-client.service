@@ -1,0 +1,27 @@
+# systemd unit for agent-client. Copy to /etc/systemd/system/agent-client.service
+# and edit the ExecStart / User lines, then:
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now agent-client
+#   journalctl -u agent-client -f
+#
+# The client is a static binary with no runtime deps, so it runs fine on CentOS 7.
+[Unit]
+Description=pi-web local workspace client (file/command bridge)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Edit: point to the binary.
+ExecStart=/usr/local/bin/agent-client run
+# Optionally pin the shared workspace root (default: service working directory).
+# WorkingDirectory=/home/youruser/projects
+# Config is read from ~/.agent-client/config.json (legacy ~/.pi-agent/config.json
+# is still honored).
+User=youruser
+Restart=always
+RestartSec=3
+# Run as a non-privileged user; pair first as that user so the config exists.
+
+[Install]
+WantedBy=multi-user.target

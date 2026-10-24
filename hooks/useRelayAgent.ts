@@ -8,6 +8,8 @@ export interface RelayStatusResponse {
   info?: AgentInfo;
   /** All paired machines (multi-machine); info = the default machine's. */
   machines?: MachineStatus[];
+  /** Minimum agent-client version this WebUI requires. */
+  requiredVersion?: string;
   relayPort: number;
   advertiseUrl: string | null;
 }

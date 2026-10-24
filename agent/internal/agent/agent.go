@@ -76,18 +76,18 @@ func cancelPtyReap() {
 
 func Run(args []string, version string) int {
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
-	configPath := fs.String("config", "", "path to config.json (default ~/.pi-agent/config.json)")
+	configPath := fs.String("config", "", "path to config.json (default ~/.agent-client/config.json)")
 	rootOverride := fs.String("root", "", "override workspace root")
 	_ = fs.Parse(args)
 
 	cfg, err := config.Load(*configPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "pi-agent: load config failed: %v\n", err)
-		fmt.Fprintln(os.Stderr, "Run `pi-agent pair --code CODE --server URL` first.")
+		fmt.Fprintf(os.Stderr, "agent-client: load config failed: %v\n", err)
+		fmt.Fprintln(os.Stderr, "Run `agent-client pair --code CODE --server URL` first.")
 		return 2
 	}
 	if cfg.Server == "" || cfg.Token == "" {
-		fmt.Fprintln(os.Stderr, "pi-agent: config missing server/token; pair first.")
+		fmt.Fprintln(os.Stderr, "agent-client: config missing server/token; pair first.")
 		return 2
 	}
 	// Stable machine identity for multi-machine relays; generates + persists on
@@ -109,13 +109,13 @@ func Run(args []string, version string) int {
 	}
 	absRoot, err := filepath.Abs(root)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "pi-agent: bad root %q: %v\n", root, err)
+		fmt.Fprintf(os.Stderr, "agent-client: bad root %q: %v\n", root, err)
 		return 2
 	}
 
 	ws := &workspace.Workspace{Root: absRoot}
 	info := buildInfo(version, ws.GetRoot(), cfg)
-	log.Printf("pi-agent %s starting; server=%s root=%s os=%s/%s",
+	log.Printf("agent-client %s starting; server=%s root=%s os=%s/%s",
 		version, cfg.Server, absRoot, runtime.GOOS, runtime.GOARCH)
 
 	connectLoop(toWSURL(cfg.Server, cfg.Token), info, ws, cfg, version)
@@ -132,6 +132,7 @@ func buildInfo(version, root string, cfg *config.Config) protocol.AgentInfo {
 		AgentVersion:  version,
 		MachineID:     cfg.MachineID,
 		Label:         cfg.Label,
+		Features:      []string{protocol.FeatureWorkspaceBase},
 	}
 }
 
@@ -359,7 +360,13 @@ func handleStreamRequest(sc *safeConn, req protocol.Request, ws *workspace.Works
 		})
 		_ = sc.writeText(frame)
 	}
-	exitCode, err := ws.ExecStream(req.Params, emit)
+	exitCode, err := func() (int, error) {
+		view, verr := ws.For(req.Params)
+		if verr != nil {
+			return -1, verr
+		}
+		return view.ExecStream(req.Params, emit)
+	}()
 
 	end := map[string]interface{}{"id": req.ID, "type": "end"}
 	if err != nil {
@@ -383,8 +390,13 @@ func handlePtyRequest(sc *safeConn, req protocol.Request, ws *workspace.Workspac
 	var perr error
 	switch req.Method {
 	case "pty.create":
+		view, verr := ws.For(req.Params)
+		if verr != nil {
+			perr = verr
+			break
+		}
 		shell := paramString(req.Params, "shell", defaultShell())
-		absCwd, e := ws.Resolve(paramString(req.Params, "cwd", "."))
+		absCwd, e := view.Resolve(paramString(req.Params, "cwd", "."))
 		if e != nil {
 			perr = e
 			break
@@ -479,6 +491,12 @@ func dispatch(req protocol.Request, ws *workspace.Workspace) protocol.Response {
 }
 
 func callMethod(method string, params map[string]interface{}, ws *workspace.Workspace) (interface{}, error) {
+	// Per-request root: an optional absolute `base` scopes this call to the
+	// project workspace (see workspace.For). Absent = the agent-wide root.
+	view, err := ws.For(params)
+	if err != nil {
+		return nil, err
+	}
 	switch method {
 	case "workspace.info":
 		host, _ := os.Hostname()
@@ -488,25 +506,25 @@ func callMethod(method string, params map[string]interface{}, ws *workspace.Work
 			"arch":     runtime.GOARCH,
 		}, nil
 	case "fs.list":
-		return ws.List(params)
+		return view.List(params)
 	case "fs.read":
-		return ws.Read(params)
+		return view.Read(params)
 	case "fs.write":
-		return ws.Write(params)
+		return view.Write(params)
 	case "fs.stat":
-		return ws.Stat(params)
+		return view.Stat(params)
 	case "fs.mkdir":
-		return ws.Mkdir(params)
+		return view.Mkdir(params)
 	case "fs.delete":
-		return ws.Delete(params)
+		return view.Delete(params)
 	case "fs.rename":
-		return ws.Rename(params)
+		return view.Rename(params)
 	case "search.grep":
-		return ws.Grep(params)
+		return view.Grep(params)
 	case "search.fd":
-		return ws.Fd(params)
+		return view.Fd(params)
 	case "exec.run":
-		return ws.Exec(params)
+		return view.Exec(params)
 	default:
 		return nil, fmt.Errorf("unknown method: %s", method)
 	}

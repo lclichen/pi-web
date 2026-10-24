@@ -10,16 +10,18 @@
  *    连接），③ 校验 agent 在线，④ 绑定本机工作目录（保存到项目 workdir）。
  *  - SSH：② 连接配置（主机/端口/用户名/认证方式，可测试连接），③ 自动测试
  *    连接（成功进④，失败给上一步/重试），④ 远程工作目录（完成时创建项目）。
+ * ④ 的目录浏览统一复用 Host 模式的 DirectoryPicker（路径输入/上级/新建文件夹），
+ * 数据源按模式注入：服务器（Host）/ relay fs.list（本机）/ SSH sftp（远程）。
  * 表单控件样式与 NewProjectDialog（沙盒配置页）保持一致：label 字段栈 +
  * 32px 输入框 + 右下角 secondary/primary 按钮。
  */
 import { useCallback, useEffect, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { useRelayAgent } from "@/hooks/useRelayAgent";
+import { clientCompatibility } from "@/lib/client-compat";
 import { NewProjectDialog } from "./NewProjectDialog";
 import { ConnectLocalMachine } from "./relay/ConnectLocalMachine";
-import { LocalDirectoryPicker } from "./relay/LocalDirectoryPicker";
-import { SshDirectoryPicker } from "./relay/SshDirectoryPicker";
+import { DirectoryPicker, type DirectorySource } from "./DirectoryPicker";
 
 type Mode = "sandbox" | "local-machine" | "ssh";
 type Step = 1 | 2 | 3 | 4;
@@ -41,6 +43,20 @@ const STEPS: Array<{ n: Step; label: string }> = [
   { n: 4, label: "选择目录" },
 ];
 
+/** Join a directory with one direct child (remote POSIX style). */
+function joinRemotePath(parent: string, name: string): string {
+  const base = parent.replace(/\/+$/, "");
+  return base && base !== "/" ? `${base}/${name}` : `/${name}`;
+}
+
+/** Parent of a remote POSIX path; null at "/". */
+function parentOfRemotePath(path: string): string | null {
+  const trimmed = path.replace(/\/+$/, "");
+  if (!trimmed || trimmed === "/") return null;
+  const idx = trimmed.lastIndexOf("/");
+  return idx <= 0 ? "/" : trimmed.slice(0, idx);
+}
+
 export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerDirectory }: Props) {
   const { t } = useI18n();
   // 多机：④ 的机器选择列表（单一机器时不显示选择器）。
@@ -60,7 +76,7 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
   const [sshForm, setSshForm] = useState({ host: "", port: "22", username: "root", authType: "password" as "password" | "key", password: "", privateKey: "", passphrase: "" });
   const [sshName, setSshName] = useState("");
   // 本地 agent 配对状态
-  const [relayInfo, setRelayInfo] = useState<{ online: boolean; hostname?: string } | null>(null);
+  const [relayInfo, setRelayInfo] = useState<{ online: boolean; hostname?: string; compatible?: boolean } | null>(null);
   // 本机目录可视化选择器（④ 打开）
   const [localPickerOpen, setLocalPickerOpen] = useState(false);
   // SSH 远程目录可视化选择器（④ 打开；一次性连接，不落盘）
@@ -102,12 +118,19 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
         // /api/agent-relay/status reports `online` (agent WS connected) —
         // there is no separate `paired` state.
         const res = await fetch("/api/agent-relay/status");
-        const d = (await res.json()) as { online?: boolean; info?: { hostname?: string } | null };
+        const d = (await res.json()) as {
+          online?: boolean;
+          info?: { hostname?: string; agentVersion?: string } | null;
+          requiredVersion?: string;
+        };
         if (cancelled) return;
-        setRelayInfo({ online: Boolean(d.online), hostname: d.info?.hostname });
-        if (d.online) {
+        const compat = clientCompatibility(d.info?.agentVersion);
+        setRelayInfo({ online: Boolean(d.online), hostname: d.info?.hostname, compatible: compat.compatible });
+        if (d.online && compat.compatible) {
           setError(null);
           setStep(4);
+        } else if (d.online) {
+          setError(compat.message ?? `客户端版本过低，需要 ≥ ${d.requiredVersion ?? "0.3.0"}`);
         } else {
           setError(t("remote.localMachinePairedCompletePairing"));
         }
@@ -189,8 +212,9 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
       onCreated("ssh", sshName.trim());
       onClose();
     } catch (e) {
+      // Stay on ④: a bad remote workdir is fixed here (credentials were
+      // already tested in ③), and jumping back to ② hides the real error.
       setError(e instanceof Error ? e.message : String(e));
-      setStep(2);
     } finally {
       setBusy(false);
     }
@@ -206,6 +230,67 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
     privateKey: sshForm.privateKey || undefined,
     passphrase: sshForm.passphrase || undefined,
   }), [sshForm]);
+
+  // ④ 的目录选择器数据源（与 Host 模式共用 DirectoryPicker UI）：
+  //  - 本机：/api/agent-relay/browse → relay fs.list（agent 共享根 / 任意 base）
+  //  - SSH：/api/host/ssh-list / ssh-mkdir → 向导第②步的一次性连接
+  const localSource: DirectorySource = {
+    load: async (directory) => {
+      const qs = new URLSearchParams();
+      if (directory) qs.set("path", directory);
+      if (localMachineId) qs.set("machineId", localMachineId);
+      const res = await fetch(`/api/agent-relay/browse?${qs.toString()}`);
+      const d = (await res.json().catch(() => ({}))) as {
+        path?: string; parentPath?: string | null;
+        directories?: Array<{ name: string; path: string }>; error?: string;
+      };
+      if (!res.ok || d.error) throw new Error(d.error ?? `HTTP ${res.status}`);
+      return d;
+    },
+    create: async (parentPath, name) => {
+      const res = await fetch("/api/agent-relay/browse", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: parentPath, name, ...(localMachineId ? { machineId: localMachineId } : {}) }),
+      });
+      const d = (await res.json().catch(() => ({}))) as { path?: string; error?: string };
+      if (!res.ok || !d.path) throw new Error(d.error ?? `HTTP ${res.status}`);
+      return d.path;
+    },
+  };
+
+  const sshSource: DirectorySource = {
+    load: async (directory) => {
+      const res = await fetch("/api/host/ssh-list", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...sshTestPayload(), ...(directory ? { path: directory } : {}) }),
+      });
+      const d = (await res.json().catch(() => ({}))) as {
+        path?: string; entries?: Array<{ name: string; isDir: boolean }>; error?: string;
+      };
+      if (!res.ok || d.error) throw new Error(d.error ?? `HTTP ${res.status}`);
+      const basePath = d.path ?? "/";
+      return {
+        path: basePath,
+        parentPath: parentOfRemotePath(basePath),
+        directories: (d.entries ?? [])
+          .filter((entry) => entry.isDir)
+          .map((entry) => ({ name: entry.name, path: joinRemotePath(basePath, entry.name) }))
+          .sort((a, b) => a.name.localeCompare(b.name)),
+      };
+    },
+    create: async (parentPath, name) => {
+      const res = await fetch("/api/host/ssh-mkdir", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...sshTestPayload(), path: parentPath, name }),
+      });
+      const d = (await res.json().catch(() => ({}))) as { path?: string; error?: string };
+      if (!res.ok || !d.path) throw new Error(d.error ?? `HTTP ${res.status}`);
+      return d.path;
+    },
+  };
 
   const runSshTest = useCallback(async (): Promise<{ whoami?: string }> => {
     const res = await fetch("/api/host/ssh-test", {
@@ -520,13 +605,21 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
               <h2 style={{ margin: "0 0 4px", fontSize: 17, color: "var(--text)" }}>{t("remote.connecting")}</h2>
               {/* 未配对：提示横幅 + 下方内嵌配对面板；配对成功由轮询自动进入下一步。 */}
               {error && <div className="error-banner" style={{ marginBottom: 10 }}>{error}</div>}
-              {relayInfo?.online ? (
+              {relayInfo?.online && relayInfo.compatible !== false ? (
                 <>
                   <div className="info-banner">{t("remote.localAgentConnected")}{relayInfo.hostname ? `：${relayInfo.hostname}` : ""}</div>
                   <div style={{ flex: 1 }} />
                   <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
                     <button onClick={() => setStep(2)}>{t("remote.back")}</button>
                     <button className="primary" onClick={() => setStep(4)}>{t("remote.next")}</button>
+                  </div>
+                </>
+              ) : relayInfo?.online ? (
+                <>
+                  <div className="info-banner">升级客户端并重新运行后会自动继续。</div>
+                  <div style={{ flex: 1 }} />
+                  <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                    <button onClick={() => setStep(2)}>{t("remote.back")}</button>
                   </div>
                 </>
               ) : (
@@ -614,28 +707,22 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
           )}
         </section>
         {localPickerOpen && (
-          <div onClick={(e) => { if (e.target === e.currentTarget) setLocalPickerOpen(false); }} style={{ position: "fixed", inset: 0, zIndex: 1300, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.45)", padding: 20 }}>
-            <div style={{ width: "min(560px, 94vw)", background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: 10, padding: 14 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>{t("remote.browseLocalDirectories")}</div>
-              <LocalDirectoryPicker
-                onPick={(abs) => { setLocalDir(abs); setLocalPickerOpen(false); }}
-                onClose={() => setLocalPickerOpen(false)}
-                {...(localMachineId ? { machineId: localMachineId } : {})}
-              />
-            </div>
-          </div>
+          <DirectoryPicker
+            title={t("remote.browseLocalDirectories")}
+            initialPath={localDir.trim() || undefined}
+            source={localSource}
+            onCancel={() => setLocalPickerOpen(false)}
+            onSelect={(abs) => { setLocalDir(abs); setLocalPickerOpen(false); }}
+          />
         )}
         {sshPickerOpen && (
-          <div onClick={(e) => { if (e.target === e.currentTarget) setSshPickerOpen(false); }} style={{ position: "fixed", inset: 0, zIndex: 1300, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.45)", padding: 20 }}>
-            <div style={{ width: "min(560px, 94vw)", background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: 10, padding: 14 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>{t("remote.browseRemoteDirectories")}</div>
-              <SshDirectoryPicker
-                config={sshTestPayload()}
-                onPick={(abs) => { setLocalDir(abs); setSshPickerOpen(false); }}
-                onClose={() => setSshPickerOpen(false)}
-              />
-            </div>
-          </div>
+          <DirectoryPicker
+            title={t("remote.browseRemoteDirectories")}
+            initialPath={localDir.trim() || undefined}
+            source={sshSource}
+            onCancel={() => setSshPickerOpen(false)}
+            onSelect={(abs) => { setLocalDir(abs); setSshPickerOpen(false); }}
+          />
         )}
       </div>
     </div>

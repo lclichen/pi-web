@@ -30,7 +30,7 @@ const (
 var skipDirs = map[string]bool{
 	".git": true, "node_modules": true, ".next": true, "dist": true,
 	".cache": true, "vendor": true, "target": true, "__pycache__": true,
-	".svn": true, ".hg": true, ".pi-agent": true,
+	".svn": true, ".hg": true, ".pi-agent": true, ".agent-client": true,
 }
 
 var errStopWalk = fmt.Errorf("__stop_walk")

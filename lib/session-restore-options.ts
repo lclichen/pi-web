@@ -17,7 +17,6 @@ import { registerBgChannel } from "./extensions/bg-shell";
 import { makeRelayBgChannel, makeSandboxBgChannel, makeSshBgChannel } from "./extensions/bg-channels";
 import { readSshConfig } from "./ssh";
 import { requireUserIdentity } from "./web-session";
-import { getAgentForUser } from "./relay/registry";
 
 /**
  * Rebuild the session-start options for a RESTORED session.
@@ -92,25 +91,31 @@ export async function restoreSessionOptions(req: Request, sessionId: string): Pr
       );
     }
   } else if (mode === "local-machine") {
-    if (getAgentForUser(meta?.ownerId ?? user.id)?.info) {
-      if (project && project.mode === "local-machine") {
-        effectiveCwd = ensureProjectHome(project);
-      } else {
-        effectiveCwd = ensureLocalHome(user.id);
-      }
-      extensionFactories = [
-        makeRelayToolsExtension(meta?.ownerId ?? user.id, project ? effectiveCwd : undefined),
-        makeRemoteVerifyExtension("local-machine", meta?.ownerId ?? user.id),
-        makeEnvironmentInfoExtension({
-          mode: "local-machine",
-          username: identity.session.user.username,
-          ...(project ? { projectName: project.name } : {}),
-        }),
-      ];
-      // bg-shell channel: tasks run on the user's paired machine via relay
-      // exec.run (nohup pattern); machine follows the project binding.
-      registerBgChannel(sessionId, makeRelayBgChannel(meta?.ownerId ?? user.id, project?.machineId ?? undefined));
+    // Always inject the relay tool layer — even when the client is offline or
+    // outdated. Each tool call then fails with an explicit relay/version error
+    // instead of silently falling back to the SERVER's built-in tools.
+    if (project && project.mode === "local-machine") {
+      effectiveCwd = ensureProjectHome(project);
+    } else {
+      effectiveCwd = ensureLocalHome(user.id);
     }
+    extensionFactories = [
+      makeRelayToolsExtension(meta?.ownerId ?? user.id, {
+        ...(project ? { projectHome: effectiveCwd } : {}),
+        ...(project?.workdir ? { workspaceDir: project.workdir } : {}),
+        ...(project?.machineId ? { machineId: project.machineId } : {}),
+      }),
+      makeRemoteVerifyExtension("local-machine", meta?.ownerId ?? user.id),
+      makeEnvironmentInfoExtension({
+        mode: "local-machine",
+        username: identity.session.user.username,
+        ...(project ? { projectName: project.name } : {}),
+        ...(project?.workdir ? { workspaceDir: project.workdir } : {}),
+      }),
+    ];
+    // bg-shell channel: tasks run on the user's paired machine via relay
+    // exec.run (nohup pattern); machine follows the project binding.
+    registerBgChannel(sessionId, makeRelayBgChannel(meta?.ownerId ?? user.id, project?.machineId ?? undefined, project?.workdir));
   } else if (mode === "ssh") {
     // SSH mode: the SDK session runs server-side in the project home; the
     // ssh-tools extension routes the seven coding tools to the remote host.
@@ -132,10 +137,10 @@ export async function restoreSessionOptions(req: Request, sessionId: string): Pr
         registerBgChannel(sessionId, makeSshBgChannel(project.id, sshConfig, project.workdir ?? "/"));
       }
     }
-  } else if (mode === "quick") {
-    // Quick mode on restore: same scratch home, same tool policy. The system
-    // prompt rides the session file itself (persisted as a model_change-adjacent
-    // context), so only the tool set needs rebuilding.
+  } else if (mode === "quick") {
+    // Quick mode on restore: same scratch home, same tool policy. The system
+    // prompt rides the session file itself (persisted as a model_change-adjacent
+    // context), so only the tool set needs rebuilding.
     // 每会话独立工作区（meta.quickDir → lib/quick-session.ts）；旧会话回落
     // 共享 quick home。恢复优先用模板快照（创建时的确切内容），而非活模板。
     const quickSlug = (meta as { quickDir?: string } | undefined)?.quickDir;

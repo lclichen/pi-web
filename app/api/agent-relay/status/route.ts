@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 // GET /api/agent-relay/status
 // Lightweight snapshot for polling: is a Local Agent connected, and what does
 // the browser know about it (hostname/os/workspaceRoot)? Also returns the relay
-// port so the UI can build the `pi-agent pair --server …` command.
+// port so the UI can build the `agent-client pair --server …` command.
 export async function GET(req: Request) {
   const identity = requireUserIdentity(req);
   if (!identity.ok) return NextResponse.json({ error: "登录已失效" }, { status: identity.status });

@@ -35,10 +35,12 @@
 ## 配对流程（device code）
 
 1. 浏览器点「连接本地机器」→ `POST /api/agent-relay/pair` 得到 6 位配对码（5 分钟有效）。
-2. 模态展示下载命令 + `pi-agent pair --code <CODE> --server <RELAY_URL>`。
-3. 用户在本地机器执行 → Agent `POST <RELAY>:30142/pair/exchange {code}` 换 token（写
-   `~/.pi-agent/config.json`）。
-4. Agent 连 `ws://<RELAY>:30142/ws?token=...`，发 `hello`（机器元信息）→ 注册为在线。
+2. 模态展示下载命令 + `agent-client pair --code <CODE> --server <RELAY_URL>`。
+3. 用户在本地机器执行 → Client `POST <RELAY>:30142/pair/exchange {code, clientVersion}`
+   换 token（写 `~/.agent-client/config.json`；旧版 `~/.pi-agent/config.json` 自动兼容）。
+   客户端版本低于 WebUI 要求时返回 HTTP 426，配对直接失败。
+4. Client 连 `ws://<RELAY>:30142/ws?token=...`，发 `hello`（机器元信息 + 版本 +
+   `features`）→ 注册为在线；WebUI 对过期版本显示升级提示并阻止建项目。
 5. 浏览器经 SSE `/status/events` 感知在线 → 自动切换到「已连接」视图。
 
 ## 多用户（PI_WEB_AUTH=on）
@@ -48,8 +50,11 @@
 - 配对码签发时即绑定发起用户的 userId；换到的 token 在服务端记录归属
   （`relay.json` 的 `tokens` 映射），Agent 重连后自动归位到原用户槽位。
 - 本机模式会话的 cwd 是该用户在 pi-web 服务器上的项目 home（`data/local-homes/u<uid>/<projectId>/`），
-  其 `.pi/` 承载项目级配置（两层合并同沙箱模式）；**文件操作则全部转发到用户机器**，
-  路径以 Agent 共享根目录为界的 workspace 相对路径，服务器不留文件副本。
+  其 `.pi/` 承载项目级配置（两层合并同沙箱模式）；**文件操作则全部转发到用户机器**。
+  工具/文件面板/终端以项目的 `workdir` 为工作区根：Agent ≥ 0.2.0 通过每次 RPC 的
+  `base` 参数支持任意绝对目录（项目之间互不影响）；旧 Agent 只能访问其共享根内的目录，
+  服务端会自动改用共享根相对路径，根外目录会给出可操作的升级/改根提示。
+  服务器不留文件副本。
 
 ## 配置（环境变量）
 
@@ -74,29 +79,29 @@
   `localhost:30142`，远程 Agent 无法连接。请用 pi-web 服务器的实际地址访问，或设
   `PI_RELAY_ADVERTISE_URL`。
 
-## 构建 Agent 二进制
+## 构建 Client 二进制
 
 ```bash
 cd pi-web/agent
 export GOPROXY=https://goproxy.cn,direct   # 国内网络
-./scripts/build.sh                          # 产出 dist/pi-agent-linux-{amd64,arm64}
+./scripts/build.sh                          # 产出 dist/agent-client-{linux,darwin}-{amd64,arm64} + windows-amd64.exe
 ```
 
 `download` 路由会从 `pi-web/agent/dist/` 下发二进制与 `install.sh`，供
-`curl …/install.sh | sh` 一键安装。
+`curl …/install.sh | sh` 一键安装；旧 `pi-agent-*` URL 作为兼容别名继续下发同一文件。
 
-## 端到端验收（已在 Windows 主机用 windows 版 Agent 验证）
+## 端到端验收（已在 Windows 主机用 windows 版 Client 验证）
 
 ```bash
 # 1) 浏览器侧
 curl http://127.0.0.1:30141/api/agent-relay/status        # {"online":false,...}
 CODE=$(curl -sX POST .../api/agent-relay/pair)             # 取 code
 
-# 2) Agent 侧
-pi-agent pair --code <CODE> --server http://<host>:30142
-pi-agent run --root /path/to/share
+# 2) Client 侧
+agent-client pair --code <CODE> --server http://<host>:30142
+agent-client run --root /path/to/share
 
-# 3) RPC（经 pi-web 转发到 Agent）
+# 3) RPC（经 pi-web 转发到 Client）
 curl -X POST .../api/agent-relay/rpc -d '{"method":"fs.list","params":{"path":"."}}'
 curl -X POST .../api/agent-relay/rpc -d '{"method":"exec.run","params":{"argv":["uname","-a"]}}'
 # 路径穿越被拒：fs.list {"path":"../../"} -> error "path outside workspace root"

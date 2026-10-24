@@ -22,7 +22,7 @@ import { sessionDirsForProject } from "@/lib/session-context";
 import { makeRemoteVerifyExtension } from "@/lib/extensions/remote-verify";
 import { makeEnvironmentInfoExtension } from "@/lib/extensions/environment-info";
 import { ensureProjectHome, ensureSandboxExtensionLink, getOwnedProject, writeSandboxConfig, type ProjectRecord } from "@/lib/projects";
-import { getAgentForUser } from "@/lib/relay/registry";
+import { requireCompatibleAgent } from "@/lib/relay/agent-gate";
 import { isApiRequestAllowed } from "@/lib/request-security";
 import { platformGet } from "@/lib/platform/client";
 import { readSandboxHomeConfig, setSandboxContainer } from "@/lib/mode-homes";
@@ -177,11 +177,16 @@ export async function POST(req: Request) {
           makeEnvironmentInfoExtension({ mode: "ssh", username: user.username, projectName: project.name, workspaceDir: dirs.workspaceDir }),
         ];
       } else {
-        if (!getAgentForUser(user.id)?.info) {
-          return NextResponse.json({ error: "本机模式需要先配对你的电脑（本机面板 → 连接本机）" }, { status: 400 });
+        const gate = requireCompatibleAgent(user.id, project.machineId);
+        if (!gate.ok) {
+          return NextResponse.json({ error: gate.error }, { status: gate.status });
         }
         extensionFactories = [
-          makeRelayToolsExtension(user.id, home),
+          makeRelayToolsExtension(user.id, {
+            projectHome: home,
+            ...(project.workdir ? { workspaceDir: project.workdir } : {}),
+            ...(project.machineId ? { machineId: project.machineId } : {}),
+          }),
           makeRemoteVerifyExtension("local-machine", user.id),
           makeEnvironmentInfoExtension({ mode: "local-machine", username: user.username, projectName: project.name, workspaceDir: dirs.workspaceDir }),
         ];
@@ -225,8 +230,9 @@ export async function POST(req: Request) {
         makeEnvironmentInfoExtension({ mode: "sandbox", username: user.username }),
       ];
     } else if (mode === "local-machine") {
-      if (user.id !== 0 && !getAgentForUser(user.id)?.info) {
-        return NextResponse.json({ error: "本机模式需要先配对你的电脑（本机面板 → 连接本机）" }, { status: 400 });
+      if (user.id !== 0) {
+        const gate = requireCompatibleAgent(user.id);
+        if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
       }
       effectiveCwd = ensureLocalHome(user.id);
       extensionFactories = [

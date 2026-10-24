@@ -17,6 +17,12 @@ type Response struct {
 	Error  string      `json:"error,omitempty"`
 }
 
+// Optional AgentInfo.features values.
+const (
+	// FeatureWorkspaceBase: per-request absolute `base` root (agent >= 0.2.0).
+	FeatureWorkspaceBase = "workspace-base"
+)
+
 // Hello is the first frame the agent sends after the WebSocket opens, carrying
 // static metadata about the connected machine.
 type Hello struct {
@@ -36,6 +42,11 @@ type AgentInfo struct {
 	MachineID string `json:"machineId,omitempty"`
 	// Label is the user-facing name chosen at pairing (or renamed server-side).
 	Label string `json:"label,omitempty"`
+	// Features lists optional capabilities the relay can rely on. Currently:
+	// "workspace-base" — fs.*/search.*/exec.*/pty.create accept an absolute
+	// `base` param that scopes that request to a project workspace instead of
+	// the agent-wide root. Omitted by agents < 0.2.0.
+	Features []string `json:"features,omitempty"`
 }
 
 // FsEntry is one row in an fs.list result.

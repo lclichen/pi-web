@@ -12,6 +12,8 @@
  */
 import { getSshClient, sshExec, type SshConfig } from "../ssh";
 import { relayRpc } from "../relay/forward";
+import { requireCompatibleAgent } from "../relay/agent-gate";
+import { resolveRelayWorkspaceScope } from "../relay/workspace-base";
 import { platformPost } from "../platform/client";
 import type { BgExecChannel } from "./bg-shell";
 
@@ -54,14 +56,26 @@ export function makeSandboxBgChannel(apiKey: string, containerId: number): BgExe
   };
 }
 
-export function makeRelayBgChannel(userId: number, machineId?: string): BgExecChannel {
+export function makeRelayBgChannel(userId: number, machineId?: string, workspaceDir?: string): BgExecChannel {
   return {
     label: "local-machine",
     kind: "remote",
     run: async (command, timeoutMs = 30_000) => {
-      const r = (await relayRpc("exec.run", { command, timeout: timeoutMs }, { userId, machineId })) as
-        | { stdout?: string; stderr?: string; exitCode?: number | null; code?: number | null }
-        | undefined;
+      const gate = requireCompatibleAgent(userId, machineId);
+      if (!gate.ok) throw new Error(gate.error);
+      const scope = resolveRelayWorkspaceScope(workspaceDir, gate.info);
+      if (scope.error) throw new Error(scope.error);
+      // exec.run is argv-based (no shell) — wrap with bash -c like relay-tools.
+      const r = (await relayRpc(
+        "exec.run",
+        {
+          argv: ["bash", "-c", command],
+          cwd: scope.prefix || ".",
+          timeout: timeoutMs,
+          ...(scope.base ? { base: scope.base } : {}),
+        },
+        { userId, ...(machineId ? { machineId } : {}) },
+      )) as { stdout?: string; stderr?: string; exitCode?: number | null; code?: number | null } | undefined;
       return {
         stdout: r?.stdout ?? "",
         stderr: r?.stderr ?? "",

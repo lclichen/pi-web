@@ -4,6 +4,7 @@ import { requireUserIdentity } from "@/lib/web-session";
 import { isApiRequestAllowed, hasJsonContentType } from "@/lib/request-security";
 import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from "fs";
 import { invalidateModelsCache } from "@/lib/models-cache";
+import { validateAgentDirectory } from "@/lib/relay/browse";
 
 export const dynamic = "force-dynamic";
 
@@ -108,12 +109,35 @@ export async function PATCH(req: Request, ctx: RouteCtx) {
     writeSandboxConfig(projectHome(project), { apiKey: r.identity!.session.apiKey });
   }
 
+  // Local-machine workdir: validate on the paired machine before persisting,
+  // so a typo cannot point the project at a directory that does not exist.
+  let workdirPatch: string | undefined;
+  if (typeof body.workdir === "string" && project.mode === "local-machine") {
+    const candidate = body.workdir.trim();
+    if (candidate) {
+      try {
+        workdirPatch = await validateAgentDirectory(
+          r.identity!.session.user.id,
+          project.machineId,
+          candidate,
+        );
+      } catch (error) {
+        return NextResponse.json(
+          { error: `工作目录不可用：${error instanceof Error ? error.message : String(error)}` },
+          { status: 400 },
+        );
+      }
+    } else {
+      workdirPatch = "";
+    }
+  }
+
   const result = updateProject(id, {
     ...(typeof body.name === "string" ? { name: body.name } : {}),
     ...(body.containerId !== undefined && (body.containerId === null || typeof body.containerId === "number")
       ? { containerId: body.containerId as number | null }
       : {}),
-    ...(typeof body.workdir === "string" ? { workdir: body.workdir } : {}),
+    ...(workdirPatch !== undefined ? { workdir: workdirPatch } : {}),
     ...(body.machineId !== undefined && (body.machineId === null || typeof body.machineId === "string")
       ? { machineId: body.machineId as string | null }
       : {}),

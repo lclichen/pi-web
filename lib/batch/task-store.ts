@@ -86,7 +86,14 @@ export interface BatchTask {
   inputTimeoutMs: number;
   stopContainer: boolean;
   containerId?: number;
-  projectId?: number;
+  /** Owning project (local-machine: binds workspace + machine; host/sandbox:
+   *  informational). Project ids are UUID strings; legacy clients sent numbers. */
+  projectId?: string | number;
+  /** local-machine: workspace directory on the paired machine (project.workdir
+   *  or an explicit request workDir). */
+  workspaceDir?: string;
+  /** local-machine: machine the task must run on (project binding). */
+  machineId?: string;
   /** Active tool allowlist for the session (eval fidelity). */
   toolNames?: string[];
   /** Reasoning effort pinned for the session (eval variable control). */
@@ -115,6 +122,8 @@ export interface BatchTaskSummary {
   usage?: BatchTaskUsage;
   durationMs?: number;
   workDir: string;
+  /** local-machine: the workspace directory on the paired machine. */
+  workspaceDir?: string;
   error?: string;
 }
 
@@ -131,6 +140,8 @@ export interface BatchTaskResult {
   sessionFile?: string;
   durationMs?: number;
   workDir: string;
+  /** local-machine: the workspace directory on the paired machine. */
+  workspaceDir?: string;
   error?: string;
 }
 
@@ -355,6 +366,7 @@ export function toSummary(task: BatchTask): BatchTaskSummary {
     usage: task.usage,
     durationMs: task.endedAt && task.startedAt ? task.endedAt - task.startedAt : undefined,
     workDir: task.actualWorkDir,
+    ...(task.workspaceDir ? { workspaceDir: task.workspaceDir } : {}),
     error: task.error,
   };
 }
@@ -372,6 +384,7 @@ export function toFullResult(task: BatchTask): BatchTaskResult {
     sessionFile: task.sessionFile,
     durationMs: task.endedAt && task.startedAt ? task.endedAt - task.startedAt : undefined,
     workDir: task.actualWorkDir,
+    ...(task.workspaceDir ? { workspaceDir: task.workspaceDir } : {}),
     error: task.error,
   };
 }

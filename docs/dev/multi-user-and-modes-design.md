@@ -26,7 +26,7 @@
 | agent 进程位置 | pi-web Node 进程 | pi-web Node 进程 | pi-web Node 进程 |
 | 工具执行位置 | 用户的平台容器 `/workspace` | **用户本机**（Go relay `fs.*`/`exec.*`/`pty.*`） | pi-web 服务器本地 |
 | 工具通道 | `pi-sandbox-extension`（改写 read/write/edit/bash/ls/find/grep → 平台 REST） | relay 版工具改写（新增，见 §5.3） | 现状（SDK 内置本地工具） |
-| cwd 语义 | `/workspace`（容器内，扩展已在 `before_agent_start` 改写提示词） | 用户本机目录（relay 共享根内） | 服务器目录 |
+| cwd 语义 | `/workspace`（容器内，扩展已在 `before_agent_start` 改写提示词） | 用户本机目录（项目 workdir；Agent ≥ 0.2.0 任意目录，旧版限共享根内） | 服务器目录 |
 | 文件面板数据源 | 平台 `workspaces` + `/tools/read|write` | relay `fs.*` | 现有 `/api/files/*` |
 | 终端数据源 | 平台 PTY WS（平台需求 R2） | relay `pty.*`（已实现） | 现有 `/api/terminal/*` |
 | 会话空间 | 用户分片空间 | 用户分片空间 | Host 全局空间（含 CLI 会话） |
@@ -87,7 +87,7 @@
 - **relay 版工具改写**：新增一个 pi-web 内置扩展（参照 pi-sandbox-extension 的做法），把 read/write/edit/bash/ls/find/grep 改道到该用户 relay 连接的 `fs.*`/`exec.*`。
 - **多 relay 并存**（pi-web 侧改动）：relay 注册表从单槽（`getRegistry().agent`）改为 `connectionId → { userId, agent }` 多槽；pairing 流程增加"绑定到当前登录用户"；普通用户只能使用绑定给自己的 relay。
 - 文件面板走 relay `fs.*`，终端走 relay `pty.*`（均已存在）。
-- 权限语义：用户本机的"目录权限"即 relay 共享根范围（现有 LocalMachinePanel 的共享目录概念），不需要服务器侧目录授权。
+- 权限语义：Agent 的共享根仍是默认边界；Agent ≥ 0.2.0 允许每个请求用 `base` 指定项目工作区（等价于已有的 `workspace.set-root` 能力），不需要服务器侧目录授权。
 
 ### 5.4 模式选择 UI
 - 新建会话对话框增加模式选择（按角色过滤可选项）；会话卡片刻意标注模式徽章。

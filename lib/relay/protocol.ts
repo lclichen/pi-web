@@ -83,6 +83,10 @@ export interface AgentInfo {
   machineId?: string;
   /** User-facing label, persisted server-side and echoed in hello. */
   label?: string;
+  /** Optional agent capabilities. "workspace-base": fs / search / exec /
+   *  pty.create accept an absolute `base` param scoping that request to a
+   *  project workspace (agent >= 0.2.0). Older agents omit it. */
+  features?: string[];
 }
 
 /** Result rows for fs.list. */
@@ -129,6 +133,8 @@ export interface GrepMatch {
 export interface RelayStatus {
   online: boolean;
   info?: AgentInfo;
+  /** Minimum local-client version this WebUI can drive. */
+  requiredVersion?: string;
   /** All of the user's paired machines (multi-machine support). `info` stays
    *  the DEFAULT machine's info for single-machine UI compatibility. */
   machines?: MachineStatus[];
@@ -140,6 +146,9 @@ export interface MachineStatus {
   label: string;
   online: boolean;
   info?: AgentInfo;
+  /** Runtime version gate (online machines only): false = upgrade required. */
+  compatible?: boolean;
+  requiredVersion?: string;
   lastSeenAt?: string;
   hostname?: string;
 }

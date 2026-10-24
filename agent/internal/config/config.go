@@ -1,5 +1,7 @@
-// Package config loads/saves the agent's pairing credentials to
-// ~/.pi-agent/config.json with mode 0600.
+// Package config loads/saves the client's pairing credentials to
+// ~/.agent-client/config.json with mode 0600. Configs written by older
+// pi-agent builds (~/.pi-agent/config.json) are read as a fallback and keep
+// being written in place, so upgrading does not require re-pairing.
 package config
 
 import (
@@ -45,8 +47,17 @@ func (c *Config) EnsureMachineID() (string, error) {
 	return c.MachineID, nil
 }
 
-// DefaultDir returns ~/.pi-agent.
+// DefaultDir returns ~/.agent-client.
 func DefaultDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".agent-client"), nil
+}
+
+// LegacyDir returns ~/.pi-agent (pre-0.3 client name).
+func LegacyDir() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
@@ -54,9 +65,18 @@ func DefaultDir() (string, error) {
 	return filepath.Join(home, ".pi-agent"), nil
 }
 
-// DefaultPath returns ~/.pi-agent/config.json.
+// DefaultPath returns ~/.agent-client/config.json.
 func DefaultPath() (string, error) {
 	d, err := DefaultDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(d, "config.json"), nil
+}
+
+// LegacyPath returns ~/.pi-agent/config.json (pre-0.3 client name).
+func LegacyPath() (string, error) {
+	d, err := LegacyDir()
 	if err != nil {
 		return "", err
 	}
@@ -73,9 +93,12 @@ func (c *Config) SetPath(p string) {
 	}
 }
 
-// Load reads config from the given path (or the default if empty).
+// Load reads config from the given path (or the default if empty). When the
+// default path is missing, a legacy ~/.pi-agent/config.json is used instead
+// (and remains the save target, so old installs keep working).
 func Load(path string) (*Config, error) {
-	if path == "" {
+	explicit := path != ""
+	if !explicit {
 		p, err := DefaultPath()
 		if err != nil {
 			return nil, err
@@ -83,6 +106,15 @@ func Load(path string) (*Config, error) {
 		path = p
 	}
 	data, err := os.ReadFile(path)
+	if err != nil && !explicit {
+		if legacy, legacyErr := LegacyPath(); legacyErr == nil {
+			if legacyData, readErr := os.ReadFile(legacy); readErr == nil {
+				path = legacy
+				data = legacyData
+				err = nil
+			}
+		}
+	}
 	if err != nil {
 		return nil, fmt.Errorf("read config %s: %w", path, err)
 	}

@@ -4,6 +4,7 @@ import { WebSocketServer, type WebSocket } from "ws";
 import { attachAgentSocket, consumePairingCode, DEFAULT_MACHINE_ID, isKnownAgentToken } from "./registry";
 import { issueAgentToken, lookupTokenRecord, touchAgentToken } from "./relay-store";
 import { clientIpOf, consumeRateLimit } from "../rate-limit";
+import { clientCompatibility, REQUIRED_CLIENT_VERSION } from "../client-compat";
 
 // The agent-facing endpoint: a plain http.Server on its own port (default
 // 30142), started once from instrumentation.ts. It serves:
@@ -117,8 +118,20 @@ async function handleHttp(req: IncomingMessage, res: ServerResponse): Promise<vo
       res.end(JSON.stringify({ error: `too many attempts; retry in ${retry}s` }));
       return;
     }
-    const body = (await readJson(req)) as { code?: unknown; machineId?: unknown; hostname?: unknown; label?: unknown };
+    const body = (await readJson(req)) as { code?: unknown; machineId?: unknown; hostname?: unknown; label?: unknown; clientVersion?: unknown };
     const code = typeof body.code === "string" ? body.code : "";
+    // Version gate at pairing time: an outdated binary must not obtain a
+    // token (it would connect and then fail every protocol expectation).
+    const clientVersion = typeof body.clientVersion === "string" ? body.clientVersion : "";
+    const compat = clientCompatibility(clientVersion);
+    if (!compat.compatible) {
+      res.writeHead(426, { "content-type": "application/json" });
+      res.end(JSON.stringify({
+        error: compat.message,
+        requiredVersion: REQUIRED_CLIENT_VERSION,
+      }));
+      return;
+    }
     // consumePairingCode returns the minting user's id — the agent token MUST
     // bind to it, otherwise every later per-user lookup (status/panel/RPC)
     // treats the connected agent as someone else's and reports offline
@@ -144,7 +157,7 @@ async function handleHttp(req: IncomingMessage, res: ServerResponse): Promise<vo
       ?? ownerUserId.label;
     const token = await issueAgentToken({ userId: ownerUserId.userId, machineId, hostname, label });
     res.writeHead(200, { "content-type": "application/json" });
-    res.end(JSON.stringify({ token, wsPath: "/ws", machineId }));
+    res.end(JSON.stringify({ token, wsPath: "/ws", machineId, requiredVersion: REQUIRED_CLIENT_VERSION }));
     return;
   }
 

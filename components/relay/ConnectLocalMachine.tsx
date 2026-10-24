@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { useRelayAgent } from "@/hooks/useRelayAgent";
+import { clientAssetName, clientCompatibility, REQUIRED_CLIENT_VERSION } from "@/lib/client-compat";
 import type { MachineStatus } from "@/lib/relay/protocol";
 import { LocalMachinePanel } from "./LocalMachinePanel";
 
@@ -33,7 +34,7 @@ function useAgentInstallInfo() {
 
 export function LocalMachinesDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { t } = useI18n();
-  const { online, info, machines, ready, refresh } = useRelayAgent();
+  const { online, machines, ready, refresh, requiredVersion } = useRelayAgent();
   const { serverUrl, asset, downloadUrl } = useAgentInstallInfo();
   const [panel, setPanel] = useState<{ machineId: string } | null>(null);
   const [pairing, setPairing] = useState<Pairing | null>(null);
@@ -59,7 +60,6 @@ export function LocalMachinesDialog({ open, onClose }: { open: boolean; onClose:
         const res = await fetch("/api/agent-relay/pair", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          ...(pairingLabel.trim() ? { body: JSON.stringify({ label: pairingLabel.trim() }) } : {}),
         });
         if (!res.ok) return;
         const data = (await res.json()) as Pairing;
@@ -72,7 +72,7 @@ export function LocalMachinesDialog({ open, onClose }: { open: boolean; onClose:
     };
     void fetchCode();
     return () => { stopped = true; };
-  }, [open, online, pairSectionOpen, pairingLabel]);
+  }, [open, online, pairSectionOpen]);
 
   const renameMachine = async (m: MachineStatus) => {
     const next = window.prompt("新的机器名称", m.label);
@@ -147,6 +147,11 @@ export function LocalMachinesDialog({ open, onClose }: { open: boolean; onClose:
                           ? (m.info?.workspaceRoot ?? "")
                           : `离线${m.lastSeenAt ? ` · 上次在线 ${new Date(m.lastSeenAt).toLocaleString()}` : ""}`}
                       </div>
+                      {m.online && m.compatible === false && (
+                        <div style={{ fontSize: 11, color: "var(--danger)" }}>
+                          客户端版本过低{m.info?.agentVersion ? `（${m.info.agentVersion}）` : ""}，需要 ≥ {m.requiredVersion ?? REQUIRED_CLIENT_VERSION}
+                        </div>
+                      )}
                     </div>
                     <button
                       disabled={!m.online || busyMachine === m.machineId}
@@ -183,7 +188,7 @@ export function LocalMachinesDialog({ open, onClose }: { open: boolean; onClose:
               </>
             ) : (
               <p style={{ ...muted, marginTop: 0 }}>
-                {t("relay.runFollowingCommandLocalMachine")}
+                {t("relay.connectLocalIntro")}
               </p>
             )}
 
@@ -201,6 +206,7 @@ export function LocalMachinesDialog({ open, onClose }: { open: boolean; onClose:
                     pairingLoading={pairingLoading}
                     label={pairingLabel}
                     onLabelChange={setPairingLabel}
+                    requiredVersion={requiredVersion}
                   />
                 </div>
               )}
@@ -223,11 +229,12 @@ export function LocalMachinesDialog({ open, onClose }: { open: boolean; onClose:
 
 export function ConnectLocalMachine() {
   const { t } = useI18n();
-  const { online, info } = useRelayAgent();
+  const { online, info, requiredVersion } = useRelayAgent();
   const { serverUrl, asset, downloadUrl } = useAgentInstallInfo();
   const [pairing, setPairing] = useState<Pairing | null>(null);
   const [pairingLoading, setPairingLoading] = useState(false);
   const [pairingLabel, setPairingLabel] = useState("");
+  const compat = info ? clientCompatibility(info.agentVersion) : null;
 
   useEffect(() => {
     if (online) {
@@ -241,7 +248,6 @@ export function ConnectLocalMachine() {
         const res = await fetch("/api/agent-relay/pair", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          ...(pairingLabel.trim() ? { body: JSON.stringify({ label: pairingLabel.trim() }) } : {}),
         });
         if (!res.ok) return;
         const data = (await res.json()) as Pairing;
@@ -254,7 +260,7 @@ export function ConnectLocalMachine() {
     };
     void fetchCode();
     return () => { stopped = true; };
-  }, [online, pairingLabel]);
+  }, [online]);
 
   return (
     <div style={{ padding: 14, height: "100%", overflowY: "auto", boxSizing: "border-box" }}>
@@ -264,12 +270,18 @@ export function ConnectLocalMachine() {
           <Row label={t("relay.hostname")} value={info.hostname} />
           <Row label={t("relay.os")} value={`${info.os} / ${info.arch}`} />
           <Row label={t("relay.workingDirectory")} value={info.workspaceRoot} />
-          <Row label={t("relay.agentVersion")} value={info.agentVersion} />
+          <Row
+            label={t("relay.agentVersion")}
+            value={`${info.agentVersion}${compat?.compatible === false ? ` ⚠ 需要 ≥ ${requiredVersion ?? REQUIRED_CLIENT_VERSION}` : ""}`}
+          />
+          {compat?.compatible === false && (
+            <div className="error-banner" style={{ marginTop: 8 }}>{compat.message}</div>
+          )}
         </div>
       ) : (
         <div style={{ padding: 0 }}>
           <p style={{ ...muted, marginTop: 0 }}>
-            {t("relay.runFollowingCommandLocalMachine")}
+            {t("relay.pairCommandsIntro")}
           </p>
           <PairingSteps
             asset={asset}
@@ -279,6 +291,7 @@ export function ConnectLocalMachine() {
             pairingLoading={pairingLoading}
             label={pairingLabel}
             onLabelChange={setPairingLabel}
+            requiredVersion={requiredVersion}
           />
         </div>
       )}
@@ -286,25 +299,45 @@ export function ConnectLocalMachine() {
   );
 }
 
+interface AgentAsset {
+  file: string;
+  label: string;
+  os: "windows" | "darwin" | "linux";
+}
+
 /** Shared pairing instructions (label input + code + download/command). */
 function PairingSteps({
-  asset, downloadUrl, serverUrl, pairing, pairingLoading, label, onLabelChange,
+  asset, downloadUrl, serverUrl, pairing, pairingLoading, label, onLabelChange, requiredVersion,
 }: {
-  asset: { file: string; label: string };
+  asset: AgentAsset;
   downloadUrl: string;
   serverUrl: string;
   pairing: Pairing | null;
   pairingLoading: boolean;
   label: string;
   onLabelChange: (v: string) => void;
+  requiredVersion?: string;
 }) {
-  const { t } = useI18n();
+  const isWindows = asset.os === "windows";
+  const exe = isWindows ? ".\\agent-client.exe" : "./agent-client";
+  const downloadCommand = isWindows
+    ? `Invoke-WebRequest -Uri "${downloadUrl}" -OutFile agent-client.exe`
+    : `curl -fsSL -o agent-client "${downloadUrl}" && chmod +x agent-client`;
+  const labelArg = label.trim() ? ` --label "${label.trim().replace(/"/g, '\\"')}"` : "";
+  const pairCommand = pairing
+    ? `${exe} pair --code ${pairing.code} --server ${serverUrl}${labelArg}`
+    : "";
+  const backgroundCommand = isWindows
+    ? `Start-Process -WindowStyle Hidden ${exe} -ArgumentList 'run'`
+    : `nohup ./agent-client run > agent-client.log 2>&1 &`;
+  const minimumVersion = requiredVersion ?? REQUIRED_CLIENT_VERSION;
+
   return (
     <>
-      <Step n={1} title={t("relay.downloadAgent")}>
-        <CodeBlock code={`curl -fsSL -o pi-agent ${downloadUrl}\nchmod +x pi-agent`} />
+      <Step n={1} title="下载客户端">
+        <CodeBlock code={downloadCommand} />
         <div style={{ ...muted, fontSize: 11, marginTop: 4 }}>
-          检测到 {asset.label}；其它架构请在 URL 里替换文件名（linux-arm64 / windows-amd64.exe）。
+          {asset.label} · 需要 ≥ {minimumVersion}
         </div>
       </Step>
       <Step n={2} title="配对">
@@ -313,7 +346,7 @@ function PairingSteps({
           <input
             value={label}
             onChange={(e) => onLabelChange(e.target.value)}
-            placeholder="如：工位机 / 实验室服务器（可选）"
+            placeholder="可选，如：工位机"
             maxLength={50}
             style={{ flex: 1, padding: "4px 8px", background: "var(--bg)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 12 }}
           />
@@ -322,25 +355,33 @@ function PairingSteps({
         {!pairingLoading && !pairing && <div style={{ ...muted, color: "var(--danger)" }}>无法生成配对码，请稍后重试。</div>}
         {pairing && (
           <>
-            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
               <span style={codeStyle}>{pairing.code}</span>
-              <span style={{ ...muted, fontSize: 11 }}>有效期 5 分钟</span>
+              <CopyButton text={pairing.code} />
+              <span style={{ ...muted, fontSize: 11 }}>5 分钟内有效</span>
             </div>
-            <CodeBlock code={`./pi-agent pair --code ${pairing.code} --server ${serverUrl}${label.trim() ? ` --label ${label.trim()}` : ""}`} />
+            <CodeBlock code={pairCommand} />
           </>
         )}
       </Step>
-      <Step n={3} title="（可选）后台常驻">
-        <CodeBlock code={"nohup ./pi-agent run >pi-agent.log 2>&1 &\n# 或 systemd: 见 agent/contrib/pi-agent.service"} />
+      <Step n={3} title="运行（前台）">
+        <CodeBlock code={`${exe} run`} />
+        <div style={{ ...muted, fontSize: 11, marginTop: 4 }}>
+          保持窗口打开；连接成功后会自动继续。
+        </div>
+      </Step>
+      <Step n={4} title="后台运行（可选，专业用户）">
+        <CodeBlock code={backgroundCommand} />
+        {!isWindows && (
+          <div style={{ ...muted, fontSize: 11, marginTop: 4 }}>
+            systemd：见 agent/contrib/agent-client.service
+          </div>
+        )}
       </Step>
       <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 8 }}>
         <span style={spinStyle} />
-        <span style={muted}>等待 Agent 连接…（连接成功后自动继续）</span>
+        <span style={muted}>等待客户端连接…</span>
       </div>
-      <p style={{ ...muted, fontSize: 11, marginTop: 12 }}>
-        提示：若 Agent 与浏览器不在同一台机器，请用 pi-web 服务器的实际地址，
-        或在服务端设置环境变量 <code>PI_RELAY_ADVERTISE_URL</code>。
-      </p>
     </>
   );
 }
@@ -354,8 +395,8 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-/** 更改本机工作区目录：调 agent 的 workspace.set-root（校验→持久化到
- *  ~/.pi-agent/config.json→热切换并重发 hello）。仅 v0.1.2+ agent 支持。 */
+/** 更改本机工作区目录：调客户端的 workspace.set-root（校验→持久化到
+ *  ~/.agent-client/config.json→热切换并重发 hello）。 */
 function WorkspaceRootEditor({ current, machineId, onSaved }: { current?: string; machineId?: string; onSaved: () => void }) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -395,37 +436,91 @@ function Step({ n, title, children }: { n: number; title: string; children: Reac
   );
 }
 
+/** Clipboard write that also works on plain-HTTP LAN origins (where
+ *  navigator.clipboard is unavailable and the old silent no-op came from). */
+async function copyText(text: string): Promise<boolean> {
+  try {
+    if (typeof navigator !== "undefined" && navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // fall through to execCommand
+  }
+  try {
+    const area = document.createElement("textarea");
+    area.value = text;
+    area.setAttribute("readonly", "");
+    area.style.position = "fixed";
+    area.style.top = "-1000px";
+    area.style.opacity = "0";
+    document.body.appendChild(area);
+    area.select();
+    const copied = document.execCommand("copy");
+    area.remove();
+    return copied;
+  } catch {
+    return false;
+  }
+}
+
+function CopyButton({ text, style }: { text: string; style?: React.CSSProperties }) {
+  const [state, setState] = useState<"idle" | "ok" | "fail">("idle");
+  return (
+    <button
+      type="button"
+      onClick={async () => {
+        const copied = await copyText(text);
+        setState(copied ? "ok" : "fail");
+        setTimeout(() => setState("idle"), 1500);
+      }}
+      title="复制"
+      style={{
+        ...closeBtnStyle,
+        fontSize: 11,
+        padding: "2px 7px",
+        border: "1px solid var(--border)",
+        borderRadius: 4,
+        background: "var(--bg-panel)",
+        color: state === "fail" ? "var(--danger)" : state === "ok" ? "var(--success)" : "var(--text-muted)",
+        ...style,
+      }}
+    >
+      {state === "ok" ? "已复制" : state === "fail" ? "复制失败" : "复制"}
+    </button>
+  );
+}
+
 function CodeBlock({ code }: { code: string }) {
-  const [copied, setCopied] = useState(false);
-  const copy = () => {
-    navigator.clipboard?.writeText(code).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1200);
-    }).catch(() => {});
-  };
   return (
     <div style={{ position: "relative" }}>
       <pre style={{
-        margin: 0, padding: "8px 32px 8px 10px", background: "var(--bg)",
+        margin: 0, padding: "8px 46px 8px 10px", background: "var(--bg)",
         border: "1px solid var(--border)", borderRadius: 4, overflow: "auto",
         fontFamily: "var(--font-mono)", fontSize: 11.5, color: "var(--text)", whiteSpace: "pre-wrap", wordBreak: "break-all",
       }}>
         {code}
       </pre>
-      <button onClick={copy} style={{ ...closeBtnStyle, position: "absolute", top: 4, right: 4, fontSize: 10 }}>
-        {copied ? "已复制" : "复制"}
-      </button>
+      <CopyButton text={code} style={{ position: "absolute", top: 4, right: 4 }} />
     </div>
   );
 }
 
-function detectAgentAsset(): { file: string; label: string } {
-  if (typeof navigator === "undefined") return { file: "pi-agent-linux-amd64", label: "Linux x86_64" };
+function detectAgentAsset(): AgentAsset {
+  if (typeof navigator === "undefined") {
+    return { os: "linux", file: clientAssetName("linux", "amd64"), label: "Linux x86_64" };
+  }
   const ua = navigator.userAgent.toLowerCase();
   const isArm = /aarch64|arm64|armv8/.test(ua);
-  if (/mac/.test(ua)) return { file: "pi-agent-linux-amd64", label: "macOS（请用 Linux 版在目标机上运行）" };
-  if (/win/.test(ua)) return { file: "pi-agent-windows-amd64.exe", label: "Windows x86_64" };
-  return { file: isArm ? "pi-agent-linux-arm64" : "pi-agent-linux-amd64", label: isArm ? "Linux arm64" : "Linux x86_64" };
+  const arch = isArm ? "arm64" : "amd64";
+  // Windows on ARM runs the amd64 build under emulation; only that is shipped.
+  if (/win/.test(ua)) {
+    return { os: "windows", file: clientAssetName("windows", "amd64"), label: "Windows x86_64" };
+  }
+  if (/mac/.test(ua)) {
+    return { os: "darwin", file: clientAssetName("darwin", arch), label: `macOS ${arch}` };
+  }
+  return { os: "linux", file: clientAssetName("linux", arch), label: `Linux ${arch}` };
 }
 
 const dialogStyle: React.CSSProperties = {

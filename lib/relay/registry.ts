@@ -9,6 +9,7 @@ import type {
 } from "./protocol";
 import { generatePairingCode, normalizeCode, PAIRING_TTL_MS } from "./pairing";
 import { isKnownToken, listAgentTokens } from "./relay-store";
+import { clientCompatibility, REQUIRED_CLIENT_VERSION } from "../client-compat";
 
 // In-memory relay state, stored on globalThis so it survives Next.js
 // hot-reload (same pattern as __piSessions in lib/rpc-manager.ts).
@@ -343,11 +344,14 @@ export function getMachinesForUser(userId: number): MachineStatus[] {
   }
   for (const [machineId, conn] of live) {
     const existing = byId.get(machineId);
+    const compat = clientCompatibility(conn.info?.agentVersion);
     byId.set(machineId, {
       machineId,
       label: existing?.label ?? conn.info?.hostname ?? machineId.slice(0, 8),
       online: true,
       info: conn.info ?? undefined,
+      compatible: compat.compatible,
+      requiredVersion: REQUIRED_CLIENT_VERSION,
       ...(existing?.lastSeenAt ? { lastSeenAt: existing.lastSeenAt } : {}),
       ...(existing?.hostname ? { hostname: existing.hostname } : {}),
     });
@@ -361,7 +365,11 @@ export function getMachinesForUser(userId: number): MachineStatus[] {
 
 export function getStatus(): RelayStatus {
   const agent = getRegistry().agent;
-  return agent?.info ? { online: true, info: agent.info } : { online: false };
+  return {
+    online: Boolean(agent?.info),
+    ...(agent?.info ? { info: agent.info } : {}),
+    requiredVersion: REQUIRED_CLIENT_VERSION,
+  };
 }
 
 /** Status snapshot for a web user: default machine compat + machines list. */
@@ -369,8 +377,8 @@ export function getStatusForUser(userId: number): RelayStatus {
   if (userId === 0) return getStatus();
   const machines = getMachinesForUser(userId);
   const agent = getAgentForUser(userId);
-  if (!agent?.info) return { online: false, machines };
-  return { online: true, info: agent.info, machines };
+  if (!agent?.info) return { online: false, machines, requiredVersion: REQUIRED_CLIENT_VERSION };
+  return { online: true, info: agent.info, machines, requiredVersion: REQUIRED_CLIENT_VERSION };
 }
 
 export function subscribeStatus(cb: (update: StatusUpdate) => void): () => void {

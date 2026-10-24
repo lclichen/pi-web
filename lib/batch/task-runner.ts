@@ -21,7 +21,7 @@ import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { startRpcSession, type AgentSessionWrapper } from "../rpc-manager.ts";
 import { trustProject } from "../project-trust.ts";
 import { toClientAgentEvent } from "../agent-event-wire.ts";
-import { writeSandboxConfig } from "../projects.ts";
+import { writeSandboxConfig, getOwnedProject } from "../projects.ts";
 import { dataDir } from "../mode-homes.ts";
 import { resolveCoreExtensionPaths } from "../session-restore-options.ts";
 import { makeRemoteVerifyExtension } from "../extensions/remote-verify.ts";
@@ -29,7 +29,7 @@ import { makeEnvironmentInfoExtension } from "../extensions/environment-info.ts"
 import { makeBgTasksExtension } from "../extensions/bg-tasks.ts";
 import { registerBgChannel } from "../extensions/bg-shell.ts";
 import { makeSandboxBgChannel, makeRelayBgChannel } from "../extensions/bg-channels.ts";
-import { getAgentForUser } from "../relay/registry.ts";
+import { requireCompatibleAgent } from "../relay/agent-gate.ts";
 import { makeRelayToolsExtension } from "../extensions/relay-tools.ts";
 import { countActiveTasks, getTask, publishTaskEvent, updateTask, type BatchTask, type BatchStopReason } from "./task-store.ts";
 
@@ -269,7 +269,12 @@ export interface RunTaskOptions {
   ownerId: number;
   /** Sandbox mode: platform container the seven coding tools route into. */
   containerId?: number;
-  projectId?: number;
+  projectId?: string | number;
+  /** local-machine: workspace on the paired machine (project workdir or an
+   *  explicit request workDir). Absent = the client's shared root. */
+  relayWorkspaceDir?: string;
+  /** local-machine: machine binding (project.machineId). */
+  relayMachineId?: string;
   /** Sandbox mode: platform API key used by the bridge extension. */
   platformApiKey?: string;
   /** environment-info username (product parity in the system prompt). */
@@ -294,6 +299,18 @@ export async function runBatchTask(options: RunTaskOptions): Promise<void> {
   try {
     updateTask(taskId, { state: "running", startedAt: Date.now() });
 
+    // local-machine workspace binding: explicit option wins, else resolve the
+    // project record (needed on resume, where only projectId is persisted).
+    let relayWorkspaceDir = options.relayWorkspaceDir;
+    let relayMachineId = options.relayMachineId;
+    if (options.mode === "local-machine" && typeof options.projectId === "string") {
+      const project = getOwnedProject(options.projectId, options.ownerId, true);
+      if (project?.mode === "local-machine") {
+        relayWorkspaceDir = relayWorkspaceDir ?? project.workdir;
+        relayMachineId = relayMachineId ?? project.machineId;
+      }
+    }
+
     // 1. Resolve the session cwd and per-mode wiring.
     //    - host: prepare a fresh workDir (suffix-if-exists) + materialize files
     //    - sandbox: per-task stub home whose .pi/sandbox-platform.json binds
@@ -315,10 +332,14 @@ export async function runBatchTask(options: RunTaskOptions): Promise<void> {
       updateTask(taskId, { homeDir: sessionCwd });
     } else if (options.mode === "local-machine") {
       // 配对机器在线性前置校验（任务提交时也查，这里兜底：排队期间掉线）。
-      const agent = getAgentForUser(options.ownerId);
-      if (!agent?.info) throw new Error("本机模式需要先配对电脑（本机面板 → 连接本机）且当前在线");
+      const gate = requireCompatibleAgent(options.ownerId, relayMachineId);
+      if (!gate.ok) throw new Error(gate.error);
       sessionCwd = ensureBatchHome(taskId);
-      updateTask(taskId, { homeDir: sessionCwd });
+      updateTask(taskId, {
+        homeDir: sessionCwd,
+        ...(relayWorkspaceDir ? { workspaceDir: relayWorkspaceDir } : {}),
+        ...(relayMachineId ? { machineId: relayMachineId } : {}),
+      });
     } else if (options.resume) {
       // Resume (host): reuse the previously prepared directory as-is.
       const task = getTask(taskId);
@@ -372,9 +393,16 @@ export async function runBatchTask(options: RunTaskOptions): Promise<void> {
               ...coreOptions,
               extensionFactories: [
                 makeBgTasksExtension(),
-                makeRelayToolsExtension(options.ownerId),
+                makeRelayToolsExtension(options.ownerId, {
+                  ...(relayWorkspaceDir ? { workspaceDir: relayWorkspaceDir } : {}),
+                  ...(relayMachineId ? { machineId: relayMachineId } : {}),
+                }),
                 makeRemoteVerifyExtension("local-machine", options.ownerId),
-                makeEnvironmentInfoExtension({ mode: "local-machine", username: options.username ?? "batch" }),
+                makeEnvironmentInfoExtension({
+                  mode: "local-machine",
+                  username: options.username ?? "batch",
+                  ...(relayWorkspaceDir ? { workspaceDir: relayWorkspaceDir } : {}),
+                }),
               ],
             }
           : {
@@ -408,7 +436,7 @@ export async function runBatchTask(options: RunTaskOptions): Promise<void> {
     if (isLocal) {
       // bg-shell channel: local-machine tasks run on the paired machine via
       // relay exec.run（与产品 local-machine 会话同一条通道）。
-      registerBgChannel(realSessionId, makeRelayBgChannel(options.ownerId));
+      registerBgChannel(realSessionId, makeRelayBgChannel(options.ownerId, relayMachineId, relayWorkspaceDir));
     }
 
     // 4. Attach auto-responder for interactive tools

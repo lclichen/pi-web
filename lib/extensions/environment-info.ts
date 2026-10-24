@@ -46,7 +46,8 @@ function modeDescription(info: EnvironmentInfo): string {
     case "local-machine":
       return [
         "用户本机（local-machine 模式）：你的工具经用户自己电脑上配对的 Agent 执行，",
-        "路径以其本机共享工作区为根（相对路径），文件不在服务器上。",
+        "文件操作与命令都在「工作区目录」内进行（路径可用绝对路径，或相对该目录的路径），",
+        "文件不在服务器上。",
         "向用户说明文件位置时请说「你的电脑上」。",
       ].join("");
     case "ssh":

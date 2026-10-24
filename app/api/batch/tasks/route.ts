@@ -5,6 +5,9 @@ import { isApiRequestAllowed, hasJsonContentType } from "@/lib/request-security"
 import { createTaskRecord, listTasks, toSummary } from "@/lib/batch/task-store";
 import { scheduleBatchTask } from "@/lib/batch/task-runner";
 import { batchSseHeaders, createBatchTaskEventStream } from "@/lib/batch/task-event-stream";
+import { requireCompatibleAgent } from "@/lib/relay/agent-gate";
+import { validateAgentDirectory } from "@/lib/relay/browse";
+import { getOwnedProject } from "@/lib/projects";
 
 export const dynamic = "force-dynamic";
 
@@ -56,7 +59,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "prompt is required" }, { status: 400 });
   }
   // Host mode requires an explicit workDir; sandbox/local-machine derive a
-  // per-task home server-side, so workDir stays empty there.
+  // per-task home server-side. local-machine MAY pass workDir = the workspace
+  // directory on the paired machine (validated below), or bind a project.
   let workDir = "";
   if (mode === "host") {
     if (typeof body.workDir !== "string" || body.workDir.trim().length === 0) {
@@ -80,15 +84,53 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "files/filePackagePath are not supported in sandbox mode — the workspace lives inside the container image" }, { status: 400 });
     }
   }
+  // local-machine: the task runs on the key owner's paired machine. The
+  // workspace is one of:
+  //   · projectId → that local-machine project's workdir + bound machine;
+  //   · workDir   → an explicit absolute directory on the paired machine;
+  //   · neither   → the client's shared root (legacy behavior).
+  let relayWorkspaceDir: string | undefined;
+  let relayMachineId: string | undefined;
+  let resolvedProject: ReturnType<typeof getOwnedProject>;
   if (mode === "local-machine") {
-    // 任务在密钥归属用户的配对机器上执行——提交时校验一次（runner 内还有
-    // 兜底：排队期间掉线以失败终态呈现，而不是挂死）。
-    const { getAgentForUser } = await import("@/lib/relay/registry");
-    if (!getAgentForUser(auth.identity.user.id)?.info) {
-      return NextResponse.json({ error: "本机模式需要密钥归属用户先配对电脑（WebUI → 本机面板 → 连接本机）且当前在线" }, { status: 400 });
-    }
     if (body.files !== undefined || body.filePackagePath !== undefined) {
       return NextResponse.json({ error: "files/filePackagePath are not supported in local-machine mode — the workspace lives on the paired machine" }, { status: 400 });
+    }
+    const rawProject = typeof body.projectId === "string"
+      ? body.projectId.trim()
+      : typeof body.projectId === "number"
+        ? String(body.projectId)
+        : "";
+    if (rawProject) {
+      resolvedProject = getOwnedProject(rawProject, auth.identity.user.id, auth.identity.user.role === "admin");
+      if (!resolvedProject) return NextResponse.json({ error: "项目不存在" }, { status: 404 });
+      if (resolvedProject.mode !== "local-machine") {
+        return NextResponse.json({ error: "projectId 指向的不是本机模式项目" }, { status: 400 });
+      }
+      relayMachineId = resolvedProject.machineId;
+      relayWorkspaceDir = resolvedProject.workdir;
+    }
+    const explicitWorkDir = typeof body.workDir === "string" ? body.workDir.trim() : "";
+    if (explicitWorkDir) {
+      if (relayWorkspaceDir) {
+        return NextResponse.json({ error: "projectId 与 workDir 只能二选一（projectId 已绑定工作区）" }, { status: 400 });
+      }
+      relayWorkspaceDir = explicitWorkDir;
+    }
+    const gate = requireCompatibleAgent(auth.identity.user.id, relayMachineId);
+    if (!gate.ok) {
+      return NextResponse.json({ error: gate.error }, { status: gate.status });
+    }
+    if (relayWorkspaceDir) {
+      try {
+        relayWorkspaceDir = await validateAgentDirectory(auth.identity.user.id, gate.machineId, relayWorkspaceDir);
+        workDir = relayWorkspaceDir;
+      } catch (error) {
+        return NextResponse.json(
+          { error: `工作目录不可用：${error instanceof Error ? error.message : String(error)}` },
+          { status: 400 },
+        );
+      }
     }
   }
   if (
@@ -142,7 +184,10 @@ export async function POST(req: Request) {
     // stopContainer only ever applied to host-managed state and is ignored.
     stopContainer: mode === "sandbox" ? false : body.stopContainer !== false,
     containerId: typeof body.containerId === "number" ? body.containerId : undefined,
-    projectId: typeof body.projectId === "number" ? body.projectId : undefined,
+    projectId: resolvedProject?.id
+      ?? (typeof body.projectId === "number" ? body.projectId : undefined),
+    ...(mode === "local-machine" && relayWorkspaceDir ? { workspaceDir: relayWorkspaceDir } : {}),
+    ...(mode === "local-machine" && relayMachineId ? { machineId: relayMachineId } : {}),
     toolNames: Array.isArray(body.toolNames) ? body.toolNames as string[] : undefined,
     thinkingLevel: typeof body.thinkingLevel === "string" ? body.thinkingLevel as typeof THINKING_LEVELS[number] : undefined,
   });
@@ -163,6 +208,8 @@ export async function POST(req: Request) {
     ownerId: auth.identity.user.id,
     containerId: task.containerId,
     projectId: task.projectId,
+    relayWorkspaceDir: mode === "local-machine" ? relayWorkspaceDir : undefined,
+    relayMachineId: mode === "local-machine" ? relayMachineId : undefined,
     platformApiKey: mode === "sandbox" ? auth.identity.apiKey : undefined,
     username: auth.identity.user.username,
     toolNames: task.toolNames,

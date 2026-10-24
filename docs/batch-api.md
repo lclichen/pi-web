@@ -134,13 +134,18 @@ X-Platform-API-Key: sk-...
   // PI_WEB_SANDBOX_EXTENSION_PATH，否则 400。
   "containerId": 42,
 
-  // local-machine 模式：不需要 workDir/containerId——任务在**密钥归属
-  // 用户的配对电脑**上执行（WebUI → 本机面板 → 连接本机，agent 在线）。
+  // local-machine 模式：任务在**密钥归属用户的配对电脑**上执行
+  // （WebUI → 本机面板 → 连接本机，客户端在线；需要 agent-client >= 0.3.0）。
   // 七个编码工具经 relay 扩展路由到该机器（与产品本机会话同一条代码
-  // 路径），后台任务经 relay exec.run 也在该机器上跑。工作区就是配对
-  // 机器自己的文件系统——prompt 里用机器上的绝对路径引用工作目录，
-  // 免去每次为任务准备服务器工作区。files/filePackagePath 在该模式下
-  // 拒绝（400）。提交时校验配对在线（排队期间掉线由 runner 兜底失败）。
+  // 路径），后台任务经 relay exec.run 也在该机器上跑。
+  // 工作区三种指定方式（优先级从上到下）：
+  //   projectId  已存在的本机项目 → 复用其 workdir + 绑定机器（推荐）
+  //   workDir    机器上的目录（绝对路径，或相对客户端共享根）；提交时经
+  //              relay fs.stat 校验存在，避免跑错目录
+  //   都不传      客户端的共享根（旧行为）
+  // files/filePackagePath 在该模式下拒绝（400）。提交时校验客户端在线且
+  // 版本兼容（排队期间掉线由 runner 兜底失败）。
+  "projectId": "6f1c…",       // 或 "workDir": "D:\\work\\repo"
 
   // 必填：初始提示词（一次性请求，无交互）
   "prompt": "Read the test files in tests/ and fix any bugs you find. Run the test suite to verify.",
@@ -179,8 +184,8 @@ X-Platform-API-Key: sk-...
   // 已废弃：stopContainer（1.3 起 sandbox 容器生命周期归调用方，忽略）
   "stopContainer": true,
 
-  // 可选：关联的项目 ID（记录用途）
-  "projectId": 7,
+  // 可选：关联的项目 ID（host/sandbox 仅记录；local-machine 用于绑定工作区）
+  "projectId": "6f1c2a9e-…",
 
   // 可选：流式返回模式（默认 false）
   // true 时不返回 202+taskId，而是直接以 HTTP SSE 流式返回任务事件，
@@ -636,6 +641,37 @@ result = json.loads(urllib.request.urlopen(urllib.request.Request(
     headers={"X-Platform-API-Key": KEY})).read())
 print(result["finalResponse"])
 ```
+
+### 本机工作区完整 Demo（登录 → 下载 client → 配对 → 项目 → 对话）
+
+`scripts/local-agent-demo.py` 用标准库把整条链路跑通，可作为嵌入自己系统的
+参考实现：
+
+```bash
+python scripts/local-agent-demo.py \
+  --pi-web http://127.0.0.1:30141 \
+  --username admin \
+  --workspace ~/pi-web-demo/workspace
+# 密码走 getpass 交互输入；加 --stop-client 可在跑完后停掉客户端
+```
+
+它依次做这些事（全部是普通 HTTP）：
+
+1. `POST /api/webauth/login` 登录，拿 `pi_web_sid` cookie（后续项目/配对/批量
+   任务都复用这个 cookie）。
+2. `GET /api/agent-relay/status` 读取 `requiredVersion`；按本机 OS/arch 从
+   `/api/agent-relay/download/agent-client-…` 下载客户端并 `--version` 校验。
+3. 在本机建工作区目录，写入 `hello.txt`。
+4. `POST /api/agent-relay/pair` 领配对码 → `agent-client pair --config <demo
+   config> --root <workspace>` → 启动 `agent-client run`（demo 专属 config，
+   不影响已有 ~/.agent-client 配对），轮询 status 直到该机器在线且版本兼容。
+5. `POST /api/projects {mode:"local-machine", workdir, machineId}` 建项目。
+6. `POST /api/batch/tasks {mode:"local-machine", projectId, prompt}` 提交任务，
+   轮询 `GET /tasks/{id}`，最后取 `/result` 打印 `finalResponse` 和 agent 写入
+   的 `answer.txt`。
+
+对方的项目/任务都绑定同一个 `projectId`，所以 Agent 的文件操作就落在你
+指定的本机工作区（而不是客户端的启动目录）。
 
 ### 边界与注意
 

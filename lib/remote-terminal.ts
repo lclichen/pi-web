@@ -5,7 +5,7 @@ import { relayRpc } from "./relay/forward";
 import { subscribePtyExit, subscribePtyOutput } from "./relay/registry";
 import { getSshClient } from "./ssh";
 import { requireUserIdentity } from "./web-session";
-import type { RemoteSessionContext } from "./remote-session";
+import { localScope, type RemoteSessionContext } from "./remote-session";
 
 /**
  * Remote terminals for sandbox / local-machine / ssh sessions — same registry
@@ -206,12 +206,19 @@ export async function createRemoteTerminal(
     const wd = (ctx.workdir ?? "").trim();
     if (wd && wd !== "/") stream.write(`cd '${wd.replace(/'/g, `'\\''`)}'\n`);
   } else {
-    // relay: pty.create returns the agent-side session id; output arrives as
+    // pty.create returns the agent-side session id; output arrives as
     // unsolicited pty.output pushes fanned out by subscribePtyOutput (keyed by
     // machine + sid so two machines' terminals never cross wires).
+    // cwd: the project workspace root on the user's machine.
+    const scope = localScope(ctx);
     const created = await relayRpc(
       "pty.create",
-      { cwd: opts.cwd ?? ".", cols: opts.cols, rows: opts.rows },
+      {
+        cwd: scope.prefix || opts.cwd || ".",
+        cols: opts.cols,
+        rows: opts.rows,
+        ...(scope.base ? { base: scope.base } : {}),
+      },
       { userId: ctx.userId, machineId: ctx.machineId },
     ) as { sessionId?: string };
     const agentSid = created?.sessionId;

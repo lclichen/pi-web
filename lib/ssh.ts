@@ -206,6 +206,36 @@ export async function sshListDirectory(config: SshConfig, path?: string): Promis
   }
 }
 
+/** POSIX single-quote a value for remote shell interpolation. */
+function shellQuote(value: string): string {
+  return "'" + value.replace(/'/g, "'\\''") + "'";
+}
+
+/** Create one directory under `parent` on an ad-hoc SSH connection (wizard
+ *  picker). Rejects names containing path separators. */
+export async function sshCreateDirectory(
+  config: SshConfig,
+  parent: string,
+  name: string,
+): Promise<{ path: string }> {
+  const dirName = name.trim();
+  if (!dirName || dirName === "." || dirName === ".." || /[\\/]/.test(dirName)) {
+    throw new Error("文件夹名不合法");
+  }
+  const base = parent.trim().replace(/\/+$/, "") || "/";
+  const target = base === "/" ? `/${dirName}` : `${base}/${dirName}`;
+  const client = await connectClient(config);
+  try {
+    const r = await sshExec(client, `mkdir -p -- ${shellQuote(target)}`, "/");
+    if (r.code !== 0) {
+      throw new Error(r.stderr.trim() || `创建目录失败（exit ${r.code}）`);
+    }
+    return { path: target };
+  } finally {
+    try { client.end(); } catch { /* already dead */ }
+  }
+}
+
 export interface SshExecResult {
   code: number;
   stdout: string;

@@ -1829,6 +1829,7 @@ export function ModelsConfig({ onClose, embedded = false }: { onClose: () => voi
   const { t } = useI18n();
   const [config, setConfig] = useState<ModelsJson>({ providers: {} });
   const [loading, setLoading] = useState(true);
+  const [canEdit, setCanEdit] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedOk, setSavedOk] = useState(false);
@@ -1850,8 +1851,10 @@ export function ModelsConfig({ onClose, embedded = false }: { onClose: () => voi
   useEffect(() => {
     fetch("/api/models-config")
       .then((r) => r.json())
-      .then((d: ModelsJson) => {
+      .then((d: ModelsJson & { canEdit?: boolean }) => {
         const normalized = d.providers ? d : { ...d, providers: {} };
+        // 非管理员视角：服务端已剥除 apiKey 且 canEdit=false——只读渲染。
+        setCanEdit(d.canEdit !== false);
         setConfig(normalized);
         const keys = Object.keys(normalized.providers ?? {});
         setSelection((current) => current && customSelectionExists(normalized, current)
@@ -1963,6 +1966,7 @@ export function ModelsConfig({ onClose, embedded = false }: { onClose: () => voi
   }, []);
 
   const handleSave = useCallback(async () => {
+    if (!canEdit) return;
     setSaving(true);
     setSaveError(null);
     setSavedOk(false);

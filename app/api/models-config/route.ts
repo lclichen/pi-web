@@ -5,8 +5,31 @@ import { isApiRequestAllowed, hasJsonContentType } from "@/lib/request-security"
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
-  return NextResponse.json(readModelsConfig());
+/** 非管理员视角：剥除所有 provider 的 apiKey（凭据不出服务端），
+ *  并标记 canEdit=false 供前端只读渲染。 */
+function redactForUser(config: Record<string, unknown>): Record<string, unknown> {
+  const providers = config.providers;
+  if (!providers || typeof providers !== "object" || Array.isArray(providers)) {
+    return { ...config, canEdit: false };
+  }
+  const redacted = Object.fromEntries(Object.entries(providers as Record<string, unknown>).map(([name, provider]) => {
+    if (!provider || typeof provider !== "object" || Array.isArray(provider)) return [name, provider];
+    const { apiKey: _drop, ...rest } = provider as Record<string, unknown>;
+    return [name, rest];
+  }));
+  return { ...config, providers: redacted, canEdit: false };
+}
+
+export async function GET(req: Request) {
+  const identity = requireUserIdentity(req);
+  if (!identity.ok) return NextResponse.json({ error: "登录已失效" }, { status: identity.status });
+  const config = readModelsConfig();
+  // 管理员拿完整配置（含密钥，编辑需要）；普通用户脱敏——模型页只读展示，
+  // 网关凭据不得下发到非管理员客户端（2026-10-26 审计修复）。
+  if (identity.session.user.role === "admin") {
+    return NextResponse.json({ ...config, canEdit: true });
+  }
+  return NextResponse.json(redactForUser(config));
 }
 
 export async function PUT(req: Request) {

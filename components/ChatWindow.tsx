@@ -855,6 +855,9 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
   const isEmptyNew = isNew && messages.length === 0 && !streamState.isStreaming && !sessionBusy;
   const hasStreamingContent = Boolean(streamState.streamingMessage?.content.length);
   const messageCwd = session?.cwd ?? newSessionCwd ?? undefined;
+  // local-machine/ssh：模型输出的文件链接必须按用户机器/远程主机的工作区
+  // 解析（session.cwd 是服务端 home——按它解析会指到 host 目录）。
+  const linkCwd = session?.workspaceDir ?? messageCwd;
   const promptAnchorSpacerRef = useRef<HTMLDivElement | null>(null);
   const promptAnchorSpacerHeightRef = useRef(0);
   const promptAnchorMeasureFrameRef = useRef<number | null>(null);
@@ -1239,7 +1242,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
                     message={msg}
                     toolResults={toolResultsMap}
                     modelNames={modelNames}
-                    cwd={messageCwd}
+                    cwd={linkCwd}
                     onOpenFile={onOpenFile}
                     onOpenSession={onOpenSession}
                     entryId={entryIds[idx]}
@@ -1374,7 +1377,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
                       for (const b of (m as AssistantMessage).content ?? []) turnContent.push(b);
                     }
                   }
-                  const writtenFiles = extractTurnWrittenFiles(turnContent, toolResultsMap, messageCwd);
+                  const writtenFiles = extractTurnWrittenFiles(turnContent, toolResultsMap, linkCwd);
                   rendered.push(renderMessage(finalAssistantIdx, {
                     messageOverride: finalAnswerMessage,
                     writtenFiles,
@@ -1399,7 +1402,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
               );
             })()}
             {streamState.isStreaming && hasStreamingContent && streamState.streamingMessage && (
-              <MessageView message={streamState.streamingMessage as AgentMessage} toolResults={toolResultsMap} isStreaming modelNames={modelNames} cwd={messageCwd} onOpenFile={onOpenFile} onOpenSession={onOpenSession} />
+              <MessageView message={streamState.streamingMessage as AgentMessage} toolResults={toolResultsMap} isStreaming modelNames={modelNames} cwd={linkCwd} onOpenFile={onOpenFile} onOpenSession={onOpenSession} />
             )}
 
             {agentRunning && !hasStreamingContent && agentPhase && (

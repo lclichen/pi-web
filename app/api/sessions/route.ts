@@ -15,6 +15,8 @@ import {
 import { requireUserIdentity } from "@/lib/web-session";
 import { spaceForRequest } from "@/lib/session-spaces";
 import { getSessionMetas, inferLegacyModeFromCwd } from "@/lib/session-metas";
+import { getProject } from "@/lib/projects";
+import { getAgentForUser } from "@/lib/relay/registry";
 
 export const dynamic = "force-dynamic";
 
@@ -48,9 +50,22 @@ export async function GET(req: Request) {
       const meta = metas[s.id];
       // 无 meta 的遗留沙箱会话按 cwd 兜底推断，避免落进 Host 目录组。
       const mode = meta?.mode ?? inferLegacyModeFromCwd(s.cwd);
+      // local-machine/ssh：附真实工作区（用户机器/远程主机上的绝对路径）。
+      // cwd 是服务端 home——模型输出里的文件链接若按 cwd 解析会指到 host
+      // 目录（bug 2026-10-26），前端用 workspaceDir 作链接解析基。
+      const remoteProject = (mode === "local-machine" || mode === "ssh") && meta?.projectId
+        ? getProject(meta.projectId)
+        : undefined;
+      let workspaceDir = remoteProject?.workdir;
+      // 未绑 workdir 的 local-machine 会话跑在 agent 共享根上——在线 agent
+      // 的 workspaceRoot 就是它的真实工作区（离线时未知，回落旧行为）。
+      if (!workspaceDir && mode === "local-machine") {
+        workspaceDir = getAgentForUser(meta?.ownerId ?? user.id)?.info?.workspaceRoot;
+      }
       return {
         ...s,
         ...(mode ? { mode, ...(meta?.projectId ? { projectId: meta.projectId } : {}) } : {}),
+        ...(workspaceDir ? { workspaceDir } : {}),
       };
     });
     // Capture AFTER the scan: mutations during the scan bump the generation,

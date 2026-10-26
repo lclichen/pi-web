@@ -355,6 +355,12 @@ export interface SessionInfo {
   mode?: "host" | "sandbox" | "local-machine" | "ssh" | "quick";
   /** Owning project id (project-scoped sessions). */
   projectId?: string;
+  /** local-machine/ssh: the session's REAL workspace — an absolute path on the
+   *  user's machine / remote host (project.workdir). cwd is the server-side
+   *  home; resolving model-output file links against cwd points at the host
+   *  directory, so link resolution (MessageView/TurnWrittenFiles) must use
+   *  this instead. Server-attached; absent for host/sandbox/quick. */
+  workspaceDir?: string;
   /** Stable server-computed project identity for grouping and comparison.
    *  Unlike projectRoot, Windows keys are case- and separator-insensitive.
    *  Internal only: use projectRoot/cwd for display and filesystem operations. */

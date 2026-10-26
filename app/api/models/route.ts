@@ -118,36 +118,43 @@ export async function GET(req: Request) {
   // Project-scoped model config: ?projectId= resolves the home server-side
   // (ownership-checked), so a not-yet-materialized session can pick models.
   const projectId = new URL(req.url).searchParams.get("projectId");
+  const explicitCwd = new URL(req.url).searchParams.get("cwd");
   let cwd: string;
   if (projectId) {
     const project = getOwnedProject(projectId, user.id, isAdmin);
     if (!project) return Response.json({ error: "项目不存在" }, { status: 404 });
     cwd = resolve(projectHome(project));
   } else {
-    cwd = resolve(new URL(req.url).searchParams.get("cwd") || process.cwd());
+    cwd = resolve(explicitCwd || process.cwd());
   }
 
-  let cwdStat;
-  try {
-    cwdStat = await stat(cwd);
-  } catch {
-    return Response.json({ error: `Directory does not exist: ${cwd}` }, { status: 400 });
-  }
-  if (!cwdStat.isDirectory()) {
-    return Response.json({ error: `Not a directory: ${cwd}` }, { status: 400 });
-  }
-  const allowedRoots = await getAllowedFileRootsForRequest(req);
-  if (!isExistingFilePathAllowed(cwd, allowedRoots)) {
-    // Project homes are config carriers outside the regular roots — allow the
-    // caller's own projects (the two-layer merge reads their .pi/ here).
-    // Existing sessions' cwds pass too: the transient allowed-roots set is
-    // repopulated only at session creation, so after a restart this check
-    // would otherwise 403 every materialized session ("No available models").
-    if (
-      !isCallerOwnedProjectHome(cwd, user.id, isAdmin)
-      && !(await isCallerSessionCwdAllowed(req, cwd))
-    ) {
-      return Response.json({ error: "Access denied" }, { status: 403 });
+  // 无显式 cwd（如快速会话选择后、会话尚未建立的模型选择器）= 部署级
+  // 默认配置层（服务器自身目录）。它不是任何用户的文件空间，不参与目录
+  // 归属检查——此前按 process.cwd() 走 roots 检查，非管理员必 403
+  // "Access denied"（前端表现为"模型错误/无权限/未配置默认模型"）。
+  if (explicitCwd || projectId) {
+    let cwdStat;
+    try {
+      cwdStat = await stat(cwd);
+    } catch {
+      return Response.json({ error: `Directory does not exist: ${cwd}` }, { status: 400 });
+    }
+    if (!cwdStat.isDirectory()) {
+      return Response.json({ error: `Not a directory: ${cwd}` }, { status: 400 });
+    }
+    const allowedRoots = await getAllowedFileRootsForRequest(req);
+    if (!isExistingFilePathAllowed(cwd, allowedRoots)) {
+      // Project homes are config carriers outside the regular roots — allow the
+      // caller's own projects (the two-layer merge reads their .pi/ here).
+      // Existing sessions' cwds pass too: the transient allowed-roots set is
+      // repopulated only at session creation, so after a restart this check
+      // would otherwise 403 every materialized session ("No available models").
+      if (
+        !isCallerOwnedProjectHome(cwd, user.id, isAdmin)
+        && !(await isCallerSessionCwdAllowed(req, cwd))
+      ) {
+        return Response.json({ error: "Access denied" }, { status: 403 });
+      }
     }
   }
 

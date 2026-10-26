@@ -17,12 +17,13 @@
  */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { makeContextStatusExtension } from "./src/context-status.ts";
+import { makePathGuardExtension } from "./src/path-guard.ts";
 import { makePlanModeExtension } from "./src/plan-mode.ts";
 import { makeSessionPlanExtension } from "./src/session-plan.ts";
 import { makeTodoExtension } from "./src/todo.ts";
 import { makeBgShellExtension } from "./src/bg-shell.ts";
 
-export { makeBgShellExtension, makeContextStatusExtension, makePlanModeExtension, makeSessionPlanExtension, makeTodoExtension };
+export { makeBgShellExtension, makeContextStatusExtension, makePathGuardExtension, makePlanModeExtension, makeSessionPlanExtension, makeTodoExtension };
 
 export default function amedacCore(pi: ExtensionAPI): void {
   makeTodoExtension()(pi);

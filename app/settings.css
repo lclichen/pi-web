@@ -1850,3 +1850,26 @@ button.bundle-chip:hover {
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+/* 设置 → 策略（路径护栏管理） */
+.policy-lock-banner {
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  border: 1px solid color-mix(in srgb, var(--warning) 35%, transparent);
+  background: color-mix(in srgb, var(--warning) 8%, transparent);
+  color: var(--text);
+}
+
+.policy-lock-banner.is-editable {
+  border-color: color-mix(in srgb, var(--success) 35%, transparent);
+  background: color-mix(in srgb, var(--success) 8%, transparent);
+}
+
+.policy-section-title {
+  margin-top: 16px;
+  margin-bottom: 4px;
+  color: var(--text-dim);
+  font-size: 11px;
+  font-weight: 600;
+}

@@ -29,6 +29,7 @@ import { SkillsConfig } from "./SkillsConfig";
 import { PluginsConfig } from "./PluginsConfig";
 import { McpServersConfig } from "./McpServersConfig";
 import { QuickTemplatesConfig } from "./QuickTemplatesConfig";
+import { PolicyConfig } from "./PolicyConfig";
 import { BundlesConfig } from "./BundlesConfig";
 import { SubagentsConfig } from "./SubagentsConfig";
 import { ConfigButton, ConfigSwitch } from "./SettingsUi";
@@ -69,6 +70,7 @@ export function SettingsSectionIcon({ section, size = 16, strokeWidth = 1.8 }: {
   if (section === "quick-templates") return <svg {...common}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></svg>;
   if (section === "mcp") return <svg {...common}><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><line x1="17.5" y1="11" x2="17.5" y2="14" /><line x1="11" y1="17.5" x2="14" y2="17.5" /></svg>;
   if (section === "account") return <svg {...common}><circle cx="12" cy="8" r="4" /><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7" /></svg>;
+  if (section === "policy") return <svg {...common}><path d="M12 2 4 5.5v5.3c0 5 3.4 9.6 8 10.7 4.6-1.1 8-5.7 8-10.7V5.5L12 2Z" /><path d="m9 12 2 2 4-4.5" /></svg>;
   if (section === "api-keys") return <svg {...common}><rect x="3" y="11" width="18" height="10" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /><circle cx="8" cy="16" r="0.6" /><circle cx="12" cy="16" r="0.6" /></svg>;
   if (section === "agents") return <svg {...common} className="settings-section-icon is-agent"><rect x="5" y="7" width="14" height="11" rx="2" /><path d="M9 11h.01M15 11h.01M9 15h6M12 7V4M10 4h4" /></svg>;
   return <svg {...common}><path d="M9 7V2M15 7V2M6 13V8a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v5a6 6 0 0 1-12 0ZM12 19v3" /></svg>;
@@ -376,6 +378,7 @@ export function SettingsPanel({ cwd, sessionId, initialSection, onClose, onSessi
     { id: "skills", label: t("common.skills"), requiresProject: true, group: "workspace" },
     { id: "agents", label: t("common.agents"), requiresProject: true, group: "workspace" },
     { id: "mcp", label: "MCP", requiresProject: true, group: "workspace" },
+    { id: "policy", label: t("settings.policy"), requiresProject: true, group: "workspace" },
     { id: "plugins", label: t("common.plugins"), requiresProject: true, group: "workspace" },
     // Admin-only management sections — their rendering is gated on isAdmin
     // below; they must also appear here or there is no way to navigate to them.
@@ -416,7 +419,7 @@ export function SettingsPanel({ cwd, sessionId, initialSection, onClose, onSessi
   }, [requestClose]);
 
   useEffect(() => {
-    if (cwd || (section !== "skills" && section !== "agents" && section !== "plugins")) return;
+    if (cwd || (section !== "skills" && section !== "agents" && section !== "plugins" && section !== "policy")) return;
     setSection("general");
     setMountedSections((current) => new Set(current).add("general"));
     setLastSettingsSection("general");
@@ -535,6 +538,7 @@ export function SettingsPanel({ cwd, sessionId, initialSection, onClose, onSessi
           {cwd && sectionHost("skills", <SkillsConfig embedded key={cwd} cwd={cwd} onClose={onClose} />)}
           {cwd && sectionHost("agents", <SubagentsConfig embedded key={cwd} cwd={cwd} onClose={onClose} />)}
           {cwd && sectionHost("mcp", <McpServersConfig embedded key={cwd} cwd={cwd} onClose={onClose} />)}
+          {cwd && sectionHost("policy", <PolicyConfig embedded key={cwd} cwd={cwd} />)}
           {isAdmin && sectionHost("quick-templates", <QuickTemplatesConfig embedded />)}
           {isAdmin && sectionHost("bundles", <BundlesConfig embedded />)}
           {cwd && sectionHost("plugins", <PluginsConfig embedded key={cwd} cwd={cwd} sessionId={sessionId} onClose={onClose} onReloaded={onSessionReloaded} />)}

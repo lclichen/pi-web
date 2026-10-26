@@ -1886,6 +1886,16 @@ function ExtensionDialog({
           {request.method === "select" && (
             <div
               onKeyDown={(event) => {
+                // 数字快捷键（对标 ZCode 问答面板）：1-9 直接选择对应项。
+                if (/^[1-9]$/.test(event.key) && !event.nativeEvent.isComposing) {
+                  const idx = Number(event.key) - 1;
+                  const target = request.options[idx];
+                  if (target !== undefined) {
+                    event.preventDefault();
+                    onRespond(request, { value: target });
+                  }
+                  return;
+                }
                 if (!["ArrowDown", "ArrowRight", "ArrowUp", "ArrowLeft", "Home", "End"].includes(event.key)) return;
                 const buttons = Array.from(event.currentTarget.querySelectorAll<HTMLElement>("[data-extension-option]"));
                 const index = buttons.indexOf(event.target as HTMLElement);
@@ -1899,42 +1909,43 @@ function ExtensionDialog({
               }}
               style={{ display: "grid", gap: 8 }}
             >
-              {request.options.map((option, index) => (
-                <div
-                  key={option}
-                  role="button"
-                  tabIndex={0}
-                  data-extension-option
-                  aria-label={option}
-                  ref={index === 0 ? focusFirstOption : undefined}
-                  onClick={() => onRespond(request, { value: option })}
-                  onKeyDown={(event) => {
-                    if (event.key !== "Enter" && event.key !== " ") return;
-                    event.preventDefault();
-                    onRespond(request, { value: option });
-                  }}
-                  style={{
-                    width: "100%",
-                    padding: "9px 10px",
-                    borderRadius: 7,
-                    border: "1px solid var(--border)",
-                    background: "var(--bg-panel)",
-                    color: "var(--text)",
-                    cursor: "pointer",
-                    textAlign: "left",
-                    fontSize: 13,
-                    overflowWrap: "anywhere",
-                    // Match the scroller's padding so keyboard navigation never parks the
-                    // option flush against the edge, where whole-pixel scroll snapping and
-                    // overflow clipping cut off its focus ring.
-                    scrollMargin: 14,
-                  }}
-                >
-                  <div inert>
-                    <MarkdownBody>{option}</MarkdownBody>
+              {request.options.map((option, index) => {
+                // 选项含换行时拆主行/描述行（ZCode label+description 形态）；
+                // 单行选项保持整块 markdown 渲染（plan-mode 等既有用法）。
+                const lines = option.split("\n");
+                const isMultiLine = lines.length > 1 && lines.slice(1).join("").trim().length > 0;
+                return (
+                  <div
+                    key={option}
+                    role="button"
+                    tabIndex={0}
+                    data-extension-option
+                    aria-label={option}
+                    ref={index === 0 ? focusFirstOption : undefined}
+                    onClick={() => onRespond(request, { value: option })}
+                    onKeyDown={(event) => {
+                      if (event.key !== "Enter" && event.key !== " ") return;
+                      event.preventDefault();
+                      onRespond(request, { value: option });
+                    }}
+                    className="ext-select-option"
+                  >
+                    {index < 9 && <span className="ext-select-badge" aria-hidden="true">{index + 1}</span>}
+                    {isMultiLine ? (
+                      <span style={{ minWidth: 0, flex: 1 }}>
+                        <span className="ext-select-label">{lines[0]}</span>
+                        <span className="ext-select-desc">
+                          <MarkdownBody>{lines.slice(1).join("\n")}</MarkdownBody>
+                        </span>
+                      </span>
+                    ) : (
+                      <span inert style={{ minWidth: 0, flex: 1 }}>
+                        <MarkdownBody>{option}</MarkdownBody>
+                      </span>
+                    )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
           {request.method === "input" && (
@@ -1984,7 +1995,13 @@ function ExtensionDialog({
           )}
         </div>
 
-        <div style={{ flexShrink: 0, display: "flex", justifyContent: "flex-end", gap: 8, padding: "10px 14px", borderTop: "1px solid var(--border)", background: "var(--bg-panel)" }}>
+        <div style={{ flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "10px 14px", borderTop: "1px solid var(--border)", background: "var(--bg-panel)" }}>
+          {request.method === "select" && request.options.length > 0 && (
+            <span style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.4, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {t("chat.extensionSelectHint")}
+            </span>
+          )}
+          <div style={{ display: "flex", gap: 8, flexShrink: 0, marginLeft: "auto" }}>
           <button
             autoFocus={request.method === "confirm" || (request.method === "select" && request.options.length === 0)}
             onClick={() => onRespond(request, { cancelled: true })}
@@ -2028,6 +2045,7 @@ function ExtensionDialog({
                {t("chat.submit")}
             </button>
           ) : null}
+          </div>
         </div>
       </div>
       )}

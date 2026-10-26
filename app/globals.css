@@ -1850,3 +1850,71 @@ span.token.table {
   width: auto;
   height: 2px;
 }
+
+/* 扩展交互对话框（ctx.ui.select）的选项——对标 ZCode 问答 UI：
+   数字徽章快捷键、焦点/悬停分层、主行+描述行拆分。 */
+.ext-select-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg-panel);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+  scroll-margin: 14px;
+  transition: border-color 0.1s ease, background 0.1s ease;
+}
+
+.ext-select-option:hover {
+  border-color: var(--text-dim);
+}
+
+.ext-select-option:focus-visible {
+  border-color: var(--accent);
+  background: var(--bg-selected);
+  outline: none;
+}
+
+.ext-select-option:focus-visible .ext-select-badge {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+.ext-select-badge {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  transition: border-color 0.1s ease, background 0.1s ease, color 0.1s ease;
+}
+
+.ext-select-label {
+  min-width: 0;
+  flex: 1;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.ext-select-desc {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 11.5px;
+  line-height: 1.5;
+}

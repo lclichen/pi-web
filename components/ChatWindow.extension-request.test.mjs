@@ -31,7 +31,8 @@ test("adds collapse without replacing cancel", () => {
 test("renders extension confirmation and options as markdown", () => {
   assert.match(source, /import \{ MarkdownBody \} from "\.\/MarkdownBody"/);
   assert.match(dialogSource, /<MarkdownBody>\{request\.message\}<\/MarkdownBody>/);
-  assert.match(dialogSource, /role="button"[\s\S]*?data-extension-option[\s\S]*?<div inert>[\s\S]*?<MarkdownBody>\{option\}<\/MarkdownBody>/);
+  // 单行选项仍是整块 markdown（2026-10-26 起 span + 数字徽章 + CSS 类形态）。
+  assert.match(dialogSource, /role="button"[\s\S]*?data-extension-option[\s\S]*?<span inert[\s\S]*?<MarkdownBody>\{option\}<\/MarkdownBody>/);
   assert.match(dialogSource, /ref=\{index === 0 \? focusFirstOption : undefined\}/);
 });
 

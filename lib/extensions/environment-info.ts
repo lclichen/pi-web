@@ -84,13 +84,29 @@ function replaceSentinelSpan(text: string, block: string): string {
   return `${text.slice(0, start)}${block}${text.slice(end + END.length)}`;
 }
 
+/** 模型视角的 cwd 改写：SDK 系统提示词固定带 "Current working directory:
+ *  <session cwd>"。local-machine/ssh 的 session cwd 是服务器 home（配置
+ *  载体），模型看到它会往那个服务器路径写文件（用户机器上不存在 → 写
+ *  失败 → 模型重写的循环）。有真实 workspaceDir 时改写为工作区路径；
+ *  host/sandbox 无 workspaceDir，不动。 */
+export function rewriteWorkingDirectoryLine(systemPrompt: string, workspaceDir: string): string {
+  return systemPrompt.replace(
+    /(Current working directory:\s*\n)[^\n]*/i,
+    `$1${workspaceDir}`,
+  );
+}
+
 export function makeEnvironmentInfoExtension(info: EnvironmentInfo): InlineExtension {
   const block = buildBlock(info);
   return (pi: ExtensionAPI): void => {
     pi.on("before_agent_start", async (event) => {
+      let systemPrompt = replaceSentinelSpan(event.systemPrompt, block);
+      if (info.workspaceDir) {
+        systemPrompt = rewriteWorkingDirectoryLine(systemPrompt, info.workspaceDir);
+      }
       // Defensive: the per-turn base prompt never contains our block, but keep
       // the sentinel replace in case another extension chains onto ours.
-      return { systemPrompt: replaceSentinelSpan(event.systemPrompt, block) };
+      return { systemPrompt };
     });
 
 

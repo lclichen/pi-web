@@ -112,9 +112,10 @@ function absolutenessOf(path: string): "windows" | "posix" | "relative" {
  *
  * - workspace-relative "src/a.ts" stays relative (prefixed for legacy agents)
  * - an absolute path under `workspaceDir` becomes workspace-relative
- * - any other absolute path is passed through in `base` mode (the agent
- *   rejects it if it escapes the base) and treated as root-relative legacy
- *   otherwise — matching the historical "strip leading /" behavior.
+ * - any other absolute path passes through VERBATIM in both modes: the
+ *   agent's resolver treats absolute paths absolutely (fenced at its root).
+ *   The historical "strip leading /" fallback made /a/b/c become root+/a/b/c
+ *   — the doubled-path bug when clicking turn-written files in the file panel.
  */
 export function toRelayPath(
   path: string,
@@ -131,8 +132,7 @@ export function toRelayPath(
       if (!scope.prefix) return rel;
       return rel === "." ? scope.prefix : `${scope.prefix}/${rel}`;
     }
-    if (scope.base) return raw;
-    return raw.replace(/^[\\/]+/, "") || ".";
+    return raw;
   }
   if (!scope.prefix) return raw;
   return raw === "." ? scope.prefix : `${scope.prefix}/${raw}`;

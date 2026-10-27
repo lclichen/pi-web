@@ -10,7 +10,7 @@ import {
   toWorkspaceRelative,
   type RelayWorkspaceScope,
 } from "@/lib/relay/workspace-base";
-import { matchServerSkillPath } from "@/lib/relay/skill-bridge";
+import { matchRuntimeConfigPath } from "@/lib/relay/runtime-config-bridge";
 import type { ExecResult, FsEntry, FsReadResult, FsStatResult, GrepMatch } from "@/lib/relay/protocol";
 
 /**
@@ -88,11 +88,12 @@ export function makeRelayToolsExtension(userId: number, options: RelayToolsOptio
       { userId, ...(machineId ? { machineId } : {}) },
     ) as Promise<T>;
 
-  /** Skills bridge (lib/relay/skill-bridge.ts): skill files live on the
-   *  server (session homes' .pi/skills + server agent dir .pi/agent/skills),
-   *  never on the user's machine — skill-shaped read/ls stays server-side. */
-  const bridgeSkill = (p: string, ctxCwd?: string) =>
-    matchServerSkillPath(p, { homes: [projectHome, ctxCwd] });
+  /** Runtime-config bridge (lib/relay/runtime-config-bridge.ts): skills and
+   *  subagent definitions live on the server (session homes' .pi/skills +
+   *  .pi/agents, server agent dir .pi/agent/skills|agents), never on the
+   *  user's machine — config-shaped read/ls stays server-side. */
+  const bridgeRuntimeConfig = (p: string, ctxCwd?: string) =>
+    matchRuntimeConfigPath(p, { homes: [projectHome, ctxCwd] });
 
   const readLocalFile = async (absPath: string): Promise<ToolResult> => {
     const { readFile } = await import("node:fs/promises");
@@ -126,9 +127,9 @@ export function makeRelayToolsExtension(userId: number, options: RelayToolsOptio
         path: Type.String({ description: "File path: absolute, or relative to the project workspace" }),
       }),
       execute: async (_id, params, _signal, _onUpdate, ctx) => {
-        // Skills bridge: runtime skill files live on the server, never on
-        // the user's machine — serve them locally instead of relaying.
-        const bridged = bridgeSkill(params.path, ctx?.cwd);
+        // Runtime-config bridge: skill/subagent files live on the server,
+        // never on the user's machine — serve them locally instead of relaying.
+        const bridged = bridgeRuntimeConfig(params.path, ctx?.cwd);
         if (bridged) return readLocalFile(bridged.path);
         const scope = currentScope();
         if (scope.error) return fail(scope.error);
@@ -231,7 +232,7 @@ export function makeRelayToolsExtension(userId: number, options: RelayToolsOptio
         path: Type.Optional(Type.String({ description: "Directory path (default \".\" = project workspace root)" })),
       }),
       execute: async (_id, params, _signal, _onUpdate, ctx) => {
-        const bridged = bridgeSkill(params.path ?? "", ctx?.cwd);
+        const bridged = bridgeRuntimeConfig(params.path ?? "", ctx?.cwd);
         if (bridged) return listLocalDir(bridged.path);
         const scope = currentScope();
         if (scope.error) return fail(scope.error);

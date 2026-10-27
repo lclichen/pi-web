@@ -11,7 +11,7 @@ import type { BashOperations } from "@earendil-works/pi-coding-agent";
 import { Type } from "@earendil-works/pi-ai";
 import type { Client, SFTPWrapper } from "ssh2";
 import { getSshClient, sshExec, type SshConfig } from "../ssh";
-import { matchServerSkillPath } from "../relay/skill-bridge";
+import { matchRuntimeConfigPath } from "../relay/runtime-config-bridge";
 
 interface ToolResult {
   content: Array<{ type: "text"; text: string }>;
@@ -66,11 +66,11 @@ function sftpList(s: SFTPWrapper, path: string): Promise<SftpEntry[]> {
  * @param projectId owner of the pooled connection
  * @param sshConfig connection credentials (from the project home's ssh.json)
  * @param workdir default remote working directory for relative paths
- * @param projectHome server-side project home — runtime skill files
- *   (<home>/.pi/skills, server ~/.pi/agent/skills) are discovered/loaded on
- *   the server and do NOT exist on the remote host; skill-shaped read/ls
- *   calls are bridged to the server side instead of SFTP
- *   (lib/relay/skill-bridge.ts).
+ * @param projectHome server-side project home — runtime skill/subagent files
+ *   (<home>/.pi/skills|agents, server ~/.pi/agent/skills|agents) are
+ *   discovered/loaded on the server and do NOT exist on the remote host;
+ *   config-shaped read/ls calls are bridged to the server side instead of
+ *   SFTP (lib/relay/runtime-config-bridge.ts).
  */
 export function makeSshToolsExtension(opts: {
   projectId: string;
@@ -81,8 +81,8 @@ export function makeSshToolsExtension(opts: {
   const { projectId, sshConfig, workdir, projectHome } = opts;
   const client = () => getSshClient(projectId, sshConfig);
 
-  const bridgeSkill = (p: string, ctxCwd?: string) =>
-    matchServerSkillPath(p, { homes: [projectHome, ctxCwd] });
+  const bridgeRuntimeConfig = (p: string, ctxCwd?: string) =>
+    matchRuntimeConfigPath(p, { homes: [projectHome, ctxCwd] });
 
   /** Read a file on the pi-web server (skills bridge), formatted like the tool. */
   const readLocalFile = async (absPath: string): Promise<ToolResult> => {
@@ -140,9 +140,9 @@ export function makeSshToolsExtension(opts: {
         path: Type.String({ description: "File path (absolute, or relative to the project workdir)" }),
       }),
       execute: async (_id, params, _signal, _onUpdate, ctx) => {
-        // Skills bridge: skill files live on the server, not on the remote
-        // host — serve them locally instead of SFTP.
-        const bridged = bridgeSkill(params.path, ctx?.cwd);
+        // Runtime-config bridge: skill/subagent files live on the server,
+        // not on the remote host — serve them locally instead of SFTP.
+        const bridged = bridgeRuntimeConfig(params.path, ctx?.cwd);
         if (bridged) return readLocalFile(bridged.path);
         try {
           const c = await client();
@@ -224,7 +224,7 @@ export function makeSshToolsExtension(opts: {
         path: Type.String({ description: "Directory path (absolute, or relative to the project workdir)" }),
       }),
       execute: async (_id, params, _signal, _onUpdate, ctx) => {
-        const bridged = bridgeSkill(params.path, ctx?.cwd);
+        const bridged = bridgeRuntimeConfig(params.path, ctx?.cwd);
         if (bridged) return listLocalDir(bridged.path);
         try {
           const c = await client();

@@ -28,10 +28,11 @@ func (m *Manager) Create(shell, cwd string, cols, rows int, onOutput func(sessio
 	cmd := exec.Command(shell)
 	cmd.Dir = cwd
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
-	// Own process group: shells spawn children (builds, su, daemons) — killing
-	// only the direct child leaves orphans holding the pty open.
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-
+	// 不要设置 Setpgid：creack/pty 的 StartWithSize 会在调用者的 SysProcAttr
+	// 上叠加 Setsid=true，而会话首进程再 setpgid(0,0) 按 POSIX 必然返回
+	// EPERM——"fork/exec /bin/bash: operation not permitted" 即此（VM
+	// strace 实证：setsid() 成功后紧接 setpgid(0,0) = -1 EPERM）。setsid
+	// 后子进程 pgid==pid，下方 kill(-pid) 的整组击杀语义不变。
 	master, err := pty.StartWithSize(cmd, &pty.Winsize{Cols: uint16(cols), Rows: uint16(rows)})
 	if err != nil {
 		return nil, err

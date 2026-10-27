@@ -10,7 +10,7 @@ import { countToolCallBlocks, getAssistantErrorMessage, getDisplayableAssistantB
 import { extractTurnWrittenFiles, type WrittenFile } from "@/lib/turn-written-files";
 import { buildQuotedSelection } from "@/lib/quoted-selection";
 import { MessageView } from "./MessageView";
-import { MarkdownBody } from "./MarkdownBody";
+import { MarkdownBody, RemoteFileSessionContext } from "./MarkdownBody";
 import { ChatInput, type ChatInputHandle } from "./ChatInput";
 import { SessionToolbar } from "./SessionToolbar";
 import { ChatMinimap, useMessageRefs } from "./ChatMinimap";
@@ -858,6 +858,12 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
   // local-machine/ssh：模型输出的文件链接必须按用户机器/远程主机的工作区
   // 解析（session.cwd 是服务端 home——按它解析会指到 host 目录）。
   const linkCwd = session?.workspaceDir ?? messageCwd;
+  // 远端模式会话：Markdown 内嵌图片经 /api/remotefs 读取（Context 下传，
+  // 见 MarkdownBody）。host/quick 会话为 null——走服务端 /api/files。
+  const remoteFileSessionId = session?.id
+    && (session.mode === "sandbox" || session.mode === "local-machine" || session.mode === "ssh")
+    ? session.id
+    : null;
   const promptAnchorSpacerRef = useRef<HTMLDivElement | null>(null);
   const promptAnchorSpacerHeightRef = useRef(0);
   const promptAnchorMeasureFrameRef = useRef<number | null>(null);
@@ -1397,12 +1403,16 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
                        {t("chat.loadEarlier")}
                     </div>
                   )}
-                  {rendered.slice(startIndex)}
+                  <RemoteFileSessionContext.Provider value={remoteFileSessionId}>
+                    {rendered.slice(startIndex)}
+                  </RemoteFileSessionContext.Provider>
                 </>
               );
             })()}
             {streamState.isStreaming && hasStreamingContent && streamState.streamingMessage && (
-              <MessageView message={streamState.streamingMessage as AgentMessage} toolResults={toolResultsMap} isStreaming modelNames={modelNames} cwd={linkCwd} onOpenFile={onOpenFile} onOpenSession={onOpenSession} />
+              <RemoteFileSessionContext.Provider value={remoteFileSessionId}>
+                <MessageView message={streamState.streamingMessage as AgentMessage} toolResults={toolResultsMap} isStreaming modelNames={modelNames} cwd={linkCwd} onOpenFile={onOpenFile} onOpenSession={onOpenSession} />
+              </RemoteFileSessionContext.Provider>
             )}
 
             {agentRunning && !hasStreamingContent && agentPhase && (

@@ -10,6 +10,14 @@ import { MermaidBlock, CodeBlock } from "./MermaidBlock";
 
 const MarkdownLinkContext = createContext(false);
 
+/**
+ * 远端模式会话（sandbox/local-machine/ssh）的 sessionId：Markdown 里的本
+ * 地路径图片经 /api/remotefs/<path>?src=<sessionId> 读取——文件在容器/
+ * 用户机器上，服务端 /api/files 拿不到（此前远端图片全部裂图）。由
+ * ChatWindow 按会话模式提供，host/quick 会话为 null（走服务端 files API）。
+ */
+export const RemoteFileSessionContext = createContext<string | null>(null);
+
 interface MarkdownBodyProps {
   children: string;
   className?: string;
@@ -25,11 +33,14 @@ function MarkdownImage({
   ...props
 }: ComponentProps<"img"> & ExtraProps & { cwd?: string }) {
   const insideLink = useContext(MarkdownLinkContext);
+  const remoteSessionId = useContext(RemoteFileSessionContext);
   delete props.node;
   const href = typeof src === "string" ? src : undefined;
   const filePath = href ? resolveLocalFileHref(href, cwd) : null;
   const imageSrc = filePath
-    ? `/api/files/${encodeFilePathForApi(filePath)}?type=read`
+    ? remoteSessionId
+      ? `/api/remotefs/${encodeFilePathForApi(filePath)}?src=${encodeURIComponent(remoteSessionId)}`
+      : `/api/files/${encodeFilePathForApi(filePath)}?type=read`
     : href;
   // Dynamic local paths are served directly by the file API.
   // eslint-disable-next-line @next/next/no-img-element

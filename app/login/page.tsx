@@ -20,6 +20,7 @@ function LoginForm() {
   const searchParams = useSearchParams();
   const [phase, setPhase] = useState<Phase>("login");
   const [registerMode, setRegisterMode] = useState<"off" | "open" | "approval">("off");
+  const [oidc, setOidc] = useState<{ enabled: boolean; label: string }>({ enabled: false, label: "OIDC" });
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [email, setEmail] = useState("");
@@ -36,8 +37,9 @@ function LoginForm() {
   useEffect(() => {
     fetch("/api/webauth/config")
       .then((r) => r.json())
-      .then((d: { registerMode?: "off" | "open" | "approval" }) => {
+      .then((d: { registerMode?: "off" | "open" | "approval"; oidc?: { enabled?: boolean; label?: string } }) => {
         if (d.registerMode) setRegisterMode(d.registerMode);
+        if (d.oidc) setOidc({ enabled: d.oidc.enabled === true, label: d.oidc.label ?? "OIDC" });
       })
       .catch(() => {});
     fetch("/api/webauth/first-run")
@@ -273,6 +275,32 @@ function LoginForm() {
         >
           {busy ? "请稍候…" : phase === "login" ? "登录" : phase === "register" ? "注册" : "修改密码"}
         </button>
+
+        {phase === "login" && oidc.enabled && (
+          <>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 14 }}>
+              <span style={{ flex: 1, height: 1, background: "var(--border, #2a2c30)" }} />
+              <span style={{ fontSize: 11, color: "var(--text-dim, #8b8f98)" }}>或</span>
+              <span style={{ flex: 1, height: 1, background: "var(--border, #2a2c30)" }} />
+            </div>
+            <a
+              href="/api/webauth/oidc/begin"
+              style={{
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                height: 36, borderRadius: 8,
+                border: "1px solid var(--border, #2a2c30)",
+                background: "transparent", color: "var(--text, #e6e6e6)",
+                fontSize: 13, fontWeight: 600, textDecoration: "none", cursor: "pointer", marginTop: 10,
+              }}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <rect x="3" y="11" width="18" height="10" rx="2" />
+                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+              </svg>
+              {`使用${oidc.label}登录`}
+            </a>
+          </>
+        )}
 
         <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
           {phase === "login" ? (

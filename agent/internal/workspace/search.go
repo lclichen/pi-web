@@ -47,7 +47,7 @@ func (w *Workspace) Grep(params map[string]interface{}) (interface{}, error) {
 	if err != nil {
 		return nil, fmt.Errorf("invalid pattern: %w", err)
 	}
-	abs, err := w.resolveLoose(paramString(params, "path", "."))
+	abs, err := w.resolve(paramString(params, "path", "."))
 	if err != nil {
 		return nil, err
 	}
@@ -136,7 +136,7 @@ func (w *Workspace) Fd(params map[string]interface{}) (interface{}, error) {
 	if pattern == "" {
 		return nil, fmt.Errorf("pattern required")
 	}
-	abs, err := w.resolveLoose(paramString(params, "path", "."))
+	abs, err := w.resolve(paramString(params, "path", "."))
 	if err != nil {
 		return nil, err
 	}

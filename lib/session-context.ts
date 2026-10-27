@@ -7,9 +7,10 @@ import type { SessionMode } from "./session-modes";
  * projectDir（项目目录，服务器侧）——pi SDK 会话的 cwd。扩展、Skills、
  * AGENTS.md、.pi/ 配置（MCP / 模型）全部从这里加载，由框架保证：
  *   · SDK 原生按会话 cwd 做资源发现；
- *   · local-machine / ssh 模式下，工具对 .pi/skills 与 AGENTS.md 的读取
- *     由服务端桥接（relay-tools 的 localSkillsPath / ssh-tools 的同级
- *     映射）落回 projectDir——这两类资源永远不进远端工作区。
+ *   · local-machine / ssh 模式下，工具对 .pi/skills、.pi/agent/skills 与
+ *     AGENTS.md 的读取由服务端桥接（lib/relay/skill-bridge.ts，relay-tools
+ *     / ssh-tools 接入）落回 projectDir / 服务器 agent 目录——运行配置类
+ *     资源永远不进远端工作区。
  *
  * workspaceDir（工作区目录，按模式）——模型实际操作文件、执行命令的位置：
  *   host           服务器目录本身（此时项目目录 = 工作区目录）

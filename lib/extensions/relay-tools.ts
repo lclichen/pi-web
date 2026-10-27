@@ -10,6 +10,7 @@ import {
   toWorkspaceRelative,
   type RelayWorkspaceScope,
 } from "@/lib/relay/workspace-base";
+import { matchServerSkillPath } from "@/lib/relay/skill-bridge";
 import type { ExecResult, FsEntry, FsReadResult, FsStatResult, GrepMatch } from "@/lib/relay/protocol";
 
 /**
@@ -87,18 +88,11 @@ export function makeRelayToolsExtension(userId: number, options: RelayToolsOptio
       { userId, ...(machineId ? { machineId } : {}) },
     ) as Promise<T>;
 
-  /** Local .pi/skills bridge: skills are discovered from the server-side
-   *  project home and do NOT exist on the user's machine — read calls that
-   *  resolve under <home>/.pi/skills are served from the pi-web server. */
-  const localSkillsPath = (p: string): string | null => {
-    if (!projectHome) return null;
-    const cleaned = p.replace(/^@/, "").trim();
-    if (!cleaned) return null;
-    const abs = cleaned.startsWith("/") ? cleaned : `${projectHome.replace(/\/+$/, "")}/${cleaned.replace(/^\/+/, "")}`;
-    const rel = abs.startsWith(`${projectHome}/`) ? abs.slice(projectHome.length + 1) : null;
-    if (rel === ".pi/skills" || rel?.startsWith(".pi/skills/")) return abs;
-    return null;
-  };
+  /** Skills bridge (lib/relay/skill-bridge.ts): skill files live on the
+   *  server (session homes' .pi/skills + server agent dir .pi/agent/skills),
+   *  never on the user's machine — skill-shaped read/ls stays server-side. */
+  const bridgeSkill = (p: string, ctxCwd?: string) =>
+    matchServerSkillPath(p, { homes: [projectHome, ctxCwd] });
 
   const readLocalFile = async (absPath: string): Promise<ToolResult> => {
     const { readFile } = await import("node:fs/promises");
@@ -112,6 +106,17 @@ export function makeRelayToolsExtension(userId: number, options: RelayToolsOptio
     }
   };
 
+  const listLocalDir = async (absPath: string): Promise<ToolResult> => {
+    const { readdir } = await import("node:fs/promises");
+    try {
+      const entries = await readdir(absPath, { withFileTypes: true });
+      if (entries.length === 0) return ok("(empty directory)");
+      return ok(entries.map((e) => `${e.isDirectory() ? "d" : "-"} ${e.name}`).sort().join("\n"));
+    } catch (err) {
+      return fail(err instanceof Error ? err.message : String(err));
+    }
+  };
+
   const factory = (pi: ExtensionAPI): void => {
     pi.registerTool(defineTool({
       name: "read",
@@ -120,10 +125,11 @@ export function makeRelayToolsExtension(userId: number, options: RelayToolsOptio
       parameters: Type.Object({
         path: Type.String({ description: "File path: absolute, or relative to the project workspace" }),
       }),
-      execute: async (_id, params) => {
-        // Skills bridge: .pi/skills/** lives in the server-side project home.
-        const bridged = localSkillsPath(params.path);
-        if (bridged) return readLocalFile(bridged);
+      execute: async (_id, params, _signal, _onUpdate, ctx) => {
+        // Skills bridge: runtime skill files live on the server, never on
+        // the user's machine — serve them locally instead of relaying.
+        const bridged = bridgeSkill(params.path, ctx?.cwd);
+        if (bridged) return readLocalFile(bridged.path);
         const scope = currentScope();
         if (scope.error) return fail(scope.error);
         try {
@@ -224,7 +230,9 @@ export function makeRelayToolsExtension(userId: number, options: RelayToolsOptio
       parameters: Type.Object({
         path: Type.Optional(Type.String({ description: "Directory path (default \".\" = project workspace root)" })),
       }),
-      execute: async (_id, params) => {
+      execute: async (_id, params, _signal, _onUpdate, ctx) => {
+        const bridged = bridgeSkill(params.path ?? "", ctx?.cwd);
+        if (bridged) return listLocalDir(bridged.path);
         const scope = currentScope();
         if (scope.error) return fail(scope.error);
         try {

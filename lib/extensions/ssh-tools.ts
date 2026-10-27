@@ -11,6 +11,7 @@ import type { BashOperations } from "@earendil-works/pi-coding-agent";
 import { Type } from "@earendil-works/pi-ai";
 import type { Client, SFTPWrapper } from "ssh2";
 import { getSshClient, sshExec, type SshConfig } from "../ssh";
+import { matchServerSkillPath } from "../relay/skill-bridge";
 
 interface ToolResult {
   content: Array<{ type: "text"; text: string }>;
@@ -65,9 +66,11 @@ function sftpList(s: SFTPWrapper, path: string): Promise<SftpEntry[]> {
  * @param projectId owner of the pooled connection
  * @param sshConfig connection credentials (from the project home's ssh.json)
  * @param workdir default remote working directory for relative paths
- * @param projectHome server-side project home — skills under <home>/.pi/skills
- *   are discovered/loaded locally and do NOT exist on the remote host; read
- *   calls mapped there are bridged to the local side instead of SFTP.
+ * @param projectHome server-side project home — runtime skill files
+ *   (<home>/.pi/skills, server ~/.pi/agent/skills) are discovered/loaded on
+ *   the server and do NOT exist on the remote host; skill-shaped read/ls
+ *   calls are bridged to the server side instead of SFTP
+ *   (lib/relay/skill-bridge.ts).
  */
 export function makeSshToolsExtension(opts: {
   projectId: string;
@@ -78,16 +81,8 @@ export function makeSshToolsExtension(opts: {
   const { projectId, sshConfig, workdir, projectHome } = opts;
   const client = () => getSshClient(projectId, sshConfig);
 
-  /** Local .pi/skills bridge target for a tool path, or null. */
-  const localSkillsPath = (p: string): string | null => {
-    if (!projectHome) return null;
-    const cleaned = p.replace(/^@/, "").trim();
-    if (!cleaned) return null;
-    const abs = cleaned.startsWith("/") ? cleaned : `${projectHome.replace(/\/+$/, "")}/${cleaned.replace(/^\/+/, "")}`;
-    const rel = abs.startsWith(`${projectHome}/`) ? abs.slice(projectHome.length + 1) : null;
-    if (rel === ".pi/skills" || rel?.startsWith(".pi/skills/")) return abs;
-    return null;
-  };
+  const bridgeSkill = (p: string, ctxCwd?: string) =>
+    matchServerSkillPath(p, { homes: [projectHome, ctxCwd] });
 
   /** Read a file on the pi-web server (skills bridge), formatted like the tool. */
   const readLocalFile = async (absPath: string): Promise<ToolResult> => {
@@ -97,6 +92,17 @@ export function makeSshToolsExtension(opts: {
       const lines = buf.toString("utf8").split("\n");
       const numbered = lines.map((line, i) => `${i + 1}→${line}`).join("\n");
       return ok(`${numbered}\n\n(${absPath}, ${lines.length} lines)`);
+    } catch (err) {
+      return fail(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const listLocalDir = async (absPath: string): Promise<ToolResult> => {
+    const { readdir } = await import("node:fs/promises");
+    try {
+      const entries = await readdir(absPath, { withFileTypes: true });
+      if (entries.length === 0) return ok("(empty)");
+      return ok(entries.map((e) => `${e.isDirectory() ? "d" : "-"} ${e.name}`).sort().join("\n"));
     } catch (err) {
       return fail(err instanceof Error ? err.message : String(err));
     }
@@ -133,11 +139,11 @@ export function makeSshToolsExtension(opts: {
       parameters: Type.Object({
         path: Type.String({ description: "File path (absolute, or relative to the project workdir)" }),
       }),
-      execute: async (_id, params) => {
-        // Skills bridge: .pi/skills/** lives in the server-side project home,
-        // not on the remote host — serve it locally.
-        const bridged = localSkillsPath(params.path);
-        if (bridged) return readLocalFile(bridged);
+      execute: async (_id, params, _signal, _onUpdate, ctx) => {
+        // Skills bridge: skill files live on the server, not on the remote
+        // host — serve them locally instead of SFTP.
+        const bridged = bridgeSkill(params.path, ctx?.cwd);
+        if (bridged) return readLocalFile(bridged.path);
         try {
           const c = await client();
           const s = await sftp(c);
@@ -217,7 +223,9 @@ export function makeSshToolsExtension(opts: {
       parameters: Type.Object({
         path: Type.String({ description: "Directory path (absolute, or relative to the project workdir)" }),
       }),
-      execute: async (_id, params) => {
+      execute: async (_id, params, _signal, _onUpdate, ctx) => {
+        const bridged = bridgeSkill(params.path, ctx?.cwd);
+        if (bridged) return listLocalDir(bridged.path);
         try {
           const c = await client();
           const s = await sftp(c);

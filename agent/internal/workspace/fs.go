@@ -14,7 +14,7 @@ const maxReadSize = 10 * 1024 * 1024 // 10 MB
 // List lists a directory (dirs first, then alphabetical).
 func (w *Workspace) List(params map[string]interface{}) (interface{}, error) {
 	p := paramString(params, "path", ".")
-	abs, err := w.resolveLoose(p)
+	abs, err := w.resolve(p)
 	if err != nil {
 		return nil, err
 	}
@@ -53,7 +53,7 @@ func (w *Workspace) Read(params map[string]interface{}) (interface{}, error) {
 	if p == "" {
 		return nil, fmt.Errorf("path required")
 	}
-	abs, err := w.resolveLoose(p)
+	abs, err := w.resolve(p)
 	if err != nil {
 		return nil, err
 	}
@@ -106,7 +106,7 @@ func (w *Workspace) Stat(params map[string]interface{}) (interface{}, error) {
 	if p == "" {
 		return nil, fmt.Errorf("path required")
 	}
-	abs, err := w.resolveLoose(p)
+	abs, err := w.resolve(p)
 	if err != nil {
 		return nil, err
 	}

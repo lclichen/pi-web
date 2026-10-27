@@ -68,23 +68,6 @@ func (w *Workspace) For(params map[string]interface{}) (*Workspace, error) {
 // resolve enforces that p (absolute or relative to Root) is inside Root after
 // cleaning and symlink resolution, and returns the absolute, real path.
 func (w *Workspace) resolve(p string) (string, error) {
-	abs, err := w.resolveLoose(p)
-	if err != nil {
-		return "", err
-	}
-	root := w.GetRoot()
-	if !isWithin(abs, w.realRoot(root)) {
-		return "", fmt.Errorf("path outside workspace root: %s", p)
-	}
-	return abs, nil
-}
-
-// resolveLoose resolves p (relative against Root, absolute verbatim) WITHOUT
-// the root fence. Read-only operations use it: absolute paths outside the
-// root — typically ~/.pi/agent/skills/** asked for by the model — must stay
-// readable (bash can `cat` them anyway, so fencing only reads adds friction
-// without a security boundary; writes stay fenced via resolve).
-func (w *Workspace) resolveLoose(p string) (string, error) {
 	root := w.GetRoot()
 	if p == "" {
 		p = "."
@@ -99,7 +82,12 @@ func (w *Workspace) resolveLoose(p string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return resolveReal(abs), nil
+	abs = resolveReal(abs)
+	realRoot := w.realRoot(root)
+	if !isWithin(abs, realRoot) {
+		return "", fmt.Errorf("path outside workspace root: %s", p)
+	}
+	return abs, nil
 }
 
 // resolveReal resolves symlinks on the longest EXISTING ancestor of abs and

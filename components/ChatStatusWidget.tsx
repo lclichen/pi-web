@@ -67,9 +67,11 @@ interface Props {
  *
  * 同一 shell 的两态形变（ZCode ConversationStatusPanel 同款）：折叠 pill
  * 与展开 panel 是同一个容器，mini 宽度经隐藏测量元素 + ResizeObserver
- * 实测。形变只动画表面属性（radius/shadow 10ms 近乎瞬时）——尺寸
- * （width/max-height）瞬时切换，壳右上角锚定，视觉上即自右上角铺开；
- * 几何参与过渡会让文本中途回流、并与圆角逐阶段失步（实测两段式跳动）。
+ * 实测。形变（用户定稿）：全部几何——尺寸与圆角——单帧瞬时切换，壳
+ * 右上角锚定即自右上角铺开；唯一过渡是阴影 140ms 淡入。圆角不做过渡
+ * 的原因见壳上注释：999px 会被浏览器钳制为盒高一半，动画期间实际圆角
+ * 随高度 ballooning 才是此前“大圆角→卡片圆角”观感的真因，两态真实
+ * 差值仅 13.5↔10px。
  * auto 变体按对话容器宽度（≥1180px 默认展开、否则 mini），用户点击可
  * 覆盖，会话切换重置。
  *
@@ -422,7 +424,13 @@ export function ChatStatusWidget({
           boxShadow: panelOpen ? "0 10px 28px rgba(0,0,0,0.14)" : "none",
           overflow: "hidden",
           display: "flex", flexDirection: "column",
-          transition: `border-radius ${SURFACE_MS}ms ease-in-out, box-shadow ${SURFACE_MS}ms ease-in-out, background 0.12s, border-color 0.12s`,
+          // No border-radius transition on purpose: 999px is a spec value the
+          // browser CLAMPS to half the box height (pill 27px → used ~13.5px,
+          // card 161px → would read 80px if 999 applied mid-size). Animating
+          // it makes the used corner balloon with height; snapping it leaves
+          // a 13.5↔10px delta the eye can't see (ZCode keeps one radius for
+          // both states for the same reason).
+          transition: `box-shadow ${SHADOW_FADE_MS}ms ease-out, background 0.12s, border-color 0.12s`,
         }}
       >
         {headerButton}
@@ -668,10 +676,11 @@ const chipStyle: React.CSSProperties = {
   background: "var(--bg-selected)", color: "var(--text-muted)", fontFamily: "var(--font-mono)",
 };
 
-/** Pill↔panel morph follows ZCode ConversationStatusPanel: geometry snaps
- *  (top-right anchored); surface props settle near-instantly (10ms — a
- *  perceptible radius/shadow lag reads as a second stage). */
-const SURFACE_MS = 10;
+/** Pill↔panel morph follows ZCode ConversationStatusPanel: everything
+ *  geometric — size AND radius — snaps in one frame (top-right anchored).
+ *  Only the box-shadow gets a 140ms fade; see the shell comment for why
+ *  border-radius deliberately has no transition. */
+const SHADOW_FADE_MS = 140;
 
 /** in_progress 优先、缺省回落首个 pending —— 与 model 层的链头一致。 */
 function currentTodoId(todos: TodoItem[]): number | null {

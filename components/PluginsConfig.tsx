@@ -4,10 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { sendAgentCommand } from "@/lib/agent-client";
 import type { PluginPackageInfo, PluginUpdateResult, PluginsResponse } from "@/lib/api-types";
 import { useI18n } from "@/hooks/useI18n";
-import {
-  getLastSettingsSelection,
-  setLastSettingsSelection,
-} from "@/lib/settings-navigation";
+import { getLastSettingsSelection, setLastSettingsSelection } from "@/lib/settings-navigation";
 import {
   ConfigButton,
   ConfigDetail,
@@ -51,7 +48,9 @@ function packageKey(pkg: Pick<PluginPackageInfo, "source" | "scope">): string {
 function resourceSummary(pkg: PluginPackageInfo, t: ReturnType<typeof useI18n>["t"]): string {
   if (pkg.disabled) return t("i18n.disabled");
   const parts = [
-    pkg.counts.extensions ? t("i18n.resourceCount", { count: pkg.counts.extensions, label: t("i18n.extensionShort") }) : "",
+    pkg.counts.extensions
+      ? t("i18n.resourceCount", { count: pkg.counts.extensions, label: t("i18n.extensionShort") })
+      : "",
     pkg.counts.skills ? t("i18n.resourceCount", { count: pkg.counts.skills, label: t("i18n.skillShort") }) : "",
     pkg.counts.prompts ? t("i18n.resourceCount", { count: pkg.counts.prompts, label: t("i18n.promptShort") }) : "",
     pkg.counts.themes ? t("i18n.resourceCount", { count: pkg.counts.themes, label: t("i18n.themeShort") }) : "",
@@ -67,9 +66,7 @@ function versionSummary(pkg: PluginPackageInfo, t: ReturnType<typeof useI18n>["t
 }
 
 function installLocation(scope: PluginScope, cwd: string): string {
-  return scope === "project"
-    ? `${shortenPath(cwd)}/.pi/{npm,git}`
-    : "~/.pi/agent/{npm,git}";
+  return scope === "project" ? `${shortenPath(cwd)}/.pi/{npm,git}` : "~/.pi/agent/{npm,git}";
 }
 
 function findInstalledPackage(
@@ -79,9 +76,11 @@ function findInstalledPackage(
 ): PluginPackageInfo | undefined {
   const trimmed = source.trim();
   const withoutNpmPrefix = trimmed.startsWith("npm:") ? trimmed.slice(4) : trimmed;
-  return packages.find((pkg) => pkg.scope === scope && pkg.source === trimmed)
-    ?? packages.find((pkg) => pkg.scope === scope && pkg.source === `npm:${withoutNpmPrefix}`)
-    ?? packages.find((pkg) => pkg.scope === scope && pkg.source.endsWith(trimmed));
+  return (
+    packages.find((pkg) => pkg.scope === scope && pkg.source === trimmed) ??
+    packages.find((pkg) => pkg.scope === scope && pkg.source === `npm:${withoutNpmPrefix}`) ??
+    packages.find((pkg) => pkg.scope === scope && pkg.source.endsWith(trimmed))
+  );
 }
 
 function statusColor(status: PluginPackageInfo["status"]): string {
@@ -93,12 +92,14 @@ function statusColor(status: PluginPackageInfo["status"]): string {
 
 function ResourceList({ pkg }: { pkg: PluginPackageInfo }) {
   const { t } = useI18n();
-  const groups = ([
-    ["extension", t("i18n.extensions")],
-    ["skill", t("i18n.skills")],
-    ["prompt", t("i18n.prompts")],
-    ["theme", t("i18n.themes")],
-  ] as const)
+  const groups = (
+    [
+      ["extension", t("i18n.extensions")],
+      ["skill", t("i18n.skills")],
+      ["prompt", t("i18n.prompts")],
+      ["theme", t("i18n.themes")],
+    ] as const
+  )
     .map(([kind, label]) => ({
       kind,
       label,
@@ -304,7 +305,9 @@ function AddPluginPanel({
   return (
     <ConfigDetailStack className="is-fill">
       <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+        <div
+          style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}
+        >
           <ConfigDetailTitle>{t("i18n.addPlugin")}</ConfigDetailTitle>
           <a
             href="https://pi.dev/packages"
@@ -320,7 +323,14 @@ function AddPluginPanel({
               whiteSpace: "nowrap",
             }}
           >
-            <svg width="28" height="28" viewBox="0 0 800 800" aria-hidden="true" focusable="false" style={{ flexShrink: 0 }}>
+            <svg
+              width="28"
+              height="28"
+              viewBox="0 0 800 800"
+              aria-hidden="true"
+              focusable="false"
+              style={{ flexShrink: 0 }}
+            >
               <path
                 fill="#000"
                 fillRule="evenodd"
@@ -370,11 +380,7 @@ function AddPluginPanel({
       </ConfigField>
 
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-        <SegmentedScope
-          value={scope}
-          projectResourcesLoaded={projectResourcesLoaded}
-          onChange={onScopeChange}
-        />
+        <SegmentedScope value={scope} projectResourcesLoaded={projectResourcesLoaded} onChange={onScopeChange} />
         <ConfigButton
           variant="primary"
           onClick={onInstall}
@@ -386,9 +392,7 @@ function AddPluginPanel({
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-        <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)" }}>
-          Examples
-        </div>
+        <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)" }}>Examples</div>
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           {examples.map((example) => (
             <button
@@ -424,20 +428,32 @@ function AddPluginPanel({
       </div>
 
       {/* Non-package install methods: settings.json extensions 数组与扩展目录 */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 7, paddingTop: 4, borderTop: "1px solid var(--border)" }}>
-        <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)" }}>
-          本地扩展
-        </div>
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: 7,
+          paddingTop: 4,
+          borderTop: "1px solid var(--border)",
+        }}
+      >
+        <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)" }}>本地扩展</div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <input
             value={extensionPath}
             onChange={(e) => onExtensionPathChange(e.target.value)}
             placeholder="D:\path\to\extension\index.ts（写入 settings.json extensions）"
             style={{
-              flex: "1 1 260px", height: 32, padding: "0 10px",
-              border: "1px solid var(--border)", borderRadius: 6,
-              background: "var(--bg-panel)", color: "var(--text)",
-              fontFamily: "var(--font-mono)", fontSize: 12, outline: "none",
+              flex: "1 1 260px",
+              height: 32,
+              padding: "0 10px",
+              border: "1px solid var(--border)",
+              borderRadius: 6,
+              background: "var(--bg-panel)",
+              color: "var(--text)",
+              fontFamily: "var(--font-mono)",
+              fontSize: 12,
+              outline: "none",
             }}
           />
           <button
@@ -455,10 +471,16 @@ function AddPluginPanel({
             onChange={(e) => onDirectoryNameChange(e.target.value)}
             placeholder="my-extension（在 .pi/extensions 下新建）"
             style={{
-              flex: "1 1 260px", height: 32, padding: "0 10px",
-              border: "1px solid var(--border)", borderRadius: 6,
-              background: "var(--bg-panel)", color: "var(--text)",
-              fontFamily: "var(--font-mono)", fontSize: 12, outline: "none",
+              flex: "1 1 260px",
+              height: 32,
+              padding: "0 10px",
+              border: "1px solid var(--border)",
+              borderRadius: 6,
+              background: "var(--bg-panel)",
+              color: "var(--text)",
+              fontFamily: "var(--font-mono)",
+              fontSize: 12,
+              outline: "none",
             }}
           />
           <button
@@ -475,11 +497,7 @@ function AddPluginPanel({
         </div>
       </div>
 
-      {actionError && (
-        <div style={{ fontSize: 12, color: "#ef4444", whiteSpace: "pre-wrap" }}>
-          {actionError}
-        </div>
-      )}
+      {actionError && <div style={{ fontSize: 12, color: "#ef4444", whiteSpace: "pre-wrap" }}>{actionError}</div>}
     </ConfigDetailStack>
   );
 }
@@ -536,18 +554,20 @@ function PackageDetail({
             >
               {t("i18n.disabled")}
             </span>
-          ) : pkg.filtered && (
-            <span
-              style={{
-                fontSize: 10,
-                padding: "1px 5px",
-                borderRadius: 3,
-                background: "rgba(245,158,11,0.12)",
-                color: "#d97706",
-              }}
-            >
-              {t("i18n.filtered")}
-            </span>
+          ) : (
+            pkg.filtered && (
+              <span
+                style={{
+                  fontSize: 10,
+                  padding: "1px 5px",
+                  borderRadius: 3,
+                  background: "rgba(245,158,11,0.12)",
+                  color: "#d97706",
+                }}
+              >
+                {t("i18n.filtered")}
+              </span>
+            )
           )}
           {pkg.origin && pkg.origin !== "package" && (
             <span
@@ -584,31 +604,29 @@ function PackageDetail({
 
         <ConfigDetailActions>
           {pkg.origin !== "settings" && pkg.origin !== "directory" && (
-          <ConfigButton
-            size="small"
-            variant={updateAvailable ? "primary" : undefined}
-            onClick={updateAvailable || !canCheckForUpdates
-              ? () => onAction("update", pkg)
-              : onCheckUpdate}
-            disabled={busy || reloadBusy || checkingUpdate}
-            title={updateAvailable ? t("i18n.updateAvailable") : undefined}
-          >
-             {busyKey === `update:${key}`
-               ? t("i18n.updating")
-               : checkingUpdate
-                 ? t("i18n.checking")
-                 : updateAvailable || !canCheckForUpdates
-                   ? t("i18n.update")
-                   : t("i18n.check")}
-          </ConfigButton>
+            <ConfigButton
+              size="small"
+              variant={updateAvailable ? "primary" : undefined}
+              onClick={updateAvailable || !canCheckForUpdates ? () => onAction("update", pkg) : onCheckUpdate}
+              disabled={busy || reloadBusy || checkingUpdate}
+              title={updateAvailable ? t("i18n.updateAvailable") : undefined}
+            >
+              {busyKey === `update:${key}`
+                ? t("i18n.updating")
+                : checkingUpdate
+                  ? t("i18n.checking")
+                  : updateAvailable || !canCheckForUpdates
+                    ? t("i18n.update")
+                    : t("i18n.check")}
+            </ConfigButton>
           )}
           <ConfigButton
             size="small"
             onClick={onReloadSession}
             disabled={!sessionId || reloadBusy || busy}
-             title={sessionId ? t("i18n.reloadSession") : t("i18n.openSessionToReload")}
+            title={sessionId ? t("i18n.reloadSession") : t("i18n.openSessionToReload")}
           >
-             {reloadBusy ? t("i18n.reloading") : t("i18n.reloadSession")}
+            {reloadBusy ? t("i18n.reloading") : t("i18n.reloadSession")}
           </ConfigButton>
           <ConfigButton
             variant="danger"
@@ -616,7 +634,7 @@ function PackageDetail({
             onClick={() => onAction("remove", pkg)}
             disabled={busy || reloadBusy}
           >
-             {busyKey === `remove:${key}` ? t("i18n.removing") : t("i18n.remove")}
+            {busyKey === `remove:${key}` ? t("i18n.removing") : t("i18n.remove")}
           </ConfigButton>
           <ConfigSwitch
             checked={enabled}
@@ -636,12 +654,15 @@ function PackageDetail({
           lineHeight: 1.45,
         }}
       >
-        {(() => { const description = pkg.description?.trim(); return description ? (
-          <>
-            <div style={{ color: "var(--text-dim)" }}>{t("i18n.description")}</div>
-            <div style={{ color: "var(--text-muted)", overflowWrap: "anywhere" }}>{description}</div>
-          </>
-        ) : null; })()}
+        {(() => {
+          const description = pkg.description?.trim();
+          return description ? (
+            <>
+              <div style={{ color: "var(--text-dim)" }}>{t("i18n.description")}</div>
+              <div style={{ color: "var(--text-muted)", overflowWrap: "anywhere" }}>{description}</div>
+            </>
+          ) : null;
+        })()}
         <div style={{ color: "var(--text-dim)" }}>{t("i18n.status")}</div>
         <div style={{ color: statusColor(pkg.status), textTransform: "capitalize" }}>{pkg.status}</div>
         <div style={{ color: "var(--text-dim)" }}>{t("i18n.version")}</div>
@@ -655,13 +676,15 @@ function PackageDetail({
             )}
             {canCheckForUpdates && (checkingUpdate || (updateStatus && !updateAvailable)) && (
               <span
-                className={`skill-update-status ${checkingUpdate
-                  ? "is-checking"
-                  : updateStatus?.state === "up-to-date"
-                    ? "is-success"
-                    : updateStatus?.state === "error"
-                      ? "is-error"
-                      : "is-muted"}`}
+                className={`skill-update-status ${
+                  checkingUpdate
+                    ? "is-checking"
+                    : updateStatus?.state === "up-to-date"
+                      ? "is-success"
+                      : updateStatus?.state === "error"
+                        ? "is-error"
+                        : "is-muted"
+                }`}
               >
                 {checkingUpdate
                   ? t("i18n.checking")
@@ -673,16 +696,14 @@ function PackageDetail({
               </span>
             )}
           </div>
-          {updateError && (
-            <span style={{ fontSize: 12, color: "#ef4444" }}>{updateError}</span>
-          )}
+          {updateError && <span style={{ fontSize: 12, color: "#ef4444" }}>{updateError}</span>}
         </div>
         <div style={{ color: "var(--text-dim)" }}>{t("i18n.package")}</div>
         <div style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)", overflowWrap: "anywhere" }}>
           {pkg.packageName ?? t("i18n.unknown")}
         </div>
         <div style={{ color: "var(--text-dim)" }}>{t("i18n.resources")}</div>
-         <div style={{ color: "var(--text-muted)" }}>{resourceSummary(pkg, t)}</div>
+        <div style={{ color: "var(--text-muted)" }}>{resourceSummary(pkg, t)}</div>
         <div style={{ color: "var(--text-dim)" }}>{t("i18n.installedPath")}</div>
         <div
           style={{
@@ -704,16 +725,8 @@ function PackageDetail({
         <ResourceList pkg={pkg} />
       </div>
 
-      {actionMessage && (
-        <div style={{ fontSize: 12, color: "#16a34a" }}>
-          {actionMessage}
-        </div>
-      )}
-      {actionError && (
-        <div style={{ fontSize: 12, color: "#ef4444", whiteSpace: "pre-wrap" }}>
-          {actionError}
-        </div>
-      )}
+      {actionMessage && <div style={{ fontSize: 12, color: "#16a34a" }}>{actionMessage}</div>}
+      {actionError && <div style={{ fontSize: 12, color: "#ef4444", whiteSpace: "pre-wrap" }}>{actionError}</div>}
     </ConfigDetailStack>
   );
 }
@@ -790,47 +803,50 @@ export function PluginsConfig({
     if (selected) setLastSettingsSelection("plugins", selected, cwd);
   }, [cwd, selected]);
 
-  const checkForUpdates = useCallback(async (pkg?: PluginPackageInfo) => {
-    const targets = pkg ? [pkg] : packages.filter((item) => item.canCheckForUpdates);
-    const keys = targets.map(packageKey);
-    if (keys.length === 0) return;
+  const checkForUpdates = useCallback(
+    async (pkg?: PluginPackageInfo) => {
+      const targets = pkg ? [pkg] : packages.filter((item) => item.canCheckForUpdates);
+      const keys = targets.map(packageKey);
+      if (keys.length === 0) return;
 
-    setUpdateError(null);
-    setCheckingUpdates((current) => new Set([...current, ...keys]));
-    if (!pkg) setCheckingAll(true);
-    try {
-      const res = await fetch("/api/plugins/check", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          cwd,
-          source: pkg?.source,
-          scope: pkg?.scope,
-        }),
-      });
-      const data = (await res.json()) as {
-        updates?: PluginUpdateResult[];
-        error?: string;
-      };
-      if (!res.ok || data.error) throw new Error(data.error ?? `HTTP ${res.status}`);
-      setUpdateStatuses((current) => {
-        const next = { ...current };
-        for (const update of data.updates ?? []) {
-          next[packageKey(update)] = update;
-        }
-        return next;
-      });
-    } catch (err) {
-      setUpdateError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setCheckingUpdates((current) => {
-        const next = new Set(current);
-        for (const key of keys) next.delete(key);
-        return next;
-      });
-      if (!pkg) setCheckingAll(false);
-    }
-  }, [cwd, packages]);
+      setUpdateError(null);
+      setCheckingUpdates((current) => new Set([...current, ...keys]));
+      if (!pkg) setCheckingAll(true);
+      try {
+        const res = await fetch("/api/plugins/check", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            cwd,
+            source: pkg?.source,
+            scope: pkg?.scope,
+          }),
+        });
+        const data = (await res.json()) as {
+          updates?: PluginUpdateResult[];
+          error?: string;
+        };
+        if (!res.ok || data.error) throw new Error(data.error ?? `HTTP ${res.status}`);
+        setUpdateStatuses((current) => {
+          const next = { ...current };
+          for (const update of data.updates ?? []) {
+            next[packageKey(update)] = update;
+          }
+          return next;
+        });
+      } catch (err) {
+        setUpdateError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setCheckingUpdates((current) => {
+          const next = new Set(current);
+          for (const key of keys) next.delete(key);
+          return next;
+        });
+        if (!pkg) setCheckingAll(false);
+      }
+    },
+    [cwd, packages],
+  );
 
   const updateAllPluginsAction = useCallback(async () => {
     setUpdatingAll(true);
@@ -858,55 +874,58 @@ export function PluginsConfig({
     }
   }, [cwd, sessionId, t]);
 
-  const runAction = useCallback(async (action: PluginAction, pkg: PluginPackageInfo) => {
-    const key = packageKey(pkg);
-    if (action === "remove" && pkg.origin === "directory") {
-      const ok = window.confirm(`删除扩展目录及其全部内容？\n${pkg.source}`);
-      if (!ok) return;
-    }
-    setBusyKey(`${action}:${key}`);
-    setActionError(null);
-    setActionMessage(null);
-    try {
-      const res = await fetch("/api/plugins", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, source: pkg.source, scope: pkg.scope, cwd, origin: pkg.origin }),
-      });
-      const next = (await res.json()) as PluginsResponse & { error?: string };
-      if (!res.ok || next.error) throw new Error(next.error ?? `HTTP ${res.status}`);
-      setData(next);
-      if (action === "remove") {
-        setSelected(next.packages[0] ? packageKey(next.packages[0]) : null);
-        if (next.packages.length === 0) setAddMode(true);
-        setActionMessage("Package removed.");
-        setUpdateStatuses((current) => {
-          const nextStatuses = { ...current };
-          delete nextStatuses[key];
-          return nextStatuses;
+  const runAction = useCallback(
+    async (action: PluginAction, pkg: PluginPackageInfo) => {
+      const key = packageKey(pkg);
+      if (action === "remove" && pkg.origin === "directory") {
+        const ok = window.confirm(`删除扩展目录及其全部内容？\n${pkg.source}`);
+        if (!ok) return;
+      }
+      setBusyKey(`${action}:${key}`);
+      setActionError(null);
+      setActionMessage(null);
+      try {
+        const res = await fetch("/api/plugins", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action, source: pkg.source, scope: pkg.scope, cwd, origin: pkg.origin }),
         });
-      } else {
-        const messages: Record<Exclude<PluginAction, "remove">, string> = {
-          install: "Package installed.",
-          update: "Package updated.",
-          disable: "Package disabled.",
-          enable: "Package enabled.",
-        };
-        setActionMessage(messages[action]);
-        if (action === "update") {
+        const next = (await res.json()) as PluginsResponse & { error?: string };
+        if (!res.ok || next.error) throw new Error(next.error ?? `HTTP ${res.status}`);
+        setData(next);
+        if (action === "remove") {
+          setSelected(next.packages[0] ? packageKey(next.packages[0]) : null);
+          if (next.packages.length === 0) setAddMode(true);
+          setActionMessage("Package removed.");
           setUpdateStatuses((current) => {
             const nextStatuses = { ...current };
             delete nextStatuses[key];
             return nextStatuses;
           });
+        } else {
+          const messages: Record<Exclude<PluginAction, "remove">, string> = {
+            install: "Package installed.",
+            update: "Package updated.",
+            disable: "Package disabled.",
+            enable: "Package enabled.",
+          };
+          setActionMessage(messages[action]);
+          if (action === "update") {
+            setUpdateStatuses((current) => {
+              const nextStatuses = { ...current };
+              delete nextStatuses[key];
+              return nextStatuses;
+            });
+          }
         }
+      } catch (err) {
+        setActionError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setBusyKey(null);
       }
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusyKey(null);
-    }
-  }, [cwd]);
+    },
+    [cwd],
+  );
 
   const installPlugin = useCallback(async () => {
     const source = normalizePluginSourceInput(installSource).trim();
@@ -1014,81 +1033,78 @@ export function PluginsConfig({
   const footerBusy = loading || busyKey !== null || checkingUpdates.size > 0 || updatingAll;
 
   return (
-    <ConfigPanelShell embedded={embedded} title={t("common.plugins")} subtitle={shortenPath(cwd)} closeLabel={t("i18n.close")} onClose={onClose}>
+    <ConfigPanelShell
+      embedded={embedded}
+      title={t("common.plugins")}
+      subtitle={shortenPath(cwd)}
+      closeLabel={t("i18n.close")}
+      onClose={onClose}
+    >
+      {!projectResourcesLoaded && (
+        <div role="status" className="config-trust-notice">
+          {t("trust.pluginsNotLoaded")}
+        </div>
+      )}
 
-        {!projectResourcesLoaded && (
-          <div role="status" className="config-trust-notice">
-            {t("trust.pluginsNotLoaded")}
-          </div>
-        )}
+      <ConfigSplitView>
+        <ConfigSidebar>
+          <ConfigSidebarList>
+            {loading ? (
+              <div className="config-sidebar-message">Loading...</div>
+            ) : error ? (
+              <div className="config-sidebar-message is-error">{error}</div>
+            ) : packages.length === 0 ? (
+              <div className="config-sidebar-message is-empty">No plugins configured</div>
+            ) : (
+              groupedPackages.map((group) => (
+                <div key={group.scope} className="config-sidebar-group">
+                  <ConfigSidebarGroupLabel>{group.scope}</ConfigSidebarGroupLabel>
+                  {group.packages.map((pkg) => {
+                    const key = packageKey(pkg);
+                    const isSelected = !addMode && selected === key;
+                    return (
+                      <ConfigSidebarItem
+                        key={key}
+                        active={isSelected}
+                        title={pkg.description ?? pkg.source}
+                        onClick={() => {
+                          setSelected(key);
+                          setAddMode(false);
+                          setActionError(null);
+                          setActionMessage(null);
+                        }}
+                      >
+                        <ConfigStatusDot active={!pkg.disabled} color={statusColor(pkg.status)} />
+                        <ConfigSidebarText className={`is-grow${pkg.disabled ? " is-muted" : ""}`}>
+                          {pkg.source}
+                        </ConfigSidebarText>
+                        {updateStatuses[packageKey(pkg)]?.state === "update-available" && (
+                          <span title={t("i18n.updateAvailable")} className="skill-update-indicator">
+                            ↑
+                          </span>
+                        )}
+                      </ConfigSidebarItem>
+                    );
+                  })}
+                </div>
+              ))
+            )}
+          </ConfigSidebarList>
+          <ConfigListAction
+            active={addMode}
+            onClick={() => {
+              setAddMode(true);
+              setActionError(null);
+              setActionMessage(null);
+            }}
+          >
+            {t("i18n.addPlugin")}
+          </ConfigListAction>
+        </ConfigSidebar>
 
-        <ConfigSplitView>
-          <ConfigSidebar>
-            <ConfigSidebarList>
-              {loading ? (
-                <div className="config-sidebar-message">
-                  Loading...
-                </div>
-              ) : error ? (
-                <div className="config-sidebar-message is-error">
-                  {error}
-                </div>
-              ) : packages.length === 0 ? (
-                <div className="config-sidebar-message is-empty">
-                  No plugins configured
-                </div>
-              ) : (
-                groupedPackages.map((group) => (
-                  <div key={group.scope} className="config-sidebar-group">
-                    <ConfigSidebarGroupLabel>
-                      {group.scope}
-                    </ConfigSidebarGroupLabel>
-                    {group.packages.map((pkg) => {
-                      const key = packageKey(pkg);
-                      const isSelected = !addMode && selected === key;
-                      return (
-                        <ConfigSidebarItem
-                          key={key}
-                          active={isSelected}
-                          title={pkg.description ?? pkg.source}
-                          onClick={() => {
-                            setSelected(key);
-                            setAddMode(false);
-                            setActionError(null);
-                            setActionMessage(null);
-                          }}
-                        >
-                          <ConfigStatusDot active={!pkg.disabled} color={statusColor(pkg.status)} />
-                          <ConfigSidebarText className={`is-grow${pkg.disabled ? " is-muted" : ""}`}>
-                            {pkg.source}
-                          </ConfigSidebarText>
-                          {updateStatuses[packageKey(pkg)]?.state === "update-available" && (
-                            <span title={t("i18n.updateAvailable")} className="skill-update-indicator">
-                              ↑
-                            </span>
-                          )}
-                        </ConfigSidebarItem>
-                      );
-                    })}
-                  </div>
-                ))
-              )}
-            </ConfigSidebarList>
-            <ConfigListAction
-                active={addMode}
-                onClick={() => {
-                  setAddMode(true);
-                  setActionError(null);
-                  setActionMessage(null);
-                }}
-              >
-                 {t("i18n.addPlugin")}
-            </ConfigListAction>
-          </ConfigSidebar>
-
-          <ConfigDetail>
-            <ConfigDetailStack className="is-fill">
-              {addMode ? (
+        <ConfigDetail>
+          <ConfigDetailStack className="is-fill">
+            {addMode ? (
               <AddPluginPanel
                 cwd={cwd}
                 source={installSource}
@@ -1122,53 +1138,58 @@ export function PluginsConfig({
                 onCheckUpdate={() => void checkForUpdates(selectedPackage)}
                 onReloadSession={reloadSession}
               />
-              ) : (
-                <ConfigEmptyState>{t("i18n.selectPackage")}</ConfigEmptyState>
-              )}
-            </ConfigDetailStack>
-          </ConfigDetail>
-        </ConfigSplitView>
-
-        <ConfigFooter status={
-            availableUpdateCount > 0 ? (
-              <span style={{ fontSize: 12, color: "var(--accent)" }}>
-                {availableUpdateCount}{" "}
-                {availableUpdateCount === 1 ? t("i18n.update") : t("i18n.updates")}
-              </span>
-            ) : data?.diagnostics.length ? (
-              <span
-                title={data.diagnostics.map((d) => `${d.type}: ${d.source ? `${d.source}: ` : ""}${d.message}`).join("\n")}
-                style={{ color: data.diagnostics.some((d) => d.type === "error") ? "#ef4444" : "#d97706" }}
-              >
-                {data.diagnostics.length} diagnostic{data.diagnostics.length === 1 ? "" : "s"}
-              </span>
             ) : (
-              <span>
-                {data ? `${data.totals.extensions} ext · ${data.totals.skills} skills · ${data.totals.prompts} prompts · ${data.totals.themes} themes` : ""}
-              </span>
+              <ConfigEmptyState>{t("i18n.selectPackage")}</ConfigEmptyState>
             )}
-        >
-          {!embedded && <ConfigButton onClick={onClose}>{t("i18n.close")}</ConfigButton>}
-          {hasCheckablePackages && (
-            <ConfigButton
-              variant={availableUpdateCount > 0 ? "primary" : "secondary"}
-              onClick={() => void (availableUpdateCount > 0 ? updateAllPluginsAction() : checkForUpdates())}
-              disabled={footerBusy}
-              title={availableUpdateCount > 0 ? t("i18n.updateAllPluginsHint") : undefined}
+          </ConfigDetailStack>
+        </ConfigDetail>
+      </ConfigSplitView>
+
+      <ConfigFooter
+        status={
+          availableUpdateCount > 0 ? (
+            <span style={{ fontSize: 12, color: "var(--accent)" }}>
+              {availableUpdateCount} {availableUpdateCount === 1 ? t("i18n.update") : t("i18n.updates")}
+            </span>
+          ) : data?.diagnostics.length ? (
+            <span
+              title={data.diagnostics
+                .map((d) => `${d.type}: ${d.source ? `${d.source}: ` : ""}${d.message}`)
+                .join("\n")}
+              style={{ color: data.diagnostics.some((d) => d.type === "error") ? "#ef4444" : "#d97706" }}
             >
-              {updatingAll
-                ? t("i18n.updating")
-                : checkingAll
-                  ? t("i18n.checking")
-                  : availableUpdateCount > 0
-                    ? `${t("i18n.updateAllPlugins")} (${availableUpdateCount})`
-                    : t("i18n.checkUpdates")}
-            </ConfigButton>
-          )}
-          <ConfigButton variant="secondary" onClick={() => void loadPlugins()} disabled={footerBusy}>
-             {t("i18n.refresh")}
+              {data.diagnostics.length} diagnostic{data.diagnostics.length === 1 ? "" : "s"}
+            </span>
+          ) : (
+            <span>
+              {data
+                ? `${data.totals.extensions} ext · ${data.totals.skills} skills · ${data.totals.prompts} prompts · ${data.totals.themes} themes`
+                : ""}
+            </span>
+          )
+        }
+      >
+        {!embedded && <ConfigButton onClick={onClose}>{t("i18n.close")}</ConfigButton>}
+        {hasCheckablePackages && (
+          <ConfigButton
+            variant={availableUpdateCount > 0 ? "primary" : "secondary"}
+            onClick={() => void (availableUpdateCount > 0 ? updateAllPluginsAction() : checkForUpdates())}
+            disabled={footerBusy}
+            title={availableUpdateCount > 0 ? t("i18n.updateAllPluginsHint") : undefined}
+          >
+            {updatingAll
+              ? t("i18n.updating")
+              : checkingAll
+                ? t("i18n.checking")
+                : availableUpdateCount > 0
+                  ? `${t("i18n.updateAllPlugins")} (${availableUpdateCount})`
+                  : t("i18n.checkUpdates")}
           </ConfigButton>
-        </ConfigFooter>
+        )}
+        <ConfigButton variant="secondary" onClick={() => void loadPlugins()} disabled={footerBusy}>
+          {t("i18n.refresh")}
+        </ConfigButton>
+      </ConfigFooter>
     </ConfigPanelShell>
   );
 }

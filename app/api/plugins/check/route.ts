@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json() as {
+    const body = (await req.json()) as {
       cwd?: unknown;
       source?: unknown;
       scope?: unknown;
@@ -20,9 +20,7 @@ export async function POST(req: Request) {
     }
 
     const source = typeof body.source === "string" ? body.source : undefined;
-    const scope = body.scope === "global" || body.scope === "project"
-      ? body.scope as PluginScope
-      : undefined;
+    const scope = body.scope === "global" || body.scope === "project" ? (body.scope as PluginScope) : undefined;
     if ((source && !scope) || (!source && scope)) {
       return NextResponse.json({ error: "source and scope must be provided together" }, { status: 400 });
     }
@@ -34,9 +32,6 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ updates });
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : String(error) },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
   }
 }

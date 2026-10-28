@@ -40,8 +40,10 @@ function message(id, parentId, role, content) {
 
 function writeSession(id, entries) {
   const header = { type: "session", version: 3, id, timestamp, cwd: project };
-  writeFileSync(join(sessionDir, `2026-08-23T00-00-00-000Z_${id}.jsonl`),
-    [header, ...entries].map((entry) => JSON.stringify(entry)).join("\n") + "\n");
+  writeFileSync(
+    join(sessionDir, `2026-08-23T00-00-00-000Z_${id}.jsonl`),
+    [header, ...entries].map((entry) => JSON.stringify(entry)).join("\n") + "\n",
+  );
 }
 
 let server;
@@ -64,7 +66,8 @@ try {
   mkdirSync(join(agentDir, "extensions"));
   writeFileSync(join(agentDir, "extensions", "e2e-dialog.js"), extensionSource);
   const longEntries = Array.from({ length: 5000 }, (_, i) =>
-    message(`e${i}`, i ? `e${i - 1}` : null, i % 2 ? "assistant" : "user", text(i)));
+    message(`e${i}`, i ? `e${i - 1}` : null, i % 2 ? "assistant" : "user", text(i)),
+  );
   longEntries.splice(1, 0, message("alternate", "e0", "user", "E2E alternate history branch"));
   writeSession(LONG, longEntries);
   writeSession(BRANCH, [
@@ -88,11 +91,13 @@ try {
       { type: "thinking", thinking: "E2E follow-up reasoning\nFollow-up thinking details." },
       { type: "text", text: "E2E process note" },
       { type: "thinking", thinking: "E2E final reasoning\nFinal thinking details." },
-      { type: "text", text:
-        "E2E final answer\n```js\nconsole.log('E2E code');\n```\n\n"
-        + "E2E answer paragraph.\n\n".repeat(20)
-        + "## E2E reading position\n\n"
-        + "E2E answer paragraph.\n\n".repeat(20),
+      {
+        type: "text",
+        text:
+          "E2E final answer\n```js\nconsole.log('E2E code');\n```\n\n" +
+          "E2E answer paragraph.\n\n".repeat(20) +
+          "## E2E reading position\n\n" +
+          "E2E answer paragraph.\n\n".repeat(20),
       },
     ]),
   ];
@@ -104,35 +109,57 @@ try {
   // visible entry and must stay outside the first page.
   const compactedEntries = [
     message("user", null, "user", "E2E prompt outside the compacted page"),
-    { type: "compaction", id: "compact", parentId: "user", timestamp, summary: "E2E compaction anchor", firstKeptEntryId: "user", tokensBefore: 100 },
+    {
+      type: "compaction",
+      id: "compact",
+      parentId: "user",
+      timestamp,
+      summary: "E2E compaction anchor",
+      firstKeptEntryId: "user",
+      tokensBefore: 100,
+    },
   ];
   for (let i = 0; i < 48; i++) {
-    compactedEntries.push(message(`call${i}`, compactedEntries.at(-1).id, "assistant", [
-      { type: "toolCall", id: `t${i}`, name: "bash", arguments: { command: `echo step${i}` } },
-    ]));
+    compactedEntries.push(
+      message(`call${i}`, compactedEntries.at(-1).id, "assistant", [
+        { type: "toolCall", id: `t${i}`, name: "bash", arguments: { command: `echo step${i}` } },
+      ]),
+    );
     const result = message(`result${i}`, `call${i}`, "toolResult", [{ type: "text", text: `step${i}` }]);
     Object.assign(result.message, { toolCallId: `t${i}`, toolName: "bash", isError: false });
     compactedEntries.push(result);
   }
-  compactedEntries.push(message("answer", "result47", "assistant", [{ type: "text", text:
-    "E2E compacted answer paragraph.\n\n".repeat(20)
-    + "## E2E compacted heading\n\n"
-    + "E2E compacted answer paragraph.\n\n".repeat(20),
-  }]));
+  compactedEntries.push(
+    message("answer", "result47", "assistant", [
+      {
+        type: "text",
+        text:
+          "E2E compacted answer paragraph.\n\n".repeat(20) +
+          "## E2E compacted heading\n\n" +
+          "E2E compacted answer paragraph.\n\n".repeat(20),
+      },
+    ]),
+  );
   writeSession(COMPACTED, compactedEntries);
 
   const probe = createServer();
   probe.listen(0, "127.0.0.1");
   await once(probe, "listening");
   const port = probe.address().port;
-  await new Promise((resolve, reject) => probe.close((error) => error ? reject(error) : resolve()));
+  await new Promise((resolve, reject) => probe.close((error) => (error ? reject(error) : resolve())));
   const base = `http://127.0.0.1:${port}`;
-  server = spawn(process.execPath, [join(root, "node_modules/next/dist/bin/next"), mode, "-H", "127.0.0.1", "-p", String(port)], {
-    cwd: root,
-    env: { ...process.env, PI_CODING_AGENT_DIR: agentDir, PI_WEB_PASSWORD: "", NEXT_TELEMETRY_DISABLED: "1" },
-    stdio: ["ignore", "pipe", "pipe"],
+  server = spawn(
+    process.execPath,
+    [join(root, "node_modules/next/dist/bin/next"), mode, "-H", "127.0.0.1", "-p", String(port)],
+    {
+      cwd: root,
+      env: { ...process.env, PI_CODING_AGENT_DIR: agentDir, PI_WEB_PASSWORD: "", NEXT_TELEMETRY_DISABLED: "1" },
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
+  server.once("error", (error) => {
+    serverError = error;
   });
-  server.once("error", (error) => { serverError = error; });
   serverExited = once(server, "exit");
   server.stdout.pipe(serverLog, { end: false });
   server.stderr.pipe(serverLog, { end: false });
@@ -177,11 +204,17 @@ try {
   await api("/api/files/..%2F..%2Fetc%2Fpasswd?type=read", 403);
   const compacted = await api(`/api/sessions/${COMPACTED}`);
   assert.equal(compacted.context.entryIds[0], "compact");
-  assert.equal(compacted.context.messages.some((entry) => entry.role === "user"), false);
+  assert.equal(
+    compacted.context.messages.some((entry) => entry.role === "user"),
+    false,
+  );
   console.log("PASS: bounded history, branch context, pagination root, and API errors");
 
   browser = await chromium.launch();
-  for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
+  for (const viewport of [
+    { width: 1280, height: 800 },
+    { width: 390, height: 844 },
+  ]) {
     context = await browser.newContext({ viewport, locale: "en-US" });
     await context.tracing.start({ screenshots: true, snapshots: true });
     page = await context.newPage();
@@ -189,13 +222,19 @@ try {
     const errors = [];
     const olderResponses = [];
     page.on("pageerror", (error) => errors.push(error.message));
-    page.on("console", (event) => { if (event.type() === "error") errors.push(event.text()); });
-    page.on("response", (response) => {
-      if (response.url().startsWith(base) && response.status() >= 500) errors.push(`${response.status()} ${response.url()}`);
-      const url = new URL(response.url());
-      if (url.pathname === `/api/sessions/${LONG}/context` && url.searchParams.has("before")) olderResponses.push(response);
+    page.on("console", (event) => {
+      if (event.type() === "error") errors.push(event.text());
     });
-    const stateReady = page.waitForResponse((response) => new URL(response.url()).pathname === `/api/sessions/${LONG}/state`);
+    page.on("response", (response) => {
+      if (response.url().startsWith(base) && response.status() >= 500)
+        errors.push(`${response.status()} ${response.url()}`);
+      const url = new URL(response.url());
+      if (url.pathname === `/api/sessions/${LONG}/context` && url.searchParams.has("before"))
+        olderResponses.push(response);
+    });
+    const stateReady = page.waitForResponse(
+      (response) => new URL(response.url()).pathname === `/api/sessions/${LONG}/state`,
+    );
     await page.goto(`${base}/?session=${LONG}`, { waitUntil: "domcontentloaded" });
     assert.equal((await stateReady).status(), 200);
     await page.getByText(text(4999), { exact: true }).waitFor();
@@ -207,20 +246,27 @@ try {
 
     // Exercise the real IntersectionObserver and prepend path, twice.
     for (let turn = 0; turn < 2; turn++) {
-      const responsePromise = page.waitForResponse((response) =>
-        new URL(response.url()).pathname === `/api/sessions/${LONG}/context`);
+      const responsePromise = page.waitForResponse(
+        (response) => new URL(response.url()).pathname === `/api/sessions/${LONG}/context`,
+      );
       await sentinel.evaluate((element) => element.scrollIntoView({ block: "start", behavior: "instant" }));
       const response = await responsePromise;
       const older = (await response.json()).context;
       const firstMessage = older.messages.find((message) => message.role === "user")?.content;
       assert.equal(typeof firstMessage, "string", "Older page must contain user messages");
       await page.getByText(firstMessage, { exact: true }).waitFor({ state: "attached" });
-      await page.getByText(text(4999), { exact: true }).evaluate((element) => element.scrollIntoView({ block: "end", behavior: "instant" }));
+      await page
+        .getByText(text(4999), { exact: true })
+        .evaluate((element) => element.scrollIntoView({ block: "end", behavior: "instant" }));
     }
-    assert.deepEqual(await latestUser.evaluate((element) => ({
-      connected: element.isConnected,
-      text: element.textContent,
-    })), { connected: true, text: text(4998) }, "Prepending history must preserve existing message nodes");
+    assert.deepEqual(
+      await latestUser.evaluate((element) => ({
+        connected: element.isConnected,
+        text: element.textContent,
+      })),
+      { connected: true, text: text(4998) },
+      "Prepending history must preserve existing message nodes",
+    );
     await latestUser.dispose();
     assert.ok(olderResponses.length >= 2, "Scrolling must fetch consecutive older pages");
     let oldest = Number(new URL(olderResponses[0].url()).searchParams.get("before")?.slice(1));
@@ -237,8 +283,11 @@ try {
     }
     const rendered = await page.getByText(/^E2E message \d{4}$/).allTextContents();
     // The sidebar also displays the first message as the session title.
-    assert.deepEqual(rendered.filter((value) => value !== text(0)),
-      Array.from({ length: 5000 - oldest }, (_, i) => text(oldest + i)), "Missing, reordered, or duplicate chat messages");
+    assert.deepEqual(
+      rendered.filter((value) => value !== text(0)),
+      Array.from({ length: 5000 - oldest }, (_, i) => text(oldest + i)),
+      "Missing, reordered, or duplicate chat messages",
+    );
     await page.screenshot({ path: join(artifacts, `history-${viewport.width}.png`) });
 
     await page.goto(`${base}/?session=${BRANCH}`, { waitUntil: "domcontentloaded" });
@@ -264,7 +313,11 @@ try {
     assert.equal(await thinking.count(), 3);
     assert.equal(await thinking.last().innerText(), "E2E final reasoning");
     assert.equal(thinkingRequests.length, 0);
-    for (const [index, text] of ["Intermediate thinking details.", "Follow-up thinking details.", "Final thinking details."].entries()) {
+    for (const [index, text] of [
+      "Intermediate thinking details.",
+      "Follow-up thinking details.",
+      "Final thinking details.",
+    ].entries()) {
       await thinking.nth(index).click();
       await page.getByText(text, { exact: false }).waitFor();
     }
@@ -294,8 +347,13 @@ try {
       await page.waitForFunction(() => {
         const heading = document.querySelector("[data-entry-id='answer'] h2");
         const scroll = heading?.closest(".overflow-y-auto");
-        return heading && scroll && Math.abs(heading.getBoundingClientRect().top
-          - scroll.getBoundingClientRect().top - scroll.clientHeight * 0.3) < 5;
+        return (
+          heading &&
+          scroll &&
+          Math.abs(
+            heading.getBoundingClientRect().top - scroll.getBoundingClientRect().top - scroll.clientHeight * 0.3,
+          ) < 5
+        );
       });
       await page.screenshot({ path: join(artifacts, "compaction-minimap.png") });
 
@@ -303,9 +361,11 @@ try {
         await page.locator(`[title="${title}"]`).click();
         await page.locator(`[data-entry-id="${entryId}"]:not([data-message-role])`).waitFor({ state: "visible" });
       };
-      const readingOffset = (target) => target.evaluate((element) => (
-        element.getBoundingClientRect().top - element.closest(".overflow-y-auto").getBoundingClientRect().top
-      ));
+      const readingOffset = (target) =>
+        target.evaluate(
+          (element) =>
+            element.getBoundingClientRect().top - element.closest(".overflow-y-auto").getBoundingClientRect().top,
+        );
       const positionForReading = async (target) => {
         await target.evaluate((element) => {
           const scroll = element.closest(".overflow-y-auto");
@@ -315,7 +375,9 @@ try {
       };
       await selectSession(text(0), "e4999");
       const olderPage = page.waitForResponse((response) => response.url().includes(`/api/sessions/${LONG}/context?`));
-      await page.getByText("Scroll up to load earlier messages", { exact: true }).evaluate((element) => element.scrollIntoView({ block: "start", behavior: "instant" }));
+      await page
+        .getByText("Scroll up to load earlier messages", { exact: true })
+        .evaluate((element) => element.scrollIntoView({ block: "start", behavior: "instant" }));
       await olderPage;
       const olderMessage = page.locator("[data-entry-id='e4920']");
       const olderOffset = await positionForReading(olderMessage);
@@ -325,14 +387,22 @@ try {
       const answerHeading = page.getByRole("heading", { name: "E2E reading position", exact: true });
       const answerOffset = await positionForReading(answerHeading);
       await selectSession(text(0), "e4920");
-      assert.ok(Math.abs(await readingOffset(olderMessage) - olderOffset) < 5, "Returning to older history must restore its reading offset");
+      assert.ok(
+        Math.abs((await readingOffset(olderMessage)) - olderOffset) < 5,
+        "Returning to older history must restore its reading offset",
+      );
       await selectSession("Render **E2E markdown**", "user");
       assert.equal(await process.getAttribute("aria-expanded"), "false");
-      assert.ok(Math.abs(await readingOffset(answerHeading) - answerOffset) < 5, "Collapsing process details on remount must not displace the answer");
+      assert.ok(
+        Math.abs((await readingOffset(answerHeading)) - answerOffset) < 5,
+        "Collapsing process details on remount must not displace the answer",
+      );
 
       // Hold pagination until a different branch has loaded, exercising effect cancellation.
       let releaseHistory;
-      const historyGate = new Promise((resolve) => { releaseHistory = resolve; });
+      const historyGate = new Promise((resolve) => {
+        releaseHistory = resolve;
+      });
       const contextRoute = `**/api/sessions/${LONG}/context?*`;
       await page.route(contextRoute, async (route) => {
         if (new URL(route.request().url()).searchParams.has("before")) await historyGate;
@@ -342,7 +412,11 @@ try {
       const agentRoute = `**/api/agent/${LONG}`;
       await page.route(agentRoute, (route) => route.fulfill({ json: {} }));
       try {
-        const pendingHistory = page.waitForRequest((request) => request.url().includes(`/api/sessions/${LONG}/context?`) && new URL(request.url()).searchParams.has("before"));
+        const pendingHistory = page.waitForRequest(
+          (request) =>
+            request.url().includes(`/api/sessions/${LONG}/context?`) &&
+            new URL(request.url()).searchParams.has("before"),
+        );
         await page.locator(`[title="${text(0)}"]`).click();
         await pendingHistory;
         await page.getByRole("button", { name: "Branches", exact: true }).click();
@@ -368,7 +442,9 @@ try {
       await checkChatAppearance(page);
     }
     assert.deepEqual(errors, [], `Browser errors at width ${viewport.width}`);
-    console.log(`PASS: ${viewport.width}px browser pagination, branch, markdown, code, tool call, and compaction navigation`);
+    console.log(
+      `PASS: ${viewport.width}px browser pagination, branch, markdown, code, tool call, and compaction navigation`,
+    );
     await context.tracing.stop();
     await context.close();
     context = undefined;

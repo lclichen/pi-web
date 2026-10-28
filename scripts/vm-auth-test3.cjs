@@ -1,5 +1,5 @@
-const { Client } = require('ssh2');
-const { loadVmConnection } = require('./vm-connection.cjs');
+const { Client } = require("ssh2");
+const { loadVmConnection } = require("./vm-connection.cjs");
 const conn = new Client();
 
 const remote = `#!/bin/bash
@@ -60,13 +60,24 @@ echo "idle-5d: $(curl -s -m 10 -o /dev/null -w '%{http_code}' $BASE/api/account 
 echo DONE >> $OUT
 `;
 
-const b64 = Buffer.from(remote, 'utf8').toString('base64');
-conn.on('ready', () => {
-  conn.exec(`printf %s '${b64}' | base64 -d > /tmp/auth-test3.sh && timeout 180 bash /tmp/auth-test3.sh; cat /tmp/auth-results.txt`, { pty: false }, (err, stream) => {
-    if (err) { console.error(err); process.exit(1); }
-    let out = '';
-    stream.on('data', (d) => out += d).stderr.on('data', (d) => out += d);
-    stream.on('close', () => { console.log(out.trim()); conn.end(); process.exit(0); });
-  });
+const b64 = Buffer.from(remote, "utf8").toString("base64");
+conn.on("ready", () => {
+  conn.exec(
+    `printf %s '${b64}' | base64 -d > /tmp/auth-test3.sh && timeout 180 bash /tmp/auth-test3.sh; cat /tmp/auth-results.txt`,
+    { pty: false },
+    (err, stream) => {
+      if (err) {
+        console.error(err);
+        process.exit(1);
+      }
+      let out = "";
+      stream.on("data", (d) => (out += d)).stderr.on("data", (d) => (out += d));
+      stream.on("close", () => {
+        console.log(out.trim());
+        conn.end();
+        process.exit(0);
+      });
+    },
+  );
 });
 conn.connect(loadVmConnection());

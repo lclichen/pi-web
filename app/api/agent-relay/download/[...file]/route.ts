@@ -32,10 +32,7 @@ const SERVABLE = new Map<string, Asset>([
   ["install.sh", { file: "install.sh", type: "text/x-shellscript; charset=utf-8" }],
 ]);
 
-export async function GET(
-  _req: Request,
-  ctx: { params: Promise<{ file?: string[] }> },
-): Promise<Response> {
+export async function GET(_req: Request, ctx: { params: Promise<{ file?: string[] }> }): Promise<Response> {
   const { file } = await ctx.params;
   const name = Array.isArray(file) ? file.join("/") : "";
 

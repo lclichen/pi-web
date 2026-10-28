@@ -38,9 +38,6 @@ export async function POST(req: Request) {
     const stats = await importSkillsZip(dir.cwd, data, file.name);
     return NextResponse.json({ ok: true, ...stats });
   } catch (e) {
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : String(e) },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 400 });
   }
 }

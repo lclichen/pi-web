@@ -32,7 +32,14 @@ import { makeSandboxBgChannel, makeRelayBgChannel } from "../extensions/bg-chann
 import { requireCompatibleAgent } from "../relay/agent-gate.ts";
 import { makeRelayToolsExtension } from "../extensions/relay-tools.ts";
 import { makeSandboxToolsExtension } from "../extensions/sandbox-tools.ts";
-import { countActiveTasks, getTask, publishTaskEvent, updateTask, type BatchTask, type BatchStopReason } from "./task-store.ts";
+import {
+  countActiveTasks,
+  getTask,
+  publishTaskEvent,
+  updateTask,
+  type BatchTask,
+  type BatchStopReason,
+} from "./task-store.ts";
 
 // ---------------------------------------------------------------------------
 // Concurrency gate — PI_WEB_BATCH_MAX_CONCURRENT (0/unset = unlimited)
@@ -126,10 +133,7 @@ export function prepareWorkDir(requested: string): string {
 // File materialization
 // ---------------------------------------------------------------------------
 
-export function materializeFiles(
-  workDir: string,
-  files: Record<string, string>,
-): void {
+export function materializeFiles(workDir: string, files: Record<string, string>): void {
   for (const [relPath, content] of Object.entries(files)) {
     // Path traversal guard
     const safe = resolve(workDir, relPath);
@@ -189,56 +193,54 @@ interface UiResponder {
  * is non-destructive: if a human answers first (via SSE), the
  * pendingUiResponses entry resolves and our late response is a no-op.
  */
-function attachAutoResponder(
-  wrapper: AgentSessionWrapper,
-  inputTimeoutMs: number,
-  taskId: string,
-): UiResponder {
+function attachAutoResponder(wrapper: AgentSessionWrapper, inputTimeoutMs: number, taskId: string): UiResponder {
   let active = true;
   const timers: Set<ReturnType<typeof setTimeout>> = new Set();
 
-  const unsubscribe = wrapper.onEvent((event: { type?: string; method?: string; id?: string; title?: string; options?: string[] }) => {
-    if (!active || event.type !== "extension_ui_request") return;
-    if (!event.id || !event.method) return;
-    const method = event.method;
-    if (method !== "select" && method !== "confirm" && method !== "input") return;
+  const unsubscribe = wrapper.onEvent(
+    (event: { type?: string; method?: string; id?: string; title?: string; options?: string[] }) => {
+      if (!active || event.type !== "extension_ui_request") return;
+      if (!event.id || !event.method) return;
+      const method = event.method;
+      if (method !== "select" && method !== "confirm" && method !== "input") return;
 
-    // Surface the wait in the task state (and thus the SSE stream).
-    if (getTask(taskId)?.state === "running") {
-      updateTask(taskId, { state: "waiting_input" });
-    }
+      // Surface the wait in the task state (and thus the SSE stream).
+      if (getTask(taskId)?.state === "running") {
+        updateTask(taskId, { state: "waiting_input" });
+      }
 
-    const requestEvent = event as { id: string; method: string; title?: string; options?: string[] };
-    const timer = setTimeout(() => {
-      timers.delete(timer);
-      let response: Record<string, unknown>;
-      switch (method) {
-        case "select":
-          // Pick the first option = recommended by convention
-          response = { type: "extension_ui_response", id: requestEvent.id, value: requestEvent.options?.[0] };
-          break;
-        case "confirm":
-          response = { type: "extension_ui_response", id: requestEvent.id, confirmed: true };
-          break;
-        case "input":
-          response = { type: "extension_ui_response", id: requestEvent.id, value: "" };
-          break;
-        default:
-          return;
-      }
-      try {
-        // Fire-and-forget: the wrapper's pendingUiResponses either accepts it
-        // (timeout won) or ignores it (human answered first).
-        void wrapper.send(response);
-      } catch {
-        // Session may have ended — best-effort
-      }
-      if (getTask(taskId)?.state === "waiting_input") {
-        updateTask(taskId, { state: "running" });
-      }
-    }, inputTimeoutMs);
-    timers.add(timer);
-  });
+      const requestEvent = event as { id: string; method: string; title?: string; options?: string[] };
+      const timer = setTimeout(() => {
+        timers.delete(timer);
+        let response: Record<string, unknown>;
+        switch (method) {
+          case "select":
+            // Pick the first option = recommended by convention
+            response = { type: "extension_ui_response", id: requestEvent.id, value: requestEvent.options?.[0] };
+            break;
+          case "confirm":
+            response = { type: "extension_ui_response", id: requestEvent.id, confirmed: true };
+            break;
+          case "input":
+            response = { type: "extension_ui_response", id: requestEvent.id, value: "" };
+            break;
+          default:
+            return;
+        }
+        try {
+          // Fire-and-forget: the wrapper's pendingUiResponses either accepts it
+          // (timeout won) or ignores it (human answered first).
+          void wrapper.send(response);
+        } catch {
+          // Session may have ended — best-effort
+        }
+        if (getTask(taskId)?.state === "waiting_input") {
+          updateTask(taskId, { state: "running" });
+        }
+      }, inputTimeoutMs);
+      timers.add(timer);
+    },
+  );
 
   return {
     stop: () => {
@@ -362,7 +364,9 @@ export async function runBatchTask(options: RunTaskOptions): Promise<void> {
       mode: options.mode,
       ...(options.model ? { initialModel: options.model } : {}),
       ...(options.toolNames ? { toolNames: options.toolNames } : {}),
-      ...(options.thinkingLevel ? { thinkingLevel: options.thinkingLevel as "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" } : {}),
+      ...(options.thinkingLevel
+        ? { thinkingLevel: options.thinkingLevel as "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" }
+        : {}),
     };
     const isSandbox = options.mode === "sandbox";
     const isLocal = options.mode === "local-machine";
@@ -417,7 +421,10 @@ export async function runBatchTask(options: RunTaskOptions): Promise<void> {
     const realSessionId = wrapper.sessionId;
     // Record the session file immediately (not just at completion) so an
     // interruption at any point leaves a resumable record on disk.
-    updateTask(taskId, { sessionId: realSessionId, ...(wrapper.sessionFile ? { sessionFile: wrapper.sessionFile } : {}) });
+    updateTask(taskId, {
+      sessionId: realSessionId,
+      ...(wrapper.sessionFile ? { sessionFile: wrapper.sessionFile } : {}),
+    });
 
     // Pin the model through the product set_model path. Startup selection
     // drops providers the runtime does not count as "configured" (custom
@@ -476,7 +483,10 @@ export async function runBatchTask(options: RunTaskOptions): Promise<void> {
     for (;;) {
       await new Promise((r) => setTimeout(r, 2000));
       const st = (await wrapper.send({ type: "get_state" }).catch(() => null)) as {
-        isPromptRunning?: boolean; isStreaming?: boolean; isCompacting?: boolean; isBashRunning?: boolean;
+        isPromptRunning?: boolean;
+        isStreaming?: boolean;
+        isCompacting?: boolean;
+        isBashRunning?: boolean;
       } | null;
       if (!st) break; // session gone — treat as settled, result collection below runs best-effort
       const busy = st.isPromptRunning || st.isStreaming || st.isCompacting || st.isBashRunning;
@@ -492,7 +502,17 @@ export async function runBatchTask(options: RunTaskOptions): Promise<void> {
     clearTimeout(timeoutTimer);
     responder.stop();
 
-    const inner = (wrapper as unknown as { inner: { getSessionStats(): { tokens: { input: number; output: number; total: number }; toolCalls: number }; messages: MinimalMessage[]; sessionManager: { getBranch(): Array<{ type?: string; message?: MinimalMessage }>; sessionFile?: string }; sessionFile?: string; dispose(): void } }).inner;
+    const inner = (
+      wrapper as unknown as {
+        inner: {
+          getSessionStats(): { tokens: { input: number; output: number; total: number }; toolCalls: number };
+          messages: MinimalMessage[];
+          sessionManager: { getBranch(): Array<{ type?: string; message?: MinimalMessage }>; sessionFile?: string };
+          sessionFile?: string;
+          dispose(): void;
+        };
+      }
+    ).inner;
     const stats = inner.getSessionStats();
     // inner.messages is the agent transcript (role/content/stopReason); the
     // session file's raw entries nest it under {type:"message",message} —
@@ -500,21 +520,25 @@ export async function runBatchTask(options: RunTaskOptions): Promise<void> {
     // once a real model run was wired through).
     const messages: MinimalMessage[] = Array.isArray(inner.messages)
       ? inner.messages
-      : inner.sessionManager.getBranch().map((e) => e.message).filter((m): m is MinimalMessage => Boolean(m));
+      : inner.sessionManager
+          .getBranch()
+          .map((e) => e.message)
+          .filter((m): m is MinimalMessage => Boolean(m));
     const lastAssistant = [...messages].reverse().find((m) => (m as { role?: string }).role === "assistant");
     const finalText =
       (lastAssistant as { content?: Array<{ type?: string; text?: string }> } | undefined)?.content
         ?.filter((p) => p.type === "text" && p.text)
         ?.map((p) => p.text ?? "")
         ?.join("\n") ?? "";
-    const stopReason = ((lastAssistant as { stopReason?: string } | undefined)?.stopReason) ?? "end_turn";
+    const stopReason = (lastAssistant as { stopReason?: string } | undefined)?.stopReason ?? "end_turn";
 
     const toolCallLog = collectToolCalls(messages);
-    const artifacts = options.mode === "sandbox"
-      // Sandbox artifacts live inside the container; the caller collects them
-      // (e.g. deep-swe verifier.collect via the platform tools API).
-      ? []
-      : scanArtifacts(sessionCwd);
+    const artifacts =
+      options.mode === "sandbox"
+        ? // Sandbox artifacts live inside the container; the caller collects them
+          // (e.g. deep-swe verifier.collect via the platform tools API).
+          []
+        : scanArtifacts(sessionCwd);
     const sessionFile = wrapper.sessionFile;
 
     updateTask(taskId, {
@@ -589,7 +613,10 @@ function collectToolCalls(messages: unknown[]): BatchTask["toolCallLog"] {
       for (let i = log.length - 1; i >= 0; i--) {
         if (log[i].name === msg.toolName && !log[i].resultSummary) {
           const text = Array.isArray(msg.content)
-            ? msg.content.filter((p) => p.type === "text").map((p) => p.text ?? "").join(" ")
+            ? msg.content
+                .filter((p) => p.type === "text")
+                .map((p) => p.text ?? "")
+                .join(" ")
             : "";
           log[i].resultSummary = text.slice(0, 200);
           log[i].isError = msg.isError === true;

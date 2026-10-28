@@ -49,8 +49,5 @@ export function getRightPanelMaxWidth(options: {
   if (viewportWidth < SPLIT_PANEL_MIN_WIDTH) return RIGHT_PANEL_MAX_WIDTH;
 
   const visibleSidebarWidth = sidebarOpen ? sidebarWidth : 0;
-  return Math.min(
-    RIGHT_PANEL_MAX_WIDTH,
-    viewportWidth - DESKTOP_CHAT_MIN_WIDTH - visibleSidebarWidth,
-  );
+  return Math.min(RIGHT_PANEL_MAX_WIDTH, viewportWidth - DESKTOP_CHAT_MIN_WIDTH - visibleSidebarWidth);
 }

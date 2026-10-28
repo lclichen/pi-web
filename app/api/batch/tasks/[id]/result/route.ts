@@ -21,9 +21,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   if (!task) {
     return NextResponse.json({ error: "Task not found" }, { status: 404 });
   }
-    if (!canAccessBatchTask(auth.identity.user, task.ownerId)) {
-      return NextResponse.json({ error: "Task not found" }, { status: 404 });
-    }
+  if (!canAccessBatchTask(auth.identity.user, task.ownerId)) {
+    return NextResponse.json({ error: "Task not found" }, { status: 404 });
+  }
   if (!isTerminal(task.state)) {
     return NextResponse.json(
       { error: "Task is still running", state: task.state, statusUrl: `/api/batch/tasks/${id}` },

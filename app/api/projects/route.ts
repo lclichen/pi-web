@@ -33,9 +33,23 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "无权创建项目" }, { status: 403 });
   }
   let body: {
-    name?: unknown; mode?: unknown; containerId?: unknown; seedFromProjectId?: unknown;
-    imageId?: unknown; workspaceId?: unknown; workdir?: unknown; machineId?: unknown;
-    ssh?: { host?: unknown; port?: unknown; username?: unknown; authType?: unknown; password?: unknown; privateKey?: unknown; passphrase?: unknown };
+    name?: unknown;
+    mode?: unknown;
+    containerId?: unknown;
+    seedFromProjectId?: unknown;
+    imageId?: unknown;
+    workspaceId?: unknown;
+    workdir?: unknown;
+    machineId?: unknown;
+    ssh?: {
+      host?: unknown;
+      port?: unknown;
+      username?: unknown;
+      authType?: unknown;
+      password?: unknown;
+      privateKey?: unknown;
+      passphrase?: unknown;
+    };
     presetBundle?: unknown;
   };
   try {
@@ -46,17 +60,18 @@ export async function POST(req: Request) {
 
   const mode = typeof body.mode === "string" ? body.mode : "";
   const machineId = typeof body.machineId === "string" && body.machineId ? body.machineId : undefined;
-  const sshInput = body.ssh && typeof body.ssh === "object"
-    ? {
-        host: typeof body.ssh.host === "string" ? body.ssh.host : "",
-        port: typeof body.ssh.port === "number" ? body.ssh.port : undefined,
-        username: typeof body.ssh.username === "string" ? body.ssh.username : "",
-        authType: body.ssh.authType === "password" ? "password" as const : "key" as const,
-        password: typeof body.ssh.password === "string" ? body.ssh.password : undefined,
-        privateKey: typeof body.ssh.privateKey === "string" ? body.ssh.privateKey : undefined,
-        passphrase: typeof body.ssh.passphrase === "string" ? body.ssh.passphrase : undefined,
-      }
-    : undefined;
+  const sshInput =
+    body.ssh && typeof body.ssh === "object"
+      ? {
+          host: typeof body.ssh.host === "string" ? body.ssh.host : "",
+          port: typeof body.ssh.port === "number" ? body.ssh.port : undefined,
+          username: typeof body.ssh.username === "string" ? body.ssh.username : "",
+          authType: body.ssh.authType === "password" ? ("password" as const) : ("key" as const),
+          password: typeof body.ssh.password === "string" ? body.ssh.password : undefined,
+          privateKey: typeof body.ssh.privateKey === "string" ? body.ssh.privateKey : undefined,
+          passphrase: typeof body.ssh.passphrase === "string" ? body.ssh.passphrase : undefined,
+        }
+      : undefined;
 
   // Workdirs are real directories on a remote backend — validate them BEFORE
   // creating the record so a typo cannot yield a project that silently runs
@@ -137,19 +152,17 @@ export async function POST(req: Request) {
       }
       // 别绑定已被其他项目占用的容器（两个项目共享一个容器会互相覆盖 /workspace）。
       const excluded = allProjects()
-        .filter((p) => p.mode === "sandbox" && p.id !== result.project.id && p.containerId !== undefined && p.containerId !== null)
+        .filter(
+          (p) =>
+            p.mode === "sandbox" && p.id !== result.project.id && p.containerId !== undefined && p.containerId !== null,
+        )
         .map((p) => Number(p.containerId));
-      const provisioned = await provisionContainerForProject(
-        identity.session.apiKey,
-        result.project.name,
-        excluded,
-        {
-          // 环境与云盘初始化来自创建对话框的选择（imageId 必须与项目一致；
-          // workspaceId 只在创建新容器时生效，一次性 seed）。
-          ...(typeof body.imageId === "number" ? { imageId: body.imageId } : {}),
-          ...(typeof body.workspaceId === "number" ? { workspaceId: body.workspaceId } : {}),
-        },
-      );
+      const provisioned = await provisionContainerForProject(identity.session.apiKey, result.project.name, excluded, {
+        // 环境与云盘初始化来自创建对话框的选择（imageId 必须与项目一致；
+        // workspaceId 只在创建新容器时生效，一次性 seed）。
+        ...(typeof body.imageId === "number" ? { imageId: body.imageId } : {}),
+        ...(typeof body.workspaceId === "number" ? { workspaceId: body.workspaceId } : {}),
+      });
       const updated = updateProject(result.project.id, { containerId: provisioned.containerId });
       if (!updated.ok) throw new Error(updated.error);
       return NextResponse.json({ project: updated.project }, { status: 201 });

@@ -19,9 +19,7 @@ import type { SessionMode } from "./session-modes.ts";
  */
 
 export function dataDir(): string {
-  const dir = process.env.PI_WEB_DATA_DIR
-    ? process.env.PI_WEB_DATA_DIR
-    : join(process.cwd(), "data");
+  const dir = process.env.PI_WEB_DATA_DIR ? process.env.PI_WEB_DATA_DIR : join(process.cwd(), "data");
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   return dir;
 }
@@ -59,11 +57,7 @@ export function ensureSandboxHome(userId: number, config: SandboxHomeConfig): st
   if (!existsSync(piDir)) mkdirSync(piDir, { recursive: true });
   const current = readSandboxHomeConfig(userId);
   const next: SandboxHomeConfig = { ...current, ...config, url: config.url || current.url, disableLocalFallback: true };
-  writeFileSync(
-    join(piDir, "sandbox-platform.json"),
-    JSON.stringify(next, null, 2),
-    "utf8",
-  );
+  writeFileSync(join(piDir, "sandbox-platform.json"), JSON.stringify(next, null, 2), "utf8");
   return home;
 }
 
@@ -87,9 +81,7 @@ export function setSandboxContainer(userId: number, containerId: number | string
   const current = readSandboxHomeConfig(userId);
   const next: SandboxHomeConfig = {
     ...current,
-    ...(containerId === null
-      ? {}
-      : { containerId }),
+    ...(containerId === null ? {} : { containerId }),
   };
   if (containerId === null) delete next.containerId;
   ensureSandboxHome(userId, next);

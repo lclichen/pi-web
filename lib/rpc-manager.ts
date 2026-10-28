@@ -1,5 +1,14 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
-import { ModelRuntime, createAgentSessionFromServices, createAgentSessionServices, getAgentDir, initTheme, SessionManager, SettingsManager, Theme } from "@earendil-works/pi-coding-agent";
+import {
+  ModelRuntime,
+  createAgentSessionFromServices,
+  createAgentSessionServices,
+  getAgentDir,
+  initTheme,
+  SessionManager,
+  SettingsManager,
+  Theme,
+} from "@earendil-works/pi-coding-agent";
 import { KeybindingsManager as TuiKeybindingsManager, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
 import { randomUUID } from "crypto";
 import { existsSync, realpathSync, writeFileSync } from "fs";
@@ -10,7 +19,12 @@ import { installSubagentBridge } from "./subagent-bridge";
 import { hasActiveSessionLivenessProvider } from "./session-liveness";
 import { invalidateModelsCache } from "./models-cache";
 import { resolveVisibleModels, selectInitialModelScope } from "./model-scope";
-import { cacheSessionPath, getLatestModelChange, invalidateSessionListCache, resolveSessionPath } from "./session-reader";
+import {
+  cacheSessionPath,
+  getLatestModelChange,
+  invalidateSessionListCache,
+  resolveSessionPath,
+} from "./session-reader";
 import { appendWebUiAddendum } from "./web-system-prompt";
 import { readPreferences } from "./preferences-service";
 import { readMcpConfig } from "./mcp-config";
@@ -25,7 +39,7 @@ import {
   preferUserBashExtension,
 } from "./project-command-env";
 import { notifySessionComplete } from "./web-push";
-import type { InlineExtension,  SlashCommandInfo } from "@earendil-works/pi-coding-agent";
+import type { InlineExtension, SlashCommandInfo } from "@earendil-works/pi-coding-agent";
 import type { AgentSessionLike, ExtensionUiContextLike, ToolInfo } from "./pi-types";
 import type {
   ExtensionUiRequest,
@@ -36,10 +50,7 @@ import type {
   SessionMessageEntry,
 } from "./types";
 import { createHeadlessCustomUiTui, DEFAULT_CUSTOM_UI_COLUMNS, type HeadlessCustomUiTui } from "./custom-ui-terminal";
-import {
-  createSubagentExtension,
-  preferPiWebSubagentExtension,
-} from "./subagent-extension";
+import { createSubagentExtension, preferPiWebSubagentExtension } from "./subagent-extension";
 import {
   listSubagentProfiles,
   readSubagentRun,
@@ -148,12 +159,7 @@ type ExtensionBindingOptions = {
   forceEmptySystemPrompt?: boolean;
 };
 
-const IDLE_RESET_EVENT_TYPES = new Set([
-  "agent_end",
-  "agent_settled",
-  "auto_compaction_end",
-  "compaction_end",
-]);
+const IDLE_RESET_EVENT_TYPES = new Set(["agent_end", "agent_settled", "auto_compaction_end", "compaction_end"]);
 
 const DEFAULT_SESSION_IDLE_TIMEOUT_MS = 10 * 60 * 1000;
 
@@ -165,9 +171,7 @@ const DEFAULT_SESSION_IDLE_TIMEOUT_MS = 10 * 60 * 1000;
  * the default with a console warning.
  * @param rawValue Value to parse; defaults to the environment variable.
  */
-export function resolveSessionIdleTimeoutMs(
-  rawValue: string | undefined = process.env.PI_WEB_IDLE_TIMEOUT_MS,
-): number {
+export function resolveSessionIdleTimeoutMs(rawValue: string | undefined = process.env.PI_WEB_IDLE_TIMEOUT_MS): number {
   if (rawValue !== undefined && rawValue.trim() !== "") {
     const parsed = Number(rawValue);
     if (Number.isFinite(parsed) && parsed >= 0 && parsed <= 2_147_483_647) return parsed;
@@ -260,19 +264,39 @@ class PlainTextTheme extends Theme {
     );
   }
 
-  override fg(...[, text]: Parameters<Theme["fg"]>): string { return text; }
-  override bg(...[, text]: Parameters<Theme["bg"]>): string { return text; }
-  override bold(text: string): string { return text; }
-  override italic(text: string): string { return text; }
-  override underline(text: string): string { return text; }
-  override inverse(text: string): string { return text; }
-  override strikethrough(text: string): string { return text; }
-  override getFgAnsi(): string { return ""; }
-  override getBgAnsi(): string { return ""; }
+  override fg(...[, text]: Parameters<Theme["fg"]>): string {
+    return text;
+  }
+  override bg(...[, text]: Parameters<Theme["bg"]>): string {
+    return text;
+  }
+  override bold(text: string): string {
+    return text;
+  }
+  override italic(text: string): string {
+    return text;
+  }
+  override underline(text: string): string {
+    return text;
+  }
+  override inverse(text: string): string {
+    return text;
+  }
+  override strikethrough(text: string): string {
+    return text;
+  }
+  override getFgAnsi(): string {
+    return "";
+  }
+  override getBgAnsi(): string {
+    return "";
+  }
   override getThinkingBorderColor(): (text: string) => string {
     return (text) => text;
   }
-  override getBashModeBorderColor(): (text: string) => string { return (text) => text; }
+  override getBashModeBorderColor(): (text: string) => string {
+    return (text) => text;
+  }
 }
 
 const PLAIN_TEXT_THEME = new PlainTextTheme();
@@ -416,7 +440,10 @@ export class AgentSessionWrapper {
   }
 
   isRunning(): boolean {
-    return this._alive && (this.pendingPromptCount > 0 || this.inner.isStreaming || this.inner.isCompacting || this.inner.isBashRunning);
+    return (
+      this._alive &&
+      (this.pendingPromptCount > 0 || this.inner.isStreaming || this.inner.isCompacting || this.inner.isBashRunning)
+    );
   }
 
   isChatOnly(): boolean {
@@ -463,7 +490,10 @@ export class AgentSessionWrapper {
   beginExtensionBinding(options: ExtensionBindingOptions = {}): void {
     if (options.forceEmptySystemPrompt) this.forceEmptySystemPrompt = true;
     void this.ensureExtensionsBound().catch((err) => {
-      console.error("[pi-web] failed to dispatch session_start to extensions:", err instanceof Error ? err.message : err);
+      console.error(
+        "[pi-web] failed to dispatch session_start to extensions:",
+        err instanceof Error ? err.message : err,
+      );
     });
   }
 
@@ -499,19 +529,21 @@ export class AgentSessionWrapper {
           uiContext,
           mode: "rpc",
           commandContextActions: this.createExtensionCommandContextActions(),
-          shutdownHandler: () => this.emit({
-            type: "extension_ui_request",
-            id: randomUUID(),
-            method: "notify",
-            notifyType: "warning",
-            message: "Extension requested shutdown, but shutdown is not supported in Pi Web.",
-          } as ExtensionUiRequest as AgentEvent),
-          onError: (error) => this.emit({
-            type: "extension_error",
-            extensionPath: error.extensionPath,
-            event: error.event,
-            error: error.error,
-          }),
+          shutdownHandler: () =>
+            this.emit({
+              type: "extension_ui_request",
+              id: randomUUID(),
+              method: "notify",
+              notifyType: "warning",
+              message: "Extension requested shutdown, but shutdown is not supported in Pi Web.",
+            } as ExtensionUiRequest as AgentEvent),
+          onError: (error) =>
+            this.emit({
+              type: "extension_error",
+              extensionPath: error.extensionPath,
+              event: error.event,
+              error: error.error,
+            }),
         });
       } else {
         this.inner.extensionRunner.setUIContext?.(uiContext, "rpc");
@@ -571,11 +603,9 @@ export class AgentSessionWrapper {
   }
 
   private shouldWaitForExtensions(type: string): boolean {
-    return type === "prompt"
-      || type === "steer"
-      || type === "follow_up"
-      || type === "get_commands"
-      || type === "get_state";
+    return (
+      type === "prompt" || type === "steer" || type === "follow_up" || type === "get_commands" || type === "get_state"
+    );
   }
 
   private async withFinalIdleReset<T>(operation: () => Promise<T>): Promise<T> {
@@ -674,7 +704,11 @@ export class AgentSessionWrapper {
     if (this.extensionsBound) {
       apply();
     } else {
-      void this.ensureExtensionsBound().then(apply).catch(() => {/* 工具过滤失败不阻断 */});
+      void this.ensureExtensionsBound()
+        .then(apply)
+        .catch(() => {
+          /* 工具过滤失败不阻断 */
+        });
     }
   }
 
@@ -710,7 +744,10 @@ export class AgentSessionWrapper {
     const sorted = [...current].sort();
     let differs = false;
     for (let i = 0; i < sorted.length; i += 1) {
-      if (sorted[i] !== current[i]) { differs = true; break; }
+      if (sorted[i] !== current[i]) {
+        differs = true;
+        break;
+      }
     }
     if (differs) this.inner.setActiveToolsByName(sorted);
   }
@@ -824,10 +861,14 @@ export class AgentSessionWrapper {
     if (SESSION_IDLE_TIMEOUT_MS === 0) return;
     if (!this.isRunning()) this.forceShutdownOnIdle = false;
     this.idleTimer = setTimeout(() => {
-      if (!this.forceShutdownOnIdle && (this.isRunning() || hasActiveSessionLivenessProvider({
-        sessionId: this.sessionId,
-        sessionFile: this.sessionFile || undefined,
-      }))) {
+      if (
+        !this.forceShutdownOnIdle &&
+        (this.isRunning() ||
+          hasActiveSessionLivenessProvider({
+            sessionId: this.sessionId,
+            sessionFile: this.sessionFile || undefined,
+          }))
+      ) {
         this.resetIdleTimer();
         return;
       }
@@ -845,9 +886,7 @@ export class AgentSessionWrapper {
     const header = manager.getHeader();
     if (!header) return;
 
-    const content = [header, ...manager.getEntries()]
-      .map((entry) => JSON.stringify(entry))
-      .join("\n") + "\n";
+    const content = [header, ...manager.getEntries()].map((entry) => JSON.stringify(entry)).join("\n") + "\n";
     writeFileSync(sessionFile, content, { encoding: "utf8", flag: "wx" });
 
     // Pi normally delays the first flush until an assistant message exists.
@@ -871,10 +910,7 @@ export class AgentSessionWrapper {
     this.onDestroyCallback = cb;
   }
 
-  private async withSessionReplacement<T>(
-    replacement: "fork" | "clone",
-    operation: () => Promise<T>,
-  ): Promise<T> {
+  private async withSessionReplacement<T>(replacement: "fork" | "clone", operation: () => Promise<T>): Promise<T> {
     if (this.sessionReplacement) throw new Error("Session is already being copied");
     this.sessionReplacement = replacement;
     try {
@@ -885,10 +921,7 @@ export class AgentSessionWrapper {
   }
 
   private isSessionRunningForReplacement(): boolean {
-    return this.inner.isBashRunning
-      || this.inner.isStreaming
-      || this.inner.isCompacting
-      || this.pendingPromptCount > 0;
+    return this.inner.isBashRunning || this.inner.isStreaming || this.inner.isCompacting || this.pendingPromptCount > 0;
   }
 
   private async shutdownAfterSessionReplacement(replacement: "fork" | "clone"): Promise<void> {
@@ -916,10 +949,7 @@ export class AgentSessionWrapper {
    *  cleared) so identical future texts are not wrongly protected. */
   private pruneQueuedImageTexts(): void {
     if (this.queuedImageTexts.size === 0) return;
-    const remaining = new Set<string>([
-      ...this.inner.getSteeringMessages(),
-      ...this.inner.getFollowUpMessages(),
-    ]);
+    const remaining = new Set<string>([...this.inner.getSteeringMessages(), ...this.inner.getFollowUpMessages()]);
     for (const text of this.queuedImageTexts) {
       if (!remaining.has(text)) this.queuedImageTexts.delete(text);
     }
@@ -952,596 +982,644 @@ export class AgentSessionWrapper {
       }
 
       switch (type) {
-      case "prompt": {
-        // Serialize only admission. Once the preceding prompt has either
-        // passed or failed preflight, the SDK can atomically decide whether
-        // this submission starts a run or joins its streaming queue.
-        const releaseAdmission = await this.acquirePromptAdmission();
-        try {
-          if (this.inner.isBashRunning) {
-            throw new Error("Cannot send a prompt while a shell command is running");
-          }
-          if (this.extensionUiAbortController.signal.aborted) {
-            this.extensionUiAbortController = new AbortController();
-          }
-          const promptImages = command.images as Array<{ type: "image"; data: string; mimeType: string }> | undefined;
-          const streamingBehavior = command.streamingBehavior as "steer" | "followUp" | undefined;
-          if (promptImages?.length && streamingBehavior && typeof command.message === "string") {
-            // Track for update_queue image protection. The SDK queue stores
-            // the *expanded* text; plain texts match, expanded skill text
-            // with images simply stays unprotected (rare, degrades to a
-            // normal edit that drops the image — acceptable).
-            this.queuedImageTexts.add(command.message);
-          }
-          let preflightAccepted = false;
-          let preflightSettled = false;
-          let promptSettled = false;
-          let acceptPreflight!: () => void;
-          let rejectPreflight!: (error: unknown) => void;
-          const preflight = new Promise<void>((resolve, reject) => {
-            acceptPreflight = () => {
-              preflightAccepted = true;
-              this.agentRunNeedsCompletion = true;
-              if (preflightSettled) return;
-              preflightSettled = true;
-              resolve();
-            };
-            rejectPreflight = (error) => {
-              if (preflightSettled) return;
-              preflightSettled = true;
-              reject(error);
-            };
-          });
-          const finishPrompt = () => {
-            if (promptSettled) return;
-            promptSettled = true;
-            this.pendingPromptCount = Math.max(0, this.pendingPromptCount - 1);
-            this.resetIdleTimer();
-            this.notifyAgentRunCompleteIfIdle();
-          };
-
-          this.pendingPromptCount += 1;
-          // 提示词缓存一致性（2026-10-19 研究，详见 lib/prompt-consistency.ts）：
-          // quick → 派发前钳制（adapter 重激活会扩大活动集并重建 base，事件
-          // base 是发射前快照，钩子内钳制救不了当回合；此处与 inner.prompt()
-          // 之间无 await，无再污染窗口）；非 quick → 排序化活动集（工具段
-          // 顺序 = 激活序 = 注册时序，跨进程不确定，同长度不同字节照样打断
-          // 前缀缓存；排序使 base 成为集合的纯函数）。
-          if (this.quickPrompt) {
-            this.enforceQuickTools();
-          } else {
-            this.normalizeActiveToolOrder();
-          }
-          let prompt: Promise<void>;
+        case "prompt": {
+          // Serialize only admission. Once the preceding prompt has either
+          // passed or failed preflight, the SDK can atomically decide whether
+          // this submission starts a run or joins its streaming queue.
+          const releaseAdmission = await this.acquirePromptAdmission();
           try {
-            prompt = this.inner.prompt(command.message as string, {
-              ...(promptImages?.length ? { images: promptImages } : {}),
-              ...(streamingBehavior ? { streamingBehavior } : {}),
-              source: "rpc",
-              // Match pi's RPC contract: acknowledge only after synchronous prompt
-              // validation and extension preflight have accepted the submission.
-              preflightResult: (success) => {
-                if (success) {
-                  this.applyExactSystemPrompt();
-                  acceptPreflight();
-                }
-              },
-            });
-          } catch (error) {
-            finishPrompt();
-            throw error;
-          }
-
-          void prompt.then(() => {
-            // Compatibility fallback if a future SDK resolves without invoking
-            // the internal callback. This waits for the run, but never acks early.
-            acceptPreflight();
-            finishPrompt();
-            if (!streamingBehavior) this.emit({ type: "prompt_done" });
-          }, (error) => {
-            rejectPreflight(error);
-            finishPrompt();
-            invalidateSessionListCache();
-            // A preflight rejection is returned by the POST itself. Only an
-            // unexpected failure after acceptance needs the asynchronous event.
-            if (preflightAccepted) {
-              this.emit({
-                type: "prompt_error",
-                errorMessage: error instanceof Error ? error.message : String(error),
-              });
-              if (!streamingBehavior) this.emit({ type: "prompt_done" });
+            if (this.inner.isBashRunning) {
+              throw new Error("Cannot send a prompt while a shell command is running");
             }
-          }).catch((error) => {
-            console.error(
-              "[pi-web] prompt completion handler failed:",
-              error instanceof Error ? error.message : error,
-            );
-          });
-
-          await preflight;
-          return null;
-        } finally {
-          releaseAdmission();
-        }
-      }
-
-      case "abort":
-        this.forceShutdownOnIdle = true;
-        // Stop must unwind extension commands that have not started the agent yet.
-        this.extensionUiAbortController.abort(new DOMException("Extension UI cancelled by Stop", "AbortError"));
-        try {
-          await this.withFinalIdleReset(() => this.inner.abort());
-          return null;
-        } finally {
-          if (!this.isRunning()) this.forceShutdownOnIdle = false;
-        }
-
-      case "get_state": {
-        // quick 显示镜像的读取时重放：恢复路径上 SDK 的模型恢复/工具重建
-        // 会重写 state.systemPrompt（绑定时的镜像被冲掉）。组合变换幂等
-        //（身份替换/文档块删除/模板附加都只生效一次），读前重放保证前端
-        // 看到的与 before_agent_start 每回合改写的一致。
-        this.applyQuickPromptToState();
-        const model = this.inner.model;
-        const contextUsage = this.inner.getContextUsage();
-        return {
-          sessionId: this.inner.sessionId,
-          sessionFile: this.inner.sessionFile ?? "",
-          isStreaming: this.inner.isStreaming,
-          isPromptRunning: this.pendingPromptCount > 0,
-          isBashRunning: this.inner.isBashRunning,
-          isCompacting: this.inner.isCompacting,
-          autoCompactionEnabled: this.inner.autoCompactionEnabled,
-          autoRetryEnabled: this.inner.autoRetryEnabled,
-          model: model ? { id: model.id, provider: model.provider } : undefined,
-          messageCount: 0,
-          pendingMessageCount: this.inner.pendingMessageCount,
-          queuedMessages: {
-            steering: [...this.inner.getSteeringMessages()],
-            followUp: [...this.inner.getFollowUpMessages()],
-          },
-          contextUsage: contextUsage
-            ? { percent: contextUsage.percent, contextWindow: contextUsage.contextWindow, tokens: contextUsage.tokens }
-            : null,
-          systemPrompt: this.inner.agent.state?.systemPrompt ?? "",
-          thinkingLevel: this.inner.agent.state?.thinkingLevel ?? "off",
-          extensionStatuses: this.getExtensionStatuses(),
-          extensionWidgets: this.getExtensionWidgets(),
-        };
-      }
-
-      case "set_model": {
-        const { provider, modelId } = command as { provider: string; modelId: string };
-        let model = this.inner.modelRuntime.getModel(provider, modelId);
-        if (!model) {
-          await this.inner.modelRuntime.refresh({ allowNetwork: false });
-          model = this.inner.modelRuntime.getModel(provider, modelId);
-        }
-        if (!model) throw new Error(`Model not found: ${provider}/${modelId}`);
-        await this.inner.setModel(model);
-        invalidateModelsCache();
-        invalidateSessionListCache();
-        return { id: model.id, provider: model.provider };
-      }
-
-      case "fork": {
-        if (this.isSessionRunningForReplacement()) {
-          throw new Error("Cannot fork while the session is running");
-        }
-        return this.withSessionReplacement("fork", async () => {
-          const entryId = command.entryId as string;
-          const sessionManager = this.inner.sessionManager;
-          const currentSessionFile = this.inner.sessionFile;
-
-          if (!sessionManager.isPersisted()) return { cancelled: true };
-          if (!currentSessionFile) throw new Error("Persisted session is missing a session file");
-
-          const entry = sessionManager.getEntry(entryId);
-          if (!entry) throw new Error("Invalid entry ID for forking");
-
-          const sessionDir = sessionManager.getSessionDir();
-          let newSessionFile: string;
-          let forkedManager: SessionManager;
-
-          if (!entry.parentId) {
-            // Fork before the first message: create an empty session linked to this one
-            forkedManager = SessionManager.create(sessionManager.getCwd(), sessionDir, {
-              parentSession: currentSessionFile,
+            if (this.extensionUiAbortController.signal.aborted) {
+              this.extensionUiAbortController = new AbortController();
+            }
+            const promptImages = command.images as Array<{ type: "image"; data: string; mimeType: string }> | undefined;
+            const streamingBehavior = command.streamingBehavior as "steer" | "followUp" | undefined;
+            if (promptImages?.length && streamingBehavior && typeof command.message === "string") {
+              // Track for update_queue image protection. The SDK queue stores
+              // the *expanded* text; plain texts match, expanded skill text
+              // with images simply stays unprotected (rare, degrades to a
+              // normal edit that drops the image — acceptable).
+              this.queuedImageTexts.add(command.message);
+            }
+            let preflightAccepted = false;
+            let preflightSettled = false;
+            let promptSettled = false;
+            let acceptPreflight!: () => void;
+            let rejectPreflight!: (error: unknown) => void;
+            const preflight = new Promise<void>((resolve, reject) => {
+              acceptPreflight = () => {
+                preflightAccepted = true;
+                this.agentRunNeedsCompletion = true;
+                if (preflightSettled) return;
+                preflightSettled = true;
+                resolve();
+              };
+              rejectPreflight = (error) => {
+                if (preflightSettled) return;
+                preflightSettled = true;
+                reject(error);
+              };
             });
-            newSessionFile = forkedManager.getSessionFile() as string;
-          } else {
-            // Fork after some history: copy path up to (but not including) the fork point
-            forkedManager = SessionManager.open(currentSessionFile, sessionDir);
-            const forkedPath = forkedManager.createBranchedSession(entry.parentId);
-            if (!forkedPath) throw new Error("Failed to create forked session");
-            newSessionFile = forkedPath;
+            const finishPrompt = () => {
+              if (promptSettled) return;
+              promptSettled = true;
+              this.pendingPromptCount = Math.max(0, this.pendingPromptCount - 1);
+              this.resetIdleTimer();
+              this.notifyAgentRunCompleteIfIdle();
+            };
+
+            this.pendingPromptCount += 1;
+            // 提示词缓存一致性（2026-10-19 研究，详见 lib/prompt-consistency.ts）：
+            // quick → 派发前钳制（adapter 重激活会扩大活动集并重建 base，事件
+            // base 是发射前快照，钩子内钳制救不了当回合；此处与 inner.prompt()
+            // 之间无 await，无再污染窗口）；非 quick → 排序化活动集（工具段
+            // 顺序 = 激活序 = 注册时序，跨进程不确定，同长度不同字节照样打断
+            // 前缀缓存；排序使 base 成为集合的纯函数）。
+            if (this.quickPrompt) {
+              this.enforceQuickTools();
+            } else {
+              this.normalizeActiveToolOrder();
+            }
+            let prompt: Promise<void>;
+            try {
+              prompt = this.inner.prompt(command.message as string, {
+                ...(promptImages?.length ? { images: promptImages } : {}),
+                ...(streamingBehavior ? { streamingBehavior } : {}),
+                source: "rpc",
+                // Match pi's RPC contract: acknowledge only after synchronous prompt
+                // validation and extension preflight have accepted the submission.
+                preflightResult: (success) => {
+                  if (success) {
+                    this.applyExactSystemPrompt();
+                    acceptPreflight();
+                  }
+                },
+              });
+            } catch (error) {
+              finishPrompt();
+              throw error;
+            }
+
+            void prompt
+              .then(
+                () => {
+                  // Compatibility fallback if a future SDK resolves without invoking
+                  // the internal callback. This waits for the run, but never acks early.
+                  acceptPreflight();
+                  finishPrompt();
+                  if (!streamingBehavior) this.emit({ type: "prompt_done" });
+                },
+                (error) => {
+                  rejectPreflight(error);
+                  finishPrompt();
+                  invalidateSessionListCache();
+                  // A preflight rejection is returned by the POST itself. Only an
+                  // unexpected failure after acceptance needs the asynchronous event.
+                  if (preflightAccepted) {
+                    this.emit({
+                      type: "prompt_error",
+                      errorMessage: error instanceof Error ? error.message : String(error),
+                    });
+                    if (!streamingBehavior) this.emit({ type: "prompt_done" });
+                  }
+                },
+              )
+              .catch((error) => {
+                console.error(
+                  "[pi-web] prompt completion handler failed:",
+                  error instanceof Error ? error.message : error,
+                );
+              });
+
+            await preflight;
+            return null;
+          } finally {
+            releaseAdmission();
           }
-
-          if (!existsSync(newSessionFile)) {
-            const header = forkedManager.getHeader();
-            if (!header) throw new Error("Forked session is missing a session header");
-            const content = [header, ...forkedManager.getEntries()]
-              .map((forkedEntry) => JSON.stringify(forkedEntry))
-              .join("\n") + "\n";
-            writeFileSync(newSessionFile, content, { encoding: "utf8", flag: "wx" });
-          }
-
-          const newSessionId = forkedManager.getSessionId();
-          cacheSessionPath(newSessionId, newSessionFile);
-          invalidateSessionListCache();
-          await this.shutdownAfterSessionReplacement("fork");
-          return { cancelled: false, newSessionId };
-        });
-      }
-
-      case "fork_branch": {
-        if (this.isSessionRunningForReplacement()) {
-          throw new Error("Cannot fork while the session is running");
         }
-        const entryId = command.entryId as string;
-        const sessionManager = this.inner.sessionManager;
-        const currentSessionFile = this.inner.sessionFile;
-        if (!sessionManager.isPersisted()) return { cancelled: true };
-        if (!currentSessionFile) throw new Error("Persisted session is missing a session file");
-        if (!sessionManager.getEntry(entryId)) throw new Error("Invalid entry ID for forking");
 
-        const sessionDir = sessionManager.getSessionDir();
-        const sourceManager = SessionManager.open(currentSessionFile, sessionDir);
-        const forkedPath = sourceManager.createBranchedSession(entryId);
-        if (!forkedPath) throw new Error("Failed to create forked session");
-
-        const newSessionId = SessionManager.open(forkedPath, sessionDir).getSessionId();
-        cacheSessionPath(newSessionId, forkedPath);
-        invalidateSessionListCache();
-        return { cancelled: false, newSessionId };
-      }
-
-      case "clone": {
-        if (this.isSessionRunningForReplacement()) {
-          throw new Error("Cannot clone while the session is running");
-        }
-        const sessionManager = this.inner.sessionManager;
-        const currentSessionFile = this.inner.sessionFile;
-        const leafId = typeof command.leafId === "string" ? command.leafId : sessionManager.getLeafId();
-        const branchHasAssistant = leafId && sessionManager.getBranch(leafId).some(
-          (entry) => entry.type === "message" && entry.message.role === "assistant",
-        );
-
-        if (!sessionManager.isPersisted() || !leafId || !branchHasAssistant) return { cancelled: true };
-        if (!currentSessionFile || !existsSync(currentSessionFile)) return { cancelled: true };
-
-        return this.withSessionReplacement("clone", async () => {
-          const sessionDir = sessionManager.getSessionDir();
-          const sourceManager = SessionManager.open(currentSessionFile, sessionDir);
-          const clonedPath = sourceManager.createBranchedSession(leafId);
-          if (!clonedPath || !existsSync(clonedPath)) throw new Error("Failed to clone current session branch");
-
-          const newSessionId = SessionManager.open(clonedPath, sessionDir).getSessionId();
-          cacheSessionPath(newSessionId, clonedPath);
-          invalidateSessionListCache();
-          await this.shutdownAfterSessionReplacement("clone");
-          return { cancelled: false, newSessionId };
-        });
-      }
-
-      case "navigate_tree": {
-        if (this.inner.isBashRunning) {
-          throw new Error("Cannot navigate while a shell command is running");
-        }
-        const result = await this.inner.navigateTree(command.targetId as string, {});
-        return { cancelled: result.cancelled };
-      }
-
-      case "set_thinking_level": {
-        const level = command.level as string;
-        this.inner.setThinkingLevel(level);
-        // setThinkingLevel clamps xhigh→high for models where supportsXhigh()===false.
-        // If the model has DeepSeek thinking compat (reasoningEffortMap maps xhigh→max),
-        // force the state back so the compat layer can use it correctly.
-        if (level === "xhigh" && (this.inner.model as { compat?: { thinkingFormat?: string } } | null)?.compat?.thinkingFormat === "deepseek" && this.inner.agent?.state) {
-          this.inner.agent.state.thinkingLevel = "xhigh";
-        }
-        invalidateSessionListCache();
-        return null;
-      }
-
-      case "compact": {
-        try {
-          return await this.withFinalIdleReset(() =>
-            this.inner.compact(command.customInstructions as string | undefined)
-          );
-        } finally {
-          invalidateSessionListCache();
-        }
-      }
-
-      case "set_session_name": {
-        const name = (command.name as string | undefined)?.trim();
-        if (!name) throw new Error("Session name cannot be empty");
-        this.inner.setSessionName(name);
-        invalidateSessionListCache();
-        return null;
-      }
-
-      case "get_session_stats": {
-        return {
-          ...this.inner.getSessionStats(),
-          sessionName: this.inner.sessionManager.getSessionName(),
-        };
-      }
-
-      case "get_last_assistant_text": {
-        return { text: this.inner.getLastAssistantText() ?? "" };
-      }
-
-      case "set_auto_compaction": {
-        this.inner.setAutoCompactionEnabled(command.enabled as boolean);
-        return null;
-      }
-
-      case "clear_queue": {
-        this.queuedImageTexts.clear();
-        // Full clear only: pi has no single-item dequeue. For single-item
-        // operations use update_queue, which drains+transforms+requeues
-        // atomically inside one command.
-        return this.inner.clearQueue();
-      }
-
-      case "stop_bg": {
-        // Background-shell stop bridge: the bg-shell extension's registry
-        // lives on globalThis in this same process (amedac-core).
-        const { stopBgTask } = await import("./extensions/bg-shell");
-        return stopBgTask(this.inner.sessionId, String(command.taskId ?? ""));
-      }
-
-      case "update_queue": {
-        // Single-item queue op (edit/delete/convert/interrupt). Drain → pure
-        // transform (lib/queue-ops) → requeue all run within this microtask
-        // chain, so the agent loop (driven by I/O macrotasks) cannot
-        // interleave — the "clear+requeue races" caveat only applies to
-        // multi-request sequences.
-        const op = command.op as QueueOp;
-        if (!op || !["edit", "delete", "convert", "interrupt"].includes(String(op?.op))) {
-          throw new Error("Invalid update_queue op");
-        }
-        if (op.kind !== "steering" && op.kind !== "followUp") {
-          throw new Error("Invalid update_queue kind");
-        }
-        if (typeof op.index !== "number" || !Number.isInteger(op.index) || op.index < 0) {
-          throw new Error("Invalid update_queue index");
-        }
-        if (op.op === "edit" && typeof op.text !== "string") {
-          throw new Error("Invalid update_queue text");
-        }
-        const drained = this.inner.clearQueue();
-        const result = applyQueueOp(
-          drained,
-          op,
-          (text) => this.queuedImageTexts.has(text),
-        );
-        if (!result.ok) {
-          // Restore the drained queue untouched before failing the command —
-          // the op was rejected, the queue must not change.
-          await this.requeueMessages(drained);
-          throw new Error(describeQueueOpError(result.error));
-        }
-        await this.requeueMessages(result.next);
-        if (result.interruptedText !== undefined) {
-          // Interrupt: abort the current run, then send the message as a
-          // fresh turn. Requeueing already happened above, so the remaining
-          // steering messages inject into the new run at tool-call
-          // boundaries. If the prompt is rejected, requeue the text so it is
-          // never lost.
+        case "abort":
+          this.forceShutdownOnIdle = true;
+          // Stop must unwind extension commands that have not started the agent yet.
           this.extensionUiAbortController.abort(new DOMException("Extension UI cancelled by Stop", "AbortError"));
           try {
             await this.withFinalIdleReset(() => this.inner.abort());
-          } catch {
-            // Already idle / nothing to abort — the prompt below still runs.
-          }
-          try {
-            await this.inner.prompt(result.interruptedText, { source: "rpc" });
-          } catch (error) {
-            await this.inner.steer(result.interruptedText).catch(() => {});
-            throw error;
-          }
-        }
-        this.pruneQueuedImageTexts();
-        return {
-          steering: [...this.inner.getSteeringMessages()],
-          followUp: [...this.inner.getFollowUpMessages()],
-        };
-      }
-
-      case "steer": {
-        const steerImages = command.images as Array<{ type: "image"; data: string; mimeType: string }> | undefined;
-        if (steerImages?.length && typeof command.message === "string") this.queuedImageTexts.add(command.message);
-        await this.inner.steer(command.message as string, steerImages?.length ? steerImages : undefined);
-        return null;
-      }
-
-      case "follow_up": {
-        const followImages = command.images as Array<{ type: "image"; data: string; mimeType: string }> | undefined;
-        if (followImages?.length && typeof command.message === "string") this.queuedImageTexts.add(command.message);
-        await this.inner.followUp(command.message as string, followImages?.length ? followImages : undefined);
-        return null;
-      }
-
-      case "get_tools": {
-        const all: ToolInfo[] = this.inner.getAllTools();
-        const active = new Set<string>(this.inner.getActiveToolNames());
-        return all.map((t) => ({
-          ...t,
-          active: active.has(t.name),
-        }));
-      }
-
-      case "get_commands": {
-        const commands: SlashCommandInfo[] = [];
-        for (const registered of this.inner.extensionRunner.getRegisteredCommands()) {
-          commands.push({
-            name: registered.invocationName,
-            description: registered.description,
-            source: "extension",
-            sourceInfo: registered.sourceInfo,
-          });
-        }
-        for (const template of this.inner.promptTemplates) {
-          commands.push({
-            name: template.name,
-            description: template.description,
-            source: "prompt",
-            sourceInfo: template.sourceInfo,
-          });
-        }
-        for (const skill of this.inner.resourceLoader.getSkills().skills) {
-          commands.push({
-            name: `skill:${skill.name}`,
-            description: skill.description,
-            source: "skill",
-            sourceInfo: skill.sourceInfo,
-          });
-        }
-        return { commands };
-      }
-
-      case "set_tools": {
-        const toolNames = command.toolNames as string[];
-        this.setActiveToolSelection(toolNames);
-        return null;
-      }
-
-      case "apply_quick_template": {
-        // Quick mode: re-pin the template's system prompt / model / MCP set.
-        const templateId = command.templateId as string;
-        if (typeof templateId !== "string" || !templateId) {
-          throw new Error("templateId required");
-        }
-        const { getQuickTemplate } = await import("./quick-templates");
-        const template = getQuickTemplate(templateId);
-        if (!template) throw new Error(`快速会话模板不存在：${templateId}`);
-        // 提示词经 before_agent_start 扩展改写（holder 热更新）——不再走
-        // setExactSystemPrompt（全量替换会丢工具列表/准则）。
-        this.updateQuickTemplate(template.systemPrompt);
-        // 工具面跟随新模板白名单（空名单=纯聊天；前缀匹配见 quickToolSet）。
-        // noTools/配置级 shadow 都兜不住 adapter 的 direct-tools 注册路径。
-        this.setQuickToolAllowlist(template.mcpServers);
-        if (template.model) {
-          await this.send({ type: "set_model", provider: template.model.provider, modelId: template.model.modelId });
-        }
-        // 快照与 meta 同步：会话工作区记录切换后的模板版本
-        try {
-          const { ensureQuickSessionWorkspace } = await import("./quick-session");
-          const { recordSessionMeta, getSessionMeta } = await import("./session-metas");
-          const meta = getSessionMeta(this.sessionId);
-          // 切换模板 = 换到新模板版本的工作区（ensure：同版本复用/新建）
-          const ws = ensureQuickSessionWorkspace(this.ownerId, template);
-          if (meta?.templateId !== template.id || (meta as { quickDir?: string } | undefined)?.quickDir !== ws.slug) {
-            recordSessionMeta(this.sessionId, { ...meta, mode: "quick", ownerId: this.ownerId, templateId: template.id, ...(ws.slug ? { quickDir: ws.slug } : {}) } as never);
-          }
-        } catch { /* 快照失败不阻断切换 */ }
-        return { success: true, template: { id: template.id, name: template.name } };
-      }
-
-      case "apply_preferences": {
-        const prefCwd = command.cwd as string;
-        const action = command.action as string | undefined;
-        if (action === "reload_agents") {
-          await this.waitForExtensionsBound();
-          this.extensionStatuses.clear();
-          this.extensionWidgets.clear();
-          await this.inner.reload();
-          if (typeof this.inner.bindExtensions !== "function") {
-            this.inner.extensionRunner.setUIContext?.(this.createExtensionUiContext(), "rpc");
-          }
-          this.applyForcedEmptySystemPrompt();
-        }
-        this.applyToolPreferences(prefCwd);
-        return { success: true };
-      }
-
-      case "reload": {
-        if (this.extensionUiAbortController.signal.aborted) {
-          this.extensionUiAbortController = new AbortController();
-        }
-        const activeToolNames = this.inner.getActiveToolNames();
-        await this.waitForExtensionsBound();
-        this.extensionStatuses.clear();
-        this.resetExtensionWidgetsForReload();
-        this.syncProjectTrust();
-        await this.inner.reload();
-        this.setActiveToolSelection(activeToolNames);
-        if (typeof this.inner.bindExtensions !== "function") {
-          this.inner.extensionRunner.setUIContext?.(this.createExtensionUiContext(), "rpc");
-        }
-        this.applyExactSystemPrompt();
-        invalidateModelsCache();
-        return { success: true };
-      }
-
-      case "abort_compaction": {
-        this.inner.abortCompaction();
-        return null;
-      }
-
-      case "extension_ui_response": {
-        this.resolveExtensionUiResponse(command as ExtensionUiResponse);
-        return null;
-      }
-
-      case "extension_ui_input": {
-        this.handleExtensionUiInput(command.id as string, command.data as string);
-        return null;
-      }
-
-      case "set_auto_retry": {
-        this.inner.setAutoRetryEnabled(command.enabled as boolean);
-        return null;
-      }
-
-      case "stop_subagent": {
-        // Capsule background-task stop: forward onto the session's extension
-        // event bus (subagents:rpc:stop) via the bg-tasks bridge extension.
-        const agentId = command.agentId as string;
-        if (typeof agentId !== "string" || !agentId) {
-          throw new Error("agentId required");
-        }
-        const outcome = await stopSubagentRun(this.sessionId, agentId);
-        if (!outcome.ok) throw new Error(outcome.error ?? "停止失败");
-        return { success: true };
-      }
-      case "bash": {
-        if (this.pendingPromptCount > 0 || this.inner.isStreaming || this.inner.isCompacting || this.inner.isBashRunning) {
-          throw new Error("Cannot run a shell command while the session is busy");
-        }
-        const bashCommand = command.command as string;
-        const excludeFromContext = command.excludeFromContext as boolean | undefined;
-        // pi CLI's rpc-mode gives extensions first claim on user `!`/`!!`
-        // commands; pi-web must do the same or the mode extensions (sandbox
-        // container / SSH / relay) never see them — and they would execute on
-        // the pi-web server itself, outside the session's backend and outside
-        // every isolation fence (container escape for sandbox users).
-        const eventResult = await this.inner.extensionRunner.emitUserBash?.({
-          type: "user_bash",
-          command: bashCommand,
-          excludeFromContext: Boolean(excludeFromContext),
-          cwd: this.cwd,
-        });
-        if (eventResult?.result) {
-          this.inner.recordBashResult?.(bashCommand, eventResult.result, { excludeFromContext });
-          try {
-            this.persistBashOnlySession();
-            return eventResult.result;
+            return null;
           } finally {
-            this.resetIdleTimer();
+            if (!this.isRunning()) this.forceShutdownOnIdle = false;
+          }
+
+        case "get_state": {
+          // quick 显示镜像的读取时重放：恢复路径上 SDK 的模型恢复/工具重建
+          // 会重写 state.systemPrompt（绑定时的镜像被冲掉）。组合变换幂等
+          //（身份替换/文档块删除/模板附加都只生效一次），读前重放保证前端
+          // 看到的与 before_agent_start 每回合改写的一致。
+          this.applyQuickPromptToState();
+          const model = this.inner.model;
+          const contextUsage = this.inner.getContextUsage();
+          return {
+            sessionId: this.inner.sessionId,
+            sessionFile: this.inner.sessionFile ?? "",
+            isStreaming: this.inner.isStreaming,
+            isPromptRunning: this.pendingPromptCount > 0,
+            isBashRunning: this.inner.isBashRunning,
+            isCompacting: this.inner.isCompacting,
+            autoCompactionEnabled: this.inner.autoCompactionEnabled,
+            autoRetryEnabled: this.inner.autoRetryEnabled,
+            model: model ? { id: model.id, provider: model.provider } : undefined,
+            messageCount: 0,
+            pendingMessageCount: this.inner.pendingMessageCount,
+            queuedMessages: {
+              steering: [...this.inner.getSteeringMessages()],
+              followUp: [...this.inner.getFollowUpMessages()],
+            },
+            contextUsage: contextUsage
+              ? {
+                  percent: contextUsage.percent,
+                  contextWindow: contextUsage.contextWindow,
+                  tokens: contextUsage.tokens,
+                }
+              : null,
+            systemPrompt: this.inner.agent.state?.systemPrompt ?? "",
+            thinkingLevel: this.inner.agent.state?.thinkingLevel ?? "off",
+            extensionStatuses: this.getExtensionStatuses(),
+            extensionWidgets: this.getExtensionWidgets(),
+          };
+        }
+
+        case "set_model": {
+          const { provider, modelId } = command as { provider: string; modelId: string };
+          let model = this.inner.modelRuntime.getModel(provider, modelId);
+          if (!model) {
+            await this.inner.modelRuntime.refresh({ allowNetwork: false });
+            model = this.inner.modelRuntime.getModel(provider, modelId);
+          }
+          if (!model) throw new Error(`Model not found: ${provider}/${modelId}`);
+          await this.inner.setModel(model);
+          invalidateModelsCache();
+          invalidateSessionListCache();
+          return { id: model.id, provider: model.provider };
+        }
+
+        case "fork": {
+          if (this.isSessionRunningForReplacement()) {
+            throw new Error("Cannot fork while the session is running");
+          }
+          return this.withSessionReplacement("fork", async () => {
+            const entryId = command.entryId as string;
+            const sessionManager = this.inner.sessionManager;
+            const currentSessionFile = this.inner.sessionFile;
+
+            if (!sessionManager.isPersisted()) return { cancelled: true };
+            if (!currentSessionFile) throw new Error("Persisted session is missing a session file");
+
+            const entry = sessionManager.getEntry(entryId);
+            if (!entry) throw new Error("Invalid entry ID for forking");
+
+            const sessionDir = sessionManager.getSessionDir();
+            let newSessionFile: string;
+            let forkedManager: SessionManager;
+
+            if (!entry.parentId) {
+              // Fork before the first message: create an empty session linked to this one
+              forkedManager = SessionManager.create(sessionManager.getCwd(), sessionDir, {
+                parentSession: currentSessionFile,
+              });
+              newSessionFile = forkedManager.getSessionFile() as string;
+            } else {
+              // Fork after some history: copy path up to (but not including) the fork point
+              forkedManager = SessionManager.open(currentSessionFile, sessionDir);
+              const forkedPath = forkedManager.createBranchedSession(entry.parentId);
+              if (!forkedPath) throw new Error("Failed to create forked session");
+              newSessionFile = forkedPath;
+            }
+
+            if (!existsSync(newSessionFile)) {
+              const header = forkedManager.getHeader();
+              if (!header) throw new Error("Forked session is missing a session header");
+              const content =
+                [header, ...forkedManager.getEntries()].map((forkedEntry) => JSON.stringify(forkedEntry)).join("\n") +
+                "\n";
+              writeFileSync(newSessionFile, content, { encoding: "utf8", flag: "wx" });
+            }
+
+            const newSessionId = forkedManager.getSessionId();
+            cacheSessionPath(newSessionId, newSessionFile);
+            invalidateSessionListCache();
+            await this.shutdownAfterSessionReplacement("fork");
+            return { cancelled: false, newSessionId };
+          });
+        }
+
+        case "fork_branch": {
+          if (this.isSessionRunningForReplacement()) {
+            throw new Error("Cannot fork while the session is running");
+          }
+          const entryId = command.entryId as string;
+          const sessionManager = this.inner.sessionManager;
+          const currentSessionFile = this.inner.sessionFile;
+          if (!sessionManager.isPersisted()) return { cancelled: true };
+          if (!currentSessionFile) throw new Error("Persisted session is missing a session file");
+          if (!sessionManager.getEntry(entryId)) throw new Error("Invalid entry ID for forking");
+
+          const sessionDir = sessionManager.getSessionDir();
+          const sourceManager = SessionManager.open(currentSessionFile, sessionDir);
+          const forkedPath = sourceManager.createBranchedSession(entryId);
+          if (!forkedPath) throw new Error("Failed to create forked session");
+
+          const newSessionId = SessionManager.open(forkedPath, sessionDir).getSessionId();
+          cacheSessionPath(newSessionId, forkedPath);
+          invalidateSessionListCache();
+          return { cancelled: false, newSessionId };
+        }
+
+        case "clone": {
+          if (this.isSessionRunningForReplacement()) {
+            throw new Error("Cannot clone while the session is running");
+          }
+          const sessionManager = this.inner.sessionManager;
+          const currentSessionFile = this.inner.sessionFile;
+          const leafId = typeof command.leafId === "string" ? command.leafId : sessionManager.getLeafId();
+          const branchHasAssistant =
+            leafId &&
+            sessionManager
+              .getBranch(leafId)
+              .some((entry) => entry.type === "message" && entry.message.role === "assistant");
+
+          if (!sessionManager.isPersisted() || !leafId || !branchHasAssistant) return { cancelled: true };
+          if (!currentSessionFile || !existsSync(currentSessionFile)) return { cancelled: true };
+
+          return this.withSessionReplacement("clone", async () => {
+            const sessionDir = sessionManager.getSessionDir();
+            const sourceManager = SessionManager.open(currentSessionFile, sessionDir);
+            const clonedPath = sourceManager.createBranchedSession(leafId);
+            if (!clonedPath || !existsSync(clonedPath)) throw new Error("Failed to clone current session branch");
+
+            const newSessionId = SessionManager.open(clonedPath, sessionDir).getSessionId();
+            cacheSessionPath(newSessionId, clonedPath);
+            invalidateSessionListCache();
+            await this.shutdownAfterSessionReplacement("clone");
+            return { cancelled: false, newSessionId };
+          });
+        }
+
+        case "navigate_tree": {
+          if (this.inner.isBashRunning) {
+            throw new Error("Cannot navigate while a shell command is running");
+          }
+          const result = await this.inner.navigateTree(command.targetId as string, {});
+          return { cancelled: result.cancelled };
+        }
+
+        case "set_thinking_level": {
+          const level = command.level as string;
+          this.inner.setThinkingLevel(level);
+          // setThinkingLevel clamps xhigh→high for models where supportsXhigh()===false.
+          // If the model has DeepSeek thinking compat (reasoningEffortMap maps xhigh→max),
+          // force the state back so the compat layer can use it correctly.
+          if (
+            level === "xhigh" &&
+            (this.inner.model as { compat?: { thinkingFormat?: string } } | null)?.compat?.thinkingFormat ===
+              "deepseek" &&
+            this.inner.agent?.state
+          ) {
+            this.inner.agent.state.thinkingLevel = "xhigh";
+          }
+          invalidateSessionListCache();
+          return null;
+        }
+
+        case "compact": {
+          try {
+            return await this.withFinalIdleReset(() =>
+              this.inner.compact(command.customInstructions as string | undefined),
+            );
+          } finally {
             invalidateSessionListCache();
           }
         }
-        if (eventResult?.operations) {
-          try {
-            const result = await this.inner.executeBash(bashCommand, undefined, {
-              excludeFromContext,
-              operations: eventResult.operations,
+
+        case "set_session_name": {
+          const name = (command.name as string | undefined)?.trim();
+          if (!name) throw new Error("Session name cannot be empty");
+          this.inner.setSessionName(name);
+          invalidateSessionListCache();
+          return null;
+        }
+
+        case "get_session_stats": {
+          return {
+            ...this.inner.getSessionStats(),
+            sessionName: this.inner.sessionManager.getSessionName(),
+          };
+        }
+
+        case "get_last_assistant_text": {
+          return { text: this.inner.getLastAssistantText() ?? "" };
+        }
+
+        case "set_auto_compaction": {
+          this.inner.setAutoCompactionEnabled(command.enabled as boolean);
+          return null;
+        }
+
+        case "clear_queue": {
+          this.queuedImageTexts.clear();
+          // Full clear only: pi has no single-item dequeue. For single-item
+          // operations use update_queue, which drains+transforms+requeues
+          // atomically inside one command.
+          return this.inner.clearQueue();
+        }
+
+        case "stop_bg": {
+          // Background-shell stop bridge: the bg-shell extension's registry
+          // lives on globalThis in this same process (amedac-core).
+          const { stopBgTask } = await import("./extensions/bg-shell");
+          return stopBgTask(this.inner.sessionId, String(command.taskId ?? ""));
+        }
+
+        case "update_queue": {
+          // Single-item queue op (edit/delete/convert/interrupt). Drain → pure
+          // transform (lib/queue-ops) → requeue all run within this microtask
+          // chain, so the agent loop (driven by I/O macrotasks) cannot
+          // interleave — the "clear+requeue races" caveat only applies to
+          // multi-request sequences.
+          const op = command.op as QueueOp;
+          if (!op || !["edit", "delete", "convert", "interrupt"].includes(String(op?.op))) {
+            throw new Error("Invalid update_queue op");
+          }
+          if (op.kind !== "steering" && op.kind !== "followUp") {
+            throw new Error("Invalid update_queue kind");
+          }
+          if (typeof op.index !== "number" || !Number.isInteger(op.index) || op.index < 0) {
+            throw new Error("Invalid update_queue index");
+          }
+          if (op.op === "edit" && typeof op.text !== "string") {
+            throw new Error("Invalid update_queue text");
+          }
+          const drained = this.inner.clearQueue();
+          const result = applyQueueOp(drained, op, (text) => this.queuedImageTexts.has(text));
+          if (!result.ok) {
+            // Restore the drained queue untouched before failing the command —
+            // the op was rejected, the queue must not change.
+            await this.requeueMessages(drained);
+            throw new Error(describeQueueOpError(result.error));
+          }
+          await this.requeueMessages(result.next);
+          if (result.interruptedText !== undefined) {
+            // Interrupt: abort the current run, then send the message as a
+            // fresh turn. Requeueing already happened above, so the remaining
+            // steering messages inject into the new run at tool-call
+            // boundaries. If the prompt is rejected, requeue the text so it is
+            // never lost.
+            this.extensionUiAbortController.abort(new DOMException("Extension UI cancelled by Stop", "AbortError"));
+            try {
+              await this.withFinalIdleReset(() => this.inner.abort());
+            } catch {
+              // Already idle / nothing to abort — the prompt below still runs.
+            }
+            try {
+              await this.inner.prompt(result.interruptedText, { source: "rpc" });
+            } catch (error) {
+              await this.inner.steer(result.interruptedText).catch(() => {});
+              throw error;
+            }
+          }
+          this.pruneQueuedImageTexts();
+          return {
+            steering: [...this.inner.getSteeringMessages()],
+            followUp: [...this.inner.getFollowUpMessages()],
+          };
+        }
+
+        case "steer": {
+          const steerImages = command.images as Array<{ type: "image"; data: string; mimeType: string }> | undefined;
+          if (steerImages?.length && typeof command.message === "string") this.queuedImageTexts.add(command.message);
+          await this.inner.steer(command.message as string, steerImages?.length ? steerImages : undefined);
+          return null;
+        }
+
+        case "follow_up": {
+          const followImages = command.images as Array<{ type: "image"; data: string; mimeType: string }> | undefined;
+          if (followImages?.length && typeof command.message === "string") this.queuedImageTexts.add(command.message);
+          await this.inner.followUp(command.message as string, followImages?.length ? followImages : undefined);
+          return null;
+        }
+
+        case "get_tools": {
+          const all: ToolInfo[] = this.inner.getAllTools();
+          const active = new Set<string>(this.inner.getActiveToolNames());
+          return all.map((t) => ({
+            ...t,
+            active: active.has(t.name),
+          }));
+        }
+
+        case "get_commands": {
+          const commands: SlashCommandInfo[] = [];
+          for (const registered of this.inner.extensionRunner.getRegisteredCommands()) {
+            commands.push({
+              name: registered.invocationName,
+              description: registered.description,
+              source: "extension",
+              sourceInfo: registered.sourceInfo,
             });
+          }
+          for (const template of this.inner.promptTemplates) {
+            commands.push({
+              name: template.name,
+              description: template.description,
+              source: "prompt",
+              sourceInfo: template.sourceInfo,
+            });
+          }
+          for (const skill of this.inner.resourceLoader.getSkills().skills) {
+            commands.push({
+              name: `skill:${skill.name}`,
+              description: skill.description,
+              source: "skill",
+              sourceInfo: skill.sourceInfo,
+            });
+          }
+          return { commands };
+        }
+
+        case "set_tools": {
+          const toolNames = command.toolNames as string[];
+          this.setActiveToolSelection(toolNames);
+          return null;
+        }
+
+        case "apply_quick_template": {
+          // Quick mode: re-pin the template's system prompt / model / MCP set.
+          const templateId = command.templateId as string;
+          if (typeof templateId !== "string" || !templateId) {
+            throw new Error("templateId required");
+          }
+          const { getQuickTemplate } = await import("./quick-templates");
+          const template = getQuickTemplate(templateId);
+          if (!template) throw new Error(`快速会话模板不存在：${templateId}`);
+          // 提示词经 before_agent_start 扩展改写（holder 热更新）——不再走
+          // setExactSystemPrompt（全量替换会丢工具列表/准则）。
+          this.updateQuickTemplate(template.systemPrompt);
+          // 工具面跟随新模板白名单（空名单=纯聊天；前缀匹配见 quickToolSet）。
+          // noTools/配置级 shadow 都兜不住 adapter 的 direct-tools 注册路径。
+          this.setQuickToolAllowlist(template.mcpServers);
+          if (template.model) {
+            await this.send({ type: "set_model", provider: template.model.provider, modelId: template.model.modelId });
+          }
+          // 快照与 meta 同步：会话工作区记录切换后的模板版本
+          try {
+            const { ensureQuickSessionWorkspace } = await import("./quick-session");
+            const { recordSessionMeta, getSessionMeta } = await import("./session-metas");
+            const meta = getSessionMeta(this.sessionId);
+            // 切换模板 = 换到新模板版本的工作区（ensure：同版本复用/新建）
+            const ws = ensureQuickSessionWorkspace(this.ownerId, template);
+            if (meta?.templateId !== template.id || (meta as { quickDir?: string } | undefined)?.quickDir !== ws.slug) {
+              recordSessionMeta(this.sessionId, {
+                ...meta,
+                mode: "quick",
+                ownerId: this.ownerId,
+                templateId: template.id,
+                ...(ws.slug ? { quickDir: ws.slug } : {}),
+              } as never);
+            }
+          } catch {
+            /* 快照失败不阻断切换 */
+          }
+          return { success: true, template: { id: template.id, name: template.name } };
+        }
+
+        case "apply_preferences": {
+          const prefCwd = command.cwd as string;
+          const action = command.action as string | undefined;
+          if (action === "reload_agents") {
+            await this.waitForExtensionsBound();
+            this.extensionStatuses.clear();
+            this.extensionWidgets.clear();
+            await this.inner.reload();
+            if (typeof this.inner.bindExtensions !== "function") {
+              this.inner.extensionRunner.setUIContext?.(this.createExtensionUiContext(), "rpc");
+            }
+            this.applyForcedEmptySystemPrompt();
+          }
+          this.applyToolPreferences(prefCwd);
+          return { success: true };
+        }
+
+        case "reload": {
+          if (this.extensionUiAbortController.signal.aborted) {
+            this.extensionUiAbortController = new AbortController();
+          }
+          const activeToolNames = this.inner.getActiveToolNames();
+          await this.waitForExtensionsBound();
+          this.extensionStatuses.clear();
+          this.resetExtensionWidgetsForReload();
+          this.syncProjectTrust();
+          await this.inner.reload();
+          this.setActiveToolSelection(activeToolNames);
+          if (typeof this.inner.bindExtensions !== "function") {
+            this.inner.extensionRunner.setUIContext?.(this.createExtensionUiContext(), "rpc");
+          }
+          this.applyExactSystemPrompt();
+          invalidateModelsCache();
+          return { success: true };
+        }
+
+        case "abort_compaction": {
+          this.inner.abortCompaction();
+          return null;
+        }
+
+        case "extension_ui_response": {
+          this.resolveExtensionUiResponse(command as ExtensionUiResponse);
+          return null;
+        }
+
+        case "extension_ui_input": {
+          this.handleExtensionUiInput(command.id as string, command.data as string);
+          return null;
+        }
+
+        case "set_auto_retry": {
+          this.inner.setAutoRetryEnabled(command.enabled as boolean);
+          return null;
+        }
+
+        case "stop_subagent": {
+          // Capsule background-task stop: forward onto the session's extension
+          // event bus (subagents:rpc:stop) via the bg-tasks bridge extension.
+          const agentId = command.agentId as string;
+          if (typeof agentId !== "string" || !agentId) {
+            throw new Error("agentId required");
+          }
+          const outcome = await stopSubagentRun(this.sessionId, agentId);
+          if (!outcome.ok) throw new Error(outcome.error ?? "停止失败");
+          return { success: true };
+        }
+        case "bash": {
+          if (
+            this.pendingPromptCount > 0 ||
+            this.inner.isStreaming ||
+            this.inner.isCompacting ||
+            this.inner.isBashRunning
+          ) {
+            throw new Error("Cannot run a shell command while the session is busy");
+          }
+          const bashCommand = command.command as string;
+          const excludeFromContext = command.excludeFromContext as boolean | undefined;
+          // pi CLI's rpc-mode gives extensions first claim on user `!`/`!!`
+          // commands; pi-web must do the same or the mode extensions (sandbox
+          // container / SSH / relay) never see them — and they would execute on
+          // the pi-web server itself, outside the session's backend and outside
+          // every isolation fence (container escape for sandbox users).
+          const eventResult = await this.inner.extensionRunner.emitUserBash?.({
+            type: "user_bash",
+            command: bashCommand,
+            excludeFromContext: Boolean(excludeFromContext),
+            cwd: this.cwd,
+          });
+          if (eventResult?.result) {
+            this.inner.recordBashResult?.(bashCommand, eventResult.result, { excludeFromContext });
+            try {
+              this.persistBashOnlySession();
+              return eventResult.result;
+            } finally {
+              this.resetIdleTimer();
+              invalidateSessionListCache();
+            }
+          }
+          if (eventResult?.operations) {
+            try {
+              const result = await this.inner.executeBash(bashCommand, undefined, {
+                excludeFromContext,
+                operations: eventResult.operations,
+              });
+              this.persistBashOnlySession();
+              return result;
+            } finally {
+              this.resetIdleTimer();
+              invalidateSessionListCache();
+            }
+          }
+          if (this.mode !== "host") {
+            // No extension claimed the command (container offline, relay
+            // offline, SSH unreachable). Never fall back to server-local
+            // execution for remote modes — block with an actionable error.
+            throw new Error(
+              "! / !! 指令需由会话的后端执行：当前后端未接管（沙盒容器未就绪 / 本机未连接 / SSH 不可达），已拒绝在服务器本机执行",
+            );
+          }
+          const execution = this.inner.executeBash(command.command as string, undefined, {
+            excludeFromContext: command.excludeFromContext as boolean | undefined,
+            operations: createProjectCommandBashOperations({
+              shellPath: this.inner.settingsManager.getShellPath(),
+            }),
+          });
+          try {
+            const result = await execution;
             this.persistBashOnlySession();
             return result;
           } finally {
@@ -1549,37 +1627,12 @@ export class AgentSessionWrapper {
             invalidateSessionListCache();
           }
         }
-        if (this.mode !== "host") {
-          // No extension claimed the command (container offline, relay
-          // offline, SSH unreachable). Never fall back to server-local
-          // execution for remote modes — block with an actionable error.
-          throw new Error("! / !! 指令需由会话的后端执行：当前后端未接管（沙盒容器未就绪 / 本机未连接 / SSH 不可达），已拒绝在服务器本机执行");
-        }
-        const execution = this.inner.executeBash(
-          command.command as string,
-          undefined,
-          {
-            excludeFromContext: command.excludeFromContext as boolean | undefined,
-            operations: createProjectCommandBashOperations({
-              shellPath: this.inner.settingsManager.getShellPath(),
-            }),
-          },
-        );
-        try {
-          const result = await execution;
-          this.persistBashOnlySession();
-          return result;
-        } finally {
-          this.resetIdleTimer();
-          invalidateSessionListCache();
-        }
-      }
 
-      case "abort_bash": {
-        this.forceShutdownOnIdle = true;
-        this.inner.abortBash();
-        return null;
-      }
+        case "abort_bash": {
+          this.forceShutdownOnIdle = true;
+          this.inner.abortBash();
+          return null;
+        }
 
         default:
           throw new Error(`Unsupported command: ${type}`);
@@ -1625,10 +1678,7 @@ export class AgentSessionWrapper {
       return;
     }
 
-    void (async () => emit.call(
-      this.inner.extensionRunner,
-      { type: "session_shutdown", reason: "quit" },
-    ))()
+    void (async () => emit.call(this.inner.extensionRunner, { type: "session_shutdown", reason: "quit" }))()
       .catch((error) => {
         console.error(
           "[pi-web] session_shutdown before dispose failed:",
@@ -1718,10 +1768,7 @@ export class AgentSessionWrapper {
   }
 
   private clearExtensionWidgets(emitClear: boolean): void {
-    const keys = new Set([
-      ...this.extensionWidgets.keys(),
-      ...this.activeExtensionWidgets.keys(),
-    ]);
+    const keys = new Set([...this.extensionWidgets.keys(), ...this.activeExtensionWidgets.keys()]);
     for (const key of keys) this.clearExtensionWidget(key, emitClear);
   }
 
@@ -1779,9 +1826,10 @@ export class AgentSessionWrapper {
 
   private renderExtensionWidget(active: ActiveExtensionWidget): void {
     if (
-      this.activeExtensionWidgets.get(active.key) !== active
-      || this.extensionWidgetGenerations.get(active.key) !== active.generation
-    ) return;
+      this.activeExtensionWidgets.get(active.key) !== active ||
+      this.extensionWidgetGenerations.get(active.key) !== active.generation
+    )
+      return;
 
     let lines: unknown;
     try {
@@ -1800,9 +1848,10 @@ export class AgentSessionWrapper {
       return;
     }
     if (
-      this.activeExtensionWidgets.get(active.key) !== active
-      || this.extensionWidgetGenerations.get(active.key) !== active.generation
-    ) return;
+      this.activeExtensionWidgets.get(active.key) !== active ||
+      this.extensionWidgetGenerations.get(active.key) !== active.generation
+    )
+      return;
 
     const widgetLines = lines as string[];
     this.extensionWidgets.set(active.key, {
@@ -1846,9 +1895,9 @@ export class AgentSessionWrapper {
       return;
     }
     if (
-      !component
-      || (typeof component !== "object" && typeof component !== "function")
-      || typeof (component as { render?: unknown }).render !== "function"
+      !component ||
+      (typeof component !== "object" && typeof component !== "function") ||
+      typeof (component as { render?: unknown }).render !== "function"
     ) {
       this.failExtensionWidget(
         key,
@@ -1878,9 +1927,7 @@ export class AgentSessionWrapper {
     const resolved = typeof overlayOptions === "function" ? overlayOptions() : overlayOptions;
     if (!resolved || typeof resolved !== "object") return DEFAULT_CUSTOM_UI_COLUMNS;
     const width = (resolved as { width?: unknown }).width;
-    return typeof width === "number" && Number.isFinite(width)
-      ? Math.max(40, Math.min(140, Math.round(width)))
-      : 92;
+    return typeof width === "number" && Number.isFinite(width) ? Math.max(40, Math.min(140, Math.round(width))) : 92;
   }
 
   private emitCustomUiRender(id: string, custom: ActiveCustomUi): void {
@@ -1938,10 +1985,7 @@ export class AgentSessionWrapper {
     }
   }
 
-  private requestExtensionCustomUi<T>(
-    factory: unknown,
-    options?: unknown,
-  ): Promise<T> {
+  private requestExtensionCustomUi<T>(factory: unknown, options?: unknown): Promise<T> {
     if (typeof factory !== "function") return Promise.resolve(undefined as T);
 
     const stopSignal = this.extensionUiAbortController.signal;
@@ -1952,13 +1996,10 @@ export class AgentSessionWrapper {
 
     return new Promise<T>((resolve, reject) => {
       let completed = false;
-      const tui = createHeadlessCustomUiTui(
-        () => {
-          const custom = this.activeCustomUis.get(id);
-          if (custom) this.emitCustomUiRender(id, custom);
-        },
-        width,
-      );
+      const tui = createHeadlessCustomUiTui(() => {
+        const custom = this.activeCustomUis.get(id);
+        if (custom) this.emitCustomUiRender(id, custom);
+      }, width);
       const finish = (value: T) => {
         if (completed) return;
         completed = true;
@@ -1977,7 +2018,7 @@ export class AgentSessionWrapper {
       stopSignal.addEventListener("abort", onStop, { once: true });
 
       Promise.resolve()
-        .then(() => completed ? undefined : factory(tui, PLAIN_TEXT_THEME, CUSTOM_UI_KEYBINDINGS, done))
+        .then(() => (completed ? undefined : factory(tui, PLAIN_TEXT_THEME, CUSTOM_UI_KEYBINDINGS, done)))
         .then((component) => {
           if (completed) {
             try {
@@ -1987,7 +2028,11 @@ export class AgentSessionWrapper {
             }
             return;
           }
-          if (!component || typeof component !== "object" || typeof (component as CustomUiComponent).render !== "function") {
+          if (
+            !component ||
+            typeof component !== "object" ||
+            typeof (component as CustomUiComponent).render !== "function"
+          ) {
             finish(undefined as T);
             return;
           }
@@ -2088,9 +2133,7 @@ export class AgentSessionWrapper {
         cancel: () => settle(defaultValue),
         // Only switch-following dialogs can re-arm; extension-owned timeouts
         // (extensionTimeout truthy) keep their original semantics.
-        ...(extensionTimeout
-          ? {}
-          : { rearmTimeout: (duration: number | undefined) => armTimeout(duration, true) }),
+        ...(extensionTimeout ? {} : { rearmTimeout: (duration: number | undefined) => armTimeout(duration, true) }),
       });
       publish();
     });
@@ -2108,34 +2151,48 @@ export class AgentSessionWrapper {
 
   private createExtensionUiContext(): ExtensionUiContextLike {
     return {
-      select: (title, options, opts) => this.requestExtensionUi(
-        { method: "select", title, options, ...(opts?.timeout ? { timeout: opts.timeout } : {}) },
-        undefined,
-        (response) => "value" in response ? response.value : undefined,
-        opts?.timeout,
-        opts?.signal,
-      ),
-      confirm: (title, message, opts) => this.requestExtensionUi(
-        { method: "confirm", title, message, ...(opts?.timeout ? { timeout: opts.timeout } : {}) },
-        false,
-        (response) => "confirmed" in response ? response.confirmed : false,
-        opts?.timeout,
-        opts?.signal,
-      ),
-      input: (title, placeholder, opts) => this.requestExtensionUi(
-        { method: "input", title, ...(placeholder !== undefined ? { placeholder } : {}), ...(opts?.timeout ? { timeout: opts.timeout } : {}) },
-        undefined,
-        (response) => "value" in response ? response.value : undefined,
-        opts?.timeout,
-        opts?.signal,
-      ),
-      editor: (title, prefill, opts) => this.requestExtensionUi(
-        { method: "editor", title, ...(prefill !== undefined ? { prefill } : {}), ...(opts?.timeout ? { timeout: opts.timeout } : {}) },
-        undefined,
-        (response) => "value" in response ? response.value : undefined,
-        opts?.timeout,
-        opts?.signal,
-      ),
+      select: (title, options, opts) =>
+        this.requestExtensionUi(
+          { method: "select", title, options, ...(opts?.timeout ? { timeout: opts.timeout } : {}) },
+          undefined,
+          (response) => ("value" in response ? response.value : undefined),
+          opts?.timeout,
+          opts?.signal,
+        ),
+      confirm: (title, message, opts) =>
+        this.requestExtensionUi(
+          { method: "confirm", title, message, ...(opts?.timeout ? { timeout: opts.timeout } : {}) },
+          false,
+          (response) => ("confirmed" in response ? response.confirmed : false),
+          opts?.timeout,
+          opts?.signal,
+        ),
+      input: (title, placeholder, opts) =>
+        this.requestExtensionUi(
+          {
+            method: "input",
+            title,
+            ...(placeholder !== undefined ? { placeholder } : {}),
+            ...(opts?.timeout ? { timeout: opts.timeout } : {}),
+          },
+          undefined,
+          (response) => ("value" in response ? response.value : undefined),
+          opts?.timeout,
+          opts?.signal,
+        ),
+      editor: (title, prefill, opts) =>
+        this.requestExtensionUi(
+          {
+            method: "editor",
+            title,
+            ...(prefill !== undefined ? { prefill } : {}),
+            ...(opts?.timeout ? { timeout: opts.timeout } : {}),
+          },
+          undefined,
+          (response) => ("value" in response ? response.value : undefined),
+          opts?.timeout,
+          opts?.signal,
+        ),
       notify: (message, type) => {
         this.emit({
           type: "extension_ui_request",
@@ -2164,11 +2221,7 @@ export class AgentSessionWrapper {
       setWidget: (key, content, options) => {
         if (!this._alive || this.extensionWidgetsResetting) return;
         if (typeof content === "function") {
-          this.setExtensionWidgetFactory(
-            key,
-            content as unknown as ExtensionWidgetFactory,
-            options,
-          );
+          this.setExtensionWidgetFactory(key, content as unknown as ExtensionWidgetFactory, options);
           return;
         }
         if (content !== undefined && !Array.isArray(content)) return;
@@ -2227,7 +2280,9 @@ export class AgentSessionWrapper {
       addAutocompleteProvider: () => {},
       setEditorComponent: () => {},
       getEditorComponent: () => undefined,
-      get theme() { return PLAIN_TEXT_THEME; },
+      get theme() {
+        return PLAIN_TEXT_THEME;
+      },
       getAllThemes: () => [],
       getTheme: () => undefined,
       setTheme: () => ({ success: false, error: "Theme switching is not supported in Pi Web extension UI yet" }),
@@ -2310,16 +2365,13 @@ const SUBAGENT_CONTROLLER = createSubagentController({
   getSession: (sessionId) => getRegistry().get(sessionId),
   registerSession: (inner, options) => {
     const wrapper = new AgentSessionWrapper(inner, {
-      ...(options?.exactSystemPrompt !== undefined
-        ? { exactSystemPrompt: () => options.exactSystemPrompt! }
-        : {}),
+      ...(options?.exactSystemPrompt !== undefined ? { exactSystemPrompt: () => options.exactSystemPrompt! } : {}),
       chatOnly: options?.chatOnly,
       suppressCompletionNotifications: true,
     });
     registerRpcWrapper(wrapper);
   },
-  reopenSession: async (sessionId, sessionFile) =>
-    (await startRpcSession(sessionId, sessionFile, undefined)).session,
+  reopenSession: async (sessionId, sessionFile) => (await startRpcSession(sessionId, sessionFile, undefined)).session,
   resolveSessionPath,
   invalidateSessionList: invalidateSessionListCache,
   isBuiltInSubagentsEnabled,
@@ -2372,7 +2424,9 @@ export function getRpcSession(sessionId: string): AgentSessionWrapper | undefine
 }
 
 /** Ownership/mode info for a live session (registry is authoritative). */
-export function getRpcSessionOwner(sessionId: string): { ownerId: number; mode: "host" | "sandbox" | "local-machine" | "ssh" | "quick" } | undefined {
+export function getRpcSessionOwner(
+  sessionId: string,
+): { ownerId: number; mode: "host" | "sandbox" | "local-machine" | "ssh" | "quick" } | undefined {
   const session = getRegistry().get(sessionId);
   if (!session) return undefined;
   return { ownerId: session.ownerId, mode: session.mode };
@@ -2430,10 +2484,9 @@ export async function setRpcSessionTools(
     throw new Error("Subagent tool selection is fixed by its profile");
   }
 
-  const hasCurrentResourcePolicy = typeof existing.isChatOnly === "function"
-    && typeof existing.setActiveToolSelection === "function";
-  const crossesChatOnlyBoundary = !hasCurrentResourcePolicy
-    || existing.isChatOnly() !== (toolNames.length === 0);
+  const hasCurrentResourcePolicy =
+    typeof existing.isChatOnly === "function" && typeof existing.setActiveToolSelection === "function";
+  const crossesChatOnlyBoundary = !hasCurrentResourcePolicy || existing.isChatOnly() !== (toolNames.length === 0);
   appendSessionToolSelection(existing.inner.sessionManager, toolNames);
   invalidateSessionListCache();
 
@@ -2442,9 +2495,7 @@ export async function setRpcSessionTools(
     return { session: existing, sessionId, recreated: false };
   }
 
-  const persistedFile = existing.sessionFile && existsSync(existing.sessionFile)
-    ? existing.sessionFile
-    : undefined;
+  const persistedFile = existing.sessionFile && existsSync(existing.sessionFile) ? existing.sessionFile : undefined;
   const sessionCwd = existing.cwd;
   const model = existing.inner.model;
   const currentThinkingLevel = existing.inner.agent.state?.thinkingLevel;
@@ -2471,7 +2522,7 @@ function runtimeMessageText(entry: SessionMessageEntry): string {
   const content = entry.message.content;
   if (typeof content === "string") return content;
   return content
-    .map((block) => block.type === "text" ? block.text : "")
+    .map((block) => (block.type === "text" ? block.text : ""))
     .filter(Boolean)
     .join(" ");
 }
@@ -2495,22 +2546,22 @@ export function getRpcSessionInfos(): SessionInfo[] {
 
     const manager = session.inner.sessionManager;
     const header = manager.getHeader();
-    const entries = manager.getEntries() as unknown as Array<
-      { type: string; timestamp: string } | SessionMessageEntry
-    >;
+    const entries = manager.getEntries() as unknown as Array<{ type: string; timestamp: string } | SessionMessageEntry>;
     const messages = entries.filter((entry): entry is SessionMessageEntry => entry.type === "message");
     const firstUserMessage = messages.find((entry) => entry.message.role === "user");
     const sessionFile = manager.getSessionFile() ?? session.sessionFile;
     const persisted = Boolean(sessionFile && existsSync(sessionFile));
-    const subagent = readSubagentRun(entries as unknown as SessionEntry[], header?.id ?? session.sessionId, sessionFile ?? "");
+    const subagent = readSubagentRun(
+      entries as unknown as SessionEntry[],
+      header?.id ?? session.sessionId,
+      sessionFile ?? "",
+    );
 
     // An ensure_session call creates an idle, empty runtime while the composer
     // loads commands. Do not leak it into history before a prompt is accepted.
     if (!persisted && (!session.isRunning() || !firstUserMessage)) continue;
 
-    const created = header?.timestamp
-      ?? entries[0]?.timestamp
-      ?? new Date().toISOString();
+    const created = header?.timestamp ?? entries[0]?.timestamp ?? new Date().toISOString();
     const headerTimestamp = new Date(created).getTime();
     let lastActivityMs = Number.isNaN(headerTimestamp) ? Date.now() : headerTimestamp;
     for (const message of messages) {
@@ -2527,16 +2578,18 @@ export function getRpcSessionInfos(): SessionInfo[] {
       modified: new Date(lastActivityMs).toISOString(),
       messageCount: messages.length,
       firstMessage: firstUserMessage ? runtimeMessageText(firstUserMessage) || "(no messages)" : "(no messages)",
-      ...(subagent ? {
-        parentSessionId: subagent.parentSessionId,
-        relation: {
-          kind: "subagent" as const,
-          parentSessionId: subagent.parentSessionId,
-          profile: subagent.profile,
-          description: subagent.description,
-          status: session.isRunning() ? "running" as const : subagent.status,
-        },
-      } : {}),
+      ...(subagent
+        ? {
+            parentSessionId: subagent.parentSessionId,
+            relation: {
+              kind: "subagent" as const,
+              parentSessionId: subagent.parentSessionId,
+              profile: subagent.profile,
+              description: subagent.description,
+              status: session.isRunning() ? ("running" as const) : subagent.status,
+            },
+          }
+        : {}),
       transient: !persisted,
     });
   }
@@ -2553,9 +2606,7 @@ export function hasBusyRpcSessionForCwd(cwd: string): boolean {
 
 export async function destroyRpcSessionsForCwd(cwd: string): Promise<number> {
   const targetCwd = normalizeRpcCwd(cwd);
-  const sessions = Array.from(getRegistry().values()).filter(
-    (session) => normalizeRpcCwd(session.cwd) === targetCwd,
-  );
+  const sessions = Array.from(getRegistry().values()).filter((session) => normalizeRpcCwd(session.cwd) === targetCwd);
   await Promise.all(sessions.map((session) => session.shutdown()));
   return sessions.length;
 }
@@ -2613,9 +2664,7 @@ export async function startRpcSession(
     extensionFactories,
     projectCredentialDir,
   } = options;
-  const requestedToolNames = toolNames === undefined
-    ? undefined
-    : validateSessionToolSelection(toolNames);
+  const requestedToolNames = toolNames === undefined ? undefined : validateSessionToolSelection(toolNames);
   const registry = getRegistry();
   const locks = getLocks();
 
@@ -2634,9 +2683,7 @@ export async function startRpcSession(
   }
   const sessionCwd = sessionManager.getCwd();
   const subagentResources = sessionFile
-    ? readSubagentSessionResources(
-        sessionManager.getEntries() as unknown as SessionEntry[],
-      )
+    ? readSubagentSessionResources(sessionManager.getEntries() as unknown as SessionEntry[])
     : null;
   const persistedToolNames = subagentResources
     ? undefined
@@ -2648,9 +2695,7 @@ export async function startRpcSession(
   if (!subagentResources && !quick && persistedToolNames === undefined && requestedToolNames !== undefined) {
     appendSessionToolSelection(sessionManager, requestedToolNames);
   }
-  const subagentLoadsResources = Boolean(
-    subagentResources?.loadExtensions || subagentResources?.loadSkills,
-  );
+  const subagentLoadsResources = Boolean(subagentResources?.loadExtensions || subagentResources?.loadSkills);
   const chatOnly = !quick && selectedToolNames?.length === 0 && !subagentLoadsResources;
   const finishStartingSession = trackStartingSession(sessionCwd);
   const starting = (async () => {
@@ -2689,8 +2734,8 @@ export async function startRpcSession(
     // user/project extension discovery.
     // quick 模板 holder：loader 扩展（每回合改写）与 wrapper（显示镜像）共享，
     // apply_quick_template 热切换时原地更新（updateQuickTemplate）。
-    const quickTemplateHolder: import("./quick-prompt").QuickTemplateHolder | undefined
-      = quick && !subagentResources ? { current: quick.systemPrompt } : undefined;
+    const quickTemplateHolder: import("./quick-prompt").QuickTemplateHolder | undefined =
+      quick && !subagentResources ? { current: quick.systemPrompt } : undefined;
     // 每回合工具钳制的间接引用：扩展工厂先于 wrapper 构造，经 ref 回连
     //（adapter 的 syncProxyTool 每回合可能把网关工具加回活动集）。
     const quickTurnClampRef: { current: (() => string | undefined) | undefined } = { current: undefined };
@@ -2769,58 +2814,54 @@ export async function startRpcSession(
                   }
                 : {}),
             }
-        : chatOnly
-          ? CHAT_ONLY_RESOURCE_LOADER_OPTIONS
-        : {
-            ...platformResourceLoaderOptions,
-            extensionFactories: [
-              ...(platformResourceLoaderOptions.extensionFactories ?? []),
-              createProjectCommandBashExtension({
-                cwd: sessionCwd,
-                settings: settingsManager,
-              }),
-              createSubagentExtension(
-                SUBAGENT_CONTROLLER.extensionRuntime,
-                () => listSubagentProfiles(sessionCwd),
-                isBuiltInSubagentsEnabled,
-              ),
-              // 末位：一致性钉住（钩子链式，末位看到最终合成提示词）。
-              createPromptConsistencyExtension((h, l, t) => promptPinRef.current?.(h, l, t)),
-            ],
-            extensionsOverride: (base) => preferUserBashExtension(preferPiWebSubagentExtension(base)),
-          },
+          : chatOnly
+            ? CHAT_ONLY_RESOURCE_LOADER_OPTIONS
+            : {
+                ...platformResourceLoaderOptions,
+                extensionFactories: [
+                  ...(platformResourceLoaderOptions.extensionFactories ?? []),
+                  createProjectCommandBashExtension({
+                    cwd: sessionCwd,
+                    settings: settingsManager,
+                  }),
+                  createSubagentExtension(
+                    SUBAGENT_CONTROLLER.extensionRuntime,
+                    () => listSubagentProfiles(sessionCwd),
+                    isBuiltInSubagentsEnabled,
+                  ),
+                  // 末位：一致性钉住（钩子链式，末位看到最终合成提示词）。
+                  createPromptConsistencyExtension((h, l, t) => promptPinRef.current?.(h, l, t)),
+                ],
+                extensionsOverride: (base) => preferUserBashExtension(preferPiWebSubagentExtension(base)),
+              },
       ...(trustReloadOptions ? { resourceLoaderReloadOptions: trustReloadOptions } : {}),
     });
-    const scope = await resolveVisibleModels(
-      services.modelRuntime,
-      services.settingsManager.getEnabledModels(),
-    );
-    const effectiveInitialModel = initialModel && (
-      !allowInitialModelFallback
-      || scope.visible.some((model) => model.provider === initialModel.provider && model.id === initialModel.modelId)
-    )
-      ? initialModel
-      : undefined;
+    const scope = await resolveVisibleModels(services.modelRuntime, services.settingsManager.getEnabledModels());
+    const effectiveInitialModel =
+      initialModel &&
+      (!allowInitialModelFallback ||
+        scope.visible.some((model) => model.provider === initialModel.provider && model.id === initialModel.modelId))
+        ? initialModel
+        : undefined;
     const defaultProvider = services.settingsManager.getDefaultProvider();
     const defaultModelId = services.settingsManager.getDefaultModel();
     const branch = sessionManager.getBranch();
     const hasExistingMessages = branch.some((entry) => entry.type === "message");
-    const savedModel = hasExistingMessages
-      ? getLatestModelChange(branch as unknown as SessionEntry[])
-      : null;
+    const savedModel = hasExistingMessages ? getLatestModelChange(branch as unknown as SessionEntry[]) : null;
     const restoredModel = savedModel
       ? services.modelRuntime.getModel(savedModel.provider, savedModel.modelId)
       : undefined;
-    const initial = hasExistingMessages ? null : selectInitialModelScope(scope, {
-        ...(effectiveInitialModel ? { requestedModel: effectiveInitialModel } : {}),
-        ...(defaultProvider && defaultModelId
-          ? { defaultModel: { provider: defaultProvider, modelId: defaultModelId } }
-          : {}),
-        ...(thinkingLevel ? { thinkingLevel } : {}),
-      });
-    const startupModel = restoredModel && services.modelRuntime.hasConfiguredAuth(restoredModel.provider)
-      ? restoredModel
-      : initial?.model;
+    const initial = hasExistingMessages
+      ? null
+      : selectInitialModelScope(scope, {
+          ...(effectiveInitialModel ? { requestedModel: effectiveInitialModel } : {}),
+          ...(defaultProvider && defaultModelId
+            ? { defaultModel: { provider: defaultProvider, modelId: defaultModelId } }
+            : {}),
+          ...(thinkingLevel ? { thinkingLevel } : {}),
+        });
+    const startupModel =
+      restoredModel && services.modelRuntime.hasConfiguredAuth(restoredModel.provider) ? restoredModel : initial?.model;
     const { session: inner } = await createAgentSessionFromServices({
       services,
       sessionManager,
@@ -2841,9 +2882,7 @@ export async function startRpcSession(
         ...(thinkingLevel ? { thinkingLevel } : {}),
       },
       {
-        ...(inner.model
-          ? { model: { provider: inner.model.provider, modelId: inner.model.id } }
-          : {}),
+        ...(inner.model ? { model: { provider: inner.model.provider, modelId: inner.model.id } } : {}),
         thinkingLevel: inner.thinkingLevel,
         supportsThinking: inner.supportsThinking(),
       },

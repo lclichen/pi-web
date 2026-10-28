@@ -30,6 +30,9 @@ const groups = {};
 for (const r of rows) (groups[r.gate] ??= []).push(r);
 for (const [g, list] of Object.entries(groups)) {
   console.log(`\n===== ${g} (${list.length}) =====`);
-  for (const r of list) console.log(`${r.api} [${r.methods}]${r.roleCheck ? " role!" : ""}${r.fence ? " fence" : ""}${r.csrf ? " csrf" : ""}`);
+  for (const r of list)
+    console.log(
+      `${r.api} [${r.methods}]${r.roleCheck ? " role!" : ""}${r.fence ? " fence" : ""}${r.csrf ? " csrf" : ""}`,
+    );
 }
 console.log("\nTOTAL", rows.length);

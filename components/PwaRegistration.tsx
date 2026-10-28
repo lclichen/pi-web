@@ -12,12 +12,14 @@ export function PwaRegistration() {
       const appVersion = process.env.NEXT_PUBLIC_APP_VERSION ?? "dev";
       const scriptUrl = `/sw.js?v=${encodeURIComponent(appVersion)}`;
 
-      void navigator.serviceWorker.register(scriptUrl, {
-        scope: "/",
-        updateViaCache: "none",
-      }).catch((error: unknown) => {
-        console.error("Failed to register the Pi Web service worker:", error);
-      });
+      void navigator.serviceWorker
+        .register(scriptUrl, {
+          scope: "/",
+          updateViaCache: "none",
+        })
+        .catch((error: unknown) => {
+          console.error("Failed to register the Pi Web service worker:", error);
+        });
     };
 
     if (document.readyState === "complete") {

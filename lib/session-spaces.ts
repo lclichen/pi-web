@@ -1,6 +1,6 @@
 import { join, resolve, sep } from "path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import type { WebSession }  from "./web-session";
+import type { WebSession } from "./web-session";
 
 /**
  * Session spaces (design doc §4.1): the platform CLI keeps writing to the
@@ -9,18 +9,14 @@ import type { WebSession }  from "./web-session";
  * must live inside the requesting space or the answer is 404.
  */
 
-export type SessionSpace =
-  | { kind: "host" }
-  | { kind: "user"; userId: number };
+export type SessionSpace = { kind: "host" } | { kind: "user"; userId: number };
 
 export function sessionsRoot(): string {
   return join(getAgentDir(), "sessions");
 }
 
 export function spaceDir(space: SessionSpace): string {
-  return space.kind === "host"
-    ? sessionsRoot()
-    : join(sessionsRoot(), "users", `u${space.userId}`);
+  return space.kind === "host" ? sessionsRoot() : join(sessionsRoot(), "users", `u${space.userId}`);
 }
 
 export function spaceKey(space: SessionSpace): string {

@@ -74,24 +74,49 @@ export function ProjectSettingsDialog({ projectId, onClose, onChanged }: Props) 
 
   return (
     <div
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
       style={{
-        position: "fixed", inset: 0, zIndex: 1150, display: "flex",
-        alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.35)",
+        position: "fixed",
+        inset: 0,
+        zIndex: 1150,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "rgba(0,0,0,0.35)",
       }}
     >
       <form
         onSubmit={submit}
         style={{
-          width: "min(620px, 92vw)", maxHeight: "86vh", overflowY: "auto",
-          display: "flex", flexDirection: "column", gap: 14,
-          padding: "20px 22px", borderRadius: 12,
-          background: "var(--bg-panel)", border: "1px solid var(--border)",
+          width: "min(620px, 92vw)",
+          maxHeight: "86vh",
+          overflowY: "auto",
+          display: "flex",
+          flexDirection: "column",
+          gap: 14,
+          padding: "20px 22px",
+          borderRadius: 12,
+          background: "var(--bg-panel)",
+          border: "1px solid var(--border)",
         }}
       >
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <span style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>项目设置</span>
-          <button type="button" onClick={onClose} style={{ background: "transparent", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 16 }}>×</button>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{
+              background: "transparent",
+              border: "none",
+              color: "var(--text-muted)",
+              cursor: "pointer",
+              fontSize: 16,
+            }}
+          >
+            ×
+          </button>
         </div>
 
         <label style={{ display: "flex", flexDirection: "column", gap: 5, fontSize: 12, color: "var(--text-muted)" }}>
@@ -132,8 +157,8 @@ export function ProjectSettingsDialog({ projectId, onClose, onChanged }: Props) 
           />
         </label>
         <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
-          AGENTS.md 保存在项目目录并随"复制项目"携带；会话以此作为提示词上下文（新建会话生效）。
-          在沙箱/本机会话中由 Agent 对工作区根 AGENTS.md 的修改也会同步回这里。
+          AGENTS.md 保存在项目目录并随"复制项目"携带；会话以此作为提示词上下文（新建会话生效）。 在沙箱/本机会话中由
+          Agent 对工作区根 AGENTS.md 的修改也会同步回这里。
         </div>
 
         <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
@@ -144,8 +169,14 @@ export function ProjectSettingsDialog({ projectId, onClose, onChanged }: Props) 
         {saved && <div style={{ fontSize: 12, color: "#4ade80" }}>已保存。</div>}
 
         <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-          <button type="button" onClick={onClose} style={btnStyle}>关闭</button>
-          <button type="submit" disabled={busy} style={{ ...btnStyle, background: "var(--accent)", color: "white", borderColor: "var(--accent)" }}>
+          <button type="button" onClick={onClose} style={btnStyle}>
+            关闭
+          </button>
+          <button
+            type="submit"
+            disabled={busy}
+            style={{ ...btnStyle, background: "var(--accent)", color: "white", borderColor: "var(--accent)" }}
+          >
             {busy ? "保存中…" : "保存"}
           </button>
         </div>
@@ -155,13 +186,23 @@ export function ProjectSettingsDialog({ projectId, onClose, onChanged }: Props) 
 }
 
 const inputStyle = {
-  height: 34, padding: "0 10px", borderRadius: 6,
-  border: "1px solid var(--border)", background: "var(--bg)",
-  color: "var(--text)", fontSize: 13, outline: "none",
+  height: 34,
+  padding: "0 10px",
+  borderRadius: 6,
+  border: "1px solid var(--border)",
+  background: "var(--bg)",
+  color: "var(--text)",
+  fontSize: 13,
+  outline: "none",
 } as const;
 
 const btnStyle = {
-  height: 32, padding: "0 14px", borderRadius: 7,
-  border: "1px solid var(--border)", background: "var(--bg)",
-  color: "var(--text-muted)", fontSize: 12, cursor: "pointer",
+  height: 32,
+  padding: "0 14px",
+  borderRadius: 7,
+  border: "1px solid var(--border)",
+  background: "var(--bg)",
+  color: "var(--text-muted)",
+  fontSize: 12,
+  cursor: "pointer",
 } as const;

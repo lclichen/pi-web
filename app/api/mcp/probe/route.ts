@@ -13,19 +13,12 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "entry required" }, { status: 400 });
     }
     if (!body.entry.command && !body.entry.url && !body.entry.socket) {
-      return NextResponse.json(
-        { error: "entry must have command, url, or socket" },
-        { status: 400 },
-      );
+      return NextResponse.json({ error: "entry must have command, url, or socket" }, { status: 400 });
     }
-    const timeoutMs =
-      typeof body.timeoutMs === "number" && body.timeoutMs > 0 ? body.timeoutMs : 15000;
+    const timeoutMs = typeof body.timeoutMs === "number" && body.timeoutMs > 0 ? body.timeoutMs : 15000;
     const result = await probeServer(body.entry, timeoutMs);
     return NextResponse.json(result);
   } catch (e) {
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : String(e) },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 });
   }
 }

@@ -25,9 +25,11 @@ function frameworkForKind(
 ): { kind: "tarball" | "appimage" | "electron"; framework: CatalogFramework } | null {
   // electron 部署优先 electron 专属产物，缺失时回落 tarball（同为目录交换）。
   if (pkgKind === "electron") {
-    return frameworks.electron ? { kind: "electron", framework: frameworks.electron }
-      : frameworks.tarball ? { kind: "tarball", framework: frameworks.tarball }
-      : null;
+    return frameworks.electron
+      ? { kind: "electron", framework: frameworks.electron }
+      : frameworks.tarball
+        ? { kind: "tarball", framework: frameworks.tarball }
+        : null;
   }
   return frameworks[pkgKind] ? { kind: pkgKind, framework: frameworks[pkgKind]! } : null;
 }
@@ -40,21 +42,34 @@ export async function POST(req: Request) {
   if (user.id !== 0 && user.role !== "admin") {
     return NextResponse.json({ error: "仅管理员可以应用更新" }, { status: 403 });
   }
-  if (!hasJsonContentType(req)) return NextResponse.json({ error: "Content-Type must be application/json" }, { status: 415 });
+  if (!hasJsonContentType(req))
+    return NextResponse.json({ error: "Content-Type must be application/json" }, { status: 415 });
 
   const catalogSource = process.env.AMEDAC_UPDATE_CATALOG_URL?.trim();
   if (!catalogSource) {
-    return NextResponse.json({ started: false, error: "未配置更新源（AMEDAC_UPDATE_CATALOG_URL）" } satisfies UpdateApplyResponse, { status: 400 });
+    return NextResponse.json(
+      { started: false, error: "未配置更新源（AMEDAC_UPDATE_CATALOG_URL）" } satisfies UpdateApplyResponse,
+      { status: 400 },
+    );
   }
   const pkgKind = detectPkgKind();
   if (!pkgKind) {
-    return NextResponse.json({ started: false, error: "无法识别部署形态（非打包部署，不支持自助更新）" } satisfies UpdateApplyResponse, { status: 400 });
+    return NextResponse.json(
+      { started: false, error: "无法识别部署形态（非打包部署，不支持自助更新）" } satisfies UpdateApplyResponse,
+      { status: 400 },
+    );
   }
   const applier = applierPath();
   const statusFile = updateStatusPath();
   const appRoot = getAppRoot();
   if (!applier || !statusFile || (pkgKind !== "appimage" && !appRoot)) {
-    return NextResponse.json({ started: false, error: "更新器组件缺失（AMEDAC_APP_ROOT / apply-update 脚本 / 数据目录不可用）" } satisfies UpdateApplyResponse, { status: 400 });
+    return NextResponse.json(
+      {
+        started: false,
+        error: "更新器组件缺失（AMEDAC_APP_ROOT / apply-update 脚本 / 数据目录不可用）",
+      } satisfies UpdateApplyResponse,
+      { status: 400 },
+    );
   }
 
   const body = (await req.json().catch(() => ({}))) as { version?: unknown };
@@ -64,10 +79,17 @@ export async function POST(req: Request) {
     if (statusFile) {
       try {
         const current = JSON.parse(await readFile(statusFile, "utf8")) as { phase?: string };
-        if (current.phase && ["downloading", "verifying", "staging", "swapping", "restarting"].includes(current.phase)) {
-          return NextResponse.json({ started: false, error: "已有更新在进行中" } satisfies UpdateApplyResponse, { status: 429 });
+        if (
+          current.phase &&
+          ["downloading", "verifying", "staging", "swapping", "restarting"].includes(current.phase)
+        ) {
+          return NextResponse.json({ started: false, error: "已有更新在进行中" } satisfies UpdateApplyResponse, {
+            status: 429,
+          });
         }
-      } catch { /* 无状态文件 = idle */ }
+      } catch {
+        /* 无状态文件 = idle */
+      }
     }
     const catalog = await loadCatalog(catalogSource);
     const { channel } = readRuntimeVersion();
@@ -75,15 +97,24 @@ export async function POST(req: Request) {
     if (typeof body.version === "string" && body.version) {
       target = catalog.versions.find((v) => v.version === body.version) ?? null;
       if (!target) {
-        return NextResponse.json({ started: false, error: `catalog 中不存在版本 ${body.version}` } satisfies UpdateApplyResponse, { status: 400 });
+        return NextResponse.json(
+          { started: false, error: `catalog 中不存在版本 ${body.version}` } satisfies UpdateApplyResponse,
+          { status: 400 },
+        );
       }
     }
     if (!target) {
-      return NextResponse.json({ started: false, error: "catalog 中没有匹配当前通道的版本" } satisfies UpdateApplyResponse, { status: 400 });
+      return NextResponse.json(
+        { started: false, error: "catalog 中没有匹配当前通道的版本" } satisfies UpdateApplyResponse,
+        { status: 400 },
+      );
     }
     const selected = frameworkForKind(target.frameworks, pkgKind);
     if (!selected) {
-      return NextResponse.json({ started: false, error: `版本 ${target.version} 没有 ${pkgKind} 形态的产物` } satisfies UpdateApplyResponse, { status: 400 });
+      return NextResponse.json(
+        { started: false, error: `版本 ${target.version} 没有 ${pkgKind} 形态的产物` } satisfies UpdateApplyResponse,
+        { status: 400 },
+      );
     }
 
     const config = {
@@ -98,13 +129,15 @@ export async function POST(req: Request) {
       },
       pkgKind,
       appRoot,
-      appImagePath: pkgKind === "appimage" ? process.env.APPIMAGE ?? null : null,
-      appDir: pkgKind === "appimage" ? process.env.APPDIR ?? null : null,
+      appImagePath: pkgKind === "appimage" ? (process.env.APPIMAGE ?? null) : null,
+      appDir: pkgKind === "appimage" ? (process.env.APPDIR ?? null) : null,
       electronExec: process.env.AMEDAC_ELECTRON_EXEC ?? null,
       dataDir: process.env.PI_WEB_DATA_DIR?.trim() ?? null,
     };
     if (!config.dataDir) {
-      return NextResponse.json({ started: false, error: "PI_WEB_DATA_DIR 未配置" } satisfies UpdateApplyResponse, { status: 400 });
+      return NextResponse.json({ started: false, error: "PI_WEB_DATA_DIR 未配置" } satisfies UpdateApplyResponse, {
+        status: 400,
+      });
     }
 
     // 分离执行：applier 与本服务进程脱钩，交换目录/重启服务时它可以活着收尾。
@@ -115,7 +148,9 @@ export async function POST(req: Request) {
     });
     child.unref();
 
-    return NextResponse.json({ started: true, statusUrl: "/api/app-update/status" } satisfies UpdateApplyResponse, { status: 202 });
+    return NextResponse.json({ started: true, statusUrl: "/api/app-update/status" } satisfies UpdateApplyResponse, {
+      status: 202,
+    });
   } catch (error) {
     return NextResponse.json(
       { started: false, error: error instanceof Error ? error.message : String(error) } satisfies UpdateApplyResponse,

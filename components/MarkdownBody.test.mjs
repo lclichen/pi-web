@@ -17,11 +17,15 @@ function renderMarkdown(markdown, props = {}) {
     React.createElement(
       I18nProvider,
       null,
-      React.createElement(MarkdownBody, {
-        cwd: "/home/me/project",
-        onOpenFile() {},
-        ...props,
-      }, markdown),
+      React.createElement(
+        MarkdownBody,
+        {
+          cwd: "/home/me/project",
+          onOpenFile() {},
+          ...props,
+        },
+        markdown,
+      ),
     ),
   );
 }
@@ -159,10 +163,7 @@ test("opens markdown images in the shared image preview", () => {
 test("keeps linked markdown images as links instead of nested preview buttons", () => {
   const html = renderMarkdown("[![diagram](docs/tmp/diagram.png)](https://example.com/docs)");
 
-  assert.match(
-    html,
-    /<a (?=[^>]*href="https:\/\/example\.com\/docs")(?=[^>]*target="_blank")[^>]*>/,
-  );
+  assert.match(html, /<a (?=[^>]*href="https:\/\/example\.com\/docs")(?=[^>]*target="_blank")[^>]*>/);
   assert.match(html, /<img[^>]+alt="diagram"/);
   assert.doesNotMatch(html, /<a[^>]*>[\s\S]*<button/);
   assert.doesNotMatch(html, /<button[^>]*>[\s\S]*<\/a>/);

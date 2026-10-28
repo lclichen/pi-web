@@ -90,10 +90,7 @@ function replaceSentinelSpan(text: string, block: string): string {
  *  失败 → 模型重写的循环）。有真实 workspaceDir 时改写为工作区路径；
  *  host/sandbox 无 workspaceDir，不动。 */
 export function rewriteWorkingDirectoryLine(systemPrompt: string, workspaceDir: string): string {
-  return systemPrompt.replace(
-    /(Current working directory:\s*\n)[^\n]*/i,
-    `$1${workspaceDir}`,
-  );
+  return systemPrompt.replace(/(Current working directory:\s*\n)[^\n]*/i, `$1${workspaceDir}`);
 }
 
 export function makeEnvironmentInfoExtension(info: EnvironmentInfo): InlineExtension {
@@ -108,7 +105,5 @@ export function makeEnvironmentInfoExtension(info: EnvironmentInfo): InlineExten
       // the sentinel replace in case another extension chains onto ours.
       return { systemPrompt };
     });
-
-
   };
 }

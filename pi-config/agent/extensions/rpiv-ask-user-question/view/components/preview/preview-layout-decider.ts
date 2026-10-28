@@ -34,7 +34,7 @@ export type PreviewLayoutMode = "side-by-side" | "stacked";
  * capping height too short.
  */
 export function decideLayout(terminalWidth: number, paneWidth: number): PreviewLayoutMode {
-	return terminalWidth >= PREVIEW_MIN_WIDTH && paneWidth >= PREVIEW_MIN_WIDTH ? "side-by-side" : "stacked";
+  return terminalWidth >= PREVIEW_MIN_WIDTH && paneWidth >= PREVIEW_MIN_WIDTH ? "side-by-side" : "stacked";
 }
 
 /**
@@ -47,21 +47,21 @@ export function decideLayout(terminalWidth: number, paneWidth: number): PreviewL
  *   3. Safety net: never exceed available = paneWidth - GAP - MIN_PREVIEW_WIDTH
  */
 export function adaptiveLeftWidth(
-	items: readonly WrappingSelectItem[],
-	totalForNumbering: number,
-	paneWidth: number,
+  items: readonly WrappingSelectItem[],
+  totalForNumbering: number,
+  paneWidth: number,
 ): number {
-	const prefixW = String(Math.max(1, totalForNumbering)).length + 4; // digits + "❯ " + ". "
-	const confirmedOverhead = CONFIRMED_OVERHEAD; // visibleWidth(" ✔") = 2 (space + ✔ codepoint)
-	let maxLabel = 0;
-	for (const item of items) {
-		const w = visibleWidth(item.label);
-		if (w > maxLabel) maxLabel = w;
-	}
-	const desired = maxLabel + prefixW + confirmedOverhead;
-	const ratioCapped = Math.min(desired, Math.floor(paneWidth * MAX_LEFT_RATIO));
-	const available = paneWidth - PREVIEW_COLUMN_GAP - MIN_PREVIEW_WIDTH;
-	return Math.max(MIN_LEFT, Math.min(ratioCapped, Math.max(1, available)));
+  const prefixW = String(Math.max(1, totalForNumbering)).length + 4; // digits + "❯ " + ". "
+  const confirmedOverhead = CONFIRMED_OVERHEAD; // visibleWidth(" ✔") = 2 (space + ✔ codepoint)
+  let maxLabel = 0;
+  for (const item of items) {
+    const w = visibleWidth(item.label);
+    if (w > maxLabel) maxLabel = w;
+  }
+  const desired = maxLabel + prefixW + confirmedOverhead;
+  const ratioCapped = Math.min(desired, Math.floor(paneWidth * MAX_LEFT_RATIO));
+  const available = paneWidth - PREVIEW_COLUMN_GAP - MIN_PREVIEW_WIDTH;
+  return Math.max(MIN_LEFT, Math.min(ratioCapped, Math.max(1, available)));
 }
 
 /**
@@ -74,18 +74,18 @@ export function adaptiveLeftWidth(
  * Floor is `MIN_LEFT` so an all-empty input still produces a usable column.
  */
 export function crossTabMaxLeftWidth(
-	tabs: ReadonlyArray<{ multiSelect?: boolean }>,
-	itemsByTab: ReadonlyArray<readonly WrappingSelectItem[]>,
-	paneWidth: number,
+  tabs: ReadonlyArray<{ multiSelect?: boolean }>,
+  itemsByTab: ReadonlyArray<readonly WrappingSelectItem[]>,
+  paneWidth: number,
 ): number {
-	let max = MIN_LEFT;
-	for (let i = 0; i < tabs.length; i++) {
-		const items = itemsByTab[i] ?? [];
-		const totalForNumbering = items.length;
-		const tabWidth = adaptiveLeftWidth(items, totalForNumbering, paneWidth);
-		if (tabWidth > max) max = tabWidth;
-	}
-	return max;
+  let max = MIN_LEFT;
+  for (let i = 0; i < tabs.length; i++) {
+    const items = itemsByTab[i] ?? [];
+    const totalForNumbering = items.length;
+    const tabWidth = adaptiveLeftWidth(items, totalForNumbering, paneWidth);
+    if (tabWidth > max) max = tabWidth;
+  }
+  return max;
 }
 
 /**
@@ -100,16 +100,16 @@ export function crossTabMaxLeftWidth(
  * Pure function — O(total chars) per question; no Markdown invocation, no cache interaction.
  */
 export function previewSourceWidth(question: QuestionData): number {
-	let max = 0;
-	for (const option of question.options) {
-		const text = option.preview;
-		if (!text) continue;
-		for (const line of text.split("\n")) {
-			const w = visibleWidth(line);
-			if (w > max) max = w;
-		}
-	}
-	return max;
+  let max = 0;
+  for (const option of question.options) {
+    const text = option.preview;
+    if (!text) continue;
+    for (const line of text.split("\n")) {
+      const w = visibleWidth(line);
+      if (w > max) max = w;
+    }
+  }
+  return max;
 }
 
 /**
@@ -121,14 +121,14 @@ export function previewSourceWidth(question: QuestionData): number {
  * Pure function — same cross-tab max pattern as `crossTabMaxLeftWidth`.
  */
 export function crossTabPreviewBudget(questions: readonly QuestionData[], paneWidth: number): number {
-	let max = MIN_PREVIEW_WIDTH;
-	for (const question of questions) {
-		const rawWidth = previewSourceWidth(question);
-		const capped = Math.min(rawWidth, paneWidth - PREVIEW_COLUMN_GAP - MIN_LEFT);
-		const budget = capped + BORDER_HORIZONTAL_OVERHEAD + 2 * BORDER_INNER_PADDING_HORIZONTAL + PREVIEW_PADDING_LEFT;
-		if (budget > max) max = budget;
-	}
-	return max;
+  let max = MIN_PREVIEW_WIDTH;
+  for (const question of questions) {
+    const rawWidth = previewSourceWidth(question);
+    const capped = Math.min(rawWidth, paneWidth - PREVIEW_COLUMN_GAP - MIN_LEFT);
+    const budget = capped + BORDER_HORIZONTAL_OVERHEAD + 2 * BORDER_INNER_PADDING_HORIZONTAL + PREVIEW_PADDING_LEFT;
+    if (budget > max) max = budget;
+  }
+  return max;
 }
 
 /**
@@ -158,21 +158,21 @@ export function crossTabPreviewBudget(questions: readonly QuestionData[], paneWi
  * composer right-aligns narrower boxes inside the remaining column.
  */
 export function crossTabLeftWidthWithDonation(
-	tabs: ReadonlyArray<{ multiSelect?: boolean }>,
-	itemsByTab: ReadonlyArray<readonly WrappingSelectItem[]>,
-	questions: readonly QuestionData[],
-	paneWidth: number,
+  tabs: ReadonlyArray<{ multiSelect?: boolean }>,
+  itemsByTab: ReadonlyArray<readonly WrappingSelectItem[]>,
+  questions: readonly QuestionData[],
+  paneWidth: number,
 ): number {
-	const labelDriven = crossTabMaxLeftWidth(tabs, itemsByTab, paneWidth);
-	const previewBudget = crossTabPreviewBudget(questions, paneWidth);
-	const slackDonation = paneWidth - PREVIEW_COLUMN_GAP - previewBudget;
-	// At side-by-side widths the ratio ceiling is always the tighter bound
-	// (paneWidth/2 ≤ paneWidth − GAP − MIN_PREVIEW_WIDTH once paneWidth ≥ 94);
-	// previewSafetyCeiling stays as defensive depth should MAX_LEFT_RATIO grow.
-	const previewSafetyCeiling = paneWidth - PREVIEW_COLUMN_GAP - MIN_PREVIEW_WIDTH;
-	const ratioCeiling = Math.floor(paneWidth * MAX_LEFT_RATIO);
-	const ceiling = Math.min(previewSafetyCeiling, ratioCeiling);
-	return Math.min(Math.max(labelDriven, slackDonation), Math.max(1, ceiling));
+  const labelDriven = crossTabMaxLeftWidth(tabs, itemsByTab, paneWidth);
+  const previewBudget = crossTabPreviewBudget(questions, paneWidth);
+  const slackDonation = paneWidth - PREVIEW_COLUMN_GAP - previewBudget;
+  // At side-by-side widths the ratio ceiling is always the tighter bound
+  // (paneWidth/2 ≤ paneWidth − GAP − MIN_PREVIEW_WIDTH once paneWidth ≥ 94);
+  // previewSafetyCeiling stays as defensive depth should MAX_LEFT_RATIO grow.
+  const previewSafetyCeiling = paneWidth - PREVIEW_COLUMN_GAP - MIN_PREVIEW_WIDTH;
+  const ratioCeiling = Math.floor(paneWidth * MAX_LEFT_RATIO);
+  const ceiling = Math.min(previewSafetyCeiling, ratioCeiling);
+  return Math.min(Math.max(labelDriven, slackDonation), Math.max(1, ceiling));
 }
 
 /**
@@ -182,13 +182,13 @@ export function crossTabLeftWidthWithDonation(
  * extreme inputs.
  */
 export function columnWidths(
-	paneWidth: number,
-	adaptiveLeft: number,
+  paneWidth: number,
+  adaptiveLeft: number,
 ): { leftWidth: number; rightWidth: number; gap: number } {
-	const gap = PREVIEW_COLUMN_GAP;
-	const leftWidth = Math.min(adaptiveLeft, Math.max(1, paneWidth - gap - 1));
-	const rightWidth = Math.max(1, paneWidth - leftWidth - gap);
-	return { leftWidth, rightWidth, gap };
+  const gap = PREVIEW_COLUMN_GAP;
+  const leftWidth = Math.min(adaptiveLeft, Math.max(1, paneWidth - gap - 1));
+  const rightWidth = Math.max(1, paneWidth - leftWidth - gap);
+  return { leftWidth, rightWidth, gap };
 }
 
 /**
@@ -197,11 +197,11 @@ export function columnWidths(
  * `columnWidths`, with the preview column offset by `PREVIEW_PADDING_LEFT`.
  */
 export function bodyWidths(
-	paneWidth: number,
-	mode: PreviewLayoutMode,
-	adaptiveLeft: number,
+  paneWidth: number,
+  mode: PreviewLayoutMode,
+  adaptiveLeft: number,
 ): { optionsWidth: number; previewWidth: number } {
-	if (mode === "stacked") return { optionsWidth: paneWidth, previewWidth: paneWidth };
-	const { leftWidth, rightWidth } = columnWidths(paneWidth, adaptiveLeft);
-	return { optionsWidth: leftWidth, previewWidth: Math.max(1, rightWidth - PREVIEW_PADDING_LEFT) };
+  if (mode === "stacked") return { optionsWidth: paneWidth, previewWidth: paneWidth };
+  const { leftWidth, rightWidth } = columnWidths(paneWidth, adaptiveLeft);
+  return { optionsWidth: leftWidth, previewWidth: Math.max(1, rightWidth - PREVIEW_PADDING_LEFT) };
 }

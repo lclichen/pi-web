@@ -10,15 +10,22 @@ const { version } = JSON.parse(readFileSync(join(configDir, "package.json"), "ut
 let appVersion = version;
 let appChannel = "stable";
 try {
-  const release = JSON.parse(readFileSync(join(configDir, "version.json"), "utf8")) as { version?: string; channel?: string };
+  const release = JSON.parse(readFileSync(join(configDir, "version.json"), "utf8")) as {
+    version?: string;
+    channel?: string;
+  };
   if (release.version) appVersion = release.version;
   if (release.channel) appChannel = release.channel;
-} catch { /* 开发环境无 version.json 时回落 npm 版本 */ }
+} catch {
+  /* 开发环境无 version.json 时回落 npm 版本 */
+}
 let piVersion = "unknown";
 try {
   const piPkgPath = join(configDir, "node_modules/@earendil-works/pi-coding-agent/package.json");
   piVersion = (JSON.parse(readFileSync(piPkgPath, "utf8")) as { version: string }).version;
-} catch { /* package not found, use default */ }
+} catch {
+  /* package not found, use default */
+}
 
 const nextConfig: NextConfig = {
   outputFileTracingRoot: configDir,
@@ -79,9 +86,7 @@ const nextConfig: NextConfig = {
     return [
       {
         source: "/",
-        headers: [
-          { key: "Cache-Control", value: "private, no-cache, max-age=0, must-revalidate" },
-        ],
+        headers: [{ key: "Cache-Control", value: "private, no-cache, max-age=0, must-revalidate" }],
       },
       {
         source: "/sw.js",
@@ -92,9 +97,7 @@ const nextConfig: NextConfig = {
       },
       {
         source: "/manifest.webmanifest",
-        headers: [
-          { key: "Cache-Control", value: "public, max-age=0, must-revalidate" },
-        ],
+        headers: [{ key: "Cache-Control", value: "public, max-age=0, must-revalidate" }],
       },
     ];
   },

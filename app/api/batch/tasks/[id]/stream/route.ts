@@ -23,9 +23,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   if (!task) {
     return NextResponse.json({ error: "Task not found" }, { status: 404 });
   }
-    if (!canAccessBatchTask(auth.identity.user, task.ownerId)) {
-      return NextResponse.json({ error: "Task not found" }, { status: 404 });
-    }
+  if (!canAccessBatchTask(auth.identity.user, task.ownerId)) {
+    return NextResponse.json({ error: "Task not found" }, { status: 404 });
+  }
   return new Response(createBatchTaskEventStream(id, req), {
     headers: batchSseHeaders(),
   });

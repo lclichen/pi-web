@@ -10,10 +10,7 @@ interface LocalFileClickEvent {
 export function shouldOpenLocalFileInApp(event: LocalFileClickEvent): boolean {
   // Browsers block file:// navigation from Pi Web's HTTP origin, so the
   // platform primary modifier must use the same in-app preview as a plain click.
-  return !event.defaultPrevented
-    && event.button === 0
-    && !event.shiftKey
-    && !event.altKey;
+  return !event.defaultPrevented && event.button === 0 && !event.shiftKey && !event.altKey;
 }
 
 function safeDecode(value: string): string {
@@ -111,7 +108,11 @@ export function resolveLocalFileHref(
 
   if (lowerHref.startsWith("/api/") || lowerHref.startsWith("/_next/")) return null;
   if (!isBackslashUncPath && normalizedHref.startsWith("//")) return null;
-  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/i.test(normalizedHref) && !lowerHref.startsWith("file:") && !/^[a-zA-Z]:\//.test(normalizedHref)) {
+  if (
+    /^[a-zA-Z][a-zA-Z0-9+.-]*:/i.test(normalizedHref) &&
+    !lowerHref.startsWith("file:") &&
+    !/^[a-zA-Z]:\//.test(normalizedHref)
+  ) {
     return null;
   }
 
@@ -150,7 +151,10 @@ export function parsePdfPageFragment(href: string | undefined): number | null {
   if (!href) return null;
   const hashIndex = href.indexOf("#");
   if (hashIndex === -1) return null;
-  const match = href.slice(hashIndex + 1).trim().match(PDF_PAGE_FRAGMENT);
+  const match = href
+    .slice(hashIndex + 1)
+    .trim()
+    .match(PDF_PAGE_FRAGMENT);
   if (!match) return null;
   const page = Number.parseInt(match[1], 10);
   return Number.isInteger(page) && page > 0 ? page : null;
@@ -160,10 +164,11 @@ export function parsePdfPageFragment(href: string | undefined): number | null {
 export function resolveLocalFilePath(filePath: string | undefined, baseDir?: string): string | null {
   if (!filePath) return null;
 
-  const windowsStyle = /^[a-zA-Z]:[\\/]/.test(filePath) ||
+  const windowsStyle =
+    /^[a-zA-Z]:[\\/]/.test(filePath) ||
     filePath.startsWith("\\\\") ||
     (baseDir !== undefined && (/^[a-zA-Z]:[\\/]/.test(baseDir) || baseDir.startsWith("\\\\")));
-  const normalizeSlashes = (value: string) => windowsStyle ? value.replace(/\\/g, "/") : value;
+  const normalizeSlashes = (value: string) => (windowsStyle ? value.replace(/\\/g, "/") : value);
   const normalizedPath = normalizeSlashes(filePath);
   const normalizedBase = baseDir ? normalizeSlashes(baseDir).replace(/\/+$/, "") : undefined;
 
@@ -174,8 +179,8 @@ export function resolveLocalFilePath(filePath: string | undefined, baseDir?: str
   if (isDriveAbsolute || isUncAbsolute) {
     candidate = normalizedPath;
   } else if (normalizedPath.startsWith("/")) {
-    const windowsRoot = normalizedBase?.match(/^([a-zA-Z]:)(?:\/|$)/)?.[1]
-      ?? normalizedBase?.match(/^(\/\/[^/]+\/[^/]+)(?:\/|$)/)?.[1];
+    const windowsRoot =
+      normalizedBase?.match(/^([a-zA-Z]:)(?:\/|$)/)?.[1] ?? normalizedBase?.match(/^(\/\/[^/]+\/[^/]+)(?:\/|$)/)?.[1];
     candidate = windowsRoot ? `${windowsRoot}${normalizedPath}` : normalizedPath;
   } else {
     if (!normalizedBase) return null;

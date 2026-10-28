@@ -91,38 +91,106 @@ export function PlatformAdminDialog({ open, onClose }: Props) {
 
   return (
     <div
-      style={{ position: "fixed", inset: 0, zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.45)" }}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 90,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "rgba(0,0,0,0.45)",
+      }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
     >
       <div
         style={{
-          width: "min(960px, 94vw)", maxHeight: "88vh", display: "flex", flexDirection: "column",
-          background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: 10,
+          width: "min(960px, 94vw)",
+          maxHeight: "88vh",
+          display: "flex",
+          flexDirection: "column",
+          background: "var(--bg-panel)",
+          border: "1px solid var(--border)",
+          borderRadius: 10,
           boxShadow: "0 18px 50px rgba(0,0,0,0.35)",
         }}
       >
         {/* header + tabs */}
-        <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "10px 16px 0", borderBottom: "1px solid var(--border)" }}>
-          {(["overview", "users", "containers", "images", "quotas", "workspaces", "llm", "logs"] as const).map((key) => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => { setTab(key); setError(null); setNotice(null); }}
-              style={{
-                padding: "7px 14px 9px", fontSize: 12.5, cursor: "pointer",
-                background: "none", border: "none", borderBottom: `2px solid ${tab === key ? "var(--accent)" : "transparent"}`,
-                color: tab === key ? "var(--text)" : "var(--text-muted)", fontWeight: tab === key ? 600 : 400,
-              }}
-            >
-              {key === "overview" ? t("admin.overview") : key === "users" ? t("admin.users") : key === "containers" ? t("admin.containers") : key === "images" ? t("admin.images") : key === "quotas" ? t("admin.quotas") : key === "workspaces" ? t("admin.workspaces") : key === "llm" ? "LLM" : t("admin.logs")}
-            </button>
-          ))}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 4,
+            padding: "10px 16px 0",
+            borderBottom: "1px solid var(--border)",
+          }}
+        >
+          {(["overview", "users", "containers", "images", "quotas", "workspaces", "llm", "logs"] as const).map(
+            (key) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => {
+                  setTab(key);
+                  setError(null);
+                  setNotice(null);
+                }}
+                style={{
+                  padding: "7px 14px 9px",
+                  fontSize: 12.5,
+                  cursor: "pointer",
+                  background: "none",
+                  border: "none",
+                  borderBottom: `2px solid ${tab === key ? "var(--accent)" : "transparent"}`,
+                  color: tab === key ? "var(--text)" : "var(--text-muted)",
+                  fontWeight: tab === key ? 600 : 400,
+                }}
+              >
+                {key === "overview"
+                  ? t("admin.overview")
+                  : key === "users"
+                    ? t("admin.users")
+                    : key === "containers"
+                      ? t("admin.containers")
+                      : key === "images"
+                        ? t("admin.images")
+                        : key === "quotas"
+                          ? t("admin.quotas")
+                          : key === "workspaces"
+                            ? t("admin.workspaces")
+                            : key === "llm"
+                              ? "LLM"
+                              : t("admin.logs")}
+              </button>
+            ),
+          )}
           <div style={{ flex: 1 }} />
-          <button type="button" onClick={onClose} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 15, paddingBottom: 6 }}>✕</button>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{
+              background: "none",
+              border: "none",
+              color: "var(--text-muted)",
+              cursor: "pointer",
+              fontSize: 15,
+              paddingBottom: 6,
+            }}
+          >
+            ✕
+          </button>
         </div>
 
         {(notice || error) && (
-          <div style={{ padding: "6px 16px", fontSize: 11.5, color: error ? "#f87171" : "var(--success, #22c55e)", borderBottom: "1px solid var(--border)" }}>
+          <div
+            style={{
+              padding: "6px 16px",
+              fontSize: 11.5,
+              color: error ? "#f87171" : "var(--success, #22c55e)",
+              borderBottom: "1px solid var(--border)",
+            }}
+          >
             {error ?? notice}
           </div>
         )}
@@ -159,24 +227,27 @@ function UsersTab({ action, notify }: { action: ActionFn; notify: (msg: string) 
   const [resetFor, setResetFor] = useState<PlatformUserRow | null>(null);
   const [resetPassword, setResetPassword] = useState("");
 
-  const load = useCallback(async (nextOffset = 0) => {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(nextOffset) });
-      if (search.trim()) params.set("search", search.trim());
-      if (status) params.set("status", status);
-      const res = await fetch(`/api/admin/users?${params}`, { credentials: "same-origin" });
-      const data = (await res.json()) as { users?: PlatformUserRow[]; total?: number; error?: string };
-      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
-      setRows(data.users ?? []);
-      setTotal(data.total ?? 0);
-      setOffset(nextOffset);
-    } catch (e) {
-      notify(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoading(false);
-    }
-  }, [search, status, notify]);
+  const load = useCallback(
+    async (nextOffset = 0) => {
+      setLoading(true);
+      try {
+        const params = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(nextOffset) });
+        if (search.trim()) params.set("search", search.trim());
+        if (status) params.set("status", status);
+        const res = await fetch(`/api/admin/users?${params}`, { credentials: "same-origin" });
+        const data = (await res.json()) as { users?: PlatformUserRow[]; total?: number; error?: string };
+        if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+        setRows(data.users ?? []);
+        setTotal(data.total ?? 0);
+        setOffset(nextOffset);
+      } catch (e) {
+        notify(e instanceof Error ? e.message : String(e));
+      } finally {
+        setLoading(false);
+      }
+    },
+    [search, status, notify],
+  );
 
   useEffect(() => {
     void load(0);
@@ -184,11 +255,13 @@ function UsersTab({ action, notify }: { action: ActionFn; notify: (msg: string) 
 
   const doResetPassword = async () => {
     if (!resetFor || resetPassword.length < 8) return;
-    if (await action(`/api/admin/users/${resetFor.id}/password`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password: resetPassword }),
-    })) {
+    if (
+      await action(`/api/admin/users/${resetFor.id}/password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: resetPassword }),
+      })
+    ) {
       notify(t("admin.passwordResetAllTheirOld", { name: resetFor.username }));
       setResetFor(null);
       setResetPassword("");
@@ -196,11 +269,13 @@ function UsersTab({ action, notify }: { action: ActionFn; notify: (msg: string) 
   };
 
   const doStatus = async (user: PlatformUserRow, next: string) => {
-    if (await action(`/api/admin/users/${user.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: next }),
-    })) {
+    if (
+      await action(`/api/admin/users/${user.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: next }),
+      })
+    ) {
       notify(t("admin.set", { name: user.username, status: next }));
       void load(offset);
     }
@@ -216,7 +291,9 @@ function UsersTab({ action, notify }: { action: ActionFn; notify: (msg: string) 
 
   const doApprove = async (user: PlatformUserRow, act: "approve" | "reject") => {
     if (await action(`/api/admin/users/${user.id}/${act}`, { method: "POST" })) {
-      notify(act === "approve" ? t("admin.approved", { name: user.username }) : t("admin.rejected", { name: user.username }));
+      notify(
+        act === "approve" ? t("admin.approved", { name: user.username }) : t("admin.rejected", { name: user.username }),
+      );
       void load(offset);
     }
   };
@@ -226,21 +303,79 @@ function UsersTab({ action, notify }: { action: ActionFn; notify: (msg: string) 
 
   return (
     <>
-      <div style={{ display: "flex", gap: 8, padding: "10px 16px", borderBottom: "1px solid var(--border)", flexWrap: "wrap" }}>
+      <div
+        style={{
+          display: "flex",
+          gap: 8,
+          padding: "10px 16px",
+          borderBottom: "1px solid var(--border)",
+          flexWrap: "wrap",
+        }}
+      >
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") void load(0); }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") void load(0);
+          }}
           placeholder={t("admin.searchUsernameEmail")}
-          style={{ flex: 1, minWidth: 160, padding: "5px 9px", fontSize: 12, background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text)" }}
+          style={{
+            flex: 1,
+            minWidth: 160,
+            padding: "5px 9px",
+            fontSize: 12,
+            background: "var(--bg)",
+            border: "1px solid var(--border)",
+            borderRadius: 6,
+            color: "var(--text)",
+          }}
         />
-        <select value={status} onChange={(e) => setStatus(e.target.value)} style={{ padding: "5px 7px", fontSize: 12, background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text)" }}>
-          {STATUSES.map((s) => <option key={s} value={s}>{s === "" ? t("admin.allStatuses") : s}</option>)}
+        <select
+          value={status}
+          onChange={(e) => setStatus(e.target.value)}
+          style={{
+            padding: "5px 7px",
+            fontSize: 12,
+            background: "var(--bg)",
+            border: "1px solid var(--border)",
+            borderRadius: 6,
+            color: "var(--text)",
+          }}
+        >
+          {STATUSES.map((s) => (
+            <option key={s} value={s}>
+              {s === "" ? t("admin.allStatuses") : s}
+            </option>
+          ))}
         </select>
-        <button type="button" onClick={() => void load(0)} style={{ padding: "5px 12px", fontSize: 12, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text)", borderRadius: 6, cursor: "pointer" }}>
+        <button
+          type="button"
+          onClick={() => void load(0)}
+          style={{
+            padding: "5px 12px",
+            fontSize: 12,
+            border: "1px solid var(--border)",
+            background: "var(--bg)",
+            color: "var(--text)",
+            borderRadius: 6,
+            cursor: "pointer",
+          }}
+        >
           {t("admin.search")}
         </button>
-        <button type="button" onClick={() => setCreating((v) => !v)} style={{ padding: "5px 12px", fontSize: 12, border: "1px solid var(--accent)", color: "var(--accent)", background: "none", borderRadius: 6, cursor: "pointer" }}>
+        <button
+          type="button"
+          onClick={() => setCreating((v) => !v)}
+          style={{
+            padding: "5px 12px",
+            fontSize: 12,
+            border: "1px solid var(--accent)",
+            color: "var(--accent)",
+            background: "none",
+            borderRadius: 6,
+            cursor: "pointer",
+          }}
+        >
           {creating ? t("common.cancel") : t("admin.newUser")}
         </button>
       </div>
@@ -248,7 +383,11 @@ function UsersTab({ action, notify }: { action: ActionFn; notify: (msg: string) 
       {creating && (
         <CreateUserForm
           onCancel={() => setCreating(false)}
-          onCreated={async (name) => { setCreating(false); notify(t("admin.createdUser", { name })); await load(0); }}
+          onCreated={async (name) => {
+            setCreating(false);
+            notify(t("admin.createdUser", { name }));
+            await load(0);
+          }}
           action={action}
           t={t}
         />
@@ -267,59 +406,141 @@ function UsersTab({ action, notify }: { action: ActionFn; notify: (msg: string) 
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={6} style={{ padding: 18, textAlign: "center", color: "var(--text-dim)" }}>{t("admin.loading")}</td></tr>}
-            {!loading && rows.length === 0 && <tr><td colSpan={6} style={{ padding: 18, textAlign: "center", color: "var(--text-dim)" }}>{t("admin.matchingUsers")}</td></tr>}
-            {!loading && rows.map((u) => (
-              <tr key={u.id} style={{ borderTop: "1px solid var(--border)" }}>
-                <td style={{ padding: "7px 8px", color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>{u.id}</td>
-                <td style={{ padding: "7px 8px", fontWeight: 500 }}>
-                  {u.username}
-                  {u.must_change_password && <span style={{ marginLeft: 6, fontSize: 10, color: "var(--warning, #eab308)" }} title={t("admin.mustChangePasswordNextLogin")}>⟳</span>}
-                </td>
-                <td style={{ padding: "7px 8px", color: "var(--text-muted)" }}>{u.email ?? "—"}</td>
-                <td style={{ padding: "7px 8px" }}>{u.role}</td>
-                <td style={{ padding: "7px 8px", color: statusColor(u.status) }}>{u.status}</td>
-                <td style={{ padding: "7px 8px", whiteSpace: "nowrap" }}>
-                  {u.status === "pending" ? (
-                    <>
-                      <MiniButton onClick={() => void doApprove(u, "approve")} accent>{t("admin.approve")}</MiniButton>
-                      <MiniButton onClick={() => void doApprove(u, "reject")}>{t("admin.reject")}</MiniButton>
-                    </>
-                  ) : (
-                    <>
-                      <MiniButton onClick={() => setResetFor(u)} accent>{t("admin.resetPassword")}</MiniButton>
-                      {u.status === "active"
-                        ? <MiniButton onClick={() => void doStatus(u, "disabled")}>{t("admin.disable")}</MiniButton>
-                        : u.status === "disabled" && <MiniButton onClick={() => void doStatus(u, "active")}>{t("common.enable")}</MiniButton>}
-                      <MiniButton onClick={() => void doDelete(u)} danger>{t("common.delete")}</MiniButton>
-                    </>
-                  )}
+            {loading && (
+              <tr>
+                <td colSpan={6} style={{ padding: 18, textAlign: "center", color: "var(--text-dim)" }}>
+                  {t("admin.loading")}
                 </td>
               </tr>
-            ))}
+            )}
+            {!loading && rows.length === 0 && (
+              <tr>
+                <td colSpan={6} style={{ padding: 18, textAlign: "center", color: "var(--text-dim)" }}>
+                  {t("admin.matchingUsers")}
+                </td>
+              </tr>
+            )}
+            {!loading &&
+              rows.map((u) => (
+                <tr key={u.id} style={{ borderTop: "1px solid var(--border)" }}>
+                  <td style={{ padding: "7px 8px", color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>
+                    {u.id}
+                  </td>
+                  <td style={{ padding: "7px 8px", fontWeight: 500 }}>
+                    {u.username}
+                    {u.must_change_password && (
+                      <span
+                        style={{ marginLeft: 6, fontSize: 10, color: "var(--warning, #eab308)" }}
+                        title={t("admin.mustChangePasswordNextLogin")}
+                      >
+                        ⟳
+                      </span>
+                    )}
+                  </td>
+                  <td style={{ padding: "7px 8px", color: "var(--text-muted)" }}>{u.email ?? "—"}</td>
+                  <td style={{ padding: "7px 8px" }}>{u.role}</td>
+                  <td style={{ padding: "7px 8px", color: statusColor(u.status) }}>{u.status}</td>
+                  <td style={{ padding: "7px 8px", whiteSpace: "nowrap" }}>
+                    {u.status === "pending" ? (
+                      <>
+                        <MiniButton onClick={() => void doApprove(u, "approve")} accent>
+                          {t("admin.approve")}
+                        </MiniButton>
+                        <MiniButton onClick={() => void doApprove(u, "reject")}>{t("admin.reject")}</MiniButton>
+                      </>
+                    ) : (
+                      <>
+                        <MiniButton onClick={() => setResetFor(u)} accent>
+                          {t("admin.resetPassword")}
+                        </MiniButton>
+                        {u.status === "active" ? (
+                          <MiniButton onClick={() => void doStatus(u, "disabled")}>{t("admin.disable")}</MiniButton>
+                        ) : (
+                          u.status === "disabled" && (
+                            <MiniButton onClick={() => void doStatus(u, "active")}>{t("common.enable")}</MiniButton>
+                          )
+                        )}
+                        <MiniButton onClick={() => void doDelete(u)} danger>
+                          {t("common.delete")}
+                        </MiniButton>
+                      </>
+                    )}
+                  </td>
+                </tr>
+              ))}
           </tbody>
         </table>
       </div>
 
-      <Pager page={page} pages={pages} loading={loading} onNav={(o) => void load(o)} pageSize={PAGE_SIZE} total={total} noun={t("admin.people")} />
+      <Pager
+        page={page}
+        pages={pages}
+        loading={loading}
+        onNav={(o) => void load(o)}
+        pageSize={PAGE_SIZE}
+        total={total}
+        noun={t("admin.people")}
+      />
 
       {resetFor && (
-        <div style={{ position: "absolute", inset: 0, zIndex: 91, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.35)", borderRadius: 10 }}>
-          <div style={{ width: 320, background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: 10, padding: 16 }}>
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            zIndex: 91,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "rgba(0,0,0,0.35)",
+            borderRadius: 10,
+          }}
+        >
+          <div
+            style={{
+              width: 320,
+              background: "var(--bg-panel)",
+              border: "1px solid var(--border)",
+              borderRadius: 10,
+              padding: 16,
+            }}
+          >
             <strong style={{ fontSize: 12.5 }}>{t("admin.resetPassword2", { name: resetFor.username })}</strong>
-            <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "8px 0" }}>{t("admin.allUsersSessionsLoginsBecome")}</p>
+            <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "8px 0" }}>
+              {t("admin.allUsersSessionsLoginsBecome")}
+            </p>
             <input
               type="text"
               value={resetPassword}
               onChange={(e) => setResetPassword(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") void doResetPassword(); }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void doResetPassword();
+              }}
               placeholder={t("admin.newPassword8Chars")}
               autoFocus
-              style={{ width: "100%", boxSizing: "border-box", padding: "6px 9px", fontSize: 12, background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text)", fontFamily: "var(--font-mono)" }}
+              style={{
+                width: "100%",
+                boxSizing: "border-box",
+                padding: "6px 9px",
+                fontSize: 12,
+                background: "var(--bg)",
+                border: "1px solid var(--border)",
+                borderRadius: 6,
+                color: "var(--text)",
+                fontFamily: "var(--font-mono)",
+              }}
             />
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
-              <MiniButton onClick={() => { setResetFor(null); setResetPassword(""); }}>{t("common.cancel")}</MiniButton>
-              <MiniButton accent disabled={resetPassword.length < 8} onClick={() => void doResetPassword()}>{t("admin.reset")}</MiniButton>
+              <MiniButton
+                onClick={() => {
+                  setResetFor(null);
+                  setResetPassword("");
+                }}
+              >
+                {t("common.cancel")}
+              </MiniButton>
+              <MiniButton accent disabled={resetPassword.length < 8} onClick={() => void doResetPassword()}>
+                {t("admin.reset")}
+              </MiniButton>
             </div>
           </div>
         </div>
@@ -328,7 +549,12 @@ function UsersTab({ action, notify }: { action: ActionFn; notify: (msg: string) 
   );
 }
 
-function CreateUserForm({ onCancel, onCreated, action, t }: {
+function CreateUserForm({
+  onCancel,
+  onCreated,
+  action,
+  t,
+}: {
   onCancel: () => void;
   onCreated: (name: string) => void;
   action: ActionFn;
@@ -359,19 +585,64 @@ function CreateUserForm({ onCancel, onCreated, action, t }: {
       value={value}
       onChange={(e) => set(e.target.value)}
       placeholder={placeholder}
-      style={{ flex: 1, minWidth: 120, padding: "5px 9px", fontSize: 12, background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text)", ...(mono ? { fontFamily: "var(--font-mono)" } : {}) }}
+      style={{
+        flex: 1,
+        minWidth: 120,
+        padding: "5px 9px",
+        fontSize: 12,
+        background: "var(--bg)",
+        border: "1px solid var(--border)",
+        borderRadius: 6,
+        color: "var(--text)",
+        ...(mono ? { fontFamily: "var(--font-mono)" } : {}),
+      }}
     />
   );
 
   return (
-    <div style={{ display: "flex", gap: 8, padding: "10px 16px", borderBottom: "1px solid var(--border)", flexWrap: "wrap", alignItems: "center" }}>
+    <div
+      style={{
+        display: "flex",
+        gap: 8,
+        padding: "10px 16px",
+        borderBottom: "1px solid var(--border)",
+        flexWrap: "wrap",
+        alignItems: "center",
+      }}
+    >
       {field(username, setUsername, t("admin.username"))}
       {field(password, setPassword, t("admin.initialPassword8Chars"), true)}
       {field(email, setEmail, "Email（可选）")}
-      <button type="button" disabled={busy || !username || password.length < 8} onClick={() => void submit()} style={{ padding: "5px 12px", fontSize: 12, border: "1px solid var(--accent)", color: "var(--accent)", background: "none", borderRadius: 6, cursor: "pointer", opacity: busy || !username || password.length < 8 ? 0.4 : 1 }}>
+      <button
+        type="button"
+        disabled={busy || !username || password.length < 8}
+        onClick={() => void submit()}
+        style={{
+          padding: "5px 12px",
+          fontSize: 12,
+          border: "1px solid var(--accent)",
+          color: "var(--accent)",
+          background: "none",
+          borderRadius: 6,
+          cursor: "pointer",
+          opacity: busy || !username || password.length < 8 ? 0.4 : 1,
+        }}
+      >
         {t("common.create")}
       </button>
-      <button type="button" onClick={onCancel} style={{ padding: "5px 12px", fontSize: 12, border: "1px solid var(--border)", color: "var(--text-muted)", background: "none", borderRadius: 6, cursor: "pointer" }}>
+      <button
+        type="button"
+        onClick={onCancel}
+        style={{
+          padding: "5px 12px",
+          fontSize: 12,
+          border: "1px solid var(--border)",
+          color: "var(--text-muted)",
+          background: "none",
+          borderRadius: 6,
+          cursor: "pointer",
+        }}
+      >
         {t("common.cancel")}
       </button>
       {err && <span style={{ fontSize: 11, color: "#f87171" }}>{err}</span>}
@@ -413,13 +684,18 @@ function ContainersTab({ action, notify }: { action: ActionFn; notify: (msg: str
 
   const doLifecycle = async (row: PlatformContainerRow, act: "start" | "stop") => {
     if (await action(`/api/admin/containers/${row.id}/${act}`, { method: "POST" })) {
-      notify(act === "start" ? t("admin.startedContainer", { name: row.name }) : t("admin.stoppedContainer", { name: row.name }));
+      notify(
+        act === "start"
+          ? t("admin.startedContainer", { name: row.name })
+          : t("admin.stoppedContainer", { name: row.name }),
+      );
       void load();
     }
   };
 
   const doDelete = async (row: PlatformContainerRow) => {
-    if (!window.confirm(t("admin.deleteContainerConfirm", { name: row.name, owner: row.owner_username ?? "?" }))) return;
+    if (!window.confirm(t("admin.deleteContainerConfirm", { name: row.name, owner: row.owner_username ?? "?" })))
+      return;
     if (await action(`/api/admin/containers/${row.id}`, { method: "DELETE" })) {
       notify(t("admin.deletedContainer", { name: row.name }));
       void load();
@@ -428,13 +704,48 @@ function ContainersTab({ action, notify }: { action: ActionFn; notify: (msg: str
 
   return (
     <>
-      <div style={{ display: "flex", gap: 8, padding: "10px 16px", borderBottom: "1px solid var(--border)", alignItems: "center" }}>
-        <select value={status} onChange={(e) => setStatus(e.target.value)} style={{ padding: "5px 7px", fontSize: 12, background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text)" }}>
-          {CONTAINER_FILTERS.map((s) => <option key={s} value={s}>{s === "" ? t("admin.allStatuses") : s}</option>)}
+      <div
+        style={{
+          display: "flex",
+          gap: 8,
+          padding: "10px 16px",
+          borderBottom: "1px solid var(--border)",
+          alignItems: "center",
+        }}
+      >
+        <select
+          value={status}
+          onChange={(e) => setStatus(e.target.value)}
+          style={{
+            padding: "5px 7px",
+            fontSize: 12,
+            background: "var(--bg)",
+            border: "1px solid var(--border)",
+            borderRadius: 6,
+            color: "var(--text)",
+          }}
+        >
+          {CONTAINER_FILTERS.map((s) => (
+            <option key={s} value={s}>
+              {s === "" ? t("admin.allStatuses") : s}
+            </option>
+          ))}
         </select>
         <div style={{ flex: 1 }} />
         <span style={{ fontSize: 11, color: "var(--text-dim)" }}>{t("admin.showing50MostRecent")}</span>
-        <button type="button" onClick={() => void load()} style={{ padding: "5px 12px", fontSize: 12, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text)", borderRadius: 6, cursor: "pointer" }}>
+        <button
+          type="button"
+          onClick={() => void load()}
+          style={{
+            padding: "5px 12px",
+            fontSize: 12,
+            border: "1px solid var(--border)",
+            background: "var(--bg)",
+            color: "var(--text)",
+            borderRadius: 6,
+            cursor: "pointer",
+          }}
+        >
           {t("admin.refresh")}
         </button>
       </div>
@@ -452,29 +763,63 @@ function ContainersTab({ action, notify }: { action: ActionFn; notify: (msg: str
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={7} style={{ padding: 18, textAlign: "center", color: "var(--text-dim)" }}>{t("admin.loading")}</td></tr>}
-            {!loading && rows.length === 0 && <tr><td colSpan={7} style={{ padding: 18, textAlign: "center", color: "var(--text-dim)" }}>{t("admin.containers2")}</td></tr>}
-            {!loading && rows.map((c) => (
-              <tr key={c.id} style={{ borderTop: "1px solid var(--border)" }}>
-                <td style={{ padding: "7px 8px", color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>{c.id}</td>
-                <td style={{ padding: "7px 8px", fontWeight: 500 }} title={c.error_message ?? undefined}>
-                  {c.name}
-                  {c.error_message && <span style={{ marginLeft: 6, fontSize: 10, color: "#f87171" }} title={c.error_message}>⚠</span>}
-                </td>
-                <td style={{ padding: "7px 8px", color: "var(--text-muted)" }}>{c.owner_username ?? `u${c.id}`}</td>
-                <td style={{ padding: "7px 8px", color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>#{c.image_id}</td>
-                <td style={{ padding: "7px 8px", color: statusColor(c.status) }}>{c.status}</td>
-                <td style={{ padding: "7px 8px", color: "var(--text-dim)", fontFamily: "var(--font-mono)", fontSize: 11 }}>
-                  {c.cpu}c·{Math.round(c.memory_mb / 1024)}G·{c.disk_gb}G
-                </td>
-                <td style={{ padding: "7px 8px", whiteSpace: "nowrap" }}>
-                  {c.status === "running"
-                    ? <MiniButton onClick={() => void doLifecycle(c, "stop")}>{t("admin.stop")}</MiniButton>
-                    : <MiniButton onClick={() => void doLifecycle(c, "start")} accent>{t("admin.start")}</MiniButton>}
-                  <MiniButton onClick={() => void doDelete(c)} danger>{t("common.delete")}</MiniButton>
+            {loading && (
+              <tr>
+                <td colSpan={7} style={{ padding: 18, textAlign: "center", color: "var(--text-dim)" }}>
+                  {t("admin.loading")}
                 </td>
               </tr>
-            ))}
+            )}
+            {!loading && rows.length === 0 && (
+              <tr>
+                <td colSpan={7} style={{ padding: 18, textAlign: "center", color: "var(--text-dim)" }}>
+                  {t("admin.containers2")}
+                </td>
+              </tr>
+            )}
+            {!loading &&
+              rows.map((c) => (
+                <tr key={c.id} style={{ borderTop: "1px solid var(--border)" }}>
+                  <td style={{ padding: "7px 8px", color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>
+                    {c.id}
+                  </td>
+                  <td style={{ padding: "7px 8px", fontWeight: 500 }} title={c.error_message ?? undefined}>
+                    {c.name}
+                    {c.error_message && (
+                      <span style={{ marginLeft: 6, fontSize: 10, color: "#f87171" }} title={c.error_message}>
+                        ⚠
+                      </span>
+                    )}
+                  </td>
+                  <td style={{ padding: "7px 8px", color: "var(--text-muted)" }}>{c.owner_username ?? `u${c.id}`}</td>
+                  <td style={{ padding: "7px 8px", color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
+                    #{c.image_id}
+                  </td>
+                  <td style={{ padding: "7px 8px", color: statusColor(c.status) }}>{c.status}</td>
+                  <td
+                    style={{
+                      padding: "7px 8px",
+                      color: "var(--text-dim)",
+                      fontFamily: "var(--font-mono)",
+                      fontSize: 11,
+                    }}
+                  >
+                    {c.cpu}c·{Math.round(c.memory_mb / 1024)}G·{c.disk_gb}G
+                  </td>
+                  <td style={{ padding: "7px 8px", whiteSpace: "nowrap" }}>
+                    {c.status === "running" ? (
+                      <MiniButton onClick={() => void doLifecycle(c, "stop")}>{t("admin.stop")}</MiniButton>
+                    ) : (
+                      <MiniButton onClick={() => void doLifecycle(c, "start")} accent>
+                        {t("admin.start")}
+                      </MiniButton>
+                    )}
+                    <MiniButton onClick={() => void doDelete(c)} danger>
+                      {t("common.delete")}
+                    </MiniButton>
+                  </td>
+                </tr>
+              ))}
           </tbody>
         </table>
       </div>
@@ -512,12 +857,18 @@ function ImagesTab({ action, notify }: { action: ActionFn; notify: (msg: string)
 
   const doTogglePublic = async (img: PlatformImageRow) => {
     const next = !img.is_public;
-    if (await action(`/api/admin/images/${img.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ is_public: next }),
-    })) {
-      notify(next ? t("admin.imageNowPublic", { name: img.display_name }) : t("admin.imageNowPrivate", { name: img.display_name }));
+    if (
+      await action(`/api/admin/images/${img.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ is_public: next }),
+      })
+    ) {
+      notify(
+        next
+          ? t("admin.imageNowPublic", { name: img.display_name })
+          : t("admin.imageNowPrivate", { name: img.display_name }),
+      );
       void load();
     }
   };
@@ -532,13 +883,45 @@ function ImagesTab({ action, notify }: { action: ActionFn; notify: (msg: string)
 
   return (
     <>
-      <div style={{ display: "flex", gap: 8, padding: "10px 16px", borderBottom: "1px solid var(--border)", alignItems: "center" }}>
+      <div
+        style={{
+          display: "flex",
+          gap: 8,
+          padding: "10px 16px",
+          borderBottom: "1px solid var(--border)",
+          alignItems: "center",
+        }}
+      >
         <span style={{ fontSize: 11, color: "var(--text-dim)" }}>{t("admin.imageCataloguePlaceSifPlatform")}</span>
         <div style={{ flex: 1 }} />
-        <button type="button" onClick={() => void load()} style={{ padding: "5px 12px", fontSize: 12, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text)", borderRadius: 6, cursor: "pointer" }}>
+        <button
+          type="button"
+          onClick={() => void load()}
+          style={{
+            padding: "5px 12px",
+            fontSize: 12,
+            border: "1px solid var(--border)",
+            background: "var(--bg)",
+            color: "var(--text)",
+            borderRadius: 6,
+            cursor: "pointer",
+          }}
+        >
           {t("admin.refresh")}
         </button>
-        <button type="button" onClick={() => setCreating((v) => !v)} style={{ padding: "5px 12px", fontSize: 12, border: "1px solid var(--accent)", color: "var(--accent)", background: "none", borderRadius: 6, cursor: "pointer" }}>
+        <button
+          type="button"
+          onClick={() => setCreating((v) => !v)}
+          style={{
+            padding: "5px 12px",
+            fontSize: 12,
+            border: "1px solid var(--accent)",
+            color: "var(--accent)",
+            background: "none",
+            borderRadius: 6,
+            cursor: "pointer",
+          }}
+        >
           {creating ? t("common.cancel") : t("admin.registerImage")}
         </button>
       </div>
@@ -546,7 +929,11 @@ function ImagesTab({ action, notify }: { action: ActionFn; notify: (msg: string)
       {creating && (
         <CreateImageForm
           onCancel={() => setCreating(false)}
-          onCreated={async (name) => { setCreating(false); notify(t("admin.registeredImage", { name })); await load(); }}
+          onCreated={async (name) => {
+            setCreating(false);
+            notify(t("admin.registeredImage", { name }));
+            await load();
+          }}
           action={action}
           t={t}
         />
@@ -565,27 +952,64 @@ function ImagesTab({ action, notify }: { action: ActionFn; notify: (msg: string)
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={6} style={{ padding: 18, textAlign: "center", color: "var(--text-dim)" }}>{t("admin.loading")}</td></tr>}
-            {!loading && rows.length === 0 && <tr><td colSpan={6} style={{ padding: 18, textAlign: "center", color: "var(--text-dim)" }}>{t("admin.imageCatalogueEmpty")}</td></tr>}
-            {!loading && rows.map((img) => (
-              <tr key={img.id} style={{ borderTop: "1px solid var(--border)" }}>
-                <td style={{ padding: "7px 8px", color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>{img.id}</td>
-                <td style={{ padding: "7px 8px", fontWeight: 500 }} title={img.description ?? undefined}>{img.display_name}</td>
-                <td style={{ padding: "7px 8px", color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>{img.name}</td>
-                <td style={{ padding: "7px 8px", color: "var(--text-dim)", fontFamily: "var(--font-mono)", fontSize: 11, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={img.sif_path}>{img.sif_path}</td>
-                <td style={{ padding: "7px 8px" }}>
-                  {img.is_public
-                    ? <span style={{ color: "var(--success, #22c55e)" }}>{t("admin.public")}</span>
-                    : <span style={{ color: "var(--text-dim)" }}>{t("admin.private")}</span>}
-                </td>
-                <td style={{ padding: "7px 8px", whiteSpace: "nowrap" }}>
-                  <MiniButton onClick={() => void doTogglePublic(img)}>
-                    {img.is_public ? t("admin.setPrivate") : t("admin.setPublic")}
-                  </MiniButton>
-                  <MiniButton onClick={() => void doDelete(img)} danger>{t("common.delete")}</MiniButton>
+            {loading && (
+              <tr>
+                <td colSpan={6} style={{ padding: 18, textAlign: "center", color: "var(--text-dim)" }}>
+                  {t("admin.loading")}
                 </td>
               </tr>
-            ))}
+            )}
+            {!loading && rows.length === 0 && (
+              <tr>
+                <td colSpan={6} style={{ padding: 18, textAlign: "center", color: "var(--text-dim)" }}>
+                  {t("admin.imageCatalogueEmpty")}
+                </td>
+              </tr>
+            )}
+            {!loading &&
+              rows.map((img) => (
+                <tr key={img.id} style={{ borderTop: "1px solid var(--border)" }}>
+                  <td style={{ padding: "7px 8px", color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>
+                    {img.id}
+                  </td>
+                  <td style={{ padding: "7px 8px", fontWeight: 500 }} title={img.description ?? undefined}>
+                    {img.display_name}
+                  </td>
+                  <td style={{ padding: "7px 8px", color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
+                    {img.name}
+                  </td>
+                  <td
+                    style={{
+                      padding: "7px 8px",
+                      color: "var(--text-dim)",
+                      fontFamily: "var(--font-mono)",
+                      fontSize: 11,
+                      maxWidth: 220,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                    title={img.sif_path}
+                  >
+                    {img.sif_path}
+                  </td>
+                  <td style={{ padding: "7px 8px" }}>
+                    {img.is_public ? (
+                      <span style={{ color: "var(--success, #22c55e)" }}>{t("admin.public")}</span>
+                    ) : (
+                      <span style={{ color: "var(--text-dim)" }}>{t("admin.private")}</span>
+                    )}
+                  </td>
+                  <td style={{ padding: "7px 8px", whiteSpace: "nowrap" }}>
+                    <MiniButton onClick={() => void doTogglePublic(img)}>
+                      {img.is_public ? t("admin.setPrivate") : t("admin.setPublic")}
+                    </MiniButton>
+                    <MiniButton onClick={() => void doDelete(img)} danger>
+                      {t("common.delete")}
+                    </MiniButton>
+                  </td>
+                </tr>
+              ))}
           </tbody>
         </table>
       </div>
@@ -593,7 +1017,12 @@ function ImagesTab({ action, notify }: { action: ActionFn; notify: (msg: string)
   );
 }
 
-function CreateImageForm({ onCancel, onCreated, action, t }: {
+function CreateImageForm({
+  onCancel,
+  onCreated,
+  action,
+  t,
+}: {
   onCancel: () => void;
   onCreated: (name: string) => void;
   action: ActionFn;
@@ -614,7 +1043,13 @@ function CreateImageForm({ onCancel, onCreated, action, t }: {
     const ok = await action("/api/admin/images", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, display_name: displayName, sif_path: sifPath, ...(description ? { description } : {}), is_public: isPublic }),
+      body: JSON.stringify({
+        name,
+        display_name: displayName,
+        sif_path: sifPath,
+        ...(description ? { description } : {}),
+        is_public: isPublic,
+      }),
     });
     setBusy(false);
     if (ok) onCreated(displayName);
@@ -625,24 +1060,78 @@ function CreateImageForm({ onCancel, onCreated, action, t }: {
       value={value}
       onChange={(e) => set(e.target.value)}
       placeholder={placeholder}
-      style={{ flex: 1, minWidth: 120, padding: "5px 9px", fontSize: 12, background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text)", ...(mono ? { fontFamily: "var(--font-mono)" } : {}) }}
+      style={{
+        flex: 1,
+        minWidth: 120,
+        padding: "5px 9px",
+        fontSize: 12,
+        background: "var(--bg)",
+        border: "1px solid var(--border)",
+        borderRadius: 6,
+        color: "var(--text)",
+        ...(mono ? { fontFamily: "var(--font-mono)" } : {}),
+      }}
     />
   );
 
   return (
-    <div style={{ display: "flex", gap: 8, padding: "10px 16px", borderBottom: "1px solid var(--border)", flexWrap: "wrap", alignItems: "center" }}>
+    <div
+      style={{
+        display: "flex",
+        gap: 8,
+        padding: "10px 16px",
+        borderBottom: "1px solid var(--border)",
+        flexWrap: "wrap",
+        alignItems: "center",
+      }}
+    >
       {field(name, setName, t("admin.nameLettersDigits"), true)}
       {field(displayName, setDisplayName, t("admin.displayName"))}
       {field(sifPath, setSifPath, "/path/to/image.sif", true)}
       {field(description, setDescription, t("common.descriptionOptional"))}
-      <label style={{ fontSize: 11.5, color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
+      <label
+        style={{
+          fontSize: 11.5,
+          color: "var(--text-muted)",
+          display: "flex",
+          alignItems: "center",
+          gap: 4,
+          cursor: "pointer",
+        }}
+      >
         <input type="checkbox" checked={isPublic} onChange={(e) => setIsPublic(e.target.checked)} />
         {t("admin.public")}
       </label>
-      <button type="button" disabled={busy || !valid} onClick={() => void submit()} style={{ padding: "5px 12px", fontSize: 12, border: "1px solid var(--accent)", color: "var(--accent)", background: "none", borderRadius: 6, cursor: "pointer", opacity: busy || !valid ? 0.4 : 1 }}>
+      <button
+        type="button"
+        disabled={busy || !valid}
+        onClick={() => void submit()}
+        style={{
+          padding: "5px 12px",
+          fontSize: 12,
+          border: "1px solid var(--accent)",
+          color: "var(--accent)",
+          background: "none",
+          borderRadius: 6,
+          cursor: "pointer",
+          opacity: busy || !valid ? 0.4 : 1,
+        }}
+      >
         {t("admin.register")}
       </button>
-      <button type="button" onClick={onCancel} style={{ padding: "5px 12px", fontSize: 12, border: "1px solid var(--border)", color: "var(--text-muted)", background: "none", borderRadius: 6, cursor: "pointer" }}>
+      <button
+        type="button"
+        onClick={onCancel}
+        style={{
+          padding: "5px 12px",
+          fontSize: 12,
+          border: "1px solid var(--border)",
+          color: "var(--text-muted)",
+          background: "none",
+          borderRadius: 6,
+          cursor: "pointer",
+        }}
+      >
         {t("common.cancel")}
       </button>
     </div>
@@ -687,7 +1176,11 @@ function OverviewTab({ notify }: { notify: (msg: string) => void }) {
   }, [load]);
 
   if (loading && !data) {
-    return <div style={{ padding: 24, textAlign: "center", color: "var(--text-dim)", fontSize: 12 }}>{t("admin.loading")}</div>;
+    return (
+      <div style={{ padding: 24, textAlign: "center", color: "var(--text-dim)", fontSize: 12 }}>
+        {t("admin.loading")}
+      </div>
+    );
   }
   if (!data) return null;
 
@@ -700,17 +1193,45 @@ function OverviewTab({ notify }: { notify: (msg: string) => void }) {
 
   return (
     <div style={{ flex: 1, overflow: "auto", padding: 16 }}>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10, marginBottom: 14 }}>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+          gap: 10,
+          marginBottom: 14,
+        }}
+      >
         {cards.map(([label, value, color]) => (
-          <div key={label} style={{ padding: "12px 14px", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 8 }}>
+          <div
+            key={label}
+            style={{
+              padding: "12px 14px",
+              background: "var(--bg)",
+              border: "1px solid var(--border)",
+              borderRadius: 8,
+            }}
+          >
             <div style={{ fontSize: 10.5, color: "var(--text-dim)", marginBottom: 4 }}>{label}</div>
-            <div style={{ fontSize: 22, fontWeight: 700, fontFamily: "var(--font-mono)", color: color ?? "var(--text)" }}>{value}</div>
+            <div
+              style={{ fontSize: 22, fontWeight: 700, fontFamily: "var(--font-mono)", color: color ?? "var(--text)" }}
+            >
+              {value}
+            </div>
           </div>
         ))}
       </div>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginBottom: 14 }}>
         {Object.entries(data.containersByStatus).map(([status, count]) => (
-          <span key={status} style={{ fontSize: 11.5, padding: "3px 10px", borderRadius: 999, border: "1px solid var(--border)", color: statusColor(status) }}>
+          <span
+            key={status}
+            style={{
+              fontSize: 11.5,
+              padding: "3px 10px",
+              borderRadius: 999,
+              border: "1px solid var(--border)",
+              color: statusColor(status),
+            }}
+          >
             {status}: <strong style={{ fontFamily: "var(--font-mono)" }}>{count}</strong>
           </span>
         ))}
@@ -719,7 +1240,9 @@ function OverviewTab({ notify }: { notify: (msg: string) => void }) {
         {t("admin.executorDatabase", { kind: data.executor, dialect: data.dialect })}
       </div>
       <div style={{ marginTop: 12 }}>
-        <button type="button" onClick={() => void load()} style={{ ...pagerBtn }}>{t("admin.refresh")}</button>
+        <button type="button" onClick={() => void load()} style={{ ...pagerBtn }}>
+          {t("admin.refresh")}
+        </button>
       </div>
     </div>
   );
@@ -772,17 +1295,41 @@ function QuotasTab({ action, notify }: { action: ActionFn; notify: (msg: string)
 
   return (
     <>
-      <div style={{ display: "flex", gap: 8, padding: "10px 16px", borderBottom: "1px solid var(--border)", alignItems: "center" }}>
+      <div
+        style={{
+          display: "flex",
+          gap: 8,
+          padding: "10px 16px",
+          borderBottom: "1px solid var(--border)",
+          alignItems: "center",
+        }}
+      >
         <span style={{ fontSize: 11, color: "var(--text-dim)" }}>{t("admin.quotaTiersPerUserCaps")}</span>
         <div style={{ flex: 1 }} />
-        <button type="button" onClick={() => setCreating((v) => !v)} style={{ padding: "5px 12px", fontSize: 12, border: "1px solid var(--accent)", color: "var(--accent)", background: "none", borderRadius: 6, cursor: "pointer" }}>
+        <button
+          type="button"
+          onClick={() => setCreating((v) => !v)}
+          style={{
+            padding: "5px 12px",
+            fontSize: 12,
+            border: "1px solid var(--accent)",
+            color: "var(--accent)",
+            background: "none",
+            borderRadius: 6,
+            cursor: "pointer",
+          }}
+        >
           {creating ? t("common.cancel") : t("admin.newQuota")}
         </button>
       </div>
       {creating && (
         <QuotaForm
           onCancel={() => setCreating(false)}
-          onSaved={async () => { setCreating(false); notify(t("admin.quotaCreated")); await load(); }}
+          onSaved={async () => {
+            setCreating(false);
+            notify(t("admin.quotaCreated"));
+            await load();
+          }}
           action={action}
           t={t}
         />
@@ -791,7 +1338,11 @@ function QuotasTab({ action, notify }: { action: ActionFn; notify: (msg: string)
         <QuotaForm
           initial={editing}
           onCancel={() => setEditing(null)}
-          onSaved={async () => { setEditing(null); notify(t("admin.quotaUpdated")); await load(); }}
+          onSaved={async () => {
+            setEditing(null);
+            notify(t("admin.quotaUpdated"));
+            await load();
+          }}
           action={action}
           t={t}
         />
@@ -811,22 +1362,41 @@ function QuotasTab({ action, notify }: { action: ActionFn; notify: (msg: string)
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={8} style={{ padding: 18, textAlign: "center", color: "var(--text-dim)" }}>{t("admin.loading")}</td></tr>}
-            {!loading && rows.map((q) => (
-              <tr key={q.id} style={{ borderTop: "1px solid var(--border)" }}>
-                <td style={{ padding: "7px 8px", color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>{q.id}</td>
-                <td style={{ padding: "7px 8px", fontWeight: 500 }} title={q.description ?? undefined}>{q.name}</td>
-                <td style={{ padding: "7px 8px", fontFamily: "var(--font-mono)" }}>{q.max_containers}</td>
-                <td style={{ padding: "7px 8px", fontFamily: "var(--font-mono)" }}>{q.max_cpu_cores}</td>
-                <td style={{ padding: "7px 8px", fontFamily: "var(--font-mono)" }}>{Math.round(q.max_memory_mb / 1024)}G</td>
-                <td style={{ padding: "7px 8px", fontFamily: "var(--font-mono)" }}>{q.max_disk_gb}G</td>
-                <td style={{ padding: "7px 8px", fontFamily: "var(--font-mono)" }}>{q.max_snapshots_per_container}</td>
-                <td style={{ padding: "7px 8px", whiteSpace: "nowrap" }}>
-                  <MiniButton onClick={() => setEditing(q)} accent>{t("admin.edit")}</MiniButton>
-                  <MiniButton onClick={() => void doDelete(q)} danger>{t("common.delete")}</MiniButton>
+            {loading && (
+              <tr>
+                <td colSpan={8} style={{ padding: 18, textAlign: "center", color: "var(--text-dim)" }}>
+                  {t("admin.loading")}
                 </td>
               </tr>
-            ))}
+            )}
+            {!loading &&
+              rows.map((q) => (
+                <tr key={q.id} style={{ borderTop: "1px solid var(--border)" }}>
+                  <td style={{ padding: "7px 8px", color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>
+                    {q.id}
+                  </td>
+                  <td style={{ padding: "7px 8px", fontWeight: 500 }} title={q.description ?? undefined}>
+                    {q.name}
+                  </td>
+                  <td style={{ padding: "7px 8px", fontFamily: "var(--font-mono)" }}>{q.max_containers}</td>
+                  <td style={{ padding: "7px 8px", fontFamily: "var(--font-mono)" }}>{q.max_cpu_cores}</td>
+                  <td style={{ padding: "7px 8px", fontFamily: "var(--font-mono)" }}>
+                    {Math.round(q.max_memory_mb / 1024)}G
+                  </td>
+                  <td style={{ padding: "7px 8px", fontFamily: "var(--font-mono)" }}>{q.max_disk_gb}G</td>
+                  <td style={{ padding: "7px 8px", fontFamily: "var(--font-mono)" }}>
+                    {q.max_snapshots_per_container}
+                  </td>
+                  <td style={{ padding: "7px 8px", whiteSpace: "nowrap" }}>
+                    <MiniButton onClick={() => setEditing(q)} accent>
+                      {t("admin.edit")}
+                    </MiniButton>
+                    <MiniButton onClick={() => void doDelete(q)} danger>
+                      {t("common.delete")}
+                    </MiniButton>
+                  </td>
+                </tr>
+              ))}
           </tbody>
         </table>
       </div>
@@ -834,7 +1404,13 @@ function QuotasTab({ action, notify }: { action: ActionFn; notify: (msg: string)
   );
 }
 
-function QuotaForm({ initial, onCancel, onSaved, action, t }: {
+function QuotaForm({
+  initial,
+  onCancel,
+  onSaved,
+  action,
+  t,
+}: {
   initial?: QuotaRow;
   onCancel: () => void;
   onSaved: () => void;
@@ -850,16 +1426,38 @@ function QuotaForm({ initial, onCancel, onSaved, action, t }: {
   const [maxSnapshots, setMaxSnapshots] = useState(String(initial?.max_snapshots_per_container ?? 5));
   const [busy, setBusy] = useState(false);
 
-  const valid = name.length > 0 && /^\d+$/.test(maxContainers) && /^\d+$/.test(maxCpu) && /^\d+$/.test(maxMemGb) && /^\d+$/.test(maxDiskGb) && /^\d+$/.test(maxSnapshots);
+  const valid =
+    name.length > 0 &&
+    /^\d+$/.test(maxContainers) &&
+    /^\d+$/.test(maxCpu) &&
+    /^\d+$/.test(maxMemGb) &&
+    /^\d+$/.test(maxDiskGb) &&
+    /^\d+$/.test(maxSnapshots);
   const num = (v: string) => Number(v);
 
   const submit = async () => {
     if (!valid) return;
     setBusy(true);
-    const body = { name, description: description || undefined, max_containers: num(maxContainers), max_cpu_cores: num(maxCpu), max_memory_mb: num(maxMemGb) * 1024, max_disk_gb: num(maxDiskGb), max_snapshots_per_container: num(maxSnapshots) };
+    const body = {
+      name,
+      description: description || undefined,
+      max_containers: num(maxContainers),
+      max_cpu_cores: num(maxCpu),
+      max_memory_mb: num(maxMemGb) * 1024,
+      max_disk_gb: num(maxDiskGb),
+      max_snapshots_per_container: num(maxSnapshots),
+    };
     const ok = initial
-      ? await action(`/api/admin/quotas/${initial.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
-      : await action("/api/admin/quotas", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      ? await action(`/api/admin/quotas/${initial.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        })
+      : await action("/api/admin/quotas", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
     setBusy(false);
     if (ok) onSaved();
   };
@@ -870,13 +1468,31 @@ function QuotaForm({ initial, onCancel, onSaved, action, t }: {
       <input
         value={value}
         onChange={(e) => set(e.target.value)}
-        style={{ width, padding: "5px 8px", fontSize: 12, background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text)", fontFamily: "var(--font-mono)" }}
+        style={{
+          width,
+          padding: "5px 8px",
+          fontSize: 12,
+          background: "var(--bg)",
+          border: "1px solid var(--border)",
+          borderRadius: 6,
+          color: "var(--text)",
+          fontFamily: "var(--font-mono)",
+        }}
       />
     </label>
   );
 
   return (
-    <div style={{ display: "flex", gap: 10, padding: "12px 16px", borderBottom: "1px solid var(--border)", flexWrap: "wrap", alignItems: "flex-end" }}>
+    <div
+      style={{
+        display: "flex",
+        gap: 10,
+        padding: "12px 16px",
+        borderBottom: "1px solid var(--border)",
+        flexWrap: "wrap",
+        alignItems: "flex-end",
+      }}
+    >
       {field(t("admin.name"), name, setName, 110)}
       {field(t("admin.description"), description, setDescription, 160)}
       {field(t("admin.maxContainers"), maxContainers, setMaxContainers)}
@@ -884,10 +1500,36 @@ function QuotaForm({ initial, onCancel, onSaved, action, t }: {
       {field(t("admin.memoryGb"), maxMemGb, setMaxMemGb)}
       {field(t("admin.diskGb"), maxDiskGb, setMaxDiskGb)}
       {field(t("admin.maxSnapshots"), maxSnapshots, setMaxSnapshots)}
-      <button type="button" disabled={busy || !valid} onClick={() => void submit()} style={{ padding: "6px 14px", fontSize: 12, border: "1px solid var(--accent)", color: "var(--accent)", background: "none", borderRadius: 6, cursor: "pointer", opacity: busy || !valid ? 0.4 : 1 }}>
+      <button
+        type="button"
+        disabled={busy || !valid}
+        onClick={() => void submit()}
+        style={{
+          padding: "6px 14px",
+          fontSize: 12,
+          border: "1px solid var(--accent)",
+          color: "var(--accent)",
+          background: "none",
+          borderRadius: 6,
+          cursor: "pointer",
+          opacity: busy || !valid ? 0.4 : 1,
+        }}
+      >
         {initial ? t("common.save") : t("common.create")}
       </button>
-      <button type="button" onClick={onCancel} style={{ padding: "6px 14px", fontSize: 12, border: "1px solid var(--border)", color: "var(--text-muted)", background: "none", borderRadius: 6, cursor: "pointer" }}>
+      <button
+        type="button"
+        onClick={onCancel}
+        style={{
+          padding: "6px 14px",
+          fontSize: 12,
+          border: "1px solid var(--border)",
+          color: "var(--text-muted)",
+          background: "none",
+          borderRadius: 6,
+          cursor: "pointer",
+        }}
+      >
         {t("common.cancel")}
       </button>
     </div>
@@ -914,23 +1556,26 @@ function WorkspacesTab({ action, notify }: { action: ActionFn; notify: (msg: str
   const [loading, setLoading] = useState(false);
   const PAGE = 20;
 
-  const load = useCallback(async (nextOffset = 0) => {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams({ limit: String(PAGE), offset: String(nextOffset) });
-      if (search.trim()) params.set("search", search.trim());
-      const res = await fetch(`/api/admin/workspaces?${params}`, { credentials: "same-origin" });
-      const data = (await res.json()) as { workspaces?: WorkspaceRow[]; total?: number; error?: string };
-      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
-      setRows(data.workspaces ?? []);
-      setTotal(data.total ?? 0);
-      setOffset(nextOffset);
-    } catch (e) {
-      notify(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoading(false);
-    }
-  }, [search, notify]);
+  const load = useCallback(
+    async (nextOffset = 0) => {
+      setLoading(true);
+      try {
+        const params = new URLSearchParams({ limit: String(PAGE), offset: String(nextOffset) });
+        if (search.trim()) params.set("search", search.trim());
+        const res = await fetch(`/api/admin/workspaces?${params}`, { credentials: "same-origin" });
+        const data = (await res.json()) as { workspaces?: WorkspaceRow[]; total?: number; error?: string };
+        if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+        setRows(data.workspaces ?? []);
+        setTotal(data.total ?? 0);
+        setOffset(nextOffset);
+      } catch (e) {
+        notify(e instanceof Error ? e.message : String(e));
+      } finally {
+        setLoading(false);
+      }
+    },
+    [search, notify],
+  );
 
   useEffect(() => {
     void load(0);
@@ -947,7 +1592,11 @@ function WorkspacesTab({ action, notify }: { action: ActionFn; notify: (msg: str
   const pages = Math.max(1, Math.ceil(total / PAGE));
   const page = Math.floor(offset / PAGE) + 1;
   const fmtSize = (bytes: number): string =>
-    bytes > 1024 * 1024 * 1024 ? `${(bytes / 1024 / 1024 / 1024).toFixed(1)}G` : bytes > 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)}M` : `${Math.round(bytes / 1024)}K`;
+    bytes > 1024 * 1024 * 1024
+      ? `${(bytes / 1024 / 1024 / 1024).toFixed(1)}G`
+      : bytes > 1024 * 1024
+        ? `${(bytes / 1024 / 1024).toFixed(1)}M`
+        : `${Math.round(bytes / 1024)}K`;
 
   return (
     <>
@@ -955,11 +1604,33 @@ function WorkspacesTab({ action, notify }: { action: ActionFn; notify: (msg: str
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") void load(0); }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") void load(0);
+          }}
           placeholder={t("admin.searchWorkspaceName")}
-          style={{ flex: 1, padding: "5px 9px", fontSize: 12, background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text)" }}
+          style={{
+            flex: 1,
+            padding: "5px 9px",
+            fontSize: 12,
+            background: "var(--bg)",
+            border: "1px solid var(--border)",
+            borderRadius: 6,
+            color: "var(--text)",
+          }}
         />
-        <button type="button" onClick={() => void load(0)} style={{ padding: "5px 12px", fontSize: 12, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text)", borderRadius: 6, cursor: "pointer" }}>
+        <button
+          type="button"
+          onClick={() => void load(0)}
+          style={{
+            padding: "5px 12px",
+            fontSize: 12,
+            border: "1px solid var(--border)",
+            background: "var(--bg)",
+            color: "var(--text)",
+            borderRadius: 6,
+            cursor: "pointer",
+          }}
+        >
           {t("admin.search")}
         </button>
       </div>
@@ -977,25 +1648,58 @@ function WorkspacesTab({ action, notify }: { action: ActionFn; notify: (msg: str
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={7} style={{ padding: 18, textAlign: "center", color: "var(--text-dim)" }}>{t("admin.loading")}</td></tr>}
-            {!loading && rows.length === 0 && <tr><td colSpan={7} style={{ padding: 18, textAlign: "center", color: "var(--text-dim)" }}>{t("admin.workspaces2")}</td></tr>}
-            {!loading && rows.map((ws) => (
-              <tr key={ws.id} style={{ borderTop: "1px solid var(--border)" }}>
-                <td style={{ padding: "7px 8px", color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>{ws.id}</td>
-                <td style={{ padding: "7px 8px", fontWeight: 500 }} title={ws.description ?? undefined}>{ws.name}</td>
-                <td style={{ padding: "7px 8px", color: "var(--text-muted)" }}>{ws.owner_username ?? "—"}</td>
-                <td style={{ padding: "7px 8px", fontFamily: "var(--font-mono)", color: "var(--text-dim)" }}>{fmtSize(ws.size_bytes)}</td>
-                <td style={{ padding: "7px 8px", fontFamily: "var(--font-mono)", color: "var(--text-dim)" }}>{ws.file_count}</td>
-                <td style={{ padding: "7px 8px", fontFamily: "var(--font-mono)", color: "var(--text-dim)" }}>{ws.source_container_id ? `#${ws.source_container_id}` : "—"}</td>
-                <td style={{ padding: "7px 8px" }}>
-                  <MiniButton onClick={() => void doDelete(ws)} danger>{t("common.delete")}</MiniButton>
+            {loading && (
+              <tr>
+                <td colSpan={7} style={{ padding: 18, textAlign: "center", color: "var(--text-dim)" }}>
+                  {t("admin.loading")}
                 </td>
               </tr>
-            ))}
+            )}
+            {!loading && rows.length === 0 && (
+              <tr>
+                <td colSpan={7} style={{ padding: 18, textAlign: "center", color: "var(--text-dim)" }}>
+                  {t("admin.workspaces2")}
+                </td>
+              </tr>
+            )}
+            {!loading &&
+              rows.map((ws) => (
+                <tr key={ws.id} style={{ borderTop: "1px solid var(--border)" }}>
+                  <td style={{ padding: "7px 8px", color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>
+                    {ws.id}
+                  </td>
+                  <td style={{ padding: "7px 8px", fontWeight: 500 }} title={ws.description ?? undefined}>
+                    {ws.name}
+                  </td>
+                  <td style={{ padding: "7px 8px", color: "var(--text-muted)" }}>{ws.owner_username ?? "—"}</td>
+                  <td style={{ padding: "7px 8px", fontFamily: "var(--font-mono)", color: "var(--text-dim)" }}>
+                    {fmtSize(ws.size_bytes)}
+                  </td>
+                  <td style={{ padding: "7px 8px", fontFamily: "var(--font-mono)", color: "var(--text-dim)" }}>
+                    {ws.file_count}
+                  </td>
+                  <td style={{ padding: "7px 8px", fontFamily: "var(--font-mono)", color: "var(--text-dim)" }}>
+                    {ws.source_container_id ? `#${ws.source_container_id}` : "—"}
+                  </td>
+                  <td style={{ padding: "7px 8px" }}>
+                    <MiniButton onClick={() => void doDelete(ws)} danger>
+                      {t("common.delete")}
+                    </MiniButton>
+                  </td>
+                </tr>
+              ))}
           </tbody>
         </table>
       </div>
-      <Pager page={page} pages={pages} loading={loading} onNav={(o) => void load(o)} pageSize={PAGE} total={total} noun={t("admin.items")} />
+      <Pager
+        page={page}
+        pages={pages}
+        loading={loading}
+        onNav={(o) => void load(o)}
+        pageSize={PAGE}
+        total={total}
+        noun={t("admin.items")}
+      />
     </>
   );
 }
@@ -1042,7 +1746,11 @@ function LlmTab({ action, notify }: { action: ActionFn; notify: (msg: string) =>
     const ok = await action("/api/admin/llm/bindings", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ platformUserId: Number(grantUserId), maxBudget: Number(grantBudget), budgetDuration: "monthly" }),
+      body: JSON.stringify({
+        platformUserId: Number(grantUserId),
+        maxBudget: Number(grantBudget),
+        budgetDuration: "monthly",
+      }),
     });
     if (ok) {
       notify(t("admin.grantedUserBudgetMo", { id: grantUserId, budget: grantBudget }));
@@ -1061,26 +1769,62 @@ function LlmTab({ action, notify }: { action: ActionFn; notify: (msg: string) =>
 
   return (
     <>
-      <div style={{ display: "flex", gap: 8, padding: "10px 16px", borderBottom: "1px solid var(--border)", alignItems: "center", flexWrap: "wrap" }}>
+      <div
+        style={{
+          display: "flex",
+          gap: 8,
+          padding: "10px 16px",
+          borderBottom: "1px solid var(--border)",
+          alignItems: "center",
+          flexWrap: "wrap",
+        }}
+      >
         <span style={{ fontSize: 11, color: "var(--text-dim)" }}>{t("admin.llmAccessGrantsPlatformUsers")}</span>
         <div style={{ flex: 1 }} />
         <input
           value={grantUserId}
           onChange={(e) => setGrantUserId(e.target.value)}
           placeholder={t("admin.userId")}
-          style={{ width: 90, padding: "5px 8px", fontSize: 12, background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text)", fontFamily: "var(--font-mono)" }}
+          style={{
+            width: 90,
+            padding: "5px 8px",
+            fontSize: 12,
+            background: "var(--bg)",
+            border: "1px solid var(--border)",
+            borderRadius: 6,
+            color: "var(--text)",
+            fontFamily: "var(--font-mono)",
+          }}
         />
         <input
           value={grantBudget}
           onChange={(e) => setGrantBudget(e.target.value)}
           placeholder={t("admin.budget")}
-          style={{ width: 70, padding: "5px 8px", fontSize: 12, background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text)", fontFamily: "var(--font-mono)" }}
+          style={{
+            width: 70,
+            padding: "5px 8px",
+            fontSize: 12,
+            background: "var(--bg)",
+            border: "1px solid var(--border)",
+            borderRadius: 6,
+            color: "var(--text)",
+            fontFamily: "var(--font-mono)",
+          }}
         />
         <button
           type="button"
           disabled={!/^\d+$/.test(grantUserId) || !/^\d+(\.\d+)?$/.test(grantBudget)}
           onClick={() => void doGrant()}
-          style={{ padding: "5px 12px", fontSize: 12, border: "1px solid var(--accent)", color: "var(--accent)", background: "none", borderRadius: 6, cursor: "pointer", opacity: !/^\d+$/.test(grantUserId) || !/^\d+(\.\d+)?$/.test(grantBudget) ? 0.4 : 1 }}
+          style={{
+            padding: "5px 12px",
+            fontSize: 12,
+            border: "1px solid var(--accent)",
+            color: "var(--accent)",
+            background: "none",
+            borderRadius: 6,
+            cursor: "pointer",
+            opacity: !/^\d+$/.test(grantUserId) || !/^\d+(\.\d+)?$/.test(grantBudget) ? 0.4 : 1,
+          }}
         >
           {t("admin.grant")}
         </button>
@@ -1099,21 +1843,49 @@ function LlmTab({ action, notify }: { action: ActionFn; notify: (msg: string) =>
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={7} style={{ padding: 18, textAlign: "center", color: "var(--text-dim)" }}>{t("admin.loading")}</td></tr>}
-            {!loading && rows.length === 0 && <tr><td colSpan={7} style={{ padding: 18, textAlign: "center", color: "var(--text-dim)" }}>{t("admin.llmGrants")}</td></tr>}
-            {!loading && rows.map((b) => (
-              <tr key={b.id} style={{ borderTop: "1px solid var(--border)" }}>
-                <td style={{ padding: "7px 8px", color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>{b.id}</td>
-                <td style={{ padding: "7px 8px", fontWeight: 500 }}>#{b.platform_user_id}{b.username ? ` ${b.username}` : ""}</td>
-                <td style={{ padding: "7px 8px", fontFamily: "var(--font-mono)" }}>{b.max_budget}</td>
-                <td style={{ padding: "7px 8px", color: "var(--text-muted)" }}>{b.budget_duration ?? "—"}</td>
-                <td style={{ padding: "7px 8px", color: "var(--text-muted)", fontSize: 11 }}>{b.models ? b.models.join(", ") : t("admin.all")}</td>
-                <td style={{ padding: "7px 8px", color: b.revoked_at ? "var(--text-dim)" : "var(--success, #22c55e)" }}>{b.revoked_at ? t("admin.revoked") : t("admin.active")}</td>
-                <td style={{ padding: "7px 8px" }}>
-                  {!b.revoked_at && <MiniButton onClick={() => void doRevoke(b)} danger>{t("admin.revoke")}</MiniButton>}
+            {loading && (
+              <tr>
+                <td colSpan={7} style={{ padding: 18, textAlign: "center", color: "var(--text-dim)" }}>
+                  {t("admin.loading")}
                 </td>
               </tr>
-            ))}
+            )}
+            {!loading && rows.length === 0 && (
+              <tr>
+                <td colSpan={7} style={{ padding: 18, textAlign: "center", color: "var(--text-dim)" }}>
+                  {t("admin.llmGrants")}
+                </td>
+              </tr>
+            )}
+            {!loading &&
+              rows.map((b) => (
+                <tr key={b.id} style={{ borderTop: "1px solid var(--border)" }}>
+                  <td style={{ padding: "7px 8px", color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>
+                    {b.id}
+                  </td>
+                  <td style={{ padding: "7px 8px", fontWeight: 500 }}>
+                    #{b.platform_user_id}
+                    {b.username ? ` ${b.username}` : ""}
+                  </td>
+                  <td style={{ padding: "7px 8px", fontFamily: "var(--font-mono)" }}>{b.max_budget}</td>
+                  <td style={{ padding: "7px 8px", color: "var(--text-muted)" }}>{b.budget_duration ?? "—"}</td>
+                  <td style={{ padding: "7px 8px", color: "var(--text-muted)", fontSize: 11 }}>
+                    {b.models ? b.models.join(", ") : t("admin.all")}
+                  </td>
+                  <td
+                    style={{ padding: "7px 8px", color: b.revoked_at ? "var(--text-dim)" : "var(--success, #22c55e)" }}
+                  >
+                    {b.revoked_at ? t("admin.revoked") : t("admin.active")}
+                  </td>
+                  <td style={{ padding: "7px 8px" }}>
+                    {!b.revoked_at && (
+                      <MiniButton onClick={() => void doRevoke(b)} danger>
+                        {t("admin.revoke")}
+                      </MiniButton>
+                    )}
+                  </td>
+                </tr>
+              ))}
           </tbody>
         </table>
       </div>
@@ -1142,24 +1914,27 @@ function LogsTab({ notify }: { notify: (msg: string) => void }) {
   const [loading, setLoading] = useState(false);
   const PAGE = 30;
 
-  const load = useCallback(async (nextOffset = 0) => {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams({ limit: String(PAGE), offset: String(nextOffset) });
-      if (actionFilter.trim()) params.set("action", actionFilter.trim());
-      if (statusFilter) params.set("status", statusFilter);
-      const res = await fetch(`/api/admin/logs?${params}`, { credentials: "same-origin" });
-      const data = (await res.json()) as { logs?: LogRow[]; total?: number; error?: string };
-      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
-      setRows(data.logs ?? []);
-      setTotal(data.total ?? 0);
-      setOffset(nextOffset);
-    } catch (e) {
-      notify(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoading(false);
-    }
-  }, [actionFilter, statusFilter, notify]);
+  const load = useCallback(
+    async (nextOffset = 0) => {
+      setLoading(true);
+      try {
+        const params = new URLSearchParams({ limit: String(PAGE), offset: String(nextOffset) });
+        if (actionFilter.trim()) params.set("action", actionFilter.trim());
+        if (statusFilter) params.set("status", statusFilter);
+        const res = await fetch(`/api/admin/logs?${params}`, { credentials: "same-origin" });
+        const data = (await res.json()) as { logs?: LogRow[]; total?: number; error?: string };
+        if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+        setRows(data.logs ?? []);
+        setTotal(data.total ?? 0);
+        setOffset(nextOffset);
+      } catch (e) {
+        notify(e instanceof Error ? e.message : String(e));
+      } finally {
+        setLoading(false);
+      }
+    },
+    [actionFilter, statusFilter, notify],
+  );
 
   useEffect(() => {
     void load(0);
@@ -1174,16 +1949,50 @@ function LogsTab({ notify }: { notify: (msg: string) => void }) {
         <input
           value={actionFilter}
           onChange={(e) => setActionFilter(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") void load(0); }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") void load(0);
+          }}
           placeholder={t("admin.filterActionEGContainer")}
-          style={{ flex: 1, padding: "5px 9px", fontSize: 12, background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text)", fontFamily: "var(--font-mono)" }}
+          style={{
+            flex: 1,
+            padding: "5px 9px",
+            fontSize: 12,
+            background: "var(--bg)",
+            border: "1px solid var(--border)",
+            borderRadius: 6,
+            color: "var(--text)",
+            fontFamily: "var(--font-mono)",
+          }}
         />
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={{ padding: "5px 7px", fontSize: 12, background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text)" }}>
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          style={{
+            padding: "5px 7px",
+            fontSize: 12,
+            background: "var(--bg)",
+            border: "1px solid var(--border)",
+            borderRadius: 6,
+            color: "var(--text)",
+          }}
+        >
           <option value="">{t("admin.allStatuses")}</option>
           <option value="success">success</option>
           <option value="failure">failure</option>
         </select>
-        <button type="button" onClick={() => void load(0)} style={{ padding: "5px 12px", fontSize: 12, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text)", borderRadius: 6, cursor: "pointer" }}>
+        <button
+          type="button"
+          onClick={() => void load(0)}
+          style={{
+            padding: "5px 12px",
+            fontSize: 12,
+            border: "1px solid var(--border)",
+            background: "var(--bg)",
+            color: "var(--text)",
+            borderRadius: 6,
+            cursor: "pointer",
+          }}
+        >
           {t("admin.search")}
         </button>
       </div>
@@ -1199,62 +2008,172 @@ function LogsTab({ notify }: { notify: (msg: string) => void }) {
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={5} style={{ padding: 18, textAlign: "center", color: "var(--text-dim)" }}>{t("admin.loading")}</td></tr>}
-            {!loading && rows.length === 0 && <tr><td colSpan={5} style={{ padding: 18, textAlign: "center", color: "var(--text-dim)" }}>{t("admin.logs2")}</td></tr>}
-            {!loading && rows.map((log) => (
-              <tr key={log.id} style={{ borderTop: "1px solid var(--border)" }}>
-                <td style={{ padding: "7px 8px", color: "var(--text-dim)", fontFamily: "var(--font-mono)", fontSize: 11, whiteSpace: "nowrap" }}>
-                  {log.created_at?.replace("T", " ").slice(0, 19)}
+            {loading && (
+              <tr>
+                <td colSpan={5} style={{ padding: 18, textAlign: "center", color: "var(--text-dim)" }}>
+                  {t("admin.loading")}
                 </td>
-                <td style={{ padding: "7px 8px", color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>{log.user_id ?? "—"}</td>
-                <td style={{ padding: "7px 8px", fontFamily: "var(--font-mono)", fontSize: 11 }} title={log.detail ?? undefined}>{log.action}</td>
-                <td style={{ padding: "7px 8px", color: "var(--text-dim)", fontFamily: "var(--font-mono)", fontSize: 11 }}>
-                  {log.resource_type ? `${log.resource_type}${log.resource_id ? `#${log.resource_id}` : ""}` : "—"}
-                </td>
-                <td style={{ padding: "7px 8px", color: log.status === "failure" ? "#f87171" : "var(--success, #22c55e)" }}>{log.status}</td>
               </tr>
-            ))}
+            )}
+            {!loading && rows.length === 0 && (
+              <tr>
+                <td colSpan={5} style={{ padding: 18, textAlign: "center", color: "var(--text-dim)" }}>
+                  {t("admin.logs2")}
+                </td>
+              </tr>
+            )}
+            {!loading &&
+              rows.map((log) => (
+                <tr key={log.id} style={{ borderTop: "1px solid var(--border)" }}>
+                  <td
+                    style={{
+                      padding: "7px 8px",
+                      color: "var(--text-dim)",
+                      fontFamily: "var(--font-mono)",
+                      fontSize: 11,
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {log.created_at?.replace("T", " ").slice(0, 19)}
+                  </td>
+                  <td style={{ padding: "7px 8px", color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
+                    {log.user_id ?? "—"}
+                  </td>
+                  <td
+                    style={{ padding: "7px 8px", fontFamily: "var(--font-mono)", fontSize: 11 }}
+                    title={log.detail ?? undefined}
+                  >
+                    {log.action}
+                  </td>
+                  <td
+                    style={{
+                      padding: "7px 8px",
+                      color: "var(--text-dim)",
+                      fontFamily: "var(--font-mono)",
+                      fontSize: 11,
+                    }}
+                  >
+                    {log.resource_type ? `${log.resource_type}${log.resource_id ? `#${log.resource_id}` : ""}` : "—"}
+                  </td>
+                  <td
+                    style={{
+                      padding: "7px 8px",
+                      color: log.status === "failure" ? "#f87171" : "var(--success, #22c55e)",
+                    }}
+                  >
+                    {log.status}
+                  </td>
+                </tr>
+              ))}
           </tbody>
         </table>
       </div>
-      <Pager page={page} pages={pages} loading={loading} onNav={(o) => void load(o)} pageSize={PAGE} total={total} noun={t("admin.entries")} />
+      <Pager
+        page={page}
+        pages={pages}
+        loading={loading}
+        onNav={(o) => void load(o)}
+        pageSize={PAGE}
+        total={total}
+        noun={t("admin.entries")}
+      />
     </>
   );
 }
 
 function statusColor(s: string): string {
   return (
-    {
-      active: "var(--success, #22c55e)",
-      running: "var(--success, #22c55e)",
-      pending: "var(--warning, #eab308)",
-      stopped: "var(--text-dim)",
-      disabled: "var(--text-dim)",
-      rejected: "var(--text-dim)",
-      error: "#f87171",
-    } as Record<string, string>
-  )[s] ?? "var(--text-muted)";
+    (
+      {
+        active: "var(--success, #22c55e)",
+        running: "var(--success, #22c55e)",
+        pending: "var(--warning, #eab308)",
+        stopped: "var(--text-dim)",
+        disabled: "var(--text-dim)",
+        rejected: "var(--text-dim)",
+        error: "#f87171",
+      } as Record<string, string>
+    )[s] ?? "var(--text-muted)"
+  );
 }
 
-function Pager({ page, pages, loading, onNav, pageSize, total, noun }: {
-  page: number; pages: number; loading: boolean; onNav: (offset: number) => void; pageSize: number; total: number; noun: string;
+function Pager({
+  page,
+  pages,
+  loading,
+  onNav,
+  pageSize,
+  total,
+  noun,
+}: {
+  page: number;
+  pages: number;
+  loading: boolean;
+  onNav: (offset: number) => void;
+  pageSize: number;
+  total: number;
+  noun: string;
 }) {
   const { t } = useI18n();
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 16px", borderTop: "1px solid var(--border)", fontSize: 11, color: "var(--text-dim)" }}>
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        padding: "8px 16px",
+        borderTop: "1px solid var(--border)",
+        fontSize: 11,
+        color: "var(--text-dim)",
+      }}
+    >
       <span>{t("admin.totalCount", { total: String(total), noun })}</span>
       <div style={{ flex: 1 }} />
-      <button type="button" disabled={page <= 1 || loading} onClick={() => onNav(Math.max(0, (page - 2) * pageSize))} style={{ ...pagerBtn, opacity: page <= 1 ? 0.4 : 1 }}>{t("admin.prev")}</button>
-      <span>{page} / {pages}</span>
-      <button type="button" disabled={page >= pages || loading} onClick={() => onNav(page * pageSize)} style={{ ...pagerBtn, opacity: page >= pages ? 0.4 : 1 }}>{t("admin.next")}</button>
+      <button
+        type="button"
+        disabled={page <= 1 || loading}
+        onClick={() => onNav(Math.max(0, (page - 2) * pageSize))}
+        style={{ ...pagerBtn, opacity: page <= 1 ? 0.4 : 1 }}
+      >
+        {t("admin.prev")}
+      </button>
+      <span>
+        {page} / {pages}
+      </span>
+      <button
+        type="button"
+        disabled={page >= pages || loading}
+        onClick={() => onNav(page * pageSize)}
+        style={{ ...pagerBtn, opacity: page >= pages ? 0.4 : 1 }}
+      >
+        {t("admin.next")}
+      </button>
     </div>
   );
 }
 
-const pagerBtn: React.CSSProperties = { padding: "3px 10px", fontSize: 11, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text)", borderRadius: 6, cursor: "pointer" };
+const pagerBtn: React.CSSProperties = {
+  padding: "3px 10px",
+  fontSize: 11,
+  border: "1px solid var(--border)",
+  background: "var(--bg)",
+  color: "var(--text)",
+  borderRadius: 6,
+  cursor: "pointer",
+};
 
-function MiniButton({ children, onClick, accent, danger, disabled }: {
-  children: React.ReactNode; onClick: () => void; accent?: boolean; danger?: boolean; disabled?: boolean;
+function MiniButton({
+  children,
+  onClick,
+  accent,
+  danger,
+  disabled,
+}: {
+  children: React.ReactNode;
+  onClick: () => void;
+  accent?: boolean;
+  danger?: boolean;
+  disabled?: boolean;
 }) {
   const color = danger ? "#f87171" : accent ? "var(--accent)" : "var(--text-muted)";
   return (
@@ -1262,7 +2181,15 @@ function MiniButton({ children, onClick, accent, danger, disabled }: {
       type="button"
       onClick={onClick}
       disabled={disabled}
-      style={{ background: "none", border: "none", color, fontSize: 11, cursor: disabled ? "default" : "pointer", padding: "2px 6px", opacity: disabled ? 0.4 : 1 }}
+      style={{
+        background: "none",
+        border: "none",
+        color,
+        fontSize: 11,
+        cursor: disabled ? "default" : "pointer",
+        padding: "2px 6px",
+        opacity: disabled ? 0.4 : 1,
+      }}
     >
       {children}
     </button>

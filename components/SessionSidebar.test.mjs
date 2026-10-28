@@ -11,7 +11,10 @@ const globalStyles = await readFile(new URL("../app/globals.css", import.meta.ur
 const sessionItemSource = source.slice(source.indexOf("function SessionItem("));
 
 test("scrolling keeps the focused session and the viewport mounted without expanding the whole window", () => {
-  for (const [scrollTop, focusedIndex] of [[0, 1999], [10000, 0]]) {
+  for (const [scrollTop, focusedIndex] of [
+    [0, 1999],
+    [10000, 0],
+  ]) {
     const indices = getSessionListIndices(2000, scrollTop, 335, focusedIndex);
     const firstVisible = Math.floor(scrollTop / 54);
     const lastVisible = Math.ceil((scrollTop + 335) / 54) - 1;
@@ -19,7 +22,10 @@ test("scrolling keeps the focused session and the viewport mounted without expan
     assert.ok(indices.includes(focusedIndex));
     assert.equal(indices.length, 24);
     assert.equal(new Set(indices).size, indices.length);
-    assert.deepEqual(indices, [...indices].sort((a, b) => a - b));
+    assert.deepEqual(
+      indices,
+      [...indices].sort((a, b) => a - b),
+    );
   }
   assert.equal(getSessionListIndices(2000, 0, 335, 3).length, 23);
   const blurred = getSessionListIndices(2000, 10000, 335);
@@ -48,7 +54,10 @@ test("persists and exposes a vertical session/explorer resize handle", () => {
   assert.match(source, /data-resize-handle="sidebar-sections"/);
   assert.match(source, /sidebar-section-resize-handle/);
   assert.match(globalStyles, /\.sidebar-section-resize-handle:focus-visible::after/);
-  assert.doesNotMatch(globalStyles, /\.sidebar-section-resize-handle:focus-visible \{[^}]*outline: 2px solid var\(--accent\)/);
+  assert.doesNotMatch(
+    globalStyles,
+    /\.sidebar-section-resize-handle:focus-visible \{[^}]*outline: 2px solid var\(--accent\)/,
+  );
   assert.match(globalStyles, /\.sidebar-section-resize-handle::after[\s\S]*?background: transparent/);
   assert.match(source, /borderTop: "1px solid var\(--border\)"/);
   assert.match(source, /var\(--sidebar-session-pane-height, 320px\)/);
@@ -93,14 +102,8 @@ test("subagent completion stays silent and never becomes unread", () => {
 });
 
 test("includes project activity counts in accessible labels", () => {
-  assert.match(
-    source,
-    /aria-label=\{`\$\{t\("sidebar\.agentRunning"\)\} \(\$\{activity\.running\}\)`\}/,
-  );
-  assert.match(
-    source,
-    /aria-label=\{`\$\{t\("sidebar\.newSessionActivity"\)\} \(\$\{activity\.unread\}\)`\}/,
-  );
+  assert.match(source, /aria-label=\{`\$\{t\("sidebar\.agentRunning"\)\} \(\$\{activity\.running\}\)`\}/);
+  assert.match(source, /aria-label=\{`\$\{t\("sidebar\.newSessionActivity"\)\} \(\$\{activity\.unread\}\)`\}/);
 });
 
 test("formats session timestamps with the active locale", () => {
@@ -118,10 +121,7 @@ test("does not persist an unchanged fallback title ending in whitespace", () => 
 
 test("offers the downstream context-menu hook only on a normal session row", () => {
   assert.match(sessionItemSource, /const handleContextMenu[\s\S]*?dispatchSessionRowContextMenu\(\{/);
-  assert.match(
-    sessionItemSource,
-    /onContextMenu=\{confirmDelete \|\| renaming \? undefined : handleContextMenu\}/,
-  );
+  assert.match(sessionItemSource, /onContextMenu=\{confirmDelete \|\| renaming \? undefined : handleContextMenu\}/);
 });
 
 test("manual and lifecycle refreshes bypass the server session-list cache", () => {

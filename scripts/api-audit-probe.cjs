@@ -13,15 +13,28 @@ const path = require("path");
 
 // 略过实测的路由（副作用危险 / 本身就是匿名端点 / 长连接）
 const SKIP = new Set([
-  "webauth/login", "webauth/register", "webauth/logout", "webauth/first-run",
-  "webauth/touch", "webauth/me", "webauth/config",
-  "auth/login/[provider]", "auth/logout/[provider]",
-  "app-update/apply", "app-update", "app-update/status",
-  "agent/new", "agent/[id]/events", "agent-relay/rpc/stream",
-  "agent-relay/status/events", "push/subscribe",
-  "terminal/[sid]/events", "remoteterminal/[sid]/events",
+  "webauth/login",
+  "webauth/register",
+  "webauth/logout",
+  "webauth/first-run",
+  "webauth/touch",
+  "webauth/me",
+  "webauth/config",
+  "auth/login/[provider]",
+  "auth/logout/[provider]",
+  "app-update/apply",
+  "app-update",
+  "app-update/status",
+  "agent/new",
+  "agent/[id]/events",
+  "agent-relay/rpc/stream",
+  "agent-relay/status/events",
+  "push/subscribe",
+  "terminal/[sid]/events",
+  "remoteterminal/[sid]/events",
   "agent-relay/terminal/[sid]/events",
-  "skills/install", "host/config-import",
+  "skills/install",
+  "host/config-import",
   "sessions/[id]/export", // 大响应
 ]);
 
@@ -48,20 +61,25 @@ async function probe(url, method, cookie) {
       signal: AbortSignal.timeout(8000),
     });
     // SSE 等长响应立即中断
-    try { await res.text(); } catch { /* aborted body */ }
+    try {
+      await res.text();
+    } catch {
+      /* aborted body */
+    }
     return res.status;
   } catch (e) {
-    return e.name === "TimeoutError" || e.name === "AbortError" ? "timeout" : String(e.cause?.code ?? e.message).slice(0, 24);
+    return e.name === "TimeoutError" || e.name === "AbortError"
+      ? "timeout"
+      : String(e.cause?.code ?? e.message).slice(0, 24);
   }
 }
 
 (async () => {
   // 普通用户会话：凭据经环境变量注入（API_AUDIT_USER / API_AUDIT_PASSWORD），
   // 或复用已有 cookie 文件（API_AUDIT_COOKIE_FILE，内容为 "pi_web_sid=…"）。
-  let userCookie = process.env.API_AUDIT_COOKIE
-    ?? (process.env.API_AUDIT_COOKIE_FILE
-      ? fs.readFileSync(process.env.API_AUDIT_COOKIE_FILE, "utf8").trim()
-      : null);
+  let userCookie =
+    process.env.API_AUDIT_COOKIE ??
+    (process.env.API_AUDIT_COOKIE_FILE ? fs.readFileSync(process.env.API_AUDIT_COOKIE_FILE, "utf8").trim() : null);
   if (!userCookie) {
     if (!process.env.API_AUDIT_USER || !process.env.API_AUDIT_PASSWORD) {
       console.error("需要 API_AUDIT_USER + API_AUDIT_PASSWORD（或 API_AUDIT_COOKIE(_FILE)）");
@@ -86,7 +104,16 @@ async function probe(url, method, cookie) {
     const methods = [...s.matchAll(/export async function (GET|POST|PUT|PATCH|DELETE)/g)].map((m) => m[1]);
     for (const m of methods) {
       // 动态段填哑值
-      const url = `${BASE}/api/${api.replace(/\[id\]/g, "x").replace(/\[name\]/g, "x").replace(/\[machineId\]/g, "x").replace(/\[userId\]/g, "999999").replace(/\[provider\]/g, "x").replace(/\[sid\]/g, "x").replace(/\[templateId\]/g, "x").replace(/\[entryId\]/g, "x").replace(/\[\.\.\..*\]/g, "x")}`;
+      const url = `${BASE}/api/${api
+        .replace(/\[id\]/g, "x")
+        .replace(/\[name\]/g, "x")
+        .replace(/\[machineId\]/g, "x")
+        .replace(/\[userId\]/g, "999999")
+        .replace(/\[provider\]/g, "x")
+        .replace(/\[sid\]/g, "x")
+        .replace(/\[templateId\]/g, "x")
+        .replace(/\[entryId\]/g, "x")
+        .replace(/\[\.\.\..*\]/g, "x")}`;
       const anon = await probe(url, m, null);
       const authed = await probe(url, m, userCookie);
       results.push({ api, method: m, anon, authed });

@@ -1,16 +1,26 @@
-const { Client } = require('ssh2');
-const { loadVmConnection } = require('./vm-connection.cjs');
+const { Client } = require("ssh2");
+const { loadVmConnection } = require("./vm-connection.cjs");
 const conn = new Client();
 
 // 失败重试路径的 E2E：重置状态 → 再次 apply → 轮询 → 验证。
 // applier 的同步走 fastPut（open+write 不截断会留 0 字节文件——踩过的坑）。
-conn.on('ready', () => {
+conn.on("ready", () => {
   conn.sftp((err, sftp) => {
-    if (err) { console.error(err); process.exit(1); }
-    sftp.fastPut(require('path').join(__dirname, '../packaging/scripts/apply-update.cjs'), '/home/llmx/amedac/app-test/scripts/apply-update.cjs', (e) => {
-      if (e) { console.error('fastPut: ' + e.message); process.exit(1); }
-      console.log('applier 已同步到被测实例');
-      conn.exec(`
+    if (err) {
+      console.error(err);
+      process.exit(1);
+    }
+    sftp.fastPut(
+      require("path").join(__dirname, "../packaging/scripts/apply-update.cjs"),
+      "/home/llmx/amedac/app-test/scripts/apply-update.cjs",
+      (e) => {
+        if (e) {
+          console.error("fastPut: " + e.message);
+          process.exit(1);
+        }
+        console.log("applier 已同步到被测实例");
+        conn.exec(
+          `
 export PATH=/home/llmx/tools/node/bin:$PATH
 {
 set -x
@@ -50,12 +60,21 @@ curl -s -H "cookie: pi_web_sid=$COOKIE2" http://127.0.0.1:32141/api/app-update |
 } > /tmp/e2e-retry.log 2>&1 </dev/null
 cat /tmp/e2e-retry.log
 exit 0
-`, (err4, stream) => {
-        if (err4) { console.error(err4); process.exit(1); }
-        stream.on('data', d => process.stdout.write(d)).stderr.on('data', d => process.stderr.write(d));
-        stream.on('close', () => { conn.end(); process.exit(0); });
-      });
-    });
+`,
+          (err4, stream) => {
+            if (err4) {
+              console.error(err4);
+              process.exit(1);
+            }
+            stream.on("data", (d) => process.stdout.write(d)).stderr.on("data", (d) => process.stderr.write(d));
+            stream.on("close", () => {
+              conn.end();
+              process.exit(0);
+            });
+          },
+        );
+      },
+    );
   });
 });
 conn.connect(loadVmConnection());

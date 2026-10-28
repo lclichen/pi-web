@@ -19,7 +19,9 @@ declare global {
 
 const ALLOWED_ROOTS_TTL_MS = 5_000;
 
-export async function getAllowedFileRoots(space: { kind: "host" } | { kind: "user"; userId: number } = { kind: "host" }): Promise<Set<string>> {
+export async function getAllowedFileRoots(
+  space: { kind: "host" } | { kind: "user"; userId: number } = { kind: "host" },
+): Promise<Set<string>> {
   const now = Date.now();
   // 缓存按空间分键：host 空间沿用旧字段（单用户/CLI 语义不变）。
   const store = () => globalThis.__piAllowedRootsCacheStore ?? (globalThis.__piAllowedRootsCacheStore = new Map());
@@ -83,7 +85,6 @@ export function isFilePathAllowed(target: string, allowedRoots: Set<string>): bo
 export function isExistingFilePathAllowed(target: string, allowedRoots: Set<string>): boolean {
   return isExistingPathWithinRoots(target, allowedRoots);
 }
-
 
 /**
  * Allowed roots for an incoming request: the host space for admins /

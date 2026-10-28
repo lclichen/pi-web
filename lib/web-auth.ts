@@ -10,9 +10,7 @@ function secretsEqual(actual: string, expected: string): boolean {
   return timingSafeEqual(hashSecret(actual), hashSecret(expected));
 }
 
-export function isWebPasswordEnabled(
-  password: string | undefined = process.env.PI_WEB_PASSWORD,
-): password is string {
+export function isWebPasswordEnabled(password: string | undefined = process.env.PI_WEB_PASSWORD): password is string {
   return typeof password === "string" && password.length > 0;
 }
 

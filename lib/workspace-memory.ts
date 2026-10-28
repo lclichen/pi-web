@@ -35,7 +35,7 @@ function readMap(storage: StorageLike): Record<string, string | undefined> {
   try {
     const parsed: unknown = JSON.parse(raw);
     return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)
-      ? parsed as Record<string, string | undefined>
+      ? (parsed as Record<string, string | undefined>)
       : {};
   } catch {
     return {};
@@ -71,10 +71,7 @@ export function setLastOpenSession(
   }
 }
 
-export function clearLastOpen(
-  workspaceKey: string,
-  storage: StorageLike | null = getBrowserStorage(),
-): void {
+export function clearLastOpen(workspaceKey: string, storage: StorageLike | null = getBrowserStorage()): void {
   if (!storage) return;
   try {
     const map = readMap(storage);

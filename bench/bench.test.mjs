@@ -29,8 +29,15 @@ function tempWorkspace() {
 // ---------------------------------------------------------------------------
 
 const CHECK_KINDS = new Set([
-  "file_exists", "file_not_exists", "file_contains", "file_not_contains",
-  "node_script", "command", "plan_saved", "todo_used", "todo_all_completed",
+  "file_exists",
+  "file_not_exists",
+  "file_contains",
+  "file_not_contains",
+  "node_script",
+  "command",
+  "plan_saved",
+  "todo_used",
+  "todo_all_completed",
   "tool_called",
 ]);
 
@@ -48,7 +55,10 @@ test("task fixtures are well-formed", async () => {
       assert.ok(CHECK_KINDS.has(check.kind), `${task.id}: unknown check kind ${check.kind}`);
     }
     for (const path of Object.keys(task.files)) {
-      assert.ok(!path.includes("..") && !/^[a-zA-Z]:[\\/]/.test(path), `${task.id}: fixture path must be workspace-relative: ${path}`);
+      assert.ok(
+        !path.includes("..") && !/^[a-zA-Z]:[\\/]/.test(path),
+        `${task.id}: fixture path must be workspace-relative: ${path}`,
+      );
     }
     // File checks must reference files that exist in the fixture OR will be
     // created by the agent — at minimum, no check may read a file that the
@@ -100,11 +110,26 @@ test("file checks: exists / not_exists / contains(text|regex) / not_contains", a
     assert.equal((await runCheck({ kind: "file_exists", path: "a.txt" }, { cwd, messages: [] })).pass, true);
     assert.equal((await runCheck({ kind: "file_exists", path: "nope.txt" }, { cwd, messages: [] })).pass, false);
     assert.equal((await runCheck({ kind: "file_not_exists", path: "nope.txt" }, { cwd, messages: [] })).pass, true);
-    assert.equal((await runCheck({ kind: "file_contains", path: "a.txt", text: "second line" }, { cwd, messages: [] })).pass, true);
-    assert.equal((await runCheck({ kind: "file_contains", path: "a.txt", regex: "^second" }, { cwd, messages: [] })).pass, true);
-    assert.equal((await runCheck({ kind: "file_contains", path: "a.txt", regex: "^third" }, { cwd, messages: [] })).pass, false);
-    assert.equal((await runCheck({ kind: "file_not_contains", path: "a.txt", text: "third" }, { cwd, messages: [] })).pass, true);
-    assert.equal((await runCheck({ kind: "file_not_contains", path: "missing.txt", text: "x" }, { cwd, messages: [] })).pass, false);
+    assert.equal(
+      (await runCheck({ kind: "file_contains", path: "a.txt", text: "second line" }, { cwd, messages: [] })).pass,
+      true,
+    );
+    assert.equal(
+      (await runCheck({ kind: "file_contains", path: "a.txt", regex: "^second" }, { cwd, messages: [] })).pass,
+      true,
+    );
+    assert.equal(
+      (await runCheck({ kind: "file_contains", path: "a.txt", regex: "^third" }, { cwd, messages: [] })).pass,
+      false,
+    );
+    assert.equal(
+      (await runCheck({ kind: "file_not_contains", path: "a.txt", text: "third" }, { cwd, messages: [] })).pass,
+      true,
+    );
+    assert.equal(
+      (await runCheck({ kind: "file_not_contains", path: "missing.txt", text: "x" }, { cwd, messages: [] })).pass,
+      false,
+    );
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
@@ -116,7 +141,10 @@ test("node_script check passes on exit 0 and fails on exit 1 with stderr detail"
   try {
     const ok = await runCheck({ kind: "node_script", script: "process.exit(0)" }, { cwd, messages: [] });
     assert.equal(ok.pass, true);
-    const bad = await runCheck({ kind: "node_script", script: "console.error('boom'); process.exit(1)" }, { cwd, messages: [] });
+    const bad = await runCheck(
+      { kind: "node_script", script: "console.error('boom'); process.exit(1)" },
+      { cwd, messages: [] },
+    );
     assert.equal(bad.pass, false);
     assert.match(bad.detail, /boom/);
   } finally {
@@ -184,7 +212,14 @@ const toolResult = (toolName, details, isError = false) => ({
 
 const todoCall = () => ({
   role: "assistant",
-  content: [{ type: "toolCall", id: `t-todo-${Math.random().toString(36).slice(2, 7)}`, name: "todo", arguments: { todos: [] } }],
+  content: [
+    {
+      type: "toolCall",
+      id: `t-todo-${Math.random().toString(36).slice(2, 7)}`,
+      name: "todo",
+      arguments: { todos: [] },
+    },
+  ],
 });
 
 function transcriptWithTodo(snapshots, { withCalls = true, errors = [] } = {}) {
@@ -209,7 +244,9 @@ test("todo_used: counts calls, flags misuse errors, respects bounds", async () =
   const chatty = transcriptWithTodo([{}, {}, {}, {}]);
   assert.equal((await runCheck({ kind: "todo_used", maxCalls: 3 }, { ...base, messages: chatty })).pass, false);
 
-  const misuse = transcriptWithTodo([{ todos: [], nextId: 1, error: "exactly one step may be in_progress" }], { errors: [toolResult("todo", { todos: [], nextId: 1, error: "x" })] });
+  const misuse = transcriptWithTodo([{ todos: [], nextId: 1, error: "exactly one step may be in_progress" }], {
+    errors: [toolResult("todo", { todos: [], nextId: 1, error: "x" })],
+  });
   const res = await runCheck({ kind: "todo_used", minCalls: 1, forbidErrors: true }, { ...base, messages: misuse });
   assert.equal(res.pass, false);
   assert.match(res.detail, /validation errors/);
@@ -225,14 +262,10 @@ test("todo_all_completed: auto-cleared, all-completed, unfinished, never-used", 
   ]);
   assert.equal((await runCheck({ kind: "todo_all_completed" }, { ...base, messages: cleared })).pass, true);
 
-  const allDone = transcriptWithTodo([
-    { todos: [{ status: "completed" }, { status: "completed" }], nextId: 3 },
-  ]);
+  const allDone = transcriptWithTodo([{ todos: [{ status: "completed" }, { status: "completed" }], nextId: 3 }]);
   assert.equal((await runCheck({ kind: "todo_all_completed" }, { ...base, messages: allDone })).pass, true);
 
-  const unfinished = transcriptWithTodo([
-    { todos: [{ status: "completed" }, { status: "pending" }], nextId: 3 },
-  ]);
+  const unfinished = transcriptWithTodo([{ todos: [{ status: "completed" }, { status: "pending" }], nextId: 3 }]);
   const res = await runCheck({ kind: "todo_all_completed" }, { ...base, messages: unfinished });
   assert.equal(res.pass, false);
   assert.match(res.detail, /unfinished/);
@@ -281,7 +314,10 @@ test("bench extension stack registers the todo and plan_save tools", async () =>
   const names = tools.map((t) => t.name);
   assert.ok(names.includes("todo"), "todo tool must be exposed to bench sessions");
   assert.ok(names.includes("plan_save"), "plan_save tool must be exposed to bench sessions");
-  assert.ok(names.includes("enter_plan_mode") && names.includes("exit_plan_mode"), "plan-mode tools must be exposed to bench sessions");
+  assert.ok(
+    names.includes("enter_plan_mode") && names.includes("exit_plan_mode"),
+    "plan-mode tools must be exposed to bench sessions",
+  );
   const todo = tools.find((t) => t.name === "todo");
   assert.ok(todo.promptGuidelines?.length >= 3, "todo guidance rides along into bench sessions");
 });
@@ -294,20 +330,31 @@ test("markdown report renders summary, areas, todo metrics and failures", async 
   const { renderMarkdownReport, toTaskRecord } = await import("./report.ts");
   const records = [
     toTaskRecord(
-      "todo-multi-step-discipline", "todo", { provider: "p", id: "m" }, true,
+      "todo-multi-step-discipline",
+      "todo",
+      { provider: "p", id: "m" },
+      true,
       [{ name: "c1", kind: "todo_used", pass: true, detail: "ok" }],
       { inputTokens: 100, outputTokens: 50, totalTokens: 150, toolCalls: 7 },
-      12_345, undefined,
+      12_345,
+      undefined,
       { calls: 5, errorCalls: 0, noChangeCalls: 1 },
     ),
     toTaskRecord(
-      "edit-fix-average", "edit", { provider: "p", id: "m" }, false,
+      "edit-fix-average",
+      "edit",
+      { provider: "p", id: "m" },
+      false,
       [{ name: "tests pass", kind: "command", pass: false, detail: "command failed (code 1)" }],
       { inputTokens: 10, outputTokens: 5, totalTokens: 15, toolCalls: 2 },
-      99_999, "agent run ended with stopReason=error",
+      99_999,
+      "agent run ended with stopReason=error",
     ),
   ];
-  const md = renderMarkdownReport({ startedAt: "2026-09-17T00:00:00Z", provider: "p", model: "m", taskCount: 2 }, records);
+  const md = renderMarkdownReport(
+    { startedAt: "2026-09-17T00:00:00Z", provider: "p", model: "m", taskCount: 2 },
+    records,
+  );
   assert.match(md, /通过 \*\*1\/2\*\*/);
   assert.match(md, /## 分域能力/);
   assert.match(md, /\| todo \| 1\/1 \|/);

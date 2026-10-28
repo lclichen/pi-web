@@ -20,15 +20,10 @@ export class AgentCommandError extends Error {
 }
 
 export function isPromptRejectedError(error: unknown): error is AgentCommandError {
-  return error instanceof AgentCommandError
-    && error.code === "prompt_rejected"
-    && error.accepted === false;
+  return error instanceof AgentCommandError && error.code === "prompt_rejected" && error.accepted === false;
 }
 
-export async function sendAgentCommand<T = unknown>(
-  sessionId: string,
-  command: Record<string, unknown>,
-): Promise<T> {
+export async function sendAgentCommand<T = unknown>(sessionId: string, command: Record<string, unknown>): Promise<T> {
   const res = await fetch(`/api/agent/${encodeURIComponent(sessionId)}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -42,12 +37,7 @@ export async function sendAgentCommand<T = unknown>(
     accepted?: boolean;
   };
   if (!res.ok || body.error) {
-    throw new AgentCommandError(
-      body.error ?? `HTTP ${res.status}`,
-      res.status,
-      body.code,
-      body.accepted,
-    );
+    throw new AgentCommandError(body.error ?? `HTTP ${res.status}`, res.status, body.code, body.accepted);
   }
   return body.data as T;
 }

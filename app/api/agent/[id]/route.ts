@@ -4,21 +4,18 @@ import { startRpcSession, getRpcSession, setRpcSessionTools } from "@/lib/rpc-ma
 import { restoreSessionOptions } from "@/lib/session-restore-options";
 
 // POST /api/agent/[id] - Send a command to an existing session
-export async function POST(
-  req: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
+export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   let commandType: string | undefined;
   let promptAccepted = false;
 
   try {
-    const body = await req.json() as { type: string; [key: string]: unknown };
+    const body = (await req.json()) as { type: string; [key: string]: unknown };
     commandType = typeof body.type === "string" ? body.type : undefined;
     const requestedToolNames = body.toolNames;
     if (
-      requestedToolNames !== undefined
-      && (!Array.isArray(requestedToolNames) || requestedToolNames.some((name) => typeof name !== "string"))
+      requestedToolNames !== undefined &&
+      (!Array.isArray(requestedToolNames) || requestedToolNames.some((name) => typeof name !== "string"))
     ) {
       throw new Error("toolNames must be an array of strings");
     }
@@ -54,12 +51,13 @@ export async function POST(
     if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
     const filePath = access.path;
     if (!filePath) {
-      return NextResponse.json({
-        error: "Session not found",
-        ...(body.type === "prompt"
-          ? { code: "prompt_rejected", accepted: false }
-          : {}),
-      }, { status: 404 });
+      return NextResponse.json(
+        {
+          error: "Session not found",
+          ...(body.type === "prompt" ? { code: "prompt_rejected", accepted: false } : {}),
+        },
+        { status: 404 },
+      );
     }
 
     // Restored sessions must get the SAME mode extensions as new ones
@@ -77,20 +75,18 @@ export async function POST(
 
     return NextResponse.json({ success: true, data: result });
   } catch (error) {
-    return NextResponse.json({
-      error: error instanceof Error ? error.message : String(error),
-      ...(commandType === "prompt" && !promptAccepted
-        ? { code: "prompt_rejected", accepted: false }
-        : {}),
-    }, { status: 500 });
+    return NextResponse.json(
+      {
+        error: error instanceof Error ? error.message : String(error),
+        ...(commandType === "prompt" && !promptAccepted ? { code: "prompt_rejected", accepted: false } : {}),
+      },
+      { status: 500 },
+    );
   }
 }
 
 // GET /api/agent/[id] - Get current agent state
-export async function GET(
-  _req: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
   try {

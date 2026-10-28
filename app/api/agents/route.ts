@@ -1,11 +1,6 @@
 import { NextResponse } from "next/server";
 import { resolveConfigCwdSync } from "@/lib/config-cwd";
-import {
-  createAgent,
-  listAgents,
-  listAllAgents,
-  validateAgentName,
-} from "@/lib/agents-service";
+import { createAgent, listAgents, listAllAgents, validateAgentName } from "@/lib/agents-service";
 import type { ConfigScope } from "@/lib/api-types";
 
 export const dynamic = "force-dynamic";
@@ -25,10 +20,7 @@ export async function GET(req: Request) {
     const agents = scope ? listAgents(cwd, scope) : listAllAgents(cwd);
     return NextResponse.json({ agents });
   } catch (e) {
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : String(e) },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 });
   }
 }
 
@@ -48,7 +40,10 @@ export async function POST(req: Request) {
       maxTurns?: number;
       systemPrompt?: string;
     };
-    const dir = resolveConfigCwdSync(req, { projectId: typeof body.projectId === "string" ? body.projectId : null, cwd: typeof body.cwd === "string" ? body.cwd : null });
+    const dir = resolveConfigCwdSync(req, {
+      projectId: typeof body.projectId === "string" ? body.projectId : null,
+      cwd: typeof body.cwd === "string" ? body.cwd : null,
+    });
     if (!dir.ok) return NextResponse.json({ error: dir.error }, { status: dir.status });
     body.cwd = dir.cwd;
     if (!body.cwd) return NextResponse.json({ error: "cwd required" }, { status: 400 });
@@ -74,15 +69,9 @@ export async function POST(req: Request) {
       );
       return NextResponse.json({ success: true, filePath });
     } catch (e) {
-      return NextResponse.json(
-        { error: e instanceof Error ? e.message : String(e) },
-        { status: 409 },
-      );
+      return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 409 });
     }
   } catch (e) {
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : String(e) },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 });
   }
 }

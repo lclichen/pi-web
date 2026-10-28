@@ -9,10 +9,7 @@ export const dynamic = "force-dynamic";
 // GET /api/quick-workspace/:templateId — 解析（或创建）快速会话工作区，
 // 返回 { cwd, slug }。前端在新建快速会话时调此接口获得 cwd（类似 host
 // 模式的目录选择），保证 isNew/ensure 流程有确定的 cwd。
-export async function GET(
-  req: Request,
-  { params }: { params: Promise<{ templateId: string }> },
-) {
+export async function GET(req: Request, { params }: { params: Promise<{ templateId: string }> }) {
   if (!isApiRequestAllowed(req)) {
     return NextResponse.json({ error: "Untrusted API request" }, { status: 403 });
   }

@@ -26,7 +26,7 @@ test("shows the scroll-to-latest button only when the viewport is detached from 
 
 test("floats the scroll-to-latest button above the composer, clear of the minimap", () => {
   const gate = source.indexOf("{!isEmptyNew && (");
-  const marker = source.indexOf('className={`chat-scroll-to-bottom', gate);
+  const marker = source.indexOf("className={`chat-scroll-to-bottom", gate);
   assert.notEqual(gate, -1);
   assert.notEqual(marker, -1);
   const container = source.slice(gate, marker);
@@ -47,7 +47,10 @@ test("keeps the visible button faint until hover or focus", () => {
   const visible = hidden.slice(hidden.indexOf(".chat-scroll-to-bottom.is-visible {"));
   const reveal = hidden.slice(hidden.indexOf(".chat-scroll-to-bottom.is-visible:hover"));
 
-  assert.match(visible.slice(0, visible.indexOf("}")), /opacity: 0\.28;[\s\S]*?visibility: visible;[\s\S]*?transform: none;/);
+  assert.match(
+    visible.slice(0, visible.indexOf("}")),
+    /opacity: 0\.28;[\s\S]*?visibility: visible;[\s\S]*?transform: none;/,
+  );
   assert.match(reveal.slice(0, reveal.indexOf("}")), /opacity: 1;/);
   assert.match(
     cssSource,
@@ -58,8 +61,14 @@ test("keeps the visible button faint until hover or focus", () => {
 test("fades the button in and out without motion when motion is reduced", () => {
   const hidden = cssSource.slice(cssSource.indexOf(".chat-scroll-to-bottom {"));
 
-  assert.match(hidden.slice(0, hidden.indexOf("}")), /opacity: 0;[\s\S]*?visibility: hidden;[\s\S]*?transform: translateY\(4px\) scale\(0\.96\);/);
-  assert.match(hidden.slice(0, hidden.indexOf("}")), /transition:[\s\S]*?opacity 0\.16s ease,[\s\S]*?transform 0\.16s ease,[\s\S]*?visibility 0s linear 0\.16s;/);
+  assert.match(
+    hidden.slice(0, hidden.indexOf("}")),
+    /opacity: 0;[\s\S]*?visibility: hidden;[\s\S]*?transform: translateY\(4px\) scale\(0\.96\);/,
+  );
+  assert.match(
+    hidden.slice(0, hidden.indexOf("}")),
+    /transition:[\s\S]*?opacity 0\.16s ease,[\s\S]*?transform 0\.16s ease,[\s\S]*?visibility 0s linear 0\.16s;/,
+  );
   assert.match(
     cssSource,
     /@media \(prefers-reduced-motion: reduce\) \{\s*\.chat-scroll-to-bottom,\s*\.chat-scroll-to-bottom\.is-visible \{\s*transform: none;\s*transition:\s*opacity 0\.16s ease,/,

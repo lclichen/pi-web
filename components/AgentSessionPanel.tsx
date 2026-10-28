@@ -48,21 +48,52 @@ function StatusIcon({ status }: { status: SubagentSessionStatus }) {
   }
   if (status === "failed") {
     return (
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-        <circle cx="12" cy="12" r="9" /><path d="m9 9 6 6M15 9l-6 6" />
+      <svg
+        width="13"
+        height="13"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        aria-hidden="true"
+      >
+        <circle cx="12" cy="12" r="9" />
+        <path d="m9 9 6 6M15 9l-6 6" />
       </svg>
     );
   }
   if (status === "aborted" || status === "interrupted") {
     return (
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-        <circle cx="12" cy="12" r="9" /><path d="M9 9h6v6H9z" />
+      <svg
+        width="13"
+        height="13"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        aria-hidden="true"
+      >
+        <circle cx="12" cy="12" r="9" />
+        <path d="M9 9h6v6H9z" />
       </svg>
     );
   }
   return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <circle cx="12" cy="12" r="9" /><path d="m8 12 3 3 5-6" />
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="9" />
+      <path d="m8 12 3 3 5-6" />
     </svg>
   );
 }
@@ -82,7 +113,7 @@ function AgentRow({
 }) {
   const { locale, t } = useI18n();
   const relation = session.relation?.kind === "subagent" ? session.relation : null;
-  const status: SubagentSessionStatus = running ? "running" : relation?.status ?? "completed";
+  const status: SubagentSessionStatus = running ? "running" : (relation?.status ?? "completed");
   const primary = main ? t("agentSwitcher.main") : relation?.description || sessionTitle(session);
   const secondary = main
     ? sessionTitle(session)
@@ -117,28 +148,90 @@ function AgentRow({
         if (!selected) event.currentTarget.style.background = "transparent";
       }}
     >
-      <span style={{ width: 28, height: 28, display: "grid", placeItems: "center", color: main ? "var(--text-muted)" : "var(--accent)" }}>
+      <span
+        style={{
+          width: 28,
+          height: 28,
+          display: "grid",
+          placeItems: "center",
+          color: main ? "var(--text-muted)" : "var(--accent)",
+        }}
+      >
         {main ? (
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" />
+          <svg
+            width="17"
+            height="17"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <circle cx="12" cy="8" r="4" />
+            <path d="M4 21a8 8 0 0 1 16 0" />
           </svg>
         ) : (
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <rect x="5" y="7" width="14" height="11" rx="2" /><path d="M9 11h.01M15 11h.01M9 15h6M12 7V4M10 4h4" />
+          <svg
+            width="17"
+            height="17"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <rect x="5" y="7" width="14" height="11" rx="2" />
+            <path d="M9 11h.01M15 11h.01M9 15h6M12 7V4M10 4h4" />
           </svg>
         )}
       </span>
       <span style={{ minWidth: 0 }}>
-        <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12, fontWeight: selected ? 600 : 500 }} title={primary}>
+        <span
+          style={{
+            display: "block",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            fontSize: 12,
+            fontWeight: selected ? 600 : 500,
+          }}
+          title={primary}
+        >
           {primary}
         </span>
-        <span style={{ display: "block", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text-dim)", fontSize: 11 }} title={secondary}>
+        <span
+          style={{
+            display: "block",
+            marginTop: 2,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            color: "var(--text-dim)",
+            fontSize: 11,
+          }}
+          title={secondary}
+        >
           {secondary}
         </span>
       </span>
-      <span style={{ display: "flex", alignItems: "center", gap: 6, color: main && !running ? "var(--text-dim)" : statusColor(status), fontSize: 11, whiteSpace: "nowrap" }}>
+      <span
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          color: main && !running ? "var(--text-dim)" : statusColor(status),
+          fontSize: 11,
+          whiteSpace: "nowrap",
+        }}
+      >
         {main && !running ? (
-          selected ? t("agentSwitcher.current") : null
+          selected ? (
+            t("agentSwitcher.current")
+          ) : null
         ) : (
           <>
             <StatusIcon status={status} />
@@ -150,21 +243,32 @@ function AgentRow({
   );
 }
 
-export function AgentSessionPanel({ rootSession, subagents, selectedSessionId, runningSessionIds, onSelectSession }: Props) {
+export function AgentSessionPanel({
+  rootSession,
+  subagents,
+  selectedSessionId,
+  runningSessionIds,
+  onSelectSession,
+}: Props) {
   const { t } = useI18n();
   const [query, setQuery] = useState("");
-  const sortedSubagents = useMemo(() => [...subagents].sort((a, b) => {
-    const aRunning = runningSessionIds.has(a.id);
-    const bRunning = runningSessionIds.has(b.id);
-    if (aRunning !== bRunning) return aRunning ? -1 : 1;
-    return b.modified.localeCompare(a.modified);
-  }), [runningSessionIds, subagents]);
+  const sortedSubagents = useMemo(
+    () =>
+      [...subagents].sort((a, b) => {
+        const aRunning = runningSessionIds.has(a.id);
+        const bRunning = runningSessionIds.has(b.id);
+        if (aRunning !== bRunning) return aRunning ? -1 : 1;
+        return b.modified.localeCompare(a.modified);
+      }),
+    [runningSessionIds, subagents],
+  );
   const normalizedQuery = query.trim().toLowerCase();
   const visibleSubagents = normalizedQuery
     ? sortedSubagents.filter((session) => {
         const relation = session.relation?.kind === "subagent" ? session.relation : null;
-        return [relation?.description, relation?.profile, session.name, session.firstMessage]
-          .some((value) => value?.toLowerCase().includes(normalizedQuery));
+        return [relation?.description, relation?.profile, session.name, session.firstMessage].some((value) =>
+          value?.toLowerCase().includes(normalizedQuery),
+        );
       })
     : sortedSubagents;
   const runningCount = subagents.filter((session) => runningSessionIds.has(session.id)).length;
@@ -184,7 +288,16 @@ export function AgentSessionPanel({ rootSession, subagents, selectedSessionId, r
       }}
     >
       <div>
-        <div style={{ minHeight: 44, display: "flex", alignItems: "center", gap: 8, padding: "7px 12px", borderBottom: "1px solid var(--border)" }}>
+        <div
+          style={{
+            minHeight: 44,
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "7px 12px",
+            borderBottom: "1px solid var(--border)",
+          }}
+        >
           <strong style={{ fontSize: 12, fontWeight: 600 }}>{t("agentSwitcher.title")}</strong>
           <span style={{ color: "var(--text-dim)", fontSize: 11 }}>
             {t("agentSwitcher.count", { count: subagents.length })}
@@ -204,9 +317,15 @@ export function AgentSessionPanel({ rootSession, subagents, selectedSessionId, r
               placeholder={t("agentSwitcher.search")}
               aria-label={t("agentSwitcher.search")}
               style={{
-                width: "100%", height: 32, padding: "0 10px",
-                border: "1px solid var(--border)", borderRadius: 6,
-                background: "var(--bg)", color: "var(--text)", fontSize: 12, outline: "none",
+                width: "100%",
+                height: 32,
+                padding: "0 10px",
+                border: "1px solid var(--border)",
+                borderRadius: 6,
+                background: "var(--bg)",
+                color: "var(--text)",
+                fontSize: 12,
+                outline: "none",
               }}
             />
           </div>

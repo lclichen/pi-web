@@ -9,10 +9,7 @@ import type {
   SkillsResponse,
   SkillUpdateResult,
 } from "@/lib/api-types";
-import {
-  getLastSettingsSelection,
-  setLastSettingsSelection,
-} from "@/lib/settings-navigation";
+import { getLastSettingsSelection, setLastSettingsSelection } from "@/lib/settings-navigation";
 import {
   ConfigButton,
   ConfigDetail,
@@ -49,9 +46,7 @@ function sourceLabel(skill: Skill): string {
   return "path";
 }
 
-export function orderSkillsByDormancy<
-  T extends Pick<Skill, "disableModelInvocation">,
->(skills: T[]): T[] {
+export function orderSkillsByDormancy<T extends Pick<Skill, "disableModelInvocation">>(skills: T[]): T[] {
   return [
     ...skills.filter((skill) => !skill.disableModelInvocation),
     ...skills.filter((skill) => skill.disableModelInvocation),
@@ -59,9 +54,7 @@ export function orderSkillsByDormancy<
 }
 
 function updateKey(skill: Skill): string | null {
-  return skill.install
-    ? `${skill.install.scope}\0${skill.install.package}`
-    : null;
+  return skill.install ? `${skill.install.scope}\0${skill.install.package}` : null;
 }
 
 function shortVersion(version?: string): string {
@@ -111,12 +104,8 @@ function SkillDetail({
       <div className="skill-detail-heading">
         <ConfigDetailHeader>
           <ConfigDetailHeaderInfo>
-            <span className={`config-scope-tag${label === "project" ? " is-project" : ""}`}>
-              {label}
-            </span>
-            <span className="config-detail-path">
-              {displayPath(skill.filePath)}
-            </span>
+            <span className={`config-scope-tag${label === "project" ? " is-project" : ""}`}>{label}</span>
+            <span className="config-detail-path">{displayPath(skill.filePath)}</span>
           </ConfigDetailHeaderInfo>
           <ConfigDetailActions>
             <ConfigSwitch
@@ -128,16 +117,8 @@ function SkillDetail({
           </ConfigDetailActions>
         </ConfigDetailHeader>
         <div className="skill-detail-status-row">
-          {!enabled && (
-            <span style={{ fontSize: 11, color: "var(--text-dim)" }}>
-              {t("i18n.hiddenButInvocable")}
-            </span>
-          )}
-          {saveError && (
-            <span style={{ fontSize: 12, color: "#f87171", overflowWrap: "anywhere" }}>
-              {saveError}
-            </span>
-          )}
+          {!enabled && <span style={{ fontSize: 11, color: "var(--text-dim)" }}>{t("i18n.hiddenButInvocable")}</span>}
+          {saveError && <span style={{ fontSize: 12, color: "#f87171", overflowWrap: "anywhere" }}>{saveError}</span>}
         </div>
       </div>
 
@@ -150,9 +131,7 @@ function SkillDetail({
             title={skill.install.skillsShUrl}
             className="skill-source-link"
           >
-            <span className="skill-source-link-text">
-              {skill.install.skillsShUrl.replace(/^https?:\/\//, "")} ↗
-            </span>
+            <span className="skill-source-link-text">{skill.install.skillsShUrl.replace(/^https?:\/\//, "")} ↗</span>
           </a>
         </ConfigField>
       )}
@@ -164,66 +143,50 @@ function SkillDetail({
               {shortVersion(updateStatus?.currentVersion ?? skill.install.versionHash)}
             </span>
             {skill.install.canCheckForUpdates && (
-              <ConfigButton
-                size="small"
-                onClick={onCheckUpdate}
-                disabled={checkingUpdate || updating}
-              >
-                 {t("i18n.check")}
+              <ConfigButton size="small" onClick={onCheckUpdate} disabled={checkingUpdate || updating}>
+                {t("i18n.check")}
               </ConfigButton>
             )}
             {updateStatus?.state === "update-available" && (
-              <span className="skill-version-value is-update">
-                {shortVersion(updateStatus.latestVersion)}
-              </span>
+              <span className="skill-version-value is-update">{shortVersion(updateStatus.latestVersion)}</span>
             )}
-            {(checkingUpdate ||
-              (updateStatus && updateStatus.state !== "update-available")) && (
+            {(checkingUpdate || (updateStatus && updateStatus.state !== "update-available")) && (
               <span
-                className={`skill-update-status ${checkingUpdate
-                  ? "is-checking"
-                  : updateStatus?.state === "up-to-date"
-                    ? "is-success"
-                    : updateStatus?.state === "error"
-                      ? "is-error"
-                      : "is-muted"}`}
+                className={`skill-update-status ${
+                  checkingUpdate
+                    ? "is-checking"
+                    : updateStatus?.state === "up-to-date"
+                      ? "is-success"
+                      : updateStatus?.state === "error"
+                        ? "is-error"
+                        : "is-muted"
+                }`}
               >
                 {checkingUpdate
-                   ? t("i18n.checking")
+                  ? t("i18n.checking")
                   : updateStatus?.state === "up-to-date"
-                     ? t("i18n.upToDate")
+                    ? t("i18n.upToDate")
                     : updateStatus?.state === "unsupported"
-                         ? t("i18n.automaticChecksUnavailable")
-                         : updateStatus?.message || t("i18n.checkFailed")}
+                      ? t("i18n.automaticChecksUnavailable")
+                      : updateStatus?.message || t("i18n.checkFailed")}
               </span>
             )}
             {updateStatus?.state === "update-available" && (
-              <ConfigButton
-                variant="primary"
-                size="small"
-                onClick={onUpdate}
-                disabled={updating || checkingUpdate}
-              >
-                 {updating ? t("i18n.updating") : t("i18n.update")}
+              <ConfigButton variant="primary" size="small" onClick={onUpdate} disabled={updating || checkingUpdate}>
+                {updating ? t("i18n.updating") : t("i18n.update")}
               </ConfigButton>
             )}
           </div>
-          {updateError && (
-            <span style={{ fontSize: 12, color: "#ef4444" }}>{updateError}</span>
-          )}
+          {updateError && <span style={{ fontSize: 12, color: "#ef4444" }}>{updateError}</span>}
         </ConfigField>
       )}
 
       <ConfigField label="Name">
-        <span className="skill-name-value">
-          {skill.name}
-        </span>
+        <span className="skill-name-value">{skill.name}</span>
       </ConfigField>
 
       <ConfigField label="Description">
-        <span className="skill-description">
-          {skill.description}
-        </span>
+        <span className="skill-description">{skill.description}</span>
       </ConfigField>
     </ConfigDetailStack>
   );
@@ -247,9 +210,7 @@ function AddSkillPanel({
   const [searchError, setSearchError] = useState<string | null>(null);
   const [installing, setInstalling] = useState<string | null>(null);
   const [installError, setInstallError] = useState<string | null>(null);
-  const [newlyInstalledPkgs, setNewlyInstalledPkgs] = useState<Set<string>>(
-    new Set(),
-  );
+  const [newlyInstalledPkgs, setNewlyInstalledPkgs] = useState<Set<string>>(new Set());
   const [scope, setScope] = useState<"global" | "project">("global");
   // 内网 SkillHub 地址（空 = skills.sh 外网流程）。默认取部署级配置
   // （server-settings.skillhubUrl，经 /api/webauth/me 下发），可临时改写。
@@ -262,45 +223,49 @@ function AddSkillPanel({
 
   useEffect(() => {
     fetch("/api/webauth/me")
-      .then(async (r) => (r.ok ? (await r.json()) as { skillhubUrl?: string } : null))
-      .then((d) => { if (d?.skillhubUrl) setHubUrl(d.skillhubUrl); })
+      .then(async (r) => (r.ok ? ((await r.json()) as { skillhubUrl?: string }) : null))
+      .then((d) => {
+        if (d?.skillhubUrl) setHubUrl(d.skillhubUrl);
+      })
       .catch(() => {});
   }, []);
-
 
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
 
-  const search = useCallback(async (q: string) => {
-    if (!q.trim()) return;
-    setSearching(true);
-    setSearchError(null);
-    setResults([]);
-    try {
-      const res = await fetch("/api/skills/search", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: q.trim(), ...(hubUrl.trim() ? { baseUrl: hubUrl.trim() } : {}) }),
-      });
-      const d = (await res.json()) as {
-        results?: SkillSearchResult[];
-        source?: string;
-        error?: string;
-      };
-      if (d.error) {
-        setSearchError(d.error);
-        return;
+  const search = useCallback(
+    async (q: string) => {
+      if (!q.trim()) return;
+      setSearching(true);
+      setSearchError(null);
+      setResults([]);
+      try {
+        const res = await fetch("/api/skills/search", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query: q.trim(), ...(hubUrl.trim() ? { baseUrl: hubUrl.trim() } : {}) }),
+        });
+        const d = (await res.json()) as {
+          results?: SkillSearchResult[];
+          source?: string;
+          error?: string;
+        };
+        if (d.error) {
+          setSearchError(d.error);
+          return;
+        }
+        setResults(d.results ?? []);
+        setResultsFromHub(d.source === "skillhub");
+        if ((d.results ?? []).length === 0) setSearchError("No skills found");
+      } catch (e) {
+        setSearchError(String(e));
+      } finally {
+        setSearching(false);
       }
-      setResults(d.results ?? []);
-      setResultsFromHub(d.source === "skillhub");
-      if ((d.results ?? []).length === 0) setSearchError("No skills found");
-    } catch (e) {
-      setSearchError(String(e));
-    } finally {
-      setSearching(false);
-    }
-  }, [hubUrl]);
+    },
+    [hubUrl],
+  );
 
   const install = useCallback(
     async (r: SkillSearchResult) => {
@@ -330,9 +295,7 @@ function AddSkillPanel({
           setInstallError(d.error ?? `HTTP ${res.status}`);
           return;
         }
-        setNewlyInstalledPkgs((prev) =>
-          new Set(prev).add(`${scope}:${r.package}`),
-        );
+        setNewlyInstalledPkgs((prev) => new Set(prev).add(`${scope}:${r.package}`));
         onInstalled();
       } catch (e) {
         setInstallError(String(e));
@@ -363,10 +326,7 @@ function AddSkillPanel({
       if (uploadRef.current) uploadRef.current.value = "";
     }
   };
-  const installPath =
-    scope === "global"
-      ? "~/.pi/agent/skills/"
-      : `${shortenPath(cwd)}/.pi/skills/`;
+  const installPath = scope === "global" ? "~/.pi/agent/skills/" : `${shortenPath(cwd)}/.pi/skills/`;
 
   return (
     <ConfigDetailStack className="is-full-height">
@@ -390,7 +350,7 @@ function AddSkillPanel({
             onKeyDown={(e) => {
               if (e.key === "Enter") search(query);
             }}
-             placeholder={t("i18n.skillSearchPlaceholder")}
+            placeholder={t("i18n.skillSearchPlaceholder")}
             style={{
               flex: 1,
               padding: "7px 10px",
@@ -402,12 +362,8 @@ function AddSkillPanel({
               outline: "none",
             }}
           />
-          <ConfigButton
-            variant="primary"
-            onClick={() => search(query)}
-            disabled={searching || !query.trim()}
-          >
-             {searching ? t("i18n.searching") : t("i18n.search")}
+          <ConfigButton variant="primary" onClick={() => search(query)} disabled={searching || !query.trim()}>
+            {searching ? t("i18n.searching") : t("i18n.search")}
           </ConfigButton>
         </div>
 
@@ -432,7 +388,9 @@ function AddSkillPanel({
             }}
           />
           {resultsFromHub && (
-            <span style={{ fontSize: 10, color: "var(--accent)", flexShrink: 0, fontFamily: "var(--font-mono)" }}>SkillHub</span>
+            <span style={{ fontSize: 10, color: "var(--accent)", flexShrink: 0, fontFamily: "var(--font-mono)" }}>
+              SkillHub
+            </span>
           )}
         </div>
 
@@ -480,8 +438,7 @@ function AddSkillPanel({
                   color: scope === s ? "var(--text)" : "var(--text-dim)",
                   fontWeight: scope === s ? 600 : 400,
                   opacity: s === "project" && !projectResourcesLoaded ? 0.45 : 1,
-                  borderRight:
-                    s === "global" ? "1px solid var(--border)" : "none",
+                  borderRight: s === "global" ? "1px solid var(--border)" : "none",
                 }}
               >
                 {s}
@@ -503,16 +460,8 @@ function AddSkillPanel({
         </div>
 
         {/* Errors */}
-        {searchError && (
-          <div style={{ fontSize: 12, color: "#f87171" }}>{searchError}</div>
-        )}
-        {installError && (
-          <div
-            style={{ fontSize: 12, color: "#f87171", wordBreak: "break-word" }}
-          >
-            {installError}
-          </div>
-        )}
+        {searchError && <div style={{ fontSize: 12, color: "#f87171" }}>{searchError}</div>}
+        {installError && <div style={{ fontSize: 12, color: "#f87171", wordBreak: "break-word" }}>{installError}</div>}
       </div>
 
       {/* ── Results list ── */}
@@ -520,17 +469,15 @@ function AddSkillPanel({
         <div style={{ flex: 1, overflowY: "auto" }}>
           {results.map((r) => {
             const isInstalled =
-              installedPackages[scope].has(r.package) ||
-              newlyInstalledPkgs.has(`${scope}:${r.package}`);
+              installedPackages[scope].has(r.package) || newlyInstalledPkgs.has(`${scope}:${r.package}`);
             const isInstalling = installing === r.package;
             // split "owner/repo@skill" for cleaner display; SkillHub rows are ns/slug
             const atIdx = r.package.indexOf("@");
             const repopart = atIdx > -1 ? r.package.slice(0, atIdx) : r.package;
             const skillpart = atIdx > -1 ? r.package.slice(atIdx + 1) : null;
-            const displayName = r.source === "skillhub" ? r.slug : skillpart ?? repopart;
-            const subLabel = r.source === "skillhub"
-              ? [r.namespace, r.version, r.installs].filter(Boolean).join(" · ")
-              : repopart;
+            const displayName = r.source === "skillhub" ? r.slug : (skillpart ?? repopart);
+            const subLabel =
+              r.source === "skillhub" ? [r.namespace, r.version, r.installs].filter(Boolean).join(" · ") : repopart;
             return (
               <div
                 key={r.package}
@@ -615,25 +562,15 @@ function AddSkillPanel({
                 </div>
                 <ConfigButton
                   size="small"
-                  onClick={() =>
-                    !isInstalled && !isInstalling && install(r)
-                  }
+                  onClick={() => !isInstalled && !isInstalling && install(r)}
                   disabled={isInstalled || isInstalling || installing !== null}
                   style={{
                     flexShrink: 0,
                     background: isInstalled ? "rgba(34,197,94,0.1)" : "none",
-                    color: isInstalled
-                      ? "#16a34a"
-                      : isInstalling
-                        ? "var(--accent)"
-                        : "var(--text-muted)",
+                    color: isInstalled ? "#16a34a" : isInstalling ? "var(--accent)" : "var(--text-muted)",
                   }}
                 >
-                  {isInstalled
-                     ? `✓ ${t("i18n.installed")}`
-                    : isInstalling
-                       ? t("i18n.installing")
-                       : t("i18n.install")}
+                  {isInstalled ? `✓ ${t("i18n.installed")}` : isInstalling ? t("i18n.installing") : t("i18n.install")}
                 </ConfigButton>
               </div>
             );
@@ -642,9 +579,7 @@ function AddSkillPanel({
       ) : (
         !searchError &&
         !searching && (
-          <div
-            style={{ fontSize: 13, color: "var(--text-dim)", lineHeight: 1.8 }}
-          >
+          <div style={{ fontSize: 13, color: "var(--text-dim)", lineHeight: 1.8 }}>
             Search{" "}
             <a
               href="https://skills.sh"
@@ -720,93 +655,95 @@ export function SkillsConfig({
     if (selected) setLastSettingsSelection("skills", selected, cwd);
   }, [cwd, selected]);
 
-  const checkForUpdates = useCallback(async (skill?: Skill) => {
-    const targets = skill
-      ? [skill]
-      : skills.filter((item) => Boolean(item.install));
-    const keys = targets
-      .map(updateKey)
-      .filter((key): key is string => Boolean(key));
-    if (keys.length === 0) return;
+  const checkForUpdates = useCallback(
+    async (skill?: Skill) => {
+      const targets = skill ? [skill] : skills.filter((item) => Boolean(item.install));
+      const keys = targets.map(updateKey).filter((key): key is string => Boolean(key));
+      if (keys.length === 0) return;
 
-    setUpdateError(null);
-    setCheckingUpdates((current) => new Set([...current, ...keys]));
-    if (!skill) setCheckingAll(true);
-    try {
-      const res = await fetch("/api/skills/check", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          cwd,
-          package: skill?.install?.package,
-          scope: skill?.install?.scope,
-        }),
-      });
-      const data = (await res.json()) as {
-        updates?: SkillUpdateResult[];
-        error?: string;
-      };
-      if (!res.ok || data.error) throw new Error(data.error ?? `HTTP ${res.status}`);
-      setUpdateStatuses((current) => {
-        const next = { ...current };
-        for (const update of data.updates ?? []) {
-          next[`${update.scope}\0${update.package}`] = update;
-        }
-        return next;
-      });
-    } catch (e) {
-      setUpdateError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setCheckingUpdates((current) => {
-        const next = new Set(current);
-        for (const key of keys) next.delete(key);
-        return next;
-      });
-      if (!skill) setCheckingAll(false);
-    }
-  }, [cwd, skills]);
-
-  const updateInstalledSkill = useCallback(async (skill: Skill) => {
-    if (!skill.install) return;
-    const key = updateKey(skill)!;
-    setUpdatingSkill(key);
-    setUpdateError(null);
-    try {
-      const res = await fetch("/api/skills/update", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          cwd,
-          package: skill.install.package,
-          scope: skill.install.scope,
-        }),
-      });
-      const data = (await res.json()) as {
-        success?: boolean;
-        skill?: Skill;
-        error?: string;
-      };
-      if (!res.ok || data.error || !data.success) {
-        throw new Error(data.error ?? `HTTP ${res.status}`);
+      setUpdateError(null);
+      setCheckingUpdates((current) => new Set([...current, ...keys]));
+      if (!skill) setCheckingAll(true);
+      try {
+        const res = await fetch("/api/skills/check", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            cwd,
+            package: skill?.install?.package,
+            scope: skill?.install?.scope,
+          }),
+        });
+        const data = (await res.json()) as {
+          updates?: SkillUpdateResult[];
+          error?: string;
+        };
+        if (!res.ok || data.error) throw new Error(data.error ?? `HTTP ${res.status}`);
+        setUpdateStatuses((current) => {
+          const next = { ...current };
+          for (const update of data.updates ?? []) {
+            next[`${update.scope}\0${update.package}`] = update;
+          }
+          return next;
+        });
+      } catch (e) {
+        setUpdateError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setCheckingUpdates((current) => {
+          const next = new Set(current);
+          for (const key of keys) next.delete(key);
+          return next;
+        });
+        if (!skill) setCheckingAll(false);
       }
-      await loadSkills();
-      const versionHash = data.skill?.install?.versionHash;
-      setUpdateStatuses((current) => ({
-        ...current,
-        [key]: {
-          package: skill.install!.package,
-          scope: skill.install!.scope,
-          state: "up-to-date",
-          currentVersion: versionHash,
-          latestVersion: versionHash,
-        },
-      }));
-    } catch (e) {
-      setUpdateError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setUpdatingSkill(null);
-    }
-  }, [cwd, loadSkills]);
+    },
+    [cwd, skills],
+  );
+
+  const updateInstalledSkill = useCallback(
+    async (skill: Skill) => {
+      if (!skill.install) return;
+      const key = updateKey(skill)!;
+      setUpdatingSkill(key);
+      setUpdateError(null);
+      try {
+        const res = await fetch("/api/skills/update", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            cwd,
+            package: skill.install.package,
+            scope: skill.install.scope,
+          }),
+        });
+        const data = (await res.json()) as {
+          success?: boolean;
+          skill?: Skill;
+          error?: string;
+        };
+        if (!res.ok || data.error || !data.success) {
+          throw new Error(data.error ?? `HTTP ${res.status}`);
+        }
+        await loadSkills();
+        const versionHash = data.skill?.install?.versionHash;
+        setUpdateStatuses((current) => ({
+          ...current,
+          [key]: {
+            package: skill.install!.package,
+            scope: skill.install!.scope,
+            state: "up-to-date",
+            currentVersion: versionHash,
+            latestVersion: versionHash,
+          },
+        }));
+      } catch (e) {
+        setUpdateError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setUpdatingSkill(null);
+      }
+    },
+    [cwd, loadSkills],
+  );
 
   const toggle = useCallback(async (skill: Skill) => {
     const next = !skill.disableModelInvocation;
@@ -827,11 +764,7 @@ export function SkillsConfig({
         return;
       }
       setSkills((prev) =>
-        prev.map((s) =>
-          s.filePath === skill.filePath
-            ? { ...s, disableModelInvocation: next }
-            : s,
-        ),
+        prev.map((s) => (s.filePath === skill.filePath ? { ...s, disableModelInvocation: next } : s)),
       );
     } catch (e) {
       setSaveError(String(e));
@@ -847,145 +780,123 @@ export function SkillsConfig({
   const selectedSkill = skills.find((s) => s.filePath === selected) ?? null;
 
   return (
-    <ConfigPanelShell embedded={embedded} title={t("common.skills")} subtitle={shortenPath(cwd)} closeLabel={t("i18n.close")} onClose={onClose}>
+    <ConfigPanelShell
+      embedded={embedded}
+      title={t("common.skills")}
+      subtitle={shortenPath(cwd)}
+      closeLabel={t("i18n.close")}
+      onClose={onClose}
+    >
+      {!projectResourcesLoaded && (
+        <div role="status" className="config-trust-notice">
+          {t("trust.skillsNotLoaded")}
+        </div>
+      )}
 
-        {!projectResourcesLoaded && (
-          <div role="status" className="config-trust-notice">
-            {t("trust.skillsNotLoaded")}
-          </div>
-        )}
-
-        {/* Body */}
-        <ConfigSplitView>
-          {/* Left: skill list */}
-          <ConfigSidebar>
-            <ConfigSidebarList>
-              {loading ? (
-                <div className="config-sidebar-message">
-                   {t("i18n.loading")}
-                </div>
-              ) : error ? (
-                <div className="config-sidebar-message is-error">
-                  {error}
-                </div>
-              ) : skills.length === 0 ? (
-                <div className="config-sidebar-message is-empty">
-                   {t("i18n.noSkills")}
-                </div>
-              ) : (
-                (() => {
-                  const groups: { label: string; skills: typeof skills }[] = [];
-                  const scopeLabels = {
-                    project: t("skills.scope.project"),
-                    global: t("skills.scope.global"),
-                    path: t("skills.scope.path"),
-                  };
-                  const groupDefinitions = [
-                    {
-                      label: `${scopeLabels.project} / skills.sh`,
-                      matches: (skill: Skill) =>
-                        sourceLabel(skill) === "project" &&
-                        Boolean(skill.install?.skillsShUrl),
-                    },
-                    {
-                      label: scopeLabels.project,
-                      matches: (skill: Skill) =>
-                        sourceLabel(skill) === "project" &&
-                        !skill.install?.skillsShUrl,
-                    },
-                    {
-                      label: `${scopeLabels.global} / skills.sh`,
-                      matches: (skill: Skill) =>
-                        sourceLabel(skill) === "global" &&
-                        Boolean(skill.install?.skillsShUrl),
-                    },
-                    {
-                      label: scopeLabels.global,
-                      matches: (skill: Skill) =>
-                        sourceLabel(skill) === "global" &&
-                        !skill.install?.skillsShUrl,
-                    },
-                    {
-                      label: scopeLabels.path,
-                      matches: (skill: Skill) => sourceLabel(skill) === "path",
-                    },
-                  ];
-                  for (const { label, matches } of groupDefinitions) {
-                    const grpSkills = skills.filter(matches);
-                    if (grpSkills.length > 0)
-                      groups.push({ label, skills: grpSkills });
-                  }
-                  const renderSkillRow = (skill: Skill) => {
-                    const isSelected =
-                      !addMode && selected === skill.filePath;
-                    const disabled = skill.disableModelInvocation;
-                    return (
-                      <ConfigSidebarItem
-                        key={skill.filePath}
-                        active={isSelected}
-                        onClick={() => {
-                          setSelected(skill.filePath);
-                          setAddMode(false);
-                        }}
-                      >
-                        <ConfigStatusDot active={!disabled} />
-                        <ConfigSidebarText className={`is-grow${disabled ? " is-muted" : ""}`}>
-                          {skill.name}
-                        </ConfigSidebarText>
-                        {(() => {
-                          const key = updateKey(skill);
-                          const status = key ? updateStatuses[key] : undefined;
-                          if (status?.state !== "update-available") return null;
-                          return (
-                            <span title={t("i18n.updateAvailable")} className="skill-update-indicator">
-                              ↑
-                            </span>
-                          );
-                        })()}
-                      </ConfigSidebarItem>
-                    );
-                  };
-                  return groups.map(
-                    ({ label: grpLabel, skills: grpSkills }) => {
-                      return (
-                        <div key={grpLabel} className="config-sidebar-group">
-                          <ConfigSidebarGroupLabel>
-                            {grpLabel}
-                          </ConfigSidebarGroupLabel>
-                          {orderSkillsByDormancy(grpSkills).map(renderSkillRow)}
-                        </div>
-                      );
-                    },
+      {/* Body */}
+      <ConfigSplitView>
+        {/* Left: skill list */}
+        <ConfigSidebar>
+          <ConfigSidebarList>
+            {loading ? (
+              <div className="config-sidebar-message">{t("i18n.loading")}</div>
+            ) : error ? (
+              <div className="config-sidebar-message is-error">{error}</div>
+            ) : skills.length === 0 ? (
+              <div className="config-sidebar-message is-empty">{t("i18n.noSkills")}</div>
+            ) : (
+              (() => {
+                const groups: { label: string; skills: typeof skills }[] = [];
+                const scopeLabels = {
+                  project: t("skills.scope.project"),
+                  global: t("skills.scope.global"),
+                  path: t("skills.scope.path"),
+                };
+                const groupDefinitions = [
+                  {
+                    label: `${scopeLabels.project} / skills.sh`,
+                    matches: (skill: Skill) => sourceLabel(skill) === "project" && Boolean(skill.install?.skillsShUrl),
+                  },
+                  {
+                    label: scopeLabels.project,
+                    matches: (skill: Skill) => sourceLabel(skill) === "project" && !skill.install?.skillsShUrl,
+                  },
+                  {
+                    label: `${scopeLabels.global} / skills.sh`,
+                    matches: (skill: Skill) => sourceLabel(skill) === "global" && Boolean(skill.install?.skillsShUrl),
+                  },
+                  {
+                    label: scopeLabels.global,
+                    matches: (skill: Skill) => sourceLabel(skill) === "global" && !skill.install?.skillsShUrl,
+                  },
+                  {
+                    label: scopeLabels.path,
+                    matches: (skill: Skill) => sourceLabel(skill) === "path",
+                  },
+                ];
+                for (const { label, matches } of groupDefinitions) {
+                  const grpSkills = skills.filter(matches);
+                  if (grpSkills.length > 0) groups.push({ label, skills: grpSkills });
+                }
+                const renderSkillRow = (skill: Skill) => {
+                  const isSelected = !addMode && selected === skill.filePath;
+                  const disabled = skill.disableModelInvocation;
+                  return (
+                    <ConfigSidebarItem
+                      key={skill.filePath}
+                      active={isSelected}
+                      onClick={() => {
+                        setSelected(skill.filePath);
+                        setAddMode(false);
+                      }}
+                    >
+                      <ConfigStatusDot active={!disabled} />
+                      <ConfigSidebarText className={`is-grow${disabled ? " is-muted" : ""}`}>
+                        {skill.name}
+                      </ConfigSidebarText>
+                      {(() => {
+                        const key = updateKey(skill);
+                        const status = key ? updateStatuses[key] : undefined;
+                        if (status?.state !== "update-available") return null;
+                        return (
+                          <span title={t("i18n.updateAvailable")} className="skill-update-indicator">
+                            ↑
+                          </span>
+                        );
+                      })()}
+                    </ConfigSidebarItem>
                   );
-                })()
-              )}
-            </ConfigSidebarList>
-            {/* Add skill button */}
-            <ConfigListAction
-                onClick={() => setAddMode(true)}
-                active={addMode}
-              >
-                 {t("i18n.addSkill")}
-            </ConfigListAction>
-          </ConfigSidebar>
+                };
+                return groups.map(({ label: grpLabel, skills: grpSkills }) => {
+                  return (
+                    <div key={grpLabel} className="config-sidebar-group">
+                      <ConfigSidebarGroupLabel>{grpLabel}</ConfigSidebarGroupLabel>
+                      {orderSkillsByDormancy(grpSkills).map(renderSkillRow)}
+                    </div>
+                  );
+                });
+              })()
+            )}
+          </ConfigSidebarList>
+          {/* Add skill button */}
+          <ConfigListAction onClick={() => setAddMode(true)} active={addMode}>
+            {t("i18n.addSkill")}
+          </ConfigListAction>
+        </ConfigSidebar>
 
-          {/* Right: detail or add panel */}
-          <ConfigDetail>
-            <ConfigDetailStack className="is-fill">
-              {addMode ? (
+        {/* Right: detail or add panel */}
+        <ConfigDetail>
+          <ConfigDetailStack className="is-fill">
+            {addMode ? (
               <AddSkillPanel
                 cwd={cwd}
                 projectResourcesLoaded={projectResourcesLoaded}
                 installedPackages={{
                   global: new Set(
-                    skills
-                      .filter((skill) => skill.install?.scope === "global")
-                      .map((skill) => skill.install!.package),
+                    skills.filter((skill) => skill.install?.scope === "global").map((skill) => skill.install!.package),
                   ),
                   project: new Set(
-                    skills
-                      .filter((skill) => skill.install?.scope === "project")
-                      .map((skill) => skill.install!.package),
+                    skills.filter((skill) => skill.install?.scope === "project").map((skill) => skill.install!.package),
                   ),
                 }}
                 onInstalled={() => {
@@ -1000,54 +911,44 @@ export function SkillsConfig({
                 onToggle={toggle}
                 toggling={toggling.has(selectedSkill.filePath)}
                 saveError={saveError}
-                updateStatus={
-                  updateKey(selectedSkill)
-                    ? updateStatuses[updateKey(selectedSkill)!]
-                    : undefined
-                }
-                checkingUpdate={
-                  updateKey(selectedSkill)
-                    ? checkingUpdates.has(updateKey(selectedSkill)!)
-                    : false
-                }
+                updateStatus={updateKey(selectedSkill) ? updateStatuses[updateKey(selectedSkill)!] : undefined}
+                checkingUpdate={updateKey(selectedSkill) ? checkingUpdates.has(updateKey(selectedSkill)!) : false}
                 updating={updatingSkill === updateKey(selectedSkill)}
                 updateError={updateError}
                 onCheckUpdate={() => void checkForUpdates(selectedSkill)}
                 onUpdate={() => void updateInstalledSkill(selectedSkill)}
               />
-              ) : (
-                <ConfigEmptyState>{t("i18n.selectSkill")}</ConfigEmptyState>
-              )}
-            </ConfigDetailStack>
-          </ConfigDetail>
-        </ConfigSplitView>
-
-        {/* Footer */}
-        <ConfigFooter status={
-            Object.values(updateStatuses).filter(
-              (status) => status.state === "update-available",
-            ).length > 0 && (
-              <span style={{ fontSize: 12, color: "#d97706" }}>
-                {
-                  Object.values(updateStatuses).filter(
-                    (status) => status.state === "update-available",
-                  ).length
-                }{" "}
-                {Object.values(updateStatuses).filter(
-                  (status) => status.state === "update-available",
-                ).length === 1
-                   ? t("i18n.update")
-                   : t("i18n.updates")}
-              </span>
+            ) : (
+              <ConfigEmptyState>{t("i18n.selectSkill")}</ConfigEmptyState>
             )}
-        >
-          {!embedded && <ConfigButton onClick={onClose}>{t("i18n.close")}</ConfigButton>}
-          {skills.some((skill) => Boolean(skill.install)) && (
-            <ConfigButton variant="secondary" onClick={() => void checkForUpdates()} disabled={checkingAll || updatingSkill !== null}>
-              {checkingAll ? t("i18n.checking") : t("i18n.checkUpdates")}
-            </ConfigButton>
-          )}
-        </ConfigFooter>
+          </ConfigDetailStack>
+        </ConfigDetail>
+      </ConfigSplitView>
+
+      {/* Footer */}
+      <ConfigFooter
+        status={
+          Object.values(updateStatuses).filter((status) => status.state === "update-available").length > 0 && (
+            <span style={{ fontSize: 12, color: "#d97706" }}>
+              {Object.values(updateStatuses).filter((status) => status.state === "update-available").length}{" "}
+              {Object.values(updateStatuses).filter((status) => status.state === "update-available").length === 1
+                ? t("i18n.update")
+                : t("i18n.updates")}
+            </span>
+          )
+        }
+      >
+        {!embedded && <ConfigButton onClick={onClose}>{t("i18n.close")}</ConfigButton>}
+        {skills.some((skill) => Boolean(skill.install)) && (
+          <ConfigButton
+            variant="secondary"
+            onClick={() => void checkForUpdates()}
+            disabled={checkingAll || updatingSkill !== null}
+          >
+            {checkingAll ? t("i18n.checking") : t("i18n.checkUpdates")}
+          </ConfigButton>
+        )}
+      </ConfigFooter>
     </ConfigPanelShell>
   );
 }

@@ -30,7 +30,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   }
   if (file.size === 0) return NextResponse.json({ error: "上传文件为空" }, { status: 400 });
   if (file.size > MAX_IMPORT_BYTES) {
-    return NextResponse.json({ error: `配置包过大（>${Math.round(MAX_IMPORT_BYTES / 1024 / 1024)}MB）` }, { status: 413 });
+    return NextResponse.json(
+      { error: `配置包过大（>${Math.round(MAX_IMPORT_BYTES / 1024 / 1024)}MB）` },
+      { status: 413 },
+    );
   }
 
   try {
@@ -39,9 +42,6 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     const stats = await importProjectConfigBundle(home, data);
     return NextResponse.json({ ok: true, ...stats });
   } catch (e) {
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : String(e) },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 400 });
   }
 }

@@ -7,7 +7,7 @@ export interface ToolEntry {
 }
 
 export const TOOL_PRESET_VALUES = ["none", "read-only", "default", "full"] as const;
-export type ToolPreset = typeof TOOL_PRESET_VALUES[number];
+export type ToolPreset = (typeof TOOL_PRESET_VALUES)[number];
 
 export const PRESET_NONE: string[] = [];
 export const PRESET_READ_ONLY: string[] = ["read", "grep", "find", "ls"];
@@ -29,7 +29,7 @@ export function getPresetFromToolNames(toolNames: readonly string[]): ToolPreset
   if (toolNames.length === 0) return "none";
 
   const active = toolNames
-    .map((name) => name === "powershell" ? "bash" : name)
+    .map((name) => (name === "powershell" ? "bash" : name))
     .filter((name) => BUILTIN_TOOL_NAMES.has(name))
     .sort()
     .join(",");

@@ -22,7 +22,7 @@
 export const ASK_USER_PROMPT_EVENT = "rpiv:ask-user:prompt" as const;
 
 export interface AskUserPromptEventPayload {
-	questions: ReadonlyArray<AskUserPromptQuestion>;
+  questions: ReadonlyArray<AskUserPromptQuestion>;
 }
 
 /**
@@ -33,27 +33,27 @@ export interface AskUserPromptEventPayload {
 export const ASK_USER_BLOCKED_EVENT = "rpiv:ask-user:blocked" as const;
 
 export interface AskUserBlockedEventPayload {
-	/** True while input is awaited; false when the wait ends (answer, cancel, or error). */
-	active: boolean;
+  /** True while input is awaited; false when the wait ends (answer, cancel, or error). */
+  active: boolean;
 }
 
 export interface AskUserPromptQuestion {
-	/**
-	 * The full question text as the agent authored it, with line terminators
-	 * normalized at tool entry (`\r\n` → `\n`, lone `\r` removed — #192). The
-	 * same normalization applies to `header` and every option field below.
-	 */
-	question: string;
-	/** The short chip/tag shown next to the question. */
-	header: string;
-	/** True iff the user may pick multiple options. Normalized from optional. */
-	multiSelect: boolean;
-	options: ReadonlyArray<AskUserPromptOption>;
+  /**
+   * The full question text as the agent authored it, with line terminators
+   * normalized at tool entry (`\r\n` → `\n`, lone `\r` removed — #192). The
+   * same normalization applies to `header` and every option field below.
+   */
+  question: string;
+  /** The short chip/tag shown next to the question. */
+  header: string;
+  /** True iff the user may pick multiple options. Normalized from optional. */
+  multiSelect: boolean;
+  options: ReadonlyArray<AskUserPromptOption>;
 }
 
 export interface AskUserPromptOption {
-	label: string;
-	description: string;
-	/** True iff the option carries rich preview content (content not shipped). */
-	hasPreview: boolean;
+  label: string;
+  description: string;
+  /** True iff the option carries rich preview content (content not shipped). */
+  hasPreview: boolean;
 }

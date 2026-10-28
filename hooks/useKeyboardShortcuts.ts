@@ -39,9 +39,7 @@ interface UseGlobalKeyboardShortcutsOptions {
  * the agent when no menu is open) because it needs intimate knowledge of menu
  * state that is local to that component.
  */
-export function useGlobalKeyboardShortcuts(
-  options: UseGlobalKeyboardShortcutsOptions,
-): void {
+export function useGlobalKeyboardShortcuts(options: UseGlobalKeyboardShortcutsOptions): void {
   const { onNewSession, activeCwd } = options;
 
   useEffect(() => {

@@ -1,9 +1,7 @@
 import { isIP } from "node:net";
 
 function normalizeHostname(value: string): string {
-  const unbracketed = value.startsWith("[") && value.endsWith("]")
-    ? value.slice(1, -1)
-    : value;
+  const unbracketed = value.startsWith("[") && value.endsWith("]") ? value.slice(1, -1) : value;
   return unbracketed.toLowerCase().replace(/\.$/, "");
 }
 
@@ -45,10 +43,9 @@ function isLoopbackHostname(hostname: string): boolean {
 }
 
 function configuredHostnamesFromEnvironment(): string[] {
-  return [
-    process.env.PI_WEB_HOSTNAME,
-    ...(process.env.PI_WEB_ALLOWED_HOSTS?.split(",") ?? []),
-  ].filter((value): value is string => Boolean(value?.trim()));
+  return [process.env.PI_WEB_HOSTNAME, ...(process.env.PI_WEB_ALLOWED_HOSTS?.split(",") ?? [])].filter(
+    (value): value is string => Boolean(value?.trim()),
+  );
 }
 
 function canonicalOrigin(value: string): string | null {
@@ -67,10 +64,10 @@ function getRequestOrigin(request: Request): string | null {
 
 function isUserInitiatedSessionExportNavigation(request: Request): boolean {
   if (
-    request.method !== "GET"
-    || request.headers.get("sec-fetch-mode") !== "navigate"
-    || request.headers.get("sec-fetch-dest") !== "document"
-    || request.headers.get("sec-fetch-user") !== "?1"
+    request.method !== "GET" ||
+    request.headers.get("sec-fetch-mode") !== "navigate" ||
+    request.headers.get("sec-fetch-dest") !== "document" ||
+    request.headers.get("sec-fetch-user") !== "?1"
   ) {
     return false;
   }
@@ -96,9 +93,7 @@ export function isApiRequestHostAllowed(
   if (!hostname) return false;
   if (isLoopbackHostname(hostname) || isIP(hostname)) return true;
 
-  return configuredHostnames.some(
-    (configured) => normalizeConfiguredHostname(configured) === hostname,
-  );
+  return configuredHostnames.some((configured) => normalizeConfiguredHostname(configured) === hostname);
 }
 
 /**
@@ -109,10 +104,8 @@ export function isApiRequestHostAllowed(
  * a proxy is in front, and Fetch Metadata still reports a same-origin request.
  */
 function isProxyRewrittenSameOrigin(request: Request, origin: string): boolean {
-  if (
-    request.headers.get("sec-fetch-site") !== "same-origin"
-    || !request.headers.get("x-forwarded-proto")
-  ) return false;
+  if (request.headers.get("sec-fetch-site") !== "same-origin" || !request.headers.get("x-forwarded-proto"))
+    return false;
 
   const host = request.headers.get("host");
   if (!host) return false;
@@ -156,6 +149,7 @@ export function isApiRequestAllowed(
 
 export function hasJsonContentType(request: Request): boolean {
   const mediaType = request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase();
-  return mediaType === "application/json"
-    || Boolean(mediaType?.startsWith("application/") && mediaType.endsWith("+json"));
+  return (
+    mediaType === "application/json" || Boolean(mediaType?.startsWith("application/") && mediaType.endsWith("+json"))
+  );
 }

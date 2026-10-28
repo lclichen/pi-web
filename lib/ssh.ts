@@ -34,7 +34,11 @@ export function writeSshConfig(home: string, config: SshConfigInput): void {
   const full: SshConfig = { ...config, port: config.port ?? 22 };
   const target = join(dir, CONFIG_FILE);
   writeFileSync(target, JSON.stringify(full, null, 2), { mode: 0o600 });
-  try { chmodSync(target, 0o600); } catch { /* best effort on fs without chmod */ }
+  try {
+    chmodSync(target, 0o600);
+  } catch {
+    /* best effort on fs without chmod */
+  }
 }
 
 export function readSshConfig(home: string): SshConfig | null {
@@ -117,15 +121,17 @@ export async function getSshClient(projectId: string, config: SshConfig): Promis
     pool.delete(projectId);
   }
   const fresh: PoolEntry = { client: new (ssh2().Client)(), connecting: null };
-  const connecting = connectClient(config).then((client) => {
-    fresh.client = client;
-    fresh.connecting = null;
-    return client;
-  }).catch((err) => {
-    pool.delete(projectId);
-    fresh.connecting = null;
-    throw err;
-  });
+  const connecting = connectClient(config)
+    .then((client) => {
+      fresh.client = client;
+      fresh.connecting = null;
+      return client;
+    })
+    .catch((err) => {
+      pool.delete(projectId);
+      fresh.connecting = null;
+      throw err;
+    });
   fresh.connecting = connecting;
   pool.set(projectId, fresh);
   return connecting;
@@ -135,7 +141,11 @@ export async function getSshClient(projectId: string, config: SshConfig): Promis
 export function dropSshClient(projectId: string): void {
   const entry = pool.get(projectId);
   if (entry) {
-    try { entry.client.end(); } catch { /* already dead */ }
+    try {
+      entry.client.end();
+    } catch {
+      /* already dead */
+    }
     pool.delete(projectId);
   }
 }
@@ -153,13 +163,19 @@ export async function sshTestConnection(config: SshConfig): Promise<{ whoami: st
       client.exec("whoami", (err, stream) => {
         if (err) return reject(err);
         let out = "";
-        stream.on("data", (d: Buffer) => { out += d.toString(); });
+        stream.on("data", (d: Buffer) => {
+          out += d.toString();
+        });
         stream.on("close", () => resolve(out.trim()));
       });
     });
     return { whoami };
   } finally {
-    try { client.end(); } catch { /* already dead */ }
+    try {
+      client.end();
+    } catch {
+      /* already dead */
+    }
   }
 }
 
@@ -177,7 +193,10 @@ export interface SshListEntry {
  * connect per browse call — acceptable for a wizard used before the project
  * (and its pooled client) exists.
  */
-export async function sshListDirectory(config: SshConfig, path?: string): Promise<{ path: string; entries: SshListEntry[] }> {
+export async function sshListDirectory(
+  config: SshConfig,
+  path?: string,
+): Promise<{ path: string; entries: SshListEntry[] }> {
   const client = await connectClient(config);
   try {
     let target = (path ?? "").trim();
@@ -186,23 +205,39 @@ export async function sshListDirectory(config: SshConfig, path?: string): Promis
         client.exec("echo $HOME", (err, stream) => {
           if (err) return reject(err);
           let out = "";
-          stream.on("data", (d: Buffer) => { out += d.toString(); });
+          stream.on("data", (d: Buffer) => {
+            out += d.toString();
+          });
           stream.on("close", () => resolve(out.trim() || "/"));
         });
       });
     }
-    const sftp = await new Promise<{ readdir(p: string, cb: (e: Error | undefined, l: Array<{ filename: string; attrs: { isDirectory(): boolean; size: number } }> | undefined) => void): void }>((resolve, reject) => {
+    const sftp = await new Promise<{
+      readdir(
+        p: string,
+        cb: (
+          e: Error | undefined,
+          l: Array<{ filename: string; attrs: { isDirectory(): boolean; size: number } }> | undefined,
+        ) => void,
+      ): void;
+    }>((resolve, reject) => {
       client.sftp((e: Error | undefined, s: unknown) => (e ? reject(e) : resolve(s as Parameters<typeof resolve>[0])));
     });
-    const list = await new Promise<Array<{ filename: string; attrs: { isDirectory(): boolean; size: number } }>>((resolve, reject) => {
-      sftp.readdir(target, (e, l) => (e ? reject(e) : resolve(l ?? [])));
-    });
+    const list = await new Promise<Array<{ filename: string; attrs: { isDirectory(): boolean; size: number } }>>(
+      (resolve, reject) => {
+        sftp.readdir(target, (e, l) => (e ? reject(e) : resolve(l ?? [])));
+      },
+    );
     const entries = list
       .map((e) => ({ name: e.filename, isDir: e.attrs.isDirectory(), size: e.attrs.size }))
       .sort((a, b) => (a.isDir === b.isDir ? a.name.localeCompare(b.name) : a.isDir ? -1 : 1));
     return { path: target.replace(/\/+$/, "") || "/", entries };
   } finally {
-    try { client.end(); } catch { /* already dead */ }
+    try {
+      client.end();
+    } catch {
+      /* already dead */
+    }
   }
 }
 
@@ -213,11 +248,7 @@ function shellQuote(value: string): string {
 
 /** Create one directory under `parent` on an ad-hoc SSH connection (wizard
  *  picker). Rejects names containing path separators. */
-export async function sshCreateDirectory(
-  config: SshConfig,
-  parent: string,
-  name: string,
-): Promise<{ path: string }> {
+export async function sshCreateDirectory(config: SshConfig, parent: string, name: string): Promise<{ path: string }> {
   const dirName = name.trim();
   if (!dirName || dirName === "." || dirName === ".." || /[\\/]/.test(dirName)) {
     throw new Error("文件夹名不合法");
@@ -232,7 +263,11 @@ export async function sshCreateDirectory(
     }
     return { path: target };
   } finally {
-    try { client.end(); } catch { /* already dead */ }
+    try {
+      client.end();
+    } catch {
+      /* already dead */
+    }
   }
 }
 
@@ -243,12 +278,7 @@ export interface SshExecResult {
 }
 
 /** Run a command in `cwd` on the remote host (best-effort cd; failures surface via stderr). */
-export function sshExec(
-  client: Client,
-  command: string,
-  cwd: string,
-  timeoutMs = 120_000,
-): Promise<SshExecResult> {
+export function sshExec(client: Client, command: string, cwd: string, timeoutMs = 120_000): Promise<SshExecResult> {
   return new Promise((resolve, reject) => {
     const quotedCwd = `'${cwd.replace(/'/g, `'\\''`)}'`;
     // 注意 `{ ${command}; }` 必须单行收尾：`command\n; }` 里的 `;` 会成为
@@ -261,8 +291,12 @@ export function sshExec(
         stream.close();
         resolve({ code: 124, stdout, stderr: stderr + "\n[timeout]" });
       }, timeoutMs);
-      stream.on("data", (d: Buffer) => { stdout += d.toString(); });
-      stream.stderr.on("data", (d: Buffer) => { stderr += d.toString(); });
+      stream.on("data", (d: Buffer) => {
+        stdout += d.toString();
+      });
+      stream.stderr.on("data", (d: Buffer) => {
+        stderr += d.toString();
+      });
       stream.on("close", (code?: number) => {
         clearTimeout(timer);
         resolve({ code: code ?? 0, stdout, stderr });

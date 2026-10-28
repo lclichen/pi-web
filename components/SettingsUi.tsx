@@ -104,48 +104,23 @@ export function ConfigSidebarItem({
 }
 
 export function ConfigSidebarText({ className, ...props }: HTMLAttributes<HTMLSpanElement>) {
-  return (
-    <span
-      {...props}
-      className={["config-sidebar-text", className].filter(Boolean).join(" ")}
-    />
-  );
+  return <span {...props} className={["config-sidebar-text", className].filter(Boolean).join(" ")} />;
 }
 
 export function ConfigDetailStack({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return (
-    <div
-      {...props}
-      className={["config-detail-stack", className].filter(Boolean).join(" ")}
-    />
-  );
+  return <div {...props} className={["config-detail-stack", className].filter(Boolean).join(" ")} />;
 }
 
 export function ConfigDetailHeader({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return (
-    <div
-      {...props}
-      className={["config-detail-header", className].filter(Boolean).join(" ")}
-    />
-  );
+  return <div {...props} className={["config-detail-header", className].filter(Boolean).join(" ")} />;
 }
 
 export function ConfigDetailHeaderInfo({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return (
-    <div
-      {...props}
-      className={["config-detail-header-info", className].filter(Boolean).join(" ")}
-    />
-  );
+  return <div {...props} className={["config-detail-header-info", className].filter(Boolean).join(" ")} />;
 }
 
 export function ConfigDetailActions({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return (
-    <div
-      {...props}
-      className={["config-detail-actions", className].filter(Boolean).join(" ")}
-    />
-  );
+  return <div {...props} className={["config-detail-actions", className].filter(Boolean).join(" ")} />;
 }
 
 export function ConfigDetailTitle({ children }: { children: ReactNode }) {
@@ -156,7 +131,15 @@ export function ConfigSectionTitle({ children }: { children: ReactNode }) {
   return <div className="config-section-title">{children}</div>;
 }
 
-export function ConfigField({ label, children, style }: { label: ReactNode; children: ReactNode; style?: CSSProperties }) {
+export function ConfigField({
+  label,
+  children,
+  style,
+}: {
+  label: ReactNode;
+  children: ReactNode;
+  style?: CSSProperties;
+}) {
   return (
     <div className="config-field" style={style}>
       <span className="config-field-label">{label}</span>
@@ -197,19 +180,28 @@ export function ConfigButton({
     <button
       type="button"
       {...props}
-      className={[
-        "config-button",
-        `config-button-${variant}`,
-        `config-button-${size}`,
-        className,
-      ].filter(Boolean).join(" ")}
+      className={["config-button", `config-button-${variant}`, `config-button-${size}`, className]
+        .filter(Boolean)
+        .join(" ")}
     >
       {children}
     </button>
   );
 }
 
-export function ConfigSwitch({ checked, disabled = false, loading = false, label, onChange }: { checked: boolean; disabled?: boolean; loading?: boolean; label: string; onChange: (checked: boolean) => void }) {
+export function ConfigSwitch({
+  checked,
+  disabled = false,
+  loading = false,
+  label,
+  onChange,
+}: {
+  checked: boolean;
+  disabled?: boolean;
+  loading?: boolean;
+  label: string;
+  onChange: (checked: boolean) => void;
+}) {
   const inactive = disabled || loading;
   return (
     <button
@@ -228,7 +220,12 @@ export function ConfigSwitch({ checked, disabled = false, loading = false, label
   );
 }
 
-export function ConfigListAction({ active = false, children, className, ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { active?: boolean }) {
+export function ConfigListAction({
+  active = false,
+  children,
+  className,
+  ...props
+}: ButtonHTMLAttributes<HTMLButtonElement> & { active?: boolean }) {
   return (
     <div className="config-list-action">
       <button
@@ -237,7 +234,17 @@ export function ConfigListAction({ active = false, children, className, ...props
         aria-current={active ? "page" : undefined}
         className={["config-list-action-button", className].filter(Boolean).join(" ")}
       >
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <svg
+          width="13"
+          height="13"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
           <path d="M12 5v14M5 12h14" />
         </svg>
         {children}

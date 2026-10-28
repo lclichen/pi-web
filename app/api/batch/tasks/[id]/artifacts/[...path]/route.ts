@@ -38,10 +38,7 @@ const TEXT_TYPES: Record<string, string> = {
 // content (evaluation harnesses judge produced files; the list in the result
 // payload carries paths+sizes only). The task's scanned artifact list is the
 // whitelist: only terminal tasks, only listed paths, ≤2MB per file.
-export async function GET(
-  req: Request,
-  { params }: { params: Promise<{ id: string; path: string[] }> },
-) {
+export async function GET(req: Request, { params }: { params: Promise<{ id: string; path: string[] }> }) {
   if (!isApiRequestAllowed(req)) {
     return NextResponse.json({ error: "Untrusted API request" }, { status: 403 });
   }
@@ -54,9 +51,9 @@ export async function GET(
   if (!task) {
     return NextResponse.json({ error: "Task not found" }, { status: 404 });
   }
-    if (!canAccessBatchTask(auth.identity.user, task.ownerId)) {
-      return NextResponse.json({ error: "Task not found" }, { status: 404 });
-    }
+  if (!canAccessBatchTask(auth.identity.user, task.ownerId)) {
+    return NextResponse.json({ error: "Task not found" }, { status: 404 });
+  }
   if (!isTerminal(task.state)) {
     return NextResponse.json(
       { error: "Task is still running", state: task.state, statusUrl: `/api/batch/tasks/${id}` },

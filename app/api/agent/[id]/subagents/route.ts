@@ -7,10 +7,7 @@ export const dynamic = "force-dynamic";
 // GET /api/agent/[id]/subagents — finished subagent history for one session:
 // `subagents:record` entries from the session file (absolute timestamps) plus
 // the session ids of persisted subagent conversations for replay.
-export async function GET(
-  _req: Request,
-  ctx: { params: Promise<{ id: string }> },
-): Promise<Response> {
+export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }): Promise<Response> {
   const { id } = await ctx.params;
   try {
     const access = await resolveSessionAccess(_req, id);
@@ -25,9 +22,6 @@ export async function GET(
     const sessions = await findSubagentSessions(id, records);
     return NextResponse.json({ records, sessions });
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : String(error) },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
   }
 }

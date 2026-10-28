@@ -132,14 +132,16 @@ function LoginForm() {
   };
 
   return (
-    <div style={{
-      minHeight: "100dvh",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      background: "var(--bg, #141517)",
-      padding: 24,
-    }}>
+    <div
+      style={{
+        minHeight: "100dvh",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "var(--bg, #141517)",
+        padding: 24,
+      }}
+    >
       <form
         onSubmit={submit}
         style={{
@@ -168,28 +170,37 @@ function LoginForm() {
           <div
             role="status"
             style={{
-              display: "flex", flexDirection: "column", gap: 8,
-              padding: "10px 12px", borderRadius: 8,
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+              padding: "10px 12px",
+              borderRadius: 8,
               border: "1px solid rgba(217,119,6,0.4)",
               background: "rgba(217,119,6,0.08)",
-              fontSize: 12, lineHeight: 1.6,
+              fontSize: 12,
+              lineHeight: 1.6,
               color: "var(--text, #e7e7e7)",
             }}
           >
             {firstRun.password ? (
               <>
                 <span style={{ fontWeight: 600 }}>首次运行 —— 初始管理员账号</span>
-                <span style={{ fontFamily: "monospace", wordBreak: "break-all" }}>
-                  admin / {firstRun.password}
-                </span>
+                <span style={{ fontFamily: "monospace", wordBreak: "break-all" }}>admin / {firstRun.password}</span>
                 <button
                   type="button"
-                  onClick={() => { setUsername("admin"); setPassword(firstRun.password ?? ""); }}
+                  onClick={() => {
+                    setUsername("admin");
+                    setPassword(firstRun.password ?? "");
+                  }}
                   style={{
-                    alignSelf: "flex-start", padding: "4px 10px", borderRadius: 6,
+                    alignSelf: "flex-start",
+                    padding: "4px 10px",
+                    borderRadius: 6,
                     border: "1px solid var(--border, #2a2c30)",
-                    background: "var(--bg, #141517)", color: "var(--text, #e7e7e7)",
-                    fontSize: 11.5, cursor: "pointer",
+                    background: "var(--bg, #141517)",
+                    color: "var(--text, #e7e7e7)",
+                    fontSize: 11.5,
+                    cursor: "pointer",
                   }}
                 >
                   填入并登录
@@ -199,14 +210,24 @@ function LoginForm() {
                 </span>
               </>
             ) : (
-              <span>检测到首次运行：初始管理员密码仅在这台机器的浏览器中显示，
-                请在本机打开 http://127.0.0.1:30141/ 查看并登录。</span>
+              <span>
+                检测到首次运行：初始管理员密码仅在这台机器的浏览器中显示， 请在本机打开 http://127.0.0.1:30141/
+                查看并登录。
+              </span>
             )}
           </div>
         )}
 
         {phase !== "change-password" && (
-          <label style={{ display: "flex", flexDirection: "column", gap: 5, fontSize: 12, color: "var(--text-muted, #9a9a9a)" }}>
+          <label
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 5,
+              fontSize: 12,
+              color: "var(--text-muted, #9a9a9a)",
+            }}
+          >
             用户名
             <input
               value={username}
@@ -218,7 +239,15 @@ function LoginForm() {
           </label>
         )}
         {phase !== "change-password" && (
-          <label style={{ display: "flex", flexDirection: "column", gap: 5, fontSize: 12, color: "var(--text-muted, #9a9a9a)" }}>
+          <label
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 5,
+              fontSize: 12,
+              color: "var(--text-muted, #9a9a9a)",
+            }}
+          >
             密码
             <input
               type="password"
@@ -231,25 +260,75 @@ function LoginForm() {
         )}
         {phase === "register" && (
           <>
-            <label style={{ display: "flex", flexDirection: "column", gap: 5, fontSize: 12, color: "var(--text-muted, #9a9a9a)" }}>
+            <label
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 5,
+                fontSize: 12,
+                color: "var(--text-muted, #9a9a9a)",
+              }}
+            >
               邮箱（可选）
               <input value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" style={inputStyle} />
             </label>
-            <label style={{ display: "flex", flexDirection: "column", gap: 5, fontSize: 12, color: "var(--text-muted, #9a9a9a)" }}>
+            <label
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 5,
+                fontSize: 12,
+                color: "var(--text-muted, #9a9a9a)",
+              }}
+            >
               确认密码
-              <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} autoComplete="new-password" style={inputStyle} />
+              <input
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                autoComplete="new-password"
+                style={inputStyle}
+              />
             </label>
           </>
         )}
         {phase === "change-password" && (
           <>
-            <label style={{ display: "flex", flexDirection: "column", gap: 5, fontSize: 12, color: "var(--text-muted, #9a9a9a)" }}>
+            <label
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 5,
+                fontSize: 12,
+                color: "var(--text-muted, #9a9a9a)",
+              }}
+            >
               新密码（至少 8 位）
-              <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} autoComplete="new-password" style={inputStyle} />
+              <input
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                autoComplete="new-password"
+                style={inputStyle}
+              />
             </label>
-            <label style={{ display: "flex", flexDirection: "column", gap: 5, fontSize: 12, color: "var(--text-muted, #9a9a9a)" }}>
+            <label
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 5,
+                fontSize: 12,
+                color: "var(--text-muted, #9a9a9a)",
+              }}
+            >
               确认新密码
-              <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} autoComplete="new-password" style={inputStyle} />
+              <input
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                autoComplete="new-password"
+                style={inputStyle}
+              />
             </label>
           </>
         )}
@@ -286,14 +365,33 @@ function LoginForm() {
             <a
               href="/api/webauth/oidc/begin"
               style={{
-                display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-                height: 36, borderRadius: 8,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
+                height: 36,
+                borderRadius: 8,
                 border: "1px solid var(--border, #2a2c30)",
-                background: "transparent", color: "var(--text, #e6e6e6)",
-                fontSize: 13, fontWeight: 600, textDecoration: "none", cursor: "pointer", marginTop: 10,
+                background: "transparent",
+                color: "var(--text, #e6e6e6)",
+                fontSize: 13,
+                fontWeight: 600,
+                textDecoration: "none",
+                cursor: "pointer",
+                marginTop: 10,
               }}
             >
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <svg
+                width="15"
+                height="15"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
                 <rect x="3" y="11" width="18" height="10" rx="2" />
                 <path d="M7 11V7a5 5 0 0 1 10 0v4" />
               </svg>
@@ -305,12 +403,30 @@ function LoginForm() {
         <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
           {phase === "login" ? (
             registerMode !== "off" ? (
-              <button type="button" onClick={() => { setPhase("register"); setError(null); setNotice(null); }} style={linkStyle}>
+              <button
+                type="button"
+                onClick={() => {
+                  setPhase("register");
+                  setError(null);
+                  setNotice(null);
+                }}
+                style={linkStyle}
+              >
                 注册账号
               </button>
-            ) : <span />
+            ) : (
+              <span />
+            )
           ) : (
-            <button type="button" onClick={() => { setPhase("login"); setError(null); setNotice(null); }} style={linkStyle}>
+            <button
+              type="button"
+              onClick={() => {
+                setPhase("login");
+                setError(null);
+                setNotice(null);
+              }}
+              style={linkStyle}
+            >
               返回登录
             </button>
           )}

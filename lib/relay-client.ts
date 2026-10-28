@@ -1,6 +1,6 @@
 // Client-side helper for POST /api/agent-relay/rpc. Mirrors lib/agent-client.ts:
 // same { success, data } / { error } envelope and error convention.
-import type { FsEntry, FsReadResult, FsStatResult, ExecResult, AgentInfo, GrepMatch }  from "./relay/protocol";
+import type { FsEntry, FsReadResult, FsStatResult, ExecResult, AgentInfo, GrepMatch } from "./relay/protocol";
 
 export interface RelayCallOpts {
   /** Target one specific paired machine (multi-machine); omit = default. */
@@ -31,11 +31,13 @@ export async function relayRpc<T = unknown>(
 export const relayFs = {
   list: (path: string, call?: RelayCallOpts) => relayRpc<FsEntry[]>("fs.list", { path }, call),
   read: (path: string, call?: RelayCallOpts) => relayRpc<FsReadResult>("fs.read", { path }, call),
-  write: (path: string, content: string, call?: RelayCallOpts) => relayRpc<{ ok: boolean; size: number }>("fs.write", { path, content }, call),
+  write: (path: string, content: string, call?: RelayCallOpts) =>
+    relayRpc<{ ok: boolean; size: number }>("fs.write", { path, content }, call),
   stat: (path: string, call?: RelayCallOpts) => relayRpc<FsStatResult>("fs.stat", { path }, call),
   mkdir: (path: string, call?: RelayCallOpts) => relayRpc<{ ok: boolean }>("fs.mkdir", { path }, call),
   delete: (path: string, call?: RelayCallOpts) => relayRpc<{ ok: boolean }>("fs.delete", { path }, call),
-  rename: (from: string, to: string, call?: RelayCallOpts) => relayRpc<{ ok: boolean; path: string }>("fs.rename", { from, to }, call),
+  rename: (from: string, to: string, call?: RelayCallOpts) =>
+    relayRpc<{ ok: boolean; path: string }>("fs.rename", { from, to }, call),
 };
 
 export const relaySearch = {

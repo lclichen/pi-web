@@ -5,10 +5,7 @@ export const dynamic = "force-dynamic";
 
 // POST /api/terminal/[sid]/resize { cols, rows } — propagate terminal size to
 // the PTY so full-screen programs redraw correctly.
-export async function POST(
-  req: Request,
-  ctx: { params: Promise<{ sid: string }> },
-): Promise<Response> {
+export async function POST(req: Request, ctx: { params: Promise<{ sid: string }> }): Promise<Response> {
   const { sid } = await ctx.params;
   let body: { cols?: unknown; rows?: unknown };
   try {

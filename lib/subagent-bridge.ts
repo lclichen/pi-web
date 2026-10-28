@@ -69,7 +69,12 @@ export function childExtensionsFor(
             ...(project.machineId ? { machineId: project.machineId } : {}),
           }),
           makeRemoteVerifyExtension("local-machine", info.ownerId),
-          makeEnvironmentInfoExtension({ mode: "local-machine", username, projectName: project.name, workspaceDir: dirs.workspaceDir }),
+          makeEnvironmentInfoExtension({
+            mode: "local-machine",
+            username,
+            projectName: project.name,
+            workspaceDir: dirs.workspaceDir,
+          }),
         ];
       }
       return [
@@ -84,8 +89,18 @@ export function childExtensionsFor(
         const sshConfig = readSshConfig(home);
         if (sshConfig) {
           return [
-            makeSshToolsExtension({ projectId: project.id, sshConfig, workdir: project.workdir ?? "/", projectHome: home }),
-            makeEnvironmentInfoExtension({ mode: "ssh", username, projectName: project.name, workspaceDir: project.workdir ?? "/" }),
+            makeSshToolsExtension({
+              projectId: project.id,
+              sshConfig,
+              workdir: project.workdir ?? "/",
+              projectHome: home,
+            }),
+            makeEnvironmentInfoExtension({
+              mode: "ssh",
+              username,
+              projectName: project.name,
+              workspaceDir: project.workdir ?? "/",
+            }),
           ];
         }
       }
@@ -103,7 +118,9 @@ export function childExtensionsFor(
           mode: "sandbox",
           username,
           ...(project?.name ? { projectName: project.name } : {}),
-          ...(project && project.containerId !== undefined && project.containerId !== null ? { containerId: Number(project.containerId) } : {}),
+          ...(project && project.containerId !== undefined && project.containerId !== null
+            ? { containerId: Number(project.containerId) }
+            : {}),
         }),
       ];
     }

@@ -42,7 +42,10 @@ test("all active-session transitions share one persistence effect", () => {
 test("keeps chat scroll positions in page memory by session id", () => {
   assert.match(source, /useRef\(new Map<string, ChatScrollPosition>\(\)\)/);
   assert.match(source, /sessionScrollPositionsRef\.current\.set\(sessionId, position\)/);
-  assert.match(source, /initialScrollPosition=\{selectedSession \? sessionScrollPositionsRef\.current\.get\(selectedSession\.id\) \?\? null : null\}/);
+  assert.match(
+    source,
+    /initialScrollPosition=\{selectedSession \? sessionScrollPositionsRef\.current\.get\(selectedSession\.id\) \?\? null : null\}/,
+  );
   assert.match(source, /onScrollPositionChange=\{handleSessionScrollPositionChange\}/);
   assert.doesNotMatch(source, /localStorage[^\n]*sessionScroll/i);
 });
@@ -61,7 +64,10 @@ test("New restores the draft after session navigation and workspace auto-restore
     callbackBody("handleSelectSession", "handleNewSession"),
     callbackBody("handleNewSession", "hydrateSelectedSession"),
   ].join("\n");
-  const parkedKeyHelper = source.slice(source.indexOf("function parkedNewSessionDraftKey"), source.indexOf("export function AppShell"));
+  const parkedKeyHelper = source.slice(
+    source.indexOf("function parkedNewSessionDraftKey"),
+    source.indexOf("export function AppShell"),
+  );
   const hookSource = await readFile(new URL("../hooks/useAgentSession.ts", import.meta.url), "utf8");
   const cleanupStart = hookSource.indexOf("    return () => {", hookSource.indexOf("  // Load session on mount"));
   const cleanupEnd = hookSource.indexOf("    // eslint-disable-next-line", cleanupStart);
@@ -79,7 +85,7 @@ test("New restores the draft after session navigation and workspace auto-restore
         window: { location: { pathname: "/", search: "" } },
         router: { replace() {} },
         fetch: () => response.promise,
-        getLastOpenSession: (key) => key === cwd ? session.id : null,
+        getLastOpenSession: (key) => (key === cwd ? session.id : null),
         clearLastOpen() {},
         workspaceKeyOf: (value) => value.projectKey ?? value.cwd,
         useCallback: (callback) => callback,
@@ -108,15 +114,21 @@ test("New restores the draft after session navigation and workspace auto-restore
           context[state] = typeof value === "function" ? value(context[state]) : value;
         };
       }
-      vm.runInContext(stripTypeScriptTypes(`${parkedKeyHelper}\n${callbacks}
+      vm.runInContext(
+        stripTypeScriptTypes(`${parkedKeyHelper}\n${callbacks}
         globalThis.navigate = { handleCwdChange, handleSelectSession, handleNewSession };
-      `), context);
+      `),
+        context,
+      );
       // Run the actual hook cleanup with the outgoing mount's captured draft key.
-      const makeCleanup = vm.runInContext(stripTypeScriptTypes(`((isNew, newSessionDraftKey) => {
+      const makeCleanup = vm.runInContext(
+        stripTypeScriptTypes(`((isNew, newSessionDraftKey) => {
         const sessionHookMountedRef = { current: true };
         const newSessionPromotedRef = { current: false };
         ${hookSource.slice(cleanupStart, cleanupEnd)}
-      })`), context);
+      })`),
+        context,
+      );
       let mountedKey = context.sessionKey;
       let cleanup = makeCleanup(true, context.activeNewSessionDraftKeyRef.current);
       async function commit() {

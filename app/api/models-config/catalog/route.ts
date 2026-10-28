@@ -23,7 +23,7 @@ declare global {
 }
 
 function getCache(): CatalogCache {
-  return globalThis.__piModelsDevCatalogCache ??= { entries: [], expiresAt: 0 };
+  return (globalThis.__piModelsDevCatalogCache ??= { entries: [], expiresAt: 0 });
 }
 
 async function fetchCatalog(): Promise<ModelCatalogEntry[]> {
@@ -42,13 +42,15 @@ async function loadCatalog(): Promise<ModelCatalogEntry[]> {
   const cache = getCache();
   if (cache.entries.length > 0 && cache.expiresAt > Date.now()) return cache.entries;
   if (!cache.inFlight) {
-    cache.inFlight = fetchCatalog().then((entries) => {
-      cache.entries = entries;
-      cache.expiresAt = Date.now() + CATALOG_TTL_MS;
-      return entries;
-    }).finally(() => {
-      cache.inFlight = undefined;
-    });
+    cache.inFlight = fetchCatalog()
+      .then((entries) => {
+        cache.entries = entries;
+        cache.expiresAt = Date.now() + CATALOG_TTL_MS;
+        return entries;
+      })
+      .finally(() => {
+        cache.inFlight = undefined;
+      });
   }
 
   try {

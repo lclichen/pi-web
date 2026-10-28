@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
-import { removeMcpServer, setMcpServerDisabled, setMcpServerDisabledViaProject, updateMcpServer } from "@/lib/mcp-config";
+import {
+  removeMcpServer,
+  setMcpServerDisabled,
+  setMcpServerDisabledViaProject,
+  updateMcpServer,
+} from "@/lib/mcp-config";
 import { guardMcpRequest } from "@/lib/mcp-route-guard";
 import type { ConfigScope, ServerEntry } from "@/lib/api-types";
 
@@ -13,10 +18,7 @@ type Body = { cwd?: string; projectId?: string; scope?: string; entry?: ServerEn
 type PatchBody = { cwd?: string; projectId?: string; scope?: string; disabled?: boolean };
 
 // PUT /api/mcp/servers/[name]  body: { cwd|projectId, scope?, entry }
-export async function PUT(
-  req: Request,
-  { params }: { params: Promise<{ name: string }> },
-) {
+export async function PUT(req: Request, { params }: { params: Promise<{ name: string }> }) {
   const { name } = await params;
   try {
     const body = (await req.json()) as Body;
@@ -30,24 +32,15 @@ export async function PUT(
       updateMcpServer(guard.cwd, scope, name, body.entry);
       return NextResponse.json({ success: true });
     } catch (e) {
-      return NextResponse.json(
-        { error: e instanceof Error ? e.message : String(e) },
-        { status: 404 },
-      );
+      return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 404 });
     }
   } catch (e) {
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : String(e) },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 });
   }
 }
 
 // PATCH /api/mcp/servers/[name]  body: { cwd|projectId, scope?, disabled }
-export async function PATCH(
-  req: Request,
-  { params }: { params: Promise<{ name: string }> },
-) {
+export async function PATCH(req: Request, { params }: { params: Promise<{ name: string }> }) {
   const { name } = await params;
   try {
     const body = (await req.json()) as PatchBody;
@@ -58,24 +51,15 @@ export async function PATCH(
       // 工具栏/会话内操作走项目级覆盖——不碰原始配置（与插件行为一致）；
       return NextResponse.json({ success: true });
     } catch (e) {
-      return NextResponse.json(
-        { error: e instanceof Error ? e.message : String(e) },
-        { status: 404 },
-      );
+      return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 404 });
     }
   } catch (e) {
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : String(e) },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 });
   }
 }
 
 // DELETE /api/mcp/servers/[name]?cwd=|projectId=&scope=
-export async function DELETE(
-  req: Request,
-  { params }: { params: Promise<{ name: string }> },
-) {
+export async function DELETE(req: Request, { params }: { params: Promise<{ name: string }> }) {
   const { name } = await params;
   const { searchParams } = new URL(req.url);
   const guard = guardMcpRequest(
@@ -89,9 +73,6 @@ export async function DELETE(
     removeMcpServer(guard.cwd, scope, name);
     return NextResponse.json({ success: true });
   } catch (e) {
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : String(e) },
-      { status: 404 },
-    );
+    return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 404 });
   }
 }

@@ -67,11 +67,7 @@ export function setDisableModelInvocation(content: string, disable: boolean): st
       const body = bom ? content.slice(1) : content;
       return `${bom}---\n${KEY}: true\n---\n${body}`;
     }
-    return (
-      content.slice(0, block.openingEnd) +
-      `${KEY}: true${block.newline}` +
-      content.slice(block.openingEnd)
-    );
+    return content.slice(0, block.openingEnd) + `${KEY}: true${block.newline}` + content.slice(block.openingEnd);
   }
 
   if (!block) throw new Error(`Cannot edit ${KEY}: unsupported frontmatter formatting`);

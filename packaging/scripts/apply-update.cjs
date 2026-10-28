@@ -21,7 +21,19 @@
 "use strict";
 
 const { createHash } = require("node:crypto");
-const { copyFileSync, createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync, chmodSync } = require("node:fs");
+const {
+  copyFileSync,
+  createWriteStream,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+  chmodSync,
+} = require("node:fs");
 const { spawn, spawnSync } = require("node:child_process");
 const path = require("node:path");
 
@@ -44,13 +56,16 @@ async function bootstrapSelf(raw) {
     const v = JSON.parse(readFileSync(path.join(raw.appDir || ".", "version.json"), "utf8"));
     channel = v.channel || "stable";
     current = v.version || "";
-  } catch { /* 无 version.json 用 default_version 通道 */ }
-  const wanted = raw.version
-    || (catalog.latest_versions && catalog.latest_versions[channel])
-    || catalog.default_version;
+  } catch {
+    /* 无 version.json 用 default_version 通道 */
+  }
+  const wanted =
+    raw.version || (catalog.latest_versions && catalog.latest_versions[channel]) || catalog.default_version;
   const entry = (catalog.versions || []).find((v) => v.version === wanted);
   if (!entry) throw new Error(`catalog 中不存在版本 ${wanted}`);
-  const fw = entry.frameworks && (entry.frameworks[raw.pkgKind] || (raw.pkgKind === "electron" ? entry.frameworks.tarball : undefined));
+  const fw =
+    entry.frameworks &&
+    (entry.frameworks[raw.pkgKind] || (raw.pkgKind === "electron" ? entry.frameworks.tarball : undefined));
   if (!fw) throw new Error(`版本 ${wanted} 没有 ${raw.pkgKind} 产物`);
 
   if (current && !raw.version) {
@@ -90,9 +105,7 @@ const STAGING = path.join(STAGING_ROOT, String(Date.now()));
  * （appRoot→.bak）会把暂存连同新根一起搬走，第二步 rename 就 ENOENT 了。
  * （v3 起可变数据默认在包外 $AMEDAC_HOME，仅老包兜底路径仍命中此约束。）
  */
-const EXTRACT_DIR = config.pkgKind === "appimage"
-  ? STAGING
-  : `${config.appRoot}.update-staging-${Date.now()}`;
+const EXTRACT_DIR = config.pkgKind === "appimage" ? STAGING : `${config.appRoot}.update-staging-${Date.now()}`;
 const STATUS_FILE = path.join(config.dataDir, "update-status.json");
 const LOG_FILE = path.join(config.dataDir, "update.log");
 /** 用户数据目录（仅老布局包"外置失败"兜底时交换后回迁；v3 起数据在包外）。 */
@@ -104,7 +117,9 @@ function log(line) {
     const stamp = new Date().toISOString();
     const prev = existsSync(LOG_FILE) ? readFileSync(LOG_FILE, "utf8") : "";
     writeFileSync(LOG_FILE, prev + `[${stamp}] ${line}\n`);
-  } catch { /* 日志尽力而为 */ }
+  } catch {
+    /* 日志尽力而为 */
+  }
   console.log(line);
 }
 
@@ -156,10 +171,16 @@ async function download(source, dest) {
       const now = Date.now();
       if (total > 0 && now - lastTick > 500) {
         lastTick = now;
-        status("downloading", { progress: Math.min(1, received / total), message: `${Math.round((received / total) * 100)}%` });
+        status("downloading", {
+          progress: Math.min(1, received / total),
+          message: `${Math.round((received / total) * 100)}%`,
+        });
       }
     }
-    await new Promise((resolve, reject) => { out.end(resolve); out.on("error", reject); });
+    await new Promise((resolve, reject) => {
+      out.end(resolve);
+      out.on("error", reject);
+    });
     return hasher.digest("hex");
   }
   // 本地文件源（内网共享目录 / 同机 release 目录）
@@ -232,9 +253,13 @@ function externalizePkgUserData(appRoot) {
 /** 只保留最近 N 个 .bak-（与 appimage 新文件 .bak 共用策略）。 */
 function pruneBackups(parent, prefix, keep = 1) {
   try {
-    const baks = readdirSync(parent).filter((n) => n.startsWith(prefix)).sort();
+    const baks = readdirSync(parent)
+      .filter((n) => n.startsWith(prefix))
+      .sort();
     while (baks.length > keep) rmSync(path.join(parent, baks.shift()), { recursive: true, force: true });
-  } catch { /* 清理旧备份尽力而为 */ }
+  } catch {
+    /* 清理旧备份尽力而为 */
+  }
 }
 
 async function runUpdate() {
@@ -243,7 +268,8 @@ async function runUpdate() {
     try {
       mkdirSync(STAGING_ROOT, { recursive: true });
       for (const name of readdirSync(STAGING_ROOT)) {
-        if (path.join(STAGING_ROOT, name) !== STAGING) rmSync(path.join(STAGING_ROOT, name), { recursive: true, force: true });
+        if (path.join(STAGING_ROOT, name) !== STAGING)
+          rmSync(path.join(STAGING_ROOT, name), { recursive: true, force: true });
       }
       if (config.appRoot && config.pkgKind !== "appimage") {
         const parent = path.dirname(config.appRoot);
@@ -252,7 +278,9 @@ async function runUpdate() {
           if (name.startsWith(prefix)) rmSync(path.join(parent, name), { recursive: true, force: true });
         }
       }
-    } catch { /* 尽力而为 */ }
+    } catch {
+      /* 尽力而为 */
+    }
     mkdirSync(STAGING, { recursive: true });
 
     status("downloading", { progress: 0, message: "开始下载…" });
@@ -316,10 +344,17 @@ async function runUpdate() {
         if (!externalized) migrateDataDirs(backup, config.appRoot); // 用户数据（config/data/run/logs）mv 回新根
       } catch (e) {
         // 交换或回迁失败：把数据搬回 .bak 后整体还原，并把旧版服务拉回来。
-        try { if (!externalized) migrateDataDirs(config.appRoot, backup); } catch { /* 双重失败，保留现场 */ }
+        try {
+          if (!externalized) migrateDataDirs(config.appRoot, backup);
+        } catch {
+          /* 双重失败，保留现场 */
+        }
         rmSync(config.appRoot, { recursive: true, force: true });
         renameSync(backup, config.appRoot);
-        spawn("bash", [path.join(config.appRoot, "scripts", "start-all.sh")], { detached: true, stdio: "ignore" }).unref();
+        spawn("bash", [path.join(config.appRoot, "scripts", "start-all.sh")], {
+          detached: true,
+          stdio: "ignore",
+        }).unref();
         throw e;
       }
 
@@ -334,7 +369,10 @@ async function runUpdate() {
           migrateDataDirs(config.appRoot, backup);
           rmSync(config.appRoot, { recursive: true, force: true });
           renameSync(backup, config.appRoot);
-          spawn("bash", [path.join(config.appRoot, "scripts", "start-all.sh")], { detached: true, stdio: "ignore" }).unref();
+          spawn("bash", [path.join(config.appRoot, "scripts", "start-all.sh")], {
+            detached: true,
+            stdio: "ignore",
+          }).unref();
         } catch (rollbackError) {
           log(`回滚亦失败: ${rollbackError.message}`);
         }
@@ -353,7 +391,6 @@ async function runUpdate() {
     process.exit(1);
   }
 }
-
 
 // ---- 入口（放文件尾：确保上方 const 声明先初始化，避免 TDZ）----
 void (async () => {

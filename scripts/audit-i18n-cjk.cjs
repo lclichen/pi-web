@@ -1,5 +1,6 @@
 // 审计脚本 v2：区分「已走 i18n 的中文」(t("…")/translate("…")) 与「裸中文」（遗漏）
-const fs = require("fs"), path = require("path");
+const fs = require("fs"),
+  path = require("path");
 const files = [];
 (function walk(d) {
   for (const f of fs.readdirSync(d)) {

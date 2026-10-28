@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json() as {
+    const body = (await req.json()) as {
       cwd?: unknown;
       package?: unknown;
       scope?: unknown;
@@ -21,9 +21,7 @@ export async function POST(req: Request) {
     }
 
     const pkg = typeof body.package === "string" ? body.package : undefined;
-    const scope = body.scope === "global" || body.scope === "project"
-      ? body.scope as SkillInstallScope
-      : undefined;
+    const scope = body.scope === "global" || body.scope === "project" ? (body.scope as SkillInstallScope) : undefined;
     if ((pkg && !scope) || (!pkg && scope)) {
       return NextResponse.json({ error: "package and scope must be provided together" }, { status: 400 });
     }
@@ -43,9 +41,6 @@ export async function POST(req: Request) {
     });
     return NextResponse.json({ updates });
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : String(error) },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
   }
 }

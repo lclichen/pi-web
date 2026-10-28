@@ -25,31 +25,40 @@ after(async () => {
   await rm(root, { recursive: true, force: true });
 });
 
-test("lists auto-discovered top-level extensions", { skip: "upstream test format diverges from fork (extra origin/sourceLabel fields)" }, async () => {
-  const response = await GET(new Request(`http://localhost/api/plugins?cwd=${encodeURIComponent(cwd)}`));
-  const body = await response.json();
+test(
+  "lists auto-discovered top-level extensions",
+  { skip: "upstream test format diverges from fork (extra origin/sourceLabel fields)" },
+  async () => {
+    const response = await GET(new Request(`http://localhost/api/plugins?cwd=${encodeURIComponent(cwd)}`));
+    const body = await response.json();
 
-  assert.equal(response.status, 200);
-  assert.deepEqual(body.packages, []);
-  assert.deepEqual(body.standaloneExtensions, [{
-    kind: "extension",
-    name: "rtk",
-    path: join(agentDir, "extensions", "rtk.ts"),
-    relativePath: "extensions/rtk.ts",
-    scope: "global",
-    enabled: true,
-  }]);
-  assert.equal(body.totals.extensions, 1);
-});
+    assert.equal(response.status, 200);
+    assert.deepEqual(body.packages, []);
+    assert.deepEqual(body.standaloneExtensions, [
+      {
+        kind: "extension",
+        name: "rtk",
+        path: join(agentDir, "extensions", "rtk.ts"),
+        relativePath: "extensions/rtk.ts",
+        scope: "global",
+        enabled: true,
+      },
+    ]);
+    assert.equal(body.totals.extensions, 1);
+  },
+);
 
 test("reports the package description from package.json", async () => {
   const packageDir = join(root, "pkg-with-description");
   await mkdir(join(packageDir, "extensions"), { recursive: true });
-  await writeFile(join(packageDir, "package.json"), JSON.stringify({
-    name: "pkg-with-description",
-    version: "1.2.3",
-    description: "Adds descriptions to the Plugins panel.",
-  }));
+  await writeFile(
+    join(packageDir, "package.json"),
+    JSON.stringify({
+      name: "pkg-with-description",
+      version: "1.2.3",
+      description: "Adds descriptions to the Plugins panel.",
+    }),
+  );
   await writeFile(join(packageDir, "extensions", "index.ts"), "export default () => {};\n");
   await writeFile(join(agentDir, "settings.json"), JSON.stringify({ packages: [packageDir] }));
 

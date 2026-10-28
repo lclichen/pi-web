@@ -50,11 +50,12 @@ async function resolvePlatformUser(key: string): Promise<PlatformUser | null> {
     // wrapper change degrades to a 401 (visible) rather than silent mismatch.
     const res = await platformGet<{
       user?: { id: number; username: string; email: string | null; role: string; status: string };
-      id?: number; username?: string; email?: string | null; role?: string; status?: string;
-    }>(
-      "/api/v1/auth/me",
-      key,
-    );
+      id?: number;
+      username?: string;
+      email?: string | null;
+      role?: string;
+      status?: string;
+    }>("/api/v1/auth/me", key);
     const me = res.user ?? res;
     if (!me || typeof me.id !== "number" || typeof me.username !== "string" || me.status !== "active") return null;
     const user: PlatformUser = {
@@ -76,9 +77,9 @@ async function resolvePlatformUser(key: string): Promise<PlatformUser | null> {
  * session cookie. Per-user concurrency limit enforced at task submission
  * (PI_WEB_BATCH_USER_MAX_CONCURRENT, admins exempt).
  */
-export async function requireBatchIdentity(req: Request): Promise<
-  { ok: true; identity: BatchIdentity } | { ok: false; status: number; error: string }
-> {
+export async function requireBatchIdentity(
+  req: Request,
+): Promise<{ ok: true; identity: BatchIdentity } | { ok: false; status: number; error: string }> {
   const key = platformKeyFrom(req);
   if (key) {
     const user = await resolvePlatformUser(key);
@@ -87,7 +88,8 @@ export async function requireBatchIdentity(req: Request): Promise<
   }
   // Fall back to web-session cookie (browser debugging).
   const identity = requireUserIdentity(req);
-  if (!identity.ok) return { ok: false, status: 401, error: "Provide X-Platform-API-Key: sk_... or a valid session cookie" };
+  if (!identity.ok)
+    return { ok: false, status: 401, error: "Provide X-Platform-API-Key: sk_... or a valid session cookie" };
   return { ok: true, identity: { user: identity.session.user, apiKey: identity.session.apiKey } };
 }
 
@@ -95,7 +97,9 @@ export async function requireBatchIdentity(req: Request): Promise<
  * Per-user concurrency check for task submission (429 with retry hint when
  * over the cap). Admins bypass — ops/eval runners stay unthrottled.
  */
-export function checkBatchUserQuota(user: PlatformUser): { ok: true } | { ok: false; status: number; error: string; retryAfterMs: number } {
+export function checkBatchUserQuota(
+  user: PlatformUser,
+): { ok: true } | { ok: false; status: number; error: string; retryAfterMs: number } {
   const cap = batchUserMaxConcurrent();
   if (cap <= 0 || user.role === "admin") return { ok: true };
   const active = countUserActiveTasks(user.id);

@@ -1,12 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
-import {
-  isApiRequestAllowed,
-  isApiRequestHostAllowed,
-} from "@/lib/request-security";
-import {
-  isValidBasicAuthorization,
-  isWebPasswordEnabled,
-} from "@/lib/web-auth";
+import { isApiRequestAllowed, isApiRequestHostAllowed } from "@/lib/request-security";
+import { isValidBasicAuthorization, isWebPasswordEnabled } from "@/lib/web-auth";
 import { getWebSession } from "@/lib/web-session";
 
 // Next 16 runs the proxy (middleware) on the Node.js runtime, so it can read
@@ -17,9 +11,7 @@ import { getWebSession } from "@/lib/web-session";
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const isApiRequest = pathname === "/api" || pathname.startsWith("/api/");
-  const isTrustedRequest = isApiRequest
-    ? isApiRequestAllowed(request)
-    : isApiRequestHostAllowed(request);
+  const isTrustedRequest = isApiRequest ? isApiRequestAllowed(request) : isApiRequestHostAllowed(request);
 
   if (!isTrustedRequest) {
     if (!isApiRequest) {
@@ -38,8 +30,9 @@ export function proxy(request: NextRequest) {
   // /auth/me → admin role). Without this bypass the session gate rejects
   // headless callers before the route ever runs. This is only a FORMAT
   // pre-check — the route's own validation remains the authority.
-  const hasBatchPlatformKey = pathname.startsWith("/api/batch/")
-    && (() => {
+  const hasBatchPlatformKey =
+    pathname.startsWith("/api/batch/") &&
+    (() => {
       const direct = request.headers.get("x-platform-api-key");
       if (direct?.startsWith("sk_")) return true;
       const bearer = request.headers.get("authorization");
@@ -66,10 +59,10 @@ export function proxy(request: NextRequest) {
 
   const password = process.env.PI_WEB_PASSWORD;
   if (
-    !isRelayDownload
-    && !hasBatchPlatformKey
-    && isWebPasswordEnabled(password)
-    && !isValidBasicAuthorization(request.headers.get("authorization"), password)
+    !isRelayDownload &&
+    !hasBatchPlatformKey &&
+    isWebPasswordEnabled(password) &&
+    !isValidBasicAuthorization(request.headers.get("authorization"), password)
   ) {
     return new NextResponse("Authentication required", {
       status: 401,

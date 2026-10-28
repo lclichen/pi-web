@@ -1,7 +1,4 @@
-import {
-  Agent,
-  type AgentOptions,
-} from "@earendil-works/pi-agent-core";
+import { Agent, type AgentOptions } from "@earendil-works/pi-agent-core";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 
 /**
@@ -50,16 +47,17 @@ const COMMIT_MSG_SYSTEM = [
 ].join("\n");
 
 function buildPrompt(input: GitInsightInput): string {
-  const trim = (s: string) => (s.length > MAX_DIFF_CHARS
-    ? `${s.slice(0, Math.floor(MAX_DIFF_CHARS * 0.7))}\n\n…（diff 过长，中段省略）…\n\n${s.slice(-Math.floor(MAX_DIFF_CHARS * 0.3))}`
-    : s);
-  const style = input.recentSubjects.length > 0
-    ? `近期提交（风格参考）：\n${input.recentSubjects.map((s) => `- ${s}`).join("\n")}\n\n`
-    : "";
-  const head = [
-    input.branch ? `分支：${input.branch}` : null,
-    `改动文件：\n${input.fileSummary}`,
-  ].filter(Boolean).join("\n");
+  const trim = (s: string) =>
+    s.length > MAX_DIFF_CHARS
+      ? `${s.slice(0, Math.floor(MAX_DIFF_CHARS * 0.7))}\n\n…（diff 过长，中段省略）…\n\n${s.slice(-Math.floor(MAX_DIFF_CHARS * 0.3))}`
+      : s;
+  const style =
+    input.recentSubjects.length > 0
+      ? `近期提交（风格参考）：\n${input.recentSubjects.map((s) => `- ${s}`).join("\n")}\n\n`
+      : "";
+  const head = [input.branch ? `分支：${input.branch}` : null, `改动文件：\n${input.fileSummary}`]
+    .filter(Boolean)
+    .join("\n");
   return `${head}\n\n${style}统一 diff：\n\`\`\`diff\n${trim(input.diff) || "（无文本 diff —— 可能只有未跟踪文件）"}\n\`\`\``;
 }
 
@@ -87,10 +85,7 @@ export function buildGitInsightAgentOptions(source: Agent): AgentOptions {
   };
 }
 
-export async function generateGitInsight(
-  source: AgentSession,
-  input: GitInsightInput,
-): Promise<GitInsightResult> {
+export async function generateGitInsight(source: AgentSession, input: GitInsightInput): Promise<GitInsightResult> {
   const sourceAgent = source.agent;
   await sourceAgent.waitForIdle();
 
@@ -135,13 +130,15 @@ export async function generateGitInsight(
     const cleaned = input.mode === "commit-message" ? stripFence(text) : text;
     return {
       text: cleaned,
-      ...(message.usage ? {
-        usage: {
-          input: message.usage.input,
-          output: message.usage.output,
-          total: message.usage.totalTokens,
-        },
-      } : {}),
+      ...(message.usage
+        ? {
+            usage: {
+              input: message.usage.input,
+              output: message.usage.output,
+              total: message.usage.totalTokens,
+            },
+          }
+        : {}),
     };
   }
   throw new Error("模型没有返回内容");

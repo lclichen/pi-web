@@ -81,7 +81,9 @@ export function ProjectSessionTree({
   const [hostImportDir, setHostImportDir] = useState<string | null>(null);
   /** Host 目录套用配置模板（仅未初始化目录；服务端 .pi 预检 409）。 */
   const [applyHostDir, setApplyHostDir] = useState<string | null>(null);
-  const [containers, setContainers] = useState<Array<{ id: number; name: string; status: string; imageName: string }>>([]);
+  const [containers, setContainers] = useState<Array<{ id: number; name: string; status: string; imageName: string }>>(
+    [],
+  );
   const [newDialog, setNewDialog] = useState<"sandbox" | "local-machine" | null>(null);
   const [myWorkspaceId, setMyWorkspaceId] = useState<number | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -92,17 +94,25 @@ export function ProjectSessionTree({
       .then((d: { projects?: ProjectRecord[] }) => setProjects(d.projects ?? []))
       .catch(() => {});
   }, []);
-  useEffect(() => { loadProjects(); }, [loadProjects, projectsRefreshKey]);
+  useEffect(() => {
+    loadProjects();
+  }, [loadProjects, projectsRefreshKey]);
 
   // Container list: status dots on project nodes + the container picker.
   const loadContainers = useCallback(() => {
     fetch("/api/sandbox/containers")
       .then((r) => (r.ok ? r.json() : { containers: [] }))
-      .then((d: { containers?: Array<{ id: number; name: string; status: string; imageName: string }> }) => setContainers(d.containers ?? []))
+      .then((d: { containers?: Array<{ id: number; name: string; status: string; imageName: string }> }) =>
+        setContainers(d.containers ?? []),
+      )
       .catch(() => setContainers([]));
   }, []);
-  useEffect(() => { loadContainers(); }, [loadContainers, projectsRefreshKey]);
-  useEffect(() => { if (menu?.project?.mode === "sandbox") loadContainers(); }, [menu, loadContainers]);
+  useEffect(() => {
+    loadContainers();
+  }, [loadContainers, projectsRefreshKey]);
+  useEffect(() => {
+    if (menu?.project?.mode === "sandbox") loadContainers();
+  }, [menu, loadContainers]);
 
   // My cloud workspace (for export-to-workspace); lazily ensured server-side.
   useEffect(() => {
@@ -124,7 +134,8 @@ export function ProjectSessionTree({
   const toggleCollapsed = (id: string) => {
     setCollapsed((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       localStorage.setItem(COLLAPSE_KEY, JSON.stringify([...next]));
       return next;
     });
@@ -210,7 +221,11 @@ export function ProjectSessionTree({
 
   // 项目快照槽（游戏存档制：保存/恢复/删除，服务端做 FIFO 淘汰）。
   const [menuBusy, setMenuBusy] = useState(false);
-  const projectSnapshot = async (project: ProjectRecord, action: "save" | "restore" | "delete", snapshotId?: number) => {
+  const projectSnapshot = async (
+    project: ProjectRecord,
+    action: "save" | "restore" | "delete",
+    snapshotId?: number,
+  ) => {
     if (menuBusy) return;
     if (action === "restore" && !window.confirm(t("sessions.restoreSaveConfirm"))) return;
     setMenuBusy(true);
@@ -238,14 +253,24 @@ export function ProjectSessionTree({
   // 把项目容器的 /workspace 打包导出到我的工作区（tar.gz，单向留存）。
   const exportWorkspace = async (project: ProjectRecord) => {
     if (menuBusy) return;
-    if (project.containerId == null) { window.alert(t("sessions.projectBoundContainer")); return; }
-    if (myWorkspaceId == null) { window.alert(t("sessions.cloudWorkspaceUnavailable")); return; }
+    if (project.containerId == null) {
+      window.alert(t("sessions.projectBoundContainer"));
+      return;
+    }
+    if (myWorkspaceId == null) {
+      window.alert(t("sessions.cloudWorkspaceUnavailable"));
+      return;
+    }
     setMenuBusy(true);
     try {
       const res = await fetch(`/api/sandbox/containers`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "export-workspace", containerId: project.containerId, workspaceId: myWorkspaceId }),
+        body: JSON.stringify({
+          action: "export-workspace",
+          containerId: project.containerId,
+          workspaceId: myWorkspaceId,
+        }),
       });
       const d = (await res.json().catch(() => ({}))) as { error?: string; fileName?: string };
       if (!res.ok) {
@@ -308,14 +333,17 @@ export function ProjectSessionTree({
   // deleted, snapshot remains) keep their sessions and refuse new ones.
   // Sessions predating the snapshot metadata fall into one legacy bucket.
   const quickGroups = useMemo(() => {
-    const groups = new Map<string, {
-      key: string;
-      name: string;
-      hash?: string;
-      templateId?: string;
-      detached: boolean;
-      sessions: SessionInfo[];
-    }>();
+    const groups = new Map<
+      string,
+      {
+        key: string;
+        name: string;
+        hash?: string;
+        templateId?: string;
+        detached: boolean;
+        sessions: SessionInfo[];
+      }
+    >();
     for (const s of sessions) {
       if (s.mode !== "quick") continue;
       const key = s.quickGroupKey ?? "__unassigned";
@@ -395,7 +423,9 @@ export function ProjectSessionTree({
           onSelect={() => onSelectSession(s)}
           onRename={(name) => void onRenameSession(s.id, name)}
           onDelete={() => void onDeleteSession(s.id)}
-          onTogglePin={() => { if (project) void pin(project, s.id, pinned); }}
+          onTogglePin={() => {
+            if (project) void pin(project, s.id, pinned);
+          }}
         />
         {children?.map((child) => (
           <ProjectSessionRow
@@ -437,10 +467,11 @@ export function ProjectSessionTree({
     if (!searching) return [] as SessionInfo[];
     const q = query.trim().toLowerCase();
     return allSessionsSorted
-      .filter((s) =>
-        s.name?.toLowerCase().includes(q)
-        || s.firstMessage.toLowerCase().includes(q)
-        || s.id.toLowerCase().includes(q),
+      .filter(
+        (s) =>
+          s.name?.toLowerCase().includes(q) ||
+          s.firstMessage.toLowerCase().includes(q) ||
+          s.id.toLowerCase().includes(q),
       )
       .slice(0, 50);
   }, [searching, query, allSessionsSorted]);
@@ -450,7 +481,17 @@ export function ProjectSessionTree({
       {/* 空间切换：我的项目会话 ↔ 快速会话（所有人）↔ Host 空间（admin）。
           快速会话没有项目/工作区，独立成第三个平级空间，避免混进项目列表。 */}
       {onSessionSpaceChange && !searching && (
-        <div style={{ display: "flex", gap: 0, padding: "0 4px 8px", borderRadius: 6, border: "1px solid var(--border)", overflow: "hidden", fontSize: 11 }}>
+        <div
+          style={{
+            display: "flex",
+            gap: 0,
+            padding: "0 4px 8px",
+            borderRadius: 6,
+            border: "1px solid var(--border)",
+            overflow: "hidden",
+            fontSize: 11,
+          }}
+        >
           {(["mine", "quick", ...(isAdmin ? (["host"] as const) : [])] as const).map((space) => {
             const active = sessionSpace === space;
             return (
@@ -458,15 +499,28 @@ export function ProjectSessionTree({
                 key={space}
                 type="button"
                 onClick={() => onSessionSpaceChange(space)}
-                title={space === "host" ? t("sessions.hostSessionsCreatedPiCli") : space === "quick" ? t("sessions.quickSessionsHint") : t("sessions.myProjectSessions")}
+                title={
+                  space === "host"
+                    ? t("sessions.hostSessionsCreatedPiCli")
+                    : space === "quick"
+                      ? t("sessions.quickSessionsHint")
+                      : t("sessions.myProjectSessions")
+                }
                 style={{
-                  flex: 1, padding: "4px 0", border: "none", cursor: "pointer",
+                  flex: 1,
+                  padding: "4px 0",
+                  border: "none",
+                  cursor: "pointer",
                   background: active ? "var(--bg-selected)" : "transparent",
                   color: active ? "var(--text)" : "var(--text-dim)",
                   fontWeight: active ? 600 : 400,
                 }}
               >
-                {space === "mine" ? t("sessions.mySessions") : space === "quick" ? `⚡ ${t("sessions.quick")}` : "Host (CLI)"}
+                {space === "mine"
+                  ? t("sessions.mySessions")
+                  : space === "quick"
+                    ? `⚡ ${t("sessions.quick")}`
+                    : "Host (CLI)"}
               </button>
             );
           })}
@@ -478,13 +532,23 @@ export function ProjectSessionTree({
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Escape") setQuery(""); }}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") setQuery("");
+          }}
           placeholder={t("sessions.searchSessions")}
           spellCheck={false}
           style={{
-            width: "100%", boxSizing: "border-box", height: 26, padding: "0 8px",
-            background: "var(--bg)", color: "var(--text)", border: "1px solid var(--border)",
-            borderRadius: 5, fontFamily: "var(--font-mono)", fontSize: 11, outline: "none",
+            width: "100%",
+            boxSizing: "border-box",
+            height: 26,
+            padding: "0 8px",
+            background: "var(--bg)",
+            color: "var(--text)",
+            border: "1px solid var(--border)",
+            borderRadius: 5,
+            fontFamily: "var(--font-mono)",
+            fontSize: 11,
+            outline: "none",
           }}
         />
       </div>
@@ -492,387 +556,822 @@ export function ProjectSessionTree({
       {searching && (
         <div>
           {searchResults.length === 0 ? (
-            <div style={{ padding: "8px 6px", fontSize: 11, color: "var(--text-dim)" }}>{t("sessions.matchingSessions")}</div>
-          ) : searchResults.map((s) => {
-            const owner = projects.find((p) => p.id === s.projectId) ?? null;
-            return (
-              <div key={`search:${s.id}`} style={{ marginBottom: 2 }}>
-                <div style={{ padding: "2px 8px", fontSize: 10, color: "var(--text-dim)" }}>
-                  {owner ? t("sessions.project", { name: owner.name }) : s.mode === "quick" ? `⚡ ${t("sessions.quick")}` : s.projectRoot ?? t("sessions.ungrouped")}
+            <div style={{ padding: "8px 6px", fontSize: 11, color: "var(--text-dim)" }}>
+              {t("sessions.matchingSessions")}
+            </div>
+          ) : (
+            searchResults.map((s) => {
+              const owner = projects.find((p) => p.id === s.projectId) ?? null;
+              return (
+                <div key={`search:${s.id}`} style={{ marginBottom: 2 }}>
+                  <div style={{ padding: "2px 8px", fontSize: 10, color: "var(--text-dim)" }}>
+                    {owner
+                      ? t("sessions.project", { name: owner.name })
+                      : s.mode === "quick"
+                        ? `⚡ ${t("sessions.quick")}`
+                        : (s.projectRoot ?? t("sessions.ungrouped"))}
+                  </div>
+                  {renderItem(s, owner)}
                 </div>
-                {renderItem(s, owner)}
-              </div>
-            );
-          })}
+              );
+            })
+          )}
         </div>
       )}
 
-      {!searching && (<>
-      {/* 项目列表只属于“我的会话”空间：Host(CLI) 是 CLI/服务器目录会话的
+      {!searching && (
+        <>
+          {/* 项目列表只属于“我的会话”空间：Host(CLI) 是 CLI/服务器目录会话的
           专用视图，混入平台项目组（多为空态）只会稀释真正的 CLI 分组；
           项目的浏览/管理入口在“我的会话”一侧。 */}
-      {sessionSpace === "mine" && projects.map((project) => {
-        const { visible, total } = projectSessions(project);
-        const isCollapsed = collapsed.has(project.id);
-        // 焦点会话所属项目高亮 + 左侧模式色条，一眼定位当前所在项目。
-        const projectHoldsFocus = Boolean(selectedSessionId && byProject.map.get(project.id)?.some((s) => s.id === selectedSessionId));
-        const modeColor = project.mode === "sandbox" ? "#38bdf8" : project.mode === "ssh" ? "#34d399" : "#a78bfa";
-        // 容器状态点（沙箱项目绑定容器的前台可见性）。
-        const bound = project.containerId != null ? containers.find((c) => c.id === project.containerId) : undefined;
-        const containerState = bound?.status === "running" ? { color: "#22c55e", label: t("projects.running") }
-          : bound?.status === "stopped" ? { color: "#9ca3af", label: t("projects.stopped") }
-          : bound ? { color: "#f59e0b", label: bound.status }
-          : { color: "#ef4444", label: t("sessions.container2") };
-        return (
-          <div key={project.id} style={{ marginBottom: 2 }}>
-            <div
-              onClick={() => toggleCollapsed(project.id)}
-              style={{
-                display: "flex", alignItems: "center", gap: 6, padding: "5px 6px",
-                borderRadius: 6, cursor: "pointer", fontSize: 12, fontWeight: 600,
-                color: "var(--text)",
-                background: projectHoldsFocus ? "var(--bg-selected)" : "var(--bg-panel)",
-                boxShadow: projectHoldsFocus ? `inset 2px 0 0 ${modeColor}` : "none",
-              }}
-              onMouseEnter={(e) => { if (!projectHoldsFocus) e.currentTarget.style.background = "var(--bg-selected)"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = projectHoldsFocus ? "var(--bg-selected)" : "var(--bg-panel)"; }}
-            >
-              <span style={{ fontSize: 9, color: "var(--text-dim)", width: 10 }}>{isCollapsed ? "▸" : "▾"}</span>
-              {project.mode === "sandbox" ? (
-                <span
-                  title={t("sessions.container", { info: bound ? `#${bound.id} ${bound.name} · ${containerState.label}${bound.imageName ? ` · ${bound.imageName}` : ""}` : containerState.label })}
-                  style={{ width: 8, height: 8, borderRadius: "50%", background: containerState.color, flexShrink: 0, boxShadow: containerState.label === "运行中" ? `0 0 5px ${containerState.color}` : "none" }}
-                />
-              ) : (
-                <span style={{ width: 8, height: 8, flexShrink: 0 }} />
-              )}
-              <span style={{
-                flexShrink: 0, padding: "0 5px", borderRadius: 3, fontSize: 9, fontWeight: 700,
-                color: modeColor,
-                background: project.mode === "sandbox" ? "rgba(56,189,248,0.12)" : project.mode === "ssh" ? "rgba(52,211,153,0.14)" : "rgba(167,139,250,0.12)",
-              }}>
-                {project.mode === "sandbox" ? t("sessions.sandbox") : project.mode === "ssh" ? t("SSH") : t("sessions.local")}
-              </span>
-              <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{project.name}</span>
-              {project.mode === "sandbox" && (
-                <span title={t("sessions.runInsideContainer")} style={{ flexShrink: 0, fontFamily: "var(--font-mono)", fontSize: 9, color: "var(--text-dim)" }}>/workspace</span>
-              )}
-              <span style={{ fontSize: 10, color: "var(--text-dim)" }}>{total}</span>
-              <button
-                type="button"
-                title={t("sessions.newSession")}
-                onClick={(e) => { e.stopPropagation(); onNewSessionInProject(project); }}
-                style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--text-dim)", fontSize: 13, padding: "0 3px" }}
-              >＋</button>
-              <button
-                type="button"
-                title={t("sessions.projectMenu")}
-                onClick={(e) => { e.stopPropagation(); setMenu({ project, x: e.currentTarget.getBoundingClientRect().right, y: e.currentTarget.getBoundingClientRect().bottom }); }}
-                style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--text-dim)", fontSize: 12, padding: "0 3px" }}
-              >⋮</button>
-            </div>
-            {!isCollapsed && (
-              <div>
-                {visible.map((s) => renderItem(s, project))}
-                {total > visible.length && (
-                  <button
-                    type="button"
-                    onClick={() => setShowAll((prev) => new Set(prev).add(project.id))}
-                    style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--accent)", fontSize: 11, padding: "2px 6px 2px 26px" }}
+          {sessionSpace === "mine" &&
+            projects.map((project) => {
+              const { visible, total } = projectSessions(project);
+              const isCollapsed = collapsed.has(project.id);
+              // 焦点会话所属项目高亮 + 左侧模式色条，一眼定位当前所在项目。
+              const projectHoldsFocus = Boolean(
+                selectedSessionId && byProject.map.get(project.id)?.some((s) => s.id === selectedSessionId),
+              );
+              const modeColor = project.mode === "sandbox" ? "#38bdf8" : project.mode === "ssh" ? "#34d399" : "#a78bfa";
+              // 容器状态点（沙箱项目绑定容器的前台可见性）。
+              const bound =
+                project.containerId != null ? containers.find((c) => c.id === project.containerId) : undefined;
+              const containerState =
+                bound?.status === "running"
+                  ? { color: "#22c55e", label: t("projects.running") }
+                  : bound?.status === "stopped"
+                    ? { color: "#9ca3af", label: t("projects.stopped") }
+                    : bound
+                      ? { color: "#f59e0b", label: bound.status }
+                      : { color: "#ef4444", label: t("sessions.container2") };
+              return (
+                <div key={project.id} style={{ marginBottom: 2 }}>
+                  <div
+                    onClick={() => toggleCollapsed(project.id)}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      padding: "5px 6px",
+                      borderRadius: 6,
+                      cursor: "pointer",
+                      fontSize: 12,
+                      fontWeight: 600,
+                      color: "var(--text)",
+                      background: projectHoldsFocus ? "var(--bg-selected)" : "var(--bg-panel)",
+                      boxShadow: projectHoldsFocus ? `inset 2px 0 0 ${modeColor}` : "none",
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!projectHoldsFocus) e.currentTarget.style.background = "var(--bg-selected)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = projectHoldsFocus ? "var(--bg-selected)" : "var(--bg-panel)";
+                    }}
                   >
-                    {t("sessions.showAllSessions", { n: total })}
-                  </button>
-                )}
-                {total === 0 && (
-                  <div style={{ padding: "4px 6px 6px 26px", fontSize: 11, color: "var(--text-dim)" }}>{t("sessions.sessionsYetClickCreate")}</div>
-                )}
-              </div>
-            )}
-          </div>
-        );
-      })}
-      {sessionSpace === "mine" && projects.length === 0 && hostGroups.length === 0 && (
-        <div style={{ padding: "8px 6px", fontSize: 11, color: "var(--text-dim)" }}>{t("sessions.projectsYetUseButtonAbove")}</div>
-      )}
-
-      {sessionSpace === "host" && hostGroups.length === 0 && (
-        <div style={{ padding: "8px 6px", fontSize: 11, color: "var(--text-dim)" }}>{t("sessions.hostSessionsYetSessionsOpened")}</div>
-      )}
-
-      {/* 快速会话空间：按模板版本两级分组（模板名 (hash) → 会话），组织方式
-          对齐"项目 → 会话"。模板已删除的组（快照仍在工作区）显示"模板已删除"
-          徽标且不提供 ＋ 新建；旧会话永远留在自己的组里，不会因删模板而混堆。
-          创建入口仍是侧栏顶部的 ⚡ 按钮，组头部的 ＋ 是就近快捷方式。 */}
-      {sessionSpace === "quick" && (
-        <>
-          {quickGroups.map((group) => {
-            const key = `quick:${group.key}`;
-            const isCollapsed = collapsed.has(key);
-            const expandedAll = showAll.has(key);
-            const visible = isCollapsed ? [] : expandedAll ? group.sessions : group.sessions.slice(0, RECENT_COUNT);
-            const focusInGroup = Boolean(selectedSessionId && group.sessions.some((s) => s.id === selectedSessionId));
-            return (
-              <div key={key} style={{ marginBottom: 2 }}>
-                <div
-                  onClick={() => toggleCollapsed(key)}
-                  style={{
-                    display: "flex", alignItems: "center", gap: 6, padding: "5px 6px",
-                    borderRadius: 6, cursor: "pointer", fontSize: 12, fontWeight: 600,
-                    color: "var(--text)",
-                    background: focusInGroup ? "var(--bg-selected)" : "var(--bg-panel)",
-                  }}
-                  onMouseEnter={(e) => { if (!focusInGroup) e.currentTarget.style.background = "var(--bg-selected)"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.background = focusInGroup ? "var(--bg-selected)" : "var(--bg-panel)"; }}
-                >
-                  <span style={{ fontSize: 9, color: "var(--text-dim)", width: 10 }}>{isCollapsed ? "▸" : "▾"}</span>
-                  <span
-                    title={group.detached ? t("sessions.quickDetachedHint") : t("sessions.quickSessionsHint")}
-                    style={{ flexShrink: 0, padding: "0 5px", borderRadius: 3, fontSize: 9, fontWeight: 700, color: "#fbbf24", background: "rgba(251,191,36,0.12)" }}
-                  >
-                    ⚡
-                  </span>
-                  <span
-                    style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
-                    title={group.hash ? `${group.name} (${group.hash})` : group.name}
-                  >
-                    {group.hash ? `${group.name} (${group.hash})` : (group.name || t("sessions.quickUnassignedGroup"))}
-                  </span>
-                  {group.detached && (
+                    <span style={{ fontSize: 9, color: "var(--text-dim)", width: 10 }}>{isCollapsed ? "▸" : "▾"}</span>
+                    {project.mode === "sandbox" ? (
+                      <span
+                        title={t("sessions.container", {
+                          info: bound
+                            ? `#${bound.id} ${bound.name} · ${containerState.label}${bound.imageName ? ` · ${bound.imageName}` : ""}`
+                            : containerState.label,
+                        })}
+                        style={{
+                          width: 8,
+                          height: 8,
+                          borderRadius: "50%",
+                          background: containerState.color,
+                          flexShrink: 0,
+                          boxShadow: containerState.label === "运行中" ? `0 0 5px ${containerState.color}` : "none",
+                        }}
+                      />
+                    ) : (
+                      <span style={{ width: 8, height: 8, flexShrink: 0 }} />
+                    )}
                     <span
-                      title={t("sessions.quickDetachedHint")}
-                      style={{ flexShrink: 0, padding: "0 5px", borderRadius: 3, fontSize: 9, fontWeight: 700, color: "var(--text-dim)", background: "rgba(128,128,128,0.16)" }}
+                      style={{
+                        flexShrink: 0,
+                        padding: "0 5px",
+                        borderRadius: 3,
+                        fontSize: 9,
+                        fontWeight: 700,
+                        color: modeColor,
+                        background:
+                          project.mode === "sandbox"
+                            ? "rgba(56,189,248,0.12)"
+                            : project.mode === "ssh"
+                              ? "rgba(52,211,153,0.14)"
+                              : "rgba(167,139,250,0.12)",
+                      }}
                     >
-                      {t("sessions.quickTemplateDeleted")}
+                      {project.mode === "sandbox"
+                        ? t("sessions.sandbox")
+                        : project.mode === "ssh"
+                          ? t("SSH")
+                          : t("sessions.local")}
                     </span>
-                  )}
-                  <span style={{ fontSize: 10, color: "var(--text-dim)" }}>{group.sessions.length}</span>
-                  {!group.detached && group.templateId && onNewSessionFromTemplate && (
+                    <span
+                      style={{
+                        flex: 1,
+                        minWidth: 0,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {project.name}
+                    </span>
+                    {project.mode === "sandbox" && (
+                      <span
+                        title={t("sessions.runInsideContainer")}
+                        style={{ flexShrink: 0, fontFamily: "var(--font-mono)", fontSize: 9, color: "var(--text-dim)" }}
+                      >
+                        /workspace
+                      </span>
+                    )}
+                    <span style={{ fontSize: 10, color: "var(--text-dim)" }}>{total}</span>
                     <button
                       type="button"
                       title={t("sessions.newSession")}
-                      onClick={(e) => { e.stopPropagation(); onNewSessionFromTemplate(group.templateId!, group.name); }}
-                      style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--text-dim)", fontSize: 13, padding: "0 3px" }}
-                    >＋</button>
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onNewSessionInProject(project);
+                      }}
+                      style={{
+                        background: "transparent",
+                        border: "none",
+                        cursor: "pointer",
+                        color: "var(--text-dim)",
+                        fontSize: 13,
+                        padding: "0 3px",
+                      }}
+                    >
+                      ＋
+                    </button>
+                    <button
+                      type="button"
+                      title={t("sessions.projectMenu")}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setMenu({
+                          project,
+                          x: e.currentTarget.getBoundingClientRect().right,
+                          y: e.currentTarget.getBoundingClientRect().bottom,
+                        });
+                      }}
+                      style={{
+                        background: "transparent",
+                        border: "none",
+                        cursor: "pointer",
+                        color: "var(--text-dim)",
+                        fontSize: 12,
+                        padding: "0 3px",
+                      }}
+                    >
+                      ⋮
+                    </button>
+                  </div>
+                  {!isCollapsed && (
+                    <div>
+                      {visible.map((s) => renderItem(s, project))}
+                      {total > visible.length && (
+                        <button
+                          type="button"
+                          onClick={() => setShowAll((prev) => new Set(prev).add(project.id))}
+                          style={{
+                            background: "transparent",
+                            border: "none",
+                            cursor: "pointer",
+                            color: "var(--accent)",
+                            fontSize: 11,
+                            padding: "2px 6px 2px 26px",
+                          }}
+                        >
+                          {t("sessions.showAllSessions", { n: total })}
+                        </button>
+                      )}
+                      {total === 0 && (
+                        <div style={{ padding: "4px 6px 6px 26px", fontSize: 11, color: "var(--text-dim)" }}>
+                          {t("sessions.sessionsYetClickCreate")}
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
-                {visible.map((s) => renderItem(s, null))}
-                {!isCollapsed && !expandedAll && group.sessions.length > RECENT_COUNT && (
-                  <button
-                    type="button"
-                    onClick={() => setShowAll((prev) => new Set(prev).add(key))}
-                    style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--accent)", fontSize: 11, padding: "2px 6px 2px 26px" }}
-                  >
-                    {t("sessions.showAllSessions", { n: group.sessions.length })}
-                  </button>
-                )}
-              </div>
-            );
-          })}
-          {quickGroups.length === 0 && (
-            <div style={{ padding: "8px 6px", fontSize: 11, color: "var(--text-dim)", lineHeight: 1.7 }}>
-              {t("sessions.quickSessionsYetPickTemplate")}
+              );
+            })}
+          {sessionSpace === "mine" && projects.length === 0 && hostGroups.length === 0 && (
+            <div style={{ padding: "8px 6px", fontSize: 11, color: "var(--text-dim)" }}>
+              {t("sessions.projectsYetUseButtonAbove")}
             </div>
           )}
-        </>
-      )}
 
-      {/* Host 空间动态分组（admin）。快速空间是纯 quick 列表——Host 目录组
-          只属于 mine/host 视图，混进来会稀释快速会话（用户明确要求剔除）。 */}
-      {sessionSpace !== "quick" && hostGroups.map(([root, list]) => {
-        const key = `host:${root}`;
-        const isCollapsed = collapsed.has(key);
-        // Mirrors the project branch: "show all" must widen `visible` — this
-        // always sliced to RECENT_COUNT, so the button wrote showAll state
-        // that nothing read and the click appeared dead.
-        const expandedAll = showAll.has(key);
-        const visible = isCollapsed ? [] : expandedAll ? list : list.slice(0, RECENT_COUNT);
-        return (
-          <div key={key} style={{ marginBottom: 2 }}>
-            <div
-              onClick={() => toggleCollapsed(key)}
-              style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 6px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontWeight: 600, color: "var(--text-muted)", background: "transparent" }}
-            >
-              <span style={{ fontSize: 9, color: "var(--text-dim)", width: 10 }}>{isCollapsed ? "▸" : "▾"}</span>
-              <span style={{
-                flexShrink: 0, padding: "0 5px", borderRadius: 3, fontSize: 9, fontWeight: 700,
-                color: "var(--text-muted)", background: "rgba(128,128,128,0.14)",
-              }}>Host</span>
-              {/* 显示末级文件夹名（完整路径进 tooltip）——全路径太冗余 */}
-              <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={root}>
-                {root.split("/").filter(Boolean).pop() ?? root}
-              </span>
-              <span style={{ fontSize: 10, color: "var(--text-dim)" }}>{list.length}</span>
-              {onNewSessionInDirectory && (
-                <button
-                  type="button"
-                  title={t("sessions.newSession")}
-                  onClick={(e) => { e.stopPropagation(); onNewSessionInDirectory(root); }}
-                  style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--text-dim)", fontSize: 13, padding: "0 3px" }}
-                >＋</button>
-              )}
-              <button
-                type="button"
-                title={t("sessions.directoryMenu")}
-                onClick={(e) => { e.stopPropagation(); setMenu({ directory: root, x: e.currentTarget.getBoundingClientRect().right, y: e.currentTarget.getBoundingClientRect().bottom }); }}
-                style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--text-dim)", fontSize: 12, padding: "0 3px" }}
-              >⋮</button>
+          {sessionSpace === "host" && hostGroups.length === 0 && (
+            <div style={{ padding: "8px 6px", fontSize: 11, color: "var(--text-dim)" }}>
+              {t("sessions.hostSessionsYetSessionsOpened")}
             </div>
-            {visible.map((s) => renderItem(s, null))}
-            {!isCollapsed && !expandedAll && list.length > RECENT_COUNT && (
-              <button type="button" onClick={() => setShowAll((prev) => new Set(prev).add(key))} style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--accent)", fontSize: 11, padding: "2px 6px 2px 26px" }}>
-                {t("sessions.showAllSessions", { n: list.length })}
-              </button>
-            )}
-          </div>
-        );
-      })}
+          )}
 
-      {/* 未绑定项目的非宿主模式会话（如 API 直建的 pre-project 沙箱会话）：
+          {/* 快速会话空间：按模板版本两级分组（模板名 (hash) → 会话），组织方式
+          对齐"项目 → 会话"。模板已删除的组（快照仍在工作区）显示"模板已删除"
+          徽标且不提供 ＋ 新建；旧会话永远留在自己的组里，不会因删模板而混堆。
+          创建入口仍是侧栏顶部的 ⚡ 按钮，组头部的 ＋ 是就近快捷方式。 */}
+          {sessionSpace === "quick" && (
+            <>
+              {quickGroups.map((group) => {
+                const key = `quick:${group.key}`;
+                const isCollapsed = collapsed.has(key);
+                const expandedAll = showAll.has(key);
+                const visible = isCollapsed ? [] : expandedAll ? group.sessions : group.sessions.slice(0, RECENT_COUNT);
+                const focusInGroup = Boolean(
+                  selectedSessionId && group.sessions.some((s) => s.id === selectedSessionId),
+                );
+                return (
+                  <div key={key} style={{ marginBottom: 2 }}>
+                    <div
+                      onClick={() => toggleCollapsed(key)}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                        padding: "5px 6px",
+                        borderRadius: 6,
+                        cursor: "pointer",
+                        fontSize: 12,
+                        fontWeight: 600,
+                        color: "var(--text)",
+                        background: focusInGroup ? "var(--bg-selected)" : "var(--bg-panel)",
+                      }}
+                      onMouseEnter={(e) => {
+                        if (!focusInGroup) e.currentTarget.style.background = "var(--bg-selected)";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = focusInGroup ? "var(--bg-selected)" : "var(--bg-panel)";
+                      }}
+                    >
+                      <span style={{ fontSize: 9, color: "var(--text-dim)", width: 10 }}>
+                        {isCollapsed ? "▸" : "▾"}
+                      </span>
+                      <span
+                        title={group.detached ? t("sessions.quickDetachedHint") : t("sessions.quickSessionsHint")}
+                        style={{
+                          flexShrink: 0,
+                          padding: "0 5px",
+                          borderRadius: 3,
+                          fontSize: 9,
+                          fontWeight: 700,
+                          color: "#fbbf24",
+                          background: "rgba(251,191,36,0.12)",
+                        }}
+                      >
+                        ⚡
+                      </span>
+                      <span
+                        style={{
+                          flex: 1,
+                          minWidth: 0,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                        title={group.hash ? `${group.name} (${group.hash})` : group.name}
+                      >
+                        {group.hash
+                          ? `${group.name} (${group.hash})`
+                          : group.name || t("sessions.quickUnassignedGroup")}
+                      </span>
+                      {group.detached && (
+                        <span
+                          title={t("sessions.quickDetachedHint")}
+                          style={{
+                            flexShrink: 0,
+                            padding: "0 5px",
+                            borderRadius: 3,
+                            fontSize: 9,
+                            fontWeight: 700,
+                            color: "var(--text-dim)",
+                            background: "rgba(128,128,128,0.16)",
+                          }}
+                        >
+                          {t("sessions.quickTemplateDeleted")}
+                        </span>
+                      )}
+                      <span style={{ fontSize: 10, color: "var(--text-dim)" }}>{group.sessions.length}</span>
+                      {!group.detached && group.templateId && onNewSessionFromTemplate && (
+                        <button
+                          type="button"
+                          title={t("sessions.newSession")}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onNewSessionFromTemplate(group.templateId!, group.name);
+                          }}
+                          style={{
+                            background: "transparent",
+                            border: "none",
+                            cursor: "pointer",
+                            color: "var(--text-dim)",
+                            fontSize: 13,
+                            padding: "0 3px",
+                          }}
+                        >
+                          ＋
+                        </button>
+                      )}
+                    </div>
+                    {visible.map((s) => renderItem(s, null))}
+                    {!isCollapsed && !expandedAll && group.sessions.length > RECENT_COUNT && (
+                      <button
+                        type="button"
+                        onClick={() => setShowAll((prev) => new Set(prev).add(key))}
+                        style={{
+                          background: "transparent",
+                          border: "none",
+                          cursor: "pointer",
+                          color: "var(--accent)",
+                          fontSize: 11,
+                          padding: "2px 6px 2px 26px",
+                        }}
+                      >
+                        {t("sessions.showAllSessions", { n: group.sessions.length })}
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+              {quickGroups.length === 0 && (
+                <div style={{ padding: "8px 6px", fontSize: 11, color: "var(--text-dim)", lineHeight: 1.7 }}>
+                  {t("sessions.quickSessionsYetPickTemplate")}
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Host 空间动态分组（admin）。快速空间是纯 quick 列表——Host 目录组
+          只属于 mine/host 视图，混进来会稀释快速会话（用户明确要求剔除）。 */}
+          {sessionSpace !== "quick" &&
+            hostGroups.map(([root, list]) => {
+              const key = `host:${root}`;
+              const isCollapsed = collapsed.has(key);
+              // Mirrors the project branch: "show all" must widen `visible` — this
+              // always sliced to RECENT_COUNT, so the button wrote showAll state
+              // that nothing read and the click appeared dead.
+              const expandedAll = showAll.has(key);
+              const visible = isCollapsed ? [] : expandedAll ? list : list.slice(0, RECENT_COUNT);
+              return (
+                <div key={key} style={{ marginBottom: 2 }}>
+                  <div
+                    onClick={() => toggleCollapsed(key)}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      padding: "5px 6px",
+                      borderRadius: 6,
+                      cursor: "pointer",
+                      fontSize: 12,
+                      fontWeight: 600,
+                      color: "var(--text-muted)",
+                      background: "transparent",
+                    }}
+                  >
+                    <span style={{ fontSize: 9, color: "var(--text-dim)", width: 10 }}>{isCollapsed ? "▸" : "▾"}</span>
+                    <span
+                      style={{
+                        flexShrink: 0,
+                        padding: "0 5px",
+                        borderRadius: 3,
+                        fontSize: 9,
+                        fontWeight: 700,
+                        color: "var(--text-muted)",
+                        background: "rgba(128,128,128,0.14)",
+                      }}
+                    >
+                      Host
+                    </span>
+                    {/* 显示末级文件夹名（完整路径进 tooltip）——全路径太冗余 */}
+                    <span
+                      style={{
+                        flex: 1,
+                        minWidth: 0,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                      title={root}
+                    >
+                      {root.split("/").filter(Boolean).pop() ?? root}
+                    </span>
+                    <span style={{ fontSize: 10, color: "var(--text-dim)" }}>{list.length}</span>
+                    {onNewSessionInDirectory && (
+                      <button
+                        type="button"
+                        title={t("sessions.newSession")}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onNewSessionInDirectory(root);
+                        }}
+                        style={{
+                          background: "transparent",
+                          border: "none",
+                          cursor: "pointer",
+                          color: "var(--text-dim)",
+                          fontSize: 13,
+                          padding: "0 3px",
+                        }}
+                      >
+                        ＋
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      title={t("sessions.directoryMenu")}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setMenu({
+                          directory: root,
+                          x: e.currentTarget.getBoundingClientRect().right,
+                          y: e.currentTarget.getBoundingClientRect().bottom,
+                        });
+                      }}
+                      style={{
+                        background: "transparent",
+                        border: "none",
+                        cursor: "pointer",
+                        color: "var(--text-dim)",
+                        fontSize: 12,
+                        padding: "0 3px",
+                      }}
+                    >
+                      ⋮
+                    </button>
+                  </div>
+                  {visible.map((s) => renderItem(s, null))}
+                  {!isCollapsed && !expandedAll && list.length > RECENT_COUNT && (
+                    <button
+                      type="button"
+                      onClick={() => setShowAll((prev) => new Set(prev).add(key))}
+                      style={{
+                        background: "transparent",
+                        border: "none",
+                        cursor: "pointer",
+                        color: "var(--accent)",
+                        fontSize: 11,
+                        padding: "2px 6px 2px 26px",
+                      }}
+                    >
+                      {t("sessions.showAllSessions", { n: list.length })}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+
+          {/* 未绑定项目的非宿主模式会话（如 API 直建的 pre-project 沙箱会话）：
           按模式成组、带正确徽标——之前被 Host 目录组吞掉，会话徽标与项目
           徽标各说各话。 */}
-      {sessionSpace !== "quick" && unboundModeGroups.map(([mode, list]) => {
-        const key = `unbound:${mode}`;
-        const isCollapsed = collapsed.has(key);
-        const badge = mode === "sandbox"
-          ? { label: t("sessions.sandbox"), color: "#38bdf8", bg: "rgba(56,189,248,0.12)" }
-          : mode === "ssh"
-            ? { label: t("SSH"), color: "#34d399", bg: "rgba(52,211,153,0.14)" }
-            : { label: t("sessions.local"), color: "#a78bfa", bg: "rgba(167,139,250,0.12)" };
-        const visible = isCollapsed ? [] : list;
-        return (
-          <div key={key} style={{ marginBottom: 2 }}>
-            <div
-              onClick={() => toggleCollapsed(key)}
-              style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 6px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontWeight: 600, color: "var(--text-muted)", background: "transparent" }}
-            >
-              <span style={{ fontSize: 9, color: "var(--text-dim)", width: 10 }}>{isCollapsed ? "▸" : "▾"}</span>
-              <span style={{ flexShrink: 0, padding: "0 5px", borderRadius: 3, fontSize: 9, fontWeight: 700, color: badge.color, background: badge.bg }}>{badge.label}</span>
-              <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {t("sessions.unboundSuffix")}
-              </span>
-              <span style={{ fontSize: 10, color: "var(--text-dim)" }}>{list.length}</span>
-            </div>
-            {visible.map((s) => renderItem(s, null))}
-          </div>
-        );
-      })}
-      </>)}
+          {sessionSpace !== "quick" &&
+            unboundModeGroups.map(([mode, list]) => {
+              const key = `unbound:${mode}`;
+              const isCollapsed = collapsed.has(key);
+              const badge =
+                mode === "sandbox"
+                  ? { label: t("sessions.sandbox"), color: "#38bdf8", bg: "rgba(56,189,248,0.12)" }
+                  : mode === "ssh"
+                    ? { label: t("SSH"), color: "#34d399", bg: "rgba(52,211,153,0.14)" }
+                    : { label: t("sessions.local"), color: "#a78bfa", bg: "rgba(167,139,250,0.12)" };
+              const visible = isCollapsed ? [] : list;
+              return (
+                <div key={key} style={{ marginBottom: 2 }}>
+                  <div
+                    onClick={() => toggleCollapsed(key)}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      padding: "5px 6px",
+                      borderRadius: 6,
+                      cursor: "pointer",
+                      fontSize: 12,
+                      fontWeight: 600,
+                      color: "var(--text-muted)",
+                      background: "transparent",
+                    }}
+                  >
+                    <span style={{ fontSize: 9, color: "var(--text-dim)", width: 10 }}>{isCollapsed ? "▸" : "▾"}</span>
+                    <span
+                      style={{
+                        flexShrink: 0,
+                        padding: "0 5px",
+                        borderRadius: 3,
+                        fontSize: 9,
+                        fontWeight: 700,
+                        color: badge.color,
+                        background: badge.bg,
+                      }}
+                    >
+                      {badge.label}
+                    </span>
+                    <span
+                      style={{
+                        flex: 1,
+                        minWidth: 0,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {t("sessions.unboundSuffix")}
+                    </span>
+                    <span style={{ fontSize: 10, color: "var(--text-dim)" }}>{list.length}</span>
+                  </div>
+                  {visible.map((s) => renderItem(s, null))}
+                </div>
+              );
+            })}
+        </>
+      )}
 
       {/* 目录菜单（Host 空间的动态目录组） */}
       {menu?.directory && onNewSessionInDirectory && (
         <div
           ref={menuRef}
           style={{
-            position: "fixed", top: menu.y, left: Math.max(8, menu.x - 160), zIndex: 1200,
-            display: "flex", flexDirection: "column", minWidth: 160,
-            background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: 8,
-            boxShadow: "0 8px 24px rgba(0,0,0,0.3)", overflow: "hidden", fontSize: 12,
+            position: "fixed",
+            top: menu.y,
+            left: Math.max(8, menu.x - 160),
+            zIndex: 1200,
+            display: "flex",
+            flexDirection: "column",
+            minWidth: 160,
+            background: "var(--bg-panel)",
+            border: "1px solid var(--border)",
+            borderRadius: 8,
+            boxShadow: "0 8px 24px rgba(0,0,0,0.3)",
+            overflow: "hidden",
+            fontSize: 12,
           }}
         >
-          <MenuItem label={t("sessions.newSession")} onClick={() => { onNewSessionInDirectory(menu.directory!); setMenu(null); }} />
-          <MenuItem label={t("sessions.importProjectConfig")} onClick={() => { setHostImportDir(menu.directory!); setMenu(null); }} />
-          <MenuItem label={t("bundles.applyMenu")} onClick={() => { setApplyHostDir(menu.directory!); setMenu(null); }} />
-          <MenuItem label={t("sessions.exportConfigBundle")} onClick={() => { void exportHostConfig(menu.directory!); setMenu(null); }} />
-          <MenuItem label={t("sessions.copyPath")} onClick={() => {
-            void navigator.clipboard?.writeText(menu.directory!).catch(() => {});
-            setMenu(null);
-          }} />
-          <MenuItem label={t("sessions.browseFilePanel")} onClick={() => {
-            // 与项目会话同一套文件面板：把该目录设为当前工作目录并建一个会话。
-            onNewSessionInDirectory(menu.directory!);
-            setMenu(null);
-          }} />
+          <MenuItem
+            label={t("sessions.newSession")}
+            onClick={() => {
+              onNewSessionInDirectory(menu.directory!);
+              setMenu(null);
+            }}
+          />
+          <MenuItem
+            label={t("sessions.importProjectConfig")}
+            onClick={() => {
+              setHostImportDir(menu.directory!);
+              setMenu(null);
+            }}
+          />
+          <MenuItem
+            label={t("bundles.applyMenu")}
+            onClick={() => {
+              setApplyHostDir(menu.directory!);
+              setMenu(null);
+            }}
+          />
+          <MenuItem
+            label={t("sessions.exportConfigBundle")}
+            onClick={() => {
+              void exportHostConfig(menu.directory!);
+              setMenu(null);
+            }}
+          />
+          <MenuItem
+            label={t("sessions.copyPath")}
+            onClick={() => {
+              void navigator.clipboard?.writeText(menu.directory!).catch(() => {});
+              setMenu(null);
+            }}
+          />
+          <MenuItem
+            label={t("sessions.browseFilePanel")}
+            onClick={() => {
+              // 与项目会话同一套文件面板：把该目录设为当前工作目录并建一个会话。
+              onNewSessionInDirectory(menu.directory!);
+              setMenu(null);
+            }}
+          />
         </div>
       )}
 
       {/* 项目菜单 */}
       {(() => {
-      const menuProject = menu?.project;
-      if (!menuProject) return null;
-      return (
-        <div
-          ref={menuRef}
-          style={{
-            position: "fixed", top: menu.y, left: Math.max(8, menu.x - 160), zIndex: 1200,
-            display: "flex", flexDirection: "column", minWidth: 160,
-            background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: 8,
-            boxShadow: "0 8px 24px rgba(0,0,0,0.3)", overflow: "hidden", fontSize: 12,
-          }}
-        >
-          <MenuItem label={t("sessions.newSession")} onClick={() => { onNewSessionInProject(menuProject); setMenu(null); }} />
-          <MenuItem label={t("common.rename")} onClick={() => {
-            const name = window.prompt(t("sessions.newProjectName"), menuProject.name);
-            if (name?.trim()) {
-              void fetch(`/api/projects/${encodeURIComponent(menuProject.id)}`, {
-                method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: name.trim() }),
-              }).then(() => loadProjects());
-            }
-            setMenu(null);
-          }} />
-          <MenuItem label={t("sessions.duplicateNewProject")} onClick={() => { void duplicate(menuProject); setMenu(null); }} />
-          <MenuItem label={t("sessions.settingsModelCredentials")} onClick={() => { setSettingsId(menuProject.id); setMenu(null); }} />
-          <MenuItem label={t("sessions.importProjectConfig")} onClick={() => { setImportId(menuProject.id); setMenu(null); }} />
-          <MenuItem label={t("bundles.applyMenu")} onClick={() => { setApplyBundleId(menuProject.id); setMenu(null); }} />
-          <MenuItem label={t("sessions.exportConfigBundle")} onClick={() => { void exportConfig(menuProject); setMenu(null); }} />
-          {menuProject.mode === "sandbox" && (() => {
-            // 绑定信息：项目 → 容器 → 镜像 三位一体（debug 友好）。
-            const boundInfo = menuProject.containerId != null
-              ? containers.find((c) => c.id === menuProject.containerId)
-              : undefined;
-            return (
-              <div style={{ borderTop: "1px solid var(--border)", padding: "6px 10px", color: "var(--text-dim)", fontSize: 10.5, lineHeight: 1.6 }}>
-                {t("sessions.container", { info: boundInfo ? `#${boundInfo.id} · ${boundInfo.status === "running" ? t("projects.running") : boundInfo.status}` : "未绑定" })}
-                {boundInfo?.imageName ? ` · ${boundInfo.imageName}` : ""}
-                {t("sessions.saves2MostRecent2", { n: menuProject.snapshotSlots?.length ?? 0 })}
+        const menuProject = menu?.project;
+        if (!menuProject) return null;
+        return (
+          <div
+            ref={menuRef}
+            style={{
+              position: "fixed",
+              top: menu.y,
+              left: Math.max(8, menu.x - 160),
+              zIndex: 1200,
+              display: "flex",
+              flexDirection: "column",
+              minWidth: 160,
+              background: "var(--bg-panel)",
+              border: "1px solid var(--border)",
+              borderRadius: 8,
+              boxShadow: "0 8px 24px rgba(0,0,0,0.3)",
+              overflow: "hidden",
+              fontSize: 12,
+            }}
+          >
+            <MenuItem
+              label={t("sessions.newSession")}
+              onClick={() => {
+                onNewSessionInProject(menuProject);
+                setMenu(null);
+              }}
+            />
+            <MenuItem
+              label={t("common.rename")}
+              onClick={() => {
+                const name = window.prompt(t("sessions.newProjectName"), menuProject.name);
+                if (name?.trim()) {
+                  void fetch(`/api/projects/${encodeURIComponent(menuProject.id)}`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ name: name.trim() }),
+                  }).then(() => loadProjects());
+                }
+                setMenu(null);
+              }}
+            />
+            <MenuItem
+              label={t("sessions.duplicateNewProject")}
+              onClick={() => {
+                void duplicate(menuProject);
+                setMenu(null);
+              }}
+            />
+            <MenuItem
+              label={t("sessions.settingsModelCredentials")}
+              onClick={() => {
+                setSettingsId(menuProject.id);
+                setMenu(null);
+              }}
+            />
+            <MenuItem
+              label={t("sessions.importProjectConfig")}
+              onClick={() => {
+                setImportId(menuProject.id);
+                setMenu(null);
+              }}
+            />
+            <MenuItem
+              label={t("bundles.applyMenu")}
+              onClick={() => {
+                setApplyBundleId(menuProject.id);
+                setMenu(null);
+              }}
+            />
+            <MenuItem
+              label={t("sessions.exportConfigBundle")}
+              onClick={() => {
+                void exportConfig(menuProject);
+                setMenu(null);
+              }}
+            />
+            {menuProject.mode === "sandbox" &&
+              (() => {
+                // 绑定信息：项目 → 容器 → 镜像 三位一体（debug 友好）。
+                const boundInfo =
+                  menuProject.containerId != null
+                    ? containers.find((c) => c.id === menuProject.containerId)
+                    : undefined;
+                return (
+                  <div
+                    style={{
+                      borderTop: "1px solid var(--border)",
+                      padding: "6px 10px",
+                      color: "var(--text-dim)",
+                      fontSize: 10.5,
+                      lineHeight: 1.6,
+                    }}
+                  >
+                    {t("sessions.container", {
+                      info: boundInfo
+                        ? `#${boundInfo.id} · ${boundInfo.status === "running" ? t("projects.running") : boundInfo.status}`
+                        : "未绑定",
+                    })}
+                    {boundInfo?.imageName ? ` · ${boundInfo.imageName}` : ""}
+                    {t("sessions.saves2MostRecent2", { n: menuProject.snapshotSlots?.length ?? 0 })}
+                  </div>
+                );
+              })()}
+            {menuProject.mode === "sandbox" && (
+              <div
+                style={{
+                  borderTop: "1px solid var(--border)",
+                  padding: "4px 10px",
+                  color: "var(--text-dim)",
+                  fontSize: 10,
+                }}
+              >
+                存档（含环境与文件）
               </div>
-            );
-          })()}
-          {menuProject.mode === "sandbox" && (
-            <div style={{ borderTop: "1px solid var(--border)", padding: "4px 10px", color: "var(--text-dim)", fontSize: 10 }}>存档（含环境与文件）</div>
-          )}
-          {menuProject.mode === "sandbox" && (
-            <MenuItem label={t("sessions.saveStateSnapshot")} onClick={() => { void projectSnapshot(menuProject, "save"); setMenu(null); }} />
-          )}
-          {menuProject.mode === "sandbox" && (menuProject.snapshotSlots ?? []).map((slot) => (
+            )}
+            {menuProject.mode === "sandbox" && (
+              <MenuItem
+                label={t("sessions.saveStateSnapshot")}
+                onClick={() => {
+                  void projectSnapshot(menuProject, "save");
+                  setMenu(null);
+                }}
+              />
+            )}
+            {menuProject.mode === "sandbox" &&
+              (menuProject.snapshotSlots ?? []).map((slot) => (
+                <MenuItem
+                  key={slot.id}
+                  label={t("sessions.restoreSave", { time: new Date(slot.createdAt).toLocaleString() })}
+                  onClick={() => {
+                    void projectSnapshot(menuProject, "restore", slot.id);
+                    setMenu(null);
+                  }}
+                />
+              ))}
+            {menuProject.mode === "sandbox" && (
+              <div
+                style={{
+                  borderTop: "1px solid var(--border)",
+                  padding: "4px 10px",
+                  color: "var(--text-dim)",
+                  fontSize: 10,
+                }}
+              >
+                文件留存（仅文件）
+              </div>
+            )}
+            {menuProject.mode === "sandbox" && (
+              <MenuItem
+                label={t("sessions.exportMyWorkspaceTarGz")}
+                onClick={() => {
+                  void exportWorkspace(menuProject);
+                  setMenu(null);
+                }}
+              />
+            )}
+            {menuProject.mode === "sandbox" && (
+              <div
+                style={{
+                  borderTop: "1px solid var(--border)",
+                  padding: "4px 10px",
+                  color: "var(--text-dim)",
+                  fontSize: 10,
+                }}
+              >
+                沙箱容器
+              </div>
+            )}
+            {menuProject.mode === "sandbox" &&
+              containers.map((c) => (
+                <MenuItem
+                  key={c.id}
+                  label={`${menuProject.containerId === c.id ? "● " : "○ "}${c.name} (#${c.id})`}
+                  onClick={() => void setContainer(menuProject, c.id)}
+                />
+              ))}
+            {menuProject.mode === "sandbox" && (
+              <MenuItem
+                label={t("sessions.followPlatformDefaultContainer")}
+                onClick={() => void setContainer(menuProject, null)}
+              />
+            )}
+            {menuProject.mode === "sandbox" && onManageSandbox && (
+              <MenuItem
+                label={t("sessions.manageContainers")}
+                onClick={() => {
+                  onManageSandbox(menuProject);
+                  setMenu(null);
+                }}
+              />
+            )}
+            <div style={{ borderTop: "1px solid var(--border)" }} />
             <MenuItem
-              key={slot.id}
-              label={t("sessions.restoreSave", { time: new Date(slot.createdAt).toLocaleString() })}
-              onClick={() => { void projectSnapshot(menuProject, "restore", slot.id); setMenu(null); }}
+              label={t("sessions.deleteProject")}
+              danger
+              onClick={() => {
+                void remove(menuProject);
+                setMenu(null);
+              }}
             />
-          ))}
-          {menuProject.mode === "sandbox" && (
-            <div style={{ borderTop: "1px solid var(--border)", padding: "4px 10px", color: "var(--text-dim)", fontSize: 10 }}>文件留存（仅文件）</div>
-          )}
-          {menuProject.mode === "sandbox" && (
-            <MenuItem label={t("sessions.exportMyWorkspaceTarGz")} onClick={() => { void exportWorkspace(menuProject); setMenu(null); }} />
-          )}
-          {menuProject.mode === "sandbox" && (
-            <div style={{ borderTop: "1px solid var(--border)", padding: "4px 10px", color: "var(--text-dim)", fontSize: 10 }}>沙箱容器</div>
-          )}
-          {menuProject.mode === "sandbox" && containers.map((c) => (
-            <MenuItem
-              key={c.id}
-              label={`${menuProject.containerId === c.id ? "● " : "○ "}${c.name} (#${c.id})`}
-              onClick={() => void setContainer(menuProject, c.id)}
-            />
-          ))}
-          {menuProject.mode === "sandbox" && (
-            <MenuItem label={t("sessions.followPlatformDefaultContainer")} onClick={() => void setContainer(menuProject, null)} />
-          )}
-          {menuProject.mode === "sandbox" && onManageSandbox && (
-            <MenuItem label={t("sessions.manageContainers")} onClick={() => { onManageSandbox(menuProject); setMenu(null); }} />
-          )}
-          <div style={{ borderTop: "1px solid var(--border)" }} />
-          <MenuItem label={t("sessions.deleteProject")} danger onClick={() => { void remove(menuProject); setMenu(null); }} />
-        </div>
-      );
+          </div>
+        );
       })()}
 
       {settingsId && (
         <ProjectSettingsDialog
           projectId={settingsId}
           onClose={() => setSettingsId(null)}
-          onChanged={() => { loadProjects(); refreshSessions(); }}
+          onChanged={() => {
+            loadProjects();
+            refreshSessions();
+          }}
         />
       )}
 
@@ -889,7 +1388,10 @@ export function ProjectSessionTree({
           projectId={importId}
           projectName={projects.find((p) => p.id === importId)?.name ?? importId}
           onClose={() => setImportId(null)}
-          onImported={() => { loadProjects(); refreshSessions(); }}
+          onImported={() => {
+            loadProjects();
+            refreshSessions();
+          }}
         />
       )}
       {applyBundleId && (
@@ -897,7 +1399,10 @@ export function ProjectSessionTree({
           projectId={applyBundleId}
           projectName={projects.find((p) => p.id === applyBundleId)?.name ?? applyBundleId}
           onClose={() => setApplyBundleId(null)}
-          onApplied={() => { loadProjects(); refreshSessions(); }}
+          onApplied={() => {
+            loadProjects();
+            refreshSessions();
+          }}
         />
       )}
       {applyHostDir && (
@@ -918,12 +1423,20 @@ function MenuItem({ label, onClick, danger }: { label: string; onClick: () => vo
       type="button"
       onClick={onClick}
       style={{
-        background: "transparent", border: "none", cursor: "pointer", textAlign: "left",
-        padding: "7px 12px", fontSize: 12,
+        background: "transparent",
+        border: "none",
+        cursor: "pointer",
+        textAlign: "left",
+        padding: "7px 12px",
+        fontSize: 12,
         color: danger ? "#f87171" : "var(--text)",
       }}
-      onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-hover)"; }}
-      onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.background = "var(--bg-hover)";
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.background = "transparent";
+      }}
     >
       {label}
     </button>
@@ -936,7 +1449,16 @@ function MenuItem({ label, onClick, danger }: { label: string; onClick: () => vo
  * 删除先在行内显示 红色确认/取消（Shift+点击跳过确认）。
  */
 function ProjectSessionRow({
-  session, selected, running, pinned, canPin, nested = false, onSelect, onRename, onDelete, onTogglePin,
+  session,
+  selected,
+  running,
+  pinned,
+  canPin,
+  nested = false,
+  onSelect,
+  onRename,
+  onDelete,
+  onTogglePin,
 }: {
   session: SessionInfo;
   selected: boolean;
@@ -977,21 +1499,53 @@ function ProjectSessionRow({
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          display: "flex", alignItems: "center", gap: 7,
-          height: 34, padding: "0 6px 0 26px", borderRadius: 5, cursor: "default",
-          background: "rgba(239,68,68,0.06)", borderLeft: "2px solid #ef4444",
+          display: "flex",
+          alignItems: "center",
+          gap: 7,
+          height: 34,
+          padding: "0 6px 0 26px",
+          borderRadius: 5,
+          cursor: "default",
+          background: "rgba(239,68,68,0.06)",
+          borderLeft: "2px solid #ef4444",
         }}
       >
-        <div style={{ flex: 1, minWidth: 0, fontSize: 12, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {t("common.delete")} <span style={{ fontWeight: 600 }}>“{title.slice(0, 20)}{title.length > 20 ? "…" : ""}”</span>？
+        <div
+          style={{
+            flex: 1,
+            minWidth: 0,
+            fontSize: 12,
+            color: "var(--text)",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {t("common.delete")}{" "}
+          <span style={{ fontWeight: 600 }}>
+            “{title.slice(0, 20)}
+            {title.length > 20 ? "…" : ""}”
+          </span>
+          ？
         </div>
         <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
           <button
             type="button"
-            onClick={() => { setConfirmDelete(false); onDelete(); }}
+            onClick={() => {
+              setConfirmDelete(false);
+              onDelete();
+            }}
             style={{
-              height: 22, padding: "0 9px", borderRadius: 5, border: "none",
-              background: "#ef4444", color: "#fff", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap",
+              height: 22,
+              padding: "0 9px",
+              borderRadius: 5,
+              border: "none",
+              background: "#ef4444",
+              color: "#fff",
+              fontSize: 11,
+              fontWeight: 600,
+              cursor: "pointer",
+              whiteSpace: "nowrap",
             }}
           >
             {t("common.delete")}
@@ -1000,8 +1554,15 @@ function ProjectSessionRow({
             type="button"
             onClick={() => setConfirmDelete(false)}
             style={{
-              height: 22, padding: "0 9px", borderRadius: 5,
-              border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-muted)", fontSize: 11, cursor: "pointer", whiteSpace: "nowrap",
+              height: 22,
+              padding: "0 9px",
+              borderRadius: 5,
+              border: "1px solid var(--border)",
+              background: "var(--bg)",
+              color: "var(--text-muted)",
+              fontSize: 11,
+              cursor: "pointer",
+              whiteSpace: "nowrap",
             }}
           >
             {t("common.cancel")}
@@ -1017,12 +1578,16 @@ function ProjectSessionRow({
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
-        display: "flex", alignItems: "center", gap: 7,
-        height: 34, padding: "0 6px 0 26px", borderRadius: 5,
+        display: "flex",
+        alignItems: "center",
+        gap: 7,
+        height: 34,
+        padding: "0 6px 0 26px",
+        borderRadius: 5,
         cursor: busyRow ? "default" : "pointer",
         background: selected ? "var(--bg-selected)" : hovered ? "var(--bg-hover)" : "transparent",
         transition: "background 0.1s",
-        ...(nested ? { paddingLeft: 46 } : {})
+        ...(nested ? { paddingLeft: 46 } : {}),
       }}
     >
       {renaming ? (
@@ -1038,39 +1603,83 @@ function ProjectSessionRow({
           autoFocus
           onClick={(e) => e.stopPropagation()}
           style={{
-            flex: 1, minWidth: 0, height: 24, fontSize: 12, padding: "2px 7px",
-            border: "1px solid var(--accent)", borderRadius: 5, outline: "none",
-            background: "var(--bg)", color: "var(--text)",
+            flex: 1,
+            minWidth: 0,
+            height: 24,
+            fontSize: 12,
+            padding: "2px 7px",
+            border: "1px solid var(--accent)",
+            borderRadius: 5,
+            outline: "none",
+            background: "var(--bg)",
+            color: "var(--text)",
           }}
         />
       ) : (
         <>
           {nested && !running && (
-            <span title={t("sessions.subagentSession")} style={{ fontSize: 10, lineHeight: 1, color: "var(--text-dim)", flexShrink: 0 }}>⌘</span>
+            <span
+              title={t("sessions.subagentSession")}
+              style={{ fontSize: 10, lineHeight: 1, color: "var(--text-dim)", flexShrink: 0 }}
+            >
+              ⌘
+            </span>
           )}
           {running && <span style={{ width: 6, height: 6, borderRadius: 999, background: "#4ade80", flexShrink: 0 }} />}
-          <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12, color: "var(--text)" }} title={title}>
+          <span
+            style={{
+              flex: 1,
+              minWidth: 0,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              fontSize: 12,
+              color: "var(--text)",
+            }}
+            title={title}
+          >
             {title}
           </span>
           {session.mode && session.mode !== "host" && (
-            <span style={{ fontSize: 9, color: session.mode === "sandbox" ? "#38bdf8" : session.mode === "quick" ? "#fbbf24" : "#a78bfa", flexShrink: 0 }}>
-              {session.mode === "sandbox" ? t("app.sandbox") : session.mode === "quick" ? t("sessions.quick2") : t("app.localMachine")}
+            <span
+              style={{
+                fontSize: 9,
+                color: session.mode === "sandbox" ? "#38bdf8" : session.mode === "quick" ? "#fbbf24" : "#a78bfa",
+                flexShrink: 0,
+              }}
+            >
+              {session.mode === "sandbox"
+                ? t("app.sandbox")
+                : session.mode === "quick"
+                  ? t("sessions.quick2")
+                  : t("app.localMachine")}
             </span>
           )}
-          <span style={{ fontSize: 10, color: "var(--text-dim)", flexShrink: 0 }}>{formatRelativeTime(new Date(session.modified).getTime())}</span>
+          <span style={{ fontSize: 10, color: "var(--text-dim)", flexShrink: 0 }}>
+            {formatRelativeTime(new Date(session.modified).getTime())}
+          </span>
           {canPin && hovered && (
             <button
               type="button"
               title={pinned ? t("sessions.unpin") : t("sessions.pin")}
-              onClick={(e) => { e.stopPropagation(); onTogglePin(); }}
-              style={{ background: "transparent", border: "none", cursor: "pointer", padding: "0 2px", color: pinned ? "#f59e0b" : "var(--text-dim)", fontSize: 11, flexShrink: 0 }}
+              onClick={(e) => {
+                e.stopPropagation();
+                onTogglePin();
+              }}
+              style={{
+                background: "transparent",
+                border: "none",
+                cursor: "pointer",
+                padding: "0 2px",
+                color: pinned ? "#f59e0b" : "var(--text-dim)",
+                fontSize: 11,
+                flexShrink: 0,
+              }}
             >
               {pinned ? "★" : "☆"}
             </button>
           )}
-          {!canPin && pinned && (
-            <span style={{ color: "#f59e0b", fontSize: 11, flexShrink: 0 }}>★</span>
-          )}
+          {!canPin && pinned && <span style={{ color: "#f59e0b", fontSize: 11, flexShrink: 0 }}>★</span>}
           {hovered && (
             <>
               <button
@@ -1078,32 +1687,78 @@ function ProjectSessionRow({
                 title={t("common.rename")}
                 onClick={startRename}
                 style={{
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  width: 22, height: 22, padding: 0, background: "transparent",
-                  border: "none", borderRadius: 5, color: "var(--text-muted)",
-                  cursor: "pointer", flexShrink: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  width: 22,
+                  height: 22,
+                  padding: 0,
+                  background: "transparent",
+                  border: "none",
+                  borderRadius: 5,
+                  color: "var(--text-muted)",
+                  cursor: "pointer",
+                  flexShrink: 0,
                 }}
-                onMouseEnter={(e) => { e.currentTarget.style.color = "var(--accent)"; }}
-                onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-muted)"; }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.color = "var(--accent)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.color = "var(--text-muted)";
+                }}
               >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
                   <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
                 </svg>
               </button>
               <button
                 type="button"
                 title={t("sessions.deleteSession")}
-                onClick={(e) => { e.stopPropagation(); if (e.shiftKey) onDelete(); else setConfirmDelete(true); }}
-                style={{
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  width: 22, height: 22, padding: 0, background: "transparent",
-                  border: "none", borderRadius: 5, color: "var(--text-dim)",
-                  cursor: "pointer", flexShrink: 0,
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (e.shiftKey) onDelete();
+                  else setConfirmDelete(true);
                 }}
-                onMouseEnter={(e) => { e.currentTarget.style.color = "#ef4444"; }}
-                onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-dim)"; }}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  width: 22,
+                  height: 22,
+                  padding: 0,
+                  background: "transparent",
+                  border: "none",
+                  borderRadius: 5,
+                  color: "var(--text-dim)",
+                  cursor: "pointer",
+                  flexShrink: 0,
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.color = "#ef4444";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.color = "var(--text-dim)";
+                }}
               >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
                   <polyline points="3 6 5 6 21 6" />
                   <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
                   <path d="M10 11v6M14 11v6" />
@@ -1117,4 +1772,3 @@ function ProjectSessionRow({
     </div>
   );
 }
-

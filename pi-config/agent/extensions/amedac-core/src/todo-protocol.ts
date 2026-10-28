@@ -49,15 +49,12 @@ export function parseTodoWidgetLine(line: string | undefined): TodoItem[] {
       if (!raw || typeof raw !== "object") continue;
       const item = raw as Partial<TodoItem>;
       if (typeof item.id !== "number" || typeof item.content !== "string") continue;
-      const status: TodoStatus =
-        item.status === "in_progress" || item.status === "completed" ? item.status : "pending";
+      const status: TodoStatus = item.status === "in_progress" || item.status === "completed" ? item.status : "pending";
       todos.push({
         id: item.id,
         content: item.content,
         status,
-        ...(item.activeForm === undefined || item.activeForm === null
-          ? {}
-          : { activeForm: String(item.activeForm) }),
+        ...(item.activeForm === undefined || item.activeForm === null ? {} : { activeForm: String(item.activeForm) }),
       });
     }
     return todos;

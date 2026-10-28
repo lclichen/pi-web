@@ -16,7 +16,7 @@ function normalizeCwd(cwd: string): string {
 // Validates a candidate workspace before the UI selects it.
 export async function POST(req: Request) {
   try {
-    const body = await req.json() as { cwd?: unknown };
+    const body = (await req.json()) as { cwd?: unknown };
     const cwd = typeof body.cwd === "string" ? body.cwd.trim() : "";
 
     if (!cwd) {

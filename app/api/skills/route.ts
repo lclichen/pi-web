@@ -50,7 +50,7 @@ export async function PATCH(req: Request) {
     return NextResponse.json({ error: "Content-Type must be application/json" }, { status: 415 });
   }
   try {
-    const body = await req.json() as { filePath: string; disableModelInvocation: boolean };
+    const body = (await req.json()) as { filePath: string; disableModelInvocation: boolean };
     const { filePath, disableModelInvocation } = body;
     if (!filePath) return NextResponse.json({ error: "filePath required" }, { status: 400 });
     if (!existsSync(filePath)) return NextResponse.json({ error: "file not found" }, { status: 404 });

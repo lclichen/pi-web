@@ -1,10 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireUserIdentity } from "@/lib/web-session";
-import {
-  askAutoContinueTimeoutMs,
-  getUserSettings,
-  updateUserSettings,
-} from "@/lib/user-settings";
+import { askAutoContinueTimeoutMs, getUserSettings, updateUserSettings } from "@/lib/user-settings";
 import { refreshRpcAskTimeouts } from "@/lib/rpc-manager";
 
 export const dynamic = "force-dynamic";

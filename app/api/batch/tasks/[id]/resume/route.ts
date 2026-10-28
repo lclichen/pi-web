@@ -27,9 +27,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!task) {
     return NextResponse.json({ error: "Task not found" }, { status: 404 });
   }
-    if (!canAccessBatchTask(auth.identity.user, task.ownerId)) {
-      return NextResponse.json({ error: "Task not found" }, { status: 404 });
-    }
+  if (!canAccessBatchTask(auth.identity.user, task.ownerId)) {
+    return NextResponse.json({ error: "Task not found" }, { status: 404 });
+  }
   if (task.state !== "interrupted") {
     return NextResponse.json(
       { error: `Task is '${task.state}' — only interrupted tasks can be resumed` },
@@ -50,8 +50,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     // No body / empty body → default continuation prompt below
   }
   const continuation =
-    prompt
-    ?? "The pi-web server restarted while you were working on the task above. Continue where you left off and finish the task. If you already finished, verify your work (e.g. re-run the tests) and re-state your final answer.";
+    prompt ??
+    "The pi-web server restarted while you were working on the task above. Continue where you left off and finish the task. If you already finished, verify your work (e.g. re-run the tests) and re-state your final answer.";
 
   updateTask(id, {
     state: "running",

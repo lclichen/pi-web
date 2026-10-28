@@ -31,11 +31,13 @@ export function signalExitCode(signal: string): number {
 export function createShutdownHandler(deps: ShutdownDeps): (signal: string) => void {
   const { closeServers } = deps;
   const exit = deps.exit ?? ((code: number) => process.exit(code));
-  const schedule = deps.schedule ?? ((fn: () => void, ms: number) => {
-    const t = setTimeout(fn, ms);
-    t.unref?.();
-    return t;
-  });
+  const schedule =
+    deps.schedule ??
+    ((fn: () => void, ms: number) => {
+      const t = setTimeout(fn, ms);
+      t.unref?.();
+      return t;
+    });
   const delayMs = deps.delayMs ?? 2_000;
   let fired = false;
   return (signal: string) => {

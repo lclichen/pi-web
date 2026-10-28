@@ -1,9 +1,6 @@
 import { NextResponse } from "next/server";
 import { hasJsonContentType, isApiRequestAllowed } from "@/lib/request-security";
-import {
-  readSubagentSettings,
-  writeBuiltInSubagentsEnabled,
-} from "@/lib/subagent-settings";
+import { readSubagentSettings, writeBuiltInSubagentsEnabled } from "@/lib/subagent-settings";
 
 export const dynamic = "force-dynamic";
 
@@ -12,10 +9,7 @@ export async function GET() {
     const settings = readSubagentSettings();
     return NextResponse.json({ enabled: settings.builtInEnabled });
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : String(error) },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
   }
 }
 
@@ -28,16 +22,13 @@ export async function PUT(req: Request) {
   }
 
   try {
-    const body = await req.json() as { enabled?: unknown };
+    const body = (await req.json()) as { enabled?: unknown };
     if (typeof body.enabled !== "boolean") {
       return NextResponse.json({ error: "enabled must be a boolean" }, { status: 400 });
     }
     const settings = writeBuiltInSubagentsEnabled(body.enabled);
     return NextResponse.json({ enabled: settings.builtInEnabled });
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : String(error) },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
   }
 }

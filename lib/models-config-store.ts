@@ -14,20 +14,13 @@ function normalizeModelCost(value: unknown): Record<string, unknown> | undefined
   if (!isRecord(value)) return undefined;
   const providedKeys = MODEL_COST_KEYS.filter((key) => value[key] !== undefined);
   if (providedKeys.length === 0) return undefined;
-  if (providedKeys.some((key) => (
-    typeof value[key] !== "number" || !Number.isFinite(value[key])
-  ))) return undefined;
+  if (providedKeys.some((key) => typeof value[key] !== "number" || !Number.isFinite(value[key]))) return undefined;
 
-  return Object.fromEntries([
-    ...Object.entries(value),
-    ...MODEL_COST_KEYS.map((key) => [key, value[key] ?? 0]),
-  ]);
+  return Object.fromEntries([...Object.entries(value), ...MODEL_COST_KEYS.map((key) => [key, value[key] ?? 0])]);
 }
 
 /** Complete partial cost groups with zero; omit a cost group only when it is empty. */
-export function normalizeModelsConfigCosts(
-  data: Record<string, unknown>,
-): Record<string, unknown> {
+export function normalizeModelsConfigCosts(data: Record<string, unknown>): Record<string, unknown> {
   const normalized = structuredClone(data);
   if (!isRecord(normalized.providers)) return normalized;
 
@@ -46,13 +39,15 @@ export function normalizeModelsConfigCosts(
 function sanitizeModelsConfig(data: Record<string, unknown>): Record<string, unknown> {
   if (!isRecord(data.providers)) return data;
 
-  const providers = Object.fromEntries(Object.entries(data.providers).map(([providerId, provider]) => {
-    if (!isRecord(provider) || !Array.isArray(provider.models)) return [providerId, provider];
-    const models = provider.models.filter((model) => (
-      !isRecord(model) || typeof model.id !== "string" || model.id.trim().length > 0
-    ));
-    return [providerId, { ...provider, models }];
-  }));
+  const providers = Object.fromEntries(
+    Object.entries(data.providers).map(([providerId, provider]) => {
+      if (!isRecord(provider) || !Array.isArray(provider.models)) return [providerId, provider];
+      const models = provider.models.filter(
+        (model) => !isRecord(model) || typeof model.id !== "string" || model.id.trim().length > 0,
+      );
+      return [providerId, { ...provider, models }];
+    }),
+  );
 
   return { ...data, providers };
 }
@@ -61,9 +56,7 @@ export function getModelsConfigPath(): string {
   return join(getAgentDir(), "models.json");
 }
 
-export function readModelsConfig(
-  modelsPath = getModelsConfigPath(),
-): Record<string, unknown> {
+export function readModelsConfig(modelsPath = getModelsConfigPath()): Record<string, unknown> {
   if (!existsSync(modelsPath)) return { providers: {} };
   try {
     return JSON.parse(readFileSync(modelsPath, "utf8")) as Record<string, unknown>;
@@ -72,10 +65,7 @@ export function readModelsConfig(
   }
 }
 
-export function writeModelsConfig(
-  data: Record<string, unknown>,
-  modelsPath = getModelsConfigPath(),
-): void {
+export function writeModelsConfig(data: Record<string, unknown>, modelsPath = getModelsConfigPath()): void {
   const dir = dirname(modelsPath);
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   const normalized = normalizeModelsConfigCosts(sanitizeModelsConfig(data));

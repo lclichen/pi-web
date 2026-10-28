@@ -5,11 +5,7 @@ import {
   type InlineExtension,
   type LoadExtensionsResult,
 } from "@earendil-works/pi-coding-agent";
-import {
-  SUBAGENT_CONTROL_TOOL_NAMES,
-  type SubagentProfile,
-  type SubagentRunInfo,
-} from "./subagents";
+import { SUBAGENT_CONTROL_TOOL_NAMES, type SubagentProfile, type SubagentRunInfo } from "./subagents";
 import { MAX_SUBAGENT_INPUT_FILES } from "./subagent-input";
 import { isPlanProfile, saveSessionPlan } from "./extensions/session-plan";
 
@@ -29,11 +25,11 @@ function capturePlanRun(run: SubagentRunInfo, ctx: ExtensionContext): void {
     const text = subagentFinalText(run);
     if (!text.trim()) return;
     const sessionId = ctx.sessionManager.getSessionId();
-    const result = saveSessionPlan(ctx.cwd, sessionId, [
-      `<!-- plan captured from @${run.profile} subagent ${new Date().toISOString()} -->`,
-      "",
-      text,
-    ].join("\n"));
+    const result = saveSessionPlan(
+      ctx.cwd,
+      sessionId,
+      [`<!-- plan captured from @${run.profile} subagent ${new Date().toISOString()} -->`, "", text].join("\n"),
+    );
     if (!result.ok) {
       console.error("[pi-web] session plan capture failed:", result.error);
     }
@@ -88,11 +84,13 @@ export type SubagentEnabledProvider = () => boolean;
 function agentTypeDescription(profiles: readonly SubagentProfile[]): string {
   const available = profiles.filter((profile) => profile.enabled);
   if (available.length === 0) return "No subagent profiles are currently enabled.";
-  return available.map((profile) => {
-    const details = [`Tools: ${profile.tools.length > 0 ? profile.tools.join(", ") : "none"}`];
-    if (profile.model) details.push(`Model: ${profile.model}`);
-    return `- ${profile.name}: ${profile.description} (${details.join("; ")})`;
-  }).join("\n");
+  return available
+    .map((profile) => {
+      const details = [`Tools: ${profile.tools.length > 0 ? profile.tools.join(", ") : "none"}`];
+      if (profile.model) details.push(`Model: ${profile.model}`);
+      return `- ${profile.name}: ${profile.description} (${details.join("; ")})`;
+    })
+    .join("\n");
 }
 
 export function subagentToolDetails(run: SubagentRunInfo): SubagentToolDetails {
@@ -132,139 +130,178 @@ export function createSubagentExtension(
       const profiles = getProfiles().filter((profile) => profile.enabled);
       const profileNames = profiles.map((profile) => profile.name);
       const availableTypes = profileNames.length > 0 ? profileNames.join(", ") : "none";
-      pi.registerTool(defineTool({
-        name: "Agent",
-        label: "Agent",
-        description: `Delegate a focused task to a configured subagent. Each subagent runs as a full, inspectable Pi session. Use background mode for independent work and foreground mode when the result is needed immediately.\n\nAvailable agent types:\n${agentTypeDescription(profiles)}`,
-        promptSnippet: "Delegate a focused task to an inspectable subagent session",
-        promptGuidelines: [
-          "Use Agent for a focused task that benefits from an isolated context.",
-          "Use multiple background Agent calls in the same response for independent parallel work.",
-          "Do not duplicate work already delegated to a running subagent.",
-        ],
-        executionMode: "parallel",
-        parameters: Type.Object({
-          subagent_type: Type.Optional(Type.String({ description: `Configured agent profile. Available types: ${availableTypes}. Default: general-purpose.` })),
-          prompt: Type.String({ description: "The complete task for the subagent." }),
-          input_files: Type.Optional(Type.Array(Type.String(), {
-            description: "UTF-8 text files under the session cwd to include with the task.",
-            maxItems: MAX_SUBAGENT_INPUT_FILES,
-          })),
-          description: Type.String({ description: "Short activity label shown in the UI." }),
-          run_in_background: Type.Optional(Type.Boolean({ description: "Return immediately and notify this session when complete." })),
-          model: Type.Optional(Type.String({ description: "Optional provider/modelId override." })),
-          thinking: Type.Optional(Type.String({ description: "Optional thinking level override." })),
-          max_turns: Type.Optional(Type.Number({ description: "Optional positive agent turn limit." })),
-          inherit_context: Type.Optional(Type.Boolean({ description: "Include the parent session's active conversation context." })),
-        }),
-        async execute(toolCallId, params, signal, onUpdate, ctx) {
-          try {
-            const execution = await runtime.start({
-              parentContext: ctx,
-              parentToolCallId: toolCallId,
-              profile: params.subagent_type ?? "general-purpose",
-              task: params.prompt,
-              ...(params.input_files ? { inputFiles: params.input_files } : {}),
-              description: params.description,
-              ...(params.run_in_background !== undefined ? { runInBackground: params.run_in_background } : {}),
-              ...(params.model ? { model: params.model } : {}),
-              ...(params.thinking ? { thinking: params.thinking } : {}),
-              ...(params.max_turns ? { maxTurns: params.max_turns } : {}),
-              ...(params.inherit_context !== undefined ? { inheritContext: params.inherit_context } : {}),
-              signal,
-              onUpdate: (run) => onUpdate?.({
-                content: [{ type: "text", text: `${run.profile}: ${run.description} (${run.status})` }],
-                details: subagentToolDetails(run),
+      pi.registerTool(
+        defineTool({
+          name: "Agent",
+          label: "Agent",
+          description: `Delegate a focused task to a configured subagent. Each subagent runs as a full, inspectable Pi session. Use background mode for independent work and foreground mode when the result is needed immediately.\n\nAvailable agent types:\n${agentTypeDescription(profiles)}`,
+          promptSnippet: "Delegate a focused task to an inspectable subagent session",
+          promptGuidelines: [
+            "Use Agent for a focused task that benefits from an isolated context.",
+            "Use multiple background Agent calls in the same response for independent parallel work.",
+            "Do not duplicate work already delegated to a running subagent.",
+          ],
+          executionMode: "parallel",
+          parameters: Type.Object({
+            subagent_type: Type.Optional(
+              Type.String({
+                description: `Configured agent profile. Available types: ${availableTypes}. Default: general-purpose.`,
               }),
-            });
+            ),
+            prompt: Type.String({ description: "The complete task for the subagent." }),
+            input_files: Type.Optional(
+              Type.Array(Type.String(), {
+                description: "UTF-8 text files under the session cwd to include with the task.",
+                maxItems: MAX_SUBAGENT_INPUT_FILES,
+              }),
+            ),
+            description: Type.String({ description: "Short activity label shown in the UI." }),
+            run_in_background: Type.Optional(
+              Type.Boolean({ description: "Return immediately and notify this session when complete." }),
+            ),
+            model: Type.Optional(Type.String({ description: "Optional provider/modelId override." })),
+            thinking: Type.Optional(Type.String({ description: "Optional thinking level override." })),
+            max_turns: Type.Optional(Type.Number({ description: "Optional positive agent turn limit." })),
+            inherit_context: Type.Optional(
+              Type.Boolean({ description: "Include the parent session's active conversation context." }),
+            ),
+          }),
+          async execute(toolCallId, params, signal, onUpdate, ctx) {
+            try {
+              const execution = await runtime.start({
+                parentContext: ctx,
+                parentToolCallId: toolCallId,
+                profile: params.subagent_type ?? "general-purpose",
+                task: params.prompt,
+                ...(params.input_files ? { inputFiles: params.input_files } : {}),
+                description: params.description,
+                ...(params.run_in_background !== undefined ? { runInBackground: params.run_in_background } : {}),
+                ...(params.model ? { model: params.model } : {}),
+                ...(params.thinking ? { thinking: params.thinking } : {}),
+                ...(params.max_turns ? { maxTurns: params.max_turns } : {}),
+                ...(params.inherit_context !== undefined ? { inheritContext: params.inherit_context } : {}),
+                signal,
+                onUpdate: (run) =>
+                  onUpdate?.({
+                    content: [{ type: "text", text: `${run.profile}: ${run.description} (${run.status})` }],
+                    details: subagentToolDetails(run),
+                  }),
+              });
 
-            if (execution.run.runInBackground) {
-              void execution.completion
-                .then((run) => {
-                  capturePlanRun(run, ctx);
-                  return runtime.notifyParent(run);
-                })
-                .catch((error) => {
-                  console.error(
-                    "[pi-web] failed to deliver subagent completion:",
-                    error instanceof Error ? error.message : error,
-                  );
-                });
+              if (execution.run.runInBackground) {
+                void execution.completion
+                  .then((run) => {
+                    capturePlanRun(run, ctx);
+                    return runtime.notifyParent(run);
+                  })
+                  .catch((error) => {
+                    console.error(
+                      "[pi-web] failed to deliver subagent completion:",
+                      error instanceof Error ? error.message : error,
+                    );
+                  });
+                return {
+                  content: [
+                    {
+                      type: "text",
+                      text: `Subagent started in background. Session ID: ${execution.run.sessionId}. You will be notified when it completes.`,
+                    },
+                  ],
+                  details: subagentToolDetails(execution.run),
+                };
+              }
+
+              const run = await execution.completion;
+              capturePlanRun(run, ctx);
               return {
-                content: [{ type: "text", text: `Subagent started in background. Session ID: ${execution.run.sessionId}. You will be notified when it completes.` }],
-                details: subagentToolDetails(execution.run),
+                content: [{ type: "text", text: subagentFinalText(run) }],
+                details: subagentToolDetails(run),
+                ...(run.status === "failed" ? { isError: true } : {}),
+              };
+            } catch (error) {
+              return {
+                content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }],
+                details: undefined,
+                isError: true,
               };
             }
+          },
+        }),
+      );
 
-            const run = await execution.completion;
-            capturePlanRun(run, ctx);
+      pi.registerTool(
+        defineTool({
+          name: "get_subagent_result",
+          label: "Get agent result",
+          description: "Check an inspectable subagent session and retrieve its latest result.",
+          parameters: Type.Object({
+            agent_id: Type.String({ description: "Subagent session ID." }),
+            wait: Type.Optional(Type.Boolean({ description: "Wait until the subagent finishes." })),
+          }),
+          async execute(_toolCallId, params, signal) {
+            let run = await runtime.get(params.agent_id);
+            if (!run)
+              return {
+                content: [{ type: "text", text: `Subagent not found: ${params.agent_id}` }],
+                details: undefined,
+                isError: true,
+              };
+            while (params.wait && (run.status === "starting" || run.status === "running")) {
+              await new Promise<void>((resolve, reject) => {
+                const onAbort = () => {
+                  clearTimeout(timer);
+                  reject(new Error("Result wait aborted"));
+                };
+                const timer = setTimeout(() => {
+                  signal?.removeEventListener("abort", onAbort);
+                  resolve();
+                }, 500);
+                if (signal?.aborted) onAbort();
+                else signal?.addEventListener("abort", onAbort, { once: true });
+              });
+              run = await runtime.get(params.agent_id);
+              if (!run)
+                return {
+                  content: [{ type: "text", text: `Subagent not found: ${params.agent_id}` }],
+                  details: undefined,
+                  isError: true,
+                };
+            }
             return {
               content: [{ type: "text", text: subagentFinalText(run) }],
               details: subagentToolDetails(run),
               ...(run.status === "failed" ? { isError: true } : {}),
             };
-          } catch (error) {
-            return {
-              content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }],
-              details: undefined,
-              isError: true,
-            };
-          }
-        },
-      }));
-
-      pi.registerTool(defineTool({
-        name: "get_subagent_result",
-        label: "Get agent result",
-        description: "Check an inspectable subagent session and retrieve its latest result.",
-        parameters: Type.Object({
-          agent_id: Type.String({ description: "Subagent session ID." }),
-          wait: Type.Optional(Type.Boolean({ description: "Wait until the subagent finishes." })),
+          },
         }),
-        async execute(_toolCallId, params, signal) {
-          let run = await runtime.get(params.agent_id);
-          if (!run) return { content: [{ type: "text", text: `Subagent not found: ${params.agent_id}` }], details: undefined, isError: true };
-          while (params.wait && (run.status === "starting" || run.status === "running")) {
-            await new Promise<void>((resolve, reject) => {
-              const onAbort = () => {
-                clearTimeout(timer);
-                reject(new Error("Result wait aborted"));
+      );
+
+      pi.registerTool(
+        defineTool({
+          name: "steer_subagent",
+          label: "Steer agent",
+          description: "Send a steering message to a currently running subagent session.",
+          parameters: Type.Object({
+            agent_id: Type.String({ description: "Subagent session ID." }),
+            message: Type.String({ description: "Instruction to inject after the current tool execution." }),
+          }),
+          async execute(_toolCallId, params) {
+            try {
+              await runtime.steer(params.agent_id, params.message);
+              return {
+                content: [{ type: "text", text: `Steering message sent to ${params.agent_id}.` }],
+                details: undefined,
               };
-              const timer = setTimeout(() => {
-                signal?.removeEventListener("abort", onAbort);
-                resolve();
-              }, 500);
-              if (signal?.aborted) onAbort();
-              else signal?.addEventListener("abort", onAbort, { once: true });
-            });
-            run = await runtime.get(params.agent_id);
-            if (!run) return { content: [{ type: "text", text: `Subagent not found: ${params.agent_id}` }], details: undefined, isError: true };
-          }
-          return {
-            content: [{ type: "text", text: subagentFinalText(run) }],
-            details: subagentToolDetails(run),
-            ...(run.status === "failed" ? { isError: true } : {}),
-          };
-        },
-      }));
-
-      pi.registerTool(defineTool({
-        name: "steer_subagent",
-        label: "Steer agent",
-        description: "Send a steering message to a currently running subagent session.",
-        parameters: Type.Object({
-          agent_id: Type.String({ description: "Subagent session ID." }),
-          message: Type.String({ description: "Instruction to inject after the current tool execution." }),
+            } catch (error) {
+              return {
+                content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }],
+                details: undefined,
+                isError: true,
+              };
+            }
+          },
         }),
-        async execute(_toolCallId, params) {
-          try {
-            await runtime.steer(params.agent_id, params.message);
-            return { content: [{ type: "text", text: `Steering message sent to ${params.agent_id}.` }], details: undefined };
-          } catch (error) {
-            return { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], details: undefined, isError: true };
-          }
-        },
-      }));
+      );
     },
   };
 }

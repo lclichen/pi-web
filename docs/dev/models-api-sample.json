@@ -10,12 +10,8 @@
         "owned_by": "openai",
         "context_length": 131072,
         "max_output_tokens": 16384,
-        "input_modalities": [
-          "text"
-        ],
-        "output_modalities": [
-          "text"
-        ]
+        "input_modalities": ["text"],
+        "output_modalities": ["text"]
       }
     ],
     "object": "list"

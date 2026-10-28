@@ -75,7 +75,7 @@ export function WorkspaceTerminal({ cwd, visible, remote = null, onClose }: Prop
     const term = new XTerm({
       cursorBlink: true,
       fontSize: 13,
-      fontFamily: "Menlo, Consolas, \"Courier New\", monospace",
+      fontFamily: 'Menlo, Consolas, "Courier New", monospace',
       scrollback: 5000,
     });
     const fitAddon = new FitAddon();
@@ -105,10 +105,15 @@ export function WorkspaceTerminal({ cwd, visible, remote = null, onClose }: Prop
       }).catch(() => {});
 
     const inputSub = term.onData((data) => {
-      if (sessionId && !dead) void post(remote ? `/api/remoteterminal/${sessionId}/input` : `/api/terminal/${sessionId}/input`, { data });
+      if (sessionId && !dead)
+        void post(remote ? `/api/remoteterminal/${sessionId}/input` : `/api/terminal/${sessionId}/input`, { data });
     });
     const resizeSub = term.onResize(({ cols, rows }) => {
-      if (sessionId && !dead) void post(remote ? `/api/remoteterminal/${sessionId}/resize` : `/api/terminal/${sessionId}/resize`, { cols, rows });
+      if (sessionId && !dead)
+        void post(remote ? `/api/remoteterminal/${sessionId}/resize` : `/api/terminal/${sessionId}/resize`, {
+          cols,
+          rows,
+        });
     });
 
     const ro = new ResizeObserver(fit);
@@ -119,9 +124,11 @@ export function WorkspaceTerminal({ cwd, visible, remote = null, onClose }: Prop
         const res = await fetch(remote ? "/api/remoteterminal/create" : "/api/terminal/create", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(remote
-            ? { sessionId: remote.sessionId, cols: term.cols, rows: term.rows }
-            : { cwd, cols: term.cols, rows: term.rows, shell: shellId }),
+          body: JSON.stringify(
+            remote
+              ? { sessionId: remote.sessionId, cols: term.cols, rows: term.rows }
+              : { cwd, cols: term.cols, rows: term.rows, shell: shellId },
+          ),
         });
         const body = (await res.json().catch(() => null)) as {
           success?: boolean;
@@ -149,7 +156,9 @@ export function WorkspaceTerminal({ cwd, visible, remote = null, onClose }: Prop
             } else if (payload.type === "exit") {
               dead = true;
               setExited(typeof payload.code === "number" ? payload.code : 0);
-              term.write(`\r\n\x1b[90m—— 进程已退出${typeof payload.code === "number" ? `（代码 ${payload.code}）` : ""}，点击右上角「重连」重新启动 ——\x1b[0m\r\n`);
+              term.write(
+                `\r\n\x1b[90m—— 进程已退出${typeof payload.code === "number" ? `（代码 ${payload.code}）` : ""}，点击右上角「重连」重新启动 ——\x1b[0m\r\n`,
+              );
             }
           } catch {
             // ignore malformed frames (heartbeats are comment lines)
@@ -166,7 +175,8 @@ export function WorkspaceTerminal({ cwd, visible, remote = null, onClose }: Prop
       resizeSub.dispose();
       ro.disconnect();
       es?.close();
-      if (sessionId) void post(remote ? `/api/remoteterminal/${sessionId}/close` : `/api/terminal/${sessionId}/close`, {});
+      if (sessionId)
+        void post(remote ? `/api/remoteterminal/${sessionId}/close` : `/api/terminal/${sessionId}/close`, {});
       term.dispose();
       fitRef.current = null;
       termRef.current = null;
@@ -184,8 +194,12 @@ export function WorkspaceTerminal({ cwd, visible, remote = null, onClose }: Prop
     <div style={{ display: "flex", flexDirection: "column", height: "100%", background: "#000" }}>
       <div
         style={{
-          display: "flex", alignItems: "center", gap: 8, padding: "4px 10px",
-          background: "var(--bg-panel)", borderBottom: "1px solid var(--border)",
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          padding: "4px 10px",
+          background: "var(--bg-panel)",
+          borderBottom: "1px solid var(--border)",
         }}
       >
         <span style={{ fontSize: 11, fontWeight: 600 }}>终端</span>
@@ -195,44 +209,92 @@ export function WorkspaceTerminal({ cwd, visible, remote = null, onClose }: Prop
             onChange={(e) => setShellId(e.target.value)}
             title="Shell"
             style={{
-              fontSize: 11, padding: "1px 4px", maxWidth: 130,
-              background: "var(--bg)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 4,
+              fontSize: 11,
+              padding: "1px 4px",
+              maxWidth: 130,
+              background: "var(--bg)",
+              color: "var(--text)",
+              border: "1px solid var(--border)",
+              borderRadius: 4,
             }}
           >
             {shells.map((s) => (
-              <option key={s.id} value={s.id}>{s.label}</option>
+              <option key={s.id} value={s.id}>
+                {s.label}
+              </option>
             ))}
           </select>
         )}
         {/* Transport badge — makes it unambiguous WHERE this shell lives
             (container / user machine / pi-web server). */}
         <span
-          title={remote ? (remote.label === "沙箱容器" ? "此终端运行在项目的沙箱容器内" : "此终端运行在你配对的本地机器上") : "此终端运行在 pi-web 服务器上（Host 模式）"}
+          title={
+            remote
+              ? remote.label === "沙箱容器"
+                ? "此终端运行在项目的沙箱容器内"
+                : "此终端运行在你配对的本地机器上"
+              : "此终端运行在 pi-web 服务器上（Host 模式）"
+          }
           style={{
-            fontSize: 10, fontWeight: 700, padding: "1px 7px", borderRadius: 4, flexShrink: 0,
+            fontSize: 10,
+            fontWeight: 700,
+            padding: "1px 7px",
+            borderRadius: 4,
+            flexShrink: 0,
             color: remote?.label === "沙箱容器" ? "#38bdf8" : remote ? "#a78bfa" : "var(--text-dim)",
-            background: remote?.label === "沙箱容器" ? "rgba(56,189,248,0.12)" : remote ? "rgba(167,139,250,0.12)" : "rgba(128,128,128,0.14)",
+            background:
+              remote?.label === "沙箱容器"
+                ? "rgba(56,189,248,0.12)"
+                : remote
+                  ? "rgba(167,139,250,0.12)"
+                  : "rgba(128,128,128,0.14)",
           }}
         >
           {remote?.label === "沙箱容器" ? "容器" : remote ? "本机" : "服务器"}
         </span>
         <span
           title={remote ? remote.label : cwd}
-          style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "var(--font-mono)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}
+          style={{
+            fontSize: 11,
+            color: "var(--text-muted)",
+            fontFamily: "var(--font-mono)",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            flex: 1,
+            minWidth: 0,
+          }}
         >
-{remote ? remote.label : cwd}
+          {remote ? remote.label : cwd}
         </span>
         <button
           onClick={() => termRef.current?.clear()}
           title="清屏"
-          style={{ background: "transparent", border: "1px solid var(--border)", borderRadius: 4, color: "var(--text-muted)", cursor: "pointer", fontSize: 11, padding: "1px 8px" }}
+          style={{
+            background: "transparent",
+            border: "1px solid var(--border)",
+            borderRadius: 4,
+            color: "var(--text-muted)",
+            cursor: "pointer",
+            fontSize: 11,
+            padding: "1px 8px",
+          }}
         >
           清屏
         </button>
         <button
           onClick={() => setReconnectNonce((n) => n + 1)}
           title={exited === null ? "关闭当前 shell 并重新启动" : "重新启动 shell"}
-          style={{ background: "transparent", border: "1px solid var(--border)", borderRadius: 4, color: exited === null ? "var(--text-muted)" : "var(--accent)", cursor: "pointer", fontSize: 11, padding: "1px 8px", flexShrink: 0 }}
+          style={{
+            background: "transparent",
+            border: "1px solid var(--border)",
+            borderRadius: 4,
+            color: exited === null ? "var(--text-muted)" : "var(--accent)",
+            cursor: "pointer",
+            fontSize: 11,
+            padding: "1px 8px",
+            flexShrink: 0,
+          }}
         >
           {exited === null ? "重启" : "重连"}
         </button>
@@ -241,13 +303,26 @@ export function WorkspaceTerminal({ cwd, visible, remote = null, onClose }: Prop
             onClick={onClose}
             title="收起终端"
             aria-label="收起终端"
-            style={{ background: "transparent", border: "1px solid var(--border)", borderRadius: 4, color: "var(--text-muted)", cursor: "pointer", fontSize: 11, padding: "1px 8px", flexShrink: 0 }}
+            style={{
+              background: "transparent",
+              border: "1px solid var(--border)",
+              borderRadius: 4,
+              color: "var(--text-muted)",
+              cursor: "pointer",
+              fontSize: 11,
+              padding: "1px 8px",
+              flexShrink: 0,
+            }}
           >
             收起
           </button>
         )}
       </div>
-      <div ref={containerRef} style={{ flex: 1, minHeight: 0, padding: 4, background: "#000" }} data-shell={shellLabel} />
+      <div
+        ref={containerRef}
+        style={{ flex: 1, minHeight: 0, padding: 4, background: "#000" }}
+        data-shell={shellLabel}
+      />
     </div>
   );
 }

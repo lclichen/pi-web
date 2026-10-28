@@ -67,7 +67,9 @@ export function renderMarkdownReport(meta: RunMeta, records: TaskRecord[]): stri
   const totalOut = records.reduce((s, r) => s + r.usage.outputTokens, 0);
   const totalCalls = records.reduce((s, r) => s + r.usage.toolCalls, 0);
   const totalMs = records.reduce((s, r) => s + r.durationMs, 0);
-  lines.push(`- 汇总 tokens：in ${totalIn.toLocaleString()} / out ${totalOut.toLocaleString()}，工具调用 ${totalCalls} 次，总耗时 ${(totalMs / 1000).toFixed(1)}s`);
+  lines.push(
+    `- 汇总 tokens：in ${totalIn.toLocaleString()} / out ${totalOut.toLocaleString()}，工具调用 ${totalCalls} 次，总耗时 ${(totalMs / 1000).toFixed(1)}s`,
+  );
   lines.push("");
 
   // Per-area pass rates localize a failure to a framework module.
@@ -78,7 +80,9 @@ export function renderMarkdownReport(meta: RunMeta, records: TaskRecord[]): stri
   lines.push(`|---|---|---|`);
   for (const area of areas) {
     const inArea = records.filter((r) => r.area === area);
-    lines.push(`| ${area} | ${inArea.filter((r) => r.pass).length}/${inArea.length} | ${inArea.map((r) => r.taskId).join(", ")} |`);
+    lines.push(
+      `| ${area} | ${inArea.filter((r) => r.pass).length}/${inArea.length} | ${inArea.map((r) => r.taskId).join(", ")} |`,
+    );
   }
   lines.push("");
 
@@ -104,7 +108,9 @@ export function renderMarkdownReport(meta: RunMeta, records: TaskRecord[]): stri
       lines.push(`| ${r.taskId} | ${r.todo!.calls} | ${r.todo!.errorCalls} | ${r.todo!.noChangeCalls} |`);
     }
     lines.push("");
-    lines.push(`error calls ≈ 0 且 no-op calls 低 → 模型理解全量写入契约；error calls 高 → 工具 schema 或提示引导需要调整。`);
+    lines.push(
+      `error calls ≈ 0 且 no-op calls 低 → 模型理解全量写入契约；error calls 高 → 工具 schema 或提示引导需要调整。`,
+    );
     lines.push("");
   }
 

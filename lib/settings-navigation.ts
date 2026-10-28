@@ -38,8 +38,7 @@ function getBrowserStorage(): StorageLike | null {
 }
 
 function isSettingsSection(value: unknown): value is SettingsSection {
-  return typeof value === "string"
-    && SETTINGS_SECTION_VALUES.includes(value as SettingsSection);
+  return typeof value === "string" && SETTINGS_SECTION_VALUES.includes(value as SettingsSection);
 }
 
 function readState(storage: StorageLike): SettingsNavigationState {
@@ -51,11 +50,10 @@ function readState(storage: StorageLike): SettingsNavigationState {
     const state = parsed as SettingsNavigationState;
     return {
       section: typeof state.section === "string" ? state.section : undefined,
-      selections: state.selections !== null
-        && typeof state.selections === "object"
-        && !Array.isArray(state.selections)
-        ? state.selections
-        : undefined,
+      selections:
+        state.selections !== null && typeof state.selections === "object" && !Array.isArray(state.selections)
+          ? state.selections
+          : undefined,
     };
   } catch {
     return {};

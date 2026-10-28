@@ -17,7 +17,7 @@ export function platformUrl(): string {
 
 function toError(status: number, body: unknown): PlatformError {
   const err: PlatformError = new Error(
-    (body && typeof body === "object" && "message" in body && typeof (body as { message: unknown }).message === "string")
+    body && typeof body === "object" && "message" in body && typeof (body as { message: unknown }).message === "string"
       ? (body as { message: string }).message
       : `platform HTTP ${status}`,
   );
@@ -54,7 +54,11 @@ async function request<T>(
   return parsed as T;
 }
 
-export function platformGet<T>(path: string, credential: string, query?: Record<string, string | number | undefined>): Promise<T> {
+export function platformGet<T>(
+  path: string,
+  credential: string,
+  query?: Record<string, string | number | undefined>,
+): Promise<T> {
   return request<T>("GET", path, credential, undefined, { query });
 }
 
@@ -91,7 +95,10 @@ export function platformPostBearer<T>(path: string, bearerToken: string, body?: 
 }
 
 /** Unauthenticated call (login/register/config only). */
-export async function platformAnonPost<T>(path: string, body: unknown): Promise<{ ok: true; data: T } | { ok: false; status: number; error: PlatformError }> {
+export async function platformAnonPost<T>(
+  path: string,
+  body: unknown,
+): Promise<{ ok: true; data: T } | { ok: false; status: number; error: PlatformError }> {
   const res = await fetch(platformUrl() + path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -104,7 +111,9 @@ export async function platformAnonPost<T>(path: string, body: unknown): Promise<
   return { ok: true, data: parsed as T };
 }
 
-export async function platformAnonGet<T>(path: string): Promise<{ ok: true; data: T } | { ok: false; status: number; error: PlatformError }> {
+export async function platformAnonGet<T>(
+  path: string,
+): Promise<{ ok: true; data: T } | { ok: false; status: number; error: PlatformError }> {
   const res = await fetch(platformUrl() + path, { cache: "no-store" });
   const text = await res.text();
   const parsed = text ? (JSON.parse(text) as unknown) : null;

@@ -21,11 +21,7 @@ const { splitFinalAssistantBlocks } = await jiti.import("@/lib/message-display")
 
 function renderMessage(message, props = {}) {
   return renderToStaticMarkup(
-    React.createElement(
-      I18nProvider,
-      null,
-      React.createElement(MessageView, { message, ...props }),
-    ),
+    React.createElement(I18nProvider, null, React.createElement(MessageView, { message, ...props })),
   );
 }
 
@@ -51,15 +47,17 @@ test("previews the first thinking line and reveals the full text with the saved 
   try {
     for (const expanded of [false, true]) {
       globalThis.window = { localStorage: { getItem: () => String(expanded) } };
-      const html = renderToStaticMarkup(React.createElement(
-        I18nProvider,
-        null,
-        React.createElement(ThinkingBlock, {
-          block: { type: "thinking", thinking: "**Independent reasoning**\n\nDetailed second line." },
-          blockIndex: 2,
-          duration: 3,
-        }),
-      ));
+      const html = renderToStaticMarkup(
+        React.createElement(
+          I18nProvider,
+          null,
+          React.createElement(ThinkingBlock, {
+            block: { type: "thinking", thinking: "**Independent reasoning**\n\nDetailed second line." },
+            blockIndex: 2,
+            duration: 3,
+          }),
+        ),
+      );
       assert.match(html, new RegExp(`aria-expanded="${expanded}"`));
       assert.equal((html.match(/>[^<]*Independent reasoning[^<]*</g) ?? []).length, 1);
       assert.equal(html.includes("Detailed second line."), expanded);
@@ -100,7 +98,10 @@ test("marks only the matched text block after splitting thinking and the final a
       const html = renderMessage({ ...message, content }, { searchBlock });
       assert.equal((html.match(/data-search-target="true"/g) ?? []).length, content.includes(searchBlock) ? 1 : 0);
       if (content.includes(searchBlock)) {
-        assert.match(html, new RegExp(`data-search-target="true">(?:(?!data-message-text)[\\s\\S])*${searchBlock.text}`));
+        assert.match(
+          html,
+          new RegExp(`data-search-target="true">(?:(?!data-message-text)[\\s\\S])*${searchBlock.text}`),
+        );
       }
     }
   }
@@ -114,12 +115,15 @@ test("keeps streamed tool input out of collapsed markup while counting it", () =
     input: {},
     rawInput: '{"path":"/tmp/file","content":"secret-stream-fragment',
   };
-  const html = renderMessage({
-    role: "assistant",
-    provider: "anthropic",
-    model: "claude-test",
-    content: [block],
-  }, { isStreaming: true });
+  const html = renderMessage(
+    {
+      role: "assistant",
+      provider: "anthropic",
+      model: "claude-test",
+      content: [block],
+    },
+    { isStreaming: true },
+  );
 
   assert.match(html, /write/);
   assert.match(html, /Generating parameters/);
@@ -153,15 +157,18 @@ test("renders subagents as standard tool calls with only an extra session button
       createdAt: "2026-01-01T00:00:00.000Z",
     },
   };
-  const html = renderMessage({
-    role: "assistant",
-    provider: "anthropic",
-    model: "claude-test",
-    content: [block],
-  }, {
-    toolResults: new Map([[block.toolCallId, result]]),
-    onOpenSession() {},
-  });
+  const html = renderMessage(
+    {
+      role: "assistant",
+      provider: "anthropic",
+      model: "claude-test",
+      content: [block],
+    },
+    {
+      toolResults: new Map([[block.toolCallId, result]]),
+      onOpenSession() {},
+    },
+  );
 
   assert.match(html, /border:1px solid rgba\(34,197,94,0\.25\)/);
   assert.match(html, />Agent</);
@@ -170,15 +177,18 @@ test("renders subagents as standard tool calls with only an extra session button
   assert.doesNotMatch(html, />completed</);
   assert.doesNotMatch(html, />Find parser</);
 
-  const ordinaryHtml = renderMessage({
-    role: "assistant",
-    provider: "anthropic",
-    model: "claude-test",
-    content: [{ ...block, toolCallId: "call-extension-1", toolName: "extension_tool" }],
-  }, {
-    toolResults: new Map(),
-    onOpenSession() {},
-  });
+  const ordinaryHtml = renderMessage(
+    {
+      role: "assistant",
+      provider: "anthropic",
+      model: "claude-test",
+      content: [{ ...block, toolCallId: "call-extension-1", toolName: "extension_tool" }],
+    },
+    {
+      toolResults: new Map(),
+      onOpenSession() {},
+    },
+  );
   assert.doesNotMatch(ordinaryHtml, /Open sub-agent session/);
 });
 
@@ -247,12 +257,15 @@ test("renders partial assistant content before the provider error", () => {
 });
 
 test("marks persisted assistant messages with their source entry", () => {
-  const html = renderMessage({
-    role: "assistant",
-    provider: "openai",
-    model: "gpt-test",
-    content: [{ type: "text", text: "Select this response" }],
-  }, { entryId: "assistant-entry" });
+  const html = renderMessage(
+    {
+      role: "assistant",
+      provider: "openai",
+      model: "gpt-test",
+      content: [{ type: "text", text: "Select this response" }],
+    },
+    { entryId: "assistant-entry" },
+  );
 
   assert.match(html, /data-message-role="assistant"/);
   assert.match(html, /data-entry-id="assistant-entry"/);
@@ -285,15 +298,15 @@ test("keeps attached images when restoring a compact command for editing", () =>
     type: "image",
     source: { type: "base64", media_type: "image/png", data: "QUJDRA==" },
   };
-  const restored = replaceUserMessageText({
-    role: "user",
-    content: [{ type: "text", text: COMPLETE_SKILL_EXPANSION }, image],
-  }, "/skill:review src/main.ts");
+  const restored = replaceUserMessageText(
+    {
+      role: "user",
+      content: [{ type: "text", text: COMPLETE_SKILL_EXPANSION }, image],
+    },
+    "/skill:review src/main.ts",
+  );
 
-  assert.deepEqual(restored.content, [
-    { type: "text", text: "/skill:review src/main.ts" },
-    image,
-  ]);
+  assert.deepEqual(restored.content, [{ type: "text", text: "/skill:review src/main.ts" }, image]);
 });
 
 test("renders user-message images as buttons that open a larger preview", () => {
@@ -327,12 +340,15 @@ test("marks apply_patch returned failures as errors even when isError is unset",
       result: { appliedFiles: [], failures: [{ filePath: "src/a.ts", message: "context mismatch" }] },
     },
   };
-  const html = renderMessage({
-    role: "assistant",
-    provider: "openai",
-    model: "gpt-test",
-    content: [block],
-  }, { toolResults: new Map([[block.toolCallId, failed]]) });
+  const html = renderMessage(
+    {
+      role: "assistant",
+      provider: "openai",
+      model: "gpt-test",
+      content: [block],
+    },
+    { toolResults: new Map([[block.toolCallId, failed]]) },
+  );
 
   assert.match(html, /border:1px solid rgba\(248,113,113,0\.45\)/);
   assert.match(html, />apply_patch</);
@@ -366,12 +382,15 @@ test("shows tool-result images while the tool details stay collapsed", () => {
       { type: "image", data: "YWJj", mimeType: "image/png" },
     ],
   };
-  const html = renderMessage({
-    role: "assistant",
-    provider: "anthropic",
-    model: "claude-test",
-    content: [block],
-  }, { toolResults: new Map([[block.toolCallId, result]]) });
+  const html = renderMessage(
+    {
+      role: "assistant",
+      provider: "anthropic",
+      model: "claude-test",
+      content: [block],
+    },
+    { toolResults: new Map([[block.toolCallId, result]]) },
+  );
 
   assert.match(html, /<button[^>]+aria-label="Preview image"[^>]*>/);
   assert.match(html, /<img[^>]+src="data:image\/png;base64,YWJj"/);

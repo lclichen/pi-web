@@ -31,7 +31,12 @@ export async function POST(req: Request) {
   } catch {
     return NextResponse.json({ error: "无效的 JSON 请求体" }, { status: 400 });
   }
-  if (typeof body.currentPassword !== "string" || typeof body.newPassword !== "string" || !body.currentPassword || !body.newPassword) {
+  if (
+    typeof body.currentPassword !== "string" ||
+    typeof body.newPassword !== "string" ||
+    !body.currentPassword ||
+    !body.newPassword
+  ) {
     return NextResponse.json({ error: "需要 currentPassword 与 newPassword" }, { status: 400 });
   }
 

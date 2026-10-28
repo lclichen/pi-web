@@ -35,7 +35,8 @@ function roundRect(x0, y0, x1, y1, radius, color) {
       // 每像素用中心点计算到圆角矩形的有符号距离
       const cx = Math.min(Math.max(x + 0.5, x0 + radius), x1 - radius);
       const cy = Math.min(Math.max(y + 0.5, y0 + radius), y1 - radius);
-      const dx = x + 0.5 - cx, dy = y + 0.5 - cy;
+      const dx = x + 0.5 - cx,
+        dy = y + 0.5 - cy;
       const dist = Math.hypot(dx, dy);
       const alpha = clamp01(radius - dist + 0.5);
       if (alpha > 0 && x + 0.5 >= x0 && x + 0.5 <= x1 && y + 0.5 >= y0 && y + 0.5 <= y1) {
@@ -56,8 +57,14 @@ function triangle(p0, p1, p2, color) {
   for (let y = minY; y <= maxY; y++) {
     for (let x = minX; x <= maxX; x++) {
       let hit = 0;
-      for (const [ox, oy] of [[0.25, 0.25], [0.75, 0.25], [0.25, 0.75], [0.75, 0.75]]) {
-        const sx = x + ox, sy = y + oy;
+      for (const [ox, oy] of [
+        [0.25, 0.25],
+        [0.75, 0.25],
+        [0.25, 0.75],
+        [0.75, 0.75],
+      ]) {
+        const sx = x + ox,
+          sy = y + oy;
         const d1 = sign(sx, sy, p0[0], p0[1], p1[0], p1[1]);
         const d2 = sign(sx, sy, p1[0], p1[1], p2[0], p2[1]);
         const d3 = sign(sx, sy, p2[0], p2[1], p0[0], p0[1]);
@@ -71,7 +78,7 @@ function triangle(p0, p1, p2, color) {
 }
 
 // ---- 构图 ----
-const BLUE = [37, 99, 235];     // var(--accent) 同色系
+const BLUE = [37, 99, 235]; // var(--accent) 同色系
 const WHITE = [255, 255, 255];
 
 roundRect(0, 0, SIZE - 1, SIZE - 1, SIZE * 0.18, BLUE);
@@ -79,12 +86,13 @@ roundRect(0, 0, SIZE - 1, SIZE - 1, SIZE * 0.18, BLUE);
 // 学士帽：菱形帽面 + 底座横条 + 流苏
 {
   const c = SIZE / 2;
-  const hatW = SIZE * 0.34, hatY = SIZE * 0.30;
+  const hatW = SIZE * 0.34,
+    hatY = SIZE * 0.3;
   triangle([c, hatY], [c - hatW, hatY + SIZE * 0.16], [c, hatY + SIZE * 0.32], WHITE);
   triangle([c, hatY], [c + hatW, hatY + SIZE * 0.16], [c, hatY + SIZE * 0.32], WHITE);
   // 帽身（梯形近似的第二层菱形下沿）
-  triangle([c, hatY + SIZE * 0.10], [c - SIZE * 0.17, hatY + SIZE * 0.24], [c, hatY + SIZE * 0.36], WHITE);
-  triangle([c, hatY + SIZE * 0.10], [c + SIZE * 0.17, hatY + SIZE * 0.24], [c, hatY + SIZE * 0.36], WHITE);
+  triangle([c, hatY + SIZE * 0.1], [c - SIZE * 0.17, hatY + SIZE * 0.24], [c, hatY + SIZE * 0.36], WHITE);
+  triangle([c, hatY + SIZE * 0.1], [c + SIZE * 0.17, hatY + SIZE * 0.24], [c, hatY + SIZE * 0.36], WHITE);
 }
 
 // ---- 编码 PNG ----
@@ -108,8 +116,8 @@ function chunk(type, data) {
 const ihdr = Buffer.alloc(13);
 ihdr.writeUInt32BE(SIZE, 0);
 ihdr.writeUInt32BE(SIZE, 4);
-ihdr[8] = 8;  // bit depth
-ihdr[9] = 6;  // color type RGBA
+ihdr[8] = 8; // bit depth
+ihdr[9] = 6; // color type RGBA
 
 // 每行前置 filter byte 0
 const raw = Buffer.alloc((SIZE * 4 + 1) * SIZE);

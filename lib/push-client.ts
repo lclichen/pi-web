@@ -20,10 +20,9 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array<ArrayBuffer> {
 }
 
 export function isPushSupported(): boolean {
-  return typeof window !== "undefined"
-    && "serviceWorker" in navigator
-    && "PushManager" in window
-    && "Notification" in window;
+  return (
+    typeof window !== "undefined" && "serviceWorker" in navigator && "PushManager" in window && "Notification" in window
+  );
 }
 
 export async function setupPushSubscription(locale: string): Promise<boolean> {
@@ -34,7 +33,7 @@ export async function setupPushSubscription(locale: string): Promise<boolean> {
     try {
       const configResponse = await fetch("/api/push/config");
       if (!configResponse.ok) return false;
-      const { publicKey } = await configResponse.json() as { publicKey?: string };
+      const { publicKey } = (await configResponse.json()) as { publicKey?: string };
       if (!publicKey) return false;
 
       const registration = await navigator.serviceWorker.ready;

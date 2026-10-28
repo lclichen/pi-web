@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAllowedFileRoots, isExistingFilePathAllowed, isFilePathAllowed, isWindowsAbsolutePath } from "@/lib/file-access";
+import {
+  getAllowedFileRoots,
+  isExistingFilePathAllowed,
+  isFilePathAllowed,
+  isWindowsAbsolutePath,
+} from "@/lib/file-access";
 import { gitLog } from "@/lib/git-operations";
 
 export async function GET(request: NextRequest) {

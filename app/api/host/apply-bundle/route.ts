@@ -52,9 +52,6 @@ export async function POST(req: Request) {
     await applyBundleToDirectory(name, cwd);
     return NextResponse.json({ ok: true, name, cwd });
   } catch (e) {
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : String(e) },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 400 });
   }
 }

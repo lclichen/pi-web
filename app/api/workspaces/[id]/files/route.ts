@@ -48,11 +48,17 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
         },
       });
     }
-    const list = await platformGet<{ path: string; entries?: Array<{ name: string; isDir?: boolean; is_dir?: boolean; size?: number; mtime?: string; modifiedAt?: string }> }>(
-      `/api/v1/workspaces/${wsId}/files`,
-      guard.apiKey,
-      { path },
-    );
+    const list = await platformGet<{
+      path: string;
+      entries?: Array<{
+        name: string;
+        isDir?: boolean;
+        is_dir?: boolean;
+        size?: number;
+        mtime?: string;
+        modifiedAt?: string;
+      }>;
+    }>(`/api/v1/workspaces/${wsId}/files`, guard.apiKey, { path });
     const entries = (list.entries ?? []).map((e) => ({
       name: e.name,
       isDir: e.isDir ?? e.is_dir ?? false,

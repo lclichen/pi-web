@@ -72,7 +72,9 @@ function withConnection(fn) {
               step();
             };
             mkdirs(path.posix.dirname(remote), () => {
-              sftp.fastPut(local, remote, (e2) => (e2 ? reject(new Error(`${localRel}: ${e2.message}`)) : resolve(remote)));
+              sftp.fastPut(local, remote, (e2) =>
+                e2 ? reject(new Error(`${localRel}: ${e2.message}`)) : resolve(remote),
+              );
             });
           });
         }),

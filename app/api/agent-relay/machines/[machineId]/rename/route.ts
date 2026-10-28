@@ -8,10 +8,7 @@ export const dynamic = "force-dynamic";
 // POST /api/agent-relay/machines/[machineId]/rename { label }
 // Rename one of the caller's paired machines. Labels are cosmetic but also
 // drive the project machine selector, so keep them short and unique-ish.
-export async function POST(
-  req: Request,
-  ctx: { params: Promise<{ machineId: string }> },
-) {
+export async function POST(req: Request, ctx: { params: Promise<{ machineId: string }> }) {
   const identity = requireUserIdentity(req);
   if (!identity.ok) return NextResponse.json({ error: "登录已失效" }, { status: identity.status });
   const { machineId } = await ctx.params;

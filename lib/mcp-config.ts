@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import { atomicWriteFile }  from "./atomic-write";
+import { atomicWriteFile } from "./atomic-write";
 import type {
   ConfigScope,
   McpConfigDiagnostic,
@@ -11,7 +11,7 @@ import type {
   McpSettings,
   McpTransport,
   ServerEntry,
-}  from "./api-types";
+} from "./api-types";
 
 export function mcpConfigPath(cwd: string, scope: ConfigScope): string {
   if (scope === "project") return join(cwd, ".pi", "mcp.json");
@@ -112,12 +112,7 @@ export function isDirectToolsOn(entry: ServerEntry): boolean {
   return false;
 }
 
-function toServerInfo(
-  name: string,
-  entry: ServerEntry,
-  scope: ConfigScope,
-  sourcePath: string,
-): McpServerInfo {
+function toServerInfo(name: string, entry: ServerEntry, scope: ConfigScope, sourcePath: string): McpServerInfo {
   return {
     name,
     scope,
@@ -152,19 +147,13 @@ export function readMcpConfig(cwd: string, options?: ReadMcpOptions): McpConfigD
     join(agentsDir, "mcp.json"),
     join(agentsDir, "mcp", "mcp.json"),
   ];
-  const quickCandidates = [
-    mcpConfigPath(cwd, "quick"),
-    join(agentsDir, "mcp-quick.json"),
-  ];
+  const quickCandidates = [mcpConfigPath(cwd, "quick"), join(agentsDir, "mcp-quick.json")];
 
   const activeScopes = options?.scopes ?? (["project", "quick", "global"] as ConfigScope[]);
 
   for (const scope of activeScopes) {
-    const candidates = scope === "project"
-      ? [mcpConfigPath(cwd, scope)]
-      : scope === "quick"
-        ? quickCandidates
-      : globalCandidates;
+    const candidates =
+      scope === "project" ? [mcpConfigPath(cwd, scope)] : scope === "quick" ? quickCandidates : globalCandidates;
 
     for (const path of candidates) {
       const { config, error } = readRaw(path);
@@ -220,12 +209,7 @@ function persist(path: string, cfg: RawMcpConfig): void {
   atomicWriteFile(path, `${JSON.stringify(cfg, null, 2)}\n`);
 }
 
-export function createMcpServer(
-  cwd: string,
-  scope: ConfigScope,
-  name: string,
-  entry: ServerEntry,
-): void {
+export function createMcpServer(cwd: string, scope: ConfigScope, name: string, entry: ServerEntry): void {
   const path = mcpConfigPath(cwd, scope);
   const cfg = loadWritable(path);
   if (cfg.mcpServers?.[name]) {
@@ -236,12 +220,7 @@ export function createMcpServer(
   persist(path, cfg);
 }
 
-export function updateMcpServer(
-  cwd: string,
-  scope: ConfigScope,
-  name: string,
-  entry: ServerEntry,
-): void {
+export function updateMcpServer(cwd: string, scope: ConfigScope, name: string, entry: ServerEntry): void {
   const path = mcpConfigPath(cwd, scope);
   const cfg = loadWritable(path);
   if (!cfg.mcpServers?.[name]) {
@@ -267,11 +246,7 @@ export function removeMcpServer(cwd: string, scope: ConfigScope, name: string): 
  * 原始配置的禁用只允许在设置页操作。
  * 如果服务器已在项目层有定义，直接改其中的 disabled；否则新建同名覆盖条目。
  */
-export function setMcpServerDisabledViaProject(
-  cwd: string,
-  name: string,
-  disabled: boolean,
-): void {
+export function setMcpServerDisabledViaProject(cwd: string, name: string, disabled: boolean): void {
   const projectPath = mcpConfigPath(cwd, "project");
   const cfg = loadWritable(projectPath);
   if (!cfg.mcpServers) cfg.mcpServers = {};
@@ -292,12 +267,7 @@ export function setMcpServerDisabledViaProject(
   persist(projectPath, cfg);
 }
 
-export function setMcpServerDisabled(
-  cwd: string,
-  scope: ConfigScope,
-  name: string,
-  disabled: boolean,
-): void {
+export function setMcpServerDisabled(cwd: string, scope: ConfigScope, name: string, disabled: boolean): void {
   const path = mcpConfigPath(cwd, scope);
   const cfg = loadWritable(path);
   if (!cfg.mcpServers?.[name]) {
@@ -312,11 +282,7 @@ export function setMcpServerDisabled(
   persist(path, cfg);
 }
 
-export function writeMcpSettings(
-  cwd: string,
-  scope: ConfigScope,
-  settings: McpSettings,
-): void {
+export function writeMcpSettings(cwd: string, scope: ConfigScope, settings: McpSettings): void {
   const path = mcpConfigPath(cwd, scope);
   const cfg = loadWritable(path);
   cfg.settings = settings;

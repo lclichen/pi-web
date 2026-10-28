@@ -60,15 +60,16 @@ export async function GET(req: Request) {
   const snapshotFor = Number(new URL(req.url).searchParams.get("containerId"));
   try {
     const [listRes, imagesRes, defaults, snapshotsRes] = await Promise.all([
-      platformGet<{ containers: PlatformContainer[] }>(
-        "/api/v1/containers",
-        guard.apiKey,
-        { filter: "all" },
-      ),
-      platformGet<{ images: PlatformImage[] }>("/api/v1/images", guard.apiKey).catch(() => ({ images: [] as PlatformImage[] })),
+      platformGet<{ containers: PlatformContainer[] }>("/api/v1/containers", guard.apiKey, { filter: "all" }),
+      platformGet<{ images: PlatformImage[] }>("/api/v1/images", guard.apiKey).catch(() => ({
+        images: [] as PlatformImage[],
+      })),
       platformGet<ProvisionDefaults>("/api/v1/provision/defaults", guard.apiKey).catch(() => null),
       Number.isInteger(snapshotFor) && snapshotFor > 0
-        ? platformGet<{ snapshots: PlatformSnapshot[] }>(`/api/v1/containers/${snapshotFor}/snapshots`, guard.apiKey).catch(() => null)
+        ? platformGet<{ snapshots: PlatformSnapshot[] }>(
+            `/api/v1/containers/${snapshotFor}/snapshots`,
+            guard.apiKey,
+          ).catch(() => null)
         : Promise.resolve(null),
     ]);
     return NextResponse.json({
@@ -83,9 +84,10 @@ export async function GET(req: Request) {
           imageId: c.image_id,
           // Platform's list carries image_id only — join the display name from
           // the images list fetched below (the manager dialog shows 环境).
-          imageName: (imagesRes.images ?? []).find((i) => i.id === c.image_id)?.display_name
-            ?? (imagesRes.images ?? []).find((i) => i.id === c.image_id)?.name
-            ?? "",
+          imageName:
+            (imagesRes.images ?? []).find((i) => i.id === c.image_id)?.display_name ??
+            (imagesRes.images ?? []).find((i) => i.id === c.image_id)?.name ??
+            "",
           cpu: c.cpu ?? null,
           memoryMb: c.memory_mb ?? null,
           diskGb: c.disk_gb ?? null,
@@ -101,10 +103,7 @@ export async function GET(req: Request) {
       ...(snapshotsRes ? { snapshots: snapshotsRes.snapshots ?? [] } : {}),
     });
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : String(err) },
-      { status: 502 },
-    );
+    return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 502 });
   }
 }
 
@@ -158,21 +157,17 @@ export async function POST(req: Request) {
       if (typeof body.imageId !== "number") {
         return NextResponse.json({ error: "imageId must be a number" }, { status: 400 });
       }
-      const created = await platformPost<{ id: number; name: string }>(
-        "/api/v1/containers",
-        guard.apiKey,
-        {
-          imageId: body.imageId,
-          // Platform requires a name (letters/digits/_/./space/- only).
-          name:
-            typeof body.name === "string" && body.name.trim()
-              ? body.name.trim()
-              : `web-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, "")}`,
-          ...(typeof body.cpu === "number" ? { cpu: body.cpu } : {}),
-          ...(typeof body.memoryMb === "number" ? { memoryMb: body.memoryMb } : {}),
-          ...(typeof body.diskGb === "number" ? { diskGb: body.diskGb } : {}),
-        },
-      );
+      const created = await platformPost<{ id: number; name: string }>("/api/v1/containers", guard.apiKey, {
+        imageId: body.imageId,
+        // Platform requires a name (letters/digits/_/./space/- only).
+        name:
+          typeof body.name === "string" && body.name.trim()
+            ? body.name.trim()
+            : `web-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, "")}`,
+        ...(typeof body.cpu === "number" ? { cpu: body.cpu } : {}),
+        ...(typeof body.memoryMb === "number" ? { memoryMb: body.memoryMb } : {}),
+        ...(typeof body.diskGb === "number" ? { diskGb: body.diskGb } : {}),
+      });
       // Connect so the container registers a session and reports running.
       await platformPost(`/api/v1/containers/${created.id}/connect`, guard.apiKey).catch(() => null);
       return NextResponse.json({ success: true, container: created });
@@ -223,10 +218,7 @@ export async function POST(req: Request) {
     }
     return NextResponse.json({ error: `不支持的操作: ${String(action)}` }, { status: 400 });
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : String(err) },
-      { status: 502 },
-    );
+    return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 502 });
   }
 }
 
@@ -245,9 +237,6 @@ export async function DELETE(req: Request) {
     await platformDelete(`/api/v1/containers/${containerId}`, guard.apiKey);
     return NextResponse.json({ success: true });
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : String(err) },
-      { status: 502 },
-    );
+    return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 502 });
   }
 }

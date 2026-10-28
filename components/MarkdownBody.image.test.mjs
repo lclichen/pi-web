@@ -9,7 +9,10 @@ test("markdown images route through remotefs for remote-mode sessions", () => {
   // Context 声明 + 导出（ChatWindow 提供）。
   assert.match(mdSource, /export const RemoteFileSessionContext = createContext<string \| null>\(null\)/);
   // 图片 src 双分支：远端会话走 /api/remotefs?src=，否则服务端 /api/files。
-  assert.match(mdSource, /remoteSessionId[\s\S]*?\/api\/remotefs\/\$\{encodeFilePathForApi\(filePath\)\}\?src=\$\{encodeURIComponent\(remoteSessionId\)\}/);
+  assert.match(
+    mdSource,
+    /remoteSessionId[\s\S]*?\/api\/remotefs\/\$\{encodeFilePathForApi\(filePath\)\}\?src=\$\{encodeURIComponent\(remoteSessionId\)\}/,
+  );
   assert.match(mdSource, /\/api\/files\/\$\{encodeFilePathForApi\(filePath\)\}\?type=read/);
   // 消费 context。
   assert.match(mdSource, /useContext\(RemoteFileSessionContext\)/);

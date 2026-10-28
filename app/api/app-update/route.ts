@@ -29,7 +29,7 @@ declare global {
 }
 
 function getCache(): UpdateCache {
-  return globalThis.__piWebAppUpdateCache ??= {};
+  return (globalThis.__piWebAppUpdateCache ??= {});
 }
 
 /** catalog 源：http(s) URL 或本地文件路径（AMEDAC_UPDATE_CATALOG_URL）。 */
@@ -71,14 +71,16 @@ function buildCatalogResponse(catalog: UpdateCatalog): AppUpdateResponse {
     channel,
     pkgKind: pkgKind ?? undefined,
     canSelfUpdate: canSelfUpdate(),
-    ...(target ? {
-      target: {
-        version: target.version,
-        channel: target.channel,
-        releasedAt: target.released_at,
-        frameworks,
-      },
-    } : {}),
+    ...(target
+      ? {
+          target: {
+            version: target.version,
+            channel: target.channel,
+            releasedAt: target.released_at,
+            frameworks,
+          },
+        }
+      : {}),
   };
 }
 
@@ -88,12 +90,14 @@ async function loadCatalogStatus(catalogUrl: string): Promise<AppUpdateResponse>
     return buildCatalogResponse(cache.catalog.value);
   }
   if (!cache.inFlight) {
-    cache.inFlight = loadCatalog(catalogUrl).then((value) => {
-      cache.catalog = { value, expiresAt: Date.now() + CATALOG_CACHE_TTL_MS };
-      return value;
-    }).finally(() => {
-      cache.inFlight = undefined;
-    });
+    cache.inFlight = loadCatalog(catalogUrl)
+      .then((value) => {
+        cache.catalog = { value, expiresAt: Date.now() + CATALOG_CACHE_TTL_MS };
+        return value;
+      })
+      .finally(() => {
+        cache.inFlight = undefined;
+      });
   }
   const catalog = (await cache.inFlight) as UpdateCatalog;
   return buildCatalogResponse(catalog);
@@ -113,7 +117,7 @@ async function fetchNpmLatest(): Promise<AppUpdateResponse> {
   });
   if (!response.ok) throw new Error(`npm registry returned HTTP ${response.status}`);
 
-  const body = await response.json() as { version?: unknown };
+  const body = (await response.json()) as { version?: unknown };
   const latestVersion = typeof body.version === "string" ? body.version : "";
   const releaseUrl = getPiWebReleaseUrl(latestVersion);
   if (!releaseUrl) throw new Error("npm registry returned an invalid version");
@@ -131,12 +135,14 @@ async function loadNpmStatus(): Promise<AppUpdateResponse> {
   const cache = getCache();
   if (cache.npm && cache.npm.expiresAt > Date.now()) return cache.npm.value;
   if (!cache.inFlight) {
-    cache.inFlight = fetchNpmLatest().then((value) => {
-      cache.npm = { value, expiresAt: Date.now() + NPM_CACHE_TTL_MS };
-      return value;
-    }).finally(() => {
-      cache.inFlight = undefined;
-    });
+    cache.inFlight = fetchNpmLatest()
+      .then((value) => {
+        cache.npm = { value, expiresAt: Date.now() + NPM_CACHE_TTL_MS };
+        return value;
+      })
+      .finally(() => {
+        cache.inFlight = undefined;
+      });
   }
   try {
     return (await cache.inFlight) as AppUpdateResponse;
@@ -165,9 +171,6 @@ export async function GET(req: Request) {
     if (catalogUrl) return NextResponse.json(await loadCatalogStatus(catalogUrl));
     return NextResponse.json(await loadNpmStatus());
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : String(error) },
-      { status: 502 },
-    );
+    return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 502 });
   }
 }

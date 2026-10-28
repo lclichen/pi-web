@@ -34,7 +34,11 @@ function safeRead(path: string): string | null {
   }
 }
 
-function resolveEditable(cwd: string, ownerId: number, role: "admin" | "user"): { editable: boolean; lockReason?: string } {
+function resolveEditable(
+  cwd: string,
+  ownerId: number,
+  role: "admin" | "user",
+): { editable: boolean; lockReason?: string } {
   // 项目宿主目录（sandbox / local-machine / ssh）→ 锁定。
   for (const project of listProjects(ownerId)) {
     if (normalizePolicyPath(projectHome(project)) === normalizePolicyPath(cwd)) {
@@ -87,7 +91,12 @@ export async function PUT(req: Request) {
   const { editable, lockReason } = resolveEditable(dir.cwd, identity.session.user.id, identity.session.user.role);
   if (!editable) {
     return NextResponse.json(
-      { error: lockReason === "not-admin" ? "策略仅管理员在 Host 模式目录下可编辑" : "项目策略已锁定（随配置包分发；仅 Host 模式目录可自定义）" },
+      {
+        error:
+          lockReason === "not-admin"
+            ? "策略仅管理员在 Host 模式目录下可编辑"
+            : "项目策略已锁定（随配置包分发；仅 Host 模式目录可自定义）",
+      },
       { status: 403 },
     );
   }

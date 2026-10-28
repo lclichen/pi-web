@@ -19,7 +19,12 @@
  * deployments may answer 503) or the user has no binding, this returns false
  * without noise — the container/tools flow is unaffected.
  */
-import type { ExtensionAPI, ExtensionContext, ProviderConfig, ProviderModelConfig } from "@earendil-works/pi-coding-agent";
+import type {
+  ExtensionAPI,
+  ExtensionContext,
+  ProviderConfig,
+  ProviderModelConfig,
+} from "@earendil-works/pi-coding-agent";
 import { PlatformClient, PlatformError } from "./client.ts";
 import { saveConfig, type PlatformConfig } from "./config.ts";
 import { getState } from "./auth.ts";
@@ -105,10 +110,7 @@ export async function ensureLlmProvider(
       // LLM integration disabled on the platform — not an error, just nothing to do.
       return { ok: false, reason: "not_enabled" };
     }
-    ctx.ui.notify(
-      `LLM status check failed: ${err instanceof Error ? err.message : String(err)}`,
-      "warning",
-    );
+    ctx.ui.notify(`LLM status check failed: ${err instanceof Error ? err.message : String(err)}`, "warning");
     return { ok: false, reason: "unreachable" };
   }
 
@@ -135,9 +137,7 @@ export async function ensureLlmProvider(
   }
 
   const cachedStillActive =
-    virtualKey && keyId !== undefined
-      ? keys.some((k) => k.id === keyId && !k.revoked_at)
-      : false;
+    virtualKey && keyId !== undefined ? keys.some((k) => k.id === keyId && !k.revoked_at) : false;
 
   // If the list fetch failed (keys empty) but we have a cached key, trust it
   // for now — better than blocking the agent on a transient platform hiccup.
@@ -160,10 +160,7 @@ export async function ensureLlmProvider(
       keyId = revealed.id;
       saveConfig({ llmVirtualKey: virtualKey, llmKeyId: keyId });
     } catch (err) {
-      ctx.ui.notify(
-        `Could not reveal LLM key: ${err instanceof Error ? err.message : String(err)}`,
-        "error",
-      );
+      ctx.ui.notify(`Could not reveal LLM key: ${err instanceof Error ? err.message : String(err)}`, "error");
       return { ok: false, reason: "unreachable" };
     }
   } else if (virtualKey && keyId !== undefined && !cachedStillActive && trustCache) {
@@ -183,10 +180,7 @@ export async function ensureLlmProvider(
       baseUrl = ep.baseUrl;
       saveConfig({ llmEndpoint: baseUrl });
     } catch (err) {
-      ctx.ui.notify(
-        `Could not fetch LLM endpoint: ${err instanceof Error ? err.message : String(err)}`,
-        "error",
-      );
+      ctx.ui.notify(`Could not fetch LLM endpoint: ${err instanceof Error ? err.message : String(err)}`, "error");
       return { ok: false, reason: "unreachable" };
     }
   }
@@ -218,10 +212,7 @@ export async function ensureLlmProvider(
       "warning",
     );
   } else {
-    ctx.ui.notify(
-      `LLM ready: ${name} (${models.length} models). Use /model to select.`,
-      "info",
-    );
+    ctx.ui.notify(`LLM ready: ${name} (${models.length} models). Use /model to select.`, "info");
   }
   return { ok: true, provider: name, modelCount: models.length };
 }

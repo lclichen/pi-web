@@ -1,7 +1,12 @@
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { NextRequest, NextResponse } from "next/server";
-import { getAllowedFileRoots, isExistingFilePathAllowed, isFilePathAllowed, isWindowsAbsolutePath } from "@/lib/file-access";
+import {
+  getAllowedFileRoots,
+  isExistingFilePathAllowed,
+  isFilePathAllowed,
+  isWindowsAbsolutePath,
+} from "@/lib/file-access";
 import { TEXT_PREVIEW_MAX_BYTES } from "@/lib/file-types";
 import path from "path";
 
@@ -35,10 +40,12 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
 
-    const repoRoot = (await execFileAsync("git", ["-C", cwd, "rev-parse", "--show-toplevel"], {
-      timeout: 10_000,
-      env: { ...process.env, LC_ALL: "C" },
-    })).stdout.trim();
+    const repoRoot = (
+      await execFileAsync("git", ["-C", cwd, "rev-parse", "--show-toplevel"], {
+        timeout: 10_000,
+        env: { ...process.env, LC_ALL: "C" },
+      })
+    ).stdout.trim();
     if (!repoRoot) {
       return NextResponse.json({ content: null });
     }
@@ -49,16 +56,12 @@ export async function GET(request: NextRequest) {
     }
 
     try {
-      const { stdout } = await execFileAsync(
-        "git",
-        ["-C", cwd, "show", `HEAD:${rel.split(path.sep).join("/")}`],
-        {
-          timeout: 10_000,
-          maxBuffer: TEXT_PREVIEW_MAX_BYTES + 64 * 1024,
-          encoding: "utf8",
-          env: { ...process.env, LC_ALL: "C" },
-        },
-      );
+      const { stdout } = await execFileAsync("git", ["-C", cwd, "show", `HEAD:${rel.split(path.sep).join("/")}`], {
+        timeout: 10_000,
+        maxBuffer: TEXT_PREVIEW_MAX_BYTES + 64 * 1024,
+        encoding: "utf8",
+        env: { ...process.env, LC_ALL: "C" },
+      });
       return NextResponse.json({ content: stdout });
     } catch {
       // Not in HEAD (untracked, added, or any git error) — diff shows all-added.

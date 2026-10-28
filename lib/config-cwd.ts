@@ -28,7 +28,11 @@ export function resolveConfigCwdSync(
   }
 
   const cwd = params.cwd;
-  if (!cwd || typeof cwd !== "string" || (!cwd.startsWith("/") && !cwd.startsWith("\\\\") && !isWindowsAbsolutePath(cwd))) {
+  if (
+    !cwd ||
+    typeof cwd !== "string" ||
+    (!cwd.startsWith("/") && !cwd.startsWith("\\\\") && !isWindowsAbsolutePath(cwd))
+  ) {
     return { ok: false, status: 400, error: "cwd must be an absolute path" };
   }
   // Raw cwd path: host semantics — implicit host (auth off) or admin, plus

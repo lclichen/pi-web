@@ -1,10 +1,6 @@
 import type { ClientAssistantMessageEvent } from "./agent-event-wire";
 import { normalizeStreamingToolCalls } from "./normalize";
-import type {
-  AgentMessage,
-  AssistantContentBlock,
-  AssistantMessage,
-} from "./types";
+import type { AgentMessage, AssistantContentBlock, AssistantMessage } from "./types";
 
 export type { ClientAssistantMessageEvent } from "./agent-event-wire";
 
@@ -43,10 +39,7 @@ function updateContentBlock(
   };
 }
 
-function applyDelta(
-  state: StreamingState,
-  event: ClientAssistantMessageEvent,
-): StreamingState {
+function applyDelta(state: StreamingState, event: ClientAssistantMessageEvent): StreamingState {
   switch (event.type) {
     case "text_start":
       // pi-ai documents `partial` as a shared live response-so-far helper, not
@@ -57,11 +50,9 @@ function applyDelta(
       // text: otherwise that chunk renders twice until `text_end` arrives.
       return updateContentBlock(state, event.contentIndex, () => ({ type: "text", text: "" }));
     case "text_delta":
-      return updateContentBlock(state, event.contentIndex, (current) => (
-        current?.type === "text"
-          ? { ...current, text: current.text + event.delta }
-          : null
-      ));
+      return updateContentBlock(state, event.contentIndex, (current) =>
+        current?.type === "text" ? { ...current, text: current.text + event.delta } : null,
+      );
     case "text_end":
       return updateContentBlock(state, event.contentIndex, (current) => ({
         ...(current?.type === "text" ? current : {}),
@@ -73,11 +64,9 @@ function applyDelta(
       // renders twice until `thinking_end` replaces the block.
       return updateContentBlock(state, event.contentIndex, () => ({ type: "thinking", thinking: "" }));
     case "thinking_delta":
-      return updateContentBlock(state, event.contentIndex, (current) => (
-        current?.type === "thinking"
-          ? { ...current, thinking: current.thinking + event.delta }
-          : null
-      ));
+      return updateContentBlock(state, event.contentIndex, (current) =>
+        current?.type === "thinking" ? { ...current, thinking: current.thinking + event.delta } : null,
+      );
     case "thinking_end":
       return updateContentBlock(state, event.contentIndex, (current) => ({
         ...(current?.type === "thinking" ? current : {}),
@@ -105,16 +94,16 @@ function applyDelta(
         };
       });
     case "toolcall_delta":
-      return updateContentBlock(state, event.contentIndex, (current) => (
+      return updateContentBlock(state, event.contentIndex, (current) =>
         current?.type === "toolCall"
           ? {
-            ...current,
-            toolCallId: event.id || current.toolCallId,
-            toolName: event.toolName || current.toolName,
-            rawInput: (current.rawInput ?? "") + event.delta,
-          }
-          : null
-      ));
+              ...current,
+              toolCallId: event.id || current.toolCallId,
+              toolName: event.toolName || current.toolName,
+              rawInput: (current.rawInput ?? "") + event.delta,
+            }
+          : null,
+      );
     case "toolcall_end":
       return updateContentBlock(state, event.contentIndex, () => ({
         type: "toolCall",
@@ -127,10 +116,7 @@ function applyDelta(
   }
 }
 
-export function streamReducer(
-  state: StreamingState,
-  action: StreamAction,
-): StreamingState {
+export function streamReducer(state: StreamingState, action: StreamAction): StreamingState {
   switch (action.type) {
     case "start":
       return { isStreaming: true, streamingMessage: null };
@@ -138,9 +124,7 @@ export function streamReducer(
       return { ...state, isStreaming: true };
     case "snapshot": {
       const message = normalizeStreamingToolCalls(action.message);
-      return message.role === "assistant"
-        ? { isStreaming: true, streamingMessage: message }
-        : state;
+      return message.role === "assistant" ? { isStreaming: true, streamingMessage: message } : state;
     }
     case "delta":
       return applyDelta(state, action.event);

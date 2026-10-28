@@ -118,7 +118,13 @@ async function handleHttp(req: IncomingMessage, res: ServerResponse): Promise<vo
       res.end(JSON.stringify({ error: `too many attempts; retry in ${retry}s` }));
       return;
     }
-    const body = (await readJson(req)) as { code?: unknown; machineId?: unknown; hostname?: unknown; label?: unknown; clientVersion?: unknown };
+    const body = (await readJson(req)) as {
+      code?: unknown;
+      machineId?: unknown;
+      hostname?: unknown;
+      label?: unknown;
+      clientVersion?: unknown;
+    };
     const code = typeof body.code === "string" ? body.code : "";
     // Version gate at pairing time: an outdated binary must not obtain a
     // token (it would connect and then fail every protocol expectation).
@@ -126,10 +132,12 @@ async function handleHttp(req: IncomingMessage, res: ServerResponse): Promise<vo
     const compat = clientCompatibility(clientVersion);
     if (!compat.compatible) {
       res.writeHead(426, { "content-type": "application/json" });
-      res.end(JSON.stringify({
-        error: compat.message,
-        requiredVersion: REQUIRED_CLIENT_VERSION,
-      }));
+      res.end(
+        JSON.stringify({
+          error: compat.message,
+          requiredVersion: REQUIRED_CLIENT_VERSION,
+        }),
+      );
       return;
     }
     // consumePairingCode returns the minting user's id — the agent token MUST
@@ -153,8 +161,8 @@ async function handleHttp(req: IncomingMessage, res: ServerResponse): Promise<vo
     // Label precedence: the agent's own --label flag, else the label the user
     // chose when minting the code in the pairing dialog.
     const label =
-      (typeof body.label === "string" && body.label.trim() ? body.label.trim().slice(0, 50) : undefined)
-      ?? ownerUserId.label;
+      (typeof body.label === "string" && body.label.trim() ? body.label.trim().slice(0, 50) : undefined) ??
+      ownerUserId.label;
     const token = await issueAgentToken({ userId: ownerUserId.userId, machineId, hostname, label });
     res.writeHead(200, { "content-type": "application/json" });
     res.end(JSON.stringify({ token, wsPath: "/ws", machineId, requiredVersion: REQUIRED_CLIENT_VERSION }));

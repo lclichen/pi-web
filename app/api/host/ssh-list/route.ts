@@ -41,9 +41,6 @@ export async function POST(req: Request) {
     const result = await sshListDirectory(fullConfig, path);
     return NextResponse.json(result);
   } catch (e) {
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : String(e) },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 400 });
   }
 }

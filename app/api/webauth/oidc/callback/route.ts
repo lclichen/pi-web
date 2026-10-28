@@ -59,11 +59,9 @@ export async function GET(req: Request) {
   // 与密码登录一致：铸一把专用 pi-web API key 作为会话凭证。
   let key: PlatformApiKeyCreated;
   try {
-    key = await platformPostBearer<PlatformApiKeyCreated>(
-      "/api/v1/auth/api-keys",
-      accessToken,
-      { name: `pi-web ${new Date().toISOString().slice(0, 10)}` },
-    );
+    key = await platformPostBearer<PlatformApiKeyCreated>("/api/v1/auth/api-keys", accessToken, {
+      name: `pi-web ${new Date().toISOString().slice(0, 10)}`,
+    });
   } catch {
     loginUrl.searchParams.set("error", "oidc_key_mint_failed");
     return NextResponse.redirect(loginUrl);

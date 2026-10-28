@@ -18,10 +18,12 @@ interface I18nContextValue {
 const I18nContext = createContext<I18nContextValue | null>(null);
 
 function getMessages(): Record<string, Record<string, string>> {
-  return Object.fromEntries(getSupportedLocales().flatMap((id) => {
-    const plugin = getLocalePlugin(id);
-    return plugin ? [[id, plugin.messages]] : [];
-  }));
+  return Object.fromEntries(
+    getSupportedLocales().flatMap((id) => {
+      const plugin = getLocalePlugin(id);
+      return plugin ? [[id, plugin.messages]] : [];
+    }),
+  );
 }
 
 function readInitialLocale(): Locale {
@@ -31,7 +33,9 @@ function readInitialLocale(): Locale {
   } catch {
     // 隐私模式或存储不可用时继续使用浏览器语言。
   }
-  return resolveBrowserLocale(window.navigator.languages.length ? window.navigator.languages : [window.navigator.language]);
+  return resolveBrowserLocale(
+    window.navigator.languages.length ? window.navigator.languages : [window.navigator.language],
+  );
 }
 
 /**
@@ -43,7 +47,10 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
   const [locale, setLocaleState] = useState<Locale>(defaultLocale);
   const [hydrated, setHydrated] = useState(false);
   const supportedLocales = useMemo(
-    () => getSupportedLocales().map((id) => getLocalePlugin(id)).filter((plugin): plugin is LocalePlugin => Boolean(plugin)),
+    () =>
+      getSupportedLocales()
+        .map((id) => getLocalePlugin(id))
+        .filter((plugin): plugin is LocalePlugin => Boolean(plugin)),
     [],
   );
   const messages = useMemo(() => getMessages(), []);
@@ -66,8 +73,14 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const t = useCallback((key: string, params?: TranslationParams) => translateMessage(locale, key, messages, params), [locale, messages]);
-  const value = useMemo(() => ({ locale: hydrated ? locale : defaultLocale, setLocale, t, supportedLocales }), [hydrated, locale, setLocale, t, supportedLocales]);
+  const t = useCallback(
+    (key: string, params?: TranslationParams) => translateMessage(locale, key, messages, params),
+    [locale, messages],
+  );
+  const value = useMemo(
+    () => ({ locale: hydrated ? locale : defaultLocale, setLocale, t, supportedLocales }),
+    [hydrated, locale, setLocale, t, supportedLocales],
+  );
 
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
 }

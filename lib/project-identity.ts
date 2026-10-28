@@ -9,10 +9,7 @@ import path from "node:path";
  * case-insensitive. The explicit platform argument keeps those semantics
  * testable on non-Windows CI.
  */
-export function projectIdentityKey(
-  projectRoot: string,
-  platform: NodeJS.Platform = process.platform,
-): string {
+export function projectIdentityKey(projectRoot: string, platform: NodeJS.Platform = process.platform): string {
   if (!projectRoot) return projectRoot;
   const pathApi = platform === "win32" ? path.win32 : path.posix;
   const normalized = pathApi.normalize(projectRoot);
@@ -20,7 +17,5 @@ export function projectIdentityKey(
   let end = normalized.length;
   while (end > rootLength && normalized[end - 1] === pathApi.sep) end--;
   const withoutTrailingSeparators = normalized.slice(0, end);
-  return platform === "win32"
-    ? withoutTrailingSeparators.toLowerCase()
-    : withoutTrailingSeparators;
+  return platform === "win32" ? withoutTrailingSeparators.toLowerCase() : withoutTrailingSeparators;
 }

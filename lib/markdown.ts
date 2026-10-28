@@ -131,9 +131,9 @@ export function normalizeDisplayMath(markdown: string): string {
         // column 0 so the block stays parseable when nested inside a list item.
         normalized.push(
           `${bracketDisplayStart[1]}$$`,
-          ...lines.slice(index + 1, closingIndex).map((mathLine) =>
-            indentDisplayMathContent(mathLine, bracketDisplayStart[1]),
-          ),
+          ...lines
+            .slice(index + 1, closingIndex)
+            .map((mathLine) => indentDisplayMathContent(mathLine, bracketDisplayStart[1])),
           `${bracketDisplayStart[1]}$$`,
         );
         index = closingIndex;
@@ -148,11 +148,7 @@ export function normalizeDisplayMath(markdown: string): string {
         // See the comment on bracketDisplayOneLine: without matching indentation,
         // a formula nested in a GFM list item is mis-parsed by remark-math and the
         // text after the formula renders as a garbled KaTeX error block.
-        normalized.push(
-          `${displayMathMatch[1]}$$`,
-          `${displayMathMatch[1]}${math}`,
-          `${displayMathMatch[1]}$$`,
-        );
+        normalized.push(`${displayMathMatch[1]}$$`, `${displayMathMatch[1]}${math}`, `${displayMathMatch[1]}$$`);
         continue;
       }
     }
@@ -169,12 +165,7 @@ export function normalizeDisplayMath(markdown: string): string {
       // Only treat this as a block opener if no other `$$` is embedded mid-line
       // (e.g. `$$x$$ and text` stays untouched and is rendered as inline math).
       if (firstLine && !firstLine.includes("$$")) {
-        const closing = findDisplayMathClose(
-          lines,
-          index + 1,
-          indent,
-          unmatchedDisplayMathUntil,
-        );
+        const closing = findDisplayMathClose(lines, index + 1, indent, unmatchedDisplayMathUntil);
         if (closing) {
           normalized.push(`${indent}$$`, `${indent}${firstLine}`);
           for (let j = index + 1; j < closing.index; j++) {
@@ -199,12 +190,7 @@ export function normalizeDisplayMath(markdown: string): string {
     const displayMathBareOpen = line.match(/^([ \t]{0,3})\$\$\s*$/);
     if (displayMathBareOpen) {
       const indent = displayMathBareOpen[1];
-      const closing = findDisplayMathClose(
-        lines,
-        index + 1,
-        indent,
-        unmatchedDisplayMathUntil,
-      );
+      const closing = findDisplayMathClose(lines, index + 1, indent, unmatchedDisplayMathUntil);
       if (closing && (closing.glued || indent !== "")) {
         normalized.push(`${indent}$$`);
         for (let j = index + 1; j < closing.index; j++) {
@@ -343,9 +329,8 @@ function normalizeInlineLatexMath(line: string): string {
     return line;
   }
 
-  return line.replace(
-    /(?<!\\)\\\(([^`\r\n$]+?)(?<!\\)\\\)/g,
-    (match, math: string) => (math.trim() ? `$${math}$` : match),
+  return line.replace(/(?<!\\)\\\(([^`\r\n$]+?)(?<!\\)\\\)/g, (match, math: string) =>
+    math.trim() ? `$${math}$` : match,
   );
 }
 

@@ -88,7 +88,12 @@ interface ExtensionRunnerLike {
   /** Gives mode extensions (sandbox / ssh / relay) first claim on `!`/`!!`
    *  commands, mirroring pi CLI rpc-mode. Returns operations/result or
    *  undefined when no handler wants the command. */
-  emitUserBash?(event: { type: "user_bash"; command: string; excludeFromContext: boolean; cwd: string }): Promise<UserBashEventResult | undefined>;
+  emitUserBash?(event: {
+    type: "user_bash";
+    command: string;
+    excludeFromContext: boolean;
+    cwd: string;
+  }): Promise<UserBashEventResult | undefined>;
   setUIContext?(uiContext?: unknown, mode?: "tui" | "rpc" | "json" | "print"): void;
 }
 
@@ -114,7 +119,11 @@ export interface ExtensionUiContextLike {
   setWorkingVisible(visible: boolean): void;
   setWorkingIndicator(options?: { frames?: string[]; intervalMs?: number }): void;
   setHiddenThinkingLabel(label?: string): void;
-  setWidget(key: string, content: string[] | ((...args: never[]) => unknown) | undefined, options?: WidgetOptionsLike): void;
+  setWidget(
+    key: string,
+    content: string[] | ((...args: never[]) => unknown) | undefined,
+    options?: WidgetOptionsLike,
+  ): void;
   setFooter(factory: unknown): void;
   setHeader(factory: unknown): void;
   setTitle(title: string): void;
@@ -166,29 +175,43 @@ export interface AgentSessionLike {
   dispose(): void;
   reload(options?: { beforeSessionStart?: () => void | Promise<void> }): Promise<void>;
   subscribe(listener: (event: AgentSessionEvent) => void): () => void;
-  prompt(text: string, options?: {
-    images?: Array<{ type: "image"; data: string; mimeType: string }>;
-    streamingBehavior?: "steer" | "followUp";
-    source?: "interactive" | "rpc";
-    preflightResult?: (success: boolean) => void;
-  }): Promise<void>;
-  sendCustomMessage<T = unknown>(message: {
-    customType: string;
-    content: string | (TextContent | ImageContent)[];
-    display: boolean;
-    details?: T;
-  }, options?: {
-    triggerTurn?: boolean;
-    deliverAs?: "steer" | "followUp" | "nextTurn";
-  }): Promise<void>;
+  prompt(
+    text: string,
+    options?: {
+      images?: Array<{ type: "image"; data: string; mimeType: string }>;
+      streamingBehavior?: "steer" | "followUp";
+      source?: "interactive" | "rpc";
+      preflightResult?: (success: boolean) => void;
+    },
+  ): Promise<void>;
+  sendCustomMessage<T = unknown>(
+    message: {
+      customType: string;
+      content: string | (TextContent | ImageContent)[];
+      display: boolean;
+      details?: T;
+    },
+    options?: {
+      triggerTurn?: boolean;
+      deliverAs?: "steer" | "followUp" | "nextTurn";
+    },
+  ): Promise<void>;
   abort(): Promise<void>;
-  executeBash(command: string, onChunk?: (chunk: string) => void, options?: {
-    excludeFromContext?: boolean;
-    operations?: BashOperations;
-  }): Promise<{ output: string; exitCode?: number; cancelled?: boolean; truncated?: boolean; fullOutputPath?: string }>;
+  executeBash(
+    command: string,
+    onChunk?: (chunk: string) => void,
+    options?: {
+      excludeFromContext?: boolean;
+      operations?: BashOperations;
+    },
+  ): Promise<{ output: string; exitCode?: number; cancelled?: boolean; truncated?: boolean; fullOutputPath?: string }>;
   /** Records an externally executed bash result into session history
    *  (the pre-executed path of the user_bash extension event). */
-  recordBashResult?(command: string, result: { output: string; exitCode?: number; cancelled?: boolean; truncated?: boolean; fullOutputPath?: string }, options?: { excludeFromContext?: boolean }): void;
+  recordBashResult?(
+    command: string,
+    result: { output: string; exitCode?: number; cancelled?: boolean; truncated?: boolean; fullOutputPath?: string },
+    options?: { excludeFromContext?: boolean },
+  ): void;
   abortBash(): void;
   readonly isBashRunning: boolean;
   setModel(model: ModelLike): Promise<void>;

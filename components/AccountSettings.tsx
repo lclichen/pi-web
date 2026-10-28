@@ -37,7 +37,9 @@ export function AccountSettings() {
     void fetch("/api/account")
       .then(async (res) => {
         const d = (await res.json().catch(() => ({}))) as {
-          authEnabled?: boolean; user?: AccountUser; error?: string;
+          authEnabled?: boolean;
+          user?: AccountUser;
+          error?: string;
         };
         if (cancelled) return;
         if (!res.ok) throw new Error(d.error ?? `HTTP ${res.status}`);
@@ -47,7 +49,9 @@ export function AccountSettings() {
       .catch((e: unknown) => {
         if (!cancelled) setLoadError(e instanceof Error ? e.message : String(e));
       });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const submit = useCallback(async () => {
@@ -66,7 +70,9 @@ export function AccountSettings() {
       const d = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
       if (!res.ok || d.error) throw new Error(d.error ?? `HTTP ${res.status}`);
       setMessage({ ok: true, text: t("account.success") });
-      setCurrentPassword(""); setNewPassword(""); setConfirmPassword("");
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
     } catch (e) {
       setMessage({ ok: false, text: e instanceof Error ? e.message : String(e) });
     } finally {
@@ -78,7 +84,9 @@ export function AccountSettings() {
     return (
       <div className="settings-general">
         <h2 className="settings-general-title">{t("settings.account")}</h2>
-        <p role="alert" className="settings-general-error">{loadError}</p>
+        <p role="alert" className="settings-general-error">
+          {loadError}
+        </p>
       </div>
     );
   }
@@ -130,7 +138,10 @@ export function AccountSettings() {
         <p className="settings-general-description">{t("account.changeDescription")}</p>
         <form
           className="account-password-form"
-          onSubmit={(e) => { e.preventDefault(); if (!busy) void submit(); }}
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!busy) void submit();
+          }}
         >
           <label>
             <span>{t("account.currentPassword")}</span>
@@ -165,11 +176,18 @@ export function AccountSettings() {
             />
           </label>
           {message && (
-            <p role={message.ok ? "status" : "alert"} className={message.ok ? "account-success" : "settings-general-error"}>
+            <p
+              role={message.ok ? "status" : "alert"}
+              className={message.ok ? "account-success" : "settings-general-error"}
+            >
               {message.text}
             </p>
           )}
-          <button type="submit" className="account-submit" disabled={busy || !currentPassword || !newPassword || !confirmPassword}>
+          <button
+            type="submit"
+            className="account-submit"
+            disabled={busy || !currentPassword || !newPassword || !confirmPassword}
+          >
             {busy ? t("account.changing") : t("account.submit")}
           </button>
         </form>

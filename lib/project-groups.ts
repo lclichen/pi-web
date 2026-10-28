@@ -45,9 +45,6 @@ export function getProjectActivity(
   return counts;
 }
 
-export function sessionsForProject(
-  sessions: readonly SessionInfo[],
-  projectKey: string,
-): SessionInfo[] {
+export function sessionsForProject(sessions: readonly SessionInfo[], projectKey: string): SessionInfo[] {
   return sessions.filter((session) => workspaceKeyOf(session) === projectKey);
 }

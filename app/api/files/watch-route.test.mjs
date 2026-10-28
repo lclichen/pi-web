@@ -4,7 +4,7 @@ import test from "node:test";
 
 const source = await readFile(new URL("./[...path]/route.ts", import.meta.url), "utf8");
 const start = source.indexOf('if (type === "watch")');
-const end = source.indexOf("// type === \"list\"", start);
+const end = source.indexOf('// type === "list"', start);
 assert.notEqual(start, -1, "watch route not found");
 assert.notEqual(end, -1, "watch route end not found");
 const watchBlock = source.slice(start, end);

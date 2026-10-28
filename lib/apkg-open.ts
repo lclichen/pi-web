@@ -31,9 +31,7 @@ const OPEN_TIMEOUT_MS = 90_000;
 function exeCandidates(base: string): string[] {
   // Both spellings are probed on every platform: a Windows checkout with the
   // linux binary present (or vice versa) resolves the right one anyway.
-  return process.platform === "win32"
-    ? [`${base}.exe`, base]
-    : [base, `${base}.exe`];
+  return process.platform === "win32" ? [`${base}.exe`, base] : [base, `${base}.exe`];
 }
 
 /**
@@ -65,9 +63,7 @@ export function resolveApkgTool(): string | null {
 
 function existsSyncOnPath(name: string): boolean {
   const pathDirs = (process.env.PATH ?? "").split(process.platform === "win32" ? ";" : ":");
-  const exts = process.platform === "win32"
-    ? (process.env.PATHEXT ?? ".EXE;.CMD;.BAT").split(";")
-    : [""];
+  const exts = process.platform === "win32" ? (process.env.PATHEXT ?? ".EXE;.CMD;.BAT").split(";") : [""];
   for (const dir of pathDirs) {
     if (!dir) continue;
     for (const ext of exts) {
@@ -103,7 +99,11 @@ export async function openApkgViaTool(data: Buffer, keys: Record<string, Buffer>
     const keyJson: Record<string, string> = {};
     for (const [keyId, kek] of Object.entries(keys)) keyJson[keyId] = kek.toString("base64");
     writeFileSync(keysFile, JSON.stringify(keyJson), { mode: 0o600 });
-    try { chmodSync(keysFile, 0o600); } catch { /* fs without chmod */ }
+    try {
+      chmodSync(keysFile, 0o600);
+    } catch {
+      /* fs without chmod */
+    }
 
     await new Promise<void>((resolve, reject) => {
       const child = spawn(tool, ["open", "--in", inFile, "--keys", keysFile, "--out", outFile], {

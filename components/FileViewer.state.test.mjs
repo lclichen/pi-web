@@ -62,11 +62,7 @@ test("TextFileViewer keeps first-mount preview eligibility across Strict Effects
 
 test("markdown table tokens stay inline despite Tailwind's table utility", () => {
   const html = renderToStaticMarkup(
-    React.createElement(
-      SyntaxHighlighter,
-      { language: "markdown" },
-      "| Name | Desc |\n| --- | --- |\n| A | first |",
-    ),
+    React.createElement(SyntaxHighlighter, { language: "markdown" }, "| Name | Desc |\n| --- | --- |\n| A | first |"),
   );
 
   assert.match(html, /class="token table[ "]/);

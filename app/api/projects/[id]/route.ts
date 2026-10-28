@@ -1,5 +1,12 @@
 import { NextResponse } from "next/server";
-import { deleteProject, getOwnedProject, readProjectSandboxConfig, updateProject, writeSandboxConfig, projectHome } from "@/lib/projects";
+import {
+  deleteProject,
+  getOwnedProject,
+  readProjectSandboxConfig,
+  updateProject,
+  writeSandboxConfig,
+  projectHome,
+} from "@/lib/projects";
 import { requireUserIdentity } from "@/lib/web-session";
 import { isApiRequestAllowed, hasJsonContentType } from "@/lib/request-security";
 import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from "fs";
@@ -8,7 +15,9 @@ import { validateAgentDirectory } from "@/lib/relay/browse";
 
 export const dynamic = "force-dynamic";
 
-interface RouteCtx { params: Promise<{ id: string }> }
+interface RouteCtx {
+  params: Promise<{ id: string }>;
+}
 
 function own(req: Request, id: string) {
   const identity = requireUserIdentity(req);
@@ -75,7 +84,11 @@ export async function PATCH(req: Request, ctx: RouteCtx) {
     const path = `${projectHome(project)}/.pi/${key === "modelsJson" ? "models.json" : "auth.json"}`;
     credentialsTouched = true;
     if (value.trim() === "") {
-      try { unlinkSync(path); } catch { /* absent is fine */ }
+      try {
+        unlinkSync(path);
+      } catch {
+        /* absent is fine */
+      }
       continue;
     }
     try {
@@ -98,7 +111,11 @@ export async function PATCH(req: Request, ctx: RouteCtx) {
     const agentsPath = `${projectHome(project)}/AGENTS.md`;
     mkdirSync(`${projectHome(project)}`, { recursive: true });
     if (body.agentsMd.trim() === "") {
-      try { unlinkSync(agentsPath); } catch { /* absent is fine */ }
+      try {
+        unlinkSync(agentsPath);
+      } catch {
+        /* absent is fine */
+      }
     } else {
       writeFileSync(agentsPath, body.agentsMd, "utf8");
     }
@@ -116,11 +133,7 @@ export async function PATCH(req: Request, ctx: RouteCtx) {
     const candidate = body.workdir.trim();
     if (candidate) {
       try {
-        workdirPatch = await validateAgentDirectory(
-          r.identity!.session.user.id,
-          project.machineId,
-          candidate,
-        );
+        workdirPatch = await validateAgentDirectory(r.identity!.session.user.id, project.machineId, candidate);
       } catch (error) {
         return NextResponse.json(
           { error: `工作目录不可用：${error instanceof Error ? error.message : String(error)}` },

@@ -24,7 +24,7 @@ export function UpdateCard({ isAdmin }: { isAdmin?: boolean }) {
     setError(null);
     try {
       const res = await fetch("/api/app-update", { cache: "no-store" });
-      const data = await res.json() as AppUpdateResponse & { error?: string };
+      const data = (await res.json()) as AppUpdateResponse & { error?: string };
       if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
       setState(data);
     } catch (e) {
@@ -34,10 +34,15 @@ export function UpdateCard({ isAdmin }: { isAdmin?: boolean }) {
     }
   }, []);
 
-  useEffect(() => { void check(); }, [check]);
+  useEffect(() => {
+    void check();
+  }, [check]);
 
   const stopPolling = useCallback(() => {
-    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
   }, []);
 
   // 应用期间轮询状态；服务重启时请求开始失败——保留最后已知状态即可。
@@ -48,15 +53,21 @@ export function UpdateCard({ isAdmin }: { isAdmin?: boolean }) {
     pollRef.current = setInterval(() => {
       if (Date.now() > deadline) {
         stopPolling();
-        setStatus((prev) => prev && prev.phase !== "done" && prev.phase !== "failed"
-          ? { ...prev, phase: "failed", error: t("update.timedOutWaitingServicesCome") }
-          : prev);
+        setStatus((prev) =>
+          prev && prev.phase !== "done" && prev.phase !== "failed"
+            ? { ...prev, phase: "failed", error: t("update.timedOutWaitingServicesCome") }
+            : prev,
+        );
         return;
       }
       void fetch("/api/app-update/status", { cache: "no-store" })
         .then((r) => (r.ok ? (r.json() as Promise<UpdateStatusResponse>) : null))
-        .then((d) => { if (d) setStatus(d); })
-        .catch(() => { /* 重启窗口期网络错误忽略 */ });
+        .then((d) => {
+          if (d) setStatus(d);
+        })
+        .catch(() => {
+          /* 重启窗口期网络错误忽略 */
+        });
     }, 1500);
   }, [stopPolling, t]);
 
@@ -79,7 +90,7 @@ export function UpdateCard({ isAdmin }: { isAdmin?: boolean }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(state?.target ? { version: state.target.version } : {}),
       });
-      const data = await res.json() as { started?: boolean; error?: string };
+      const data = (await res.json()) as { started?: boolean; error?: string };
       if (!res.ok || !data.started) throw new Error(data.error ?? `HTTP ${res.status}`);
       startPolling();
     } catch (e) {
@@ -98,7 +109,8 @@ export function UpdateCard({ isAdmin }: { isAdmin?: boolean }) {
     restarting: t("update.restarting"),
   };
 
-  const formatSize = (bytes: number) => (bytes > 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.round(bytes / 1024)} KB`);
+  const formatSize = (bytes: number) =>
+    bytes > 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.round(bytes / 1024)} KB`;
 
   return (
     <div>
@@ -115,13 +127,31 @@ export function UpdateCard({ isAdmin }: { isAdmin?: boolean }) {
           </ConfigButton>
         </div>
 
-        {error && <div role="alert" style={{ fontSize: 11, color: "#f87171" }}>{error}</div>}
+        {error && (
+          <div role="alert" style={{ fontSize: 11, color: "#f87171" }}>
+            {error}
+          </div>
+        )}
 
         {state?.source === "catalog" && state.updateAvailable && state.target && (
-          <div style={{ border: "1px solid rgba(37,99,235,0.35)", borderRadius: 8, padding: 10, display: "flex", flexDirection: "column", gap: 6 }}>
+          <div
+            style={{
+              border: "1px solid rgba(37,99,235,0.35)",
+              borderRadius: 8,
+              padding: 10,
+              display: "flex",
+              flexDirection: "column",
+              gap: 6,
+            }}
+          >
             <div style={{ fontSize: 12, fontWeight: 600 }}>
-              {t("update.updateAvailable")} <span style={{ fontFamily: "var(--font-mono)" }}>{state.target.version}</span>
-              {state.target.releasedAt && <span style={{ fontSize: 10, color: "var(--text-dim)", marginLeft: 6 }}>{state.target.releasedAt.slice(0, 10)}</span>}
+              {t("update.updateAvailable")}{" "}
+              <span style={{ fontFamily: "var(--font-mono)" }}>{state.target.version}</span>
+              {state.target.releasedAt && (
+                <span style={{ fontSize: 10, color: "var(--text-dim)", marginLeft: 6 }}>
+                  {state.target.releasedAt.slice(0, 10)}
+                </span>
+              )}
             </div>
             {state.target.frameworks.map((fw) => (
               <div key={fw.kind} style={{ fontSize: 11, color: "var(--text-dim)" }}>
@@ -161,7 +191,9 @@ export function UpdateCard({ isAdmin }: { isAdmin?: boolean }) {
           <div style={{ fontSize: 11, color: "#22c55e" }}>{status.message ?? t("update.updateCompleted")}</div>
         )}
         {status?.phase === "failed" && (
-          <div role="alert" style={{ fontSize: 11, color: "#f87171" }}>{status.error ?? t("update.updateFailed")}</div>
+          <div role="alert" style={{ fontSize: 11, color: "#f87171" }}>
+            {status.error ?? t("update.updateFailed")}
+          </div>
         )}
         {status?.phase === "restarting" && (
           <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{t("update.restartingReconnect")}</div>

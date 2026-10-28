@@ -120,10 +120,7 @@ function matchesAny(patterns: readonly string[], absPath: string, cwd: string): 
 // ---------------------------------------------------------------------------
 // 策略解析与评估。
 
-export type GuardAction =
-  | { action: "allow" }
-  | { action: "deny"; reason: string }
-  | { action: "ask"; reason: string };
+export type GuardAction = { action: "allow" } | { action: "deny"; reason: string } | { action: "ask"; reason: string };
 
 /** 解析策略文件内容；缺字段回默认，非法字段忽略（损坏文件不炸会话）。 */
 export function parsePathPolicy(raw: string | null | undefined): PathPolicy {
@@ -135,8 +132,10 @@ export function parsePathPolicy(raw: string | null | undefined): PathPolicy {
       policy.allowWrite = parsed.allowWrite.filter((p): p is string => typeof p === "string" && p.trim().length > 0);
       if (policy.allowWrite.length === 0) policy.allowWrite = [...DEFAULT_POLICY.allowWrite];
     }
-    if (Array.isArray(parsed.denyWrite)) policy.denyWrite = parsed.denyWrite.filter((p): p is string => typeof p === "string");
-    if (Array.isArray(parsed.denyRead)) policy.denyRead = parsed.denyRead.filter((p): p is string => typeof p === "string");
+    if (Array.isArray(parsed.denyWrite))
+      policy.denyWrite = parsed.denyWrite.filter((p): p is string => typeof p === "string");
+    if (Array.isArray(parsed.denyRead))
+      policy.denyRead = parsed.denyRead.filter((p): p is string => typeof p === "string");
     if (typeof parsed.askOnOutsideWrite === "boolean") policy.askOnOutsideWrite = parsed.askOnOutsideWrite;
   } catch {
     // 保留默认
@@ -151,7 +150,11 @@ export function parsePolicyDecisions(raw: string | null | undefined): PolicyDeci
     if (!Array.isArray(parsed.entries)) return { version: 1, entries: [] };
     const entries = parsed.entries
       .filter((e) => e && typeof e.path === "string" && (e.decision === "allow" || e.decision === "deny"))
-      .map((e) => ({ path: normalizePolicyPath(e.path as string), decision: e.decision as "allow" | "deny", at: typeof e.at === "number" ? e.at : 0 }));
+      .map((e) => ({
+        path: normalizePolicyPath(e.path as string),
+        decision: e.decision as "allow" | "deny",
+        at: typeof e.at === "number" ? e.at : 0,
+      }));
     return { version: 1, entries };
   } catch {
     return { version: 1, entries: [] };
@@ -167,7 +170,10 @@ export function evaluatePathAgainstPolicy(
 ): GuardAction {
   const norm = normalizePolicyPath(absPath);
   if (matchesAny(SELF_PROTECTED_PATTERNS, norm, cwd)) {
-    return { action: "deny", reason: `路径「${norm}」属于运行时受保护文件（策略/凭据/会话数据），任何策略都不可放行。` };
+    return {
+      action: "deny",
+      reason: `路径「${norm}」属于运行时受保护文件（策略/凭据/会话数据），任何策略都不可放行。`,
+    };
   }
   const denyList = kind === "write" ? policy.denyWrite : policy.denyRead;
   if (matchesAny(denyList, norm, cwd)) {
@@ -181,7 +187,10 @@ export function evaluatePathAgainstPolicy(
   const decision = [...decisions.entries].reverse().find((e) => matchesPattern(e.path, norm, "/"));
   if (decision) {
     if (decision.decision === "deny") {
-      return { action: "deny", reason: `路径「${norm}」已被用户标记为“拒绝且不再询问”（.pi/path-policy.decisions.json）。` };
+      return {
+        action: "deny",
+        reason: `路径「${norm}」已被用户标记为“拒绝且不再询问”（.pi/path-policy.decisions.json）。`,
+      };
     }
     return { action: "allow" };
   }
@@ -194,13 +203,30 @@ export function evaluatePathAgainstPolicy(
   if (policy.askOnOutsideWrite !== false) {
     return { action: "ask", reason: `写入目标「${norm}」在允许的工作区之外。` };
   }
-  return { action: "deny", reason: `写入目标「${norm}」在允许的工作区之外（策略 askOnOutsideWrite=false，直接拒绝）。` };
+  return {
+    action: "deny",
+    reason: `写入目标「${norm}」在允许的工作区之外（策略 askOnOutsideWrite=false，直接拒绝）。`,
+  };
 }
 
 // ---------------------------------------------------------------------------
 // bash 命令的写入目标提取（best-effort，威胁模型 A 足够）。
 
-const WRITE_COMMANDS = new Set(["rm", "rmdir", "mv", "cp", "dd", "truncate", "shred", "mkdir", "touch", "tee", "ln", "install", "rsync"]);
+const WRITE_COMMANDS = new Set([
+  "rm",
+  "rmdir",
+  "mv",
+  "cp",
+  "dd",
+  "truncate",
+  "shred",
+  "mkdir",
+  "touch",
+  "tee",
+  "ln",
+  "install",
+  "rsync",
+]);
 const REDIRECT_RE = /(?:^|[\s;|&])(?:\d*>&>?|>>?|&>?)\s*([^\s;|&<>]+)/g;
 
 function looksLikePath(token: string): boolean {

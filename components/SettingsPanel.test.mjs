@@ -15,7 +15,10 @@ test("opens one settings panel from direct sidebar shortcuts", () => {
   assert.match(shellSource, /setSettingsSection\(section\)/);
   assert.match(shellSource, /initialSection=\{settingsSection\}/);
   assert.match(shellSource, /translate\("common\.settings"\)/);
-  assert.match(shellSource, /<SettingsSectionIcon section=\{section\} size=\{14\} strokeWidth=\{2\} \/>\s*<span>\{label\}<\/span>/);
+  assert.match(
+    shellSource,
+    /<SettingsSectionIcon section=\{section\} size=\{14\} strokeWidth=\{2\} \/>\s*<span>\{label\}<\/span>/,
+  );
   assert.match(shellSource, /<SettingsSectionIcon section="general" size=\{14\} strokeWidth=\{2\} \/>/);
   assert.doesNotMatch(shellSource, /\["plugins", translate\("common\.plugins"\)\]/);
   // This fork keeps a dedicated Agents dialog for the tintinweb subagents
@@ -43,10 +46,7 @@ test("restores the settings section and each list detail selection", async () =>
   assert.match(panelSource, /setLastSettingsSection\(initialSection\)/);
   assert.match(panelSource, /setLastSettingsSection\(nextSection\)/);
   for (const name of ["ModelsConfig", "SkillsConfig", "SubagentsConfig", "PluginsConfig"]) {
-    assert.match(
-      await readFile(new URL(`./${name}.tsx`, import.meta.url), "utf8"),
-      /getLastSettingsSelection/,
-    );
+    assert.match(await readFile(new URL(`./${name}.tsx`, import.meta.url), "utf8"), /getLastSettingsSelection/);
   }
 });
 
@@ -105,7 +105,10 @@ test("standalone feature toggles use the capped card row", () => {
 
 test("keeps General free of divider rows", () => {
   assert.match(panelSource, /className="settings-dialog-header"/);
-  assert.match(cssSource, /\.settings-dialog-header \{[\s\S]*?display: flex[\s\S]*?align-items: center[\s\S]*?min-height: 50px/);
+  assert.match(
+    cssSource,
+    /\.settings-dialog-header \{[\s\S]*?display: flex[\s\S]*?align-items: center[\s\S]*?min-height: 50px/,
+  );
   assert.doesNotMatch(panelSource, /sections\.find\(\(item\) => item\.id === section\)/);
   assert.doesNotMatch(panelSource, /<section style=\{\{[^}]*borderBottom/);
   assert.doesNotMatch(panelSource, /borderLeft: index > 0/);
@@ -135,8 +138,14 @@ test("uses top navigation on desktop and one compact section picker on mobile", 
   assert.match(cssSource, /\.settings-section-tab\[aria-current="page"\]::after/);
   assert.match(cssSource, /\.settings-section-tab:focus-visible:not\(\[aria-current="page"\]\)/);
   assert.match(cssSource, /\.settings-section-tab:focus-visible\[aria-current="page"\][\s\S]*?outline: none/);
-  assert.match(cssSource, /@media \(max-width: 640px\)[\s\S]*?\.settings-section-tabs,\s*\.settings-tabs-scrollbox \{[\s\S]*?display: none/);
-  assert.match(cssSource, /@media \(max-width: 640px\)[\s\S]*?\.settings-mobile-section-picker \{[\s\S]*?display: block/);
+  assert.match(
+    cssSource,
+    /@media \(max-width: 640px\)[\s\S]*?\.settings-section-tabs,\s*\.settings-tabs-scrollbox \{[\s\S]*?display: none/,
+  );
+  assert.match(
+    cssSource,
+    /@media \(max-width: 640px\)[\s\S]*?\.settings-mobile-section-picker \{[\s\S]*?display: block/,
+  );
   assert.doesNotMatch(panelSource, /width: isMobile \? "100%" : 188/);
   assert.match(panelSource, /<main className="settings-dialog-main">/);
   assert.doesNotMatch(panelSource, /<style>/);
@@ -161,7 +170,8 @@ test("labels agent profiles as sub-agents", () => {
 });
 
 test("uses the child-session robot glyph for the sub-agents tab", () => {
-  const robotGlyph = /<rect x="5" y="7" width="14" height="11" rx="2" \/>\s*<path d="M9 11h\.01M15 11h\.01M9 15h6M12 7V4M10 4h4" \/>/;
+  const robotGlyph =
+    /<rect x="5" y="7" width="14" height="11" rx="2" \/>\s*<path d="M9 11h\.01M15 11h\.01M9 15h6M12 7V4M10 4h4" \/>/;
   assert.match(panelSource, robotGlyph);
   assert.match(sidebarSource, robotGlyph);
   assert.match(panelSource, /section === "agents"[\s\S]*?className="settings-section-icon is-agent"/);
@@ -169,5 +179,8 @@ test("uses the child-session robot glyph for the sub-agents tab", () => {
 });
 
 test("uses the compact controls glyph for General", () => {
-  assert.match(panelSource, /section === "general"[\s\S]*?<path d="M20 7h-9M14 17H5" \/>[\s\S]*?<circle cx="7" cy="7" r="3" \/>[\s\S]*?<circle cx="17" cy="17" r="3" \/>/);
+  assert.match(
+    panelSource,
+    /section === "general"[\s\S]*?<path d="M20 7h-9M14 17H5" \/>[\s\S]*?<circle cx="7" cy="7" r="3" \/>[\s\S]*?<circle cx="17" cy="17" r="3" \/>/,
+  );
 });

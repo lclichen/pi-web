@@ -1,9 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSessionListVersion } from "@/lib/session-reader";
-import {
-  getCompletionNotificationSuppressedRpcSessionIds,
-  getRunningRpcSessionInfos,
-} from "@/lib/rpc-manager";
+import { getCompletionNotificationSuppressedRpcSessionIds, getRunningRpcSessionInfos } from "@/lib/rpc-manager";
 import { requireUserIdentity } from "@/lib/web-session";
 
 export const dynamic = "force-dynamic";
@@ -22,8 +19,9 @@ export async function GET(req: Request) {
   // Web-push completion-notification suppression (upstream) rides along behind
   // the same per-user fence so other users' session ids never leak.
   const visible = new Set(runningSessionIds);
-  const completionNotificationSuppressedSessionIds = getCompletionNotificationSuppressedRpcSessionIds()
-    .filter((sessionId) => visible.has(sessionId));
+  const completionNotificationSuppressedSessionIds = getCompletionNotificationSuppressedRpcSessionIds().filter(
+    (sessionId) => visible.has(sessionId),
+  );
   return NextResponse.json(
     {
       sessionListVersion: getSessionListVersion(),

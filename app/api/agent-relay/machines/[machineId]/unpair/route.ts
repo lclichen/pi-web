@@ -9,10 +9,7 @@ export const dynamic = "force-dynamic";
 // Revoke the machine's token (it cannot reconnect) and drop its live socket.
 // The owning user must confirm in the UI — running remote sessions on this
 // machine lose their terminal/agent connection.
-export async function POST(
-  req: Request,
-  ctx: { params: Promise<{ machineId: string }> },
-) {
+export async function POST(req: Request, ctx: { params: Promise<{ machineId: string }> }) {
   const identity = requireUserIdentity(req);
   if (!identity.ok) return NextResponse.json({ error: "登录已失效" }, { status: identity.status });
   const { machineId } = await ctx.params;

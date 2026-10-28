@@ -15,10 +15,11 @@ function parseToolSelectionData(data: unknown): string[] | undefined {
   if (typeof data !== "object" || data === null || Array.isArray(data)) return undefined;
   const candidate = data as { version?: unknown; tools?: unknown };
   if (
-    candidate.version !== 1
-    || !Array.isArray(candidate.tools)
-    || candidate.tools.some((tool) => typeof tool !== "string" || !BUILTIN_TOOL_NAMES.has(tool))
-  ) return undefined;
+    candidate.version !== 1 ||
+    !Array.isArray(candidate.tools) ||
+    candidate.tools.some((tool) => typeof tool !== "string" || !BUILTIN_TOOL_NAMES.has(tool))
+  )
+    return undefined;
   return [...new Set(candidate.tools as string[])];
 }
 
@@ -41,10 +42,7 @@ export function validateSessionToolSelection(tools: unknown): string[] {
   return parsed;
 }
 
-export function appendSessionToolSelection(
-  sessionManager: SessionManager,
-  tools: readonly string[],
-): void {
+export function appendSessionToolSelection(sessionManager: SessionManager, tools: readonly string[]): void {
   sessionManager.appendCustomEntry(TOOL_SELECTION_TYPE, {
     version: 1,
     tools: [...tools],

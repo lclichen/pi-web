@@ -8,10 +8,7 @@ import { sessionCookieRefreshHeader } from "@/lib/web-session";
 export const dynamic = "force-dynamic";
 
 // GET /api/agent/[id]/events - SSE stream of agent events
-export async function GET(
-  req: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
+export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   if (req.signal.aborted) return new Response(null, { status: 204 });
 

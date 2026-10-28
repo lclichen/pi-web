@@ -117,11 +117,7 @@ function absolutenessOf(path: string): "windows" | "posix" | "relative" {
  *   The historical "strip leading /" fallback made /a/b/c become root+/a/b/c
  *   — the doubled-path bug when clicking turn-written files in the file panel.
  */
-export function toRelayPath(
-  path: string,
-  scope: RelayWorkspaceScope,
-  workspaceDir?: string | null,
-): string {
+export function toRelayPath(path: string, scope: RelayWorkspaceScope, workspaceDir?: string | null): string {
   const raw = path.trim();
   if (!raw) return scope.prefix || ".";
   const kind = absolutenessOf(raw);
@@ -143,10 +139,7 @@ export function toRelayPath(
  * workspace (or a workspace-relative path) into a workspace-relative path.
  * Returns null when the path is outside the workspace.
  */
-export function toWorkspaceRelative(
-  path: string,
-  workspaceDir?: string | null,
-): string | null {
+export function toWorkspaceRelative(path: string, workspaceDir?: string | null): string | null {
   const raw = path.trim();
   if (!raw) return "";
   const kind = absolutenessOf(raw);

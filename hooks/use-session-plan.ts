@@ -78,11 +78,7 @@ export function useSessionPlan({
       });
     }
     for (const p of [`${root}/.pi/plan.md`, `${root}/PLAN.md`]) {
-      candidates.push(
-        remote
-          ? { path: p, via: "remotefs", watch: "poll" }
-          : { path: p, via: "files", watch: "sse" },
-      );
+      candidates.push(remote ? { path: p, via: "remotefs", watch: "poll" } : { path: p, via: "files", watch: "sse" });
     }
 
     const readUrl = (c: Candidate, type: "read" | "watch"): string => {

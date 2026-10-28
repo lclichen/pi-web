@@ -11,7 +11,7 @@ type Params = { params: Promise<{ provider: string }> };
 export async function POST(req: Request, { params }: Params) {
   const { provider } = await params;
   try {
-    const { apiKey } = await req.json() as { apiKey?: string };
+    const { apiKey } = (await req.json()) as { apiKey?: string };
     if (!apiKey || typeof apiKey !== "string" || !apiKey.trim()) {
       return NextResponse.json({ error: "apiKey is required" }, { status: 400 });
     }
@@ -54,10 +54,7 @@ export async function DELETE(_req: Request, { params }: Params) {
   try {
     const removal = await removeStoredCredentialIfType(provider, "api_key");
     if (removal.status === "type_mismatch") {
-      return NextResponse.json(
-        { error: `${provider} is authenticated with OAuth, not an API key` },
-        { status: 409 },
-      );
+      return NextResponse.json({ error: `${provider} is authenticated with OAuth, not an API key` }, { status: 409 });
     }
     invalidateModelsCache();
     return NextResponse.json({ success: true });

@@ -27,14 +27,8 @@ test("uses shared sidebar sizing for providers and matching indented model rows"
 });
 
 test("ignores malformed auth provider responses", () => {
-  assert.match(
-    source,
-    /if \(Array\.isArray\(d\.oauthProviders\)\) setOauthProviders\(d\.oauthProviders\)/,
-  );
-  assert.match(
-    source,
-    /if \(Array\.isArray\(d\.apiKeyProviders\)\) setApiKeyProviders\(d\.apiKeyProviders\)/,
-  );
+  assert.match(source, /if \(Array\.isArray\(d\.oauthProviders\)\) setOauthProviders\(d\.oauthProviders\)/);
+  assert.match(source, /if \(Array\.isArray\(d\.apiKeyProviders\)\) setApiKeyProviders\(d\.apiKeyProviders\)/);
 });
 
 test("custom model config exposes provider-level request headers", () => {
@@ -60,10 +54,9 @@ test("custom model config exposes model headers and supportsDeveloperRole compat
 });
 
 test("disabling the developer role writes an explicit false override", () => {
-  assert.deepEqual(
-    setCompatBool({ compat: { supportsStore: true } }, "supportsDeveloperRole", false),
-    { compat: { supportsStore: true, supportsDeveloperRole: false } },
-  );
+  assert.deepEqual(setCompatBool({ compat: { supportsStore: true } }, "supportsDeveloperRole", false), {
+    compat: { supportsStore: true, supportsDeveloperRole: false },
+  });
 });
 
 test("editing a header preserves row order and stable identities", () => {
@@ -73,10 +66,13 @@ test("editing a header preserves row order and stable identities", () => {
   ];
   const updated = updateHeaderRow(rows, 10, { name: "X-First-Edited" });
 
-  assert.deepEqual(updated.map(({ id, name }) => ({ id, name })), [
-    { id: 10, name: "X-First-Edited" },
-    { id: 11, name: "X-Second" },
-  ]);
+  assert.deepEqual(
+    updated.map(({ id, name }) => ({ id, name })),
+    [
+      { id: 10, name: "X-First-Edited" },
+      { id: 11, name: "X-Second" },
+    ],
+  );
   assert.deepEqual(serializeHeaderRows(updated), {
     "X-First-Edited": "one",
     "X-Second": "two",
@@ -90,10 +86,10 @@ test("blank header drafts are omitted until they have a name", () => {
   ];
 
   assert.deepEqual(serializeHeaderRows(rows), { "X-Existing": "kept" });
-  assert.deepEqual(
-    serializeHeaderRows(updateHeaderRow(rows, 2, { name: "X-Draft" })),
-    { "X-Existing": "kept", "X-Draft": "draft value" },
-  );
+  assert.deepEqual(serializeHeaderRows(updateHeaderRow(rows, 2, { name: "X-Draft" })), {
+    "X-Existing": "kept",
+    "X-Draft": "draft value",
+  });
 });
 
 test("model cost drafts default blank prices to zero unless all are blank", () => {
@@ -129,10 +125,7 @@ test("model cost drafts default blank prices to zero unless all are blank", () =
 });
 
 test("manual price editing commits completed costs and removes only an all-blank group", () => {
-  const modelDetail = source.slice(
-    source.indexOf("function ModelDetail"),
-    source.indexOf("// ── OAuth detail"),
-  );
+  const modelDetail = source.slice(source.indexOf("function ModelDetail"), source.indexOf("// ── OAuth detail"));
 
   assert.match(modelDetail, /const completeCost = parseCompleteModelCost\(nextDraft\)/);
   assert.match(modelDetail, /if \(completeCost\)/);
@@ -144,10 +137,7 @@ test("manual price editing commits completed costs and removes only an all-blank
 });
 
 test("model specs keep catalog-filled prices visible outside advanced settings", () => {
-  const modelDetail = source.slice(
-    source.indexOf("function ModelDetail"),
-    source.indexOf("// ── OAuth detail"),
-  );
+  const modelDetail = source.slice(source.indexOf("function ModelDetail"), source.indexOf("// ── OAuth detail"));
   const specsIndex = modelDetail.indexOf('t("models.modelSpecs")');
   const costIndex = modelDetail.indexOf('t("models.costPerMillion")');
   const advancedIndex = modelDetail.indexOf('t("models.advancedSettings")');
@@ -160,23 +150,14 @@ test("model specs keep catalog-filled prices visible outside advanced settings",
 });
 
 test("per-model settings use one primary divider before advanced settings", () => {
-  const modelDetail = source.slice(
-    source.indexOf("function ModelDetail"),
-    source.indexOf("// ── OAuth detail"),
-  );
+  const modelDetail = source.slice(source.indexOf("function ModelDetail"), source.indexOf("// ── OAuth detail"));
 
-  assert.equal(
-    (modelDetail.match(/borderTop: "1px solid var\(--border\)"/g) ?? []).length,
-    1,
-  );
+  assert.equal((modelDetail.match(/borderTop: "1px solid var\(--border\)"/g) ?? []).length, 1);
   assert.doesNotMatch(modelDetail, /borderBottom: "1px solid var\(--border\)"/);
 });
 
 test("thinking level overrides keep explicit default, disabled, and custom controls", () => {
-  const editor = source.slice(
-    source.indexOf("function ThinkingLevelMapEditor"),
-    source.indexOf("// ── Model detail"),
-  );
+  const editor = source.slice(source.indexOf("function ThinkingLevelMapEditor"), source.indexOf("// ── Model detail"));
 
   assert.match(editor, /THINKING_LEVELS\.map/);
   assert.match(editor, />\s*Default\s*</);

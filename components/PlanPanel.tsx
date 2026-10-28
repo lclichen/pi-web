@@ -48,41 +48,63 @@ export function PlanPanel({ plan, sessionId }: Props) {
         // offline — history stays empty, live plan unaffected
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [sessionId]);
 
-  const pickedVersion = useMemo(
-    () => versions.find((v) => v.toolCallId === picked) ?? null,
-    [versions, picked],
-  );
+  const pickedVersion = useMemo(() => versions.find((v) => v.toolCallId === picked) ?? null, [versions, picked]);
 
   const emptyPlan = !plan && versions.length === 0;
   if (emptyPlan) {
     return (
-      <div style={{ height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, padding: 24, textAlign: "center" }}>
+      <div
+        style={{
+          height: "100%",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 8,
+          padding: 24,
+          textAlign: "center",
+        }}
+      >
         <div style={{ fontSize: 12, color: "var(--text-dim)" }}>未找到计划</div>
         <div style={{ fontSize: 11, color: "var(--text-dim)", fontFamily: "var(--font-mono)", lineHeight: "18px" }}>
-          会话中让模型调用 plan_save，或运行 @plan 子智能体，<br />
+          会话中让模型调用 plan_save，或运行 @plan 子智能体，
+          <br />
           计划会保存到 .pi/plans/plan-sess_&lt;会话ID&gt;.md 并显示在这里
         </div>
       </div>
     );
   }
 
-  const content = pickedVersion ? pickedVersion.content : plan?.content ?? "";
+  const content = pickedVersion ? pickedVersion.content : (plan?.content ?? "");
   const headerPath = pickedVersion
     ? `${plan?.path ?? ".pi/plans/"} · 历史版本 v${versions.indexOf(pickedVersion) + 1}/${versions.length}`
-    : plan?.path ?? "";
+    : (plan?.path ?? "");
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
-      <div style={{
-        display: "flex", alignItems: "center", gap: 8,
-        padding: "6px 14px", fontSize: 11, color: "var(--text-dim)",
-        fontFamily: "var(--font-mono)", borderBottom: "1px solid var(--border)",
-        flexShrink: 0, overflow: "hidden",
-      }}>
-        <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={headerPath}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          padding: "6px 14px",
+          fontSize: 11,
+          color: "var(--text-dim)",
+          fontFamily: "var(--font-mono)",
+          borderBottom: "1px solid var(--border)",
+          flexShrink: 0,
+          overflow: "hidden",
+        }}
+      >
+        <span
+          style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+          title={headerPath}
+        >
           {headerPath}
         </span>
         {versions.length > 0 && (
@@ -92,9 +114,15 @@ export function PlanPanel({ plan, sessionId }: Props) {
             aria-label="计划版本"
             title="切换计划版本"
             style={{
-              flexShrink: 0, maxWidth: 132, fontSize: 10, padding: "2px 4px",
-              background: "var(--bg-panel)", color: "var(--text-muted)",
-              border: "1px solid var(--border)", borderRadius: 5, outline: "none",
+              flexShrink: 0,
+              maxWidth: 132,
+              fontSize: 10,
+              padding: "2px 4px",
+              background: "var(--bg-panel)",
+              color: "var(--text-muted)",
+              border: "1px solid var(--border)",
+              borderRadius: 5,
+              outline: "none",
             }}
           >
             <option value="live">当前文件{plan ? "" : "（缺失）"}</option>
@@ -107,8 +135,17 @@ export function PlanPanel({ plan, sessionId }: Props) {
         )}
       </div>
       {pickedVersion && (
-        <div style={{ padding: "4px 14px", fontSize: 10, color: "var(--text-dim)", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
-          历史版本只读——保存于 {pickedVersion.savedAt ? new Date(pickedVersion.savedAt).toLocaleString() : "未知时间"}（{pickedVersion.chars} 字符）
+        <div
+          style={{
+            padding: "4px 14px",
+            fontSize: 10,
+            color: "var(--text-dim)",
+            borderBottom: "1px solid var(--border)",
+            flexShrink: 0,
+          }}
+        >
+          历史版本只读——保存于 {pickedVersion.savedAt ? new Date(pickedVersion.savedAt).toLocaleString() : "未知时间"}（
+          {pickedVersion.chars} 字符）
         </div>
       )}
       <div style={{ flex: 1, overflowY: "auto" }}>

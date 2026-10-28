@@ -50,7 +50,10 @@
   const genericRules = [
     [/sk-[A-Za-z0-9]{20,}/, "疑似 API Key（sk-…）"],
     [/-----BEGIN [A-Z ]*PRIVATE KEY-----/, "PEM 私钥"],
-    [/(password|passwd|pwd|secret|token|apiKey|api_key)\s*[:=]\s*["'][^"'${][^"'${]{5,}["']/i, "明文凭据赋值（password/secret/token = '…'）"],
+    [
+      /(password|passwd|pwd|secret|token|apiKey|api_key)\s*[:=]\s*["'][^"'${][^"'${]{5,}["']/i,
+      "明文凭据赋值（password/secret/token = '…'）",
+    ],
   ];
 
   const exempt = /\$\{|\$\w+|process\.env|<your-|your[-_]password|change[-_]?me|placeholder|\bexample\b/i;
@@ -64,12 +67,18 @@
     let hit = null;
     if (!allowMarker.test(added)) {
       for (const [pattern, why] of burnedRules) {
-        if (pattern.test(added)) { hit = why; break; }
+        if (pattern.test(added)) {
+          hit = why;
+          break;
+        }
       }
     }
     if (!hit && !allowMarker.test(added) && !exempt.test(added)) {
       for (const [pattern, why] of genericRules) {
-        if (pattern.test(added)) { hit = why; break; }
+        if (pattern.test(added)) {
+          hit = why;
+          break;
+        }
       }
     }
     if (hit) hits.push("  [" + hit + "] " + added.trim().slice(0, 120));

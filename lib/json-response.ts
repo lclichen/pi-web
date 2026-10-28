@@ -29,11 +29,7 @@ function appendVary(headers: Headers, value: string): void {
   }
 }
 
-export function jsonResponse(
-  request: Request,
-  data: unknown,
-  init: ResponseInit = {},
-): Response {
+export function jsonResponse(request: Request, data: unknown, init: ResponseInit = {}): Response {
   const body = JSON.stringify(data);
   const isLargeEnough = Buffer.byteLength(body) >= MIN_GZIP_BYTES;
   const headers = new Headers(init.headers);
@@ -43,10 +39,7 @@ export function jsonResponse(
     appendVary(headers, "Accept-Encoding");
   }
 
-  if (
-    isLargeEnough
-    && acceptedEncodingQuality(request.headers.get("Accept-Encoding") ?? "", "gzip") > 0
-  ) {
+  if (isLargeEnough && acceptedEncodingQuality(request.headers.get("Accept-Encoding") ?? "", "gzip") > 0) {
     headers.set("Content-Encoding", "gzip");
     const compressed = new Blob([body]).stream().pipeThrough(new CompressionStream("gzip"));
     return new Response(compressed, { ...init, headers });

@@ -6,8 +6,5 @@ const source = await readFile(new URL("./ChatWindow.tsx", import.meta.url), "utf
 
 test("expands process details when a completed turn has no final answer", () => {
   assert.match(source, /const \[expanded, setExpanded\] = useState\(defaultExpanded\)/);
-  assert.match(
-    source,
-    /<ProcessDetailsGroup[\s\S]*?defaultExpanded=\{!finalAnswerMessage\}/,
-  );
+  assert.match(source, /<ProcessDetailsGroup[\s\S]*?defaultExpanded=\{!finalAnswerMessage\}/);
 });

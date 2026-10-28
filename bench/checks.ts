@@ -66,8 +66,18 @@ function contains(content: string, check: { text?: string; regex?: string }): bo
 // Transcript helpers — structural access to pi session messages.
 // ---------------------------------------------------------------------------
 
-export interface ToolCallRecord { id: string; name: string; arguments: unknown }
-export interface ToolResultRecord { toolCallId: string; name: string; isError: boolean; details: unknown; text: string }
+export interface ToolCallRecord {
+  id: string;
+  name: string;
+  arguments: unknown;
+}
+export interface ToolResultRecord {
+  toolCallId: string;
+  name: string;
+  isError: boolean;
+  details: unknown;
+  text: string;
+}
 
 export function collectToolEvents(messages: unknown[]): {
   calls: ToolCallRecord[];
@@ -92,7 +102,10 @@ export function collectToolEvents(messages: unknown[]): {
       }
     } else if (msg.role === "toolResult" && typeof msg.toolName === "string") {
       const text = Array.isArray(msg.content)
-        ? msg.content.filter((p) => p.type === "text").map((p) => p.text ?? "").join("\n")
+        ? msg.content
+            .filter((p) => p.type === "text")
+            .map((p) => p.text ?? "")
+            .join("\n")
         : "";
       results.push({
         toolCallId: String(msg.toolCallId),
@@ -106,7 +119,11 @@ export function collectToolEvents(messages: unknown[]): {
   return { calls, results };
 }
 
-interface TodoSnapshot { todos: Array<{ status?: string }>; error?: string; noChange?: boolean }
+interface TodoSnapshot {
+  todos: Array<{ status?: string }>;
+  error?: string;
+  noChange?: boolean;
+}
 
 function todoResults(results: ToolResultRecord[]): ToolResultRecord[] {
   return results.filter((r) => r.name === "todo" && r.details && typeof r.details === "object");
@@ -150,9 +167,7 @@ export async function runCheck(check: Check, ctx: CheckContext): Promise<CheckRe
   switch (check.kind) {
     case "file_exists": {
       const full = join(ctx.cwd, check.path);
-      return existsSync(full)
-        ? pass(`${check.path} exists`)
-        : fail(`${check.path} not found`);
+      return existsSync(full) ? pass(`${check.path} exists`) : fail(`${check.path} not found`);
     }
     case "file_not_exists":
       return existsSync(join(ctx.cwd, check.path))
@@ -164,9 +179,13 @@ export async function runCheck(check: Check, ctx: CheckContext): Promise<CheckRe
       if (content === null) return fail(`${check.path} not found`);
       const has = contains(content, check);
       if (check.kind === "file_contains") {
-        return has ? pass(`${check.path} matches`) : fail(`${check.path} does not contain ${check.text ?? `/${check.regex}/`}`);
+        return has
+          ? pass(`${check.path} matches`)
+          : fail(`${check.path} does not contain ${check.text ?? `/${check.regex}/`}`);
       }
-      return has ? fail(`${check.path} still contains ${check.text ?? `/${check.regex}/`}`) : pass(`${check.path} clean`);
+      return has
+        ? fail(`${check.path} still contains ${check.text ?? `/${check.regex}/`}`)
+        : pass(`${check.path} clean`);
     }
     case "node_script": {
       try {
@@ -189,7 +208,8 @@ export async function runCheck(check: Check, ctx: CheckContext): Promise<CheckRe
         return pass(`exit 0${check.stdoutRegex ? `, stdout matches` : ""}`);
       } catch (e) {
         const err = e as { stdout?: string; stderr?: string; message?: string; code?: number };
-        if (check.expectExit !== undefined && err.code === check.expectExit) return pass(`exit ${err.code} as expected`);
+        if (check.expectExit !== undefined && err.code === check.expectExit)
+          return pass(`exit ${err.code} as expected`);
         return fail(`command failed (code ${err.code}): ${err.stderr || err.stdout || err.message}`);
       }
     }

@@ -80,11 +80,19 @@ interface Props {
  * plan quick row（终端入口在文件浏览器工具栏——合并决策 1）。
  */
 export function ChatStatusWidget({
-  subagentCalls, onOpenAgents, onOpenPlan, sessionId,
-  cwd = null, refreshSignal = 0, agentRunning = false, bashRunning = false,
+  subagentCalls,
+  onOpenAgents,
+  onOpenPlan,
+  sessionId,
+  cwd = null,
+  refreshSignal = 0,
+  agentRunning = false,
+  bashRunning = false,
   bgTasks = [],
   planActive,
-  plan = null, todos = [], goal = null,
+  plan = null,
+  todos = [],
+  goal = null,
   planMode = null,
   onTopReserveChange,
 }: Props) {
@@ -122,7 +130,9 @@ export function ChatStatusWidget({
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, [panelOpen, runningCount]);
-  useEffect(() => { setAgentsOpen(runningCount > 0); }, [runningCount]);
+  useEffect(() => {
+    setAgentsOpen(runningCount > 0);
+  }, [runningCount]);
 
   // ---- git summary poll (collapsed-chain input #3) ----------------------
   const [gitSummary, setGitSummary] = useState<CapsuleGitSummary | null>(null);
@@ -146,7 +156,10 @@ export function ChatStatusWidget({
     };
     void load();
     const timer = setInterval(load, 45_000);
-    return () => { cancelled = true; clearInterval(timer); };
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
   }, [cwd, refreshSignal]);
 
   // ---- auto variant: conversation container width (ZCode container-query
@@ -185,7 +198,9 @@ export function ChatStatusWidget({
     const onDown = (e: MouseEvent) => {
       if (rootRef.current && !rootRef.current.contains(e.target as Node)) setVariantOverride("mini");
     };
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setVariantOverride("mini"); };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setVariantOverride("mini");
+    };
     document.addEventListener("mousedown", onDown);
     document.addEventListener("keydown", onKey);
     return () => {
@@ -200,17 +215,18 @@ export function ChatStatusWidget({
   // ---- the model truth (①②): one derivation, everything renders from it --
   const bgRunningCount = bgTasks.filter((x) => x.status === "running").length;
   const summary = useMemo(
-    () => buildCollapsedSummary({
-      todos,
-      goal,
-      git: gitSummary,
-      runningSubagents: runningCount,
-      endedSubagents: endedCalls.length,
-      bashRunning,
-      agentRunning,
-      bgRunning: bgRunningCount,
-      hasPlan: Boolean(plan),
-    }),
+    () =>
+      buildCollapsedSummary({
+        todos,
+        goal,
+        git: gitSummary,
+        runningSubagents: runningCount,
+        endedSubagents: endedCalls.length,
+        bashRunning,
+        agentRunning,
+        bgRunning: bgRunningCount,
+        hasPlan: Boolean(plan),
+      }),
     [todos, goal, gitSummary, runningCount, endedCalls.length, bashRunning, agentRunning, bgTasks, plan],
   );
   const visible = capsuleVisible(summary, planMode === "plan");
@@ -257,7 +273,8 @@ export function ChatStatusWidget({
     setBgStopError(null);
     try {
       const { sendAgentCommand } = await import("@/lib/agent-client");
-      const r = (await sendAgentCommand(sessionId, { type: "stop_bg", taskId })) as { ok?: boolean; error?: string } | undefined;
+      const r = (await sendAgentCommand(sessionId, { type: "stop_bg", taskId })) as
+        { ok?: boolean; error?: string } | undefined;
       if (r && r.ok === false) setBgStopError(r.error ?? "停止失败");
     } catch (e) {
       setBgStopError(e instanceof Error ? e.message : String(e));
@@ -278,7 +295,11 @@ export function ChatStatusWidget({
     case "todo":
       leadingIcon = <IconCart />;
       pinnedText = summary.step;
-      trailingChip = <span style={{ ...chipStyle }}>{summary.done}/{summary.total}</span>;
+      trailingChip = (
+        <span style={{ ...chipStyle }}>
+          {summary.done}/{summary.total}
+        </span>
+      );
       break;
     case "goal":
       leadingIcon = <IconTarget />;
@@ -289,8 +310,7 @@ export function ChatStatusWidget({
       pinnedText = "";
       trailingChip = (
         <span style={{ fontFamily: "var(--font-mono)", fontSize: 10.5, flexShrink: 0 }}>
-          <span style={{ color: "var(--success, #22c55e)" }}>+{summary.additions}</span>
-          {" "}
+          <span style={{ color: "var(--success, #22c55e)" }}>+{summary.additions}</span>{" "}
           <span style={{ color: "#f87171" }}>−{summary.deletions}</span>
         </span>
       );
@@ -300,12 +320,20 @@ export function ChatStatusWidget({
       pinnedText = planStep ?? planSummaryText ?? t("app.plan");
       break;
     case "activity":
-      leadingIcon = <span className="chat-status-pulse" style={{ width: 7, height: 7, borderRadius: 999, background: "var(--accent)", flexShrink: 0 }} />;
+      leadingIcon = (
+        <span
+          className="chat-status-pulse"
+          style={{ width: 7, height: 7, borderRadius: 999, background: "var(--accent)", flexShrink: 0 }}
+        />
+      );
       if (summary.mixed) {
         leadingIcon = (
           <>
             <IconWave />
-            <span className="chat-status-pulse" style={{ width: 6, height: 6, borderRadius: 999, background: "var(--accent)", flexShrink: 0 }} />
+            <span
+              className="chat-status-pulse"
+              style={{ width: 6, height: 6, borderRadius: 999, background: "var(--accent)", flexShrink: 0 }}
+            />
           </>
         );
         pinnedText = t("chat.status.activityMixed", { count: activityTotal });
@@ -314,9 +342,8 @@ export function ChatStatusWidget({
         pinnedText = t("chat.status.activitySubagents", { count: summary.subagents });
       } else if (summary.bash || bgRunningCount > 0) {
         leadingIcon = <IconTerminal />;
-        pinnedText = bgRunningCount > 0
-          ? t("chat.status.activityBg", { count: bgRunningCount })
-          : t("chat.status.activityBash");
+        pinnedText =
+          bgRunningCount > 0 ? t("chat.status.activityBg", { count: bgRunningCount }) : t("chat.status.activityBash");
       } else {
         pinnedText = t("chat.status.activityAgent");
       }
@@ -337,21 +364,29 @@ export function ChatStatusWidget({
     trailingChip = <span style={{ color: "var(--accent)", fontWeight: 700, flexShrink: 0 }}>{runningCount}</span>;
   }
 
-  const pillTitle =
-    summary.kind === "git" ? t("chat.status.gitSummary") : t("chat.status.panelTitle");
+  const pillTitle = summary.kind === "git" ? t("chat.status.gitSummary") : t("chat.status.panelTitle");
 
   const headerRow = (
     <>
       {hovered && !panelOpen ? <IconExpand /> : leadingIcon}
       {pinnedText ? (
-        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 500, minWidth: 0 }}>
+        <span
+          style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 500, minWidth: 0 }}
+        >
           {pinnedText}
         </span>
       ) : null}
       {trailingChip}
       <svg
-        width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.8"
-        strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
+        width="9"
+        height="9"
+        viewBox="0 0 10 10"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
         style={{ transform: panelOpen ? "rotate(180deg)" : "none", transition: "transform 0.15s", flexShrink: 0 }}
       >
         <polyline points="2 4 5 7 8 4" />
@@ -372,9 +407,15 @@ export function ChatStatusWidget({
       title={pillTitle}
       className="chat-status-capsule"
       style={{
-        display: "flex", alignItems: "center", gap: 7, width: "100%", minWidth: 0,
+        display: "flex",
+        alignItems: "center",
+        gap: 7,
+        width: "100%",
+        minWidth: 0,
         padding: panelOpen ? "8px 12px" : "4px 11px",
-        fontSize: 11.5, cursor: "pointer", textAlign: "left",
+        fontSize: 11.5,
+        cursor: "pointer",
+        textAlign: "left",
         background: "transparent",
         color: hovered && !panelOpen ? "var(--accent)" : "var(--text)",
         border: "none",
@@ -389,7 +430,17 @@ export function ChatStatusWidget({
     <div
       ref={rootRef}
       className="chat-status-widget"
-      style={{ position: "absolute", top: 12, right: 36, zIndex: 45, pointerEvents: "auto", display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}
+      style={{
+        position: "absolute",
+        top: 12,
+        right: 36,
+        zIndex: 45,
+        pointerEvents: "auto",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "flex-end",
+        gap: 4,
+      }}
     >
       {planMode === "plan" && (
         <button
@@ -397,9 +448,14 @@ export function ChatStatusWidget({
           onClick={onOpenPlan}
           title={t("chat.status.planModeHint")}
           style={{
-            display: "flex", alignItems: "center", gap: 5,
-            padding: "2px 9px", borderRadius: 999,
-            fontSize: 10, fontWeight: 700, letterSpacing: 0.6,
+            display: "flex",
+            alignItems: "center",
+            gap: 5,
+            padding: "2px 9px",
+            borderRadius: 999,
+            fontSize: 10,
+            fontWeight: 700,
+            letterSpacing: 0.6,
             fontFamily: "var(--font-mono)",
             cursor: "pointer",
             background: "color-mix(in srgb, var(--accent) 14%, var(--bg-panel))",
@@ -416,14 +472,18 @@ export function ChatStatusWidget({
       <div
         role={panelOpen ? "menu" : undefined}
         style={{
-          width: panelOpen ? Math.min(340, typeof window === "undefined" ? 340 : window.innerWidth - 48) : (miniWidth ?? undefined),
+          width: panelOpen
+            ? Math.min(340, typeof window === "undefined" ? 340 : window.innerWidth - 48)
+            : (miniWidth ?? undefined),
           maxWidth: 340,
-          background: panelOpen || hovered ? "color-mix(in srgb, var(--accent) 7%, var(--bg-panel))" : "var(--bg-panel)",
+          background:
+            panelOpen || hovered ? "color-mix(in srgb, var(--accent) 7%, var(--bg-panel))" : "var(--bg-panel)",
           border: `1px solid ${panelOpen || hovered ? "color-mix(in srgb, var(--accent) 55%, var(--border))" : "var(--border)"}`,
           borderRadius: panelOpen ? 10 : 999,
           boxShadow: panelOpen ? "0 10px 28px rgba(0,0,0,0.14)" : "none",
           overflow: "hidden",
-          display: "flex", flexDirection: "column",
+          display: "flex",
+          flexDirection: "column",
           // No border-radius transition on purpose: 999px is a spec value the
           // browser CLAMPS to half the box height (pill 27px → used ~13.5px,
           // card 161px → would read 80px if 999 applied mid-size). Animating
@@ -439,15 +499,45 @@ export function ChatStatusWidget({
             {/* Goal row */}
             {(goal || summary.kind === "todo") && (
               <div style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "2px 12px 8px" }}>
-                <span style={{
-                  flexShrink: 0, fontSize: 10, lineHeight: "17px", padding: "0 6px", borderRadius: 999,
-                  background: "var(--bg-selected)", color: "var(--text-muted)", fontWeight: 600,
-                }}>{t("chat.status.goals")}</span>
-                <div style={{ flex: 1, minWidth: 0, fontSize: 11.5, color: "var(--text)", lineHeight: "17px", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                <span
+                  style={{
+                    flexShrink: 0,
+                    fontSize: 10,
+                    lineHeight: "17px",
+                    padding: "0 6px",
+                    borderRadius: 999,
+                    background: "var(--bg-selected)",
+                    color: "var(--text-muted)",
+                    fontWeight: 600,
+                  }}
+                >
+                  {t("chat.status.goals")}
+                </span>
+                <div
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    fontSize: 11.5,
+                    color: "var(--text)",
+                    lineHeight: "17px",
+                    display: "-webkit-box",
+                    WebkitLineClamp: 2,
+                    WebkitBoxOrient: "vertical",
+                    overflow: "hidden",
+                  }}
+                >
                   {goal ?? pinnedText}
                 </div>
                 {todos.length > 0 && (
-                  <span style={{ flexShrink: 0, fontSize: 10, color: "var(--text-dim)", fontFamily: "var(--font-mono)", lineHeight: "17px" }}>
+                  <span
+                    style={{
+                      flexShrink: 0,
+                      fontSize: 10,
+                      color: "var(--text-dim)",
+                      fontFamily: "var(--font-mono)",
+                      lineHeight: "17px",
+                    }}
+                  >
                     {todoDone}/{todos.length}
                   </span>
                 )}
@@ -472,7 +562,14 @@ export function ChatStatusWidget({
                       <div
                         key={`marker-${idx}`}
                         title={entry.hidden.map((h) => h.content).join("\n")}
-                        style={{ padding: "2px 4px", fontSize: 10, color: "var(--text-dim)", fontFamily: "var(--font-mono)", letterSpacing: 2, textAlign: "center" }}
+                        style={{
+                          padding: "2px 4px",
+                          fontSize: 10,
+                          color: "var(--text-dim)",
+                          fontFamily: "var(--font-mono)",
+                          letterSpacing: 2,
+                          textAlign: "center",
+                        }}
                       >
                         ···
                         <span style={{ letterSpacing: 0, marginLeft: 6 }}>
@@ -508,8 +605,13 @@ export function ChatStatusWidget({
                       now={now}
                       stopping={stoppingIds.has(call.key)}
                       stopEnabled={Boolean(sessionId)}
-                      onStop={() => { void handleStop(call); }}
-                      onOpen={() => { onOpenAgents(); setVariantOverride("mini"); }}
+                      onStop={() => {
+                        void handleStop(call);
+                      }}
+                      onOpen={() => {
+                        onOpenAgents();
+                        setVariantOverride("mini");
+                      }}
                       stopTitle={t("chat.status.stopTask")}
                       runtimeTitle={t("chat.status.runtime")}
                     />
@@ -520,48 +622,105 @@ export function ChatStatusWidget({
                       onClick={() => setShowEnded((v) => !v)}
                       aria-expanded={showEnded}
                       style={{
-                        display: "flex", alignItems: "center", gap: 6, width: "100%",
-                        padding: "4px 6px", border: "none", borderRadius: 5, background: "transparent",
-                        color: "var(--text-dim)", fontSize: 10.5, cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                        width: "100%",
+                        padding: "4px 6px",
+                        border: "none",
+                        borderRadius: 5,
+                        background: "transparent",
+                        color: "var(--text-dim)",
+                        fontSize: 10.5,
+                        cursor: "pointer",
                       }}
-                      onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-hover)"; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = "var(--bg-hover)";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = "transparent";
+                      }}
                     >
-                      <svg width="8" height="8" viewBox="0 0 10 10" aria-hidden="true" style={{ flexShrink: 0, transform: showEnded ? "rotate(90deg)" : "none", transition: "transform 0.12s" }}>
+                      <svg
+                        width="8"
+                        height="8"
+                        viewBox="0 0 10 10"
+                        aria-hidden="true"
+                        style={{
+                          flexShrink: 0,
+                          transform: showEnded ? "rotate(90deg)" : "none",
+                          transition: "transform 0.12s",
+                        }}
+                      >
                         <path d="M3 1l5 4-5 4z" fill="currentColor" />
                       </svg>
                       {t("chat.status.endedCollapsed", { count: endedCalls.length })}
                     </button>
                   )}
-                  {showEnded && endedCalls.map((call) => (
-                    <AgentRow
-                      key={call.key}
-                      call={call}
-                      now={now}
-                      stopping={false}
-                      stopEnabled={false}
-                      onStop={() => {}}
-                      onOpen={() => { onOpenAgents(); setVariantOverride("mini"); }}
-                      stopTitle={t("chat.status.stopTask")}
-                      runtimeTitle={t("chat.status.runtime")}
-                    />
-                  ))}
+                  {showEnded &&
+                    endedCalls.map((call) => (
+                      <AgentRow
+                        key={call.key}
+                        call={call}
+                        now={now}
+                        stopping={false}
+                        stopEnabled={false}
+                        onStop={() => {}}
+                        onOpen={() => {
+                          onOpenAgents();
+                          setVariantOverride("mini");
+                        }}
+                        stopTitle={t("chat.status.stopTask")}
+                        runtimeTitle={t("chat.status.runtime")}
+                      />
+                    ))}
                   {stopError && (
-                    <div style={{ padding: "2px 6px", fontSize: 10, color: "#f87171", overflowWrap: "anywhere" }}>{stopError}</div>
+                    <div style={{ padding: "2px 6px", fontSize: 10, color: "#f87171", overflowWrap: "anywhere" }}>
+                      {stopError}
+                    </div>
                   )}
                   <button
                     type="button"
                     role="menuitem"
-                    onClick={() => { onOpenAgents(); setVariantOverride("mini"); }}
-                    style={{
-                      display: "flex", alignItems: "center", gap: 7, width: "100%",
-                      padding: "4px 6px", border: "none", borderRadius: 5, background: "transparent",
-                      color: "var(--text-dim)", fontSize: 10.5, cursor: "pointer", textAlign: "left",
+                    onClick={() => {
+                      onOpenAgents();
+                      setVariantOverride("mini");
                     }}
-                    onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-hover)"; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 7,
+                      width: "100%",
+                      padding: "4px 6px",
+                      border: "none",
+                      borderRadius: 5,
+                      background: "transparent",
+                      color: "var(--text-dim)",
+                      fontSize: 10.5,
+                      cursor: "pointer",
+                      textAlign: "left",
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = "var(--bg-hover)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = "transparent";
+                    }}
                   >
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}><path d="M9 18l6-6-6-6" /></svg>
+                    <svg
+                      width="11"
+                      height="11"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                      style={{ flexShrink: 0 }}
+                    >
+                      <path d="M9 18l6-6-6-6" />
+                    </svg>
                     {t("chat.status.openSubagents")}
                   </button>
                 </div>
@@ -582,55 +741,127 @@ export function ChatStatusWidget({
                       <button
                         type="button"
                         role="menuitem"
-                        onClick={() => { setVariantOverride("mini"); }}
+                        onClick={() => {
+                          setVariantOverride("mini");
+                        }}
                         title={`${task.outputFile} (pid ${task.pid})`}
                         style={{
-                          display: "flex", alignItems: "center", gap: 7, flex: 1, minWidth: 0,
-                          padding: "4px 6px", border: "none", borderRadius: 5, background: "transparent",
-                          color: "var(--text)", fontSize: 11, textAlign: "left", cursor: "pointer",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 7,
+                          flex: 1,
+                          minWidth: 0,
+                          padding: "4px 6px",
+                          border: "none",
+                          borderRadius: 5,
+                          background: "transparent",
+                          color: "var(--text)",
+                          fontSize: 11,
+                          textAlign: "left",
+                          cursor: "pointer",
                         }}
-                        onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-hover)"; }}
-                        onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = "var(--bg-hover)";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = "transparent";
+                        }}
                       >
                         {task.status === "running" ? (
-                          <span className="chat-status-pulse" style={{ flexShrink: 0, width: 7, height: 7, borderRadius: 999, background: "var(--accent)" }} />
+                          <span
+                            className="chat-status-pulse"
+                            style={{
+                              flexShrink: 0,
+                              width: 7,
+                              height: 7,
+                              borderRadius: 999,
+                              background: "var(--accent)",
+                            }}
+                          />
                         ) : (
-                          <span style={{ flexShrink: 0, width: 7, height: 7, borderRadius: 999, background: task.status === "failed" ? "#f87171" : "var(--text-dim)" }} />
+                          <span
+                            style={{
+                              flexShrink: 0,
+                              width: 7,
+                              height: 7,
+                              borderRadius: 999,
+                              background: task.status === "failed" ? "#f87171" : "var(--text-dim)",
+                            }}
+                          />
                         )}
-                        <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        <span
+                          style={{
+                            flex: 1,
+                            minWidth: 0,
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
                           {task.name}
                         </span>
                       </button>
                       {task.status === "running" && (
                         <>
-                          <span style={{ flexShrink: 0, fontSize: 10, color: "var(--text-dim)", fontFamily: "var(--font-mono)", minWidth: 34, textAlign: "right" }} title={t("chat.status.runtime")}>
+                          <span
+                            style={{
+                              flexShrink: 0,
+                              fontSize: 10,
+                              color: "var(--text-dim)",
+                              fontFamily: "var(--font-mono)",
+                              minWidth: 34,
+                              textAlign: "right",
+                            }}
+                            title={t("chat.status.runtime")}
+                          >
                             {formatElapsedStatic(now, task.startedAt)}
                           </span>
                           <button
                             type="button"
-                            onClick={() => { void handleStopBg(task.taskId); }}
+                            onClick={() => {
+                              void handleStopBg(task.taskId);
+                            }}
                             disabled={!sessionId || bgStoppingId === task.taskId}
                             title={t("chat.status.stopTask")}
                             aria-label={t("chat.status.stopTask")}
                             style={{
-                              flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
-                              width: 18, height: 18, padding: 0, border: "none", borderRadius: 4,
-                              background: "transparent", color: bgStoppingId === task.taskId ? "var(--text-dim)" : "#f87171",
+                              flexShrink: 0,
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              width: 18,
+                              height: 18,
+                              padding: 0,
+                              border: "none",
+                              borderRadius: 4,
+                              background: "transparent",
+                              color: bgStoppingId === task.taskId ? "var(--text-dim)" : "#f87171",
                               cursor: bgStoppingId === task.taskId ? "default" : "pointer",
                             }}
-                            onMouseEnter={(e) => { if (bgStoppingId !== task.taskId) e.currentTarget.style.background = "rgba(248,113,113,0.12)"; }}
-                            onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+                            onMouseEnter={(e) => {
+                              if (bgStoppingId !== task.taskId)
+                                e.currentTarget.style.background = "rgba(248,113,113,0.12)";
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = "transparent";
+                            }}
                           >
-                            {bgStoppingId === task.taskId
-                              ? <span style={{ fontSize: 9 }}>…</span>
-                              : <svg width="9" height="9" viewBox="0 0 10 10" aria-hidden="true"><rect x="1" y="1" width="8" height="8" rx="1.5" fill="currentColor" /></svg>}
+                            {bgStoppingId === task.taskId ? (
+                              <span style={{ fontSize: 9 }}>…</span>
+                            ) : (
+                              <svg width="9" height="9" viewBox="0 0 10 10" aria-hidden="true">
+                                <rect x="1" y="1" width="8" height="8" rx="1.5" fill="currentColor" />
+                              </svg>
+                            )}
                           </button>
                         </>
                       )}
                     </div>
                   ))}
                   {bgStopError && (
-                    <div style={{ padding: "2px 6px", fontSize: 10, color: "#f87171", overflowWrap: "anywhere" }}>{bgStopError}</div>
+                    <div style={{ padding: "2px 6px", fontSize: 10, color: "#f87171", overflowWrap: "anywhere" }}>
+                      {bgStopError}
+                    </div>
                   )}
                 </div>
               </Section>
@@ -642,7 +873,10 @@ export function ChatStatusWidget({
             <div style={{ borderTop: "1px solid var(--border)", padding: 3, display: "flex", flexDirection: "column" }}>
               {plan && (
                 <Row
-                  onClick={() => { onOpenPlan(); setVariantOverride("mini"); }}
+                  onClick={() => {
+                    onOpenPlan();
+                    setVariantOverride("mini");
+                  }}
                   title={plan.path}
                   active={planActive}
                   icon={<IconPlan width={12} height={12} />}
@@ -660,20 +894,45 @@ export function ChatStatusWidget({
       <div
         ref={measureRef}
         aria-hidden="true"
-        style={{ position: "absolute", visibility: "hidden", pointerEvents: "none", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 7, padding: "4px 11px", fontSize: 11.5, fontWeight: 500, left: -9999, top: 0 }}
+        style={{
+          position: "absolute",
+          visibility: "hidden",
+          pointerEvents: "none",
+          whiteSpace: "nowrap",
+          display: "flex",
+          alignItems: "center",
+          gap: 7,
+          padding: "4px 11px",
+          fontSize: 11.5,
+          fontWeight: 500,
+          left: -9999,
+          top: 0,
+        }}
       >
         {leadingIcon}
         <span>{pinnedText}</span>
-        {summary.kind === "todo" && <span style={{ fontSize: 10, padding: "0 6px" }}>{todoDone}/{todos.length}</span>}
-        <svg width="9" height="9" viewBox="0 0 10 10"><polyline points="2 4 5 7 8 4" /></svg>
+        {summary.kind === "todo" && (
+          <span style={{ fontSize: 10, padding: "0 6px" }}>
+            {todoDone}/{todos.length}
+          </span>
+        )}
+        <svg width="9" height="9" viewBox="0 0 10 10">
+          <polyline points="2 4 5 7 8 4" />
+        </svg>
       </div>
     </div>
   );
 }
 
 const chipStyle: React.CSSProperties = {
-  flexShrink: 0, fontSize: 10, lineHeight: "16px", padding: "0 6px", borderRadius: 999,
-  background: "var(--bg-selected)", color: "var(--text-muted)", fontFamily: "var(--font-mono)",
+  flexShrink: 0,
+  fontSize: 10,
+  lineHeight: "16px",
+  padding: "0 6px",
+  borderRadius: 999,
+  background: "var(--bg-selected)",
+  color: "var(--text-muted)",
+  fontFamily: "var(--font-mono)",
 };
 
 /** Pill↔panel morph follows ZCode ConversationStatusPanel: everything
@@ -695,52 +954,115 @@ function TodoRow({ todo, currentId }: { todo: TodoItem; currentId: number | null
   return (
     <div
       style={{
-        display: "flex", alignItems: "flex-start", gap: 7,
-        padding: "3px 4px", borderRadius: 5,
+        display: "flex",
+        alignItems: "flex-start",
+        gap: 7,
+        padding: "3px 4px",
+        borderRadius: 5,
         background: isCurrent ? "color-mix(in srgb, var(--accent) 9%, transparent)" : "transparent",
       }}
     >
       {isDone ? (
-        <span style={{
-          flexShrink: 0, width: 13, height: 13, borderRadius: 999, marginTop: 1,
-          border: "1px solid var(--success, #22c55e)", background: "var(--success, #22c55e)",
-          display: "flex", alignItems: "center", justifyContent: "center",
-        }}>
-          <svg width="8" height="8" viewBox="0 0 16 16" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M3 8l3.5 3.5L13 4" /></svg>
+        <span
+          style={{
+            flexShrink: 0,
+            width: 13,
+            height: 13,
+            borderRadius: 999,
+            marginTop: 1,
+            border: "1px solid var(--success, #22c55e)",
+            background: "var(--success, #22c55e)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <svg
+            width="8"
+            height="8"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="#fff"
+            strokeWidth="2.6"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M3 8l3.5 3.5L13 4" />
+          </svg>
         </span>
       ) : isRunning ? (
         <span
           className="chat-status-pulse"
           style={{
-            flexShrink: 0, width: 13, height: 13, borderRadius: 999, marginTop: 1,
-            border: "1.5px solid var(--accent)", background: "color-mix(in srgb, var(--accent) 35%, transparent)",
+            flexShrink: 0,
+            width: 13,
+            height: 13,
+            borderRadius: 999,
+            marginTop: 1,
+            border: "1.5px solid var(--accent)",
+            background: "color-mix(in srgb, var(--accent) 35%, transparent)",
           }}
         />
       ) : isCurrent ? (
-        <span style={{
-          flexShrink: 0, width: 13, height: 13, borderRadius: 999, marginTop: 1,
-          border: "1.5px solid var(--accent)", color: "var(--accent)",
-          fontSize: 9, fontWeight: 700, fontFamily: "var(--font-mono)",
-          display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1,
-        }}>
+        <span
+          style={{
+            flexShrink: 0,
+            width: 13,
+            height: 13,
+            borderRadius: 999,
+            marginTop: 1,
+            border: "1.5px solid var(--accent)",
+            color: "var(--accent)",
+            fontSize: 9,
+            fontWeight: 700,
+            fontFamily: "var(--font-mono)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            lineHeight: 1,
+          }}
+        >
           {todo.id}
         </span>
       ) : (
-        <span style={{ flexShrink: 0, width: 13, height: 13, borderRadius: 999, marginTop: 1, border: "1.5px solid var(--text-dim)" }} />
+        <span
+          style={{
+            flexShrink: 0,
+            width: 13,
+            height: 13,
+            borderRadius: 999,
+            marginTop: 1,
+            border: "1.5px solid var(--text-dim)",
+          }}
+        />
       )}
-      <span style={{
-        flex: 1, minWidth: 0, fontSize: 11, lineHeight: "15px",
-        color: isDone ? "var(--text-dim)" : isCurrent ? "var(--text)" : "var(--text-muted)",
-        textDecoration: isDone ? "line-through" : "none",
-        overflowWrap: "anywhere",
-      }}>
+      <span
+        style={{
+          flex: 1,
+          minWidth: 0,
+          fontSize: 11,
+          lineHeight: "15px",
+          color: isDone ? "var(--text-dim)" : isCurrent ? "var(--text)" : "var(--text-muted)",
+          textDecoration: isDone ? "line-through" : "none",
+          overflowWrap: "anywhere",
+        }}
+      >
         {isRunning && todo.activeForm ? todo.activeForm : todo.content}
       </span>
     </div>
   );
 }
 
-function AgentRow({ call, now, stopping, stopEnabled, onStop, onOpen, stopTitle, runtimeTitle }: {
+function AgentRow({
+  call,
+  now,
+  stopping,
+  stopEnabled,
+  onStop,
+  onOpen,
+  stopTitle,
+  runtimeTitle,
+}: {
   call: SubagentCall;
   now: number;
   stopping: boolean;
@@ -760,20 +1082,56 @@ function AgentRow({ call, now, stopping, stopEnabled, onStop, onOpen, stopTitle,
         onClick={onOpen}
         title={call.description}
         style={{
-          display: "flex", alignItems: "center", gap: 7, flex: 1, minWidth: 0,
-          padding: "4px 6px", border: "none", borderRadius: 5, background: "transparent",
-          color: "var(--text)", fontSize: 11, textAlign: "left", cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          gap: 7,
+          flex: 1,
+          minWidth: 0,
+          padding: "4px 6px",
+          border: "none",
+          borderRadius: 5,
+          background: "transparent",
+          color: "var(--text)",
+          fontSize: 11,
+          textAlign: "left",
+          cursor: "pointer",
         }}
-        onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-hover)"; }}
-        onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.background = "var(--bg-hover)";
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.background = "transparent";
+        }}
       >
         {isRunning ? (
-          <span className="chat-status-pulse" style={{ flexShrink: 0, width: 7, height: 7, borderRadius: 999, background: "var(--accent)" }} />
+          <span
+            className="chat-status-pulse"
+            style={{ flexShrink: 0, width: 7, height: 7, borderRadius: 999, background: "var(--accent)" }}
+          />
         ) : (
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0, color: call.status === "error" ? "#f87171" : "var(--text-dim)" }}>
-            {call.status === "error"
-              ? <><circle cx="12" cy="12" r="9" /><path d="M12 8v4" /><path d="M12 16h.01" /></>
-              : <><path d="M20 6L9 17l-5-5" /></>}
+          <svg
+            width="11"
+            height="11"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+            style={{ flexShrink: 0, color: call.status === "error" ? "#f87171" : "var(--text-dim)" }}
+          >
+            {call.status === "error" ? (
+              <>
+                <circle cx="12" cy="12" r="9" />
+                <path d="M12 8v4" />
+                <path d="M12 16h.01" />
+              </>
+            ) : (
+              <>
+                <path d="M20 6L9 17l-5-5" />
+              </>
+            )}
           </svg>
         )}
         <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -781,7 +1139,17 @@ function AgentRow({ call, now, stopping, stopEnabled, onStop, onOpen, stopTitle,
         </span>
       </button>
       {isRunning && (
-        <span style={{ flexShrink: 0, fontSize: 10, color: "var(--text-dim)", fontFamily: "var(--font-mono)", minWidth: 34, textAlign: "right" }} title={runtimeTitle}>
+        <span
+          style={{
+            flexShrink: 0,
+            fontSize: 10,
+            color: "var(--text-dim)",
+            fontFamily: "var(--font-mono)",
+            minWidth: 34,
+            textAlign: "right",
+          }}
+          title={runtimeTitle}
+        >
           {formatElapsedStatic(now, call.startedAt)}
         </span>
       )}
@@ -798,17 +1166,33 @@ function AgentRow({ call, now, stopping, stopEnabled, onStop, onOpen, stopTitle,
           title={stopTitle}
           aria-label={stopTitle}
           style={{
-            flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
-            width: 18, height: 18, padding: 0, border: "none", borderRadius: 4,
-            background: "transparent", color: stopping ? "var(--text-dim)" : "#f87171",
+            flexShrink: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            width: 18,
+            height: 18,
+            padding: 0,
+            border: "none",
+            borderRadius: 4,
+            background: "transparent",
+            color: stopping ? "var(--text-dim)" : "#f87171",
             cursor: stopping ? "default" : "pointer",
           }}
-          onMouseEnter={(e) => { if (!stopping) e.currentTarget.style.background = "rgba(248,113,113,0.12)"; }}
-          onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+          onMouseEnter={(e) => {
+            if (!stopping) e.currentTarget.style.background = "rgba(248,113,113,0.12)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = "transparent";
+          }}
         >
-          {stopping
-            ? <span style={{ fontSize: 9 }}>…</span>
-            : <svg width="9" height="9" viewBox="0 0 10 10" aria-hidden="true"><rect x="1" y="1" width="8" height="8" rx="1.5" fill="currentColor" /></svg>}
+          {stopping ? (
+            <span style={{ fontSize: 9 }}>…</span>
+          ) : (
+            <svg width="9" height="9" viewBox="0 0 10 10" aria-hidden="true">
+              <rect x="1" y="1" width="8" height="8" rx="1.5" fill="currentColor" />
+            </svg>
+          )}
         </button>
       )}
     </div>
@@ -829,27 +1213,94 @@ function formatElapsedStatic(now: number, startedAt: number): string {
 
 function iconProps(width = 11, height = 11) {
   return {
-    width, height, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor",
-    strokeWidth: 2.2, strokeLinecap: "round" as const, strokeLinejoin: "round" as const,
-    "aria-hidden": true, style: { flexShrink: 0 } as React.CSSProperties,
+    width,
+    height,
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 2.2,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+    "aria-hidden": true,
+    style: { flexShrink: 0 } as React.CSSProperties,
   };
 }
-const IconCart = () => <svg {...iconProps()}><path d="M3 5h2l2 12h11" /><path d="M8 9h13" /><path d="M9.5 21a1 1 0 1 0 0-0.01" /><path d="M17.5 21a1 1 0 1 0 0-0.01" /></svg>;
-const IconTarget = () => <svg {...iconProps()}><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="5" /><circle cx="12" cy="12" r="1" fill="currentColor" /></svg>;
-const IconBranch = () => <svg {...iconProps()}><line x1="6" y1="3" x2="6" y2="15" /><circle cx="18" cy="6" r="3" /><circle cx="6" cy="18" r="3" /><path d="M18 9a9 9 0 0 1-9 9" /></svg>;
-const IconPlan = ({ width, height }: { width?: number; height?: number }) => <svg {...iconProps(width ?? 11, height ?? 11)}><path d="M9 4h6a2 2 0 0 1 2 2v14H7V6a2 2 0 0 1 2-2Z" /><path d="M7 20h10" /><path d="M10 8h4" /></svg>;
-const IconWave = () => <svg {...iconProps()}><path d="M22 12h-4l-3 9L9 3l-3 9H2" /></svg>;
-const IconUsers = () => <svg {...iconProps()}><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>;
-const IconTerminal = () => <svg {...iconProps()}><path d="M4 17l6-6-6-6" /><line x1="12" y1="19" x2="20" y2="19" /></svg>;
+const IconCart = () => (
+  <svg {...iconProps()}>
+    <path d="M3 5h2l2 12h11" />
+    <path d="M8 9h13" />
+    <path d="M9.5 21a1 1 0 1 0 0-0.01" />
+    <path d="M17.5 21a1 1 0 1 0 0-0.01" />
+  </svg>
+);
+const IconTarget = () => (
+  <svg {...iconProps()}>
+    <circle cx="12" cy="12" r="9" />
+    <circle cx="12" cy="12" r="5" />
+    <circle cx="12" cy="12" r="1" fill="currentColor" />
+  </svg>
+);
+const IconBranch = () => (
+  <svg {...iconProps()}>
+    <line x1="6" y1="3" x2="6" y2="15" />
+    <circle cx="18" cy="6" r="3" />
+    <circle cx="6" cy="18" r="3" />
+    <path d="M18 9a9 9 0 0 1-9 9" />
+  </svg>
+);
+const IconPlan = ({ width, height }: { width?: number; height?: number }) => (
+  <svg {...iconProps(width ?? 11, height ?? 11)}>
+    <path d="M9 4h6a2 2 0 0 1 2 2v14H7V6a2 2 0 0 1 2-2Z" />
+    <path d="M7 20h10" />
+    <path d="M10 8h4" />
+  </svg>
+);
+const IconWave = () => (
+  <svg {...iconProps()}>
+    <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+  </svg>
+);
+const IconUsers = () => (
+  <svg {...iconProps()}>
+    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+    <circle cx="9" cy="7" r="4" />
+    <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+    <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+  </svg>
+);
+const IconTerminal = () => (
+  <svg {...iconProps()}>
+    <path d="M4 17l6-6-6-6" />
+    <line x1="12" y1="19" x2="20" y2="19" />
+  </svg>
+);
 const IconExpand = () => (
-  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
-    <polyline points="13 5 19 5 19 11" /><line x1="19" y1="5" x2="9" y2="15" />
+  <svg
+    width="11"
+    height="11"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2.4"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+    style={{ flexShrink: 0 }}
+  >
+    <polyline points="13 5 19 5 19 11" />
+    <line x1="19" y1="5" x2="9" y2="15" />
     <polyline points="5 13 5 19 11 19" />
   </svg>
 );
 
 /** Collapsible popover section: ▸/▾ triangle + title + right count, hairline under the header. */
-function Section({ title, open, onToggle, count, children }: {
+function Section({
+  title,
+  open,
+  onToggle,
+  count,
+  children,
+}: {
   title: string;
   open: boolean;
   onToggle: () => void;
@@ -863,27 +1314,62 @@ function Section({ title, open, onToggle, count, children }: {
         onClick={onToggle}
         aria-expanded={open}
         style={{
-          display: "flex", alignItems: "center", gap: 6, width: "100%",
-          padding: "7px 11px", border: "none", background: "transparent",
-          color: "var(--text)", fontSize: 11, fontWeight: 600, cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          width: "100%",
+          padding: "7px 11px",
+          border: "none",
+          background: "transparent",
+          color: "var(--text)",
+          fontSize: 11,
+          fontWeight: 600,
+          cursor: "pointer",
           borderBottom: open ? "1px solid color-mix(in srgb, var(--border) 60%, transparent)" : "none",
         }}
-        onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-hover)"; }}
-        onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.background = "var(--bg-hover)";
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.background = "transparent";
+        }}
       >
-        <svg width="8" height="8" viewBox="0 0 10 10" aria-hidden="true" style={{ flexShrink: 0, transform: open ? "rotate(90deg)" : "none", transition: "transform 0.12s", color: "var(--text-dim)" }}>
+        <svg
+          width="8"
+          height="8"
+          viewBox="0 0 10 10"
+          aria-hidden="true"
+          style={{
+            flexShrink: 0,
+            transform: open ? "rotate(90deg)" : "none",
+            transition: "transform 0.12s",
+            color: "var(--text-dim)",
+          }}
+        >
           <path d="M3 1l5 4-5 4z" fill="currentColor" />
         </svg>
         <span>{title}</span>
         <span style={{ flex: 1 }} />
-        {count && <span style={{ fontSize: 10, color: "var(--text-dim)", fontFamily: "var(--font-mono)", fontWeight: 500 }}>{count}</span>}
+        {count && (
+          <span style={{ fontSize: 10, color: "var(--text-dim)", fontFamily: "var(--font-mono)", fontWeight: 500 }}>
+            {count}
+          </span>
+        )}
       </button>
       {open && <div>{children}</div>}
     </div>
   );
 }
 
-function Row({ onClick, title, icon, label, trailing, active, disabled }: {
+function Row({
+  onClick,
+  title,
+  icon,
+  label,
+  trailing,
+  active,
+  disabled,
+}: {
   onClick?: () => void;
   title?: string;
   icon: React.ReactNode;
@@ -900,18 +1386,31 @@ function Row({ onClick, title, icon, label, trailing, active, disabled }: {
       disabled={disabled}
       title={title}
       style={{
-        display: "flex", alignItems: "center", gap: 8,
-        width: "100%", padding: "6px 9px", border: "none", borderRadius: 7,
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        width: "100%",
+        padding: "6px 9px",
+        border: "none",
+        borderRadius: 7,
         background: active ? "var(--bg-selected)" : "transparent",
         color: disabled ? "var(--text-dim)" : "var(--text)",
-        fontSize: 11, textAlign: "left", cursor: disabled ? "default" : "pointer",
+        fontSize: 11,
+        textAlign: "left",
+        cursor: disabled ? "default" : "pointer",
         opacity: disabled ? 0.65 : 1,
       }}
-      onMouseEnter={(e) => { if (!disabled && !active) e.currentTarget.style.background = "var(--bg-hover)"; }}
-      onMouseLeave={(e) => { if (!disabled && !active) e.currentTarget.style.background = "transparent"; }}
+      onMouseEnter={(e) => {
+        if (!disabled && !active) e.currentTarget.style.background = "var(--bg-hover)";
+      }}
+      onMouseLeave={(e) => {
+        if (!disabled && !active) e.currentTarget.style.background = "transparent";
+      }}
     >
       <span style={{ display: "flex", flexShrink: 0, color: active ? "var(--accent)" : "inherit" }}>{icon}</span>
-      <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
+      <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        {label}
+      </span>
       {trailing && <span style={{ flexShrink: 0, color: "var(--text-muted)", fontSize: 10 }}>{trailing}</span>}
     </button>
   );

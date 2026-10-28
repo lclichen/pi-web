@@ -10,12 +10,16 @@ export interface AgentEventSourceLike {
 export type AgentEventConnectionStatus = "ready_timeout" | "startup_error" | "closed";
 
 export class AgentEventConnectionError extends Error {
-  constructor(public readonly status: AgentEventConnectionStatus, message?: string) {
-    super(message ?? (
-      status === "ready_timeout"
-        ? "Timed out starting the agent session. Please try again."
-        : "Failed to connect to the agent event stream. Please try again."
-    ));
+  constructor(
+    public readonly status: AgentEventConnectionStatus,
+    message?: string,
+  ) {
+    super(
+      message ??
+        (status === "ready_timeout"
+          ? "Timed out starting the agent session. Please try again."
+          : "Failed to connect to the agent event stream. Please try again."),
+    );
     this.name = "AgentEventConnectionError";
   }
 }
@@ -76,10 +80,7 @@ export class AgentEventConnection {
       let connection = this.current;
       if (!connection || connection.sessionId !== sessionId) {
         connection = this.open(sessionId);
-      } else if (
-        connection.attempt.ready
-        && connection.source.readyState === EVENT_SOURCE_OPEN
-      ) {
+      } else if (connection.attempt.ready && connection.source.readyState === EVENT_SOURCE_OPEN) {
         return;
       }
 
@@ -102,10 +103,7 @@ export class AgentEventConnection {
     try {
       source = this.options.createSource(sessionId);
     } catch (error) {
-      throw new AgentEventConnectionError(
-        "closed",
-        error instanceof Error ? error.message : String(error),
-      );
+      throw new AgentEventConnectionError("closed", error instanceof Error ? error.message : String(error));
     }
 
     let settled = false;

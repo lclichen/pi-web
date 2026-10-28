@@ -7,7 +7,7 @@ import type { Component } from "@earendil-works/pi-tui";
  * component needs it.
  */
 export interface StatefulView<P> extends Component {
-	setProps(props: P): void;
+  setProps(props: P): void;
 }
 
 /**

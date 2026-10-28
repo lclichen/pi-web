@@ -59,13 +59,14 @@ export function ProviderIcon({ id, size }: { id: string; size: number }) {
     );
   }
 
-  const label = id
-    .split(/[-_]/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0])
-    .join("")
-    .toUpperCase() || "?";
+  const label =
+    id
+      .split(/[-_]/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0])
+      .join("")
+      .toUpperCase() || "?";
   return (
     <span
       aria-hidden="true"

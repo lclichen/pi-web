@@ -73,7 +73,15 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
   // 沙盒模式：③ 创建出的项目信息
   const [sandboxDone, setSandboxDone] = useState<{ name: string } | null>(null);
   // SSH 模式：② 的连接配置 + 远程工作目录（④）
-  const [sshForm, setSshForm] = useState({ host: "", port: "22", username: "root", authType: "password" as "password" | "key", password: "", privateKey: "", passphrase: "" });
+  const [sshForm, setSshForm] = useState({
+    host: "",
+    port: "22",
+    username: "root",
+    authType: "password" as "password" | "key",
+    password: "",
+    privateKey: "",
+    passphrase: "",
+  });
   const [sshName, setSshName] = useState("");
   // 本地 agent 配对状态
   const [relayInfo, setRelayInfo] = useState<{ online: boolean; hostname?: string; compatible?: boolean } | null>(null);
@@ -96,16 +104,22 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
       <select value={presetBundle} onChange={(e) => setPresetBundle(e.target.value)} style={inputStyle}>
         <option value="">{t("remote.template")}</option>
         {presets.map((p) => (
-          <option key={p.name} value={p.name}>{p.name}{p.description ? ` — ${p.description}` : ""}</option>
+          <option key={p.name} value={p.name}>
+            {p.name}
+            {p.description ? ` — ${p.description}` : ""}
+          </option>
         ))}
       </select>
     </label>
   );
 
   useEffect(() => {
-    void fetch("/api/bundles").then((r) => r.json()).then((d) => {
-      setPresets((d.bundles ?? []) as Array<{ name: string; description: string }>);
-    }).catch(() => {});
+    void fetch("/api/bundles")
+      .then((r) => r.json())
+      .then((d) => {
+        setPresets((d.bundles ?? []) as Array<{ name: string; description: string }>);
+      })
+      .catch(() => {});
   }, []);
 
   // ③ 连接中（本地）：轮询 agent 配对状态；未配对时内嵌「连接本地机器」
@@ -140,11 +154,19 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
     };
     void check();
     const timer = setInterval(check, 2000);
-    return () => { cancelled = true; clearInterval(timer); };
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
   }, [step, method, t]);
 
   // 沙盒：NewProjectDialog 的 onCreate → 在③执行创建/供给，完成后进④
-  const [sandboxInput, setSandboxInput] = useState<{ name: string; imageId?: number; workspaceInit: boolean; existingContainerId?: number } | null>(null);
+  const [sandboxInput, setSandboxInput] = useState<{
+    name: string;
+    imageId?: number;
+    workspaceInit: boolean;
+    existingContainerId?: number;
+  } | null>(null);
   const [sandboxBusy, setSandboxBusy] = useState(false);
 
   const createSandbox = useCallback(async (input: NonNullable<typeof sandboxInput>) => {
@@ -221,15 +243,18 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
   }, [sshName, localDir, sshForm, presetBundle, onCreated, onClose]);
   // 测试 SSH 连接（不落盘；成功返回远端 whoami）。② 的手动按钮与 ③ 的
   // 自动测试共用同一份请求体。
-  const sshTestPayload = useCallback(() => ({
-    host: sshForm.host.trim(),
-    port: Number(sshForm.port) || 22,
-    username: sshForm.username.trim(),
-    authType: sshForm.authType,
-    password: sshForm.password || undefined,
-    privateKey: sshForm.privateKey || undefined,
-    passphrase: sshForm.passphrase || undefined,
-  }), [sshForm]);
+  const sshTestPayload = useCallback(
+    () => ({
+      host: sshForm.host.trim(),
+      port: Number(sshForm.port) || 22,
+      username: sshForm.username.trim(),
+      authType: sshForm.authType,
+      password: sshForm.password || undefined,
+      privateKey: sshForm.privateKey || undefined,
+      passphrase: sshForm.passphrase || undefined,
+    }),
+    [sshForm],
+  );
 
   // ④ 的目录选择器数据源（与 Host 模式共用 DirectoryPicker UI）：
   //  - 本机：/api/agent-relay/browse → relay fs.list（agent 共享根 / 任意 base）
@@ -241,8 +266,10 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
       if (localMachineId) qs.set("machineId", localMachineId);
       const res = await fetch(`/api/agent-relay/browse?${qs.toString()}`);
       const d = (await res.json().catch(() => ({}))) as {
-        path?: string; parentPath?: string | null;
-        directories?: Array<{ name: string; path: string }>; error?: string;
+        path?: string;
+        parentPath?: string | null;
+        directories?: Array<{ name: string; path: string }>;
+        error?: string;
       };
       if (!res.ok || d.error) throw new Error(d.error ?? `HTTP ${res.status}`);
       return d;
@@ -267,7 +294,9 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
         body: JSON.stringify({ ...sshTestPayload(), ...(directory ? { path: directory } : {}) }),
       });
       const d = (await res.json().catch(() => ({}))) as {
-        path?: string; entries?: Array<{ name: string; isDir: boolean }>; error?: string;
+        path?: string;
+        entries?: Array<{ name: string; isDir: boolean }>;
+        error?: string;
       };
       if (!res.ok || d.error) throw new Error(d.error ?? `HTTP ${res.status}`);
       const basePath = d.path ?? "/";
@@ -334,14 +363,19 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
       .finally(() => {
         if (!cancelled) setSshStep3Busy(false);
       });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [step, method, sshStep3Retry, runSshTest]);
 
-  const handleSandboxCreated = useCallback((input: NonNullable<typeof sandboxInput>) => {
-    setSandboxInput(input);
-    setStep(3);
-    void createSandbox(input);
-  }, [createSandbox]);
+  const handleSandboxCreated = useCallback(
+    (input: NonNullable<typeof sandboxInput>) => {
+      setSandboxInput(input);
+      setStep(3);
+      void createSandbox(input);
+    },
+    [createSandbox],
+  );
 
   // 本地：④ 完成 → 创建项目（带 workdir + 绑定机器）
   const finishLocal = useCallback(async () => {
@@ -370,36 +404,90 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
     }
   }, [localName, localDir, localMachineId, presetBundle, onCreated, onClose]);
 
-  const methodCards: Array<{ id: string; title: string; sub: string; icon: React.ReactNode; disabled?: boolean; soon?: boolean }> = [
+  const methodCards: Array<{
+    id: string;
+    title: string;
+    sub: string;
+    icon: React.ReactNode;
+    disabled?: boolean;
+    soon?: boolean;
+  }> = [
     {
-      id: "sandbox", title: t("remote.sandbox"), sub: t("remote.platformContainerImageSelectable"),
+      id: "sandbox",
+      title: t("remote.sandbox"),
+      sub: t("remote.platformContainerImageSelectable"),
       icon: (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-          <rect x="3" y="3" width="8" height="8" rx="1.5" /><rect x="13" y="3" width="8" height="8" rx="1.5" />
-          <rect x="3" y="13" width="8" height="8" rx="1.5" /><rect x="13" y="13" width="8" height="8" rx="1.5" />
+        <svg
+          width="20"
+          height="20"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <rect x="3" y="3" width="8" height="8" rx="1.5" />
+          <rect x="13" y="3" width="8" height="8" rx="1.5" />
+          <rect x="3" y="13" width="8" height="8" rx="1.5" />
+          <rect x="13" y="13" width="8" height="8" rx="1.5" />
         </svg>
       ),
     },
     {
-      id: "local", title: t("remote.computer"), sub: t("remote.ownMachineOneAgentConnection"),
+      id: "local",
+      title: t("remote.computer"),
+      sub: t("remote.ownMachineOneAgentConnection"),
       icon: (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-          <rect x="2" y="4" width="20" height="12" rx="2" /><path d="M8 20h8M12 16v4" />
+        <svg
+          width="20"
+          height="20"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <rect x="2" y="4" width="20" height="12" rx="2" />
+          <path d="M8 20h8M12 16v4" />
         </svg>
       ),
     },
     {
-      id: "server", title: t("remote.openServerDirectory"), sub: t("remote.hostModeDir"),
+      id: "server",
+      title: t("remote.openServerDirectory"),
+      sub: t("remote.hostModeDir"),
       icon: (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <svg
+          width="20"
+          height="20"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
           <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
         </svg>
       ),
     },
     {
-      id: "ssh", title: t("remote.ssh"), sub: t("remote.remoteHostSessionToolsRun"),
+      id: "ssh",
+      title: t("remote.ssh"),
+      sub: t("remote.remoteHostSessionToolsRun"),
       icon: (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <svg
+          width="20"
+          height="20"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
           <path d="M4 17l6-6-6-6M12 19h8" />
         </svg>
       ),
@@ -408,23 +496,77 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
 
   return (
     <div
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
-      style={{ position: "fixed", inset: 0, zIndex: 1180, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.45)" }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 1180,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "rgba(0,0,0,0.45)",
+      }}
     >
       <div
         role="dialog"
         aria-modal="true"
-        style={{ display: "flex", width: "min(860px, 94vw)", height: "min(560px, 90vh)", borderRadius: 12, overflow: "hidden", background: "var(--bg-panel)", border: "1px solid var(--border)" }}
+        style={{
+          display: "flex",
+          width: "min(860px, 94vw)",
+          height: "min(560px, 90vh)",
+          borderRadius: 12,
+          overflow: "hidden",
+          background: "var(--bg-panel)",
+          border: "1px solid var(--border)",
+        }}
       >
         {/* 左侧 stepper */}
-        <aside style={{ width: 200, flexShrink: 0, background: "var(--bg)", borderRight: "1px solid var(--border)", padding: "18px 0", display: "flex", flexDirection: "column" }}>
-          <div style={{ padding: "0 18px 16px", fontWeight: 700, fontSize: 13, color: "var(--text)" }}>{t("remote.remoteConnection")}</div>
+        <aside
+          style={{
+            width: 200,
+            flexShrink: 0,
+            background: "var(--bg)",
+            borderRight: "1px solid var(--border)",
+            padding: "18px 0",
+            display: "flex",
+            flexDirection: "column",
+          }}
+        >
+          <div style={{ padding: "0 18px 16px", fontWeight: 700, fontSize: 13, color: "var(--text)" }}>
+            {t("remote.remoteConnection")}
+          </div>
           {STEPS.map((s) => {
             const active = s.n === step;
             const done = s.n < step;
             return (
-              <div key={s.n} style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 18px", color: active ? "var(--accent)" : done ? "var(--text)" : "var(--text-dim)", fontWeight: active ? 600 : 400 }}>
-                <span style={{ width: 18, height: 18, borderRadius: 999, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 10, flexShrink: 0, border: `1px solid ${active ? "var(--accent)" : done ? "var(--success)" : "var(--text-muted)"}`, background: done ? "var(--success)" : "var(--bg)", color: done ? "var(--bg)" : active ? "var(--accent)" : "var(--text-muted)" }}>
+              <div
+                key={s.n}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "9px 18px",
+                  color: active ? "var(--accent)" : done ? "var(--text)" : "var(--text-dim)",
+                  fontWeight: active ? 600 : 400,
+                }}
+              >
+                <span
+                  style={{
+                    width: 18,
+                    height: 18,
+                    borderRadius: 999,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: 10,
+                    flexShrink: 0,
+                    border: `1px solid ${active ? "var(--accent)" : done ? "var(--success)" : "var(--text-muted)"}`,
+                    background: done ? "var(--success)" : "var(--bg)",
+                    color: done ? "var(--bg)" : active ? "var(--accent)" : "var(--text-muted)",
+                  }}
+                >
                   {s.n}
                 </span>
                 {t(s.label)}
@@ -432,7 +574,17 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
             );
           })}
           <div style={{ flex: 1 }} />
-          <button onClick={onClose} style={{ margin: "0 18px", background: "transparent", border: "none", color: "var(--text-dim)", textAlign: "left", padding: "6px 0" }}>
+          <button
+            onClick={onClose}
+            style={{
+              margin: "0 18px",
+              background: "transparent",
+              border: "none",
+              color: "var(--text-dim)",
+              textAlign: "left",
+              padding: "6px 0",
+            }}
+          >
             {t("common.cancel")}
           </button>
         </aside>
@@ -441,87 +593,191 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
         <section style={{ flex: 1, display: "flex", flexDirection: "column", padding: "22px 26px", overflow: "auto" }}>
           {step === 1 && (
             <>
-              <h2 style={{ margin: "0 0 4px", fontSize: 17, color: "var(--text)" }}>{t("remote.chooseConnectionMethod")}</h2>
-              <p style={{ margin: "0 0 18px", fontSize: 12.5, color: "var(--text-dim)" }}>{t("remote.chooseMethodHint")}</p>
+              <h2 style={{ margin: "0 0 4px", fontSize: 17, color: "var(--text)" }}>
+                {t("remote.chooseConnectionMethod")}
+              </h2>
+              <p style={{ margin: "0 0 18px", fontSize: 12.5, color: "var(--text-dim)" }}>
+                {t("remote.chooseMethodHint")}
+              </p>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 14 }}>
-                {methodCards.filter((c) => (c as { id: string }).id !== "server" || isAdmin).map((c) => (
-                  <button
-                    key={c.id}
-                    disabled={c.disabled}
-                    onClick={() => { if (c.id === "server") { onOpenServerDirectory?.(); onClose(); } else { setMethod(c.id as Method); setStep(2); } }}
-                    style={{
-                      textAlign: "left", padding: "18px 16px", borderRadius: 10,
-                      border: `1px solid ${c.disabled ? "var(--border)" : "var(--accent)"}`,
-                      background: c.disabled ? "transparent" : "var(--bg)",
-                      color: c.disabled ? "var(--text-dim)" : "var(--text)",
-                      cursor: c.disabled ? "not-allowed" : "pointer",
-                      display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-start", minHeight: 110,
-                      opacity: c.disabled ? 0.65 : 1,
-                    }}
-                  >
-                    <span style={{ color: c.disabled ? "var(--text-dim)" : "var(--accent)" }}>{c.icon}</span>
-                    <span style={{ fontSize: 14, fontWeight: 600 }}>
-                      {c.title}
-                      {c.soon && <span style={{ marginLeft: 6, fontSize: 10, padding: "1px 6px", borderRadius: 8, border: "1px solid var(--border)", color: "var(--text-dim)" }}>{t("remote.comingSoon")}</span>}
-                    </span>
-                    <span style={{ fontSize: 11.5, color: "var(--text-dim)" }}>{c.sub}</span>
-                  </button>
-                ))}
+                {methodCards
+                  .filter((c) => (c as { id: string }).id !== "server" || isAdmin)
+                  .map((c) => (
+                    <button
+                      key={c.id}
+                      disabled={c.disabled}
+                      onClick={() => {
+                        if (c.id === "server") {
+                          onOpenServerDirectory?.();
+                          onClose();
+                        } else {
+                          setMethod(c.id as Method);
+                          setStep(2);
+                        }
+                      }}
+                      style={{
+                        textAlign: "left",
+                        padding: "18px 16px",
+                        borderRadius: 10,
+                        border: `1px solid ${c.disabled ? "var(--border)" : "var(--accent)"}`,
+                        background: c.disabled ? "transparent" : "var(--bg)",
+                        color: c.disabled ? "var(--text-dim)" : "var(--text)",
+                        cursor: c.disabled ? "not-allowed" : "pointer",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 8,
+                        alignItems: "flex-start",
+                        minHeight: 110,
+                        opacity: c.disabled ? 0.65 : 1,
+                      }}
+                    >
+                      <span style={{ color: c.disabled ? "var(--text-dim)" : "var(--accent)" }}>{c.icon}</span>
+                      <span style={{ fontSize: 14, fontWeight: 600 }}>
+                        {c.title}
+                        {c.soon && (
+                          <span
+                            style={{
+                              marginLeft: 6,
+                              fontSize: 10,
+                              padding: "1px 6px",
+                              borderRadius: 8,
+                              border: "1px solid var(--border)",
+                              color: "var(--text-dim)",
+                            }}
+                          >
+                            {t("remote.comingSoon")}
+                          </span>
+                        )}
+                      </span>
+                      <span style={{ fontSize: 11.5, color: "var(--text-dim)" }}>{c.sub}</span>
+                    </button>
+                  ))}
               </div>
             </>
           )}
 
           {step === 2 && method === "sandbox" && (
             <>
-              <h2 style={{ margin: "0 0 4px", fontSize: 17, color: "var(--text)" }}>{t("remote.connectionSettings")}</h2>
-              <p style={{ margin: "0 0 10px", fontSize: 12.5, color: "var(--text-dim)" }}>{t("remote.sandboxEnvHint")}</p>
+              <h2 style={{ margin: "0 0 4px", fontSize: 17, color: "var(--text)" }}>
+                {t("remote.connectionSettings")}
+              </h2>
+              <p style={{ margin: "0 0 10px", fontSize: 12.5, color: "var(--text-dim)" }}>
+                {t("remote.sandboxEnvHint")}
+              </p>
               {error && <div className="error-banner">{error}</div>}
               <div style={{ flex: 1, margin: "0 -26px", padding: "0 26px", overflow: "auto" }}>
-                <NewProjectDialog mode="sandbox" busy={sandboxBusy} embedded onCancel={() => setStep(1)} onCreate={handleSandboxCreated} />
+                <NewProjectDialog
+                  mode="sandbox"
+                  busy={sandboxBusy}
+                  embedded
+                  onCancel={() => setStep(1)}
+                  onCreate={handleSandboxCreated}
+                />
               </div>
             </>
           )}
 
           {step === 2 && method === "ssh" && (
             <>
-              <h2 style={{ margin: "0 0 4px", fontSize: 17, color: "var(--text)" }}>{t("remote.sshConnectionSettings")}</h2>
-              <p style={{ margin: "0 0 14px", fontSize: 12.5, color: "var(--text-dim)" }}>{t("remote.sessionsRunPiWebServer")}</p>
-              {error && <div className="error-banner" style={{ marginBottom: 10 }}>{error}</div>}
+              <h2 style={{ margin: "0 0 4px", fontSize: 17, color: "var(--text)" }}>
+                {t("remote.sshConnectionSettings")}
+              </h2>
+              <p style={{ margin: "0 0 14px", fontSize: 12.5, color: "var(--text-dim)" }}>
+                {t("remote.sessionsRunPiWebServer")}
+              </p>
+              {error && (
+                <div className="error-banner" style={{ marginBottom: 10 }}>
+                  {error}
+                </div>
+              )}
               <div style={{ display: "flex", flexDirection: "column", gap: 12, maxWidth: 460 }}>
                 <label style={fieldStyle}>
                   {t("projects.projectName")}
-                  <input value={sshName} onChange={(e) => setSshName(e.target.value)} placeholder="my-ssh-lab" autoFocus style={inputStyle} />
+                  <input
+                    value={sshName}
+                    onChange={(e) => setSshName(e.target.value)}
+                    placeholder="my-ssh-lab"
+                    autoFocus
+                    style={inputStyle}
+                  />
                 </label>
                 <div style={{ display: "flex", gap: 10 }}>
                   <label style={{ ...fieldStyle, flex: 1 }}>
                     {t("remote.hostAddress")}
-                    <input value={sshForm.host} onChange={(e) => setSshForm({ ...sshForm, host: e.target.value })} placeholder="192.168.1.100" style={inputStyle} />
+                    <input
+                      value={sshForm.host}
+                      onChange={(e) => setSshForm({ ...sshForm, host: e.target.value })}
+                      placeholder="192.168.1.100"
+                      style={inputStyle}
+                    />
                   </label>
                   <label style={{ ...fieldStyle, width: 96 }}>
                     {t("remote.port")}
-                    <input value={sshForm.port} onChange={(e) => setSshForm({ ...sshForm, port: e.target.value.replace(/[^0-9]/g, "") })} placeholder="22" style={inputStyle} />
+                    <input
+                      value={sshForm.port}
+                      onChange={(e) => setSshForm({ ...sshForm, port: e.target.value.replace(/[^0-9]/g, "") })}
+                      placeholder="22"
+                      style={inputStyle}
+                    />
                   </label>
                 </div>
                 <label style={fieldStyle}>
                   {t("admin.username")}
-                  <input value={sshForm.username} onChange={(e) => setSshForm({ ...sshForm, username: e.target.value })} placeholder="root" style={inputStyle} />
+                  <input
+                    value={sshForm.username}
+                    onChange={(e) => setSshForm({ ...sshForm, username: e.target.value })}
+                    placeholder="root"
+                    style={inputStyle}
+                  />
                 </label>
-                <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "var(--text-muted)" }}>
+                <div
+                  style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "var(--text-muted)" }}
+                >
                   <span>{t("remote.authMethod")}</span>
                   <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
-                    <input type="radio" checked={sshForm.authType === "password"} onChange={() => setSshForm({ ...sshForm, authType: "password" })} />
+                    <input
+                      type="radio"
+                      checked={sshForm.authType === "password"}
+                      onChange={() => setSshForm({ ...sshForm, authType: "password" })}
+                    />
                     {t("remote.password")}
                   </label>
                   {sshForm.authType === "password" ? (
-                    <input type="password" value={sshForm.password} onChange={(e) => setSshForm({ ...sshForm, password: e.target.value })} style={{ ...inputStyle, marginLeft: 22, width: "calc(100% - 22px)" }} />
+                    <input
+                      type="password"
+                      value={sshForm.password}
+                      onChange={(e) => setSshForm({ ...sshForm, password: e.target.value })}
+                      style={{ ...inputStyle, marginLeft: 22, width: "calc(100% - 22px)" }}
+                    />
                   ) : null}
                   <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
-                    <input type="radio" checked={sshForm.authType === "key"} onChange={() => setSshForm({ ...sshForm, authType: "key" })} />
+                    <input
+                      type="radio"
+                      checked={sshForm.authType === "key"}
+                      onChange={() => setSshForm({ ...sshForm, authType: "key" })}
+                    />
                     {t("remote.privateKey")}
-                    <span style={{ fontSize: 10.5, color: "var(--text-dim)" }}>{t("remote.leaveEmptyUseServerDefault")}</span>
+                    <span style={{ fontSize: 10.5, color: "var(--text-dim)" }}>
+                      {t("remote.leaveEmptyUseServerDefault")}
+                    </span>
                   </label>
                   {sshForm.authType === "key" ? (
-                    <textarea value={sshForm.privateKey} onChange={(e) => setSshForm({ ...sshForm, privateKey: e.target.value })} rows={3} placeholder="-----BEGIN OPENSSH PRIVATE KEY-----" style={{ ...inputStyle, marginLeft: 22, width: "calc(100% - 22px)", height: "auto", padding: 8, fontFamily: "var(--font-mono)", fontSize: 11, resize: "vertical" }} />
+                    <textarea
+                      value={sshForm.privateKey}
+                      onChange={(e) => setSshForm({ ...sshForm, privateKey: e.target.value })}
+                      rows={3}
+                      placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
+                      style={{
+                        ...inputStyle,
+                        marginLeft: 22,
+                        width: "calc(100% - 22px)",
+                        height: "auto",
+                        padding: 8,
+                        fontFamily: "var(--font-mono)",
+                        fontSize: 11,
+                        resize: "vertical",
+                      }}
+                    />
                   ) : null}
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, minHeight: 30 }}>
@@ -529,19 +785,41 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
                     type="button"
                     onClick={() => void testSsh()}
                     disabled={sshTesting || !sshForm.host.trim() || !sshForm.username.trim()}
-                    style={{ ...secondaryBtn, opacity: sshTesting || !sshForm.host.trim() || !sshForm.username.trim() ? 0.5 : 1, cursor: sshTesting || !sshForm.host.trim() || !sshForm.username.trim() ? "not-allowed" : "pointer" }}
+                    style={{
+                      ...secondaryBtn,
+                      opacity: sshTesting || !sshForm.host.trim() || !sshForm.username.trim() ? 0.5 : 1,
+                      cursor:
+                        sshTesting || !sshForm.host.trim() || !sshForm.username.trim() ? "not-allowed" : "pointer",
+                    }}
                   >
                     {sshTesting ? t("remote.testing") : t("remote.testConnection")}
                   </button>
-                  {sshTestMsg && <span style={{ fontSize: 12, color: sshTestMsg.ok ? "var(--success)" : "#ef4444" }}>{sshTestMsg.text}</span>}
+                  {sshTestMsg && (
+                    <span style={{ fontSize: 12, color: sshTestMsg.ok ? "var(--success)" : "#ef4444" }}>
+                      {sshTestMsg.text}
+                    </span>
+                  )}
                 </div>
                 {presetRow}
                 <div className="info-banner">{t("remote.sshCredentialsStoredProjectConfig")}</div>
               </div>
               <div style={{ flex: 1 }} />
               <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4 }}>
-                <button onClick={() => setStep(1)} style={secondaryBtn}>{t("remote.back")}</button>
-                <button className="primary" disabled={!sshForm.host.trim() || !sshForm.username.trim() || !sshName.trim()} onClick={() => setStep(3)} title={!sshName.trim() ? t("remote.enterProjectNameFirst") : undefined} style={{ ...primaryBtn, opacity: !sshForm.host.trim() || !sshForm.username.trim() || !sshName.trim() ? 0.5 : 1 }}>{t("remote.next")}</button>
+                <button onClick={() => setStep(1)} style={secondaryBtn}>
+                  {t("remote.back")}
+                </button>
+                <button
+                  className="primary"
+                  disabled={!sshForm.host.trim() || !sshForm.username.trim() || !sshName.trim()}
+                  onClick={() => setStep(3)}
+                  title={!sshName.trim() ? t("remote.enterProjectNameFirst") : undefined}
+                  style={{
+                    ...primaryBtn,
+                    opacity: !sshForm.host.trim() || !sshForm.username.trim() || !sshName.trim() ? 0.5 : 1,
+                  }}
+                >
+                  {t("remote.next")}
+                </button>
               </div>
             </>
           )}
@@ -562,8 +840,18 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
               <div style={{ flex: 1 }} />
               {!sshStep3Busy && error && (
                 <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4 }}>
-                  <button onClick={() => { setError(null); setStep(2); }} style={secondaryBtn}>{t("remote.back")}</button>
-                  <button className="primary" onClick={() => setSshStep3Retry((n) => n + 1)} style={primaryBtn}>{t("remote.retry")}</button>
+                  <button
+                    onClick={() => {
+                      setError(null);
+                      setStep(2);
+                    }}
+                    style={secondaryBtn}
+                  >
+                    {t("remote.back")}
+                  </button>
+                  <button className="primary" onClick={() => setSshStep3Retry((n) => n + 1)} style={primaryBtn}>
+                    {t("remote.retry")}
+                  </button>
                 </div>
               )}
             </>
@@ -581,21 +869,44 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
 
           {step === 2 && method === "local" && (
             <>
-              <h2 style={{ margin: "0 0 4px", fontSize: 17, color: "var(--text)" }}>{t("remote.connectionSettings")}</h2>
-              <p style={{ margin: "0 0 14px", fontSize: 12.5, color: "var(--text-dim)" }}>{t("remote.localMachineModePairedPer")}</p>
-              {error && <div className="error-banner" style={{ marginBottom: 10 }}>{error}</div>}
+              <h2 style={{ margin: "0 0 4px", fontSize: 17, color: "var(--text)" }}>
+                {t("remote.connectionSettings")}
+              </h2>
+              <p style={{ margin: "0 0 14px", fontSize: 12.5, color: "var(--text-dim)" }}>
+                {t("remote.localMachineModePairedPer")}
+              </p>
+              {error && (
+                <div className="error-banner" style={{ marginBottom: 10 }}>
+                  {error}
+                </div>
+              )}
               <div style={{ display: "flex", flexDirection: "column", gap: 12, maxWidth: 460 }}>
                 <label style={fieldStyle}>
                   {t("projects.projectName")}
-                  <input value={localName} onChange={(e) => setLocalName(e.target.value)} placeholder={t("remote.eGMyLocalLab")} autoFocus style={inputStyle} />
+                  <input
+                    value={localName}
+                    onChange={(e) => setLocalName(e.target.value)}
+                    placeholder={t("remote.eGMyLocalLab")}
+                    autoFocus
+                    style={inputStyle}
+                  />
                 </label>
                 <div className="info-banner">{t("remote.nextStepCompletesPairingInside")}</div>
                 {presetRow}
               </div>
               <div style={{ flex: 1 }} />
               <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4 }}>
-                <button onClick={() => setStep(1)} style={secondaryBtn}>{t("remote.back")}</button>
-                <button className="primary" disabled={!localName.trim()} onClick={() => setStep(3)} style={{ ...primaryBtn, opacity: !localName.trim() ? 0.5 : 1 }}>{t("remote.next")}</button>
+                <button onClick={() => setStep(1)} style={secondaryBtn}>
+                  {t("remote.back")}
+                </button>
+                <button
+                  className="primary"
+                  disabled={!localName.trim()}
+                  onClick={() => setStep(3)}
+                  style={{ ...primaryBtn, opacity: !localName.trim() ? 0.5 : 1 }}
+                >
+                  {t("remote.next")}
+                </button>
               </div>
             </>
           )}
@@ -604,14 +915,23 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
             <>
               <h2 style={{ margin: "0 0 4px", fontSize: 17, color: "var(--text)" }}>{t("remote.connecting")}</h2>
               {/* 未配对：提示横幅 + 下方内嵌配对面板；配对成功由轮询自动进入下一步。 */}
-              {error && <div className="error-banner" style={{ marginBottom: 10 }}>{error}</div>}
+              {error && (
+                <div className="error-banner" style={{ marginBottom: 10 }}>
+                  {error}
+                </div>
+              )}
               {relayInfo?.online && relayInfo.compatible !== false ? (
                 <>
-                  <div className="info-banner">{t("remote.localAgentConnected")}{relayInfo.hostname ? `：${relayInfo.hostname}` : ""}</div>
+                  <div className="info-banner">
+                    {t("remote.localAgentConnected")}
+                    {relayInfo.hostname ? `：${relayInfo.hostname}` : ""}
+                  </div>
                   <div style={{ flex: 1 }} />
                   <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
                     <button onClick={() => setStep(2)}>{t("remote.back")}</button>
-                    <button className="primary" onClick={() => setStep(4)}>{t("remote.next")}</button>
+                    <button className="primary" onClick={() => setStep(4)}>
+                      {t("remote.next")}
+                    </button>
                   </div>
                 </>
               ) : relayInfo?.online ? (
@@ -623,7 +943,16 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
                   </div>
                 </>
               ) : (
-                <div style={{ flex: 1, minHeight: 0, overflow: "auto", border: "1px solid var(--border)", borderRadius: 10, padding: 6 }}>
+                <div
+                  style={{
+                    flex: 1,
+                    minHeight: 0,
+                    overflow: "auto",
+                    border: "1px solid var(--border)",
+                    borderRadius: 10,
+                    padding: 6,
+                  }}
+                >
                   <ConnectLocalMachine />
                 </div>
               )}
@@ -633,20 +962,26 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
           {step === 4 && method === "local" && (
             <>
               <h2 style={{ margin: "0 0 4px", fontSize: 17, color: "var(--text)" }}>{t("remote.chooseDirectory")}</h2>
-              <p style={{ margin: "0 0 14px", fontSize: 12.5, color: "var(--text-dim)" }}>{t("remote.localWorkdirHint")}</p>
+              <p style={{ margin: "0 0 14px", fontSize: 12.5, color: "var(--text-dim)" }}>
+                {t("remote.localWorkdirHint")}
+              </p>
               <div style={{ display: "flex", flexDirection: "column", gap: 12, maxWidth: 460 }}>
                 {(relayMachines?.length ?? 0) > 1 && (
                   <label style={fieldStyle}>
                     {t("remote.whichMachine")}
                     <select
                       value={localMachineId}
-                      onChange={(e) => { setLocalMachineId(e.target.value); setLocalDir(""); }}
+                      onChange={(e) => {
+                        setLocalMachineId(e.target.value);
+                        setLocalDir("");
+                      }}
                       style={inputStyle}
                     >
                       <option value="">{t("remote.defaultMachine")}</option>
                       {relayMachines?.map((m) => (
                         <option key={m.machineId} value={m.machineId} disabled={!m.online}>
-                          {m.label}{m.online ? "" : `（${t("remote.offline")}）`}
+                          {m.label}
+                          {m.online ? "" : `（${t("remote.offline")}）`}
                         </option>
                       ))}
                     </select>
@@ -655,16 +990,35 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
                 <label style={fieldStyle}>
                   {t("remote.localWorkingDirectoryOptional")}
                   <div style={{ display: "flex", gap: 8 }}>
-                    <input value={localDir} onChange={(e) => setLocalDir(e.target.value)} placeholder="/home/me/projects/demo" style={{ ...inputStyle, flex: 1 }} />
-                    <button type="button" onClick={() => setLocalPickerOpen(true)} title={t("remote.openLocalDirectoryBrowser")} style={{ ...secondaryBtn, flexShrink: 0 }}>{t("remote.browse")}</button>
+                    <input
+                      value={localDir}
+                      onChange={(e) => setLocalDir(e.target.value)}
+                      placeholder="/home/me/projects/demo"
+                      style={{ ...inputStyle, flex: 1 }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setLocalPickerOpen(true)}
+                      title={t("remote.openLocalDirectoryBrowser")}
+                      style={{ ...secondaryBtn, flexShrink: 0 }}
+                    >
+                      {t("remote.browse")}
+                    </button>
                   </div>
                 </label>
                 {error && <div className="error-banner">{error}</div>}
               </div>
               <div style={{ flex: 1 }} />
               <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4 }}>
-                <button onClick={() => setStep(3)} style={secondaryBtn}>{t("remote.back")}</button>
-                <button className="primary" disabled={busy || !localName.trim()} onClick={finishLocal} style={{ ...primaryBtn, opacity: busy || !localName.trim() ? 0.5 : 1 }}>
+                <button onClick={() => setStep(3)} style={secondaryBtn}>
+                  {t("remote.back")}
+                </button>
+                <button
+                  className="primary"
+                  disabled={busy || !localName.trim()}
+                  onClick={finishLocal}
+                  style={{ ...primaryBtn, opacity: busy || !localName.trim() ? 0.5 : 1 }}
+                >
                   {busy ? t("projects.creating") : t("common.finish")}
                 </button>
               </div>
@@ -674,21 +1028,42 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
           {step === 4 && method === "ssh" && (
             <>
               <h2 style={{ margin: "0 0 4px", fontSize: 17, color: "var(--text)" }}>{t("remote.chooseDirectory")}</h2>
-              <p style={{ margin: "0 0 14px", fontSize: 12.5, color: "var(--text-dim)" }}>{t("remote.pickEnterProjectWorkingDirectory")}</p>
+              <p style={{ margin: "0 0 14px", fontSize: 12.5, color: "var(--text-dim)" }}>
+                {t("remote.pickEnterProjectWorkingDirectory")}
+              </p>
               <div style={{ display: "flex", flexDirection: "column", gap: 12, maxWidth: 460 }}>
                 <label style={fieldStyle}>
                   {t("remote.remoteWorkingDirectoryOptional")}
                   <div style={{ display: "flex", gap: 8 }}>
-                    <input value={localDir} onChange={(e) => setLocalDir(e.target.value)} placeholder="/root/projects/demo" style={{ ...inputStyle, flex: 1 }} />
-                    <button type="button" onClick={() => setSshPickerOpen(true)} title={t("remote.openRemoteDirectoryBrowser")} style={{ ...secondaryBtn, flexShrink: 0 }}>{t("remote.browse")}</button>
+                    <input
+                      value={localDir}
+                      onChange={(e) => setLocalDir(e.target.value)}
+                      placeholder="/root/projects/demo"
+                      style={{ ...inputStyle, flex: 1 }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setSshPickerOpen(true)}
+                      title={t("remote.openRemoteDirectoryBrowser")}
+                      style={{ ...secondaryBtn, flexShrink: 0 }}
+                    >
+                      {t("remote.browse")}
+                    </button>
                   </div>
                 </label>
                 {error && <div className="error-banner">{error}</div>}
               </div>
               <div style={{ flex: 1 }} />
               <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4 }}>
-                <button onClick={() => setStep(3)} style={secondaryBtn}>{t("remote.back")}</button>
-                <button className="primary" disabled={busy || !sshName.trim()} onClick={() => void finishSsh()} style={{ ...primaryBtn, opacity: busy || !sshName.trim() ? 0.5 : 1 }}>
+                <button onClick={() => setStep(3)} style={secondaryBtn}>
+                  {t("remote.back")}
+                </button>
+                <button
+                  className="primary"
+                  disabled={busy || !sshName.trim()}
+                  onClick={() => void finishSsh()}
+                  style={{ ...primaryBtn, opacity: busy || !sshName.trim() ? 0.5 : 1 }}
+                >
                   {busy ? t("projects.creating") : t("common.finish")}
                 </button>
               </div>
@@ -701,7 +1076,15 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
               <div className="info-banner">{t("remote.sandboxDirFixedHint")}</div>
               <div style={{ flex: 1 }} />
               <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-                <button className="primary" onClick={() => { onCreated("sandbox", sandboxDone?.name ?? ""); onClose(); }}>{t("common.finish")}</button>
+                <button
+                  className="primary"
+                  onClick={() => {
+                    onCreated("sandbox", sandboxDone?.name ?? "");
+                    onClose();
+                  }}
+                >
+                  {t("common.finish")}
+                </button>
               </div>
             </>
           )}
@@ -712,7 +1095,10 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
             initialPath={localDir.trim() || undefined}
             source={localSource}
             onCancel={() => setLocalPickerOpen(false)}
-            onSelect={(abs) => { setLocalDir(abs); setLocalPickerOpen(false); }}
+            onSelect={(abs) => {
+              setLocalDir(abs);
+              setLocalPickerOpen(false);
+            }}
           />
         )}
         {sshPickerOpen && (
@@ -721,7 +1107,10 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
             initialPath={localDir.trim() || undefined}
             source={sshSource}
             onCancel={() => setSshPickerOpen(false)}
-            onSelect={(abs) => { setLocalDir(abs); setSshPickerOpen(false); }}
+            onSelect={(abs) => {
+              setLocalDir(abs);
+              setSshPickerOpen(false);
+            }}
           />
         )}
       </div>
@@ -732,19 +1121,39 @@ export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerD
 // 与 NewProjectDialog（沙盒配置页）一致的表单控件样式：label 字段栈、32px
 // 输入框、右下角 secondary/primary 按钮。
 const fieldStyle = {
-  display: "flex", flexDirection: "column", gap: 4, fontSize: 12, color: "var(--text-muted)",
+  display: "flex",
+  flexDirection: "column",
+  gap: 4,
+  fontSize: 12,
+  color: "var(--text-muted)",
 } as const;
 
 const inputStyle = {
-  height: 32, padding: "0 8px", borderRadius: 6, border: "1px solid var(--border)",
-  background: "var(--bg)", color: "var(--text)", fontSize: 12, outline: "none",
+  height: 32,
+  padding: "0 8px",
+  borderRadius: 6,
+  border: "1px solid var(--border)",
+  background: "var(--bg)",
+  color: "var(--text)",
+  fontSize: 12,
+  outline: "none",
 } as const;
 
 const secondaryBtn = {
-  height: 30, padding: "0 14px", borderRadius: 6, border: "1px solid var(--border)",
-  background: "var(--bg)", color: "var(--text)", fontSize: 12, cursor: "pointer",
+  height: 30,
+  padding: "0 14px",
+  borderRadius: 6,
+  border: "1px solid var(--border)",
+  background: "var(--bg)",
+  color: "var(--text)",
+  fontSize: 12,
+  cursor: "pointer",
 } as const;
 
 const primaryBtn = {
-  ...secondaryBtn, background: "var(--accent)", color: "#fff", borderColor: "var(--accent)", fontWeight: 600,
+  ...secondaryBtn,
+  background: "var(--accent)",
+  color: "#fff",
+  borderColor: "var(--accent)",
+  fontWeight: 600,
 } as const;

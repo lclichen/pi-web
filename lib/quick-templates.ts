@@ -85,7 +85,10 @@ function readStore(): TemplateStore {
     if (!templates.some((t) => t.id === DEFAULT_TEMPLATE_ID)) {
       templates.unshift(defaultTemplate());
     }
-    return { version: 1, templates: templates.filter((t) => t && typeof t.id === "string" && typeof t.name === "string") };
+    return {
+      version: 1,
+      templates: templates.filter((t) => t && typeof t.id === "string" && typeof t.name === "string"),
+    };
   } catch {
     return { version: 1, templates: [defaultTemplate()] };
   }
@@ -137,7 +140,10 @@ function validate(template: Partial<QuickTemplate>): TemplateValidationError[] {
 }
 
 /** Admin: create a new template. Returns the stored record. */
-export function createQuickTemplate(input: Partial<QuickTemplate>): { template?: QuickTemplate; errors?: TemplateValidationError[] } {
+export function createQuickTemplate(input: Partial<QuickTemplate>): {
+  template?: QuickTemplate;
+  errors?: TemplateValidationError[];
+} {
   const errors = validate(input);
   if (errors.length > 0) return { errors };
   const template: QuickTemplate = {
@@ -155,7 +161,10 @@ export function createQuickTemplate(input: Partial<QuickTemplate>): { template?:
 }
 
 /** Admin: update (including the built-in default). */
-export function updateQuickTemplate(id: string, input: Partial<QuickTemplate>): { template?: QuickTemplate; errors?: TemplateValidationError[] } {
+export function updateQuickTemplate(
+  id: string,
+  input: Partial<QuickTemplate>,
+): { template?: QuickTemplate; errors?: TemplateValidationError[] } {
   const store = readStore();
   const existing = store.templates.find((t) => t.id === id);
   if (!existing) return { errors: [{ field: "id", reason: "模板不存在" }] };
@@ -172,7 +181,9 @@ export function updateQuickTemplate(id: string, input: Partial<QuickTemplate>): 
     description: typeof merged.description === "string" ? merged.description.trim().slice(0, 300) : "",
     systemPrompt: merged.systemPrompt!,
     ...(merged.model ? { model: merged.model } : { model: undefined }),
-    ...(Array.isArray(merged.mcpServers) ? { mcpServers: merged.mcpServers.map((s) => s.trim()).filter(Boolean) } : { mcpServers: undefined }),
+    ...(Array.isArray(merged.mcpServers)
+      ? { mcpServers: merged.mcpServers.map((s) => s.trim()).filter(Boolean) }
+      : { mcpServers: undefined }),
   });
   writeStore(store);
   return { template: { ...existing } };

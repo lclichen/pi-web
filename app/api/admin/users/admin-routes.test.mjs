@@ -9,14 +9,10 @@ const usersRoute = await readFile(new URL("./route.ts", import.meta.url), "utf8"
 const idRoute = await readFile(new URL("./[id]/route.ts", import.meta.url), "utf8");
 const passwordRoute = await readFile(new URL("./[id]/password/route.ts", import.meta.url), "utf8");
 const approveRoute = await readFile(new URL("./[id]/approve/route.ts", import.meta.url), "utf8");
-const dialogSource = await readFile(
-  new URL("../../../../components/PlatformAdminDialog.tsx", import.meta.url),
-  "utf8",
-);
+const dialogSource = await readFile(new URL("../../../../components/PlatformAdminDialog.tsx", import.meta.url), "utf8");
 
 test("every admin route gates on requireAdminIdentity before any platform call", async () => {
-  const firstCall = (src, ...markers) =>
-    Math.min(...markers.map((m) => src.indexOf(m)).filter((i) => i !== -1));
+  const firstCall = (src, ...markers) => Math.min(...markers.map((m) => src.indexOf(m)).filter((i) => i !== -1));
   for (const [name, src, callMarker] of [
     ["users", usersRoute, 'platformGet<unknown>("/api/v1/admin/users"'],
     ["users/[id]", idRoute, "platformPatch<unknown>("],
@@ -80,7 +76,10 @@ test("the legacy external console link is fully retired", async () => {
 });
 
 test("P3 tabs exist: overview/quotas/workspaces/llm/logs", async () => {
-  assert.match(dialogSource, /"overview" \| "users" \| "containers" \| "images" \| "quotas" \| "workspaces" \| "llm" \| "logs"/);
+  assert.match(
+    dialogSource,
+    /"overview" \| "users" \| "containers" \| "images" \| "quotas" \| "workspaces" \| "llm" \| "logs"/,
+  );
   assert.match(dialogSource, /\/api\/admin\/overview/);
   assert.match(dialogSource, /\/api\/admin\/quotas/);
   assert.match(dialogSource, /\/api\/admin\/workspaces/);

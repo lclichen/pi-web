@@ -113,62 +113,72 @@ export function GitPanel({ cwd, sessionId, refreshKey, onClose }: Props) {
     }
   }, [cwd]);
 
-  useEffect(() => { refresh(); }, [refresh, refreshKey]);
-  useEffect(() => { if (view === "history" && log === null && !logError) void loadHistory(); }, [view, log, logError, loadHistory]);
+  useEffect(() => {
+    refresh();
+  }, [refresh, refreshKey]);
+  useEffect(() => {
+    if (view === "history" && log === null && !logError) void loadHistory();
+  }, [view, log, logError, loadHistory]);
 
   const showResult = useCallback((ok: boolean, msg: string) => {
     setResult({ ok, msg });
     setTimeout(() => setResult(null), 4000);
   }, []);
 
-  const doOp = useCallback(async (name: string, fn: () => Promise<Response>) => {
-    setBusy(name);
-    setResult(null);
-    try {
-      const res = await fn();
-      const data = await res.json().catch(() => ({}));
-      if (res.ok && (data.success || data.commitHash)) {
-        showResult(true, data.message || data.output || `${name} succeeded`);
-        await refresh();
-      } else {
-        showResult(false, data.error || `${name} failed (HTTP ${res.status})`);
+  const doOp = useCallback(
+    async (name: string, fn: () => Promise<Response>) => {
+      setBusy(name);
+      setResult(null);
+      try {
+        const res = await fn();
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && (data.success || data.commitHash)) {
+          showResult(true, data.message || data.output || `${name} succeeded`);
+          await refresh();
+        } else {
+          showResult(false, data.error || `${name} failed (HTTP ${res.status})`);
+        }
+      } catch (e) {
+        showResult(false, e instanceof Error ? e.message : String(e));
+      } finally {
+        setBusy(null);
       }
-    } catch (e) {
-      showResult(false, e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(null);
-    }
-  }, [refresh, showResult]);
+    },
+    [refresh, showResult],
+  );
 
-  const runInsight = useCallback(async (mode: InsightMode) => {
-    if (!sessionId) {
-      setInsightError("AI 审查需要一个会话提供模型：请先在左侧选择或创建一个会话");
-      return;
-    }
-    setInsightBusy(mode);
-    setInsightError(null);
-    try {
-      const res = await fetch("/api/git/review", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId, cwd, mode }),
-      });
-      const data = (await res.json().catch(() => ({}))) as { text?: string; error?: string };
-      if (!res.ok || typeof data.text !== "string") {
-        setInsightError(data.error ?? `HTTP ${res.status}`);
+  const runInsight = useCallback(
+    async (mode: InsightMode) => {
+      if (!sessionId) {
+        setInsightError("AI 审查需要一个会话提供模型：请先在左侧选择或创建一个会话");
         return;
       }
-      if (mode === "commit-message") {
-        setCommitMsg(data.text);
-      } else {
-        setReview(data.text);
+      setInsightBusy(mode);
+      setInsightError(null);
+      try {
+        const res = await fetch("/api/git/review", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sessionId, cwd, mode }),
+        });
+        const data = (await res.json().catch(() => ({}))) as { text?: string; error?: string };
+        if (!res.ok || typeof data.text !== "string") {
+          setInsightError(data.error ?? `HTTP ${res.status}`);
+          return;
+        }
+        if (mode === "commit-message") {
+          setCommitMsg(data.text);
+        } else {
+          setReview(data.text);
+        }
+      } catch (e) {
+        setInsightError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setInsightBusy(null);
       }
-    } catch (e) {
-      setInsightError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setInsightBusy(null);
-    }
-  }, [sessionId, cwd]);
+    },
+    [sessionId, cwd],
+  );
 
   const toggleStage = useCallback((filePath: string) => {
     setStaged((prev) => {
@@ -189,7 +199,10 @@ export function GitPanel({ cwd, sessionId, refreshKey, onClose }: Props) {
   }, []);
 
   const handleStageAndCommit = useCallback(async () => {
-    if (!commitMsg.trim()) { showResult(false, "Commit message required"); return; }
+    if (!commitMsg.trim()) {
+      showResult(false, "Commit message required");
+      return;
+    }
     const files = Array.from(staged);
     await doOp("commit", () =>
       fetch("/api/git/commit", {
@@ -223,17 +236,41 @@ export function GitPanel({ cwd, sessionId, refreshKey, onClose }: Props) {
     );
   }, [staged, cwd, doOp]);
 
-  const handlePush = useCallback(() =>
-    doOp("push", () => fetch("/api/git/push", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cwd }) })),
-    [doOp, cwd]);
+  const handlePush = useCallback(
+    () =>
+      doOp("push", () =>
+        fetch("/api/git/push", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ cwd }),
+        }),
+      ),
+    [doOp, cwd],
+  );
 
-  const handlePull = useCallback(() =>
-    doOp("pull", () => fetch("/api/git/pull", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cwd }) })),
-    [doOp, cwd]);
+  const handlePull = useCallback(
+    () =>
+      doOp("pull", () =>
+        fetch("/api/git/pull", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ cwd }),
+        }),
+      ),
+    [doOp, cwd],
+  );
 
-  const handleFetch = useCallback(() =>
-    doOp("fetch", () => fetch("/api/git/fetch", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cwd }) })),
-    [doOp, cwd]);
+  const handleFetch = useCallback(
+    () =>
+      doOp("fetch", () =>
+        fetch("/api/git/fetch", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ cwd }),
+        }),
+      ),
+    [doOp, cwd],
+  );
 
   if (loading) {
     return <div style={{ padding: 12, fontSize: 11, color: "var(--text-dim)" }}>Loading git status...</div>;
@@ -252,16 +289,37 @@ export function GitPanel({ cwd, sessionId, refreshKey, onClose }: Props) {
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
       {/* Header: branch + view switch + remote ops */}
-      <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 10px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--accent)", flexShrink: 0 }}>
-          <circle cx="6" cy="6" r="3" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="6" r="3" /><path d="M18 9v2c0 2-2 3-4 3H9" /><path d="M6 9v6" />
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          padding: "6px 10px",
+          borderBottom: "1px solid var(--border)",
+          flexShrink: 0,
+        }}
+      >
+        <svg
+          width="13"
+          height="13"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          style={{ color: "var(--accent)", flexShrink: 0 }}
+        >
+          <circle cx="6" cy="6" r="3" />
+          <circle cx="6" cy="18" r="3" />
+          <circle cx="18" cy="6" r="3" />
+          <path d="M18 9v2c0 2-2 3-4 3H9" />
+          <path d="M6 9v6" />
         </svg>
         <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text)" }}>
           {branch?.current ?? "detached HEAD"}
         </span>
-        {branch?.tracking && (
-          <span style={{ fontSize: 10, color: "var(--text-dim)" }}>{branch.tracking}</span>
-        )}
+        {branch?.tracking && <span style={{ fontSize: 10, color: "var(--text-dim)" }}>{branch.tracking}</span>}
         {(branch?.ahead ?? 0) > 0 && (
           <span style={{ fontSize: 10, color: "#22c55e", fontWeight: 600 }}>{branch!.ahead} ahead</span>
         )}
@@ -270,13 +328,25 @@ export function GitPanel({ cwd, sessionId, refreshKey, onClose }: Props) {
         )}
         <div style={{ width: 6 }} />
         {/* 更改 / 历史 view switch */}
-        <div style={{ display: "flex", border: "1px solid var(--border)", borderRadius: 999, overflow: "hidden", flexShrink: 0 }}>
+        <div
+          style={{
+            display: "flex",
+            border: "1px solid var(--border)",
+            borderRadius: 999,
+            overflow: "hidden",
+            flexShrink: 0,
+          }}
+        >
           {(["changes", "history"] as const).map((v) => (
             <button
               key={v}
               onClick={() => setView(v)}
               style={{
-                border: "none", padding: "1px 9px", fontSize: 10, fontWeight: 600, cursor: "pointer",
+                border: "none",
+                padding: "1px 9px",
+                fontSize: 10,
+                fontWeight: 600,
+                cursor: "pointer",
                 background: view === v ? "var(--accent)" : "transparent",
                 color: view === v ? "#fff" : "var(--text-dim)",
               }}
@@ -288,35 +358,60 @@ export function GitPanel({ cwd, sessionId, refreshKey, onClose }: Props) {
         <div style={{ flex: 1 }} />
         {view === "changes" && (
           <>
-            <button onClick={handleFetch} disabled={!!busy} title="Fetch all remotes" style={btnStyle("var(--bg-panel)")}>
+            <button
+              onClick={handleFetch}
+              disabled={!!busy}
+              title="Fetch all remotes"
+              style={btnStyle("var(--bg-panel)")}
+            >
               {busy === "fetch" ? "..." : "Fetch"}
             </button>
             <button onClick={handlePull} disabled={!!busy} title="Pull from remote" style={btnStyle("var(--bg-panel)")}>
               {busy === "pull" ? "..." : "Pull"}
             </button>
-            <button onClick={handlePush} disabled={!!busy} title="Push to remote" style={btnStyle("var(--accent)", "#fff")}>
+            <button
+              onClick={handlePush}
+              disabled={!!busy}
+              title="Push to remote"
+              style={btnStyle("var(--accent)", "#fff")}
+            >
               {busy === "push" ? "..." : "Push"}
             </button>
           </>
         )}
         {view === "history" && (
-          <button onClick={() => { setLog(null); void loadHistory(); }} disabled={insightBusy !== null} title="刷新提交历史" style={btnStyle("var(--bg-panel)")}>
+          <button
+            onClick={() => {
+              setLog(null);
+              void loadHistory();
+            }}
+            disabled={insightBusy !== null}
+            title="刷新提交历史"
+            style={btnStyle("var(--bg-panel)")}
+          >
             刷新
           </button>
         )}
-        <button onClick={onClose} title="Close" style={{ ...btnStyle("var(--bg-panel)"), padding: "0 6px" }}>x</button>
+        <button onClick={onClose} title="Close" style={{ ...btnStyle("var(--bg-panel)"), padding: "0 6px" }}>
+          x
+        </button>
       </div>
 
       {/* Result message */}
       {result && (
-        <div style={{
-          padding: "4px 10px", fontSize: 10,
-          color: result.ok ? "#22c55e" : "#f87171",
-          background: result.ok ? "rgba(34,197,94,0.08)" : "rgba(248,113,113,0.08)",
-          borderBottom: "1px solid var(--border)",
-          whiteSpace: "pre-wrap", maxHeight: 60, overflow: "auto",
-          flexShrink: 0,
-        }}>
+        <div
+          style={{
+            padding: "4px 10px",
+            fontSize: 10,
+            color: result.ok ? "#22c55e" : "#f87171",
+            background: result.ok ? "rgba(34,197,94,0.08)" : "rgba(248,113,113,0.08)",
+            borderBottom: "1px solid var(--border)",
+            whiteSpace: "pre-wrap",
+            maxHeight: 60,
+            overflow: "auto",
+            flexShrink: 0,
+          }}
+        >
           {result.msg}
         </div>
       )}
@@ -331,49 +426,95 @@ export function GitPanel({ cwd, sessionId, refreshKey, onClose }: Props) {
               </div>
             ) : (
               <>
-                <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "3px 10px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 4,
+                    padding: "3px 10px",
+                    borderBottom: "1px solid var(--border)",
+                    flexShrink: 0,
+                  }}
+                >
                   <span style={{ fontSize: 10, color: "var(--text-dim)", fontWeight: 600 }}>
                     {files.length} changed {files.length === 1 ? "file" : "files"}
                   </span>
                   <div style={{ flex: 1 }} />
-                  <button onClick={stageAll} style={miniBtn}>Stage all</button>
-                  <button onClick={unstageAll} style={miniBtn}>Unstage all</button>
+                  <button onClick={stageAll} style={miniBtn}>
+                    Stage all
+                  </button>
+                  <button onClick={unstageAll} style={miniBtn}>
+                    Unstage all
+                  </button>
                 </div>
                 {files.map((f) => {
                   const isStaged = staged.has(f.filePath);
-                  const letter = statusLetter(f.indexStatus !== " " && f.indexStatus !== "?" ? f.indexStatus : (f.worktreeStatus || "?"));
+                  const letter = statusLetter(
+                    f.indexStatus !== " " && f.indexStatus !== "?" ? f.indexStatus : f.worktreeStatus || "?",
+                  );
                   return (
                     <div
                       key={f.filePath}
                       onClick={() => toggleStage(f.filePath)}
                       style={{
-                        display: "flex", alignItems: "center", gap: 6,
-                        padding: "3px 10px", cursor: "pointer", fontSize: 11,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                        padding: "3px 10px",
+                        cursor: "pointer",
+                        fontSize: 11,
                         background: isStaged ? "rgba(59,130,246,0.08)" : "transparent",
                       }}
-                      onMouseEnter={(e) => { if (!isStaged) e.currentTarget.style.background = "var(--bg-hover)"; }}
-                      onMouseLeave={(e) => { if (!isStaged) e.currentTarget.style.background = "transparent"; }}
+                      onMouseEnter={(e) => {
+                        if (!isStaged) e.currentTarget.style.background = "var(--bg-hover)";
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!isStaged) e.currentTarget.style.background = "transparent";
+                      }}
                     >
-                      <div style={{
-                        width: 14, height: 14, borderRadius: 3, flexShrink: 0,
-                        border: `1.5px solid ${isStaged ? "var(--accent)" : "var(--text-dim)"}`,
-                        background: isStaged ? "var(--accent)" : "transparent",
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                      }}>
-                        {isStaged && <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="#fff" strokeWidth="2.5"><path d="M3 8l3.5 3.5L13 4" /></svg>}
+                      <div
+                        style={{
+                          width: 14,
+                          height: 14,
+                          borderRadius: 3,
+                          flexShrink: 0,
+                          border: `1.5px solid ${isStaged ? "var(--accent)" : "var(--text-dim)"}`,
+                          background: isStaged ? "var(--accent)" : "transparent",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                      >
+                        {isStaged && (
+                          <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="#fff" strokeWidth="2.5">
+                            <path d="M3 8l3.5 3.5L13 4" />
+                          </svg>
+                        )}
                       </div>
-                      <span style={{
-                        fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: 10,
-                        color: STATUS_COLORS[letter] ?? "var(--text-muted)",
-                        flexShrink: 0, width: 14, textAlign: "center",
-                      }}>
+                      <span
+                        style={{
+                          fontFamily: "var(--font-mono)",
+                          fontWeight: 700,
+                          fontSize: 10,
+                          color: STATUS_COLORS[letter] ?? "var(--text-muted)",
+                          flexShrink: 0,
+                          width: 14,
+                          textAlign: "center",
+                        }}
+                      >
                         {letter}
                       </span>
-                      <span style={{
-                        flex: 1, minWidth: 0,
-                        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                        color: "var(--text)",
-                      }} title={f.filePath}>
+                      <span
+                        style={{
+                          flex: 1,
+                          minWidth: 0,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                          color: "var(--text)",
+                        }}
+                        title={f.filePath}
+                      >
                         {shortPath(f.filePath)}
                       </span>
                     </div>
@@ -385,11 +526,29 @@ export function GitPanel({ cwd, sessionId, refreshKey, onClose }: Props) {
 
           {/* AI review result */}
           {(review || insightError) && (
-            <div style={{ borderTop: "1px solid var(--border)", flexShrink: 0, maxHeight: 220, display: "flex", flexDirection: "column" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 10px", borderBottom: "1px solid var(--border)" }}>
+            <div
+              style={{
+                borderTop: "1px solid var(--border)",
+                flexShrink: 0,
+                maxHeight: 220,
+                display: "flex",
+                flexDirection: "column",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  padding: "4px 10px",
+                  borderBottom: "1px solid var(--border)",
+                }}
+              >
                 <span style={{ fontSize: 10, fontWeight: 700, color: "var(--accent)" }}>AI 审查</span>
                 <div style={{ flex: 1 }} />
-                <button onClick={() => setReview(null)} style={miniBtn}>收起</button>
+                <button onClick={() => setReview(null)} style={miniBtn}>
+                  收起
+                </button>
               </div>
               <div style={{ overflowY: "auto", padding: "6px 12px", fontSize: 11 }}>
                 {insightError ? (
@@ -410,10 +569,15 @@ export function GitPanel({ cwd, sessionId, refreshKey, onClose }: Props) {
               rows={2}
               spellCheck={false}
               style={{
-                width: "100%", resize: "none",
-                border: "1px solid var(--border)", borderRadius: 4,
-                background: "var(--bg)", color: "var(--text)",
-                fontSize: 11, padding: "4px 8px", outline: "none",
+                width: "100%",
+                resize: "none",
+                border: "1px solid var(--border)",
+                borderRadius: 4,
+                background: "var(--bg)",
+                color: "var(--text)",
+                fontSize: 11,
+                padding: "4px 8px",
+                outline: "none",
                 fontFamily: "var(--font-mono)",
               }}
               onKeyDown={(e) => {
@@ -426,15 +590,24 @@ export function GitPanel({ cwd, sessionId, refreshKey, onClose }: Props) {
                 disabled={!!busy || !commitMsg.trim()}
                 style={{
                   ...btnStyle("var(--accent)", "#fff"),
-                  flex: 1, fontWeight: 600,
+                  flex: 1,
+                  fontWeight: 600,
                   opacity: busy || !commitMsg.trim() ? 0.5 : 1,
                   cursor: busy || !commitMsg.trim() ? "default" : "pointer",
                 }}
               >
                 {busy === "commit" ? "Committing..." : staged.size > 0 ? `Commit (${staged.size})` : "Commit all"}
               </button>
-              <button onClick={handleStage} disabled={!!busy || staged.size === 0} style={btnStyle("var(--bg-panel)")}>Stage</button>
-              <button onClick={handleUnstage} disabled={!!busy || staged.size === 0} style={btnStyle("var(--bg-panel)")}>Unstage</button>
+              <button onClick={handleStage} disabled={!!busy || staged.size === 0} style={btnStyle("var(--bg-panel)")}>
+                Stage
+              </button>
+              <button
+                onClick={handleUnstage}
+                disabled={!!busy || staged.size === 0}
+                style={btnStyle("var(--bg-panel)")}
+              >
+                Unstage
+              </button>
             </div>
             <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
               <button
@@ -483,26 +656,54 @@ export function GitPanel({ cwd, sessionId, refreshKey, onClose }: Props) {
                 key={c.hash}
                 title={`${c.hash}\n${c.author}`}
                 style={{
-                  display: "flex", alignItems: "baseline", gap: 8,
-                  padding: "3px 10px", fontSize: 11,
+                  display: "flex",
+                  alignItems: "baseline",
+                  gap: 8,
+                  padding: "3px 10px",
+                  fontSize: 11,
                   borderBottom: "1px solid color-mix(in srgb, var(--border) 45%, transparent)",
                 }}
               >
                 <span
                   aria-hidden="true"
                   style={{
-                    fontFamily: "var(--font-mono)", fontSize: 11, lineHeight: "17px",
-                    whiteSpace: "pre", color: "var(--text-dim)", flexShrink: 0, userSelect: "none",
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 11,
+                    lineHeight: "17px",
+                    whiteSpace: "pre",
+                    color: "var(--text-dim)",
+                    flexShrink: 0,
+                    userSelect: "none",
                   }}
                 >
                   {c.graph}
                 </span>
                 {c.refs && (
-                  <span style={{ flexShrink: 0, fontSize: 9.5, fontFamily: "var(--font-mono)", color: "var(--accent)", background: "color-mix(in srgb, var(--accent) 12%, transparent)", padding: "0 5px", borderRadius: 999, lineHeight: "15px" }}>
+                  <span
+                    style={{
+                      flexShrink: 0,
+                      fontSize: 9.5,
+                      fontFamily: "var(--font-mono)",
+                      color: "var(--accent)",
+                      background: "color-mix(in srgb, var(--accent) 12%, transparent)",
+                      padding: "0 5px",
+                      borderRadius: 999,
+                      lineHeight: "15px",
+                    }}
+                  >
                     {c.refs.replace(/HEAD -> /, "")}
                   </span>
                 )}
-                <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text)" }}>
+                <span
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                    color: "var(--text)",
+                  }}
+                >
                   {c.subject}
                 </span>
                 <span style={{ flexShrink: 0, fontSize: 10, color: "var(--text-dim)" }}>{c.relTime}</span>
@@ -517,16 +718,31 @@ export function GitPanel({ cwd, sessionId, refreshKey, onClose }: Props) {
 
 function btnStyle(bg: string, color = "var(--text-muted)"): React.CSSProperties {
   return {
-    height: 22, padding: "0 8px", border: "1px solid var(--border)",
-    borderRadius: 4, background: bg, color,
-    fontSize: 11, fontWeight: 500, cursor: "pointer",
-    display: "flex", alignItems: "center", gap: 3, whiteSpace: "nowrap",
+    height: 22,
+    padding: "0 8px",
+    border: "1px solid var(--border)",
+    borderRadius: 4,
+    background: bg,
+    color,
+    fontSize: 11,
+    fontWeight: 500,
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+    gap: 3,
+    whiteSpace: "nowrap",
     transition: "opacity 0.1s",
   };
 }
 
 const miniBtn: React.CSSProperties = {
-  height: 18, padding: "0 6px", border: "1px solid var(--border)",
-  borderRadius: 3, background: "transparent", color: "var(--text-dim)",
-  fontSize: 9, cursor: "pointer", whiteSpace: "nowrap",
+  height: 18,
+  padding: "0 6px",
+  border: "1px solid var(--border)",
+  borderRadius: 3,
+  background: "transparent",
+  color: "var(--text-dim)",
+  fontSize: 9,
+  cursor: "pointer",
+  whiteSpace: "nowrap",
 };

@@ -4,9 +4,7 @@ export interface InitialNavigation {
   sidebarCollapsed: boolean;
 }
 
-export function getInitialNavigation(
-  searchParams: Pick<URLSearchParams, "get">,
-): InitialNavigation {
+export function getInitialNavigation(searchParams: Pick<URLSearchParams, "get">): InitialNavigation {
   const requestedCwd = searchParams.get("cwd")?.trim() || null;
 
   return {

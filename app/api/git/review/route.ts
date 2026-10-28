@@ -54,9 +54,10 @@ export async function POST(req: Request) {
     if (!hasChanges && !diffRes.diff) {
       return NextResponse.json({ error: "工作区没有可审查的改动" }, { status: 400 });
     }
-    const fileSummary = status.files.length > 0
-      ? status.files.map((f) => `${f.code ?? "?"} ${f.filePath}`).join("\n")
-      : "（仅有未跟踪文件的元信息）";
+    const fileSummary =
+      status.files.length > 0
+        ? status.files.map((f) => `${f.code ?? "?"} ${f.filePath}`).join("\n")
+        : "（仅有未跟踪文件的元信息）";
 
     // Resolve the session (owner-fenced) and reuse its model configuration.
     const sessionAccess = await resolveSessionAccess(req, sessionId);

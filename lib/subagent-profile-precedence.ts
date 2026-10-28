@@ -13,8 +13,7 @@ export function isSubagentProfileOverridden(
 ): boolean {
   const name = profile.name.toLowerCase();
   const priority = SUBAGENT_SCOPE_PRIORITY[profile.scope];
-  return profiles.some((candidate) =>
-    candidate.name.toLowerCase() === name
-    && SUBAGENT_SCOPE_PRIORITY[candidate.scope] > priority
+  return profiles.some(
+    (candidate) => candidate.name.toLowerCase() === name && SUBAGENT_SCOPE_PRIORITY[candidate.scope] > priority,
   );
 }

@@ -26,7 +26,8 @@ function useAgentInstallInfo() {
   const { relayPort, advertiseUrl } = useRelayAgent();
   const port = relayPort;
   const hasWindow = typeof window !== "undefined";
-  const serverUrl = advertiseUrl ?? (hasWindow ? `${window.location.protocol}//${window.location.hostname}:${port}` : "");
+  const serverUrl =
+    advertiseUrl ?? (hasWindow ? `${window.location.protocol}//${window.location.hostname}:${port}` : "");
   const asset = detectAgentAsset();
   const downloadUrl = hasWindow ? `${window.location.origin}/api/agent-relay/download/${asset.file}` : "";
   return { serverUrl, asset, downloadUrl };
@@ -71,7 +72,9 @@ export function LocalMachinesDialog({ open, onClose }: { open: boolean; onClose:
       }
     };
     void fetchCode();
-    return () => { stopped = true; };
+    return () => {
+      stopped = true;
+    };
   }, [open, online, pairSectionOpen]);
 
   const renameMachine = async (m: MachineStatus) => {
@@ -106,18 +109,27 @@ export function LocalMachinesDialog({ open, onClose }: { open: boolean; onClose:
   return (
     <>
       <div
-        onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+        onClick={(e) => {
+          if (e.target === e.currentTarget) onClose();
+        }}
         style={{
           // Above the remote-connect wizard (1180) — the wizard's pairing step
           // shares this module's state and the dialog must cover it.
-          position: "fixed", inset: 0, zIndex: 1200, display: "flex",
-          alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.4)",
+          position: "fixed",
+          inset: 0,
+          zIndex: 1200,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: "rgba(0,0,0,0.4)",
         }}
       >
         <div role="dialog" aria-modal="true" style={dialogStyle}>
           <div style={headerStyle}>
             <span style={{ fontWeight: 600 }}>{t("relay.localMachine")}</span>
-            <button onClick={onClose} style={closeBtnStyle}>×</button>
+            <button onClick={onClose} style={closeBtnStyle}>
+              ×
+            </button>
           </div>
 
           <div style={{ padding: 16 }}>
@@ -127,18 +139,35 @@ export function LocalMachinesDialog({ open, onClose }: { open: boolean; onClose:
                   {t("relay.pairedMachines")}（{machinesList.length}）
                 </div>
                 {machinesList.map((m) => (
-                  <div key={m.machineId} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 0", borderBottom: "1px solid var(--border)" }}>
-                    <span style={{
-                      width: 8, height: 8, borderRadius: "50%", flexShrink: 0,
-                      background: m.online ? "var(--success)" : "#9ca3af",
-                      boxShadow: m.online ? "0 0 6px var(--success)" : "none",
-                    }} />
+                  <div
+                    key={m.machineId}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      padding: "8px 0",
+                      borderBottom: "1px solid var(--border)",
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: "50%",
+                        flexShrink: 0,
+                        background: m.online ? "var(--success)" : "#9ca3af",
+                        boxShadow: m.online ? "0 0 6px var(--success)" : "none",
+                      }}
+                    />
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 12.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      <div
+                        style={{ fontSize: 12.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                      >
                         {m.label}
                         {m.online && m.info && (
                           <span style={{ ...muted, fontSize: 11, fontFamily: "var(--font-mono)" }}>
-                            {" "}{m.info.hostname} · {m.info.os}/{m.info.arch}
+                            {" "}
+                            {m.info.hostname} · {m.info.os}/{m.info.arch}
                           </span>
                         )}
                       </div>
@@ -149,13 +178,17 @@ export function LocalMachinesDialog({ open, onClose }: { open: boolean; onClose:
                       </div>
                       {m.online && m.compatible === false && (
                         <div style={{ fontSize: 11, color: "var(--danger)" }}>
-                          客户端版本过低{m.info?.agentVersion ? `（${m.info.agentVersion}）` : ""}，需要 ≥ {m.requiredVersion ?? REQUIRED_CLIENT_VERSION}
+                          客户端版本过低{m.info?.agentVersion ? `（${m.info.agentVersion}）` : ""}，需要 ≥{" "}
+                          {m.requiredVersion ?? REQUIRED_CLIENT_VERSION}
                         </div>
                       )}
                     </div>
                     <button
                       disabled={!m.online || busyMachine === m.machineId}
-                      onClick={() => { onClose(); setPanel({ machineId: m.machineId }); }}
+                      onClick={() => {
+                        onClose();
+                        setPanel({ machineId: m.machineId });
+                      }}
                       style={{ ...secondaryBtnStyle, opacity: m.online ? 1 : 0.5 }}
                     >
                       {t("relay.panel")}
@@ -187,13 +220,23 @@ export function LocalMachinesDialog({ open, onClose }: { open: boolean; onClose:
                 ))}
               </>
             ) : (
-              <p style={{ ...muted, marginTop: 0 }}>
-                {t("relay.connectLocalIntro")}
-              </p>
+              <p style={{ ...muted, marginTop: 0 }}>{t("relay.connectLocalIntro")}</p>
             )}
 
-            <div style={{ marginTop: 12, borderTop: machinesList.length > 0 ? "1px solid var(--border)" : "none", paddingTop: 12 }}>
-              <button onClick={() => { setPairSectionOpen((v) => !v); setPairing(null); }} style={secondaryBtnStyle}>
+            <div
+              style={{
+                marginTop: 12,
+                borderTop: machinesList.length > 0 ? "1px solid var(--border)" : "none",
+                paddingTop: 12,
+              }}
+            >
+              <button
+                onClick={() => {
+                  setPairSectionOpen((v) => !v);
+                  setPairing(null);
+                }}
+                style={secondaryBtnStyle}
+              >
                 {pairSectionOpen ? t("relay.collapsePairing") : t("relay.pairNewMachine")}
               </button>
               {pairSectionOpen && (
@@ -259,7 +302,9 @@ export function ConnectLocalMachine() {
       }
     };
     void fetchCode();
-    return () => { stopped = true; };
+    return () => {
+      stopped = true;
+    };
   }, [online]);
 
   return (
@@ -275,14 +320,14 @@ export function ConnectLocalMachine() {
             value={`${info.agentVersion}${compat?.compatible === false ? ` ⚠ 需要 ≥ ${requiredVersion ?? REQUIRED_CLIENT_VERSION}` : ""}`}
           />
           {compat?.compatible === false && (
-            <div className="error-banner" style={{ marginTop: 8 }}>{compat.message}</div>
+            <div className="error-banner" style={{ marginTop: 8 }}>
+              {compat.message}
+            </div>
           )}
         </div>
       ) : (
         <div style={{ padding: 0 }}>
-          <p style={{ ...muted, marginTop: 0 }}>
-            {t("relay.pairCommandsIntro")}
-          </p>
+          <p style={{ ...muted, marginTop: 0 }}>{t("relay.pairCommandsIntro")}</p>
           <PairingSteps
             asset={asset}
             downloadUrl={downloadUrl}
@@ -307,7 +352,14 @@ interface AgentAsset {
 
 /** Shared pairing instructions (label input + code + download/command). */
 function PairingSteps({
-  asset, downloadUrl, serverUrl, pairing, pairingLoading, label, onLabelChange, requiredVersion,
+  asset,
+  downloadUrl,
+  serverUrl,
+  pairing,
+  pairingLoading,
+  label,
+  onLabelChange,
+  requiredVersion,
 }: {
   asset: AgentAsset;
   downloadUrl: string;
@@ -324,9 +376,7 @@ function PairingSteps({
     ? `Invoke-WebRequest -Uri "${downloadUrl}" -OutFile agent-client.exe`
     : `curl -fsSL -o agent-client "${downloadUrl}" && chmod +x agent-client`;
   const labelArg = label.trim() ? ` --label "${label.trim().replace(/"/g, '\\"')}"` : "";
-  const pairCommand = pairing
-    ? `${exe} pair --code ${pairing.code} --server ${serverUrl}${labelArg}`
-    : "";
+  const pairCommand = pairing ? `${exe} pair --code ${pairing.code} --server ${serverUrl}${labelArg}` : "";
   const backgroundCommand = isWindows
     ? `Start-Process -WindowStyle Hidden ${exe} -ArgumentList 'run'`
     : `nohup ./agent-client run > agent-client.log 2>&1 &`;
@@ -348,11 +398,21 @@ function PairingSteps({
             onChange={(e) => onLabelChange(e.target.value)}
             placeholder="可选，如：工位机"
             maxLength={50}
-            style={{ flex: 1, padding: "4px 8px", background: "var(--bg)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 12 }}
+            style={{
+              flex: 1,
+              padding: "4px 8px",
+              background: "var(--bg)",
+              color: "var(--text)",
+              border: "1px solid var(--border)",
+              borderRadius: 4,
+              fontSize: 12,
+            }}
           />
         </div>
         {pairingLoading && <div style={muted}>生成配对码…</div>}
-        {!pairingLoading && !pairing && <div style={{ ...muted, color: "var(--danger)" }}>无法生成配对码，请稍后重试。</div>}
+        {!pairingLoading && !pairing && (
+          <div style={{ ...muted, color: "var(--danger)" }}>无法生成配对码，请稍后重试。</div>
+        )}
         {pairing && (
           <>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
@@ -366,16 +426,12 @@ function PairingSteps({
       </Step>
       <Step n={3} title="运行（前台）">
         <CodeBlock code={`${exe} run`} />
-        <div style={{ ...muted, fontSize: 11, marginTop: 4 }}>
-          保持窗口打开；连接成功后会自动继续。
-        </div>
+        <div style={{ ...muted, fontSize: 11, marginTop: 4 }}>保持窗口打开；连接成功后会自动继续。</div>
       </Step>
       <Step n={4} title="后台运行（可选，专业用户）">
         <CodeBlock code={backgroundCommand} />
         {!isWindows && (
-          <div style={{ ...muted, fontSize: 11, marginTop: 4 }}>
-            systemd：见 agent/contrib/agent-client.service
-          </div>
+          <div style={{ ...muted, fontSize: 11, marginTop: 4 }}>systemd：见 agent/contrib/agent-client.service</div>
         )}
       </Step>
       <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 8 }}>
@@ -397,7 +453,15 @@ function Row({ label, value }: { label: string; value: string }) {
 
 /** 更改本机工作区目录：调客户端的 workspace.set-root（校验→持久化到
  *  ~/.agent-client/config.json→热切换并重发 hello）。 */
-function WorkspaceRootEditor({ current, machineId, onSaved }: { current?: string; machineId?: string; onSaved: () => void }) {
+function WorkspaceRootEditor({
+  current,
+  machineId,
+  onSaved,
+}: {
+  current?: string;
+  machineId?: string;
+  onSaved: () => void;
+}) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   return (
@@ -413,12 +477,24 @@ function WorkspaceRootEditor({ current, machineId, onSaved }: { current?: string
           setMsg(null);
           import("@/lib/relay-client").then(({ relaySetWorkspaceRoot }) =>
             relaySetWorkspaceRoot(next.trim(), machineId ? { machineId } : undefined)
-              .then(() => { setMsg("已更改"); onSaved(); })
+              .then(() => {
+                setMsg("已更改");
+                onSaved();
+              })
               .catch((e: unknown) => setMsg(e instanceof Error ? e.message : String(e)))
               .finally(() => setBusy(false)),
           );
         }}
-        style={{ height: 24, padding: "0 10px", borderRadius: 5, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text)", fontSize: 11, cursor: busy ? "default" : "pointer" }}
+        style={{
+          height: 24,
+          padding: "0 10px",
+          borderRadius: 5,
+          border: "1px solid var(--border)",
+          background: "var(--bg)",
+          color: "var(--text)",
+          fontSize: 11,
+          cursor: busy ? "default" : "pointer",
+        }}
       >
         {busy ? "应用中…" : "更改…"}
       </button>
@@ -430,7 +506,9 @@ function WorkspaceRootEditor({ current, machineId, onSaved }: { current?: string
 function Step({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
   return (
     <div style={{ marginTop: 14 }}>
-      <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>{n}. {title}</div>
+      <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>
+        {n}. {title}
+      </div>
       {children}
     </div>
   );
@@ -494,11 +572,21 @@ function CopyButton({ text, style }: { text: string; style?: React.CSSProperties
 function CodeBlock({ code }: { code: string }) {
   return (
     <div style={{ position: "relative" }}>
-      <pre style={{
-        margin: 0, padding: "8px 46px 8px 10px", background: "var(--bg)",
-        border: "1px solid var(--border)", borderRadius: 4, overflow: "auto",
-        fontFamily: "var(--font-mono)", fontSize: 11.5, color: "var(--text)", whiteSpace: "pre-wrap", wordBreak: "break-all",
-      }}>
+      <pre
+        style={{
+          margin: 0,
+          padding: "8px 46px 8px 10px",
+          background: "var(--bg)",
+          border: "1px solid var(--border)",
+          borderRadius: 4,
+          overflow: "auto",
+          fontFamily: "var(--font-mono)",
+          fontSize: 11.5,
+          color: "var(--text)",
+          whiteSpace: "pre-wrap",
+          wordBreak: "break-all",
+        }}
+      >
         {code}
       </pre>
       <CopyButton text={code} style={{ position: "absolute", top: 4, right: 4 }} />
@@ -524,30 +612,57 @@ function detectAgentAsset(): AgentAsset {
 }
 
 const dialogStyle: React.CSSProperties = {
-  width: "min(560px, 94vw)", maxHeight: "90vh", overflow: "auto",
-  background: "var(--bg-panel)", border: "1px solid var(--border)",
-  borderRadius: 8, boxShadow: "0 12px 36px rgba(0,0,0,0.24)",
+  width: "min(560px, 94vw)",
+  maxHeight: "90vh",
+  overflow: "auto",
+  background: "var(--bg-panel)",
+  border: "1px solid var(--border)",
+  borderRadius: 8,
+  boxShadow: "0 12px 36px rgba(0,0,0,0.24)",
 };
 const headerStyle: React.CSSProperties = {
-  display: "flex", alignItems: "center", justifyContent: "space-between",
-  padding: "10px 14px", borderBottom: "1px solid var(--border)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  padding: "10px 14px",
+  borderBottom: "1px solid var(--border)",
 };
 const closeBtnStyle: React.CSSProperties = {
-  background: "transparent", border: "none", color: "var(--text-muted)",
-  cursor: "pointer", fontSize: 16, lineHeight: 1, padding: "2px 6px",
+  background: "transparent",
+  border: "none",
+  color: "var(--text-muted)",
+  cursor: "pointer",
+  fontSize: 16,
+  lineHeight: 1,
+  padding: "2px 6px",
 };
 const codeStyle: React.CSSProperties = {
-  fontFamily: "var(--font-mono)", fontSize: 22, fontWeight: 700, letterSpacing: 4,
-  color: "var(--accent)", background: "var(--bg)", padding: "4px 12px", borderRadius: 4,
+  fontFamily: "var(--font-mono)",
+  fontSize: 22,
+  fontWeight: 700,
+  letterSpacing: 4,
+  color: "var(--accent)",
+  background: "var(--bg)",
+  padding: "4px 12px",
+  borderRadius: 4,
   border: "1px solid var(--border)",
 };
 const secondaryBtnStyle: React.CSSProperties = {
-  padding: "6px 14px", fontSize: 12, cursor: "pointer",
-  background: "var(--bg)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 4,
+  padding: "6px 14px",
+  fontSize: 12,
+  cursor: "pointer",
+  background: "var(--bg)",
+  color: "var(--text)",
+  border: "1px solid var(--border)",
+  borderRadius: 4,
 };
 const muted: React.CSSProperties = { fontSize: 12, color: "var(--text-muted)" };
 const spinStyle: React.CSSProperties = {
-  width: 12, height: 12, borderRadius: "50%",
-  border: "2px solid var(--border)", borderTopColor: "var(--accent)",
-  display: "inline-block", animation: "spin 0.8s linear infinite",
+  width: 12,
+  height: 12,
+  borderRadius: "50%",
+  border: "2px solid var(--border)",
+  borderTopColor: "var(--accent)",
+  display: "inline-block",
+  animation: "spin 0.8s linear infinite",
 };

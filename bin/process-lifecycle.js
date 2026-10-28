@@ -11,12 +11,7 @@ function getSignalExitCode(signal) {
   return typeof signalNumber === "number" ? 128 + signalNumber : 1;
 }
 
-function wireChildProcessLifecycle(
-  child,
-  parentProcess = process,
-  timeoutMs = shutdownTimeoutMs,
-  log = console.error,
-) {
+function wireChildProcessLifecycle(child, parentProcess = process, timeoutMs = shutdownTimeoutMs, log = console.error) {
   const signalHandlers = new Map();
   let shutdownTimer;
   // Set once we forward a signal, so an exit we asked for stays quiet and one
@@ -35,9 +30,7 @@ function wireChildProcessLifecycle(
 
   function handleError(error) {
     const failedToSpawn = child.pid === undefined;
-    log(
-      `[pi-web] ${failedToSpawn ? "could not run the Next.js process" : "Next.js process error"}: ${error.message}`,
-    );
+    log(`[pi-web] ${failedToSpawn ? "could not run the Next.js process" : "Next.js process error"}: ${error.message}`);
 
     if (failedToSpawn) {
       unwire();
@@ -69,9 +62,7 @@ function wireChildProcessLifecycle(
     // A shutdown the user asked for needs no explanation; anything else left
     // the window closing with no stated reason.
     if (!shuttingDown) {
-      log(
-        `[pi-web] Next.js exited unexpectedly (${signal ? `signal ${signal}` : `code ${code}`})`,
-      );
+      log(`[pi-web] Next.js exited unexpectedly (${signal ? `signal ${signal}` : `code ${code}`})`);
     }
 
     parentProcess.exit(code ?? getSignalExitCode(signal));

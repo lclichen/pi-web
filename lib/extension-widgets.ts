@@ -19,5 +19,5 @@ export function updateExtensionWidgets(
   const existingIndex = widgets.findIndex((widget) => widget.key === key);
   if (existingIndex === -1) return [...widgets, updatedWidget];
 
-  return widgets.map((widget, index) => index === existingIndex ? updatedWidget : widget);
+  return widgets.map((widget, index) => (index === existingIndex ? updatedWidget : widget));
 }

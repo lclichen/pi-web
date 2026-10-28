@@ -25,7 +25,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const body = await req.json() as {
+    const body = (await req.json()) as {
       package?: string;
       scope?: string;
       cwd?: string;
@@ -63,7 +63,10 @@ export async function POST(req: Request) {
       }
       hubBase = normalizeSkillhubBase(hubBase);
       const { data, filename } = await downloadSkillhubZip(
-        hubBase, namespace.trim(), slug.trim(), version?.trim() || undefined,
+        hubBase,
+        namespace.trim(),
+        slug.trim(),
+        version?.trim() || undefined,
       );
       const stats = await importSkillsZip(
         isGlobal ? process.cwd() : cwd!,

@@ -24,10 +24,7 @@ let launchOptions;
 try {
   launchOptions = parseLaunchOptions();
 } catch (error) {
-  fs.writeSync(
-    process.stderr.fd,
-    `${error instanceof Error ? error.message : String(error)}\n`,
-  );
+  fs.writeSync(process.stderr.fd, `${error instanceof Error ? error.message : String(error)}\n`);
   process.exit(1);
 }
 

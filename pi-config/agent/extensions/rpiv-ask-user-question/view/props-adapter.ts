@@ -10,31 +10,31 @@ import type { TabComponents } from "./tab-components.js";
 
 /** Cache-invalidation contract used by the adapter. `pi-tui` `Component` already satisfies it. */
 interface Invalidatable {
-	invalidate(): void;
+  invalidate(): void;
 }
 
 function getInputCursorOffset(input: Editor): number {
-	const lines = input.getLines();
-	const cursor = input.getCursor();
-	let offset = cursor.col;
-	for (let i = 0; i < cursor.line; i++) offset += (lines[i]?.length ?? 0) + 1;
-	return offset;
+  const lines = input.getLines();
+  const cursor = input.getCursor();
+  let offset = cursor.col;
+  for (let i = 0; i < cursor.line; i++) offset += (lines[i]?.length ?? 0) + 1;
+  return offset;
 }
 
 export interface QuestionnairePropsAdapterConfig {
-	tui: { requestRender(): void };
-	questions: readonly QuestionData[];
-	itemsByTab: ReadonlyArray<readonly WrappingSelectItem[]>;
-	tabsByIndex: ReadonlyArray<TabComponents>;
-	inlineInput: Editor;
-	globalBindings: ReadonlyArray<BoundGlobalBinding>;
-	perTabBindings: ReadonlyArray<BoundPerTabBinding>;
-	/**
-	 * Renderables not reached by the binding registries (e.g. the notes
-	 * `Editor`, which is typed into directly and has no props). Walked by
-	 * `invalidate()` after the binding-driven components.
-	 */
-	extraInvalidatables?: ReadonlyArray<Invalidatable>;
+  tui: { requestRender(): void };
+  questions: readonly QuestionData[];
+  itemsByTab: ReadonlyArray<readonly WrappingSelectItem[]>;
+  tabsByIndex: ReadonlyArray<TabComponents>;
+  inlineInput: Editor;
+  globalBindings: ReadonlyArray<BoundGlobalBinding>;
+  perTabBindings: ReadonlyArray<BoundPerTabBinding>;
+  /**
+   * Renderables not reached by the binding registries (e.g. the notes
+   * `Editor`, which is typed into directly and has no props). Walked by
+   * `invalidate()` after the binding-driven components.
+   */
+  extraInvalidatables?: ReadonlyArray<Invalidatable>;
 }
 
 /**
@@ -47,71 +47,71 @@ export interface QuestionnairePropsAdapterConfig {
  * `selectOptionListProps` sees the live value.
  */
 export class QuestionnairePropsAdapter {
-	private readonly tui: QuestionnairePropsAdapterConfig["tui"];
-	private readonly questions: readonly QuestionData[];
-	private readonly itemsByTab: ReadonlyArray<readonly WrappingSelectItem[]>;
-	private readonly tabsByIndex: ReadonlyArray<TabComponents>;
-	private readonly inlineInput: Editor;
-	private readonly globalBindings: ReadonlyArray<BoundGlobalBinding>;
-	private readonly perTabBindings: ReadonlyArray<BoundPerTabBinding>;
-	private readonly extraInvalidatables: ReadonlyArray<Invalidatable>;
+  private readonly tui: QuestionnairePropsAdapterConfig["tui"];
+  private readonly questions: readonly QuestionData[];
+  private readonly itemsByTab: ReadonlyArray<readonly WrappingSelectItem[]>;
+  private readonly tabsByIndex: ReadonlyArray<TabComponents>;
+  private readonly inlineInput: Editor;
+  private readonly globalBindings: ReadonlyArray<BoundGlobalBinding>;
+  private readonly perTabBindings: ReadonlyArray<BoundPerTabBinding>;
+  private readonly extraInvalidatables: ReadonlyArray<Invalidatable>;
 
-	constructor(config: QuestionnairePropsAdapterConfig) {
-		this.tui = config.tui;
-		this.questions = config.questions;
-		this.itemsByTab = config.itemsByTab;
-		this.tabsByIndex = config.tabsByIndex;
-		this.inlineInput = config.inlineInput;
-		this.globalBindings = config.globalBindings;
-		this.perTabBindings = config.perTabBindings;
-		this.extraInvalidatables = config.extraInvalidatables ?? [];
-	}
+  constructor(config: QuestionnairePropsAdapterConfig) {
+    this.tui = config.tui;
+    this.questions = config.questions;
+    this.itemsByTab = config.itemsByTab;
+    this.tabsByIndex = config.tabsByIndex;
+    this.inlineInput = config.inlineInput;
+    this.globalBindings = config.globalBindings;
+    this.perTabBindings = config.perTabBindings;
+    this.extraInvalidatables = config.extraInvalidatables ?? [];
+  }
 
-	apply(state: QuestionnaireState): void {
-		const totalQuestions = this.questions.length;
-		const activeView = selectActiveView(state, totalQuestions);
-		const paneIndex = selectActivePreviewPaneIndex(state.currentTab, totalQuestions);
-		const activePreviewPane = this.tabsByIndex[paneIndex]?.preview ?? this.tabsByIndex[0]!.preview;
+  apply(state: QuestionnaireState): void {
+    const totalQuestions = this.questions.length;
+    const activeView = selectActiveView(state, totalQuestions);
+    const paneIndex = selectActivePreviewPaneIndex(state.currentTab, totalQuestions);
+    const activePreviewPane = this.tabsByIndex[paneIndex]?.preview ?? this.tabsByIndex[0]!.preview;
 
-		const ctx: BindingContext = {
-			questions: this.questions,
-			itemsByTab: this.itemsByTab,
-			totalQuestions,
-			activeView,
-			inputBuffer: this.inlineInput.getText(),
-			inputCursorOffset: getInputCursorOffset(this.inlineInput),
-			activePreviewPane,
-		};
+    const ctx: BindingContext = {
+      questions: this.questions,
+      itemsByTab: this.itemsByTab,
+      totalQuestions,
+      activeView,
+      inputBuffer: this.inlineInput.getText(),
+      inputCursorOffset: getInputCursorOffset(this.inlineInput),
+      activePreviewPane,
+    };
 
-		for (const binding of this.globalBindings) {
-			binding.apply(state, ctx);
-		}
+    for (const binding of this.globalBindings) {
+      binding.apply(state, ctx);
+    }
 
-		for (let i = 0; i < this.tabsByIndex.length; i++) {
-			const tab = this.tabsByIndex[i]!;
-			const tabCtx: PerTabBindingContext = { ...ctx, tab, i };
-			for (const binding of this.perTabBindings) {
-				binding.apply(state, tabCtx);
-			}
-		}
+    for (let i = 0; i < this.tabsByIndex.length; i++) {
+      const tab = this.tabsByIndex[i]!;
+      const tabCtx: PerTabBindingContext = { ...ctx, tab, i };
+      for (const binding of this.perTabBindings) {
+        binding.apply(state, tabCtx);
+      }
+    }
 
-		this.tui.requestRender();
-	}
+    this.tui.requestRender();
+  }
 
-	/**
-	 * Invalidates every owned renderable. Called by the session in place of
-	 * the old `dialog.invalidate()` forwarding chain — DialogView no longer
-	 * reaches into siblings (tabBar, notesInput, activePreviewPane).
-	 * Iterates the same registries used by `apply()` plus
-	 * `extraInvalidatables` for components outside the binding system.
-	 */
-	invalidate(): void {
-		for (const b of this.globalBindings) b.invalidate();
-		for (const tab of this.tabsByIndex) {
-			tab.optionList.invalidate();
-			tab.preview.invalidate();
-			tab.multiSelect?.invalidate();
-		}
-		for (const x of this.extraInvalidatables) x.invalidate();
-	}
+  /**
+   * Invalidates every owned renderable. Called by the session in place of
+   * the old `dialog.invalidate()` forwarding chain — DialogView no longer
+   * reaches into siblings (tabBar, notesInput, activePreviewPane).
+   * Iterates the same registries used by `apply()` plus
+   * `extraInvalidatables` for components outside the binding system.
+   */
+  invalidate(): void {
+    for (const b of this.globalBindings) b.invalidate();
+    for (const tab of this.tabsByIndex) {
+      tab.optionList.invalidate();
+      tab.preview.invalidate();
+      tab.multiSelect?.invalidate();
+    }
+    for (const x of this.extraInvalidatables) x.invalidate();
+  }
 }

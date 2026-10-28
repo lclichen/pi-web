@@ -60,7 +60,11 @@ export function NewProjectDialog({ mode, busy, onCancel, onCreate, embedded }: P
         if (stopped) return;
         setImages(d.images ?? []);
         setImageId(d.images?.[0]?.id ?? null);
-        setContainers((d.containers ?? []).filter((c) => c.status === "running" || c.status === "stopped" || c.status === "created"));
+        setContainers(
+          (d.containers ?? []).filter(
+            (c) => c.status === "running" || c.status === "stopped" || c.status === "created",
+          ),
+        );
       } catch {
         // 镜像列表失败不阻塞创建（服务端会用平台默认镜像）。
       } finally {
@@ -71,10 +75,13 @@ export function NewProjectDialog({ mode, busy, onCancel, onCreate, embedded }: P
     fetch("/api/projects")
       .then((r) => (r.ok ? r.json() : { projects: [] }))
       .then((d: { projects?: Array<{ containerId?: number | null }> }) => {
-        if (!stopped) setBoundIds((d.projects ?? []).map((p) => Number(p.containerId)).filter((n) => Number.isFinite(n) && n > 0));
+        if (!stopped)
+          setBoundIds((d.projects ?? []).map((p) => Number(p.containerId)).filter((n) => Number.isFinite(n) && n > 0));
       })
       .catch(() => {});
-    return () => { stopped = true; };
+    return () => {
+      stopped = true;
+    };
   }, [mode]);
 
   useEffect(() => {
@@ -86,7 +93,9 @@ export function NewProjectDialog({ mode, busy, onCancel, onCreate, embedded }: P
         if (!stopped) setWorkspaces(d.workspaces ?? []);
       })
       .catch(() => {});
-    return () => { stopped = true; };
+    return () => {
+      stopped = true;
+    };
   }, [mode]);
 
   const submit = useCallback(() => {
@@ -105,26 +114,48 @@ export function NewProjectDialog({ mode, busy, onCancel, onCreate, embedded }: P
 
   return (
     <div
-      onClick={embedded ? undefined : (e) => { if (e.target === e.currentTarget) onCancel(); }}
-      style={embedded ? { display: "flex", flexDirection: "column", gap: 12 } : {
-        position: "fixed", inset: 0, zIndex: 1180, display: "flex",
-        alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.4)",
-      }}
+      onClick={
+        embedded
+          ? undefined
+          : (e) => {
+              if (e.target === e.currentTarget) onCancel();
+            }
+      }
+      style={
+        embedded
+          ? { display: "flex", flexDirection: "column", gap: 12 }
+          : {
+              position: "fixed",
+              inset: 0,
+              zIndex: 1180,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              background: "rgba(0,0,0,0.4)",
+            }
+      }
     >
       <div
         role="dialog"
         aria-modal={embedded ? undefined : true}
         style={{
-          width: embedded ? "100%" : "min(440px, 92vw)", display: "flex", flexDirection: "column", gap: 12,
-          padding: embedded ? 0 : "20px 22px", borderRadius: 12,
-          background: "var(--bg-panel)", border: embedded ? "none" : "1px solid var(--border)",
+          width: embedded ? "100%" : "min(440px, 92vw)",
+          display: "flex",
+          flexDirection: "column",
+          gap: 12,
+          padding: embedded ? 0 : "20px 22px",
+          borderRadius: 12,
+          background: "var(--bg-panel)",
+          border: embedded ? "none" : "1px solid var(--border)",
         }}
       >
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <span style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>
             {mode === "sandbox" ? t("projects.newSandboxProject") : t("projects.newLocalMachineProject")}
           </span>
-          <button type="button" onClick={onCancel} disabled={busy} style={closeBtnStyle}>×</button>
+          <button type="button" onClick={onCancel} disabled={busy} style={closeBtnStyle}>
+            ×
+          </button>
         </div>
 
         <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12, color: "var(--text-muted)" }}>
@@ -132,7 +163,9 @@ export function NewProjectDialog({ mode, busy, onCancel, onCreate, embedded }: P
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") submit();
+            }}
             placeholder={t("projects.eGLab1Hello")}
             autoFocus
             disabled={busy}
@@ -142,7 +175,8 @@ export function NewProjectDialog({ mode, busy, onCancel, onCreate, embedded }: P
 
         {mode === "sandbox" && (
           <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12, color: "var(--text-muted)" }}>
-            {t("projects.runtimeEnvironment")}{loading ? t("projects.loading") : ""}
+            {t("projects.runtimeEnvironment")}
+            {loading ? t("projects.loading") : ""}
             <select
               value={imageId ?? ""}
               onChange={(e) => setImageId(Number(e.target.value))}
@@ -154,7 +188,9 @@ export function NewProjectDialog({ mode, busy, onCancel, onCreate, embedded }: P
                 <option key={i.id} value={i.id}>
                   {i.name}
                   {i.maxPerUser ? t("projects.perUser", { n: i.maxPerUser }) : ""}
-                  {i.defaultResources ? ` · ${i.defaultResources.cpu}C/${i.defaultResources.memoryMb}M/${i.defaultResources.diskGb}G` : ""}
+                  {i.defaultResources
+                    ? ` · ${i.defaultResources.cpu}C/${i.defaultResources.memoryMb}M/${i.defaultResources.diskGb}G`
+                    : ""}
                 </option>
               ))}
             </select>
@@ -172,9 +208,18 @@ export function NewProjectDialog({ mode, busy, onCancel, onCreate, embedded }: P
                   onChange={() => setReuseContainer(false)}
                   disabled={busy}
                 />
-                {t("projects.newContainer")}{!reuseContainer && imageId != null ? `（${images.find((i) => i.id === imageId)?.name ?? ""}）` : ""}
+                {t("projects.newContainer")}
+                {!reuseContainer && imageId != null ? `（${images.find((i) => i.id === imageId)?.name ?? ""}）` : ""}
               </label>
-              <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: reusableContainers.length > 0 ? "pointer" : "default", opacity: reusableContainers.length > 0 ? 1 : 0.5 }}>
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  cursor: reusableContainers.length > 0 ? "pointer" : "default",
+                  opacity: reusableContainers.length > 0 ? 1 : 0.5,
+                }}
+              >
                 <input
                   type="radio"
                   checked={reuseContainer}
@@ -196,14 +241,30 @@ export function NewProjectDialog({ mode, busy, onCancel, onCreate, embedded }: P
                   {!existingContainerId && <option value="">{t("projects.chooseContainer")}</option>}
                   {reusableContainers.map((c) => (
                     <option key={c.id} value={c.id}>
-                      #{c.id} {c.name}{c.imageName ? ` · ${c.imageName}` : ""} · {c.status === "running" ? t("projects.running") : c.status === "stopped" ? t("projects.stopped") : c.status}
+                      #{c.id} {c.name}
+                      {c.imageName ? ` · ${c.imageName}` : ""} ·{" "}
+                      {c.status === "running"
+                        ? t("projects.running")
+                        : c.status === "stopped"
+                          ? t("projects.stopped")
+                          : c.status}
                     </option>
                   ))}
                 </select>
               )}
             </div>
 
-            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "var(--text-muted)", cursor: hasWorkspace && !reuseContainer ? "pointer" : "default", opacity: hasWorkspace && !reuseContainer ? 1 : 0.5 }}>
+            <label
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                fontSize: 12,
+                color: "var(--text-muted)",
+                cursor: hasWorkspace && !reuseContainer ? "pointer" : "default",
+                opacity: hasWorkspace && !reuseContainer ? 1 : 0.5,
+              }}
+            >
               <input
                 type="checkbox"
                 checked={workspaceInit}
@@ -215,7 +276,9 @@ export function NewProjectDialog({ mode, busy, onCancel, onCreate, embedded }: P
                 <span style={{ display: "block", fontSize: 10.5, color: "var(--text-dim)" }}>
                   {reuseContainer
                     ? t("projects.initWhenReusingKeepContainers")
-                    : hasWorkspace ? t("projects.copyCloudFilesIntoNew") : t("projects.workspaceYetUploadViaMy")}
+                    : hasWorkspace
+                      ? t("projects.copyCloudFilesIntoNew")
+                      : t("projects.workspaceYetUploadViaMy")}
                 </span>
               </span>
             </label>
@@ -224,19 +287,27 @@ export function NewProjectDialog({ mode, busy, onCancel, onCreate, embedded }: P
 
         <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
           {mode === "sandbox"
-            ? (reuseContainer
-                ? t("projects.reuseContainerHint")
-                : t("projects.autoProvisionHint"))
+            ? reuseContainer
+              ? t("projects.reuseContainerHint")
+              : t("projects.autoProvisionHint")
             : t("projects.projectSessionsRunPairedMachine")}
         </div>
 
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-          <button type="button" onClick={onCancel} disabled={busy} style={secondaryBtn}>{t("common.cancel")}</button>
+          <button type="button" onClick={onCancel} disabled={busy} style={secondaryBtn}>
+            {t("common.cancel")}
+          </button>
           <button
             type="button"
             onClick={submit}
             disabled={busy || !name.trim() || (mode === "sandbox" && reuseContainer && existingContainerId == null)}
-            style={{ ...secondaryBtn, background: "var(--accent)", color: "#fff", borderColor: "var(--accent)", fontWeight: 600 }}
+            style={{
+              ...secondaryBtn,
+              background: "var(--accent)",
+              color: "#fff",
+              borderColor: "var(--accent)",
+              fontWeight: 600,
+            }}
           >
             {busy ? t("projects.creating") : t("common.create")}
           </button>
@@ -247,16 +318,33 @@ export function NewProjectDialog({ mode, busy, onCancel, onCreate, embedded }: P
 }
 
 const inputStyle = {
-  height: 32, padding: "0 8px", borderRadius: 6, border: "1px solid var(--border)",
-  background: "var(--bg)", color: "var(--text)", fontSize: 12, outline: "none",
+  height: 32,
+  padding: "0 8px",
+  borderRadius: 6,
+  border: "1px solid var(--border)",
+  background: "var(--bg)",
+  color: "var(--text)",
+  fontSize: 12,
+  outline: "none",
 } as const;
 
 const secondaryBtn = {
-  height: 30, padding: "0 14px", borderRadius: 6, border: "1px solid var(--border)",
-  background: "var(--bg)", color: "var(--text)", fontSize: 12, cursor: "pointer",
+  height: 30,
+  padding: "0 14px",
+  borderRadius: 6,
+  border: "1px solid var(--border)",
+  background: "var(--bg)",
+  color: "var(--text)",
+  fontSize: 12,
+  cursor: "pointer",
 } as const;
 
 const closeBtnStyle = {
-  background: "transparent", border: "none", color: "var(--text-muted)",
-  cursor: "pointer", fontSize: 16, lineHeight: 1, padding: "2px 6px",
+  background: "transparent",
+  border: "none",
+  color: "var(--text-muted)",
+  cursor: "pointer",
+  fontSize: 16,
+  lineHeight: 1,
+  padding: "2px 6px",
 } as const;

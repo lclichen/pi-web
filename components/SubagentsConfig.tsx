@@ -165,7 +165,15 @@ function ToolCheckbox({
       />
       <span style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}>{label}</span>
       {sublabel && (
-        <span style={{ color: "var(--text-dim)", fontSize: 10, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        <span
+          style={{
+            color: "var(--text-dim)",
+            fontSize: 10,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
           {sublabel}
         </span>
       )}
@@ -173,7 +181,15 @@ function ToolCheckbox({
   );
 }
 
-export function SubagentsConfig({ cwd, onClose, embedded = false }: { cwd: string; onClose: () => void; embedded?: boolean }) {
+export function SubagentsConfig({
+  cwd,
+  onClose,
+  embedded = false,
+}: {
+  cwd: string;
+  onClose: () => void;
+  embedded?: boolean;
+}) {
   const { t } = useI18n();
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -191,7 +207,11 @@ export function SubagentsConfig({ cwd, onClose, embedded = false }: { cwd: strin
   const [discovery, setDiscovery] = useState<ToolDiscovery | null>(null);
   const [discoveryLoading, setDiscoveryLoading] = useState(false);
   const [showToolPicker, setShowToolPicker] = useState(false);
-  const [prefs, setPrefs] = useState<WebPreferences>({ mcpEnabled: true, subagentsEnabled: true, labVerifyEnabled: true });
+  const [prefs, setPrefs] = useState<WebPreferences>({
+    mcpEnabled: true,
+    subagentsEnabled: true,
+    labVerifyEnabled: true,
+  });
 
   const grouped = useMemo(() => {
     return (["builtin", "project", "global"] as const)
@@ -237,15 +257,24 @@ export function SubagentsConfig({ cwd, onClose, embedded = false }: { cwd: strin
   }, [loadList]);
 
   useEffect(() => {
-    fetch(`/api/preferences?cwd=${encodeURIComponent(cwd)}`).then(r => r.json()).then((p: WebPreferences) => setPrefs(p)).catch(() => {});
+    fetch(`/api/preferences?cwd=${encodeURIComponent(cwd)}`)
+      .then((r) => r.json())
+      .then((p: WebPreferences) => setPrefs(p))
+      .catch(() => {});
   }, [cwd]);
 
   const togglePref = async (key: "subagentsEnabled", value: boolean) => {
     const next = { ...prefs, [key]: value };
     setPrefs(next);
     try {
-      await fetch("/api/preferences", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cwd, ...next }) });
-    } catch { /* ignore */ }
+      await fetch("/api/preferences", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cwd, ...next }),
+      });
+    } catch {
+      /* ignore */
+    }
   };
 
   const loadDetail = useCallback(
@@ -282,7 +311,8 @@ export function SubagentsConfig({ cwd, onClose, embedded = false }: { cwd: strin
   const toggleBuiltin = (tool: string, on: boolean) => {
     setForm((f) => {
       const next = new Set(f.builtinTools);
-      if (on) next.add(tool); else next.delete(tool);
+      if (on) next.add(tool);
+      else next.delete(tool);
       return { ...f, builtinTools: next };
     });
   };
@@ -290,7 +320,8 @@ export function SubagentsConfig({ cwd, onClose, embedded = false }: { cwd: strin
   const toggleMcpTool = (tool: string, on: boolean) => {
     setForm((f) => {
       const next = new Set(f.mcpTools);
-      if (on) next.add(tool); else next.delete(tool);
+      if (on) next.add(tool);
+      else next.delete(tool);
       return { ...f, mcpTools: next, mcpAll: false };
     });
   };
@@ -322,7 +353,11 @@ export function SubagentsConfig({ cwd, onClose, embedded = false }: { cwd: strin
     };
     try {
       if (creating) {
-        if (!form.name.trim()) { setFormError("Name is required"); setSaving(false); return; }
+        if (!form.name.trim()) {
+          setFormError("Name is required");
+          setSaving(false);
+          return;
+        }
         const res = await fetch("/api/agents", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -377,16 +412,40 @@ export function SubagentsConfig({ cwd, onClose, embedded = false }: { cwd: strin
   const showForm = creating || detail !== null;
 
   const scopeGroupLabel = (scope: string) =>
-    scope === "builtin" ? t("agents.scope.builtin")
-      : scope === "project" ? t("agents.scope.project")
+    scope === "builtin"
+      ? t("agents.scope.builtin")
+      : scope === "project"
+        ? t("agents.scope.project")
         : t("agents.scope.global");
 
   return (
-    <ConfigPanelShell embedded={embedded} title={t("common.agents")} subtitle={shortenPath(cwd)} closeLabel={t("i18n.close")} onClose={onClose}>
+    <ConfigPanelShell
+      embedded={embedded}
+      title={t("common.agents")}
+      subtitle={shortenPath(cwd)}
+      closeLabel={t("i18n.close")}
+      onClose={onClose}
+    >
       {/* 顶部工具栏：启用开关（共享 ConfigSwitch，与技能/插件页风格一致）。 */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 10, padding: "7px 14px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
-        <span style={{ fontSize: 11, color: prefs.subagentsEnabled ? "var(--text-muted)" : "var(--text-dim)" }}>{t("common.enable")}</span>
-        <ConfigSwitch checked={prefs.subagentsEnabled} label={t("common.enable")} onChange={(v) => void togglePref("subagentsEnabled", v)} />
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "flex-end",
+          gap: 10,
+          padding: "7px 14px",
+          borderBottom: "1px solid var(--border)",
+          flexShrink: 0,
+        }}
+      >
+        <span style={{ fontSize: 11, color: prefs.subagentsEnabled ? "var(--text-muted)" : "var(--text-dim)" }}>
+          {t("common.enable")}
+        </span>
+        <ConfigSwitch
+          checked={prefs.subagentsEnabled}
+          label={t("common.enable")}
+          onChange={(v) => void togglePref("subagentsEnabled", v)}
+        />
       </div>
 
       {/* Body */}
@@ -394,26 +453,35 @@ export function SubagentsConfig({ cwd, onClose, embedded = false }: { cwd: strin
         {/* Left: agent list（与模型页同构：列表 + 左下角新建） */}
         <ConfigSidebar>
           <ConfigSidebarList>
-            {loading ? <div className="config-sidebar-message">{t("i18n.loading")}</div>
-            : error ? <div className="config-sidebar-message is-error">{error}</div>
-            : agents.length === 0 ? <div className="config-sidebar-message is-empty">{t("subagents.agentsDefined")}</div>
-            : grouped.map((group) => (
-              <div key={group.scope} className="config-sidebar-group">
-                <ConfigSidebarGroupLabel>{scopeGroupLabel(group.scope)}</ConfigSidebarGroupLabel>
-                {group.agents.map((agent) => {
-                  const key = `${agent.scope}\0${agent.name}`;
-                  const isSelected = !creating && selectedKey === key;
-                  return (
-                    <ConfigSidebarItem key={key} active={isSelected} onClick={() => selectAgent(agent)}>
-                      <ConfigSidebarText className="is-grow" title={agent.description}>{agent.name}</ConfigSidebarText>
-                    </ConfigSidebarItem>
-                  );
-                })}
-              </div>
-            ))}
+            {loading ? (
+              <div className="config-sidebar-message">{t("i18n.loading")}</div>
+            ) : error ? (
+              <div className="config-sidebar-message is-error">{error}</div>
+            ) : agents.length === 0 ? (
+              <div className="config-sidebar-message is-empty">{t("subagents.agentsDefined")}</div>
+            ) : (
+              grouped.map((group) => (
+                <div key={group.scope} className="config-sidebar-group">
+                  <ConfigSidebarGroupLabel>{scopeGroupLabel(group.scope)}</ConfigSidebarGroupLabel>
+                  {group.agents.map((agent) => {
+                    const key = `${agent.scope}\0${agent.name}`;
+                    const isSelected = !creating && selectedKey === key;
+                    return (
+                      <ConfigSidebarItem key={key} active={isSelected} onClick={() => selectAgent(agent)}>
+                        <ConfigSidebarText className="is-grow" title={agent.description}>
+                          {agent.name}
+                        </ConfigSidebarText>
+                      </ConfigSidebarItem>
+                    );
+                  })}
+                </div>
+              ))
+            )}
           </ConfigSidebarList>
           {/* 新建入口固定在侧栏左下角（与模型页「添加 Provider」一致） */}
-          <ConfigListAction onClick={startCreate} active={creating}>{t("agents.new")}</ConfigListAction>
+          <ConfigListAction onClick={startCreate} active={creating}>
+            {t("agents.new")}
+          </ConfigListAction>
         </ConfigSidebar>
 
         {/* Right: detail / form */}
@@ -430,7 +498,9 @@ export function SubagentsConfig({ cwd, onClose, embedded = false }: { cwd: strin
                   </ConfigDetailHeaderInfo>
                   <ConfigDetailActions>
                     {!creating && detail && !readOnly && (
-                      <ConfigButton variant="danger" size="small" onClick={remove} disabled={saving}>{t("common.delete")}</ConfigButton>
+                      <ConfigButton variant="danger" size="small" onClick={remove} disabled={saving}>
+                        {t("common.delete")}
+                      </ConfigButton>
                     )}
                   </ConfigDetailActions>
                 </ConfigDetailHeader>
@@ -438,12 +508,23 @@ export function SubagentsConfig({ cwd, onClose, embedded = false }: { cwd: strin
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                   <div style={{ flex: "1 1 140px" }}>
                     <ConfigField label="Name">
-                      <input style={inputStyle} value={form.name} disabled={!creating || readOnly} onChange={(e) => set("name", e.target.value)} placeholder="security-auditor" />
+                      <input
+                        style={inputStyle}
+                        value={form.name}
+                        disabled={!creating || readOnly}
+                        onChange={(e) => set("name", e.target.value)}
+                        placeholder="security-auditor"
+                      />
                     </ConfigField>
                   </div>
                   <div style={{ width: 110 }}>
                     <ConfigField label="Scope">
-                      <select style={inputStyle} value={form.scope} disabled={!creating || readOnly} onChange={(e) => set("scope", e.target.value as ConfigScope)}>
+                      <select
+                        style={inputStyle}
+                        value={form.scope}
+                        disabled={!creating || readOnly}
+                        onChange={(e) => set("scope", e.target.value as ConfigScope)}
+                      >
                         <option value="project">project</option>
                         <option value="global">global</option>
                       </select>
@@ -451,7 +532,13 @@ export function SubagentsConfig({ cwd, onClose, embedded = false }: { cwd: strin
                   </div>
                   <div style={{ flex: "1 1 160px" }}>
                     <ConfigField label="Description">
-                      <input style={inputStyle} value={form.description} disabled={readOnly} onChange={(e) => set("description", e.target.value)} placeholder="Security code reviewer" />
+                      <input
+                        style={inputStyle}
+                        value={form.description}
+                        disabled={readOnly}
+                        onChange={(e) => set("description", e.target.value)}
+                        placeholder="Security code reviewer"
+                      />
                     </ConfigField>
                   </div>
                 </div>
@@ -459,69 +546,202 @@ export function SubagentsConfig({ cwd, onClose, embedded = false }: { cwd: strin
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                   <div style={{ flex: "1 1 160px" }}>
                     <ConfigField label="Model (empty = session default)">
-                      <input style={inputStyle} value={form.model} disabled={readOnly} onChange={(e) => set("model", e.target.value)} placeholder="session default" />
+                      <input
+                        style={inputStyle}
+                        value={form.model}
+                        disabled={readOnly}
+                        onChange={(e) => set("model", e.target.value)}
+                        placeholder="session default"
+                      />
                     </ConfigField>
                   </div>
                   <div style={{ width: 100 }}>
                     <ConfigField label="Thinking">
-                      <select style={inputStyle} value={form.thinking} disabled={readOnly} onChange={(e) => set("thinking", e.target.value)}>
-                        {THINKING_OPTIONS.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
+                      <select
+                        style={inputStyle}
+                        value={form.thinking}
+                        disabled={readOnly}
+                        onChange={(e) => set("thinking", e.target.value)}
+                      >
+                        {THINKING_OPTIONS.map((opt) => (
+                          <option key={opt} value={opt}>
+                            {opt}
+                          </option>
+                        ))}
                       </select>
                     </ConfigField>
                   </div>
                   <div style={{ width: 110 }}>
                     <ConfigField label="Max turns (0 = unlimited)">
-                      <input style={inputStyle} value={form.maxTurns} disabled={readOnly} onChange={(e) => set("maxTurns", e.target.value)} placeholder="10" />
+                      <input
+                        style={inputStyle}
+                        value={form.maxTurns}
+                        disabled={readOnly}
+                        onChange={(e) => set("maxTurns", e.target.value)}
+                        placeholder="10"
+                      />
                     </ConfigField>
                   </div>
                 </div>
 
                 {/* Tool picker */}
                 <div>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
-                    <ConfigButton size="small" onClick={() => { setShowToolPicker((v) => !v); if (!discovery && !discoveryLoading) void loadDiscovery(); }}>
+                  <div
+                    style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}
+                  >
+                    <ConfigButton
+                      size="small"
+                      onClick={() => {
+                        setShowToolPicker((v) => !v);
+                        if (!discovery && !discoveryLoading) void loadDiscovery();
+                      }}
+                    >
                       {showToolPicker ? t("mcp.collapse") : t("subagents.tools")}: {toolsSummary(form)}
                     </ConfigButton>
                     {showToolPicker && !discovery && !discoveryLoading && (
-                      <ConfigButton size="small" onClick={() => void loadDiscovery()}>{t("subagents.discoverMcpTools")}</ConfigButton>
+                      <ConfigButton size="small" onClick={() => void loadDiscovery()}>
+                        {t("subagents.discoverMcpTools")}
+                      </ConfigButton>
                     )}
                   </div>
                   {showToolPicker && (
-                    <div style={{ border: "1px solid var(--border)", borderRadius: 6, background: "var(--bg-panel)", padding: 8, maxHeight: 200, overflowY: "auto" }}>
-                      {discoveryLoading && <div style={{ fontSize: 11, color: "var(--text-muted)", padding: "4px 0" }}>{t("subagents.discoveringTools")}</div>}
+                    <div
+                      style={{
+                        border: "1px solid var(--border)",
+                        borderRadius: 6,
+                        background: "var(--bg-panel)",
+                        padding: 8,
+                        maxHeight: 200,
+                        overflowY: "auto",
+                      }}
+                    >
+                      {discoveryLoading && (
+                        <div style={{ fontSize: 11, color: "var(--text-muted)", padding: "4px 0" }}>
+                          {t("subagents.discoveringTools")}
+                        </div>
+                      )}
                       {/* Builtin tools */}
                       {discovery && (
                         <>
-                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
-                            <span style={{ fontSize: 10, fontWeight: 600, color: "var(--text-dim)", textTransform: "uppercase" }}>Built-in</span>
-                            <button onClick={() => toggleAllBuiltin(discovery.builtin.some((t) => !form.builtinTools.has(t)))} style={{ background: "none", border: "none", color: "var(--accent)", fontSize: 10, cursor: "pointer" }}>
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "space-between",
+                              marginBottom: 4,
+                            }}
+                          >
+                            <span
+                              style={{
+                                fontSize: 10,
+                                fontWeight: 600,
+                                color: "var(--text-dim)",
+                                textTransform: "uppercase",
+                              }}
+                            >
+                              Built-in
+                            </span>
+                            <button
+                              onClick={() => toggleAllBuiltin(discovery.builtin.some((t) => !form.builtinTools.has(t)))}
+                              style={{
+                                background: "none",
+                                border: "none",
+                                color: "var(--accent)",
+                                fontSize: 10,
+                                cursor: "pointer",
+                              }}
+                            >
                               {discovery.builtin.every((t) => form.builtinTools.has(t)) ? "Clear all" : "Select all"}
                             </button>
                           </div>
-                          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(90px, 1fr))", gap: 3, marginBottom: 8 }}>
+                          <div
+                            style={{
+                              display: "grid",
+                              gridTemplateColumns: "repeat(auto-fill, minmax(90px, 1fr))",
+                              gap: 3,
+                              marginBottom: 8,
+                            }}
+                          >
                             {discovery.builtin.map((tool) => (
-                              <ToolCheckbox key={tool} checked={form.builtinTools.has(tool)} onChange={(v) => toggleBuiltin(tool, v)} label={tool} />
+                              <ToolCheckbox
+                                key={tool}
+                                checked={form.builtinTools.has(tool)}
+                                onChange={(v) => toggleBuiltin(tool, v)}
+                                label={tool}
+                              />
                             ))}
                           </div>
                           {/* MCP tools */}
                           {discovery.mcp.length > 0 && (
                             <>
-                              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4, marginTop: 4 }}>
-                                <span style={{ fontSize: 10, fontWeight: 600, color: "var(--text-dim)", textTransform: "uppercase" }}>MCP Tools</span>
-                                <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10, cursor: "pointer" }}>
-                                  <input type="checkbox" checked={form.mcpAll} disabled={readOnly} onChange={(e) => set("mcpAll", e.target.checked)} style={{ margin: 0 }} />
+                              <div
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "space-between",
+                                  marginBottom: 4,
+                                  marginTop: 4,
+                                }}
+                              >
+                                <span
+                                  style={{
+                                    fontSize: 10,
+                                    fontWeight: 600,
+                                    color: "var(--text-dim)",
+                                    textTransform: "uppercase",
+                                  }}
+                                >
+                                  MCP Tools
+                                </span>
+                                <label
+                                  style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: 4,
+                                    fontSize: 10,
+                                    cursor: "pointer",
+                                  }}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={form.mcpAll}
+                                    disabled={readOnly}
+                                    onChange={(e) => set("mcpAll", e.target.checked)}
+                                    style={{ margin: 0 }}
+                                  />
                                   <span style={{ color: "var(--text-muted)" }}>All (ext:pi-mcp-adapter)</span>
                                 </label>
                               </div>
-                              {!form.mcpAll && discovery.mcp.map((srv) => (
-                                <div key={srv.server} style={{ marginBottom: 6 }}>
-                                  <div style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 2 }}>{srv.server} {srv.error && <span style={{ color: "#f59e0b" }}>({srv.error.slice(0, 40)})</span>}</div>
-                                  {srv.tools.length > 0 ? srv.tools.map((tool) => {
-                                    const prefixed = `${srv.server}_${tool.name}`;
-                                    return <ToolCheckbox key={prefixed} checked={form.mcpTools.has(prefixed)} onChange={(v) => toggleMcpTool(prefixed, v)} label={prefixed} sublabel={tool.description?.slice(0, 40)} indent />;
-                                  }) : !srv.error && <span style={{ fontSize: 10, color: "var(--text-dim)", paddingLeft: 16 }}>No tools</span>}
-                                </div>
-                              ))}
+                              {!form.mcpAll &&
+                                discovery.mcp.map((srv) => (
+                                  <div key={srv.server} style={{ marginBottom: 6 }}>
+                                    <div style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 2 }}>
+                                      {srv.server}{" "}
+                                      {srv.error && (
+                                        <span style={{ color: "#f59e0b" }}>({srv.error.slice(0, 40)})</span>
+                                      )}
+                                    </div>
+                                    {srv.tools.length > 0
+                                      ? srv.tools.map((tool) => {
+                                          const prefixed = `${srv.server}_${tool.name}`;
+                                          return (
+                                            <ToolCheckbox
+                                              key={prefixed}
+                                              checked={form.mcpTools.has(prefixed)}
+                                              onChange={(v) => toggleMcpTool(prefixed, v)}
+                                              label={prefixed}
+                                              sublabel={tool.description?.slice(0, 40)}
+                                              indent
+                                            />
+                                          );
+                                        })
+                                      : !srv.error && (
+                                          <span style={{ fontSize: 10, color: "var(--text-dim)", paddingLeft: 16 }}>
+                                            No tools
+                                          </span>
+                                        )}
+                                  </div>
+                                ))}
                             </>
                           )}
                         </>
@@ -534,7 +754,15 @@ export function SubagentsConfig({ cwd, onClose, embedded = false }: { cwd: strin
                 <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 180 }}>
                   <ConfigField label="System prompt" style={{ flex: 1 }}>
                     <textarea
-                      style={{ ...inputStyle, flex: 1, minHeight: 160, height: "auto", resize: "none", padding: 8, lineHeight: 1.5 }}
+                      style={{
+                        ...inputStyle,
+                        flex: 1,
+                        minHeight: 160,
+                        height: "auto",
+                        resize: "none",
+                        padding: 8,
+                        lineHeight: 1.5,
+                      }}
                       value={form.systemPrompt}
                       disabled={readOnly}
                       onChange={(e) => set("systemPrompt", e.target.value)}
@@ -549,14 +777,16 @@ export function SubagentsConfig({ cwd, onClose, embedded = false }: { cwd: strin
       </ConfigSplitView>
 
       {/* Footer：状态 + 右下角保存（与模型页一致） */}
-      <ConfigFooter status={
-        <>
-          {readOnly && <span style={{ color: "var(--text-dim)" }}>{t("subagents.builtAgentsReadOnlyCreate")}</span>}
-          {detail?.parseError && <span style={{ color: "#f59e0b" }}>Parse warning: {detail.parseError}</span>}
-          {formError && <span style={{ color: "#ef4444" }}>{formError}</span>}
-          {formMsg && !formError && <span style={{ color: "var(--accent)" }}>{formMsg}</span>}
-        </>
-      }>
+      <ConfigFooter
+        status={
+          <>
+            {readOnly && <span style={{ color: "var(--text-dim)" }}>{t("subagents.builtAgentsReadOnlyCreate")}</span>}
+            {detail?.parseError && <span style={{ color: "#f59e0b" }}>Parse warning: {detail.parseError}</span>}
+            {formError && <span style={{ color: "#ef4444" }}>{formError}</span>}
+            {formMsg && !formError && <span style={{ color: "var(--accent)" }}>{formMsg}</span>}
+          </>
+        }
+      >
         {showForm && !readOnly && (
           <ConfigButton variant="primary" onClick={save} disabled={saving}>
             {saving ? t("common.saving") : creating ? t("common.create") : t("common.save")}

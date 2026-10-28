@@ -59,7 +59,9 @@ export function MyWorkspaceDialog({ onClose }: Props) {
         if (!stopped) setError(err instanceof Error ? err.message : String(err));
       }
     })();
-    return () => { stopped = true; };
+    return () => {
+      stopped = true;
+    };
   }, [load]);
 
   const upload = async (file: File) => {
@@ -122,32 +124,55 @@ export function MyWorkspaceDialog({ onClose }: Props) {
 
   return (
     <div
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
       style={{
-        position: "fixed", inset: 0, zIndex: 1180, display: "flex",
-        alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.4)",
+        position: "fixed",
+        inset: 0,
+        zIndex: 1180,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "rgba(0,0,0,0.4)",
       }}
     >
       <div
         role="dialog"
         aria-modal="true"
         style={{
-          width: "min(560px, 94vw)", height: "min(560px, 84vh)", display: "flex", flexDirection: "column",
-          padding: "18px 20px", borderRadius: 12,
-          background: "var(--bg-panel)", border: "1px solid var(--border)",
+          width: "min(560px, 94vw)",
+          height: "min(560px, 84vh)",
+          display: "flex",
+          flexDirection: "column",
+          padding: "18px 20px",
+          borderRadius: 12,
+          background: "var(--bg-panel)",
+          border: "1px solid var(--border)",
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>我的工作区</span>
           <span style={{ fontSize: 11, color: "var(--text-dim)" }}>云端文件留存 · 建项目时可初始化容器 /workspace</span>
           <span style={{ flex: 1 }} />
-          <button type="button" onClick={onClose} style={closeBtnStyle}>×</button>
+          <button type="button" onClick={onClose} style={closeBtnStyle}>
+            ×
+          </button>
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10 }}>
-          <button type="button" onClick={goUp} disabled={path === "/" || busy} style={btnStyle}>↑ 上级</button>
-          <button type="button" onClick={() => wsId && load(wsId, path)} disabled={loading || busy} style={btnStyle}>↻ 刷新</button>
-          <button type="button" onClick={() => fileInputRef.current?.click()} disabled={busy || !wsId} style={{ ...btnStyle, color: "#fff", background: "var(--accent)", borderColor: "var(--accent)" }}>
+          <button type="button" onClick={goUp} disabled={path === "/" || busy} style={btnStyle}>
+            ↑ 上级
+          </button>
+          <button type="button" onClick={() => wsId && load(wsId, path)} disabled={loading || busy} style={btnStyle}>
+            ↻ 刷新
+          </button>
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={busy || !wsId}
+            style={{ ...btnStyle, color: "#fff", background: "var(--accent)", borderColor: "var(--accent)" }}
+          >
             {busy ? "处理中…" : "上传文件"}
           </button>
           <input
@@ -160,30 +185,96 @@ export function MyWorkspaceDialog({ onClose }: Props) {
               if (f) void upload(f);
             }}
           />
-          <span style={{ flex: 1, minWidth: 0, textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--text-dim)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          <span
+            style={{
+              flex: 1,
+              minWidth: 0,
+              textAlign: "right",
+              fontFamily: "var(--font-mono)",
+              fontSize: 11,
+              color: "var(--text-dim)",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
             {path}
           </span>
         </div>
 
-        <div style={{ flex: 1, minHeight: 0, overflowY: "auto", marginTop: 10, border: "1px solid var(--border)", borderRadius: 8 }}>
+        <div
+          style={{
+            flex: 1,
+            minHeight: 0,
+            overflowY: "auto",
+            marginTop: 10,
+            border: "1px solid var(--border)",
+            borderRadius: 8,
+          }}
+        >
           {loading && <div style={muted}>加载中…</div>}
-          {!loading && !error && entries.length === 0 && <div style={muted}>（空）上传文件或从项目导出后保存在这里。</div>}
+          {!loading && !error && entries.length === 0 && (
+            <div style={muted}>（空）上传文件或从项目导出后保存在这里。</div>
+          )}
           {error && <div style={{ ...muted, color: "#f87171" }}>{error}</div>}
           {notice && <div style={{ ...muted, color: "#4ade80" }}>{notice}</div>}
-          {!loading && entries.map((e) => (
-            <div key={e.name} style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 10px", borderBottom: "1px solid var(--border)" }}>
-              <button
-                type="button"
-                onClick={() => openEntry(e)}
-                style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0, padding: "6px 0", background: "transparent", border: "none", cursor: "pointer", textAlign: "left", color: "var(--text)", fontSize: 12 }}
+          {!loading &&
+            entries.map((e) => (
+              <div
+                key={e.name}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "0 10px",
+                  borderBottom: "1px solid var(--border)",
+                }}
               >
-                <span>{e.isDir ? "📁" : "📄"}</span>
-                <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.name}</span>
-                {!e.isDir && <span style={{ color: "var(--text-dim)", fontSize: 10, flexShrink: 0 }}>{e.size >= 1048576 ? `${(e.size / 1048576).toFixed(1)}M` : e.size >= 1024 ? `${(e.size / 1024).toFixed(0)}K` : `${e.size}B`}</span>}
-              </button>
-              <button type="button" onClick={() => void remove(e)} disabled={busy} title="删除" style={{ ...btnStyle, padding: "0 6px", opacity: 0.7 }}>×</button>
-            </div>
-          ))}
+                <button
+                  type="button"
+                  onClick={() => openEntry(e)}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    flex: 1,
+                    minWidth: 0,
+                    padding: "6px 0",
+                    background: "transparent",
+                    border: "none",
+                    cursor: "pointer",
+                    textAlign: "left",
+                    color: "var(--text)",
+                    fontSize: 12,
+                  }}
+                >
+                  <span>{e.isDir ? "📁" : "📄"}</span>
+                  <span
+                    style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                  >
+                    {e.name}
+                  </span>
+                  {!e.isDir && (
+                    <span style={{ color: "var(--text-dim)", fontSize: 10, flexShrink: 0 }}>
+                      {e.size >= 1048576
+                        ? `${(e.size / 1048576).toFixed(1)}M`
+                        : e.size >= 1024
+                          ? `${(e.size / 1024).toFixed(0)}K`
+                          : `${e.size}B`}
+                    </span>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void remove(e)}
+                  disabled={busy}
+                  title="删除"
+                  style={{ ...btnStyle, padding: "0 6px", opacity: 0.7 }}
+                >
+                  ×
+                </button>
+              </div>
+            ))}
         </div>
 
         <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 8 }}>
@@ -195,13 +286,25 @@ export function MyWorkspaceDialog({ onClose }: Props) {
 }
 
 const btnStyle = {
-  height: 28, padding: "0 10px", borderRadius: 6, border: "1px solid var(--border)",
-  background: "var(--bg)", color: "var(--text)", fontSize: 12, cursor: "pointer", whiteSpace: "nowrap",
+  height: 28,
+  padding: "0 10px",
+  borderRadius: 6,
+  border: "1px solid var(--border)",
+  background: "var(--bg)",
+  color: "var(--text)",
+  fontSize: 12,
+  cursor: "pointer",
+  whiteSpace: "nowrap",
 } as const;
 
 const closeBtnStyle = {
-  background: "transparent", border: "none", color: "var(--text-muted)",
-  cursor: "pointer", fontSize: 16, lineHeight: 1, padding: "2px 6px",
+  background: "transparent",
+  border: "none",
+  color: "var(--text-muted)",
+  cursor: "pointer",
+  fontSize: 16,
+  lineHeight: 1,
+  padding: "2px 6px",
 } as const;
 
 const muted = { padding: "10px 12px", fontSize: 12, color: "var(--text-dim)" } as const;

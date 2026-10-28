@@ -34,12 +34,19 @@ export function registerCommands(pi: ExtensionAPI): void {
         setState({ client, config, containerId: undefined, instanceName: undefined }, ctx.cwd);
         ctx.ui.setStatus("sandbox", ctx.ui.theme.fg("accent", `Sandbox: logged in as ${me.username}`));
         ctx.ui.notify(
-          [`Logged in as ${me.username} (${me.role}).`, "Credentials saved — you won't need to log in again for 7 days."].join("\n"),
+          [
+            `Logged in as ${me.username} (${me.role}).`,
+            "Credentials saved — you won't need to log in again for 7 days.",
+          ].join("\n"),
           "info",
         );
       } catch (err) {
         const msg =
-          err instanceof PlatformError ? `${err.status} ${err.message}` : err instanceof Error ? err.message : String(err);
+          err instanceof PlatformError
+            ? `${err.status} ${err.message}`
+            : err instanceof Error
+              ? err.message
+              : String(err);
         ctx.ui.notify(`Login failed: ${msg}`, "error");
       }
     },
@@ -149,7 +156,8 @@ export function registerCommands(pi: ExtensionAPI): void {
             return;
           }
           const lines = keys.map(
-            (k) => `${k.key_prefix}  ${k.name}  ${k.revoked_at ? "[revoked]" : k.last_used_at ? `used ${k.last_used_at}` : "unused"}`,
+            (k) =>
+              `${k.key_prefix}  ${k.name}  ${k.revoked_at ? "[revoked]" : k.last_used_at ? `used ${k.last_used_at}` : "unused"}`,
           );
           ctx.ui.notify(["Your API keys:", ...lines].join("\n"), "info");
         } else if (action === "Revoke a key") {
@@ -229,14 +237,20 @@ export function registerCommands(pi: ExtensionAPI): void {
         if (action === "Re-register provider (use cached key)") {
           const res = await ensureLlmProvider(pi, ctx, client);
           if (res.ok) {
-            ctx.ui.notify(`LLM provider "${res.provider}" registered (${res.modelCount} models). Use /model to select.`, "info");
+            ctx.ui.notify(
+              `LLM provider "${res.provider}" registered (${res.modelCount} models). Use /model to select.`,
+              "info",
+            );
           } else {
             ctx.ui.notify(`LLM setup skipped: ${res.reason ?? "unknown"}`, "warning");
           }
         } else {
           const res = await refreshLlmProvider(pi, ctx, client);
           if (res.ok) {
-            ctx.ui.notify(`LLM provider refreshed: "${res.provider}" (${res.modelCount} models). Use /model to select.`, "info");
+            ctx.ui.notify(
+              `LLM provider refreshed: "${res.provider}" (${res.modelCount} models). Use /model to select.`,
+              "info",
+            );
           } else {
             ctx.ui.notify(`LLM refresh skipped: ${res.reason ?? "unknown"}`, "warning");
           }
@@ -266,7 +280,8 @@ export function registerCommands(pi: ExtensionAPI): void {
         const imageId = Number.parseInt(imageChoice.split(":")[0], 10);
         const image = images.find((i) => i.id === imageId)!;
         const name =
-          (await ctx.ui.input("Container name:", `box-${new Date().toISOString().slice(0, 10)}`)) ?? `box-${Date.now()}`;
+          (await ctx.ui.input("Container name:", `box-${new Date().toISOString().slice(0, 10)}`)) ??
+          `box-${Date.now()}`;
         const created = await client.createContainer({
           imageId,
           name,
@@ -279,7 +294,10 @@ export function registerCommands(pi: ExtensionAPI): void {
           const info = await client.connectContainer(created.id);
           cur.containerId = created.id;
           cur.instanceName = info.instanceName;
-          ctx.ui.setStatus("sandbox", ctx.ui.theme.fg("accent", `Sandbox: ${info.instanceName} (container ${created.id})`));
+          ctx.ui.setStatus(
+            "sandbox",
+            ctx.ui.theme.fg("accent", `Sandbox: ${info.instanceName} (container ${created.id})`),
+          );
         }
         ctx.ui.notify(`Created and connected to container #${created.id}.`, "info");
       } catch (err) {
@@ -299,8 +317,7 @@ export function registerCommands(pi: ExtensionAPI): void {
       try {
         ctx.ui.setStatus("sandbox", "Sandbox: syncing local project → /workspace…");
         const result = await syncWorkspaceToContainer(st.client, st.containerId, ctx.cwd, {
-          onFile: (rel, index, total) =>
-            ctx.ui.setStatus("sandbox", `Sandbox: syncing ${index}/${total} ${rel}`),
+          onFile: (rel, index, total) => ctx.ui.setStatus("sandbox", `Sandbox: syncing ${index}/${total} ${rel}`),
         });
         const mb = (result.bytes / (1024 * 1024)).toFixed(1);
         // Distinguish "uploaded N changed" from "M unchanged (skipped)" so a

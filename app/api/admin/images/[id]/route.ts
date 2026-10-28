@@ -16,7 +16,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
   const identity = requireAdminIdentity(req);
   if (!identity.ok) {
-    return NextResponse.json({ error: identity.status === 403 ? "仅管理员可用" : "登录已失效" }, { status: identity.status });
+    return NextResponse.json(
+      { error: identity.status === 403 ? "仅管理员可用" : "登录已失效" },
+      { status: identity.status },
+    );
   }
   const { id } = await params;
   if (!/^\d+$/.test(id)) {
@@ -46,7 +49,10 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
   }
   const identity = requireAdminIdentity(req);
   if (!identity.ok) {
-    return NextResponse.json({ error: identity.status === 403 ? "仅管理员可用" : "登录已失效" }, { status: identity.status });
+    return NextResponse.json(
+      { error: identity.status === 403 ? "仅管理员可用" : "登录已失效" },
+      { status: identity.status },
+    );
   }
   const { id } = await params;
   if (!/^\d+$/.test(id)) {

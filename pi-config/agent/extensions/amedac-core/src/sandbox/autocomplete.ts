@@ -228,9 +228,9 @@ export function createContainerAutocompleteProvider(
       const rawPrefix = isQuoted ? atPrefix.slice(2) : atPrefix.slice(1);
       const items = await suggestContainerFiles(
         (dir) =>
-          session.client.toolLs(session.containerId, dir).then((entries) =>
-            entries.map((e) => ({ name: e.name, isDirectory: e.isDirectory })),
-          ),
+          session.client
+            .toolLs(session.containerId, dir)
+            .then((entries) => entries.map((e) => ({ name: e.name, isDirectory: e.isDirectory }))),
         rawPrefix,
       );
       if (items.length === 0) return null;

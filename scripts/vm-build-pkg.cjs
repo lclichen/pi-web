@@ -1,5 +1,5 @@
-const { Client } = require('ssh2');
-const { loadVmConnection } = require('./vm-connection.cjs');
+const { Client } = require("ssh2");
+const { loadVmConnection } = require("./vm-connection.cjs");
 const conn = new Client();
 
 // 在 VM 上同步 dev 分支并构建 tar 分发包（跳过内置冒烟，后续用 catalog E2E 真实验证）。
@@ -32,11 +32,17 @@ cat /tmp/vmbuild.log
 exit 0
 `;
 
-conn.on('ready', () => {
+conn.on("ready", () => {
   conn.exec(cmd, (err, stream) => {
-    if (err) { console.error(err); process.exit(1); }
-    stream.on('data', d => process.stdout.write(d)).stderr.on('data', d => process.stderr.write(d));
-    stream.on('close', () => { conn.end(); process.exit(0); });
+    if (err) {
+      console.error(err);
+      process.exit(1);
+    }
+    stream.on("data", (d) => process.stdout.write(d)).stderr.on("data", (d) => process.stderr.write(d));
+    stream.on("close", () => {
+      conn.end();
+      process.exit(0);
+    });
   });
 });
 conn.connect(loadVmConnection());

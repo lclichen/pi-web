@@ -17,9 +17,7 @@ type PtyModule = typeof import("@homebridge/node-pty-prebuilt-multiarch");
 type PtySpawn = PtyModule["spawn"];
 type IPty = ReturnType<PtySpawn>;
 
-export type TerminalFrame =
-  | { type: "output"; data: string }
-  | { type: "exit"; code: number };
+export type TerminalFrame = { type: "output"; data: string } | { type: "exit"; code: number };
 
 interface LocalTerminal {
   pty: IPty;
@@ -87,14 +85,17 @@ function ensureReaper(): void {
   reg.reaperStarted = true;
   // Kill terminals nobody is watching (SSE disconnected) and that have been
   // idle for a long time — a closed browser tab must not leak shells forever.
-  setInterval(() => {
-    const now = Date.now();
-    for (const [sid, t] of reg.terminals) {
-      if (t.subscribers.size === 0 && now - t.lastActivity > IDLE_KILL_MS) {
-        closeLocalTerminal(sid);
+  setInterval(
+    () => {
+      const now = Date.now();
+      for (const [sid, t] of reg.terminals) {
+        if (t.subscribers.size === 0 && now - t.lastActivity > IDLE_KILL_MS) {
+          closeLocalTerminal(sid);
+        }
       }
-    }
-  }, 5 * 60 * 1000).unref?.();
+    },
+    5 * 60 * 1000,
+  ).unref?.();
 }
 
 function notify(t: LocalTerminal, frame: TerminalFrame): void {
@@ -220,10 +221,7 @@ export function closeLocalTerminal(sid: string): void {
   }
 }
 
-export function subscribeLocalTerminal(
-  sid: string,
-  cb: (frame: TerminalFrame) => void,
-): () => void {
+export function subscribeLocalTerminal(sid: string, cb: (frame: TerminalFrame) => void): () => void {
   const reg = getRegistry();
   const t = reg.terminals.get(sid);
   if (!t) return () => {};

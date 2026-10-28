@@ -36,7 +36,11 @@ export function SubagentDirectoryPanel({ sessionId, subagentCalls }: Props) {
   const [records, setRecords] = useState<SubagentRecord[]>([]);
   const [sessions, setSessions] = useState<Record<string, string>>({});
   const [openAgent, setOpenAgent] = useState<DirectoryRecord | null>(null);
-  const [conversation, setConversation] = useState<{ loading: boolean; messages: AgentMessage[] | null; error?: string } | null>(null);
+  const [conversation, setConversation] = useState<{
+    loading: boolean;
+    messages: AgentMessage[] | null;
+    error?: string;
+  } | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const openAgentIdRef = useRef<string | null>(null);
 
@@ -91,8 +95,9 @@ export function SubagentDirectoryPanel({ sessionId, subagentCalls }: Props) {
   // (background agents leave tool_execution_end as "background" forever).
   const running: DirectoryRecord[] = useMemo(() => {
     return subagentCalls
-      .filter((c) => (c.status === "running" || c.status === "background")
-        && !(c.agentId && finishedIds.has(c.agentId)))
+      .filter(
+        (c) => (c.status === "running" || c.status === "background") && !(c.agentId && finishedIds.has(c.agentId)),
+      )
       .map((c) => ({
         key: c.key,
         ...(c.agentId ? { id: c.agentId } : {}),
@@ -169,37 +174,73 @@ export function SubagentDirectoryPanel({ sessionId, subagentCalls }: Props) {
   // Inline stop for RUNNING rows (same stop_subagent channel as the capsule).
   const [stoppingKey, setStoppingKey] = useState<string | null>(null);
   const [stopError, setStopError] = useState<string | null>(null);
-  const handleStop = useCallback(async (record: DirectoryRecord) => {
-    if (!record.id) return;
-    setStoppingKey(record.key);
-    setStopError(null);
-    try {
-      if (!sessionId) throw new Error("会话未激活");
-      const { sendAgentCommand } = await import("@/lib/agent-client");
-      await sendAgentCommand(sessionId, { type: "stop_subagent", agentId: record.id });
-    } catch (e) {
-      setStopError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setStoppingKey(null);
-    }
-  }, [sessionId]);
+  const handleStop = useCallback(
+    async (record: DirectoryRecord) => {
+      if (!record.id) return;
+      setStoppingKey(record.key);
+      setStopError(null);
+      try {
+        if (!sessionId) throw new Error("会话未激活");
+        const { sendAgentCommand } = await import("@/lib/agent-client");
+        await sendAgentCommand(sessionId, { type: "stop_subagent", agentId: record.id });
+      } catch (e) {
+        setStopError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setStoppingKey(null);
+      }
+    },
+    [sessionId],
+  );
 
   if (openAgent) {
     return (
       <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "6px 12px",
+            borderBottom: "1px solid var(--border)",
+            flexShrink: 0,
+          }}
+        >
           <button
             type="button"
-            onClick={() => { setOpenAgent(null); setConversation(null); openAgentIdRef.current = null; }}
-            style={{ background: "transparent", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 14, padding: "0 4px" }}
+            onClick={() => {
+              setOpenAgent(null);
+              setConversation(null);
+              openAgentIdRef.current = null;
+            }}
+            style={{
+              background: "transparent",
+              border: "none",
+              color: "var(--text-muted)",
+              cursor: "pointer",
+              fontSize: 14,
+              padding: "0 4px",
+            }}
             title="返回目录"
           >
             ←
           </button>
           <span style={{ fontSize: 11, fontWeight: 700 }}>{openAgent.type}</span>
-          <span style={{ fontSize: 11, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{openAgent.description}</span>
+          <span
+            style={{
+              fontSize: 11,
+              color: "var(--text-muted)",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              flex: 1,
+            }}
+          >
+            {openAgent.description}
+          </span>
           {openAgent.completedAt !== undefined && (
-            <span style={{ fontSize: 10, color: "var(--text-dim)", flexShrink: 0 }}>{formatRelativeTime(openAgent.completedAt, now)}</span>
+            <span style={{ fontSize: 10, color: "var(--text-dim)", flexShrink: 0 }}>
+              {formatRelativeTime(openAgent.completedAt, now)}
+            </span>
           )}
         </div>
         <div style={{ flex: 1, overflowY: "auto", background: "var(--bg)" }}>
@@ -215,7 +256,10 @@ export function SubagentDirectoryPanel({ sessionId, subagentCalls }: Props) {
                 {openAgent.sessionId ? "会话无消息" : "未找到持久化会话，显示结果摘要："}
               </div>
               <div className="markdown-body" style={{ fontSize: 12 }}>
-                <ReactMarkdown remarkPlugins={markdownPreviewRemarkPlugins} rehypePlugins={markdownPreviewRehypePlugins}>
+                <ReactMarkdown
+                  remarkPlugins={markdownPreviewRemarkPlugins}
+                  rehypePlugins={markdownPreviewRehypePlugins}
+                >
                   {openAgent.result?.trim() || "（无输出）"}
                 </ReactMarkdown>
               </div>
@@ -241,11 +285,19 @@ export function SubagentDirectoryPanel({ sessionId, subagentCalls }: Props) {
                 now={now}
                 onClick={() => loadConversation(r)}
                 stopping={stoppingKey === r.key}
-                onStop={r.id ? () => { void handleStop(r); } : undefined}
+                onStop={
+                  r.id
+                    ? () => {
+                        void handleStop(r);
+                      }
+                    : undefined
+                }
               />
             ))}
             {stopError && (
-              <div style={{ padding: "2px 14px 8px", fontSize: 10, color: "#f87171", overflowWrap: "anywhere" }}>{stopError}</div>
+              <div style={{ padding: "2px 14px 8px", fontSize: 10, color: "#f87171", overflowWrap: "anywhere" }}>
+                {stopError}
+              </div>
             )}
           </>
         )}
@@ -264,7 +316,18 @@ export function SubagentDirectoryPanel({ sessionId, subagentCalls }: Props) {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div style={{ borderBottom: "1px solid var(--border)" }}>
-      <div style={{ padding: "6px 14px", fontSize: 10, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.4 }}>{title}</div>
+      <div
+        style={{
+          padding: "6px 14px",
+          fontSize: 10,
+          fontWeight: 700,
+          color: "var(--text-dim)",
+          textTransform: "uppercase",
+          letterSpacing: 0.4,
+        }}
+      >
+        {title}
+      </div>
       {children}
     </div>
   );
@@ -293,36 +356,83 @@ function statusLabel(status: string): string {
   return map[status] ?? status;
 }
 
-function Row({ record, now, onClick, stopping, onStop }: { record: DirectoryRecord; now: number; onClick: () => void; stopping?: boolean; onStop?: () => void }) {
+function Row({
+  record,
+  now,
+  onClick,
+  stopping,
+  onStop,
+}: {
+  record: DirectoryRecord;
+  now: number;
+  onClick: () => void;
+  stopping?: boolean;
+  onStop?: () => void;
+}) {
   return (
     <div
       role="button"
       tabIndex={0}
       onClick={onClick}
-      onKeyDown={(e) => { if (e.key === "Enter") onClick(); }}
-      style={{
-        display: "flex", alignItems: "center", gap: 8, width: "100%",
-        padding: "7px 14px", textAlign: "left",
-        cursor: "pointer", fontSize: 11,
+      onKeyDown={(e) => {
+        if (e.key === "Enter") onClick();
       }}
-      onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-selected)"; }}
-      onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        width: "100%",
+        padding: "7px 14px",
+        textAlign: "left",
+        cursor: "pointer",
+        fontSize: 11,
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.background = "var(--bg-selected)";
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.background = "transparent";
+      }}
     >
       <span
         style={{
-          flexShrink: 0, fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 4,
-          background: "var(--bg-panel)", border: "1px solid var(--border)",
+          flexShrink: 0,
+          fontSize: 10,
+          fontWeight: 700,
+          padding: "1px 6px",
+          borderRadius: 4,
+          background: "var(--bg-panel)",
+          border: "1px solid var(--border)",
           fontFamily: "var(--font-mono)",
         }}
       >
         {record.type}
       </span>
-      <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text)" }}>
+      <span
+        style={{
+          flex: 1,
+          minWidth: 0,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+          color: "var(--text)",
+        }}
+      >
         {record.description || "(无描述)"}
       </span>
       <span style={{ flexShrink: 0, fontSize: 10, color: statusColor(record.status) }}>
         {record.status === "running" && (
-          <span style={{ display: "inline-block", width: 6, height: 6, borderRadius: 999, background: "#4ade80", marginRight: 4, verticalAlign: "middle" }} />
+          <span
+            style={{
+              display: "inline-block",
+              width: 6,
+              height: 6,
+              borderRadius: 999,
+              background: "#4ade80",
+              marginRight: 4,
+              verticalAlign: "middle",
+            }}
+          />
         )}
         {statusLabel(record.status)}
       </span>
@@ -336,22 +446,41 @@ function Row({ record, now, onClick, stopping, onStop }: { record: DirectoryReco
       {onStop && (
         <button
           type="button"
-          onClick={(e) => { e.stopPropagation(); onStop(); }}
+          onClick={(e) => {
+            e.stopPropagation();
+            onStop();
+          }}
           disabled={stopping}
           title="停止该后台任务"
           aria-label="停止该后台任务"
           style={{
-            flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
-            width: 20, height: 20, padding: 0, border: "none", borderRadius: 4,
-            background: "transparent", color: stopping ? "var(--text-dim)" : "#f87171",
+            flexShrink: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            width: 20,
+            height: 20,
+            padding: 0,
+            border: "none",
+            borderRadius: 4,
+            background: "transparent",
+            color: stopping ? "var(--text-dim)" : "#f87171",
             cursor: stopping ? "default" : "pointer",
           }}
-          onMouseEnter={(e) => { if (!stopping) e.currentTarget.style.background = "rgba(248,113,113,0.12)"; }}
-          onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+          onMouseEnter={(e) => {
+            if (!stopping) e.currentTarget.style.background = "rgba(248,113,113,0.12)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = "transparent";
+          }}
         >
-          {stopping
-            ? <span style={{ fontSize: 9 }}>…</span>
-            : <svg width="9" height="9" viewBox="0 0 10 10" aria-hidden="true"><rect x="1" y="1" width="8" height="8" rx="1.5" fill="currentColor" /></svg>}
+          {stopping ? (
+            <span style={{ fontSize: 9 }}>…</span>
+          ) : (
+            <svg width="9" height="9" viewBox="0 0 10 10" aria-hidden="true">
+              <rect x="1" y="1" width="8" height="8" rx="1.5" fill="currentColor" />
+            </svg>
+          )}
         </button>
       )}
     </div>
@@ -364,27 +493,44 @@ function SubagentConversation({ messages }: { messages: AgentMessage[] }) {
     <div style={{ padding: "10px 14px", display: "flex", flexDirection: "column", gap: 12 }}>
       {messages.map((message, i) => {
         if (message.role === "user") {
-          const text = typeof message.content === "string"
-            ? message.content
-            : message.content.filter((b) => b.type === "text").map((b) => (b as { text: string }).text).join("\n");
+          const text =
+            typeof message.content === "string"
+              ? message.content
+              : message.content
+                  .filter((b) => b.type === "text")
+                  .map((b) => (b as { text: string }).text)
+                  .join("\n");
           if (!text.trim()) return null;
           return (
             <div key={i} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
               <RoleLabel role="user" />
               <div className="markdown-body" style={{ fontSize: 12 }}>
-                <ReactMarkdown remarkPlugins={markdownPreviewRemarkPlugins} rehypePlugins={markdownPreviewRehypePlugins}>{text}</ReactMarkdown>
+                <ReactMarkdown
+                  remarkPlugins={markdownPreviewRemarkPlugins}
+                  rehypePlugins={markdownPreviewRehypePlugins}
+                >
+                  {text}
+                </ReactMarkdown>
               </div>
             </div>
           );
         }
         if (message.role === "assistant") {
-          const text = message.content.filter((b) => b.type === "text").map((b) => (b as { text: string }).text).join("\n");
+          const text = message.content
+            .filter((b) => b.type === "text")
+            .map((b) => (b as { text: string }).text)
+            .join("\n");
           if (!text.trim()) return null;
           return (
             <div key={i} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
               <RoleLabel role="assistant" />
               <div className="markdown-body" style={{ fontSize: 12 }}>
-                <ReactMarkdown remarkPlugins={markdownPreviewRemarkPlugins} rehypePlugins={markdownPreviewRehypePlugins}>{text}</ReactMarkdown>
+                <ReactMarkdown
+                  remarkPlugins={markdownPreviewRemarkPlugins}
+                  rehypePlugins={markdownPreviewRehypePlugins}
+                >
+                  {text}
+                </ReactMarkdown>
               </div>
             </div>
           );
@@ -397,7 +543,14 @@ function SubagentConversation({ messages }: { messages: AgentMessage[] }) {
 
 function RoleLabel({ role }: { role: "user" | "assistant" }) {
   return (
-    <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: 0.5, color: role === "user" ? "var(--accent)" : "var(--text-dim)" }}>
+    <span
+      style={{
+        fontSize: 9,
+        fontWeight: 700,
+        letterSpacing: 0.5,
+        color: role === "user" ? "var(--accent)" : "var(--text-dim)",
+      }}
+    >
       {role === "user" ? "USER" : "AGENT"}
     </span>
   );

@@ -1,5 +1,5 @@
-const { Client } = require('ssh2');
-const { loadVmConnection } = require('./vm-connection.cjs');
+const { Client } = require("ssh2");
+const { loadVmConnection } = require("./vm-connection.cjs");
 const conn = new Client();
 
 // 验证新布局：解包 → 用临时 HOME 起服务 → 数据应落在 $HOME/.local/share/amedac
@@ -41,13 +41,23 @@ bash $PKG/scripts/stop-all.sh >> $T/start.log 2>&1
 echo DONE >> $OUT
 `;
 
-const b64 = Buffer.from(remote, 'utf8').toString('base64');
-conn.on('ready', () => {
-  conn.exec(`printf %s '${b64}' | base64 -d > /tmp/pkg-layout.sh && timeout 240 bash /tmp/pkg-layout.sh; cat /tmp/pkg-layout-results.txt; rm -rf /tmp/pkg-layout-test`, (err, stream) => {
-    if (err) { console.error(err); process.exit(1); }
-    let out = '';
-    stream.on('data', (d) => out += d).stderr.on('data', (d) => out += d);
-    stream.on('close', () => { console.log(out.trim()); conn.end(); process.exit(0); });
-  });
+const b64 = Buffer.from(remote, "utf8").toString("base64");
+conn.on("ready", () => {
+  conn.exec(
+    `printf %s '${b64}' | base64 -d > /tmp/pkg-layout.sh && timeout 240 bash /tmp/pkg-layout.sh; cat /tmp/pkg-layout-results.txt; rm -rf /tmp/pkg-layout-test`,
+    (err, stream) => {
+      if (err) {
+        console.error(err);
+        process.exit(1);
+      }
+      let out = "";
+      stream.on("data", (d) => (out += d)).stderr.on("data", (d) => (out += d));
+      stream.on("close", () => {
+        console.log(out.trim());
+        conn.end();
+        process.exit(0);
+      });
+    },
+  );
 });
 conn.connect(loadVmConnection());

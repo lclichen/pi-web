@@ -54,13 +54,7 @@ function useClickOutside<T extends HTMLElement>(onClose: () => void) {
   return ref;
 }
 
-function Popover({
-  children,
-  onClose,
-}: {
-  children: React.ReactNode;
-  onClose: () => void;
-}) {
+function Popover({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
   const ref = useClickOutside<HTMLDivElement>(onClose);
   return (
     <div
@@ -101,7 +95,10 @@ function ToggleRow({
 }) {
   return (
     <div
-      onClick={(e) => { e.stopPropagation(); onToggle(); }}
+      onClick={(e) => {
+        e.stopPropagation();
+        onToggle();
+      }}
       style={{
         display: "flex",
         alignItems: "center",
@@ -110,16 +107,26 @@ function ToggleRow({
         cursor: "pointer",
         borderBottom: "1px solid var(--border)",
       }}
-      onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-hover)"; }}
-      onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.background = "var(--bg-hover)";
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.background = "transparent";
+      }}
     >
-      <div style={{
-        width: 14, height: 14, borderRadius: 3,
-        border: `1.5px solid ${enabled ? "var(--accent)" : "var(--text-dim)"}`,
-        background: enabled ? "var(--accent)" : "transparent",
-        flexShrink: 0,
-        display: "flex", alignItems: "center", justifyContent: "center",
-      }}>
+      <div
+        style={{
+          width: 14,
+          height: 14,
+          borderRadius: 3,
+          border: `1.5px solid ${enabled ? "var(--accent)" : "var(--text-dim)"}`,
+          background: enabled ? "var(--accent)" : "transparent",
+          flexShrink: 0,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
         {enabled && (
           <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="#fff" strokeWidth="2.5">
             <path d="M3 8l3.5 3.5L13 4" />
@@ -127,22 +134,43 @@ function ToggleRow({
         )}
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 12, color: "var(--text)", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        <div
+          style={{
+            fontSize: 12,
+            color: "var(--text)",
+            fontWeight: 500,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
           {name}
         </div>
         {description && (
-          <div style={{ fontSize: 10, color: "var(--text-dim)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          <div
+            style={{
+              fontSize: 10,
+              color: "var(--text-dim)",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
             {description}
           </div>
         )}
       </div>
       {badge && (
-        <span style={{
-          fontSize: 9, color: "var(--text-dim)",
-          padding: "1px 5px", borderRadius: 8,
-          border: "1px solid var(--border)",
-          flexShrink: 0,
-        }}>
+        <span
+          style={{
+            fontSize: 9,
+            color: "var(--text-dim)",
+            padding: "1px 5px",
+            borderRadius: 8,
+            border: "1px solid var(--border)",
+            flexShrink: 0,
+          }}
+        >
           {badge}
         </span>
       )}
@@ -150,9 +178,23 @@ function ToggleRow({
   );
 }
 
-export function SessionToolbar({ cwd, sessionId, hasLabTraining, onSendCommand, onApplyPreferences, disabled, quickMode = false, onNewSessionTemplateChange, newSessionTemplateId }: Props) {
+export function SessionToolbar({
+  cwd,
+  sessionId,
+  hasLabTraining,
+  onSendCommand,
+  onApplyPreferences,
+  disabled,
+  quickMode = false,
+  onNewSessionTemplateChange,
+  newSessionTemplateId,
+}: Props) {
   const { t } = useI18n();
-  const [prefs, setPrefs] = useState<WebPreferences>({ mcpEnabled: true, subagentsEnabled: true, labVerifyEnabled: true });
+  const [prefs, setPrefs] = useState<WebPreferences>({
+    mcpEnabled: true,
+    subagentsEnabled: true,
+    labVerifyEnabled: true,
+  });
   const [mcpOpen, setMcpOpen] = useState(false);
   const [agentsOpen, setAgentsOpen] = useState(false);
   const [mcpServers, setMcpServers] = useState<McpServerInfo[]>([]);
@@ -162,7 +204,14 @@ export function SessionToolbar({ cwd, sessionId, hasLabTraining, onSendCommand, 
   const [applyingTemplate, setApplyingTemplate] = useState<string | null>(null);
   // 当前会话的模板快照（SessionInfo.quickTemplate）：显示"当前模板·版本"，
   // 模板事后变更/删除给出 stale/detached 提示。
-  const [activeTemplate, setActiveTemplate] = useState<{ id: string; name: string; hash: string; capturedAt: string; stale?: true; detached?: true } | null>(null);
+  const [activeTemplate, setActiveTemplate] = useState<{
+    id: string;
+    name: string;
+    hash: string;
+    capturedAt: string;
+    stale?: true;
+    detached?: true;
+  } | null>(null);
 
   // Quick mode: template list for mid-session switching.
   useEffect(() => {
@@ -176,28 +225,47 @@ export function SessionToolbar({ cwd, sessionId, hasLabTraining, onSendCommand, 
   // 当前模板快照：首次打开与恢复后都可见（模板名 + 8 位版本指纹）。
   useEffect(() => {
     if (!quickMode) return;
-    if (!sessionId) { setActiveTemplate(null); return; }
+    if (!sessionId) {
+      setActiveTemplate(null);
+      return;
+    }
     fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
-      .then((d: { quickTemplate?: { id: string; name: string; hash: string; capturedAt: string; stale?: true; detached?: true } } | null) => {
-        setActiveTemplate(d?.quickTemplate ?? null);
-      })
+      .then(
+        (
+          d: {
+            quickTemplate?: {
+              id: string;
+              name: string;
+              hash: string;
+              capturedAt: string;
+              stale?: true;
+              detached?: true;
+            };
+          } | null,
+        ) => {
+          setActiveTemplate(d?.quickTemplate ?? null);
+        },
+      )
       .catch(() => setActiveTemplate(null));
   }, [quickMode, sessionId]);
 
-  const applyQuickTemplate = useCallback(async (templateId: string) => {
-    if (!sessionId) return;
-    setApplyingTemplate(templateId);
-    try {
-      const { sendAgentCommand } = await import("@/lib/agent-client");
-      await sendAgentCommand(sessionId, { type: "apply_quick_template", templateId });
-      setQuickOpen(false);
-    } catch {
-      // surfaced via the disabled state clearing; template errors arrive as thrown text
-    } finally {
-      setApplyingTemplate(null);
-    }
-  }, [sessionId]);
+  const applyQuickTemplate = useCallback(
+    async (templateId: string) => {
+      if (!sessionId) return;
+      setApplyingTemplate(templateId);
+      try {
+        const { sendAgentCommand } = await import("@/lib/agent-client");
+        await sendAgentCommand(sessionId, { type: "apply_quick_template", templateId });
+        setQuickOpen(false);
+      } catch {
+        // surfaced via the disabled state clearing; template errors arrive as thrown text
+      } finally {
+        setApplyingTemplate(null);
+      }
+    },
+    [sessionId],
+  );
 
   useEffect(() => {
     fetch(`/api/preferences?cwd=${encodeURIComponent(cwd)}`)
@@ -254,7 +322,7 @@ export function SessionToolbar({ cwd, sessionId, hasLabTraining, onSendCommand, 
   const toggleMcpServer = useCallback(
     async (name: string, scope: string, currentlyDisabled: boolean) => {
       try {
-                if (quickMode) return; // quick 模式 MCP 只读（模板白名单决定）
+        if (quickMode) return; // quick 模式 MCP 只读（模板白名单决定）
         await fetch(`/api/mcp/servers/${encodeURIComponent(name)}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
@@ -262,7 +330,9 @@ export function SessionToolbar({ cwd, sessionId, hasLabTraining, onSendCommand, 
         });
         loadMcp();
         onApplyPreferences();
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     },
     [cwd, loadMcp, onApplyPreferences],
   );
@@ -277,7 +347,9 @@ export function SessionToolbar({ cwd, sessionId, hasLabTraining, onSendCommand, 
         });
         loadAgents();
         onApplyPreferences("reload_agents");
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     },
     [cwd, loadAgents, onApplyPreferences],
   );
@@ -293,39 +365,76 @@ export function SessionToolbar({ cwd, sessionId, hasLabTraining, onSendCommand, 
     buttons.push(
       <div key="quick-template" style={{ position: "relative" }}>
         <button
-          onClick={() => { setQuickOpen((v) => !v); }}
+          onClick={() => {
+            setQuickOpen((v) => !v);
+          }}
           disabled={disabled || conversationStarted}
           style={chipStyle(quickOpen)}
-          title={conversationStarted ? "当前会话模板（对话开始后不可切换）" : isNewQuick ? "选择快速会话模板（模型 / 系统提示词 / MCP）——发送首条消息前可切换" : "切换快速会话模板（模型 / 系统提示词 / MCP）"}
+          title={
+            conversationStarted
+              ? "当前会话模板（对话开始后不可切换）"
+              : isNewQuick
+                ? "选择快速会话模板（模型 / 系统提示词 / MCP）——发送首条消息前可切换"
+                : "切换快速会话模板（模型 / 系统提示词 / MCP）"
+          }
         >
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <svg
+            width="10"
+            height="10"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
             <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
           </svg>
           模板
         </button>
-        {isNewQuick && !activeTemplate && newSessionTemplateId && quickTemplates.find((x) => x.id === newSessionTemplateId) && (
-          <span
-            title={`当前模板：${quickTemplates.find((x) => x.id === newSessionTemplateId)!.name}（尚未发送消息，可切换）`}
-            style={{
-              display: "inline-flex", alignItems: "center", gap: 4, height: 20,
-              padding: "0 7px", borderRadius: 999, fontSize: 10, fontWeight: 600,
-              color: "var(--text-dim)", background: "var(--bg-panel)",
-              border: "1px solid var(--border)", fontFamily: "var(--font-mono)", whiteSpace: "nowrap",
-            }}
-          >
-            {quickTemplates.find((x) => x.id === newSessionTemplateId)!.name}
-          </span>
-        )}
+        {isNewQuick &&
+          !activeTemplate &&
+          newSessionTemplateId &&
+          quickTemplates.find((x) => x.id === newSessionTemplateId) && (
+            <span
+              title={`当前模板：${quickTemplates.find((x) => x.id === newSessionTemplateId)!.name}（尚未发送消息，可切换）`}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 4,
+                height: 20,
+                padding: "0 7px",
+                borderRadius: 999,
+                fontSize: 10,
+                fontWeight: 600,
+                color: "var(--text-dim)",
+                background: "var(--bg-panel)",
+                border: "1px solid var(--border)",
+                fontFamily: "var(--font-mono)",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {quickTemplates.find((x) => x.id === newSessionTemplateId)!.name}
+            </span>
+          )}
         {activeTemplate && (
           <span
             title={`模板快照：${activeTemplate.name}（版本 ${activeTemplate.hash}，${activeTemplate.capturedAt || "时间未知"}）${activeTemplate.stale ? "——模板内容已变更，切换模板可应用新版" : activeTemplate.detached ? "——模板已被删除" : ""}`}
             style={{
-              display: "inline-flex", alignItems: "center", gap: 4, height: 20,
-              padding: "0 7px", borderRadius: 999, fontSize: 10, fontWeight: 600,
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 4,
+              height: 20,
+              padding: "0 7px",
+              borderRadius: 999,
+              fontSize: 10,
+              fontWeight: 600,
               color: activeTemplate.stale || activeTemplate.detached ? "#f59e0b" : "var(--text-dim)",
               background: activeTemplate.stale || activeTemplate.detached ? "rgba(245,158,11,0.12)" : "var(--bg-panel)",
               border: `1px solid ${activeTemplate.stale || activeTemplate.detached ? "rgba(245,158,11,0.4)" : "var(--border)"}`,
-              fontFamily: "var(--font-mono)", whiteSpace: "nowrap",
+              fontFamily: "var(--font-mono)",
+              whiteSpace: "nowrap",
             }}
           >
             {activeTemplate.name}·{activeTemplate.hash}
@@ -343,16 +452,30 @@ export function SessionToolbar({ cwd, sessionId, hasLabTraining, onSendCommand, 
                   type="button"
                   disabled={applyingTemplate !== null}
                   onClick={() => {
-                    if (isNewQuick) { onNewSessionTemplateChange?.(tpl.id); setQuickOpen(false); return; }
+                    if (isNewQuick) {
+                      onNewSessionTemplateChange?.(tpl.id);
+                      setQuickOpen(false);
+                      return;
+                    }
                     void applyQuickTemplate(tpl.id);
                   }}
                   style={{
-                    display: "block", width: "100%", padding: "6px 12px", border: "none",
-                    background: "transparent", color: "var(--text)", fontSize: 11.5,
-                    cursor: "pointer", textAlign: "left",
+                    display: "block",
+                    width: "100%",
+                    padding: "6px 12px",
+                    border: "none",
+                    background: "transparent",
+                    color: "var(--text)",
+                    fontSize: 11.5,
+                    cursor: "pointer",
+                    textAlign: "left",
                   }}
-                  onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-hover)"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = "var(--bg-hover)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = "transparent";
+                  }}
                 >
                   {applyingTemplate === tpl.id ? `${tpl.name} · 应用中…` : tpl.name}
                 </button>
@@ -360,13 +483,22 @@ export function SessionToolbar({ cwd, sessionId, hasLabTraining, onSendCommand, 
             )}
             {/* 切换已有会话的模板 = 显式提示词变化（缓存重置）；新建草稿切换无代价（提示词一致性研究 #2）。 */}
             {!isNewQuick && (
-              <div style={{ padding: "6px 12px", fontSize: 10.5, color: "var(--text-dim)", borderTop: "1px solid var(--border)", maxWidth: 300, whiteSpace: "normal" }}>
+              <div
+                style={{
+                  padding: "6px 12px",
+                  fontSize: 10.5,
+                  color: "var(--text-dim)",
+                  borderTop: "1px solid var(--border)",
+                  maxWidth: 300,
+                  whiteSpace: "normal",
+                }}
+              >
                 {t("chat.cacheResetHint")}
               </div>
             )}
           </Popover>
         )}
-      </div>
+      </div>,
     );
   }
 
@@ -374,7 +506,10 @@ export function SessionToolbar({ cwd, sessionId, hasLabTraining, onSendCommand, 
   buttons.push(
     <div key="mcp" style={{ position: "relative" }}>
       <button
-        onClick={() => { setMcpOpen((v) => !v); setAgentsOpen(false); }}
+        onClick={() => {
+          setMcpOpen((v) => !v);
+          setAgentsOpen(false);
+        }}
         disabled={disabled}
         style={chipStyle(prefs.mcpEnabled)}
       >
@@ -383,7 +518,17 @@ export function SessionToolbar({ cwd, sessionId, hasLabTraining, onSendCommand, 
       {mcpOpen && (
         <Popover onClose={() => setMcpOpen(false)}>
           <div style={{ padding: "6px 12px", borderBottom: "1px solid var(--border)" }}>
-            <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 11, color: "var(--text-muted)", fontWeight: 600 }}>
+            <label
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                cursor: "pointer",
+                fontSize: 11,
+                color: "var(--text-muted)",
+                fontWeight: 600,
+              }}
+            >
               <input
                 type="checkbox"
                 checked={prefs.mcpEnabled}
@@ -417,48 +562,62 @@ export function SessionToolbar({ cwd, sessionId, hasLabTraining, onSendCommand, 
   const agentList = Array.isArray(agents) ? agents : [];
   const agentEnabledCount = agentList.filter((a) => a.enabled !== false).length;
   // quick 会话不显示 Agents 按钮——quick 无子智能体（模板即全部配置面）
-  if (!quickMode) buttons.push(
-    <div key="subagents" style={{ position: "relative" }}>
-      <button
-        onClick={() => { setAgentsOpen((v) => !v); setMcpOpen(false); }}
-        disabled={disabled}
-        style={chipStyle(prefs.subagentsEnabled)}
-      >
-        Agents {agentList.length > 0 && `(${agentEnabledCount}/${agentList.length})`}
-      </button>
-      {agentsOpen && (
-        <Popover onClose={() => setAgentsOpen(false)}>
-          <div style={{ padding: "6px 12px", borderBottom: "1px solid var(--border)" }}>
-            <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 11, color: "var(--text-muted)", fontWeight: 600 }}>
-              <input
-                type="checkbox"
-                checked={prefs.subagentsEnabled}
-                onChange={(e) => savePref("subagentsEnabled", e.target.checked)}
-                style={{ accentColor: "var(--accent)" }}
-              />
-              Enable All Agents
-            </label>
-          </div>
-          {agentList.length === 0 ? (
-            <div style={{ padding: "10px 12px", fontSize: 11, color: "var(--text-dim)" }}>
-              No subagents configured
+  if (!quickMode)
+    buttons.push(
+      <div key="subagents" style={{ position: "relative" }}>
+        <button
+          onClick={() => {
+            setAgentsOpen((v) => !v);
+            setMcpOpen(false);
+          }}
+          disabled={disabled}
+          style={chipStyle(prefs.subagentsEnabled)}
+        >
+          Agents {agentList.length > 0 && `(${agentEnabledCount}/${agentList.length})`}
+        </button>
+        {agentsOpen && (
+          <Popover onClose={() => setAgentsOpen(false)}>
+            <div style={{ padding: "6px 12px", borderBottom: "1px solid var(--border)" }}>
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  cursor: "pointer",
+                  fontSize: 11,
+                  color: "var(--text-muted)",
+                  fontWeight: 600,
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={prefs.subagentsEnabled}
+                  onChange={(e) => savePref("subagentsEnabled", e.target.checked)}
+                  style={{ accentColor: "var(--accent)" }}
+                />
+                Enable All Agents
+              </label>
             </div>
-          ) : (
-            agentList.map((a) => (
-              <ToggleRow
-                key={`${a.scope}/${a.name}`}
-                name={a.name}
-                description={a.description}
-                enabled={prefs.subagentsEnabled && a.enabled !== false}
-                badge={a.isDefault ? "builtin" : a.scope}
-                onToggle={() => toggleAgent(a.name, a.scope, a.enabled !== false)}
-              />
-            ))
-          )}
-        </Popover>
-      )}
-    </div>,
-  );
+            {agentList.length === 0 ? (
+              <div style={{ padding: "10px 12px", fontSize: 11, color: "var(--text-dim)" }}>
+                No subagents configured
+              </div>
+            ) : (
+              agentList.map((a) => (
+                <ToggleRow
+                  key={`${a.scope}/${a.name}`}
+                  name={a.name}
+                  description={a.description}
+                  enabled={prefs.subagentsEnabled && a.enabled !== false}
+                  badge={a.isDefault ? "builtin" : a.scope}
+                  onToggle={() => toggleAgent(a.name, a.scope, a.enabled !== false)}
+                />
+              ))
+            )}
+          </Popover>
+        )}
+      </div>,
+    );
 
   if (buttons.length === 0) return null;
 

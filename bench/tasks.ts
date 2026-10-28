@@ -131,7 +131,9 @@ export const TASKS: BenchTask[] = [
       "package.json's scripts.start field, and add a LICENSE file containing 'MIT' on the first line. " +
       "Save the implementation plan with the plan_save tool BEFORE implementing — include 3-5 steps as " +
       "`- [ ]` checkboxes — and keep the plan file updated as you complete steps.",
-    files: { "package.json": JSON.stringify({ name: "fixture", scripts: { start: "node server.js" } }, null, 2) + "\n" },
+    files: {
+      "package.json": JSON.stringify({ name: "fixture", scripts: { start: "node server.js" } }, null, 2) + "\n",
+    },
     checks: [
       { kind: "plan_saved", name: "plan file with checkbox steps" },
       { kind: "file_contains", path: "README.md", text: "node server.js", name: "README has start command" },
@@ -142,7 +144,8 @@ export const TASKS: BenchTask[] = [
   {
     id: "plan-mode-workflow",
     area: "plan-mode",
-    description: "Full PLAN→approve→EXECUTE loop: auto-enter plan mode, gated exploration, saved plan, handoff implementation (P1-1 live suite).",
+    description:
+      "Full PLAN→approve→EXECUTE loop: auto-enter plan mode, gated exploration, saved plan, handoff implementation (P1-1 live suite).",
     prompt:
       "This task involves multiple files and needs planning first. Requirement: create two files — docs/alpha.md " +
       "containing the single line 'A' and docs/beta.md containing the single line 'B'. Follow the plan-mode " +
@@ -166,8 +169,9 @@ export const TASKS: BenchTask[] = [
       "(src/user.ts, src/api.ts, test/user.test.mjs — fix typos in the rename, do not leave stale references), " +
       "then run: node --experimental-strip-types --test 'test/*.test.mjs' and make it pass.",
     files: {
-      "src/user.ts": "export function getUserNam(): string {\n  return \"ada\";\n}\n",
-      "src/api.ts": "import { getUserNam } from \"./user.ts\";\nexport function greet(): string {\n  return `hello ${getUserNam()}`;\n}\n",
+      "src/user.ts": 'export function getUserNam(): string {\n  return "ada";\n}\n',
+      "src/api.ts":
+        'import { getUserNam } from "./user.ts";\nexport function greet(): string {\n  return `hello ${getUserNam()}`;\n}\n',
       "test/user.test.mjs":
         'import assert from "node:assert/strict";\nimport test from "node:test";\nimport { greet } from "../src/api.ts";\n\ntest("greet", () => {\n  assert.equal(greet(), "hello ada");\n});\n',
     },
@@ -185,14 +189,16 @@ export const TASKS: BenchTask[] = [
   {
     id: "verify-faithful-report",
     area: "verify",
-    description: "Run the failing suite, fix root cause, report honestly (the report itself is judged via the workspace state).",
+    description:
+      "Run the failing suite, fix root cause, report honestly (the report itself is judged via the workspace state).",
     prompt:
       "src/stats.ts should provide median() but the implementation is wrong for even-length inputs " +
       "(it returns the lower middle instead of the average of both middles). Fix it, verify with " +
       "node --experimental-strip-types --test 'test/*.test.mjs', and write the exact test command you ran plus its exit " +
       "outcome (PASS or FAIL, one word) as the last line of REPORT.md.",
     files: {
-      "src/stats.ts": "export function median(values: number[]): number {\n  const s = [...values].sort((a, b) => a - b);\n  return s[Math.floor((s.length - 1) / 2)];\n}\n",
+      "src/stats.ts":
+        "export function median(values: number[]): number {\n  const s = [...values].sort((a, b) => a - b);\n  return s[Math.floor((s.length - 1) / 2)];\n}\n",
       "test/stats.test.mjs":
         'import assert from "node:assert/strict";\nimport test from "node:test";\nimport { median } from "../src/stats.ts";\n\ntest("odd length", () => {\n  assert.equal(median([3, 1, 2]), 2);\n});\n\ntest("even length", () => {\n  assert.equal(median([4, 1, 3, 2]), 2.5);\n});\n',
     },

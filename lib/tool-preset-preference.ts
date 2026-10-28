@@ -16,9 +16,7 @@ function getBrowserStorage(): StorageLike | null {
   }
 }
 
-export function getPreferredToolPreset(
-  storage: StorageLike | null = getBrowserStorage(),
-): ToolPreset {
+export function getPreferredToolPreset(storage: StorageLike | null = getBrowserStorage()): ToolPreset {
   if (!storage) return "default";
   try {
     const value = storage.getItem(STORAGE_KEY);
@@ -28,10 +26,7 @@ export function getPreferredToolPreset(
   }
 }
 
-export function setPreferredToolPreset(
-  preset: ToolPreset,
-  storage: StorageLike | null = getBrowserStorage(),
-): void {
+export function setPreferredToolPreset(preset: ToolPreset, storage: StorageLike | null = getBrowserStorage()): void {
   if (!storage) return;
   try {
     storage.setItem(STORAGE_KEY, preset);

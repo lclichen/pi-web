@@ -18,7 +18,7 @@ import type { QuestionParams } from "./types.js";
  *   pi-coding-agent's own display normalization (`normalizeDisplayText`).
  */
 export function normalizeLineTerminators(text: string): string {
-	return text.replace(/\r\n/g, "\n").replace(/\r/g, "");
+  return text.replace(/\r\n/g, "\n").replace(/\r/g, "");
 }
 
 /**
@@ -27,12 +27,12 @@ export function normalizeLineTerminators(text: string): string {
  * checks and `hasPreview` derivations are unchanged.
  */
 function normalizeStringFields<T extends object>(obj: T, keys: readonly (keyof T)[]): T {
-	const out = { ...obj };
-	for (const key of keys) {
-		const value = obj[key];
-		if (typeof value === "string") out[key] = normalizeLineTerminators(value) as T[typeof key];
-	}
-	return out;
+  const out = { ...obj };
+  for (const key of keys) {
+    const value = obj[key];
+    if (typeof value === "string") out[key] = normalizeLineTerminators(value) as T[typeof key];
+  }
+  return out;
 }
 
 /**
@@ -46,11 +46,11 @@ function normalizeStringFields<T extends object>(obj: T, keys: readonly (keyof T
  * clean text. Pure: the input object is never mutated.
  */
 export function normalizeQuestionParams(params: QuestionParams): QuestionParams {
-	return {
-		...params,
-		questions: params.questions.map((q) => ({
-			...normalizeStringFields(q, ["question", "header"]),
-			options: q.options.map((o) => normalizeStringFields(o, ["label", "description", "preview"])),
-		})),
-	};
+  return {
+    ...params,
+    questions: params.questions.map((q) => ({
+      ...normalizeStringFields(q, ["question", "header"]),
+      options: q.options.map((o) => normalizeStringFields(o, ["label", "description", "preview"])),
+    })),
+  };
 }

@@ -14,14 +14,8 @@ import {
 } from "@/hooks/useChatAppearance";
 import { sendAgentCommand } from "@/lib/agent-client";
 import type { ShellToolSettingsResponse } from "@/lib/api-types";
-import {
-  setLastSettingsSection,
-  type SettingsSection,
-} from "@/lib/settings-navigation";
-import {
-  isThinkingExpandedByDefault,
-  setThinkingExpandedByDefault,
-} from "@/lib/thinking-expansion-preference";
+import { setLastSettingsSection, type SettingsSection } from "@/lib/settings-navigation";
+import { isThinkingExpandedByDefault, setThinkingExpandedByDefault } from "@/lib/thinking-expansion-preference";
 import { ModelsConfig } from "./ModelsConfig";
 import { AccountSettings } from "./AccountSettings";
 import { ApiKeysConfig } from "./ApiKeysConfig";
@@ -49,7 +43,15 @@ interface Props {
   isAdmin?: boolean;
 }
 
-export function SettingsSectionIcon({ section, size = 16, strokeWidth = 1.8 }: { section: SettingsSection; size?: number; strokeWidth?: number }) {
+export function SettingsSectionIcon({
+  section,
+  size = 16,
+  strokeWidth = 1.8,
+}: {
+  section: SettingsSection;
+  size?: number;
+  strokeWidth?: number;
+}) {
   const common = {
     width: size,
     height: size,
@@ -63,30 +65,150 @@ export function SettingsSectionIcon({ section, size = 16, strokeWidth = 1.8 }: {
     className: "settings-section-icon",
   };
 
-  if (section === "general") return <svg {...common}><path d="M20 7h-9M14 17H5" /><circle cx="7" cy="7" r="3" /><circle cx="17" cy="17" r="3" /></svg>;
-  if (section === "models") return <svg {...common}><rect x="4" y="4" width="16" height="16" rx="2" /><rect x="9" y="9" width="6" height="6" /><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 15h3M1 9h3M1 15h3" /></svg>;
-  if (section === "skills") return <svg {...common}><path d="m12 2-10 5 10 5 10-5-10-5Z" /><path d="m2 12 10 5 10-5M2 17l10 5 10-5" /></svg>;
-  if (section === "bundles") return <svg {...common}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>;
-  if (section === "quick-templates") return <svg {...common}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></svg>;
-  if (section === "mcp") return <svg {...common}><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><line x1="17.5" y1="11" x2="17.5" y2="14" /><line x1="11" y1="17.5" x2="14" y2="17.5" /></svg>;
-  if (section === "account") return <svg {...common}><circle cx="12" cy="8" r="4" /><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7" /></svg>;
-  if (section === "policy") return <svg {...common}><path d="M12 2 4 5.5v5.3c0 5 3.4 9.6 8 10.7 4.6-1.1 8-5.7 8-10.7V5.5L12 2Z" /><path d="m9 12 2 2 4-4.5" /></svg>;
-  if (section === "api-keys") return <svg {...common}><rect x="3" y="11" width="18" height="10" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /><circle cx="8" cy="16" r="0.6" /><circle cx="12" cy="16" r="0.6" /></svg>;
-  if (section === "agents") return <svg {...common} className="settings-section-icon is-agent"><rect x="5" y="7" width="14" height="11" rx="2" /><path d="M9 11h.01M15 11h.01M9 15h6M12 7V4M10 4h4" /></svg>;
-  return <svg {...common}><path d="M9 7V2M15 7V2M6 13V8a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v5a6 6 0 0 1-12 0ZM12 19v3" /></svg>;
+  if (section === "general")
+    return (
+      <svg {...common}>
+        <path d="M20 7h-9M14 17H5" />
+        <circle cx="7" cy="7" r="3" />
+        <circle cx="17" cy="17" r="3" />
+      </svg>
+    );
+  if (section === "models")
+    return (
+      <svg {...common}>
+        <rect x="4" y="4" width="16" height="16" rx="2" />
+        <rect x="9" y="9" width="6" height="6" />
+        <path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 15h3M1 9h3M1 15h3" />
+      </svg>
+    );
+  if (section === "skills")
+    return (
+      <svg {...common}>
+        <path d="m12 2-10 5 10 5 10-5-10-5Z" />
+        <path d="m2 12 10 5 10-5M2 17l10 5 10-5" />
+      </svg>
+    );
+  if (section === "bundles")
+    return (
+      <svg {...common}>
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+        <polyline points="7 10 12 15 17 10" />
+        <line x1="12" y1="15" x2="12" y2="3" />
+      </svg>
+    );
+  if (section === "quick-templates")
+    return (
+      <svg {...common}>
+        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+      </svg>
+    );
+  if (section === "mcp")
+    return (
+      <svg {...common}>
+        <rect x="3" y="3" width="7" height="7" rx="1" />
+        <rect x="14" y="3" width="7" height="7" rx="1" />
+        <rect x="3" y="14" width="7" height="7" rx="1" />
+        <line x1="17.5" y1="11" x2="17.5" y2="14" />
+        <line x1="11" y1="17.5" x2="14" y2="17.5" />
+      </svg>
+    );
+  if (section === "account")
+    return (
+      <svg {...common}>
+        <circle cx="12" cy="8" r="4" />
+        <path d="M4 21c0-4 3.6-7 8-7s8 3 8 7" />
+      </svg>
+    );
+  if (section === "policy")
+    return (
+      <svg {...common}>
+        <path d="M12 2 4 5.5v5.3c0 5 3.4 9.6 8 10.7 4.6-1.1 8-5.7 8-10.7V5.5L12 2Z" />
+        <path d="m9 12 2 2 4-4.5" />
+      </svg>
+    );
+  if (section === "api-keys")
+    return (
+      <svg {...common}>
+        <rect x="3" y="11" width="18" height="10" rx="2" />
+        <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+        <circle cx="8" cy="16" r="0.6" />
+        <circle cx="12" cy="16" r="0.6" />
+      </svg>
+    );
+  if (section === "agents")
+    return (
+      <svg {...common} className="settings-section-icon is-agent">
+        <rect x="5" y="7" width="14" height="11" rx="2" />
+        <path d="M9 11h.01M15 11h.01M9 15h6M12 7V4M10 4h4" />
+      </svg>
+    );
+  return (
+    <svg {...common}>
+      <path d="M9 7V2M15 7V2M6 13V8a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v5a6 6 0 0 1-12 0ZM12 19v3" />
+    </svg>
+  );
 }
 
 function ThemeIcon({ preference }: { preference: ThemePreference }) {
   if (preference === "light") {
-    return <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.42-1.41M17.66 6.34l1.41-1.41" /></svg>;
+    return (
+      <svg
+        width="17"
+        height="17"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        aria-hidden="true"
+      >
+        <circle cx="12" cy="12" r="4" />
+        <path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.42-1.41M17.66 6.34l1.41-1.41" />
+      </svg>
+    );
   }
   if (preference === "dark") {
-    return <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z" /></svg>;
+    return (
+      <svg
+        width="17"
+        height="17"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z" />
+      </svg>
+    );
   }
-  return <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2" /><path d="M8 21h8M12 17v4" /></svg>;
+  return (
+    <svg
+      width="17"
+      height="17"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="3" y="4" width="18" height="13" rx="2" />
+      <path d="M8 21h8M12 17v4" />
+    </svg>
+  );
 }
 
-function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, onQuoteSelectionChange, isAdmin }: Pick<Props, "sessionId" | "onSessionReloaded" | "quoteSelectionEnabled" | "onQuoteSelectionChange" | "isAdmin">) {
+function GeneralSettings({
+  sessionId,
+  onSessionReloaded,
+  quoteSelectionEnabled,
+  onQuoteSelectionChange,
+  isAdmin,
+}: Pick<Props, "sessionId" | "onSessionReloaded" | "quoteSelectionEnabled" | "onQuoteSelectionChange" | "isAdmin">) {
   const { locale, setLocale, supportedLocales, t } = useI18n();
   const { preference, setThemePreference } = useTheme();
   const { width: chatContentWidth, setWidth: setChatContentWidth, fontSize, setFontSize } = useChatAppearance();
@@ -113,21 +235,27 @@ function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, 
     let cancelled = false;
     void fetch("/api/tools/settings")
       .then(async (response) => {
-        const data = await response.json() as ShellToolSettingsResponse & { error?: string };
+        const data = (await response.json()) as ShellToolSettingsResponse & { error?: string };
         if (!response.ok || data.error) throw new Error(data.error ?? `HTTP ${response.status}`);
         if (!cancelled) setShellSettings(data);
       })
       .catch((cause) => {
         if (!cancelled) setShellError(cause instanceof Error ? cause.message : String(cause));
       });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
     let cancelled = false;
     void fetch("/api/user-settings")
       .then(async (response) => {
-        const data = await response.json() as { askAutoContinue?: boolean; askTimeoutMinutes?: number; error?: string };
+        const data = (await response.json()) as {
+          askAutoContinue?: boolean;
+          askTimeoutMinutes?: number;
+          error?: string;
+        };
         if (!response.ok || data.error) throw new Error(data.error ?? `HTTP ${response.status}`);
         if (!cancelled) {
           setAskSettings({
@@ -139,7 +267,9 @@ function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, 
       .catch(() => {
         // 用户设置暂不可达（如登录失效）——隐藏该节，不打扰其他设置。
       });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const toggleAskAutoContinue = async (enabled: boolean) => {
@@ -151,7 +281,7 @@ function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ askAutoContinue: enabled }),
       });
-      const data = await response.json() as { askAutoContinue: boolean; askTimeoutMinutes: number; error?: string };
+      const data = (await response.json()) as { askAutoContinue: boolean; askTimeoutMinutes: number; error?: string };
       if (!response.ok || data.error) throw new Error(data.error ?? `HTTP ${response.status}`);
       // 无需重载会话：服务端在 PUT 后对等待中的提问重新武装/取消倒计时。
       setAskSettings(data);
@@ -171,7 +301,7 @@ function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ enabled }),
       });
-      const data = await response.json() as ShellToolSettingsResponse & { error?: string };
+      const data = (await response.json()) as ShellToolSettingsResponse & { error?: string };
       if (!response.ok || data.error) throw new Error(data.error ?? `HTTP ${response.status}`);
       setShellSettings(data);
       if (sessionId) {
@@ -238,7 +368,17 @@ function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, 
                 disabled={chatContentWidth === CHAT_CONTENT_WIDTH_DEFAULT}
                 onClick={() => setChatContentWidth(CHAT_CONTENT_WIDTH_DEFAULT)}
               >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
                   <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8M3 3v5h5" />
                 </svg>
               </ConfigButton>
@@ -266,7 +406,17 @@ function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, 
                 disabled={fontSize === CHAT_CONTENT_FONT_SIZE_DEFAULT}
                 onClick={() => setFontSize(CHAT_CONTENT_FONT_SIZE_DEFAULT)}
               >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
                   <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8M3 3v5h5" />
                 </svg>
               </ConfigButton>
@@ -305,7 +455,11 @@ function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, 
               onChange={(enabled) => void togglePowerShell(enabled)}
             />
           </div>
-          {shellError && <p role="alert" className="settings-general-error">{shellError}</p>}
+          {shellError && (
+            <p role="alert" className="settings-general-error">
+              {shellError}
+            </p>
+          )}
         </section>
       )}
 
@@ -325,7 +479,11 @@ function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, 
               onChange={(enabled) => void toggleAskAutoContinue(enabled)}
             />
           </div>
-          {askError && <p role="alert" className="settings-general-error">{askError}</p>}
+          {askError && (
+            <p role="alert" className="settings-general-error">
+              {askError}
+            </p>
+          )}
         </section>
       )}
 
@@ -361,16 +519,28 @@ function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, 
   );
 }
 
-export function SettingsPanel({ cwd, sessionId, initialSection, onClose, onSessionReloaded, quoteSelectionEnabled, onQuoteSelectionChange, isAdmin = false }: Props) {
+export function SettingsPanel({
+  cwd,
+  sessionId,
+  initialSection,
+  onClose,
+  onSessionReloaded,
+  quoteSelectionEnabled,
+  onQuoteSelectionChange,
+  isAdmin = false,
+}: Props) {
   const { t } = useI18n();
   const { confirm, confirmDialog } = useConfirm();
   const [section, setSection] = useState<SettingsSection>(initialSection);
-  const [mountedSections, setMountedSections] = useState<ReadonlySet<SettingsSection>>(
-    () => new Set([section]),
-  );
+  const [mountedSections, setMountedSections] = useState<ReadonlySet<SettingsSection>>(() => new Set([section]));
   const tabsScrollboxRef = useRef<HTMLDivElement>(null);
   // 分组仅驱动分隔线渲染：个人 | 工作区配置 | 管理员。
-  const sections: Array<{ id: SettingsSection; label: string; requiresProject: boolean; group: "personal" | "workspace" | "admin" }> = [
+  const sections: Array<{
+    id: SettingsSection;
+    label: string;
+    requiresProject: boolean;
+    group: "personal" | "workspace" | "admin";
+  }> = [
     { id: "general", label: t("settings.general"), requiresProject: false, group: "personal" },
     { id: "account", label: t("settings.account"), requiresProject: false, group: "personal" },
     { id: "api-keys", label: t("settings.apiKeys"), requiresProject: false, group: "personal" },
@@ -382,10 +552,17 @@ export function SettingsPanel({ cwd, sessionId, initialSection, onClose, onSessi
     { id: "plugins", label: t("common.plugins"), requiresProject: true, group: "workspace" },
     // Admin-only management sections — their rendering is gated on isAdmin
     // below; they must also appear here or there is no way to navigate to them.
-    ...(isAdmin ? [
-      { id: "quick-templates" as const, label: t("quickTemplates.quickSessionTemplates"), requiresProject: false, group: "admin" as const },
-      { id: "bundles" as const, label: t("bundles.agentsAdmin"), requiresProject: false, group: "admin" as const },
-    ] : []),
+    ...(isAdmin
+      ? [
+          {
+            id: "quick-templates" as const,
+            label: t("quickTemplates.quickSessionTemplates"),
+            requiresProject: false,
+            group: "admin" as const,
+          },
+          { id: "bundles" as const, label: t("bundles.agentsAdmin"), requiresProject: false, group: "admin" as const },
+        ]
+      : []),
   ];
 
   useEffect(() => setLastSettingsSection(initialSection), [initialSection]);
@@ -459,7 +636,10 @@ export function SettingsPanel({ cwd, sessionId, initialSection, onClose, onSessi
       const overflow = scroller.scrollWidth - scroller.clientWidth;
       scroller.classList.toggle("is-compact", overflow > 1);
       wrapper.classList.toggle("can-scroll-left", scroller.scrollLeft > 4);
-      wrapper.classList.toggle("can-scroll-right", scroller.scrollLeft + scroller.clientWidth < scroller.scrollWidth - 4);
+      wrapper.classList.toggle(
+        "can-scroll-right",
+        scroller.scrollLeft + scroller.clientWidth < scroller.scrollWidth - 4,
+      );
     };
     update();
     scroller.addEventListener("scroll", update, { passive: true });
@@ -471,22 +651,21 @@ export function SettingsPanel({ cwd, sessionId, initialSection, onClose, onSessi
     };
   }, [cwd, isAdmin, section, t]);
 
-  const sectionHost = (id: SettingsSection, content: ReactNode) => mountedSections.has(id) ? (
-    <div
-      key={id}
-      hidden={section !== id}
-      className="settings-section-host"
-    >
-      {content}
-    </div>
-  ) : null;
+  const sectionHost = (id: SettingsSection, content: ReactNode) =>
+    mountedSections.has(id) ? (
+      <div key={id} hidden={section !== id} className="settings-section-host">
+        {content}
+      </div>
+    ) : null;
 
   return (
     <div
       role="dialog"
       aria-modal="true"
       aria-label={t("settings.title")}
-      onClick={(event) => { if (event.target === event.currentTarget) requestClose(); }}
+      onClick={(event) => {
+        if (event.target === event.currentTarget) requestClose();
+      }}
       className="settings-dialog-backdrop"
     >
       <div className="settings-dialog-surface">
@@ -527,11 +706,28 @@ export function SettingsPanel({ cwd, sessionId, initialSection, onClose, onSessi
               ))}
             </nav>
           </div>
-          <button type="button" onClick={requestClose} title={t("i18n.close")} aria-label={t("i18n.close")} className="config-close-button settings-dialog-close">×</button>
+          <button
+            type="button"
+            onClick={requestClose}
+            title={t("i18n.close")}
+            aria-label={t("i18n.close")}
+            className="config-close-button settings-dialog-close"
+          >
+            ×
+          </button>
         </div>
 
         <main className="settings-dialog-main">
-          {sectionHost("general", <GeneralSettings sessionId={sessionId} onSessionReloaded={onSessionReloaded} quoteSelectionEnabled={quoteSelectionEnabled} onQuoteSelectionChange={onQuoteSelectionChange} isAdmin={isAdmin} />)}
+          {sectionHost(
+            "general",
+            <GeneralSettings
+              sessionId={sessionId}
+              onSessionReloaded={onSessionReloaded}
+              quoteSelectionEnabled={quoteSelectionEnabled}
+              onQuoteSelectionChange={onQuoteSelectionChange}
+              isAdmin={isAdmin}
+            />,
+          )}
           {sectionHost("account", <AccountSettings />)}
           {sectionHost("api-keys", <ApiKeysConfig />)}
           {sectionHost("models", <ModelsConfig embedded onClose={onClose} />)}
@@ -541,7 +737,18 @@ export function SettingsPanel({ cwd, sessionId, initialSection, onClose, onSessi
           {cwd && sectionHost("policy", <PolicyConfig embedded key={cwd} cwd={cwd} />)}
           {isAdmin && sectionHost("quick-templates", <QuickTemplatesConfig embedded />)}
           {isAdmin && sectionHost("bundles", <BundlesConfig embedded />)}
-          {cwd && sectionHost("plugins", <PluginsConfig embedded key={cwd} cwd={cwd} sessionId={sessionId} onClose={onClose} onReloaded={onSessionReloaded} />)}
+          {cwd &&
+            sectionHost(
+              "plugins",
+              <PluginsConfig
+                embedded
+                key={cwd}
+                cwd={cwd}
+                sessionId={sessionId}
+                onClose={onClose}
+                onReloaded={onSessionReloaded}
+              />,
+            )}
         </main>
       </div>
       {confirmDialog}

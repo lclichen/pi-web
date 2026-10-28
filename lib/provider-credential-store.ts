@@ -3,14 +3,12 @@ import { dirname, join } from "node:path";
 import type { Credential } from "@earendil-works/pi-ai";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import lockfile from "proper-lockfile";
-import type { ProviderCredentialType }  from "./provider-listing";
+import type { ProviderCredentialType } from "./provider-listing";
 
 const AUTH_FILE_WRITE_OPTIONS = { encoding: "utf-8" as const, mode: 0o600 };
 
 export type CredentialRemovalResult =
-  | { status: "removed" }
-  | { status: "not_found" }
-  | { status: "type_mismatch"; storedType: string };
+  { status: "removed" } | { status: "not_found" } | { status: "type_mismatch"; storedType: string };
 
 function ensureAuthFile(authPath: string): void {
   const parent = dirname(authPath);
@@ -101,9 +99,7 @@ export async function removeStoredCredentialIfType(
     }
 
     const credential = credentials[providerId];
-    const storedType = isRecord(credential) && typeof credential.type === "string"
-      ? credential.type
-      : "unknown";
+    const storedType = isRecord(credential) && typeof credential.type === "string" ? credential.type : "unknown";
     if (storedType !== expectedType) {
       return { result: { status: "type_mismatch", storedType }, changed: false };
     }

@@ -3,16 +3,8 @@ import fs from "fs";
 import path from "path";
 import { promisify } from "util";
 import { TEXT_PREVIEW_MAX_BYTES } from "./file-types";
-import type {
-  GitFileDiffResponse,
-  GitFileStatus,
-  GitStatusResponse,
-} from "./git-types";
-import {
-  classifyGitStatus,
-  parseGitPorcelainV1,
-  type GitPorcelainEntry,
-} from "./git-status";
+import type { GitFileDiffResponse, GitFileStatus, GitStatusResponse } from "./git-types";
+import { classifyGitStatus, parseGitPorcelainV1, type GitPorcelainEntry } from "./git-status";
 
 const execFileAsync = promisify(execFile);
 const GIT_TIMEOUT_MS = 10_000;
@@ -45,12 +37,7 @@ function toGitPath(filePath: string): string {
 }
 
 async function readStatusEntries(repositoryRoot: string): Promise<GitPorcelainEntry[]> {
-  const output = await git(repositoryRoot, [
-    "status",
-    "--porcelain=v1",
-    "-z",
-    "--untracked-files=all",
-  ]);
+  const output = await git(repositoryRoot, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]);
   return parseGitPorcelainV1(output);
 }
 
@@ -119,12 +106,14 @@ export async function getGitStatus(cwd: string): Promise<GitStatusResponse> {
     const filePath = path.resolve(repositoryRoot, entry.path);
     if (!isWithinPath(cwd, filePath)) return [];
     const classified = classifyGitStatus(entry);
-    return [{
-      filePath,
-      ...classified,
-      indexStatus: entry.indexStatus,
-      worktreeStatus: entry.worktreeStatus,
-    }];
+    return [
+      {
+        filePath,
+        ...classified,
+        indexStatus: entry.indexStatus,
+        worktreeStatus: entry.worktreeStatus,
+      },
+    ];
   });
   const untrackedAdditions = files.reduce(
     (total, file) => total + (file.status === "untracked" ? countUntrackedTextLines(file.filePath) : 0),
@@ -149,9 +138,7 @@ function createAddedFilePatch(gitPath: string, content: string): string {
   const lines = content.split("\n");
   if (hasTrailingNewline) lines.pop();
   const body = lines.map((line) => `+${line}`).join("\n");
-  const noNewlineMarker = !hasTrailingNewline && lines.length > 0
-    ? "\n\\ No newline at end of file"
-    : "";
+  const noNewlineMarker = !hasTrailingNewline && lines.length > 0 ? "\n\\ No newline at end of file" : "";
   return [
     `diff --git a/${gitPath} b/${gitPath}`,
     "new file mode 100644",
@@ -167,19 +154,13 @@ async function createTrackedFilePatch(
   relativePath: string,
   originalPath?: string,
 ): Promise<string | null> {
-  const paths = originalPath && originalPath !== relativePath
-    ? [originalPath, relativePath]
-    : [relativePath];
+  const paths = originalPath && originalPath !== relativePath ? [originalPath, relativePath] : [relativePath];
   try {
-    return await git(repositoryRoot, [
-      "diff",
-      "--no-color",
-      "--no-ext-diff",
-      "--unified=3",
-      "HEAD",
-      "--",
-      ...paths,
-    ], TEXT_PREVIEW_MAX_BYTES * 4);
+    return await git(
+      repositoryRoot,
+      ["diff", "--no-color", "--no-ext-diff", "--unified=3", "HEAD", "--", ...paths],
+      TEXT_PREVIEW_MAX_BYTES * 4,
+    );
   } catch {
     return null;
   }

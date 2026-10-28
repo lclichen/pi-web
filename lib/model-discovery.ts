@@ -37,9 +37,10 @@ function modelFromValue(value: unknown): DiscoveredModel | null {
   if (!rawId) return null;
   const id = rawId.startsWith("models/") ? rawId.slice("models/".length) : rawId;
   if (!id) return null;
-  const name = cleanString(value.display_name)
-    ?? cleanString(value.displayName)
-    ?? (cleanString(value.id) || cleanString(value.model) ? cleanString(value.name) : undefined);
+  const name =
+    cleanString(value.display_name) ??
+    cleanString(value.displayName) ??
+    (cleanString(value.id) || cleanString(value.model) ? cleanString(value.name) : undefined);
   const contextLength = finitePositiveNumber(value.context_length) ?? finitePositiveNumber(value.contextLength);
   const maxOutputTokens = finitePositiveNumber(value.max_output_tokens) ?? finitePositiveNumber(value.maxOutputTokens);
   const inputModalities = stringArray(value.input_modalities) ?? stringArray(value.inputModalities);
@@ -72,10 +73,12 @@ export function parseDiscoveredModels(value: unknown): DiscoveredModel[] {
     seen.add(model.id);
     models.push(model);
   }
-  return models.sort((a, b) => (a.name ?? a.id).localeCompare(b.name ?? b.id, undefined, {
-    numeric: true,
-    sensitivity: "base",
-  }));
+  return models.sort((a, b) =>
+    (a.name ?? a.id).localeCompare(b.name ?? b.id, undefined, {
+      numeric: true,
+      sensitivity: "base",
+    }),
+  );
 }
 
 export function buildModelsListUrl(baseUrl: string, api: string): URL {

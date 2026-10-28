@@ -36,7 +36,8 @@ export async function POST(req: Request) {
   if (!isApiRequestAllowed(req)) return NextResponse.json({ error: "Untrusted API request" }, { status: 403 });
   const gate = isAdmin(req);
   if (!gate.ok) return gate.response!;
-  if (!hasJsonContentType(req)) return NextResponse.json({ error: "Content-Type must be application/json" }, { status: 415 });
+  if (!hasJsonContentType(req))
+    return NextResponse.json({ error: "Content-Type must be application/json" }, { status: 415 });
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
   const result = createQuickTemplate(body);
   if (result.errors) return NextResponse.json({ errors: result.errors }, { status: 400 });
@@ -47,7 +48,8 @@ export async function PATCH(req: Request) {
   if (!isApiRequestAllowed(req)) return NextResponse.json({ error: "Untrusted API request" }, { status: 403 });
   const gate = isAdmin(req);
   if (!gate.ok) return gate.response!;
-  if (!hasJsonContentType(req)) return NextResponse.json({ error: "Content-Type must be application/json" }, { status: 415 });
+  if (!hasJsonContentType(req))
+    return NextResponse.json({ error: "Content-Type must be application/json" }, { status: 415 });
   const body = (await req.json().catch(() => ({}))) as { id?: unknown; template?: unknown };
   if (typeof body.id !== "string") return NextResponse.json({ error: "id required" }, { status: 400 });
   const result = updateQuickTemplate(body.id, (body.template ?? {}) as Record<string, unknown>);

@@ -36,11 +36,10 @@ export async function GET(req: Request) {
       // Auto-create the user's default workspace on first use. The platform
       // schema only allows ASCII names; the UI renders the fixed label
       // "我的工作区" regardless of the stored name.
-      const created = await platformPost<PlatformWorkspace>(
-        "/api/v1/workspaces",
-        identity.session.apiKey,
-        { name: "my-workspace", description: "Cloud file storage (seeds /workspace when creating projects)" },
-      );
+      const created = await platformPost<PlatformWorkspace>("/api/v1/workspaces", identity.session.apiKey, {
+        name: "my-workspace",
+        description: "Cloud file storage (seeds /workspace when creating projects)",
+      });
       normal.push(created);
     }
     return NextResponse.json({ workspaces: normal });

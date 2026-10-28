@@ -16,9 +16,17 @@ test("settings labels the section as Agents management with an Agent-definitions
 test("agent definition detail inspects contents, dependencies, and previews files", () => {
   assert.match(bundlesSource, /\/api\/bundles\/\$\{encodeURIComponent\(bundleName\)\}\/inspect/);
   for (const key of [
-    "detailContents", "detailDependencies", "detailManifest", "detailPreview",
-    "sectionExtensions", "sectionSkills", "sectionAgents", "sectionModels",
-    "sectionMcp", "sectionLabs", "binaryPreview",
+    "detailContents",
+    "detailDependencies",
+    "detailManifest",
+    "detailPreview",
+    "sectionExtensions",
+    "sectionSkills",
+    "sectionAgents",
+    "sectionModels",
+    "sectionMcp",
+    "sectionLabs",
+    "binaryPreview",
   ]) {
     assert.match(bundlesSource, new RegExp(`bundles\\.${key}`));
   }
@@ -48,5 +56,8 @@ test("host-mode apply is fenced, admin-only, and refuses initialized directories
   const treeSource = await readFile(new URL("./ProjectSessionTree.tsx", import.meta.url), "utf8");
   const dialogSource = await readFile(new URL("./ApplyBundleDialog.tsx", import.meta.url), "utf8");
   assert.match(treeSource, /setApplyHostDir\(menu\.directory/);
-  assert.match(dialogSource, /hostDir \? \/\/ api\/host\/apply-bundle|hostDir\s*\?\s*await fetch\("\/api\/host\/apply-bundle"/);
+  assert.match(
+    dialogSource,
+    /hostDir \? \/\/ api\/host\/apply-bundle|hostDir\s*\?\s*await fetch\("\/api\/host\/apply-bundle"/,
+  );
 });

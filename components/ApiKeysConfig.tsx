@@ -141,32 +141,35 @@ export function ApiKeysConfig() {
     });
   }, []);
 
-  const revoke = useCallback(async (row: ApiKeyRow) => {
-    if (revoking !== null) return;
-    const ok = await confirm({
-      title: t("apiKeys.revoke"),
-      message: t("apiKeys.revokeConfirm", { name: row.name }),
-      confirmLabel: t("apiKeys.revoke"),
-      abortLabel: t("common.cancel"),
-      danger: true,
-    });
-    if (!ok) return;
-    setRevoking(row.id);
-    setRevokeError(null);
-    try {
-      const res = await fetch(`/api/platform/api-keys/${row.id}`, { method: "DELETE" });
-      const d = (await res.json()) as { ok?: boolean; error?: string };
-      if (!res.ok || d.error) {
-        setRevokeError(d.error ?? `HTTP ${res.status}`);
-        return;
+  const revoke = useCallback(
+    async (row: ApiKeyRow) => {
+      if (revoking !== null) return;
+      const ok = await confirm({
+        title: t("apiKeys.revoke"),
+        message: t("apiKeys.revokeConfirm", { name: row.name }),
+        confirmLabel: t("apiKeys.revoke"),
+        abortLabel: t("common.cancel"),
+        danger: true,
+      });
+      if (!ok) return;
+      setRevoking(row.id);
+      setRevokeError(null);
+      try {
+        const res = await fetch(`/api/platform/api-keys/${row.id}`, { method: "DELETE" });
+        const d = (await res.json()) as { ok?: boolean; error?: string };
+        if (!res.ok || d.error) {
+          setRevokeError(d.error ?? `HTTP ${res.status}`);
+          return;
+        }
+        setKeys((prev) => prev.filter((k) => k.id !== row.id));
+      } catch (e) {
+        setRevokeError(String(e));
+      } finally {
+        setRevoking(null);
       }
-      setKeys((prev) => prev.filter((k) => k.id !== row.id));
-    } catch (e) {
-      setRevokeError(String(e));
-    } finally {
-      setRevoking(null);
-    }
-  }, [revoking, t, confirm]);
+    },
+    [revoking, t, confirm],
+  );
 
   const fmtDate = (iso: string | null): string => {
     if (!iso) return "";
@@ -233,7 +236,9 @@ export function ApiKeysConfig() {
     <div className="settings-general">
       <h2 className="settings-general-title">{t("settings.apiKeys")}</h2>
       {loadError ? (
-        <p role="alert" className="settings-general-error">{loadError}</p>
+        <p role="alert" className="settings-general-error">
+          {loadError}
+        </p>
       ) : (
         <>
           <section className="settings-general-section">
@@ -244,7 +249,10 @@ export function ApiKeysConfig() {
             </p>
             <form
               className="api-keys-create-form"
-              onSubmit={(e) => { e.preventDefault(); void create(); }}
+              onSubmit={(e) => {
+                e.preventDefault();
+                void create();
+              }}
             >
               <input
                 className="config-input"
@@ -257,10 +265,12 @@ export function ApiKeysConfig() {
                 {creating ? t("apiKeys.creating") : t("apiKeys.create")}
               </ConfigButton>
             </form>
-            {createError && <p role="alert" className="settings-general-error">{createError}</p>}
-            {revealNew !== null && (
-              <p className="api-key-created-hint">{t("apiKeys.createdHint")}</p>
+            {createError && (
+              <p role="alert" className="settings-general-error">
+                {createError}
+              </p>
             )}
+            {revealNew !== null && <p className="api-key-created-hint">{t("apiKeys.createdHint")}</p>}
           </section>
 
           <section className="settings-general-section">
@@ -287,12 +297,26 @@ export function ApiKeysConfig() {
                       onClick={() => setAutoExpanded((v) => !v)}
                     >
                       <svg
-                        width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
-                        style={{ transform: autoExpanded ? "rotate(90deg)" : "none", transition: "transform 0.12s", flexShrink: 0 }}
+                        width="10"
+                        height="10"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2.4"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                        style={{
+                          transform: autoExpanded ? "rotate(90deg)" : "none",
+                          transition: "transform 0.12s",
+                          flexShrink: 0,
+                        }}
                       >
                         <polyline points="9 6 15 12 9 18" />
                       </svg>
-                      <span>{t("apiKeys.groupAuto")}（{autoKeys.length}）</span>
+                      <span>
+                        {t("apiKeys.groupAuto")}（{autoKeys.length}）
+                      </span>
                     </button>
                     <p className="settings-general-description" style={{ marginBottom: 0 }}>
                       {t("apiKeys.groupAutoDesc")}
@@ -309,7 +333,11 @@ export function ApiKeysConfig() {
                 )}
               </div>
             )}
-            {revokeError && <p role="alert" className="settings-general-error">{revokeError}</p>}
+            {revokeError && (
+              <p role="alert" className="settings-general-error">
+                {revokeError}
+              </p>
+            )}
           </section>
         </>
       )}

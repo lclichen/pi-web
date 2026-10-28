@@ -38,7 +38,9 @@ export function consumeInitialPasswordIfMatch(usedPassword: string): boolean {
   if (usedPassword !== initial) return false;
   try {
     unlinkSync(file);
-  } catch { /* 已被并发删除/权限问题——banner 最多多显示一轮 */ }
+  } catch {
+    /* 已被并发删除/权限问题——banner 最多多显示一轮 */
+  }
   return true;
 }
 
@@ -46,8 +48,6 @@ export function consumeInitialPasswordIfMatch(usedPassword: string): boolean {
  *  IPv6 形如 [::1]:30141——先取 ] 前的整段，再比较带括号形式。 */
 export function isLoopbackHost(req: Request): boolean {
   const raw = req.headers.get("host")?.toLowerCase() ?? "";
-  const hostname = raw.startsWith("[")
-    ? raw.slice(0, raw.indexOf("]") + 1)
-    : raw.split(":")[0];
+  const hostname = raw.startsWith("[") ? raw.slice(0, raw.indexOf("]") + 1) : raw.split(":")[0];
   return hostname === "127.0.0.1" || hostname === "localhost" || hostname === "[::1]";
 }

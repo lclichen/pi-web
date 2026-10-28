@@ -55,10 +55,14 @@ function getPackageSource(entry: PackageSource): string {
 function isDisabledPackage(entry: PackageSource): boolean {
   if (typeof entry === "string") return false;
   return (
-    Array.isArray(entry.extensions) && entry.extensions.length === 0 &&
-    Array.isArray(entry.skills) && entry.skills.length === 0 &&
-    Array.isArray(entry.prompts) && entry.prompts.length === 0 &&
-    Array.isArray(entry.themes) && entry.themes.length === 0
+    Array.isArray(entry.extensions) &&
+    entry.extensions.length === 0 &&
+    Array.isArray(entry.skills) &&
+    entry.skills.length === 0 &&
+    Array.isArray(entry.prompts) &&
+    entry.prompts.length === 0 &&
+    Array.isArray(entry.themes) &&
+    entry.themes.length === 0
   );
 }
 
@@ -79,9 +83,10 @@ function setPackageDisabled(
   scope: PluginScope,
   disabled: boolean,
 ): boolean {
-  const current = scope === "project"
-    ? settingsManager.getProjectSettings().packages ?? []
-    : settingsManager.getGlobalSettings().packages ?? [];
+  const current =
+    scope === "project"
+      ? (settingsManager.getProjectSettings().packages ?? [])
+      : (settingsManager.getGlobalSettings().packages ?? []);
   let changed = false;
   const next = current.map((entry): PackageSource => {
     if (getPackageSource(entry) !== source) return entry;
@@ -175,16 +180,13 @@ function collectResource(
   resourcesByPackage: Map<string, PluginResourceInfo[]>,
   totals: PluginResourceCounts,
   topLevel: Map<string, PluginPackageInfo>,
-  classify: (resource: ResolvedResource) => { origin: "settings" | "directory"; source: string; sourceLabel: string; installedPath?: string } | null,
+  classify: (
+    resource: ResolvedResource,
+  ) => { origin: "settings" | "directory"; source: string; sourceLabel: string; installedPath?: string } | null,
 ): void {
   if (!resource.enabled) return;
-  const resourceKind = kind === "extensions"
-    ? "extension"
-    : kind === "skills"
-      ? "skill"
-      : kind === "prompts"
-        ? "prompt"
-        : "theme";
+  const resourceKind =
+    kind === "extensions" ? "extension" : kind === "skills" ? "skill" : kind === "prompts" ? "prompt" : "theme";
   const info: PluginResourceInfo = {
     kind: resourceKind,
     name: getResourceName(resource.path, resourceKind),
@@ -237,7 +239,9 @@ function collectResource(
 
 function collectResources(
   paths: ResolvedPaths,
-  classify: (resource: ResolvedResource) => { origin: "settings" | "directory"; source: string; sourceLabel: string; installedPath?: string } | null,
+  classify: (
+    resource: ResolvedResource,
+  ) => { origin: "settings" | "directory"; source: string; sourceLabel: string; installedPath?: string } | null,
 ): {
   countsByPackage: Map<string, PluginResourceCounts>;
   resourcesByPackage: Map<string, PluginResourceInfo[]>;
@@ -248,10 +252,14 @@ function collectResources(
   const resourcesByPackage = new Map<string, PluginResourceInfo[]>();
   const totals = emptyCounts();
   const topLevel = new Map<string, PluginPackageInfo>();
-  for (const resource of paths.extensions) collectResource(resource, "extensions", countsByPackage, resourcesByPackage, totals, topLevel, classify);
-  for (const resource of paths.skills) collectResource(resource, "skills", countsByPackage, resourcesByPackage, totals, topLevel, classify);
-  for (const resource of paths.prompts) collectResource(resource, "prompts", countsByPackage, resourcesByPackage, totals, topLevel, classify);
-  for (const resource of paths.themes) collectResource(resource, "themes", countsByPackage, resourcesByPackage, totals, topLevel, classify);
+  for (const resource of paths.extensions)
+    collectResource(resource, "extensions", countsByPackage, resourcesByPackage, totals, topLevel, classify);
+  for (const resource of paths.skills)
+    collectResource(resource, "skills", countsByPackage, resourcesByPackage, totals, topLevel, classify);
+  for (const resource of paths.prompts)
+    collectResource(resource, "prompts", countsByPackage, resourcesByPackage, totals, topLevel, classify);
+  for (const resource of paths.themes)
+    collectResource(resource, "themes", countsByPackage, resourcesByPackage, totals, topLevel, classify);
   return { countsByPackage, resourcesByPackage, totals, topLevel };
 }
 
@@ -269,7 +277,9 @@ function makeClassifier(
   settingsManager: SettingsManager,
   cwd: string,
   agentDir: string,
-): (resource: ResolvedResource) => { origin: "settings" | "directory"; source: string; sourceLabel: string; installedPath?: string } | null {
+): (
+  resource: ResolvedResource,
+) => { origin: "settings" | "directory"; source: string; sourceLabel: string; installedPath?: string } | null {
   const configured: Array<{ source: string }> = [];
   const globalSettings = settingsManager.getGlobalSettings();
   const projectSettings = settingsManager.getProjectSettings();
@@ -281,10 +291,14 @@ function makeClassifier(
     }
   }
   const autoRoots = [
-    join(cwd, ".pi", "extensions"), join(cwd, ".pi", "skills"),
-    join(cwd, ".pi", "prompts"), join(cwd, ".pi", "themes"),
-    join(agentDir, "extensions"), join(agentDir, "skills"),
-    join(agentDir, "prompts"), join(agentDir, "themes"),
+    join(cwd, ".pi", "extensions"),
+    join(cwd, ".pi", "skills"),
+    join(cwd, ".pi", "prompts"),
+    join(cwd, ".pi", "themes"),
+    join(agentDir, "extensions"),
+    join(agentDir, "skills"),
+    join(agentDir, "prompts"),
+    join(agentDir, "themes"),
   ].map((root) => ({ root, norm: normalizeForMatch(root) }));
 
   const statPath = (p: string): string | undefined => {
@@ -451,7 +465,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const rawBody = await req.json() as {
+    const rawBody = (await req.json()) as {
       action?: PluginAction;
       source?: string;
       scope?: PluginScope;
@@ -462,7 +476,10 @@ export async function POST(req: Request) {
       projectId?: string;
     };
     const body = rawBody;
-    const configDir = resolveConfigCwdSync(req, { projectId: typeof body.projectId === "string" ? body.projectId : null, cwd: typeof body.cwd === "string" ? body.cwd : null });
+    const configDir = resolveConfigCwdSync(req, {
+      projectId: typeof body.projectId === "string" ? body.projectId : null,
+      cwd: typeof body.cwd === "string" ? body.cwd : null,
+    });
     if (!configDir.ok) return NextResponse.json({ error: configDir.error }, { status: configDir.status });
     body.cwd = configDir.cwd;
     // 全局层（admin 管理）：scope=global 的任何写操作（含 origin=package 的
@@ -504,9 +521,9 @@ export async function POST(req: Request) {
         if (!existsSync(source) || !statSync(source).isFile()) {
           return NextResponse.json({ error: `扩展文件不存在：${source}` }, { status: 400 });
         }
-        const current = (local
-          ? settingsManager.getProjectSettings().extensions
-          : settingsManager.getGlobalSettings().extensions) ?? [];
+        const current =
+          (local ? settingsManager.getProjectSettings().extensions : settingsManager.getGlobalSettings().extensions) ??
+          [];
         if (!current.includes(source)) {
           if (local) settingsManager.setProjectExtensionPaths([...current, source]);
           else settingsManager.setExtensionPaths([...current, source]);
@@ -543,7 +560,10 @@ export async function POST(req: Request) {
       if (body.action === "remove") {
         if (!source) return NextResponse.json({ error: "source required" }, { status: 400 });
         if (!isManagedDir(source)) {
-          return NextResponse.json({ error: "只能删除 .pi/extensions 或全局 extensions 目录下的扩展目录" }, { status: 400 });
+          return NextResponse.json(
+            { error: "只能删除 .pi/extensions 或全局 extensions 目录下的扩展目录" },
+            { status: 400 },
+          );
         }
         rmSync(resolve(source), { recursive: true, force: true });
         return NextResponse.json(await readPlugins(body.cwd));
@@ -571,7 +591,11 @@ export async function POST(req: Request) {
       if (!source) return NextResponse.json({ error: "source required" }, { status: 400 });
       await packageManager.removeAndPersist(source, { local });
     } else if (body.action === "update") {
-      if (!source && !projectTrust.trusted && packageManager.listConfiguredPackages().some((pkg) => pkg.scope === "project")) {
+      if (
+        !source &&
+        !projectTrust.trusted &&
+        packageManager.listConfiguredPackages().some((pkg) => pkg.scope === "project")
+      ) {
         return NextResponse.json(
           { error: "Project resources must be trusted before updating project plugins" },
           { status: 403 },

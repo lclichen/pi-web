@@ -1,12 +1,5 @@
 import type { WebSocket } from "ws";
-import type {
-  AgentHello,
-  AgentInfo,
-  AgentToRelayMessage,
-  MachineStatus,
-  PairingCode,
-  RelayStatus,
-} from "./protocol";
+import type { AgentHello, AgentInfo, AgentToRelayMessage, MachineStatus, PairingCode, RelayStatus } from "./protocol";
 import { generatePairingCode, normalizeCode, PAIRING_TTL_MS } from "./pairing";
 import { isKnownToken, listAgentTokens } from "./relay-store";
 import { clientCompatibility, REQUIRED_CLIENT_VERSION } from "../client-compat";
@@ -433,10 +426,7 @@ export function machineForPty(sessionId: string): string {
  * auth off) and admins pass; everyone else must have created the PTY. Unknown
  * sid → deny: these sids travel in URLs, so possession is not authorization.
  */
-export function authorizePtySession(
-  sessionId: string,
-  user: { id: number; role: string },
-): boolean {
+export function authorizePtySession(sessionId: string, user: { id: number; role: string }): boolean {
   if (user.id === 0 || user.role === "admin") return true;
   const owner = getRegistry().ptyOwners.get(sessionId);
   return owner !== undefined && owner === user.id;

@@ -2,7 +2,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
-import type { McpTool, ProbeResult, ServerEntry }  from "./api-types";
+import type { McpTool, ProbeResult, ServerEntry } from "./api-types";
 
 const DEFAULT_TIMEOUT_MS = 15000;
 
@@ -44,20 +44,14 @@ async function connectHttp(client: Client, entry: ServerEntry): Promise<void> {
   }
 }
 
-export async function probeServer(
-  entry: ServerEntry,
-  timeoutMs: number = DEFAULT_TIMEOUT_MS,
-): Promise<ProbeResult> {
+export async function probeServer(entry: ServerEntry, timeoutMs: number = DEFAULT_TIMEOUT_MS): Promise<ProbeResult> {
   if (!entry.url && !entry.command && !entry.socket) {
     return { tools: [], error: "Server entry has neither url, command, nor socket" };
   }
   if (entry.socket) {
     return { tools: [], error: "rmcp-mux Unix socket probing is not supported from the web panel" };
   }
-  const client = new Client(
-    { name: "pi-web-mcp-probe", version: "1.0.0" },
-    { capabilities: {} },
-  );
+  const client = new Client({ name: "pi-web-mcp-probe", version: "1.0.0" }, { capabilities: {} });
   let timedOut = false;
   const timer = setTimeout(() => {
     timedOut = true;

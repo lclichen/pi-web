@@ -26,14 +26,16 @@ export function getWindowsDriveCandidates(): BrowsableDirectory[] {
 }
 
 export async function listWindowsDrives(): Promise<BrowsableDirectory[]> {
-  const candidates = await Promise.all(getWindowsDriveCandidates().map(async (drive) => {
-    try {
-      const driveStat = await stat(drive.path);
-      return driveStat.isDirectory() ? drive : null;
-    } catch {
-      return null;
-    }
-  }));
+  const candidates = await Promise.all(
+    getWindowsDriveCandidates().map(async (drive) => {
+      try {
+        const driveStat = await stat(drive.path);
+        return driveStat.isDirectory() ? drive : null;
+      } catch {
+        return null;
+      }
+    }),
+  );
 
   return candidates.filter((drive): drive is BrowsableDirectory => drive !== null);
 }
@@ -45,9 +47,7 @@ export function normalizeDirectory(directory: string): string {
 }
 
 export function getParentDirectory(directory: string): string | null {
-  const pathApi = /^[a-zA-Z]:[\\/]/.test(directory) || directory.startsWith("\\\\")
-    ? path.win32
-    : path.posix;
+  const pathApi = /^[a-zA-Z]:[\\/]/.test(directory) || directory.startsWith("\\\\") ? path.win32 : path.posix;
   const normalized = pathApi.normalize(directory);
   const parent = pathApi.dirname(normalized);
   return parent === normalized ? null : parent;
@@ -60,22 +60,24 @@ export async function resolveDirectory(directory: string): Promise<string> {
 export async function listDirectories(directory: string): Promise<BrowsableDirectory[]> {
   const entries = await readdir(directory, { withFileTypes: true });
   // 忽略损坏、不可访问或不指向目录的符号链接。
-  const candidates = await Promise.all(entries.map(async (entry) => {
-    if (entry.isDirectory()) {
-      return { name: entry.name, path: path.join(directory, entry.name) };
-    }
-    if (!entry.isSymbolicLink()) return null;
+  const candidates = await Promise.all(
+    entries.map(async (entry) => {
+      if (entry.isDirectory()) {
+        return { name: entry.name, path: path.join(directory, entry.name) };
+      }
+      if (!entry.isSymbolicLink()) return null;
 
-    try {
-      const entryPath = path.join(directory, entry.name);
-      const realEntryPath = await realpath(entryPath);
-      const entryStat = await stat(realEntryPath);
-      if (!entryStat.isDirectory()) return null;
-      return { name: entry.name, path: entryPath };
-    } catch {
-      return null;
-    }
-  }));
+      try {
+        const entryPath = path.join(directory, entry.name);
+        const realEntryPath = await realpath(entryPath);
+        const entryStat = await stat(realEntryPath);
+        if (!entryStat.isDirectory()) return null;
+        return { name: entry.name, path: entryPath };
+      } catch {
+        return null;
+      }
+    }),
+  );
 
   return candidates
     .filter((entry): entry is BrowsableDirectory => entry !== null)

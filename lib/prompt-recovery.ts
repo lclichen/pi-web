@@ -1,4 +1,4 @@
-import type { AgentMessage }  from "./types";
+import type { AgentMessage } from "./types";
 
 function extractMessageText(message: Partial<AgentMessage>): string {
   const content = (message as { content?: unknown }).content;
@@ -6,11 +6,13 @@ function extractMessageText(message: Partial<AgentMessage>): string {
   if (!Array.isArray(content)) return "";
   return content
     .map((block) =>
-      block && typeof block === "object"
-        && (block as { type?: string }).type === "text"
-        && typeof (block as { text?: unknown }).text === "string"
+      block &&
+      typeof block === "object" &&
+      (block as { type?: string }).type === "text" &&
+      typeof (block as { text?: unknown }).text === "string"
         ? (block as { text: string }).text
-        : "")
+        : "",
+    )
     .filter(Boolean)
     .join("\n");
 }

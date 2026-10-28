@@ -1,8 +1,4 @@
-import {
-  SessionManager,
-  getAgentDir,
-  type SessionInfo as PiSessionInfo,
-} from "@earendil-works/pi-coding-agent";
+import { SessionManager, getAgentDir, type SessionInfo as PiSessionInfo } from "@earendil-works/pi-coding-agent";
 import { closeSync, type Dirent, fstatSync, openSync, readSync } from "fs";
 import { readdir } from "fs/promises";
 import { isAbsolute, join, normalize as normalizePath, relative, resolve as resolvePath, sep } from "path";
@@ -11,7 +7,13 @@ import { normalizeToolCalls } from "./normalize";
 import { getThinkingPreview } from "./message-display";
 import { projectIdentityKey } from "./project-identity";
 import { sessionPathKey } from "./session-path";
-import { isPathInSpace, sessionsRoot as sessionsRootPath, spaceDir, spaceKey, type SessionSpace } from "./session-spaces";
+import {
+  isPathInSpace,
+  sessionsRoot as sessionsRootPath,
+  spaceDir,
+  spaceKey,
+  type SessionSpace,
+} from "./session-spaces";
 import { MAX_TOOL_RESULT_IMAGE_BYTES, TOOL_RESULT_IMAGE_MIMES } from "./tool-result-images";
 import { resolveProject, type ProjectInfo } from "./worktree";
 import { readSubagentRun, SUBAGENT_META_TYPE } from "./subagents";
@@ -56,7 +58,7 @@ function readBoundedLines(filePath: string, maxBytes: number, maxLines: number):
     const lines = source.split("\n");
     if (!reachedEof && !source.endsWith("\n")) lines.pop();
     if (lines.at(-1) === "") lines.pop();
-    return lines.map((line) => line.endsWith("\r") ? line.slice(0, -1) : line);
+    return lines.map((line) => (line.endsWith("\r") ? line.slice(0, -1) : line));
   } finally {
     closeSync(fd);
   }
@@ -78,7 +80,7 @@ function readBoundedTailLines(filePath: string, maxBytes: number): string[] {
       if (previousByte[0] !== 0x0a) lines.shift();
     }
     if (lines.at(-1) === "") lines.pop();
-    return lines.map((line) => line.endsWith("\r") ? line.slice(0, -1) : line);
+    return lines.map((line) => (line.endsWith("\r") ? line.slice(0, -1) : line));
   } finally {
     closeSync(fd);
   }
@@ -99,23 +101,20 @@ function readSessionRelationEntries(filePath: string): SessionEntry[] {
   const prefixEntries = parseSessionEntries(
     readBoundedLines(filePath, SESSION_RELATION_MAX_BYTES, SESSION_RELATION_MAX_LINES).slice(1),
   );
-  const isSubagent = prefixEntries.some((entry) => (
-    entry.type === "custom" && entry.customType === SUBAGENT_META_TYPE
-  ));
+  const isSubagent = prefixEntries.some((entry) => entry.type === "custom" && entry.customType === SUBAGENT_META_TYPE);
   if (!isSubagent) return prefixEntries;
 
-  return [
-    ...prefixEntries,
-    ...parseSessionEntries(readBoundedTailLines(filePath, SESSION_RESULT_MAX_BYTES)),
-  ];
+  return [...prefixEntries, ...parseSessionEntries(readBoundedTailLines(filePath, SESSION_RESULT_MAX_BYTES))];
 }
 
 export async function attachSessionProjectInfo(sessions: SessionInfo[]): Promise<SessionInfo[]> {
   const uniqueCwds = [...new Set(sessions.map((s) => s.cwd).filter(Boolean))];
   const projectByCwd = new Map<string, ProjectInfo>();
-  await Promise.all(uniqueCwds.map(async (cwd) => {
+  await Promise.all(
+    uniqueCwds.map(async (cwd) => {
       projectByCwd.set(cwd, await resolveProject(cwd));
-  }));
+    }),
+  );
 
   // quick 会话附带模板快照信息（id/name/hash/capturedAt/stale）——前端显示
   // "当前模板·版本"，模板事后变更可对比出 stale。
@@ -128,9 +127,8 @@ export async function attachSessionProjectInfo(sessions: SessionInfo[]): Promise
     const projectRoot = project?.projectRoot ?? session.cwd;
     const meta = getSessionMeta(session.id);
     const quickSlug = (meta as { quickDir?: string } | undefined)?.quickDir;
-    const snapshot = meta?.mode === "quick" && quickSlug
-      ? readQuickTemplateSnapshot(quickSessionDir(meta.ownerId, quickSlug))
-      : null;
+    const snapshot =
+      meta?.mode === "quick" && quickSlug ? readQuickTemplateSnapshot(quickSessionDir(meta.ownerId, quickSlug)) : null;
     const live = snapshot ? getQuickTemplate(snapshot.id) : undefined;
     const quickTemplate = snapshot
       ? {
@@ -140,7 +138,9 @@ export async function attachSessionProjectInfo(sessions: SessionInfo[]): Promise
           capturedAt: snapshot.capturedAt,
           // 活模板仍在且内容指纹与快照不一致 → 已变更；模板被删 = detached
           ...(live
-            ? (quickTemplateHash(live) !== snapshot.hash ? { stale: true as const } : {})
+            ? quickTemplateHash(live) !== snapshot.hash
+              ? { stale: true as const }
+              : {}
             : { detached: true as const }),
         }
       : undefined;
@@ -171,9 +171,8 @@ async function loadAllSessions(space: SessionSpace = { kind: "host" }): Promise<
   // User shards list their own directory; the host space lists the global
   // root (the users/ shard itself holds no session files directly, so it
   // never leaks into the host listing).
-  const piSessions: PiSessionInfo[] = space.kind === "host"
-    ? await SessionManager.listAll()
-    : await SessionManager.listAll(spaceDir(space));
+  const piSessions: PiSessionInfo[] =
+    space.kind === "host" ? await SessionManager.listAll() : await SessionManager.listAll(spaceDir(space));
   const pathToId = new Map<string, string>();
   for (const s of piSessions) pathToId.set(sessionPathKey(s.path), s.id);
 
@@ -184,7 +183,9 @@ async function loadAllSessions(space: SessionSpace = { kind: "host" }): Promise<
     if (s.parentSessionPath) {
       try {
         subagent = readSubagentRun(readSessionRelationEntries(s.path), s.id, s.path);
-      } catch { /* malformed or concurrently removed session */ }
+      } catch {
+        /* malformed or concurrently removed session */
+      }
     }
     // tintinweb 子会话命名约定：<Type>#<agentId8>，不写 pi-web 的
     // pi-web:subagent meta。按命名识别补上 relation，侧栏才能把它们嵌套在
@@ -208,7 +209,15 @@ async function loadAllSessions(space: SessionSpace = { kind: "host" }): Promise<
       firstMessage: s.firstMessage || "(no messages)",
       parentSessionId: originSessionId,
       ...(subagent
-        ? { relation: { kind: "subagent" as const, parentSessionId: subagent.parentSessionId, profile: subagent.profile, description: subagent.description, status: subagent.status } }
+        ? {
+            relation: {
+              kind: "subagent" as const,
+              parentSessionId: subagent.parentSessionId,
+              profile: subagent.profile,
+              description: subagent.description,
+              status: subagent.status,
+            },
+          }
         : s.parentSessionPath
           ? { relation: { kind: "fork" as const, ...(originSessionId ? { originSessionId } : {}) } }
           : {}),
@@ -253,7 +262,7 @@ export async function listAllSessions(
   // Accept both call styles: listAllSessions(space, { force }) and the
   // upstream-style legacy listAllSessions({ force }).
   const space: SessionSpace = "kind" in spaceOrOptions ? spaceOrOptions : { kind: "host" };
-  const options = "force" in spaceOrOptions ? spaceOrOptions as { force?: boolean } : maybeOptions;
+  const options = "force" in spaceOrOptions ? (spaceOrOptions as { force?: boolean }) : maybeOptions;
   const key = spaceKey(space);
   const bundle = spaceBundle(key);
   if (options.force) invalidateSessionListCache(space);
@@ -311,10 +320,10 @@ function resolvePathWithinDefaultSessions(
 ): string | null {
   const candidatePath = resolvePath(filePath);
   const relativePath = relative(sessionsDir, candidatePath);
-  return relativePath !== ""
-    && relativePath !== ".."
-    && !relativePath.startsWith(`..${sep}`)
-    && !isAbsolute(relativePath)
+  return relativePath !== "" &&
+    relativePath !== ".." &&
+    !relativePath.startsWith(`..${sep}`) &&
+    !isAbsolute(relativePath)
     ? candidatePath
     : null;
 }
@@ -336,10 +345,7 @@ async function findSessionPathById(sessionId: string): Promise<string | null> {
   let match: string | undefined;
   for (const projectDir of projectDirs) {
     if (!projectDir.isDirectory() && !projectDir.isSymbolicLink()) continue;
-    const projectPath = resolvePathWithinDefaultSessions(
-      join(sessionsDir, projectDir.name),
-      sessionsDir,
-    );
+    const projectPath = resolvePathWithinDefaultSessions(join(sessionsDir, projectDir.name), sessionsDir);
     if (!projectPath) continue;
 
     let files: string[];
@@ -351,10 +357,7 @@ async function findSessionPathById(sessionId: string): Promise<string | null> {
 
     for (const file of files) {
       if (!file.endsWith(suffix)) continue;
-      const candidate = resolvePathWithinDefaultSessions(
-        join(projectPath, file),
-        sessionsDir,
-      );
+      const candidate = resolvePathWithinDefaultSessions(join(projectPath, file), sessionsDir);
       if (!candidate) continue;
       try {
         if (readSessionHeader(candidate)?.id !== sessionId) continue;
@@ -454,7 +457,10 @@ function isResolvableInSpace(filePath: string, space: SessionSpace): boolean {
   return !(p === root || p.startsWith(root + sep));
 }
 
-export async function resolveSessionPath(sessionId: string, space: SessionSpace = { kind: "host" }): Promise<string | null> {
+export async function resolveSessionPath(
+  sessionId: string,
+  space: SessionSpace = { kind: "host" },
+): Promise<string | null> {
   const bundle = spaceBundle(spaceKey(space));
   const cached = bundle.pathCache.get(sessionId);
   if (cached) return isResolvableInSpace(cached, space) ? cached : null;
@@ -566,7 +572,10 @@ export function getLatestModelChange(entries: SessionEntry[]): SessionContext["m
   return null;
 }
 
-function getSessionSettings(entries: SessionEntry[], leafId?: string | null): Pick<SessionContext, "thinkingLevel" | "model"> {
+function getSessionSettings(
+  entries: SessionEntry[],
+  leafId?: string | null,
+): Pick<SessionContext, "thinkingLevel" | "model"> {
   if (leafId === null) return { thinkingLevel: "off", model: null };
   const branch = sliceActiveBranch(entries, leafId ?? null, entries.length);
   let thinkingLevel: string | undefined;
@@ -608,9 +617,10 @@ export function buildSessionContext(
   const { tail, excludeLeaf } = options;
   // History pages retain the original branch order, including compacted messages.
   // SDK context filtering can drop a page's messages when firstKeptEntryId is outside it.
-  const sliced = leafId === null ? [] : sliceActiveBranch(
-    entries, leafId ?? null, tail && tail > 0 ? tail : entries.length, excludeLeaf,
-  );
+  const sliced =
+    leafId === null
+      ? []
+      : sliceActiveBranch(entries, leafId ?? null, tail && tail > 0 ? tail : entries.length, excludeLeaf);
   const hasMore = Boolean(tail && tail > 0 && sliced[0]?.parentId);
 
   // Convert messages and their IDs together to keep fork/navigation targets aligned.
@@ -715,7 +725,7 @@ function base64ImageInfo(block: unknown): { bytes: number; mime?: string } | nul
   if (!data) return null;
 
   const padding = data.endsWith("==") ? 2 : data.endsWith("=") ? 1 : 0;
-  return { bytes: Math.max(0, Math.floor(data.length * 3 / 4) - padding), mime };
+  return { bytes: Math.max(0, Math.floor((data.length * 3) / 4) - padding), mime };
 }
 
 function deferToolResultBase64Images(
@@ -767,10 +777,7 @@ function deferToolResultBase64Images(
 
 // Convert a session entry on the active branch into a UI message.
 // Returns null for entries that do not map to chat history (metadata, non-message types).
-function entryToUiMessage(
-  entry: SessionEntry,
-  options: BuildSessionContextOptions,
-): AgentMessage | null {
+function entryToUiMessage(entry: SessionEntry, options: BuildSessionContextOptions): AgentMessage | null {
   // Supported message roles: user, assistant, toolResult, bashExecution.
   // bashExecution messages enter the case "message" branch (entry.type === "message").
   // The early return at line below ("!options.deferThinking || message.role !== "assistant"")
@@ -789,11 +796,11 @@ function entryToUiMessage(
       const content = message.content;
       return {
         ...message,
-        content: content.map((block) => (
+        content: content.map((block) =>
           block.type === "thinking" && block.thinking.trim() !== ""
             ? { ...block, thinking: getThinkingPreview(block.thinking), deferred: true }
-            : block
-        )),
+            : block,
+        ),
       };
     }
     case "compaction":

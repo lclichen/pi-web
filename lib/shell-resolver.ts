@@ -118,9 +118,7 @@ export function listShells(): ShellInfo[] {
 export function resolveShell(pref?: string): ShellInfo {
   const shells = listShells();
   if (pref) {
-    const hit =
-      shells.find((s) => s.id === pref) ||
-      shells.find((s) => s.path === pref);
+    const hit = shells.find((s) => s.id === pref) || shells.find((s) => s.path === pref);
     if (hit) return hit;
     // An unknown explicit preference is honored if it points at a real file —
     // lets users set PI_WEB_TERMINAL_SHELL to anything without code changes.

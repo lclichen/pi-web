@@ -42,11 +42,12 @@ export function makeSandboxBgChannel(apiKey: string, containerId: number): BgExe
     run: async (command, _timeoutMs) => {
       // Platform tools/bash runs inside the container; its own timeout policy
       // applies server-side.
-      const r = await platformPost<{ stdout?: string; stderr?: string; exitCode?: number | null; exit_code?: number | null }>(
-        `/api/v1/containers/${containerId}/tools/bash`,
-        apiKey,
-        { command },
-      );
+      const r = await platformPost<{
+        stdout?: string;
+        stderr?: string;
+        exitCode?: number | null;
+        exit_code?: number | null;
+      }>(`/api/v1/containers/${containerId}/tools/bash`, apiKey, { command });
       return {
         stdout: r?.stdout ?? "",
         stderr: r?.stderr ?? "",

@@ -111,17 +111,25 @@ const README_MD = `# Agent Builder（内置 Agent 定义）
 
 export async function builtinAgentBuilderBytes(): Promise<Buffer> {
   const zip = new JSZip();
-  zip.file("manifest.json", JSON.stringify({
-    format: { version: 2, exportedAt: new Date().toISOString() },
-    package: {
-      name: BUILTIN_AGENT_BUILDER_NAME,
-      title: "Agent Builder",
-      description: "对话式开发 Agent 定义：在 .pi/ 下搭建提示词/扩展/技能/子代理/模型/MCP，按规范自检并交付配置包。",
-      version: BUILTIN_AGENT_BUILDER_VERSION,
-      channel: "stable",
-      dependencies: ["node>=20"],
-    },
-  }, null, 2));
+  zip.file(
+    "manifest.json",
+    JSON.stringify(
+      {
+        format: { version: 2, exportedAt: new Date().toISOString() },
+        package: {
+          name: BUILTIN_AGENT_BUILDER_NAME,
+          title: "Agent Builder",
+          description:
+            "对话式开发 Agent 定义：在 .pi/ 下搭建提示词/扩展/技能/子代理/模型/MCP，按规范自检并交付配置包。",
+          version: BUILTIN_AGENT_BUILDER_VERSION,
+          channel: "stable",
+          dependencies: ["node>=20"],
+        },
+      },
+      null,
+      2,
+    ),
+  );
   zip.file("readme.md", README_MD);
   zip.file("agents.md", AGENTS_MD);
   zip.file(".pi/skills/agent-packaging/SKILL.md", PACKAGING_SKILL_MD);

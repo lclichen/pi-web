@@ -4,10 +4,7 @@ import { buildSessionContext } from "@/lib/session-reader";
 import { getRpcSession } from "@/lib/rpc-manager";
 import { resolveSessionAccess } from "@/lib/session-access";
 
-export async function GET(
-  req: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
+export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const url = new URL(req.url);
   const leafId = url.searchParams.get("leafId") ?? undefined;

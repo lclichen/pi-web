@@ -13,7 +13,10 @@ export async function GET(req: Request) {
   }
   const identity = requireAdminIdentity(req);
   if (!identity.ok) {
-    return NextResponse.json({ error: identity.status === 403 ? "仅管理员可用" : "登录已失效" }, { status: identity.status });
+    return NextResponse.json(
+      { error: identity.status === 403 ? "仅管理员可用" : "登录已失效" },
+      { status: identity.status },
+    );
   }
   try {
     const data = await platformGet<unknown>("/api/v1/admin/dashboard", identity.session.apiKey);

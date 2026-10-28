@@ -32,12 +32,18 @@ test("renders extension confirmation and options as markdown", () => {
   assert.match(source, /import \{ MarkdownBody, RemoteFileSessionContext \} from "\.\/MarkdownBody"/);
   assert.match(dialogSource, /<MarkdownBody>\{request\.message\}<\/MarkdownBody>/);
   // 单行选项仍是整块 markdown（2026-10-26 起 span + 数字徽章 + CSS 类形态）。
-  assert.match(dialogSource, /role="button"[\s\S]*?data-extension-option[\s\S]*?<span inert[\s\S]*?<MarkdownBody>\{option\}<\/MarkdownBody>/);
+  assert.match(
+    dialogSource,
+    /role="button"[\s\S]*?data-extension-option[\s\S]*?<span inert[\s\S]*?<MarkdownBody>\{option\}<\/MarkdownBody>/,
+  );
   assert.match(dialogSource, /ref=\{index === 0 \? focusFirstOption : undefined\}/);
 });
 
 test("preserves title newlines like pi's TUI and keeps long titles from hiding the body", () => {
-  const header = dialogSource.slice(dialogSource.indexOf('role="dialog"'), dialogSource.indexOf("{request.method === \"confirm\""));
+  const header = dialogSource.slice(
+    dialogSource.indexOf('role="dialog"'),
+    dialogSource.indexOf('{request.method === "confirm"'),
+  );
   assert.match(header, /whiteSpace: "pre-wrap", overflowWrap: "anywhere" \}\}>\{request\.title\}/);
   assert.match(header, /maxHeight: "50%", overflowY: "auto" \}\}>[\s\S]*?\{request\.title\}/);
 });

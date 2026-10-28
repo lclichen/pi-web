@@ -10,7 +10,12 @@ import { getFeedback, setFeedback, drainOutboxOnce, type FeedbackValue } from "@
  * persist locally and drain to the AI gateway once its endpoint exists
  * (docs/dev/feedback-api.md).
  */
-export function MessageFeedback({ sessionId, entryId, snippet, visible }: {
+export function MessageFeedback({
+  sessionId,
+  entryId,
+  snippet,
+  visible,
+}: {
   sessionId?: string;
   entryId?: string;
   snippet: string;
@@ -44,9 +49,15 @@ export function MessageFeedback({ sessionId, entryId, snippet, visible }: {
     "aria-label": t(kind === "up" ? "feedback.up" : "feedback.down"),
     "aria-pressed": value === kind,
     style: {
-      display: "flex", alignItems: "center", justifyContent: "center",
-      width: 22, height: 22, padding: 0,
-      background: "none", border: "none", borderRadius: 5,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      width: 22,
+      height: 22,
+      padding: 0,
+      background: "none",
+      border: "none",
+      borderRadius: 5,
       color: value === kind ? (kind === "up" ? "#22c55e" : "#f87171") : "var(--text-dim)",
       cursor: "pointer",
       opacity: visible ? 1 : 0,
@@ -64,12 +75,33 @@ export function MessageFeedback({ sessionId, entryId, snippet, visible }: {
   return (
     <span style={{ display: "inline-flex", alignItems: "center", gap: 2 }}>
       <button {...btn("up")}>
-        <svg width="12" height="12" viewBox="0 0 24 24" fill={value === "up" ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <svg
+          width="12"
+          height="12"
+          viewBox="0 0 24 24"
+          fill={value === "up" ? "currentColor" : "none"}
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
           <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3" />
         </svg>
       </button>
       <button {...btn("down")}>
-        <svg width="12" height="12" viewBox="0 0 24 24" fill={value === "down" ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ transform: "rotate(180deg)" }}>
+        <svg
+          width="12"
+          height="12"
+          viewBox="0 0 24 24"
+          fill={value === "down" ? "currentColor" : "none"}
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+          style={{ transform: "rotate(180deg)" }}
+        >
           <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3" />
         </svg>
       </button>

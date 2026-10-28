@@ -1,5 +1,5 @@
-const { Client } = require('ssh2');
-const { loadVmConnection } = require('./vm-connection.cjs');
+const { Client } = require("ssh2");
+const { loadVmConnection } = require("./vm-connection.cjs");
 const conn = new Client();
 
 // VM 是源码部署：手动造一个与平台一致的密码文件 + 注入 env 重启，验证三态
@@ -56,13 +56,23 @@ rm -f $PWFILE
 echo DONE >> $OUT
 `;
 
-const b64 = Buffer.from(remote, 'utf8').toString('base64');
-conn.on('ready', () => {
-  conn.exec(`printf %s '${b64}' | base64 -d > /tmp/firstrun-vm.sh && timeout 180 bash /tmp/firstrun-vm.sh; cat /tmp/firstrun-vm.txt`, (err, stream) => {
-    if (err) { console.error(err); process.exit(1); }
-    let out = '';
-    stream.on('data', (d) => out += d).stderr.on('data', (d) => out += d);
-    stream.on('close', () => { console.log(out.trim()); conn.end(); process.exit(0); });
-  });
+const b64 = Buffer.from(remote, "utf8").toString("base64");
+conn.on("ready", () => {
+  conn.exec(
+    `printf %s '${b64}' | base64 -d > /tmp/firstrun-vm.sh && timeout 180 bash /tmp/firstrun-vm.sh; cat /tmp/firstrun-vm.txt`,
+    (err, stream) => {
+      if (err) {
+        console.error(err);
+        process.exit(1);
+      }
+      let out = "";
+      stream.on("data", (d) => (out += d)).stderr.on("data", (d) => (out += d));
+      stream.on("close", () => {
+        console.log(out.trim());
+        conn.end();
+        process.exit(0);
+      });
+    },
+  );
 });
 conn.connect(loadVmConnection());

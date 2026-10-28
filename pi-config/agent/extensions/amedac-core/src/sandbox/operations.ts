@@ -48,11 +48,7 @@ export function pathMapper(localCwd: string | undefined): PathMapper {
   return (p: string) => toContainerPath(p, localCwd);
 }
 
-export function createPlatformReadOps(
-  client: PlatformClient,
-  containerId: number,
-  localCwd?: string,
-): ReadOperations {
+export function createPlatformReadOps(client: PlatformClient, containerId: number, localCwd?: string): ReadOperations {
   const map = pathMapper(localCwd);
   return {
     readFile: (p) => client.toolRead(containerId, map(p)),
@@ -83,11 +79,7 @@ export function createPlatformWriteOps(
   };
 }
 
-export function createPlatformEditOps(
-  client: PlatformClient,
-  containerId: number,
-  localCwd?: string,
-): EditOperations {
+export function createPlatformEditOps(client: PlatformClient, containerId: number, localCwd?: string): EditOperations {
   const read = createPlatformReadOps(client, containerId, localCwd);
   const write = createPlatformWriteOps(client, containerId, localCwd);
   return { readFile: read.readFile, writeFile: write.writeFile, access: read.access };
@@ -135,11 +127,7 @@ export function withContainerCwd(ops: BashOperations, remoteCwd = REMOTE_WORKSPA
   };
 }
 
-export function createPlatformLsOps(
-  client: PlatformClient,
-  containerId: number,
-  localCwd?: string,
-): LsOperations {
+export function createPlatformLsOps(client: PlatformClient, containerId: number, localCwd?: string): LsOperations {
   const map = pathMapper(localCwd);
   return {
     exists: async (p) => client.toolAccess(containerId, map(p)),

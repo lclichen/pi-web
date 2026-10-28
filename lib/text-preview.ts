@@ -14,11 +14,7 @@ function utf8SequenceLength(byte: number): number {
   return 1;
 }
 
-export function readTextPreviewChunk(
-  filePath: string,
-  fileSize: number,
-  offset: number,
-): TextPreviewChunk {
+export function readTextPreviewChunk(filePath: string, fileSize: number, offset: number): TextPreviewChunk {
   const length = Math.min(TEXT_PREVIEW_MAX_BYTES + 1, fileSize - offset);
   const buffer = Buffer.alloc(length);
   const descriptor = fs.openSync(filePath, "r");

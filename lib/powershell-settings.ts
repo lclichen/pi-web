@@ -14,15 +14,10 @@ export function isPowerShellToolEnabled(
   defaultTools: readonly string[] | undefined,
   platform: NodeJS.Platform = process.platform,
 ): boolean {
-  return platform === "win32"
-    && defaultTools?.includes("powershell") === true
-    && !defaultTools.includes("bash");
+  return platform === "win32" && defaultTools?.includes("powershell") === true && !defaultTools.includes("bash");
 }
 
-export function replaceShellTool(
-  toolNames: readonly string[],
-  usePowerShell: boolean,
-): string[] {
+export function replaceShellTool(toolNames: readonly string[], usePowerShell: boolean): string[] {
   const shell = usePowerShell ? "powershell" : "bash";
   const result: string[] = [];
   for (const name of toolNames) {
@@ -53,10 +48,7 @@ function parseSettings(path: string): Record<string, unknown> {
 
 function configuredTools(settings: Record<string, unknown>): string[] | undefined {
   if (settings.defaultTools === undefined) return undefined;
-  if (
-    !Array.isArray(settings.defaultTools)
-    || settings.defaultTools.some((name) => typeof name !== "string")
-  ) {
+  if (!Array.isArray(settings.defaultTools) || settings.defaultTools.some((name) => typeof name !== "string")) {
     throw new Error("Invalid settings.json: defaultTools must be an array of strings");
   }
   return settings.defaultTools as string[];

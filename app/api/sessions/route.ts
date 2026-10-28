@@ -39,11 +39,14 @@ export async function GET(req: Request) {
     // filtered to the caller's own live sessions (admins see all).
     const [persistedSessions, runtimeSessions, metas] = await Promise.all([
       listAllSessions(space, { force }),
-      Promise.resolve(getRpcSessionInfos())
-        .then((infos) => attachSessionProjectInfo(infos.filter((s) => {
-          const owner = getRpcSessionOwner(s.id);
-          return user.role === "admin" || !owner || owner.ownerId === user.id;
-        }))),
+      Promise.resolve(getRpcSessionInfos()).then((infos) =>
+        attachSessionProjectInfo(
+          infos.filter((s) => {
+            const owner = getRpcSessionOwner(s.id);
+            return user.role === "admin" || !owner || owner.ownerId === user.id;
+          }),
+        ),
+      ),
       Promise.resolve(getSessionMetas()),
     ]);
     const sessions = mergeSessionLists(persistedSessions, runtimeSessions).map((s) => {
@@ -53,9 +56,8 @@ export async function GET(req: Request) {
       // local-machine/ssh：附真实工作区（用户机器/远程主机上的绝对路径）。
       // cwd 是服务端 home——模型输出里的文件链接若按 cwd 解析会指到 host
       // 目录（bug 2026-10-26），前端用 workspaceDir 作链接解析基。
-      const remoteProject = (mode === "local-machine" || mode === "ssh") && meta?.projectId
-        ? getProject(meta.projectId)
-        : undefined;
+      const remoteProject =
+        (mode === "local-machine" || mode === "ssh") && meta?.projectId ? getProject(meta.projectId) : undefined;
       let workspaceDir = remoteProject?.workdir;
       // 未绑 workdir 的 local-machine 会话跑在 agent 共享根上——在线 agent
       // 的 workspaceRoot 就是它的真实工作区（离线时未知，回落旧行为）。
@@ -78,8 +80,9 @@ export async function GET(req: Request) {
     // Web-push completion-notification suppression rides along behind the same
     // per-user fence so other users' session ids never leak.
     const visibleRunning = new Set(runningSessionIds);
-    const completionNotificationSuppressedSessionIds = getCompletionNotificationSuppressedRpcSessionIds()
-      .filter((sessionId) => visibleRunning.has(sessionId));
+    const completionNotificationSuppressedSessionIds = getCompletionNotificationSuppressedRpcSessionIds().filter(
+      (sessionId) => visibleRunning.has(sessionId),
+    );
     return jsonResponse(
       req,
       {
@@ -91,9 +94,6 @@ export async function GET(req: Request) {
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (error) {
-    return NextResponse.json(
-      { error: String(error) },
-      { status: 500, headers: { "Cache-Control": "no-store" } },
-    );
+    return NextResponse.json({ error: String(error) }, { status: 500, headers: { "Cache-Control": "no-store" } });
   }
 }

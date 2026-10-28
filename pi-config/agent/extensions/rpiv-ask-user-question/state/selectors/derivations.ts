@@ -9,24 +9,24 @@ import type { WrappingSelectItem } from "../../view/components/wrapping-select.j
  * answer (defensive) silently skips the marker.
  */
 export function selectConfirmedIndicator(
-	questions: readonly QuestionData[],
-	currentTab: number,
-	answers: ReadonlyMap<number, QuestionAnswer>,
-	items: readonly WrappingSelectItem[],
+  questions: readonly QuestionData[],
+  currentTab: number,
+  answers: ReadonlyMap<number, QuestionAnswer>,
+  items: readonly WrappingSelectItem[],
 ): { index: number; labelOverride?: string } | undefined {
-	const q = questions[currentTab];
-	if (!q || q.multiSelect === true) return undefined;
-	const prior = answers.get(currentTab);
-	if (!prior) return undefined;
-	if (prior.kind === "custom") {
-		const otherIndex = items.findIndex((it) => it.kind === "other");
-		if (otherIndex < 0) return undefined;
-		return { index: otherIndex, labelOverride: prior.answer ?? "" };
-	}
-	if (prior.kind !== "option" || typeof prior.answer !== "string") return undefined;
-	const index = items.findIndex((it) => it.kind === "option" && it.label === prior.answer);
-	if (index < 0) return undefined;
-	return { index };
+  const q = questions[currentTab];
+  if (!q || q.multiSelect === true) return undefined;
+  const prior = answers.get(currentTab);
+  if (!prior) return undefined;
+  if (prior.kind === "custom") {
+    const otherIndex = items.findIndex((it) => it.kind === "other");
+    if (otherIndex < 0) return undefined;
+    return { index: otherIndex, labelOverride: prior.answer ?? "" };
+  }
+  if (prior.kind !== "option" || typeof prior.answer !== "string") return undefined;
+  const index = items.findIndex((it) => it.kind === "option" && it.label === prior.answer);
+  if (index < 0) return undefined;
+  return { index };
 }
 
 /**
@@ -35,6 +35,6 @@ export function selectConfirmedIndicator(
  * machinery picks the right body component independently. Defensive against `totalQuestions === 0`.
  */
 export function selectActivePreviewPaneIndex(currentTab: number, totalQuestions: number): number {
-	if (totalQuestions <= 0) return 0;
-	return Math.min(currentTab, totalQuestions - 1);
+  if (totalQuestions <= 0) return 0;
+  return Math.min(currentTab, totalQuestions - 1);
 }

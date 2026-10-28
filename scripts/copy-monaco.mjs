@@ -22,9 +22,7 @@ if (!existsSync(src)) {
   process.exit(0);
 }
 
-const { version } = JSON.parse(
-  readFileSync(join(root, "node_modules", "monaco-editor", "package.json"), "utf8"),
-);
+const { version } = JSON.parse(readFileSync(join(root, "node_modules", "monaco-editor", "package.json"), "utf8"));
 
 let current = null;
 try {
@@ -35,9 +33,7 @@ try {
 
 // Validate an existing copy: version matches and the loader entry exists.
 const copyLooksComplete =
-  current === version &&
-  existsSync(join(dest, "loader.js")) &&
-  existsSync(join(dest, "editor", "editor.main.js"));
+  current === version && existsSync(join(dest, "loader.js")) && existsSync(join(dest, "editor", "editor.main.js"));
 
 if (copyLooksComplete) {
   console.log(`[copy-monaco] ${dest} already at ${version} — skipping`);

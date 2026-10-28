@@ -37,8 +37,12 @@ function loadVmAppPassword(username) {
     // fall through to the actionable error below
   }
   console.error(
-    "缺少 VM 应用账号密码（" + username + "）。任选其一：\n" +
-      "  1) 导出环境变量 VM_APP_" + username.toUpperCase() + "_PASSWORD；\n" +
+    "缺少 VM 应用账号密码（" +
+      username +
+      "）。任选其一：\n" +
+      "  1) 导出环境变量 VM_APP_" +
+      username.toUpperCase() +
+      "_PASSWORD；\n" +
       "  2) 在 scripts/vm-credentials.cjs 的 appAccounts 里补一条（该文件不入库）。",
   );
   process.exit(1);

@@ -26,22 +26,10 @@ import { dataDir } from "../mode-homes.ts";
 import { getBatchVersionInfo } from "./version-info.ts";
 
 export type BatchTaskState =
-  | "queued"
-  | "running"
-  | "waiting_input"
-  | "interrupted"
-  | "completed"
-  | "failed"
-  | "cancelled";
+  "queued" | "running" | "waiting_input" | "interrupted" | "completed" | "failed" | "cancelled";
 
 /** ACP StopReason + batch extensions. */
-export type BatchStopReason =
-  | "end_turn"
-  | "max_tokens"
-  | "timeout"
-  | "cancelled"
-  | "refusal"
-  | "error";
+export type BatchStopReason = "end_turn" | "max_tokens" | "timeout" | "cancelled" | "refusal" | "error";
 
 export interface BatchTaskUsage {
   inputTokens: number;
@@ -261,10 +249,7 @@ export function publishTaskEvent(taskId: string, event: BatchTaskStreamEvent): v
  * Subscribe to a task's events. Buffered events are replayed first (in seq
  * order), then live events are forwarded. Returns an unsubscribe function.
  */
-export function subscribeTaskEvents(
-  taskId: string,
-  listener: (env: BatchTaskEventEnvelope) => void,
-): () => void {
+export function subscribeTaskEvents(taskId: string, listener: (env: BatchTaskEventEnvelope) => void): () => void {
   const channel = channels().get(taskId);
   if (!channel) return () => {};
   const replay = [...channel.buffer];
@@ -333,7 +318,7 @@ export function updateTask(taskId: string, patch: Partial<BatchTask>): BatchTask
 
 export function listTasks(limit = 50, ownerId?: number): BatchTask[] {
   return [...store().values()]
-    .filter((t) => ownerId === undefined ? true : t.ownerId === ownerId)
+    .filter((t) => (ownerId === undefined ? true : t.ownerId === ownerId))
     .sort((a, b) => b.createdAt - a.createdAt)
     .slice(0, limit);
 }

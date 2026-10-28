@@ -65,10 +65,7 @@ interface WebListEnvelope {
 }
 
 /** 搜索并映射为统一的 hub 条目（无结果返回空数组）。 */
-export async function searchSkillhub(
-  baseUrl: string,
-  params: SkillhubSearchParams,
-): Promise<SkillhubItem[]> {
+export async function searchSkillhub(baseUrl: string, params: SkillhubSearchParams): Promise<SkillhubItem[]> {
   const base = normalizeSkillhubBase(baseUrl);
   const url = new URL(`${base}/api/web/skills`);
   if (params.q) url.searchParams.set("q", params.q);

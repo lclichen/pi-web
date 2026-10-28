@@ -71,10 +71,7 @@ function parseStored(raw: unknown): Partial<ServerSettings> | undefined {
 }
 
 export function getServerSettings(): ServerSettings {
-  if (
-    !globalThis.__piServerSettingsStore ||
-    globalThis.__piServerSettingsStore.path !== settingsPath()
-  ) {
+  if (!globalThis.__piServerSettingsStore || globalThis.__piServerSettingsStore.path !== settingsPath()) {
     let stored: Partial<ServerSettings> | undefined;
     try {
       stored = parseStored(JSON.parse(readFileSync(settingsPath(), "utf8")));

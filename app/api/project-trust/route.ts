@@ -11,9 +11,7 @@ import { destroyRpcSessionsForCwd, hasBusyRpcSessionForCwd } from "@/lib/rpc-man
 
 export const dynamic = "force-dynamic";
 
-async function validateCwd(req: Request, value: unknown): Promise<
-  { cwd: string } | { response: NextResponse }
-> {
+async function validateCwd(req: Request, value: unknown): Promise<{ cwd: string } | { response: NextResponse }> {
   if (typeof value !== "string" || !value.trim()) {
     return { response: NextResponse.json({ error: "cwd required" }, { status: 400 }) };
   }
@@ -32,8 +30,8 @@ async function validateCwd(req: Request, value: unknown): Promise<
     // 项目空间（沙盒/SSH/本机）的会话 cwd 是项目 home，位于常规文件根之外；
     // 归属校验通过即放行——项目技能的信任提示同样需要能查/能解除。
     const identity = requireUserIdentity(req);
-    const owned = identity.ok
-      && isCallerOwnedProjectHome(cwd, identity.session.user.id, identity.session.user.role === "admin");
+    const owned =
+      identity.ok && isCallerOwnedProjectHome(cwd, identity.session.user.id, identity.session.user.role === "admin");
     if (!owned) {
       return { response: NextResponse.json({ error: "Access denied" }, { status: 403 }) };
     }
@@ -49,7 +47,7 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json() as { cwd?: unknown };
+    const body = (await req.json()) as { cwd?: unknown };
     const result = await validateCwd(req, body.cwd);
     if ("response" in result) return result.response;
 
@@ -59,7 +57,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "This project has no resources that require trust" }, { status: 409 });
     }
     if (hasBusyRpcSessionForCwd(result.cwd)) {
-      return NextResponse.json({ error: "Wait for the active session to finish before trusting this project" }, { status: 409 });
+      return NextResponse.json(
+        { error: "Wait for the active session to finish before trusting this project" },
+        { status: 409 },
+      );
     }
 
     const status = trustProject(result.cwd, agentDir);
@@ -67,9 +68,6 @@ export async function POST(req: Request) {
     await destroyRpcSessionsForCwd(result.cwd);
     return NextResponse.json(status);
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : String(error) },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
   }
 }

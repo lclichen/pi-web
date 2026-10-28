@@ -63,7 +63,9 @@ function getSnapshot(): ChatAppearance {
 
 function subscribe(listener: () => void): () => void {
   listeners.add(listener);
-  return () => { listeners.delete(listener); };
+  return () => {
+    listeners.delete(listener);
+  };
 }
 
 function setPreference(key: keyof ChatAppearance, value: number): void {

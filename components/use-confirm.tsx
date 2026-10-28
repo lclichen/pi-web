@@ -40,16 +40,27 @@ function ConfirmDialogView({ options, onSettle }: { options: ConfirmOptions; onS
       aria-modal="true"
       aria-label={options.title}
       className="confirm-dialog-backdrop"
-      onClick={(event) => { if (event.target === event.currentTarget) onSettle(false); }}
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onSettle(false);
+      }}
     >
       <div className="confirm-dialog-surface">
         <strong className="confirm-dialog-title">{options.title}</strong>
         <div className="confirm-dialog-message">{options.message}</div>
         <div className="confirm-dialog-actions">
-          <button type="button" className="config-button config-button-secondary config-button-default" onClick={() => onSettle(false)} autoFocus>
+          <button
+            type="button"
+            className="config-button config-button-secondary config-button-default"
+            onClick={() => onSettle(false)}
+            autoFocus
+          >
             {options.abortLabel}
           </button>
-          <button type="button" className={`config-button ${confirmClass} config-button-default`} onClick={() => onSettle(true)}>
+          <button
+            type="button"
+            className={`config-button ${confirmClass} config-button-default`}
+            onClick={() => onSettle(true)}
+          >
             {options.confirmLabel}
           </button>
         </div>

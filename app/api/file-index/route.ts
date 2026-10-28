@@ -16,9 +16,20 @@ const execFileAsync = promisify(execFile);
 // Same skip lists as /api/files — only used for the non-git readdir fallback.
 // Git-tracked repos rely on .gitignore instead (matches the TUI's fd behavior).
 const IGNORED_NAMES = new Set([
-  "node_modules", ".git", ".next", "dist", "build", "__pycache__",
-  ".turbo", ".cache", "coverage", ".pytest_cache", ".mypy_cache",
-  "target", "vendor", ".DS_Store",
+  "node_modules",
+  ".git",
+  ".next",
+  "dist",
+  "build",
+  "__pycache__",
+  ".turbo",
+  ".cache",
+  "coverage",
+  ".pytest_cache",
+  ".mypy_cache",
+  "target",
+  "vendor",
+  ".DS_Store",
 ]);
 
 const IGNORED_SUFFIXES = [".pyc"];

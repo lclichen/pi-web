@@ -33,9 +33,16 @@ export function MonacoDiffEditor({ original, modified, language, isDark }: Monac
         onClick={() => setSideBySide((v) => !v)}
         title={sideBySide ? "切换为内联视图" : "切换为并排视图"}
         style={{
-          position: "absolute", top: 6, right: 12, zIndex: 10,
-          fontSize: 11, padding: "2px 8px", borderRadius: 4, cursor: "pointer",
-          background: "var(--bg-panel)", color: "var(--text)",
+          position: "absolute",
+          top: 6,
+          right: 12,
+          zIndex: 10,
+          fontSize: 11,
+          padding: "2px 8px",
+          borderRadius: 4,
+          cursor: "pointer",
+          background: "var(--bg-panel)",
+          color: "var(--text)",
           border: "1px solid var(--border)",
         }}
       >
@@ -48,7 +55,16 @@ export function MonacoDiffEditor({ original, modified, language, isDark }: Monac
         modified={modified}
         theme={isDark ? "vs-dark" : "vs"}
         loading={
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--text-dim)", fontSize: 12 }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              height: "100%",
+              color: "var(--text-dim)",
+              fontSize: 12,
+            }}
+          >
             加载差异视图…
           </div>
         }
@@ -60,7 +76,7 @@ export function MonacoDiffEditor({ original, modified, language, isDark }: Monac
           minimap: { enabled: false },
           scrollBeyondLastLine: false,
           fontSize: 12.5,
-          fontFamily: "var(--font-mono, Menlo, Consolas, \"Courier New\", monospace)",
+          fontFamily: 'var(--font-mono, Menlo, Consolas, "Courier New", monospace)',
           renderLineHighlight: "none",
           ignoreTrimWhitespace: false,
         }}

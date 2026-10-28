@@ -45,10 +45,7 @@ interface HostSession {
 
 export interface SubagentRuntimeDependencies {
   getSession(sessionId: string): HostSession | undefined;
-  registerSession(
-    inner: AgentSessionLike,
-    options?: { exactSystemPrompt?: string; chatOnly?: boolean },
-  ): void;
+  registerSession(inner: AgentSessionLike, options?: { exactSystemPrompt?: string; chatOnly?: boolean }): void;
   reopenSession(sessionId: string, sessionFile: string): Promise<HostSession>;
   resolveSessionPath(sessionId: string): Promise<string | null>;
   invalidateSessionList(): void;
@@ -113,9 +110,9 @@ function parentContextText(parent: HostSession): string {
 
 function reserveSubagentSlot(parentSessionId: string): () => void {
   const starting = getSubagentStartingCounts();
-  const active = [...getSubagentRuns().values()].filter((item) =>
-    item.run.parentSessionId === parentSessionId
-      && (item.run.status === "starting" || item.run.status === "running")
+  const active = [...getSubagentRuns().values()].filter(
+    (item) =>
+      item.run.parentSessionId === parentSessionId && (item.run.status === "starting" || item.run.status === "running"),
   ).length;
   const startingCount = starting.get(parentSessionId) ?? 0;
   if (active + startingCount >= MAX_CONCURRENT_SUBAGENTS) {
@@ -129,9 +126,7 @@ function reserveSubagentSlot(parentSessionId: string): () => void {
   };
 }
 
-export function createSubagentController(
-  dependencies: SubagentRuntimeDependencies,
-): SubagentController {
+export function createSubagentController(dependencies: SubagentRuntimeDependencies): SubagentController {
   async function start(request: StartSubagentRequest): Promise<SubagentExecution> {
     const enabled = dependencies.isBuiltInSubagentsEnabled ?? isBuiltInSubagentsEnabled;
     if (!enabled()) throw new Error("Pi Web built-in sub-agents are disabled");
@@ -193,7 +188,7 @@ export function createSubagentController(
             : {}),
           appendSystemPrompt,
         },
-        ...((profile.loadExtensions || profile.loadSkills)
+        ...(profile.loadExtensions || profile.loadSkills
           ? { resourceLoaderReloadOptions: projectTrustReloadOptions(parent.cwd, agentDir) }
           : {}),
       });
@@ -240,9 +235,7 @@ export function createSubagentController(
         excludeTools: [...SUBAGENT_CONTROL_TOOL_NAMES],
       });
       dependencies.registerSession(inner, {
-        ...(promptPlan.exactSystemPrompt !== undefined
-          ? { exactSystemPrompt: promptPlan.exactSystemPrompt }
-          : {}),
+        ...(promptPlan.exactSystemPrompt !== undefined ? { exactSystemPrompt: promptPlan.exactSystemPrompt } : {}),
         chatOnly,
       });
 
@@ -268,7 +261,9 @@ export function createSubagentController(
             turnCount += 1;
             if (!softLimitReached && turnCount >= turnLimit) {
               softLimitReached = true;
-              void inner.steer("You have reached your turn limit. Wrap up immediately and provide your final answer now.");
+              void inner.steer(
+                "You have reached your turn limit. Wrap up immediately and provide your final answer now.",
+              );
             } else if (softLimitReached && turnCount >= turnLimit + 1) {
               maxTurnsReached = true;
               void inner.abort();
@@ -321,9 +316,7 @@ export function createSubagentController(
             status: aborted ? "aborted" : maxTurnsReached ? "completed" : "failed",
             completedAt: new Date().toISOString(),
             ...(text ? { result: text } : {}),
-            ...(!aborted && !maxTurnsReached
-              ? { error: error instanceof Error ? error.message : String(error) }
-              : {}),
+            ...(!aborted && !maxTurnsReached ? { error: error instanceof Error ? error.message : String(error) } : {}),
           };
         } finally {
           unsubscribeTurns();
@@ -386,12 +379,15 @@ export function createSubagentController(
     }
     await parent.waitUntilReady();
     if (!parent.isAlive()) throw new Error(`Parent session is no longer available: ${run.parentSessionId}`);
-    await parent.inner.sendCustomMessage({
-      customType: "pi-web:subagent-notification",
-      content: subagentFinalText(run),
-      display: true,
-      details: subagentToolDetails(run),
-    }, { deliverAs: "followUp", triggerTurn: true });
+    await parent.inner.sendCustomMessage(
+      {
+        customType: "pi-web:subagent-notification",
+        content: subagentFinalText(run),
+        display: true,
+        details: subagentToolDetails(run),
+      },
+      { deliverAs: "followUp", triggerTurn: true },
+    );
   }
 
   async function abort(sessionId: string): Promise<void> {

@@ -6,18 +6,18 @@ import type { TabComponents } from "../../view/tab-components.js";
 import type { QuestionnaireState } from "../state.js";
 
 export interface BindingContext {
-	readonly questions: readonly QuestionData[];
-	readonly itemsByTab: ReadonlyArray<readonly WrappingSelectItem[]>;
-	readonly totalQuestions: number;
-	readonly activeView: ActiveView;
-	readonly inputBuffer: string;
-	readonly inputCursorOffset: number | undefined;
-	readonly activePreviewPane: StatefulView<PreviewPaneProps>;
+  readonly questions: readonly QuestionData[];
+  readonly itemsByTab: ReadonlyArray<readonly WrappingSelectItem[]>;
+  readonly totalQuestions: number;
+  readonly activeView: ActiveView;
+  readonly inputBuffer: string;
+  readonly inputCursorOffset: number | undefined;
+  readonly activePreviewPane: StatefulView<PreviewPaneProps>;
 }
 
 export interface PerTabBindingContext extends BindingContext {
-	readonly tab: TabComponents;
-	readonly i: number;
+  readonly tab: TabComponents;
+  readonly i: number;
 }
 
 export type GlobalSelector<P> = (state: QuestionnaireState, ctx: BindingContext) => P;

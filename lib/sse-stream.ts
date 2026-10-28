@@ -24,7 +24,7 @@ export function sseHeaders(): Record<string, string> {
   return {
     "Content-Type": "text/event-stream",
     "Cache-Control": "no-cache, no-transform",
-    "Connection": "keep-alive",
+    Connection: "keep-alive",
     "X-Accel-Buffering": "no",
   };
 }
@@ -72,9 +72,17 @@ export function createSseStream(req: Request, options: SseStreamOptions): Readab
         teardown = null;
         if (abortHandler) req.signal.removeEventListener("abort", abortHandler);
         if (closeController === "error") {
-          try { controller.error(new Error("pi-web server shutting down")); } catch { /* already closed */ }
+          try {
+            controller.error(new Error("pi-web server shutting down"));
+          } catch {
+            /* already closed */
+          }
         } else if (closeController) {
-          try { controller.close(); } catch { /* already closed */ }
+          try {
+            controller.close();
+          } catch {
+            /* already closed */
+          }
         }
       };
       cancelStream = cleanup;

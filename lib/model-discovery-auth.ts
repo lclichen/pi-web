@@ -14,7 +14,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function stringRecord(value: unknown): Record<string, string> {
   if (!isRecord(value)) return {};
-  return Object.fromEntries(Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === "string"));
+  return Object.fromEntries(
+    Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+  );
 }
 
 export async function resolveModelDiscoveryAuth(
@@ -26,14 +28,22 @@ export async function resolveModelDiscoveryAuth(
     tempDir = mkdtempSync(join(tmpdir(), "pi-web-model-discovery-"));
     const modelsPath = join(tempDir, "models.json");
     const discoveryModelId = "__pi_web_model_discovery__";
-    writeFileSync(modelsPath, JSON.stringify({
-      providers: {
-        [providerName]: {
-          ...provider,
-          models: [{ id: discoveryModelId }],
+    writeFileSync(
+      modelsPath,
+      JSON.stringify(
+        {
+          providers: {
+            [providerName]: {
+              ...provider,
+              models: [{ id: discoveryModelId }],
+            },
+          },
         },
-      },
-    }, null, 2), "utf8");
+        null,
+        2,
+      ),
+      "utf8",
+    );
 
     const modelRuntime = await ModelRuntime.create({ modelsPath });
     const loadError = modelRuntime.getError();

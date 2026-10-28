@@ -68,7 +68,10 @@ function isSafeTail(tail: string): boolean {
  * so the read fails server-side with a clear path instead of leaking to the
  * client.
  */
-export function matchRuntimeConfigPath(raw: string, options: RuntimeConfigBridgeOptions = {}): RuntimeConfigBridgeMatch | null {
+export function matchRuntimeConfigPath(
+  raw: string,
+  options: RuntimeConfigBridgeOptions = {},
+): RuntimeConfigBridgeMatch | null {
   const homes = (options.homes ?? [])
     .filter((h): h is string => typeof h === "string" && h.trim().length > 0)
     .map((h) => h.replace(/[\\/]+$/, ""));

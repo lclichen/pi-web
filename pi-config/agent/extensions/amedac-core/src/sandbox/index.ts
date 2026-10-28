@@ -81,33 +81,29 @@ export function makeSandboxToolsExtension(): InlineExtension {
     // Runtime-config bridge (config-bridge.ts): skills and subagent
     // definitions live on the HOST, never in the container — config-shaped
     // read/ls stays host-side whatever prefix the model used.
-    const bridgedConfigPath = (requested: string): string | null =>
-      matchRuntimeConfigFile(requested, [sessionCwd]);
+    const bridgedConfigPath = (requested: string): string | null => matchRuntimeConfigFile(requested, [sessionCwd]);
 
     // add session_id key for tracking. Applies to whichever LLM provider this
     // extension registered (default "amedac.ai"), plus the bare "litellm" name
     // for setups that register under that name.
-    pi.on(
-      "before_provider_request",
-      (event: BeforeProviderRequestEvent, ctx: ExtensionContext) => {
-        const payload = event.payload as Record<string, unknown>;
-        if (!payload) return;
+    pi.on("before_provider_request", (event: BeforeProviderRequestEvent, ctx: ExtensionContext) => {
+      const payload = event.payload as Record<string, unknown>;
+      if (!payload) return;
 
-        const provider = ctx.model?.provider;
-        if (!provider || !providerNameForSessionTracking().has(provider)) return payload;
+      const provider = ctx.model?.provider;
+      if (!provider || !providerNameForSessionTracking().has(provider)) return payload;
 
-        const sessionId = ctx.sessionManager?.getSessionId();
-        if (!sessionId) {
-          console.warn("missing session id");
-          return payload;
-        }
+      const sessionId = ctx.sessionManager?.getSessionId();
+      if (!sessionId) {
+        console.warn("missing session id");
+        return payload;
+      }
 
-        return {
-          ...payload,
-          litellm_session_id: sessionId,
-        };
-      },
-    );
+      return {
+        ...payload,
+        litellm_session_id: sessionId,
+      };
+    });
 
     // Resolve the client/container on session_start so the first user prompt
     // can use the routed tools. Sessions without sandbox config (module
@@ -122,9 +118,7 @@ export function makeSandboxToolsExtension(): InlineExtension {
       ctx.ui.addAutocompleteProvider((current) =>
         createContainerAutocompleteProvider(current, () => {
           const st = getState(sessionCwd);
-          return st && st.containerId !== undefined
-            ? { client: st.client, containerId: st.containerId }
-            : undefined;
+          return st && st.containerId !== undefined ? { client: st.client, containerId: st.containerId } : undefined;
         }),
       );
       if (!(await ensureAuthenticated(client, ctx))) return;
@@ -183,7 +177,12 @@ export function makeSandboxToolsExtension(): InlineExtension {
         if (!cid) {
           // Offline fallback: container-style paths map to the local project.
           if (localFallbackBlocked()) return fallbackDenied();
-          return localRead.execute(id, { ...params, path: containerPathToLocal(params.path, sessionCwd) }, signal, onUpdate);
+          return localRead.execute(
+            id,
+            { ...params, path: containerPathToLocal(params.path, sessionCwd) },
+            signal,
+            onUpdate,
+          );
         }
         const tool = createReadTool(GUEST_WORKSPACE, {
           operations: createPlatformReadOps(getState(sessionCwd)!.client, cid, sessionCwd),
@@ -198,7 +197,12 @@ export function makeSandboxToolsExtension(): InlineExtension {
         const cid = await activeContainerId(ctx);
         if (!cid) {
           if (localFallbackBlocked()) return fallbackDenied();
-          return localWrite.execute(id, { ...params, path: containerPathToLocal(params.path, sessionCwd) }, signal, onUpdate);
+          return localWrite.execute(
+            id,
+            { ...params, path: containerPathToLocal(params.path, sessionCwd) },
+            signal,
+            onUpdate,
+          );
         }
         const tool = createWriteTool(GUEST_WORKSPACE, {
           operations: createPlatformWriteOps(getState(sessionCwd)!.client, cid, sessionCwd),
@@ -217,7 +221,12 @@ export function makeSandboxToolsExtension(): InlineExtension {
         const cid = await activeContainerId(ctx);
         if (!cid) {
           if (localFallbackBlocked()) return fallbackDenied();
-          return localEdit.execute(id, { ...params, path: containerPathToLocal(params.path, sessionCwd) }, signal, onUpdate);
+          return localEdit.execute(
+            id,
+            { ...params, path: containerPathToLocal(params.path, sessionCwd) },
+            signal,
+            onUpdate,
+          );
         }
         const tool = createEditTool(GUEST_WORKSPACE, {
           operations: createPlatformEditOps(getState(sessionCwd)!.client, cid, sessionCwd),
@@ -227,7 +236,9 @@ export function makeSandboxToolsExtension(): InlineExtension {
           // Mirror the edited file back verbatim via the raw platform read ops
           // (tool-level reads carry line numbers; ops do not).
           try {
-            const raw = await createPlatformReadOps(getState(sessionCwd)!.client, cid, sessionCwd).readFile(params.path);
+            const raw = await createPlatformReadOps(getState(sessionCwd)!.client, cid, sessionCwd).readFile(
+              params.path,
+            );
             await mirrorInstructionsContent(raw.toString("utf8"), sessionCwd);
           } catch {
             // best-effort mirror
@@ -283,7 +294,12 @@ export function makeSandboxToolsExtension(): InlineExtension {
         const cid = await activeContainerId(ctx);
         if (!cid) {
           if (localFallbackBlocked()) return fallbackDenied();
-          return localLs.execute(id, { ...params, path: containerPathToLocal(params.path ?? ".", sessionCwd) }, signal, onUpdate);
+          return localLs.execute(
+            id,
+            { ...params, path: containerPathToLocal(params.path ?? ".", sessionCwd) },
+            signal,
+            onUpdate,
+          );
         }
         const tool = createLsTool(GUEST_WORKSPACE, {
           operations: createPlatformLsOps(getState(sessionCwd)!.client, cid, sessionCwd),
@@ -306,11 +322,16 @@ export function makeSandboxToolsExtension(): InlineExtension {
           );
         }
         const st = getState(sessionCwd)!;
-        const results = await platformFind(st.client, cid, {
-          pattern: params.pattern,
-          path: params.path,
-          limit: params.limit,
-        }, sessionCwd);
+        const results = await platformFind(
+          st.client,
+          cid,
+          {
+            pattern: params.pattern,
+            path: params.path,
+            limit: params.limit,
+          },
+          sessionCwd,
+        );
         const { content } = truncateHead(results.join("\n"));
         return {
           content: [{ type: "text", text: content || "No matches" }],
@@ -333,15 +354,20 @@ export function makeSandboxToolsExtension(): InlineExtension {
           );
         }
         const st = getState(sessionCwd)!;
-        const output = await platformGrep(st.client, cid, {
-          pattern: params.pattern,
-          path: params.path,
-          glob: params.glob,
-          literal: params.literal,
-          ignoreCase: params.ignoreCase,
-          context: params.context,
-          limit: params.limit,
-        }, sessionCwd);
+        const output = await platformGrep(
+          st.client,
+          cid,
+          {
+            pattern: params.pattern,
+            path: params.path,
+            glob: params.glob,
+            literal: params.literal,
+            ignoreCase: params.ignoreCase,
+            context: params.context,
+            limit: params.limit,
+          },
+          sessionCwd,
+        );
         const { content } = truncateHead(output);
         return {
           content: [{ type: "text", text: content || "No matches found" }],

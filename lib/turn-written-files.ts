@@ -65,7 +65,10 @@ function collectApplyPatchDeletePaths(input: Record<string, unknown> | undefined
  * document. Deletes are omitted — they are not files this turn wrote.
  * A returned failure with no `appliedFiles` writes nothing.
  */
-function readApplyPatchPaths(input: Record<string, unknown> | undefined, result: ToolResultMessage | undefined): string[] {
+function readApplyPatchPaths(
+  input: Record<string, unknown> | undefined,
+  result: ToolResultMessage | undefined,
+): string[] {
   const details = result?.details;
   const deleted = collectApplyPatchDeletePaths(input, details);
   const applied = getApplyPatchAppliedFiles(details);

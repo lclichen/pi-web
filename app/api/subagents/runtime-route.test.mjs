@@ -26,43 +26,58 @@ function installRunningSubagent(t) {
   let running = true;
   const steered = [];
   let aborts = 0;
-  const entries = [{
-    type: "custom",
-    customType: "pi-web:subagent",
-    id: "meta",
-    parentId: null,
-    timestamp: "2026-01-01T00:00:00.000Z",
-    data: {
-      version: 1,
-      parentSessionId: "parent",
-      parentSessionPath: "/tmp/parent.jsonl",
-      parentToolCallId: "tool-call",
-      profile: "Explore",
-      description: "Inspect",
-      task: "Inspect files",
-      runInBackground: true,
-      createdAt: "2026-01-01T00:00:00.000Z",
+  const entries = [
+    {
+      type: "custom",
+      customType: "pi-web:subagent",
+      id: "meta",
+      parentId: null,
+      timestamp: "2026-01-01T00:00:00.000Z",
+      data: {
+        version: 1,
+        parentSessionId: "parent",
+        parentSessionPath: "/tmp/parent.jsonl",
+        parentToolCallId: "tool-call",
+        profile: "Explore",
+        description: "Inspect",
+        task: "Inspect files",
+        runInBackground: true,
+        createdAt: "2026-01-01T00:00:00.000Z",
+      },
     },
-  }];
+  ];
   globalThis.__piSubagentRuns = new Map();
-  globalThis.__piSessions = new Map([[id, {
-    isAlive: () => true,
-    isRunning: () => running,
-    sessionFile: `/tmp/${id}.jsonl`,
-    inner: {
-      sessionManager: { getEntries: () => entries },
-      steer: async (message) => { steered.push(message); },
-      abort: async () => { aborts += 1; },
-    },
-  }]]);
+  globalThis.__piSessions = new Map([
+    [
+      id,
+      {
+        isAlive: () => true,
+        isRunning: () => running,
+        sessionFile: `/tmp/${id}.jsonl`,
+        inner: {
+          sessionManager: { getEntries: () => entries },
+          steer: async (message) => {
+            steered.push(message);
+          },
+          abort: async () => {
+            aborts += 1;
+          },
+        },
+      },
+    ],
+  ]);
   t.after(() => {
     globalThis.__piSessions = previousRegistry;
     globalThis.__piSubagentRuns = previousRuns;
   });
   return {
     steered,
-    get aborts() { return aborts; },
-    stop() { running = false; },
+    get aborts() {
+      return aborts;
+    },
+    stop() {
+      running = false;
+    },
   };
 }
 
@@ -109,9 +124,8 @@ test("subagent GET returns 404 for an unknown session", async (t) => {
   });
 
   const missingId = `missing-subagent-${Date.now()}`;
-  const response = await GET(
-    new Request(`http://localhost/api/subagents/${missingId}`),
-    { params: Promise.resolve({ id: missingId }) },
-  );
+  const response = await GET(new Request(`http://localhost/api/subagents/${missingId}`), {
+    params: Promise.resolve({ id: missingId }),
+  });
   assert.equal(response.status, 404);
 });

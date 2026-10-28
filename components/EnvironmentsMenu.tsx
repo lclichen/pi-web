@@ -65,8 +65,20 @@ export function EnvironmentsMenu({
       title: t("relay.localMachine"),
       desc: t("app.environmentsMachinesDesc"),
       icon: (
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <rect x="2" y="4" width="20" height="12" rx="2" /><line x1="8" y1="20" x2="16" y2="20" /><line x1="12" y1="16" x2="12" y2="20" />
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <rect x="2" y="4" width="20" height="12" rx="2" />
+          <line x1="8" y1="20" x2="16" y2="20" />
+          <line x1="12" y1="16" x2="12" y2="20" />
         </svg>
       ),
       badge: (
@@ -83,38 +95,63 @@ export function EnvironmentsMenu({
         setMachinesOpen(true);
       },
     },
-    ...(signedIn ? [
-      {
-        key: "workspace",
-        title: t("app.myWorkspace"),
-        desc: t("app.environmentsWorkspaceDesc"),
-        icon: (
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M20 16.58A5 5 0 0 0 18 7h-1.26A8 8 0 1 0 4 15.25" />
-            <polyline points="8 16 12 12 16 16" /><line x1="12" y1="12" x2="12" y2="21" />
-          </svg>
-        ),
-        onSelect: () => {
-          setMenuOpen(false);
-          onOpenWorkspace();
-        },
-      } as const,
-      {
-        key: "sandbox",
-        title: t("app.sandboxContainer"),
-        desc: t("app.environmentsSandboxDesc"),
-        icon: (
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" />
-            <rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" />
-          </svg>
-        ),
-        onSelect: () => {
-          setMenuOpen(false);
-          onOpenSandbox();
-        },
-      } as const,
-    ] : []),
+    ...(signedIn
+      ? [
+          {
+            key: "workspace",
+            title: t("app.myWorkspace"),
+            desc: t("app.environmentsWorkspaceDesc"),
+            icon: (
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M20 16.58A5 5 0 0 0 18 7h-1.26A8 8 0 1 0 4 15.25" />
+                <polyline points="8 16 12 12 16 16" />
+                <line x1="12" y1="12" x2="12" y2="21" />
+              </svg>
+            ),
+            onSelect: () => {
+              setMenuOpen(false);
+              onOpenWorkspace();
+            },
+          } as const,
+          {
+            key: "sandbox",
+            title: t("app.sandboxContainer"),
+            desc: t("app.environmentsSandboxDesc"),
+            icon: (
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <rect x="3" y="3" width="7" height="7" rx="1" />
+                <rect x="14" y="3" width="7" height="7" rx="1" />
+                <rect x="3" y="14" width="7" height="7" rx="1" />
+                <rect x="14" y="14" width="7" height="7" rx="1" />
+              </svg>
+            ),
+            onSelect: () => {
+              setMenuOpen(false);
+              onOpenSandbox();
+            },
+          } as const,
+        ]
+      : []),
   ];
 
   return (
@@ -126,24 +163,51 @@ export function EnvironmentsMenu({
         aria-haspopup="menu"
         aria-expanded={menuOpen}
         style={{
-          display: "flex", alignItems: "center", gap: 6, height: "100%",
-          padding: "0 12px", background: "none",
-          border: "none", borderTop: "2px solid transparent", borderRight: "1px solid var(--border)",
-          color: online ? "var(--text)" : "var(--text-muted)", cursor: "pointer", fontSize: 11,
-          whiteSpace: "nowrap", flexShrink: 0,
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          height: "100%",
+          padding: "0 12px",
+          background: "none",
+          border: "none",
+          borderTop: "2px solid transparent",
+          borderRight: "1px solid var(--border)",
+          color: online ? "var(--text)" : "var(--text-muted)",
+          cursor: "pointer",
+          fontSize: 11,
+          whiteSpace: "nowrap",
+          flexShrink: 0,
           transition: "color 0.1s, background 0.1s",
         }}
-        onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text)"; e.currentTarget.style.background = "var(--bg-hover)"; }}
-        onMouseLeave={(e) => { e.currentTarget.style.color = online ? "var(--text)" : "var(--text-muted)"; e.currentTarget.style.background = "none"; }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.color = "var(--text)";
+          e.currentTarget.style.background = "var(--bg-hover)";
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.color = online ? "var(--text)" : "var(--text-muted)";
+          e.currentTarget.style.background = "none";
+        }}
       >
-        <span style={{
-          width: 8, height: 8, borderRadius: "50%",
-          background: ready ? (online ? "var(--success)" : "#9ca3af") : "#6b7280",
-          boxShadow: online ? "0 0 6px var(--success)" : "none",
-        }} />
+        <span
+          style={{
+            width: 8,
+            height: 8,
+            borderRadius: "50%",
+            background: ready ? (online ? "var(--success)" : "#9ca3af") : "#6b7280",
+            boxShadow: online ? "0 0 6px var(--success)" : "none",
+          }}
+        />
         <span>{t("app.environments")}</span>
         <svg
-          width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
+          width="10"
+          height="10"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.4"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
           style={{ transform: menuOpen ? "rotate(180deg)" : "none", transition: "transform 0.12s" }}
         >
           <polyline points="6 9 12 15 18 9" />

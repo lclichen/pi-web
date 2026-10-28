@@ -22,9 +22,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!task) {
     return NextResponse.json({ error: "Task not found" }, { status: 404 });
   }
-    if (!canAccessBatchTask(auth.identity.user, task.ownerId)) {
-      return NextResponse.json({ error: "Task not found" }, { status: 404 });
-    }
+  if (!canAccessBatchTask(auth.identity.user, task.ownerId)) {
+    return NextResponse.json({ error: "Task not found" }, { status: 404 });
+  }
   if (isTerminal(task.state)) {
     return NextResponse.json({ taskId: id, state: task.state, message: "Task already in terminal state" });
   }

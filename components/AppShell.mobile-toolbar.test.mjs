@@ -49,7 +49,10 @@ test("only renders branch toolbar controls for sessions with branches", () => {
 test("keeps covered statistics and file controls out of interaction and focus", () => {
   assert.match(source, /const covered = mobile && isNarrowMobile && mobileToolbarMoreOpen;/);
   assert.match(source, /disabled=\{!showChat \|\| covered\}[\s\S]*?tabIndex=\{covered \? -1 : undefined\}/);
-  assert.match(source, /data-mobile-toolbar-file=\{mobile \? "true" : undefined\}[\s\S]*?visibility: covered \? "hidden" : "visible"/);
+  assert.match(
+    source,
+    /data-mobile-toolbar-file=\{mobile \? "true" : undefined\}[\s\S]*?visibility: covered \? "hidden" : "visible"/,
+  );
   assert.match(source, /aria-hidden=\{covered \? true : undefined\}/);
 });
 
@@ -61,10 +64,18 @@ test("closes the mobile action layer on outside click, Escape, layout changes, a
 });
 
 test("keeps the mobile action layer open after using an expanded action", () => {
-  const toggleTopPanel = source.match(/const toggleTopPanel = useCallback\([\s\S]*?\n  \}, \[isMobile, isNarrowMobile\]\);/)?.[0];
-  const themeHandler = source.match(/const renderThemeButton =[\s\S]*?onClick=\{\(event\) => \{[\s\S]*?toggleTheme\([\s\S]*?\n      \}\}/)?.[0];
-  const historyHandler = source.match(/onClick=\{\(\) => \{[\s\S]*?handleViewFullHistory\(\);[\s\S]*?\n          \}\}/)?.[0];
-  const autoNameHandler = source.match(/onClick=\{\(\) => \{[\s\S]*?void handleAutoName\(\);[\s\S]*?\n              \}\}/)?.[0];
+  const toggleTopPanel = source.match(
+    /const toggleTopPanel = useCallback\([\s\S]*?\n  \}, \[isMobile, isNarrowMobile\]\);/,
+  )?.[0];
+  const themeHandler = source.match(
+    /const renderThemeButton =[\s\S]*?onClick=\{\(event\) => \{[\s\S]*?toggleTheme\([\s\S]*?\n      \}\}/,
+  )?.[0];
+  const historyHandler = source.match(
+    /onClick=\{\(\) => \{[\s\S]*?handleViewFullHistory\(\);[\s\S]*?\n          \}\}/,
+  )?.[0];
+  const autoNameHandler = source.match(
+    /onClick=\{\(\) => \{[\s\S]*?void handleAutoName\(\);[\s\S]*?\n              \}\}/,
+  )?.[0];
 
   for (const handler of [toggleTopPanel, themeHandler, historyHandler, autoNameHandler]) {
     assert.ok(handler);

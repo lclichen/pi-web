@@ -73,8 +73,9 @@ export function getSessionFamily(
   sessionId: string | null | undefined,
 ): SessionFamily | null {
   if (!sessionId) return null;
-  return listSessionFamilies(sessions).find((family) => (
-    family.root.id === sessionId
-    || family.subagents.some((session) => session.id === sessionId)
-  )) ?? null;
+  return (
+    listSessionFamilies(sessions).find(
+      (family) => family.root.id === sessionId || family.subagents.some((session) => session.id === sessionId),
+    ) ?? null
+  );
 }

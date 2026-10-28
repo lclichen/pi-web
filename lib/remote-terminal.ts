@@ -20,9 +20,7 @@ import { localScope, type RemoteSessionContext } from "./remote-session";
  *    connection (xterm-compatible PTY, cwd = remote workdir).
  */
 
-export type RemoteTerminalFrame =
-  | { type: "output"; data: string }
-  | { type: "exit"; code: number };
+export type RemoteTerminalFrame = { type: "output"; data: string } | { type: "exit"; code: number };
 
 /** Minimal ssh2 ClientChannel surface used here. */
 interface SshShellStream {
@@ -76,16 +74,19 @@ function ensureReaper(): void {
   const reg = getRegistry();
   if (reg.reaperStarted) return;
   reg.reaperStarted = true;
-  setInterval(() => {
-    // The platform enforces its own idle timeout; here we only reap entries
-    // nobody subscribed to anymore (closed tab) so maps can't grow forever.
-    const now = Date.now();
-    for (const [sid, t] of reg.terminals) {
-      if (t.subscribers.size === 0 && now - t.createdAt > IDLE_KILL_MS) {
-        closeRemoteTerminal(sid);
+  setInterval(
+    () => {
+      // The platform enforces its own idle timeout; here we only reap entries
+      // nobody subscribed to anymore (closed tab) so maps can't grow forever.
+      const now = Date.now();
+      for (const [sid, t] of reg.terminals) {
+        if (t.subscribers.size === 0 && now - t.createdAt > IDLE_KILL_MS) {
+          closeRemoteTerminal(sid);
+        }
       }
-    }
-  }, 5 * 60 * 1000).unref?.();
+    },
+    5 * 60 * 1000,
+  ).unref?.();
 }
 
 function notify(t: RemoteTerminal, frame: RemoteTerminalFrame): void {
@@ -172,8 +173,14 @@ export async function createRemoteTerminal(
     });
     await new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error("连接沙箱终端超时")), 10_000);
-      ws.once("open", () => { clearTimeout(timer); resolve(); });
-      ws.once("error", (err: Error) => { clearTimeout(timer); reject(err); });
+      ws.once("open", () => {
+        clearTimeout(timer);
+        resolve();
+      });
+      ws.once("error", (err: Error) => {
+        clearTimeout(timer);
+        reject(err);
+      });
     }).catch((err) => {
       reg.terminals.delete(sid);
       throw err;
@@ -186,11 +193,14 @@ export async function createRemoteTerminal(
     const client = await getSshClient(ctx.projectId, ctx.sshConfig);
     const stream = await new Promise<SshShellStream>((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error("连接 SSH 终端超时")), 10_000);
-      client.shell({ term: "xterm-256color", cols: opts.cols, rows: opts.rows }, (err: Error | undefined, s: unknown) => {
-        clearTimeout(timer);
-        if (err) return reject(err);
-        resolve(s as SshShellStream);
-      });
+      client.shell(
+        { term: "xterm-256color", cols: opts.cols, rows: opts.rows },
+        (err: Error | undefined, s: unknown) => {
+          clearTimeout(timer);
+          if (err) return reject(err);
+          resolve(s as SshShellStream);
+        },
+      );
     }).catch((err) => {
       reg.terminals.delete(sid);
       throw err;
@@ -211,7 +221,7 @@ export async function createRemoteTerminal(
     // machine + sid so two machines' terminals never cross wires).
     // cwd: the project workspace root on the user's machine.
     const scope = localScope(ctx);
-    const created = await relayRpc(
+    const created = (await relayRpc(
       "pty.create",
       {
         cwd: scope.prefix || opts.cwd || ".",
@@ -220,21 +230,29 @@ export async function createRemoteTerminal(
         ...(scope.base ? { base: scope.base } : {}),
       },
       { userId: ctx.userId, machineId: ctx.machineId },
-    ) as { sessionId?: string };
+    )) as { sessionId?: string };
     const agentSid = created?.sessionId;
     if (!agentSid) throw new Error("本机 agent 未返回终端会话");
     entry.relayAgentSid = agentSid;
     const machineId = ctx.machineId ?? "default";
-    entry.detach = subscribePtyOutput(agentSid, (data) => {
-      notify(entry, { type: "output", data });
-    }, machineId);
+    entry.detach = subscribePtyOutput(
+      agentSid,
+      (data) => {
+        notify(entry, { type: "output", data });
+      },
+      machineId,
+    );
     // pty.exit (agent ≥ this version) turns the frozen-terminal case into a
     // proper exit frame the UI can render.
-    entry.detachExit = subscribePtyExit(agentSid, (code) => {
-      if (entry.exited !== undefined) return;
-      entry.exited = code;
-      notify(entry, { type: "exit", code });
-    }, machineId);
+    entry.detachExit = subscribePtyExit(
+      agentSid,
+      (code) => {
+        if (entry.exited !== undefined) return;
+        entry.exited = code;
+        notify(entry, { type: "exit", code });
+      },
+      machineId,
+    );
   }
 
   return { sessionId: sid };
@@ -254,7 +272,12 @@ export function writeRemoteTerminal(sid: string, data: string): void {
   } else {
     // relay input is keyed by our sid → agent sid mapping via ctx; re-discover
     // is overkill: the relay input method needs the agent-side id, so store it.
-    if (t.detach) void relayRpc("pty.input", { sessionId: t.relayAgentSid, data }, { userId: t.ctx.userId, machineId: t.ctx.machineId }).catch(() => {});
+    if (t.detach)
+      void relayRpc(
+        "pty.input",
+        { sessionId: t.relayAgentSid, data },
+        { userId: t.ctx.userId, machineId: t.ctx.machineId },
+      ).catch(() => {});
   }
 }
 
@@ -270,7 +293,11 @@ export function resizeRemoteTerminal(sid: string, cols: number, rows: number): v
       // ignore
     }
   } else {
-    void relayRpc("pty.resize", { sessionId: t.relayAgentSid, cols, rows }, { userId: t.ctx.userId, machineId: t.ctx.machineId }).catch(() => {});
+    void relayRpc(
+      "pty.resize",
+      { sessionId: t.relayAgentSid, cols, rows },
+      { userId: t.ctx.userId, machineId: t.ctx.machineId },
+    ).catch(() => {});
   }
 }
 
@@ -299,17 +326,18 @@ export function closeRemoteTerminal(sid: string): void {
   } else {
     t.detach?.();
     t.detachExit?.();
-    void relayRpc("pty.close", { sessionId: t.relayAgentSid }, { userId: t.ctx.userId, machineId: t.ctx.machineId }).catch(() => {});
+    void relayRpc(
+      "pty.close",
+      { sessionId: t.relayAgentSid },
+      { userId: t.ctx.userId, machineId: t.ctx.machineId },
+    ).catch(() => {});
   }
 }
 
 /** Close a terminal this quickly after its last subscriber disappears. */
 const ORPHAN_CLOSE_MS = 60_000;
 
-export function subscribeRemoteTerminal(
-  sid: string,
-  cb: (frame: RemoteTerminalFrame) => void,
-): () => void {
+export function subscribeRemoteTerminal(sid: string, cb: (frame: RemoteTerminalFrame) => void): () => void {
   const reg = getRegistry();
   const t = reg.terminals.get(sid);
   if (!t) return () => {};
@@ -343,4 +371,3 @@ export function subscribeRemoteTerminal(
     }
   };
 }
-

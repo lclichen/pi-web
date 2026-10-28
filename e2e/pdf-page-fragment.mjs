@@ -22,10 +22,7 @@ import { chromium } from "playwright";
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const mode = process.env.E2E_SERVER_MODE || "dev";
 assert.ok(mode === "dev" || mode === "start", "E2E_SERVER_MODE must be dev or start");
-assert.ok(
-  mode !== "dev" || !existsSync(join(root, ".next/dev/lock")),
-  "Use a checkout without an active dev server",
-);
+assert.ok(mode !== "dev" || !existsSync(join(root, ".next/dev/lock")), "Use a checkout without an active dev server");
 
 const PAGE = 183;
 const PAGE_COUNT = 200;
@@ -50,7 +47,9 @@ function buildFixturePdf(pageCount) {
 
   push("%PDF-1.4\n");
   addObject("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
-  addObject(`2 0 obj\n<< /Type /Pages /Count ${pageCount} /Kids [${pageObjectIds.map((id) => `${id} 0 R`).join(" ")}] >>\nendobj\n`);
+  addObject(
+    `2 0 obj\n<< /Type /Pages /Count ${pageCount} /Kids [${pageObjectIds.map((id) => `${id} 0 R`).join(" ")}] >>\nendobj\n`,
+  );
   addObject("3 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>\nendobj\n");
 
   for (let index = 0; index < pageCount; index += 1) {
@@ -58,8 +57,8 @@ function buildFixturePdf(pageCount) {
     const contentId = pageId + 1;
     const stream = `BT /F1 108 Tf 40 690 Td (PAGE ${index + 1}) Tj ET\n`;
     addObject(
-      `${pageId} 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792]`
-      + ` /Resources << /Font << /F1 3 0 R >> >> /Contents ${contentId} 0 R >>\nendobj\n`,
+      `${pageId} 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792]` +
+        ` /Resources << /Font << /F1 3 0 R >> >> /Contents ${contentId} 0 R >>\nendobj\n`,
     );
     addObject(`${contentId} 0 obj\n<< /Length ${stream.length} >>\nstream\n${stream}endstream\nendobj\n`);
   }
@@ -111,9 +110,7 @@ const serverLog = createWriteStream(join(artifacts, "pdf-server.log"));
 
 /** The `type=read` iframe URL currently rendered by the file viewer. */
 async function viewerSrc(page) {
-  const srcs = await page
-    .locator("iframe")
-    .evaluateAll((frames) => frames.map((frame) => frame.getAttribute("src")));
+  const srcs = await page.locator("iframe").evaluateAll((frames) => frames.map((frame) => frame.getAttribute("src")));
   return srcs.find((src) => src && src.includes("/api/files/") && src.includes("type=read")) ?? null;
 }
 
@@ -176,7 +173,9 @@ try {
   page.setDefaultTimeout(30_000);
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  page.on("console", (event) => { if (event.type() === "error") errors.push(event.text()); });
+  page.on("console", (event) => {
+    if (event.type() === "error") errors.push(event.text());
+  });
 
   await page.goto(`${base}/?session=${SESSION}`, { waitUntil: "domcontentloaded" });
 

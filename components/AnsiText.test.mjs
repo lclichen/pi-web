@@ -19,9 +19,7 @@ test("plain text without escapes passes through unchanged", () => {
 });
 
 test("24-bit rgb foreground and background colors", () => {
-  const html = toHtml(
-    "\x1b[48;2;130;202;122m\x1b[38;2;21;24;29ms \x1b[39m\x1b[49m plain",
-  );
+  const html = toHtml("\x1b[48;2;130;202;122m\x1b[38;2;21;24;29ms \x1b[39m\x1b[49m plain");
   assert.match(html, /color:rgb\(21,24,29\)/);
   assert.match(html, /background-color:rgb\(130,202,122\)/);
   assert.match(html, />s <\/span> plain/);

@@ -12,11 +12,13 @@ function redactForUser(config: Record<string, unknown>): Record<string, unknown>
   if (!providers || typeof providers !== "object" || Array.isArray(providers)) {
     return { ...config, canEdit: false };
   }
-  const redacted = Object.fromEntries(Object.entries(providers as Record<string, unknown>).map(([name, provider]) => {
-    if (!provider || typeof provider !== "object" || Array.isArray(provider)) return [name, provider];
-    const { apiKey: _drop, ...rest } = provider as Record<string, unknown>;
-    return [name, rest];
-  }));
+  const redacted = Object.fromEntries(
+    Object.entries(providers as Record<string, unknown>).map(([name, provider]) => {
+      if (!provider || typeof provider !== "object" || Array.isArray(provider)) return [name, provider];
+      const { apiKey: _drop, ...rest } = provider as Record<string, unknown>;
+      return [name, rest];
+    }),
+  );
   return { ...config, providers: redacted, canEdit: false };
 }
 
@@ -47,7 +49,7 @@ export async function PUT(req: Request) {
     return NextResponse.json({ error: "Content-Type must be application/json" }, { status: 415 });
   }
   try {
-    const body = await req.json() as Record<string, unknown>;
+    const body = (await req.json()) as Record<string, unknown>;
     writeModelsConfig(body);
     return NextResponse.json({ success: true });
   } catch (error) {

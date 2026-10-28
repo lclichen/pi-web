@@ -21,11 +21,13 @@ const modelNameCollator = new Intl.Collator(undefined, { numeric: true, sensitiv
 
 function compareModelEntries(
   a: { id: string; name: string; provider: string },
-  b: { id: string; name: string; provider: string }
+  b: { id: string; name: string; provider: string },
 ): number {
-  return modelNameCollator.compare(a.name || a.id, b.name || b.id)
-    || modelNameCollator.compare(a.provider, b.provider)
-    || modelNameCollator.compare(a.id, b.id);
+  return (
+    modelNameCollator.compare(a.name || a.id, b.name || b.id) ||
+    modelNameCollator.compare(a.provider, b.provider) ||
+    modelNameCollator.compare(a.id, b.id)
+  );
 }
 
 async function loadModels(cwd: string): Promise<ModelsData> {
@@ -49,17 +51,16 @@ async function loadModels(cwd: string): Promise<ModelsData> {
   const settings: SettingsManager = services.settingsManager;
   // `enabledModels` supports globs and fuzzy patterns, so resolve it the same
   // way the CLI does instead of comparing pattern strings literally (#307).
-  const scope = await resolveVisibleModels(
-    services.modelRuntime,
-    settings.getEnabledModels(),
-  );
+  const scope = await resolveVisibleModels(services.modelRuntime, settings.getEnabledModels());
   const { visible, thinkingLevelPins, warnings } = scope;
-  modelList = visible.map((m) => ({
-    id: m.id,
-    name: m.name,
-    provider: m.provider,
-    input: m.input,
-  })).sort(compareModelEntries);
+  modelList = visible
+    .map((m) => ({
+      id: m.id,
+      name: m.name,
+      provider: m.provider,
+      input: m.input,
+    }))
+    .sort(compareModelEntries);
   for (const m of visible) {
     const key = `${m.provider}:${m.id}`;
     nameMap.set(key, m.name);
@@ -77,12 +78,11 @@ async function loadModels(cwd: string): Promise<ModelsData> {
   if (initial.model) {
     defaultModel = { provider: initial.model.provider, modelId: initial.model.id };
   }
-  const defaultThinkingLevel = initial.thinkingLevel
-    ?? (initial.model
-      ? settings.getModelThinkingLevel(initial.model.provider, initial.model.id)
-      : undefined)
-    ?? settings.getDefaultThinkingLevel()
-    ?? null;
+  const defaultThinkingLevel =
+    initial.thinkingLevel ??
+    (initial.model ? settings.getModelThinkingLevel(initial.model.provider, initial.model.id) : undefined) ??
+    settings.getDefaultThinkingLevel() ??
+    null;
 
   return withModelRuntimeError(
     {
@@ -149,10 +149,7 @@ export async function GET(req: Request) {
       // Existing sessions' cwds pass too: the transient allowed-roots set is
       // repopulated only at session creation, so after a restart this check
       // would otherwise 403 every materialized session ("No available models").
-      if (
-        !isCallerOwnedProjectHome(cwd, user.id, isAdmin)
-        && !(await isCallerSessionCwdAllowed(req, cwd))
-      ) {
+      if (!isCallerOwnedProjectHome(cwd, user.id, isAdmin) && !(await isCallerSessionCwdAllowed(req, cwd))) {
         return Response.json({ error: "Access denied" }, { status: 403 });
       }
     }

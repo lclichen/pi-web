@@ -40,19 +40,22 @@ export function LocalMachinePanel({ machineId, machines, onSelectMachine, onClos
   // terminal state
   const [termOpen, setTermOpen] = useState(false);
 
-  const refresh = useCallback(async (p: string) => {
-    setLoading(true);
-    setError(null);
-    try {
-      setEntries(await relayFs.list(p || ".", { machineId }));
-      setPath(p);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-      setEntries([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [machineId]);
+  const refresh = useCallback(
+    async (p: string) => {
+      setLoading(true);
+      setError(null);
+      try {
+        setEntries(await relayFs.list(p || ".", { machineId }));
+        setPath(p);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+        setEntries([]);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [machineId],
+  );
 
   // Switching machines resets the view — paths are per-machine.
   useEffect(() => {
@@ -182,9 +185,7 @@ export function LocalMachinePanel({ machineId, machines, onSelectMachine, onClos
         (c) => {
           setResult((r) => {
             if (!r) return r;
-            return c.stream === "stdout"
-              ? { ...r, stdout: r.stdout + c.text }
-              : { ...r, stderr: r.stderr + c.text };
+            return c.stream === "stdout" ? { ...r, stdout: r.stdout + c.text } : { ...r, stderr: r.stderr + c.text };
           });
         },
         60,
@@ -206,23 +207,63 @@ export function LocalMachinePanel({ machineId, machines, onSelectMachine, onClos
 
   return (
     <div
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
-      style={{ position: "fixed", inset: 0, zIndex: 1100, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.45)" }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 1100,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "rgba(0,0,0,0.45)",
+      }}
     >
-      <div role="dialog" aria-modal="true" style={{ width: "min(1080px, 94vw)", height: "min(82vh, 760px)", background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: 8, boxShadow: "0 12px 36px rgba(0,0,0,0.3)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        style={{
+          width: "min(1080px, 94vw)",
+          height: "min(82vh, 760px)",
+          background: "var(--bg-panel)",
+          border: "1px solid var(--border)",
+          borderRadius: 8,
+          boxShadow: "0 12px 36px rgba(0,0,0,0.3)",
+          display: "flex",
+          flexDirection: "column",
+          overflow: "hidden",
+        }}
+      >
         {/* header */}
-        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderBottom: "1px solid var(--border)" }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "8px 12px",
+            borderBottom: "1px solid var(--border)",
+          }}
+        >
           <span style={{ fontSize: 13, fontWeight: 600 }}>本地机器</span>
           {machines.length > 1 ? (
             <select
               value={machineId}
               onChange={(e) => onSelectMachine({ machineId: e.target.value })}
               aria-label="切换机器"
-              style={{ padding: "2px 6px", background: "var(--bg)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 12 }}
+              style={{
+                padding: "2px 6px",
+                background: "var(--bg)",
+                color: "var(--text)",
+                border: "1px solid var(--border)",
+                borderRadius: 4,
+                fontSize: 12,
+              }}
             >
               {machines.map((m) => (
                 <option key={m.machineId} value={m.machineId}>
-                  {m.label}{m.online ? "" : "（离线）"}
+                  {m.label}
+                  {m.online ? "" : "（离线）"}
                 </option>
               ))}
             </select>
@@ -231,41 +272,112 @@ export function LocalMachinePanel({ machineId, machines, onSelectMachine, onClos
           )}
           {current?.info && (
             <>
-              <span style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>{current.info.hostname} · {current.info.os}/{current.info.arch}</span>
+              <span style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
+                {current.info.hostname} · {current.info.os}/{current.info.arch}
+              </span>
               <span style={{ fontSize: 11, color: "var(--text-muted)" }}>|</span>
-              <span style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>{current.info.workspaceRoot}</span>
+              <span style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
+                {current.info.workspaceRoot}
+              </span>
             </>
           )}
           <span style={{ flex: 1 }} />
-          <button onClick={onClose} style={btnStyle}>关闭</button>
+          <button onClick={onClose} style={btnStyle}>
+            关闭
+          </button>
         </div>
 
         {/* toolbar */}
-        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", borderBottom: "1px solid var(--border)" }}>
-          <button onClick={goParent} disabled={!path} style={btnStyle}>↑ 上级</button>
-          <button onClick={newFolder} style={btnStyle}>＋ 新建文件夹</button>
-          <button onClick={() => refresh(path)} style={btnStyle}>↻ 刷新</button>
-          <button onClick={() => setTermOpen(true)} title="在此目录打开交互式终端" style={btnStyle}>⌗ 终端</button>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "6px 12px",
+            borderBottom: "1px solid var(--border)",
+          }}
+        >
+          <button onClick={goParent} disabled={!path} style={btnStyle}>
+            ↑ 上级
+          </button>
+          <button onClick={newFolder} style={btnStyle}>
+            ＋ 新建文件夹
+          </button>
+          <button onClick={() => refresh(path)} style={btnStyle}>
+            ↻ 刷新
+          </button>
+          <button onClick={() => setTermOpen(true)} title="在此目录打开交互式终端" style={btnStyle}>
+            ⌗ 终端
+          </button>
           <span style={{ flex: 1 }} />
-          <span style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>/{path || ""}</span>
+          <span style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
+            /{path || ""}
+          </span>
         </div>
 
         <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
           {/* left: search + file list */}
-          <div style={{ width: 340, borderRight: "1px solid var(--border)", display: "flex", flexDirection: "column", minHeight: 0 }}>
+          <div
+            style={{
+              width: 340,
+              borderRight: "1px solid var(--border)",
+              display: "flex",
+              flexDirection: "column",
+              minHeight: 0,
+            }}
+          >
             {/* search row */}
             <div style={{ display: "flex", gap: 4, padding: 6, borderBottom: "1px solid var(--border)" }}>
               <input
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") void runSearch(); }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void runSearch();
+                }}
                 placeholder={mode === "grep" ? "搜索文件内容 (grep)…" : "搜索文件名 (fd)…"}
                 spellCheck={false}
-                style={{ flex: 1, padding: "4px 6px", background: "var(--bg)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 4, fontFamily: "var(--font-mono)", fontSize: 11 }}
+                style={{
+                  flex: 1,
+                  padding: "4px 6px",
+                  background: "var(--bg)",
+                  color: "var(--text)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 4,
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 11,
+                }}
               />
-              <button onClick={() => { setMode("grep"); if (q.trim()) void runSearch(); }} style={{ ...btnStyle, fontWeight: mode === "grep" ? 700 : 400, color: mode === "grep" ? "var(--accent)" : "var(--text-muted)" }}>内容</button>
-              <button onClick={() => { setMode("fd"); if (q.trim()) void runSearch(); }} style={{ ...btnStyle, fontWeight: mode === "fd" ? 700 : 400, color: mode === "fd" ? "var(--accent)" : "var(--text-muted)" }}>文件名</button>
-              {showingSearch && <button onClick={clearSearch} style={btnStyle} title="返回文件列表">×</button>}
+              <button
+                onClick={() => {
+                  setMode("grep");
+                  if (q.trim()) void runSearch();
+                }}
+                style={{
+                  ...btnStyle,
+                  fontWeight: mode === "grep" ? 700 : 400,
+                  color: mode === "grep" ? "var(--accent)" : "var(--text-muted)",
+                }}
+              >
+                内容
+              </button>
+              <button
+                onClick={() => {
+                  setMode("fd");
+                  if (q.trim()) void runSearch();
+                }}
+                style={{
+                  ...btnStyle,
+                  fontWeight: mode === "fd" ? 700 : 400,
+                  color: mode === "fd" ? "var(--accent)" : "var(--text-muted)",
+                }}
+              >
+                文件名
+              </button>
+              {showingSearch && (
+                <button onClick={clearSearch} style={btnStyle} title="返回文件列表">
+                  ×
+                </button>
+              )}
             </div>
 
             {/* list / results */}
@@ -276,35 +388,132 @@ export function LocalMachinePanel({ machineId, machines, onSelectMachine, onClos
 
               {showingSearch ? (
                 grepResults !== null ? (
-                  grepResults.length === 0 ? <div style={muted}>（无匹配）</div> :
-                  grepResults.map((m, i) => (
-                    <div key={i} style={{ padding: "3px 12px", borderBottom: "1px solid var(--border)", display: "flex", gap: 6, fontSize: 11, fontFamily: "var(--font-mono)" }}>
-                      <button onClick={() => void openPath(m.file)} style={{ background: "none", border: "none", cursor: "pointer", textAlign: "left", flex: 1, minWidth: 0, color: "var(--text)" }}>
-                        <span style={{ color: "var(--accent)" }}>{m.file}:{m.line}</span>
-                        <div style={{ color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.text.trim()}</div>
-                      </button>
-                      <button onClick={() => void remove(m.file)} style={{ ...btnStyle, padding: "0 4px" }}>×</button>
-                    </div>
-                  ))
+                  grepResults.length === 0 ? (
+                    <div style={muted}>（无匹配）</div>
+                  ) : (
+                    grepResults.map((m, i) => (
+                      <div
+                        key={i}
+                        style={{
+                          padding: "3px 12px",
+                          borderBottom: "1px solid var(--border)",
+                          display: "flex",
+                          gap: 6,
+                          fontSize: 11,
+                          fontFamily: "var(--font-mono)",
+                        }}
+                      >
+                        <button
+                          onClick={() => void openPath(m.file)}
+                          style={{
+                            background: "none",
+                            border: "none",
+                            cursor: "pointer",
+                            textAlign: "left",
+                            flex: 1,
+                            minWidth: 0,
+                            color: "var(--text)",
+                          }}
+                        >
+                          <span style={{ color: "var(--accent)" }}>
+                            {m.file}:{m.line}
+                          </span>
+                          <div
+                            style={{
+                              color: "var(--text-muted)",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {m.text.trim()}
+                          </div>
+                        </button>
+                        <button onClick={() => void remove(m.file)} style={{ ...btnStyle, padding: "0 4px" }}>
+                          ×
+                        </button>
+                      </div>
+                    ))
+                  )
+                ) : (fdResults ?? []).length === 0 ? (
+                  <div style={muted}>（无匹配）</div>
                 ) : (
-                  (fdResults ?? []).length === 0 ? <div style={muted}>（无匹配）</div> :
                   (fdResults ?? []).map((p) => (
-                    <div key={p} style={{ padding: "3px 12px", display: "flex", gap: 6, fontSize: 11, fontFamily: "var(--font-mono)" }}>
-                      <button onClick={() => void openPath(p)} style={{ background: "none", border: "none", cursor: "pointer", textAlign: "left", flex: 1, minWidth: 0, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p}</button>
-                      <button onClick={() => void remove(p)} style={{ ...btnStyle, padding: "0 4px" }}>×</button>
+                    <div
+                      key={p}
+                      style={{
+                        padding: "3px 12px",
+                        display: "flex",
+                        gap: 6,
+                        fontSize: 11,
+                        fontFamily: "var(--font-mono)",
+                      }}
+                    >
+                      <button
+                        onClick={() => void openPath(p)}
+                        style={{
+                          background: "none",
+                          border: "none",
+                          cursor: "pointer",
+                          textAlign: "left",
+                          flex: 1,
+                          minWidth: 0,
+                          color: "var(--text)",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {p}
+                      </button>
+                      <button onClick={() => void remove(p)} style={{ ...btnStyle, padding: "0 4px" }}>
+                        ×
+                      </button>
                     </div>
                   ))
                 )
+              ) : !loading && entries.length === 0 && !error ? (
+                <div style={muted}>（空）</div>
               ) : (
-                !loading && entries.length === 0 && !error ? <div style={muted}>（空）</div> :
                 entries.map((e) => (
                   <div key={e.path} style={{ display: "flex", alignItems: "center", padding: "0 12px" }}>
-                    <button onClick={() => void openPath(e.path)} style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0, padding: "5px 0", background: "transparent", border: "none", cursor: "pointer", textAlign: "left", color: "var(--text)", fontFamily: "var(--font-mono)", fontSize: 12 }}>
+                    <button
+                      onClick={() => void openPath(e.path)}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        flex: 1,
+                        minWidth: 0,
+                        padding: "5px 0",
+                        background: "transparent",
+                        border: "none",
+                        cursor: "pointer",
+                        textAlign: "left",
+                        color: "var(--text)",
+                        fontFamily: "var(--font-mono)",
+                        fontSize: 12,
+                      }}
+                    >
                       <span>{e.isDir ? "📁" : "📄"}</span>
-                      <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.name}</span>
+                      <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {e.name}
+                      </span>
                     </button>
-                    <button onClick={() => void rename(e)} title="重命名" style={{ ...btnStyle, padding: "0 4px", opacity: 0.6 }}>✎</button>
-                    <button onClick={() => void remove(e)} title="删除" style={{ ...btnStyle, padding: "0 4px", opacity: 0.6 }}>×</button>
+                    <button
+                      onClick={() => void rename(e)}
+                      title="重命名"
+                      style={{ ...btnStyle, padding: "0 4px", opacity: 0.6 }}
+                    >
+                      ✎
+                    </button>
+                    <button
+                      onClick={() => void remove(e)}
+                      title="删除"
+                      style={{ ...btnStyle, padding: "0 4px", opacity: 0.6 }}
+                    >
+                      ×
+                    </button>
                   </div>
                 ))
               )}
@@ -316,21 +525,47 @@ export function LocalMachinePanel({ machineId, machines, onSelectMachine, onClos
             <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
               {file ? (
                 <>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", borderBottom: "1px solid var(--border)" }}>
-                    <span style={{ fontSize: 12, fontFamily: "var(--font-mono)", color: "var(--text-muted)" }}>{file.path}</span>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      padding: "6px 12px",
+                      borderBottom: "1px solid var(--border)",
+                    }}
+                  >
+                    <span style={{ fontSize: 12, fontFamily: "var(--font-mono)", color: "var(--text-muted)" }}>
+                      {file.path}
+                    </span>
                     {file.dirty && <span style={{ fontSize: 11, color: "#f59e0b" }}>● 未保存</span>}
                     <span style={{ flex: 1 }} />
-                    <button onClick={() => void save()} disabled={saving || !file.dirty} style={btnStyle}>{saving ? "保存中…" : "保存"}</button>
+                    <button onClick={() => void save()} disabled={saving || !file.dirty} style={btnStyle}>
+                      {saving ? "保存中…" : "保存"}
+                    </button>
                   </div>
                   <textarea
                     value={file.content}
                     onChange={(e) => setFile((f) => (f ? { ...f, content: e.target.value, dirty: true } : f))}
                     spellCheck={false}
-                    style={{ flex: 1, width: "100%", resize: "none", border: "none", outline: "none", padding: 12, background: "transparent", color: "var(--text)", fontFamily: "var(--font-mono)", fontSize: 12, lineHeight: 1.5 }}
+                    style={{
+                      flex: 1,
+                      width: "100%",
+                      resize: "none",
+                      border: "none",
+                      outline: "none",
+                      padding: 12,
+                      background: "transparent",
+                      color: "var(--text)",
+                      fontFamily: "var(--font-mono)",
+                      fontSize: 12,
+                      lineHeight: 1.5,
+                    }}
                   />
                 </>
               ) : (
-                <div style={{ ...muted, padding: 24 }}>选择左侧文件查看 / 编辑，或在下方运行命令。可用上方搜索框 grep 内容或 fd 文件名。</div>
+                <div style={{ ...muted, padding: 24 }}>
+                  选择左侧文件查看 / 编辑，或在下方运行命令。可用上方搜索框 grep 内容或 fd 文件名。
+                </div>
               )}
             </div>
 
@@ -339,16 +574,53 @@ export function LocalMachinePanel({ machineId, machines, onSelectMachine, onClos
                 <input
                   value={cmd}
                   onChange={(e) => setCmd(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter") void run(); }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") void run();
+                  }}
                   placeholder="运行命令（如 ls -la / git status / pytest -q），回车执行"
                   spellCheck={false}
-                  style={{ flex: 1, padding: "6px 8px", background: "var(--bg)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 4, fontFamily: "var(--font-mono)", fontSize: 12 }}
+                  style={{
+                    flex: 1,
+                    padding: "6px 8px",
+                    background: "var(--bg)",
+                    color: "var(--text)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 4,
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 12,
+                  }}
                 />
-                <button onClick={() => void run()} disabled={running || !cmd.trim()} style={btnStyle}>{running ? "运行中…" : "运行"}</button>
+                <button onClick={() => void run()} disabled={running || !cmd.trim()} style={btnStyle}>
+                  {running ? "运行中…" : "运行"}
+                </button>
               </div>
               {result && (
-                <pre style={{ margin: "8px 0 0", padding: 8, maxHeight: 160, overflow: "auto", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 4, fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--text-muted)", whiteSpace: "pre-wrap" }}>
-                  <span style={{ color: result.exitCode === 0 ? "#22c55e" : result.exitCode === -1 ? "var(--text-muted)" : "#ef4444" }}>{result.exitCode === -1 ? "[running]" : `[exit ${result.exitCode}]`}</span>{"\n"}{result.stdout}{result.stderr && `${result.stdout ? "\n" : ""}${result.stderr}`}
+                <pre
+                  style={{
+                    margin: "8px 0 0",
+                    padding: 8,
+                    maxHeight: 160,
+                    overflow: "auto",
+                    background: "var(--bg)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 4,
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 11,
+                    color: "var(--text-muted)",
+                    whiteSpace: "pre-wrap",
+                  }}
+                >
+                  <span
+                    style={{
+                      color:
+                        result.exitCode === 0 ? "#22c55e" : result.exitCode === -1 ? "var(--text-muted)" : "#ef4444",
+                    }}
+                  >
+                    {result.exitCode === -1 ? "[running]" : `[exit ${result.exitCode}]`}
+                  </span>
+                  {"\n"}
+                  {result.stdout}
+                  {result.stderr && `${result.stdout ? "\n" : ""}${result.stderr}`}
                 </pre>
               )}
             </div>
@@ -356,14 +628,20 @@ export function LocalMachinePanel({ machineId, machines, onSelectMachine, onClos
         </div>
       </div>
 
-      {termOpen && (
-        <Terminal cwd={path || "."} machineId={machineId} onClose={() => setTermOpen(false)} />
-      )}
+      {termOpen && <Terminal cwd={path || "."} machineId={machineId} onClose={() => setTermOpen(false)} />}
     </div>
   );
 }
 
-const btnStyle: React.CSSProperties = { padding: "4px 10px", fontSize: 12, background: "var(--bg)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 4, cursor: "pointer" };
+const btnStyle: React.CSSProperties = {
+  padding: "4px 10px",
+  fontSize: 12,
+  background: "var(--bg)",
+  color: "var(--text)",
+  border: "1px solid var(--border)",
+  borderRadius: 4,
+  cursor: "pointer",
+};
 const muted: React.CSSProperties = { fontSize: 12, color: "var(--text-muted)", padding: "4px 12px" };
 
 /** Minimal whitespace/quote tokenizer → argv. No shell, no expansion. */

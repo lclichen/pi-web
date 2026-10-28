@@ -1,9 +1,9 @@
 import { existsSync, readFileSync, readdirSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { parseFrontmatter, getAgentDir } from "@earendil-works/pi-coding-agent";
-import { atomicWriteFile }  from "./atomic-write";
+import { atomicWriteFile } from "./atomic-write";
 import { BUILTIN_PROFILES } from "./subagents";
-import type { AgentInfo, AgentDetail, ConfigScope }  from "./api-types";
+import type { AgentInfo, AgentDetail, ConfigScope } from "./api-types";
 
 const NAME_RE = /^[A-Za-z0-9_.-]+$/;
 
@@ -30,11 +30,17 @@ export function agentsDirFor(cwd: string, scope: ConfigScope): string {
 function csvToList(v: unknown): string[] | undefined {
   if (v == null) return undefined;
   if (Array.isArray(v)) {
-    const arr = v.map(String).map((s) => s.trim()).filter(Boolean);
+    const arr = v
+      .map(String)
+      .map((s) => s.trim())
+      .filter(Boolean);
     return arr.length ? arr : undefined;
   }
   if (typeof v === "string") {
-    const parts = v.split(",").map((s) => s.trim()).filter(Boolean);
+    const parts = v
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
     return parts.length ? parts : undefined;
   }
   return undefined;
@@ -51,10 +57,7 @@ function parseAgentFile(name: string, raw: string, scope: ConfigScope, filePath:
       disallowedTools: csvToList(fm.disallowed_tools),
       model: typeof fm.model === "string" ? fm.model : undefined,
       thinking: typeof fm.thinking === "string" ? fm.thinking : undefined,
-      maxTurns:
-        typeof fm.max_turns === "number" && Number.isFinite(fm.max_turns)
-          ? fm.max_turns
-          : undefined,
+      maxTurns: typeof fm.max_turns === "number" && Number.isFinite(fm.max_turns) ? fm.max_turns : undefined,
       enabled: fm.enabled !== false,
       isDefault: DEFAULT_AGENT_NAMES.has(name),
     };
@@ -121,11 +124,7 @@ export function listAllAgents(cwd: string): AgentInfo[] {
   return [...listAgents(cwd, "project"), ...listAgents(cwd, "global")];
 }
 
-export function getAgentDetail(
-  cwd: string,
-  scope: ConfigScope,
-  name: string,
-): AgentDetail | null {
+export function getAgentDetail(cwd: string, scope: ConfigScope, name: string): AgentDetail | null {
   const filePath = join(agentsDirFor(cwd, scope), `${name}.md`);
   if (!existsSync(filePath)) return null;
   const raw = readFileSync(filePath, "utf8");
@@ -172,10 +171,7 @@ function yamlScalar(value: unknown): string | undefined {
  * line (unknown keys, comments, formatting). Keys mapped to undefined are
  * removed; keys not present are appended.
  */
-function rewriteFrontmatterBlock(
-  block: string,
-  updates: Record<string, string | undefined>,
-): string {
+function rewriteFrontmatterBlock(block: string, updates: Record<string, string | undefined>): string {
   const lines = block.split(/\r?\n/);
   const keyIndex = new Map<string, number>();
   for (let i = 0; i < lines.length; i++) {
@@ -201,18 +197,11 @@ function fieldsToUpdate(fields: AgentFields): Record<string, string | undefined>
     disallowed_tools: yamlScalar(listToCsv(fields.disallowedTools)),
     model: yamlScalar(fields.model),
     thinking: yamlScalar(fields.thinking),
-    max_turns:
-      fields.maxTurns === undefined || Number.isNaN(fields.maxTurns)
-        ? undefined
-        : String(fields.maxTurns),
+    max_turns: fields.maxTurns === undefined || Number.isNaN(fields.maxTurns) ? undefined : String(fields.maxTurns),
   };
 }
 
-export function buildAgentContent(
-  raw: string | null,
-  fields: AgentFields,
-  systemPrompt: string,
-): string {
+export function buildAgentContent(raw: string | null, fields: AgentFields, systemPrompt: string): string {
   const body = systemPrompt.replace(/\s+$/, "");
   const updates = fieldsToUpdate(fields);
   if (raw) {
@@ -225,9 +214,7 @@ export function buildAgentContent(
   const fmLines = Object.entries(updates)
     .filter(([, v]) => v !== undefined)
     .map(([k, v]) => `${k}: ${v}`);
-  return fmLines.length
-    ? `---\n${fmLines.join("\n")}\n---\n\n${body}`
-    : body;
+  return fmLines.length ? `---\n${fmLines.join("\n")}\n---\n\n${body}` : body;
 }
 
 export function createAgent(
@@ -279,12 +266,7 @@ export function deleteAgent(cwd: string, scope: ConfigScope, name: string): bool
  *   - Disabling creates a stub .md with `enabled: false`.
  *   - Enabling is a no-op (already enabled by default).
  */
-export function setAgentEnabled(
-  cwd: string,
-  scope: ConfigScope,
-  name: string,
-  enabled: boolean,
-): boolean {
+export function setAgentEnabled(cwd: string, scope: ConfigScope, name: string, enabled: boolean): boolean {
   const dir = agentsDirFor(cwd, scope);
   const filePath = join(dir, `${name}.md`);
 
@@ -304,7 +286,12 @@ export function setAgentEnabled(
     // frontmatter delimiters), delete it to restore the default.
     if (enabled) {
       const m = rewritten.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?$/);
-      const fmLines = m ? m[1].split(/\r?\n/).map((l) => l.trim()).filter(Boolean) : [];
+      const fmLines = m
+        ? m[1]
+            .split(/\r?\n/)
+            .map((l) => l.trim())
+            .filter(Boolean)
+        : [];
       const body = m ? "" : rewritten.trim();
       if (fmLines.length === 0 && !body) {
         unlinkSync(filePath);

@@ -37,7 +37,10 @@ export interface RemoteSessionContext {
   machineId?: string;
 }
 
-interface PlatformContainer { id: number; status: string }
+interface PlatformContainer {
+  id: number;
+  status: string;
+}
 
 export async function resolveRemoteSession(
   req: Request,
@@ -61,16 +64,30 @@ export async function resolveRemoteSession(
 
   if (mode === "ssh") {
     // SSH 会话必然绑定项目：meta.projectId 提供凭据与远程工作目录。
-    const project = meta?.projectId && (user.role === "admin" || meta.ownerId === user.id || user.id === 0)
-      ? getOwnedProject(meta.projectId, meta.ownerId ?? user.id, user.role === "admin")
-      : undefined;
+    const project =
+      meta?.projectId && (user.role === "admin" || meta.ownerId === user.id || user.id === 0)
+        ? getOwnedProject(meta.projectId, meta.ownerId ?? user.id, user.role === "admin")
+        : undefined;
     if (!project || project.mode !== "ssh") {
       return { ok: false, status: 400, error: "SSH 会话缺少项目绑定" };
     }
     const home = ensureProjectHome(project);
     const sshConfig = readSshConfig(home);
     if (!sshConfig) return { ok: false, status: 400, error: "SSH 项目缺少连接配置" };
-    return { ok: true, ctx: { mode: "ssh", userId: user.id, apiKey: "", containerId: 0, isAdmin: user.role === "admin", projectId: project.id, workdir: project.workdir ?? "/", homePrefix: home, sshConfig } };
+    return {
+      ok: true,
+      ctx: {
+        mode: "ssh",
+        userId: user.id,
+        apiKey: "",
+        containerId: 0,
+        isAdmin: user.role === "admin",
+        projectId: project.id,
+        workdir: project.workdir ?? "/",
+        homePrefix: home,
+        sshConfig,
+      },
+    };
   }
 
   if (mode === "local-machine") {
@@ -144,7 +161,10 @@ export async function resolveRemoteSession(
   if (!containerId) {
     return { ok: false, status: 409, error: "没有运行中的沙箱容器——请先在会话里触发一次工具调用或稍后再试" };
   }
-  return { ok: true, ctx: { mode, userId: user.id, apiKey: identity.session.apiKey, containerId, isAdmin: user.role === "admin" } };
+  return {
+    ok: true,
+    ctx: { mode, userId: user.id, apiKey: identity.session.apiKey, containerId, isAdmin: user.role === "admin" },
+  };
 }
 
 // ---- backend helpers ----
@@ -173,7 +193,10 @@ async function sshClientFor(ctx: RemoteSessionContext) {
   return getSshClient(ctx.projectId, ctx.sshConfig);
 }
 
-interface SftpListEntry { filename: string; attrs: { isDirectory(): boolean; size: number } }
+interface SftpListEntry {
+  filename: string;
+  attrs: { isDirectory(): boolean; size: number };
+}
 
 function sftpOf(client: unknown): Promise<{
   readdir(p: string, cb: (e: Error | undefined, l: SftpListEntry[]) => void): void;
@@ -183,21 +206,34 @@ function sftpOf(client: unknown): Promise<{
 }> {
   return new Promise((resolve, reject) => {
     (client as { sftp(cb: (e: Error | undefined, s: unknown) => void): void }).sftp((e, s) =>
-      e ? reject(e) : resolve(s as Parameters<typeof resolve>[0]));
+      e ? reject(e) : resolve(s as Parameters<typeof resolve>[0]),
+    );
   });
 }
 
-async function sshRun(ctx: RemoteSessionContext, command: string): Promise<void> {  const client = await sshClientFor(ctx);
+async function sshRun(ctx: RemoteSessionContext, command: string): Promise<void> {
+  const client = await sshClientFor(ctx);
   await new Promise<void>((resolve, reject) => {
-    client.exec(command, (err: Error | undefined, stream: { on(ev: "close", cb: (c: number) => void): void; stderr: { on(ev: "data", cb: (d: Buffer) => void): void } }) => {
-      if (err) return reject(err);
-      let stderr = "";
-      stream.stderr.on("data", (d) => { stderr += d.toString(); });
-      stream.on("close", (code) => {
-        if (code !== 0) reject(new Error(`远程命令失败（exit ${code}）：${stderr.trim().slice(0, 200)}`));
-        else resolve();
-      });
-    });
+    client.exec(
+      command,
+      (
+        err: Error | undefined,
+        stream: {
+          on(ev: "close", cb: (c: number) => void): void;
+          stderr: { on(ev: "data", cb: (d: Buffer) => void): void };
+        },
+      ) => {
+        if (err) return reject(err);
+        let stderr = "";
+        stream.stderr.on("data", (d) => {
+          stderr += d.toString();
+        });
+        stream.on("close", (code) => {
+          if (code !== 0) reject(new Error(`远程命令失败（exit ${code}）：${stderr.trim().slice(0, 200)}`));
+          else resolve();
+        });
+      },
+    );
   });
 }
 /** Local-machine backend helpers: every relay call carries the project
@@ -234,21 +270,29 @@ export async function remoteList(ctx: RemoteSessionContext, path: string): Promi
   if (ctx.mode === "ssh") {
     const client = await sshClientFor(ctx);
     const s = await sftpOf(client);
-    const list = await new Promise<SftpListEntry[]>((resolve, reject) => s.readdir(sshPath(ctx, path), (e, l) => e ? reject(e) : resolve(l)));
+    const list = await new Promise<SftpListEntry[]>((resolve, reject) =>
+      s.readdir(sshPath(ctx, path), (e, l) => (e ? reject(e) : resolve(l))),
+    );
     return list.map((e) => ({ name: e.filename, isDir: e.attrs.isDirectory(), size: e.attrs.size, modified: "" }));
   }
   if (ctx.mode === "local-machine") {
     const scope = localScope(ctx);
     const entries = await localRelay<Array<{ name: string; isDir: boolean; size: number; mtime: number }>>(
-      ctx, "fs.list", { path: localWirePath(ctx, path, scope) }, scope,
+      ctx,
+      "fs.list",
+      { path: localWirePath(ctx, path, scope) },
+      scope,
     );
-    return entries.map((e) => ({ name: e.name, isDir: e.isDir, size: e.size, modified: new Date(e.mtime).toISOString() }));
+    return entries.map((e) => ({
+      name: e.name,
+      isDir: e.isDir,
+      size: e.size,
+      modified: new Date(e.mtime).toISOString(),
+    }));
   }
-  const res = await platformGet<{ entries?: Array<{ name: string; isDirectory?: boolean; isDir?: boolean; size?: number; mtimeMs?: number }> }>(
-    `/api/v1/containers/${ctx.containerId}/tools/ls`,
-    ctx.apiKey,
-    { path: containerPath(path) },
-  );
+  const res = await platformGet<{
+    entries?: Array<{ name: string; isDirectory?: boolean; isDir?: boolean; size?: number; mtimeMs?: number }>;
+  }>(`/api/v1/containers/${ctx.containerId}/tools/ls`, ctx.apiKey, { path: containerPath(path) });
   return (res.entries ?? []).map((e) => ({
     name: e.name,
     isDir: e.isDirectory ?? e.isDir ?? false,
@@ -261,13 +305,18 @@ export async function remoteRead(ctx: RemoteSessionContext, path: string): Promi
   if (ctx.mode === "ssh") {
     const client = await sshClientFor(ctx);
     const s = await sftpOf(client);
-    const buf = await new Promise<Buffer>((resolve, reject) => s.readFile(sshPath(ctx, path), (e, d) => e ? reject(e) : resolve(d)));
+    const buf = await new Promise<Buffer>((resolve, reject) =>
+      s.readFile(sshPath(ctx, path), (e, d) => (e ? reject(e) : resolve(d))),
+    );
     return { content: buf.toString("utf8"), size: buf.length };
   }
   if (ctx.mode === "local-machine") {
     const scope = localScope(ctx);
     const r = await localRelay<{ content: string; size: number }>(
-      ctx, "fs.read", { path: localWirePath(ctx, path, scope) }, scope,
+      ctx,
+      "fs.read",
+      { path: localWirePath(ctx, path, scope) },
+      scope,
     );
     return { content: r.content, size: r.size };
   }
@@ -283,7 +332,9 @@ export async function remoteWrite(ctx: RemoteSessionContext, path: string, conte
   if (ctx.mode === "ssh") {
     const client = await sshClientFor(ctx);
     const s = await sftpOf(client);
-    await new Promise<void>((resolve, reject) => s.writeFile(sshPath(ctx, path), content, (e) => e ? reject(e) : resolve()));
+    await new Promise<void>((resolve, reject) =>
+      s.writeFile(sshPath(ctx, path), content, (e) => (e ? reject(e) : resolve())),
+    );
     return;
   }
   if (ctx.mode === "local-machine") {
@@ -291,11 +342,10 @@ export async function remoteWrite(ctx: RemoteSessionContext, path: string, conte
     await localRelay(ctx, "fs.write", { path: localWirePath(ctx, path, scope), content }, scope);
     return;
   }
-  await platformPost(
-    `/api/v1/containers/${ctx.containerId}/tools/write`,
-    ctx.apiKey,
-    { path: containerPath(path), content: Buffer.from(content, "utf8").toString("base64") },
-  );
+  await platformPost(`/api/v1/containers/${ctx.containerId}/tools/write`, ctx.apiKey, {
+    path: containerPath(path),
+    content: Buffer.from(content, "utf8").toString("base64"),
+  });
 }
 
 /** Create an EMPTY file or a directory (the platform write schema rejects
@@ -319,12 +369,11 @@ export async function remoteCreateEmpty(ctx: RemoteSessionContext, path: string,
     return;
   }
   const target = containerPath(path);
-  const command = kind === "dir" ? `mkdir -p -- ${shellQuote(target)}` : `mkdir -p -- $(dirname ${shellQuote(target)}) && touch -- ${shellQuote(target)}`;
-  await platformPost(
-    `/api/v1/containers/${ctx.containerId}/tools/bash`,
-    ctx.apiKey,
-    { command },
-  );
+  const command =
+    kind === "dir"
+      ? `mkdir -p -- ${shellQuote(target)}`
+      : `mkdir -p -- $(dirname ${shellQuote(target)}) && touch -- ${shellQuote(target)}`;
+  await platformPost(`/api/v1/containers/${ctx.containerId}/tools/bash`, ctx.apiKey, { command });
 }
 
 export async function remoteDelete(ctx: RemoteSessionContext, path: string): Promise<void> {
@@ -338,32 +387,36 @@ export async function remoteDelete(ctx: RemoteSessionContext, path: string): Pro
     await localRelay(ctx, "fs.delete", { path: localWirePath(ctx, path, scope) }, scope);
     return;
   }
-  await platformPost(
-    `/api/v1/containers/${ctx.containerId}/tools/bash`,
-    ctx.apiKey,
-    { command: `rm -rf -- ${shellQuote(containerPath(path))}` },
-  );
+  await platformPost(`/api/v1/containers/${ctx.containerId}/tools/bash`, ctx.apiKey, {
+    command: `rm -rf -- ${shellQuote(containerPath(path))}`,
+  });
 }
 
 export async function remoteRename(ctx: RemoteSessionContext, path: string, newPath: string): Promise<void> {
   if (ctx.mode === "ssh") {
     const q = (t: string) => t.replace(/'/g, "'\\''");
-    await sshRun(ctx, `mkdir -p -- $(dirname '${q(sshPath(ctx, newPath))}') && mv -- '${q(sshPath(ctx, path))}' '${q(sshPath(ctx, newPath))}'`);
+    await sshRun(
+      ctx,
+      `mkdir -p -- $(dirname '${q(sshPath(ctx, newPath))}') && mv -- '${q(sshPath(ctx, path))}' '${q(sshPath(ctx, newPath))}'`,
+    );
     return;
   }
   if (ctx.mode === "local-machine") {
     const scope = localScope(ctx);
-    await localRelay(ctx, "fs.rename", {
-      from: localWirePath(ctx, path, scope),
-      to: localWirePath(ctx, newPath, scope),
-    }, scope);
+    await localRelay(
+      ctx,
+      "fs.rename",
+      {
+        from: localWirePath(ctx, path, scope),
+        to: localWirePath(ctx, newPath, scope),
+      },
+      scope,
+    );
     return;
   }
-  await platformPost(
-    `/api/v1/containers/${ctx.containerId}/tools/bash`,
-    ctx.apiKey,
-    { command: `mkdir -p -- $(dirname ${shellQuote(containerPath(newPath))}) && mv -- ${shellQuote(containerPath(path))} ${shellQuote(containerPath(newPath))}` },
-  );
+  await platformPost(`/api/v1/containers/${ctx.containerId}/tools/bash`, ctx.apiKey, {
+    command: `mkdir -p -- $(dirname ${shellQuote(containerPath(newPath))}) && mv -- ${shellQuote(containerPath(path))} ${shellQuote(containerPath(newPath))}`,
+  });
 }
 
 function stripSlash(path: string): string {
@@ -405,32 +458,56 @@ export async function remoteFind(ctx: RemoteSessionContext, base: string, query:
     const r = await new Promise<string>((resolve, reject) => {
       client.exec(
         `cd '${q(wd)}' 2>/dev/null || cd /; { find . -type f -not -path '*/node_modules/*' -not -path '*/.git/*' 2>/dev/null | grep -i '${grepPat}' | head -${MAX}; }`,
-        (err: Error | undefined, stream: { on(ev: "close", cb: (c: number) => void): void; on(ev: "data", cb: (d: Buffer) => void): void; stderr: { on(ev: "data", cb: (d: Buffer) => void): void } }) => {
+        (
+          err: Error | undefined,
+          stream: {
+            on(ev: "close", cb: (c: number) => void): void;
+            on(ev: "data", cb: (d: Buffer) => void): void;
+            stderr: { on(ev: "data", cb: (d: Buffer) => void): void };
+          },
+        ) => {
           if (err) return reject(err);
           let out = "";
           let stderr = "";
-          stream.on("data", (d) => { out += d.toString(); });
-          stream.stderr.on("data", (d) => { stderr += d.toString(); });
+          stream.on("data", (d) => {
+            out += d.toString();
+          });
+          stream.stderr.on("data", (d) => {
+            stderr += d.toString();
+          });
           stream.on("close", (code) => {
-            if (code !== 0 && code !== 1) reject(new Error(`Remote find failed (exit ${code}): ${stderr.trim().slice(0, 200)}`));
+            if (code !== 0 && code !== 1)
+              reject(new Error(`Remote find failed (exit ${code}): ${stderr.trim().slice(0, 200)}`));
             else resolve(out);
           });
         },
       );
     });
-    return r.split("\n").map((l) => l.trim()).filter(Boolean).map((p) => p.replace(/^\.\//, ""));
+    return r
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .map((p) => p.replace(/^\.\//, ""));
   }
 
   if (ctx.mode === "local-machine") {
     // relay exec.run is argv-based (no shell) — wrap with bash -c like relay-tools.
     const scope = localScope(ctx);
     const wireBase = localWirePath(ctx, base, scope);
-    const r = await localRelay<{ stdout?: string }>(ctx, "exec.run", {
-      argv: ["bash", "-c", findCmd(wireBase === "." ? "." : wireBase)],
-      cwd: ".",
-    }, scope);
+    const r = await localRelay<{ stdout?: string }>(
+      ctx,
+      "exec.run",
+      {
+        argv: ["bash", "-c", findCmd(wireBase === "." ? "." : wireBase)],
+        cwd: ".",
+      },
+      scope,
+    );
     const strip = wireBase === "." ? "" : `${wireBase.replace(/\/+$/, "")}/`;
-    return (r.stdout ?? "").split("\n").map((l) => l.trim()).filter(Boolean)
+    return (r.stdout ?? "")
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean)
       .map((p) => {
         const clean = p.replace(/^\.\//, "");
         return strip && clean.startsWith(strip) ? clean.slice(strip.length) : clean;
@@ -443,5 +520,8 @@ export async function remoteFind(ctx: RemoteSessionContext, base: string, query:
     ctx.apiKey,
     { command: `${findCmd(root)} | sed 's|^${root}/||'` },
   );
-  return (res.stdout ?? "").split("\n").map((l) => l.trim()).filter(Boolean);
+  return (res.stdout ?? "")
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
 }

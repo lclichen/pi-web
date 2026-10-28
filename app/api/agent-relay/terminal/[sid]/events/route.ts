@@ -9,10 +9,7 @@ export const dynamic = "force-dynamic";
 // them out to subscribers here. Output is the most sensitive channel (shell
 // echo may contain secrets typed earlier), so it requires identity + PTY
 // ownership like every other verb in this stack.
-export async function GET(
-  req: Request,
-  ctx: { params: Promise<{ sid: string }> },
-): Promise<Response> {
+export async function GET(req: Request, ctx: { params: Promise<{ sid: string }> }): Promise<Response> {
   const { sid } = await ctx.params;
   const identity = requireUserIdentity(req);
   if (!identity.ok) {

@@ -48,9 +48,11 @@ function sandboxOps(sessionCwd: string): BridgeOps | null {
   let apiKey: string;
   let containerId: number;
   try {
-    const cfg = JSON.parse(
-      readFileSync(join(sessionCwd, ".pi", "sandbox-platform.json"), "utf8"),
-    ) as { url?: string; apiKey?: string; containerId?: number | string };
+    const cfg = JSON.parse(readFileSync(join(sessionCwd, ".pi", "sandbox-platform.json"), "utf8")) as {
+      url?: string;
+      apiKey?: string;
+      containerId?: number | string;
+    };
     if (!cfg.url || !cfg.apiKey || !cfg.containerId) return null;
     url = cfg.url.replace(/\/+$/, "");
     apiKey = cfg.apiKey;
@@ -148,10 +150,7 @@ function shellQ(value: string): string {
  * Inline extension publishing the bridge for this session. Injected by
  * /api/agent/new alongside the mode's tool extension.
  */
-export function makeRemoteVerifyExtension(
-  kind: "sandbox" | "local-machine",
-  userId: number,
-): InlineExtension {
+export function makeRemoteVerifyExtension(kind: "sandbox" | "local-machine", userId: number): InlineExtension {
   return (pi: ExtensionAPI): void => {
     let key: string | undefined;
     pi.on("session_start", async (_event, ctx) => {

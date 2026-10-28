@@ -1,4 +1,14 @@
-import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "fs";
+import {
+  cpSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "fs";
 import { join, resolve } from "path";
 import { randomUUID } from "crypto";
 import { dataDir } from "./mode-homes";
@@ -120,7 +130,12 @@ export function getOwnedProject(projectId: string, ownerId: number, isAdmin = fa
 }
 
 export function projectHome(project: ProjectRecord): string {
-  return join(dataDir(), `${project.mode === "sandbox" ? "sandbox-homes" : "local-homes"}`, `u${project.ownerId}`, project.id);
+  return join(
+    dataDir(),
+    `${project.mode === "sandbox" ? "sandbox-homes" : "local-homes"}`,
+    `u${project.ownerId}`,
+    project.id,
+  );
 }
 
 /**
@@ -164,9 +179,7 @@ export async function createProject(input: {
   if (!name || name.length > 64) return { ok: false, error: "项目名不能为空且不超过 64 字符" };
   if (!PROJECT_MODES.has(input.mode)) return { ok: false, error: `不支持的模式：${input.mode}` };
   // 同一用户下项目名唯一：重名会让侧栏分组与复制/导入的目标辨识混乱。
-  const duplicate = Object.values(store().data.projects).find(
-    (p) => p.ownerId === input.ownerId && p.name === name,
-  );
+  const duplicate = Object.values(store().data.projects).find((p) => p.ownerId === input.ownerId && p.name === name);
   if (duplicate) {
     return { ok: false, error: `已存在同名项目「${name}」，请换一个名称` };
   }
@@ -254,7 +267,15 @@ export async function createProject(input: {
 
 export function updateProject(
   projectId: string,
-  patch: { name?: string; containerId?: number | null; workdir?: string; machineId?: string | null; pinSessionId?: string; unpinSessionId?: string; snapshotSlots?: Array<{ id: number; name: string; createdAt: number }> },
+  patch: {
+    name?: string;
+    containerId?: number | null;
+    workdir?: string;
+    machineId?: string | null;
+    pinSessionId?: string;
+    unpinSessionId?: string;
+    snapshotSlots?: Array<{ id: number; name: string; createdAt: number }>;
+  },
 ): { ok: true; project: ProjectRecord } | { ok: false; error: string } {
   const project = store().data.projects[projectId];
   if (!project) return { ok: false, error: "项目不存在" };
@@ -352,7 +373,9 @@ export interface ProjectSandboxConfig {
 
 export function readProjectSandboxConfig(project: ProjectRecord): ProjectSandboxConfig {
   try {
-    const parsed = JSON.parse(readFileSync(join(projectHome(project), ".pi", "sandbox-platform.json"), "utf8")) as Partial<ProjectSandboxConfig>;
+    const parsed = JSON.parse(
+      readFileSync(join(projectHome(project), ".pi", "sandbox-platform.json"), "utf8"),
+    ) as Partial<ProjectSandboxConfig>;
     return {
       url: typeof parsed.url === "string" ? parsed.url : (safePlatformUrl() ?? ""),
       apiKey: typeof parsed.apiKey === "string" ? parsed.apiKey : "",

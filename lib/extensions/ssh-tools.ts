@@ -102,7 +102,12 @@ export function makeSshToolsExtension(opts: {
     try {
       const entries = await readdir(absPath, { withFileTypes: true });
       if (entries.length === 0) return ok("(empty)");
-      return ok(entries.map((e) => `${e.isDirectory() ? "d" : "-"} ${e.name}`).sort().join("\n"));
+      return ok(
+        entries
+          .map((e) => `${e.isDirectory() ? "d" : "-"} ${e.name}`)
+          .sort()
+          .join("\n"),
+      );
     } catch (err) {
       return fail(err instanceof Error ? err.message : String(err));
     }
@@ -110,181 +115,200 @@ export function makeSshToolsExtension(opts: {
 
   const factory = (pi: ExtensionAPI): void => {
     // ---- bash ----
-    pi.registerTool(defineTool({
-      name: "bash",
-      label: "Bash",
-      description: "Run a shell command on the remote host (SSH). Executes in the project workdir.",
-      parameters: Type.Object({
-        command: Type.String({ description: "The shell command to run remotely." }),
-        timeout: Type.Optional(Type.Number({ description: "Timeout in seconds (default 120)." })),
+    pi.registerTool(
+      defineTool({
+        name: "bash",
+        label: "Bash",
+        description: "Run a shell command on the remote host (SSH). Executes in the project workdir.",
+        parameters: Type.Object({
+          command: Type.String({ description: "The shell command to run remotely." }),
+          timeout: Type.Optional(Type.Number({ description: "Timeout in seconds (default 120)." })),
+        }),
+        execute: async (_id, params) => {
+          try {
+            const c = await client();
+            const r = await sshExec(c, params.command, workdir, (params.timeout ?? 120) * 1000);
+            const out = [r.stdout, r.stderr ? `[stderr]\n${r.stderr}` : "", r.code !== 0 ? `[exit ${r.code}]` : ""]
+              .filter(Boolean)
+              .join("\n");
+            return r.code === 0 ? ok(out || "(no output)") : fail(out || `exit ${r.code}`);
+          } catch (err) {
+            return fail(err instanceof Error ? err.message : String(err));
+          }
+        },
       }),
-      execute: async (_id, params) => {
-        try {
-          const c = await client();
-          const r = await sshExec(c, params.command, workdir, (params.timeout ?? 120) * 1000);
-          const out = [r.stdout, r.stderr ? `[stderr]\n${r.stderr}` : "", r.code !== 0 ? `[exit ${r.code}]` : ""]
-            .filter(Boolean).join("\n");
-          return r.code === 0 ? ok(out || "(no output)") : fail(out || `exit ${r.code}`);
-        } catch (err) {
-          return fail(err instanceof Error ? err.message : String(err));
-        }
-      },
-    }));
+    );
 
     // ---- read ----
-    pi.registerTool(defineTool({
-      name: "read",
-      label: "Read",
-      description: "Read a remote file over SFTP. Returns content with line numbers.",
-      parameters: Type.Object({
-        path: Type.String({ description: "File path (absolute, or relative to the project workdir)" }),
+    pi.registerTool(
+      defineTool({
+        name: "read",
+        label: "Read",
+        description: "Read a remote file over SFTP. Returns content with line numbers.",
+        parameters: Type.Object({
+          path: Type.String({ description: "File path (absolute, or relative to the project workdir)" }),
+        }),
+        execute: async (_id, params, _signal, _onUpdate, ctx) => {
+          // Runtime-config bridge: skill/subagent files live on the server,
+          // not on the remote host — serve them locally instead of SFTP.
+          const bridged = bridgeRuntimeConfig(params.path, ctx?.cwd);
+          if (bridged) return readLocalFile(bridged.path);
+          try {
+            const c = await client();
+            const s = await sftp(c);
+            const buf = await sftpRead(s, remotePath(workdir, params.path));
+            const lines = buf.toString("utf8").split("\n");
+            const numbered = lines.map((line, i) => `${i + 1}→${line}`).join("\n");
+            return ok(`${numbered}\n\n(${params.path}, ${lines.length} lines)`);
+          } catch (err) {
+            return fail(err instanceof Error ? err.message : String(err));
+          }
+        },
       }),
-      execute: async (_id, params, _signal, _onUpdate, ctx) => {
-        // Runtime-config bridge: skill/subagent files live on the server,
-        // not on the remote host — serve them locally instead of SFTP.
-        const bridged = bridgeRuntimeConfig(params.path, ctx?.cwd);
-        if (bridged) return readLocalFile(bridged.path);
-        try {
-          const c = await client();
-          const s = await sftp(c);
-          const buf = await sftpRead(s, remotePath(workdir, params.path));
-          const lines = buf.toString("utf8").split("\n");
-          const numbered = lines.map((line, i) => `${i + 1}→${line}`).join("\n");
-          return ok(`${numbered}\n\n(${params.path}, ${lines.length} lines)`);
-        } catch (err) {
-          return fail(err instanceof Error ? err.message : String(err));
-        }
-      },
-    }));
+    );
 
     // ---- write ----
-    pi.registerTool(defineTool({
-      name: "write",
-      label: "Write",
-      description: "Write a file on the remote host over SFTP (creates parent directories).",
-      parameters: Type.Object({
-        path: Type.String({ description: "File path (absolute, or relative to the project workdir)" }),
-        content: Type.String({ description: "Full file content." }),
-      }),
-      execute: async (_id, params) => {
-        try {
-          const c = await client();
-          const s = await sftp(c);
-          const target = remotePath(workdir, params.path);
-          const dir = target.replace(/\/[^/]*$/, "") || "/";
-          await new Promise<void>((resolve, reject) => {
-            s.mkdir(dir, { recursive: true } as never, (err) => {
-              // recursive mkdir fails if parts exist — tolerate and verify
-              if (err && !s) return reject(err);
-              resolve();
+    pi.registerTool(
+      defineTool({
+        name: "write",
+        label: "Write",
+        description: "Write a file on the remote host over SFTP (creates parent directories).",
+        parameters: Type.Object({
+          path: Type.String({ description: "File path (absolute, or relative to the project workdir)" }),
+          content: Type.String({ description: "Full file content." }),
+        }),
+        execute: async (_id, params) => {
+          try {
+            const c = await client();
+            const s = await sftp(c);
+            const target = remotePath(workdir, params.path);
+            const dir = target.replace(/\/[^/]*$/, "") || "/";
+            await new Promise<void>((resolve, reject) => {
+              s.mkdir(dir, { recursive: true } as never, (err) => {
+                // recursive mkdir fails if parts exist — tolerate and verify
+                if (err && !s) return reject(err);
+                resolve();
+              });
             });
-          });
-          await sftpWrite(s, target, params.content);
-          return ok(`Wrote ${params.path} (${params.content.length} bytes)`);
-        } catch (err) {
-          return fail(err instanceof Error ? err.message : String(err));
-        }
-      },
-    }));
+            await sftpWrite(s, target, params.content);
+            return ok(`Wrote ${params.path} (${params.content.length} bytes)`);
+          } catch (err) {
+            return fail(err instanceof Error ? err.message : String(err));
+          }
+        },
+      }),
+    );
 
     // ---- edit ----
-    pi.registerTool(defineTool({
-      name: "edit",
-      label: "Edit",
-      description: "Edit a remote file: replace the first exact occurrence of oldText with newText.",
-      parameters: Type.Object({
-        path: Type.String({ description: "File path (absolute, or relative to the project workdir)" }),
-        oldText: Type.String({ description: "Exact text to replace." }),
-        newText: Type.String({ description: "Replacement text." }),
-      }),
-      execute: async (_id, params) => {
-        try {
-          const c = await client();
-          const s = await sftp(c);
-          const target = remotePath(workdir, params.path);
-          const buf = await sftpRead(s, target);
-          const content = buf.toString("utf8");
-          if (!content.includes(params.oldText)) {
-            return fail(`oldText not found in ${params.path}`);
+    pi.registerTool(
+      defineTool({
+        name: "edit",
+        label: "Edit",
+        description: "Edit a remote file: replace the first exact occurrence of oldText with newText.",
+        parameters: Type.Object({
+          path: Type.String({ description: "File path (absolute, or relative to the project workdir)" }),
+          oldText: Type.String({ description: "Exact text to replace." }),
+          newText: Type.String({ description: "Replacement text." }),
+        }),
+        execute: async (_id, params) => {
+          try {
+            const c = await client();
+            const s = await sftp(c);
+            const target = remotePath(workdir, params.path);
+            const buf = await sftpRead(s, target);
+            const content = buf.toString("utf8");
+            if (!content.includes(params.oldText)) {
+              return fail(`oldText not found in ${params.path}`);
+            }
+            await sftpWrite(s, target, content.replace(params.oldText, params.newText));
+            return ok(`Edited ${params.path}`);
+          } catch (err) {
+            return fail(err instanceof Error ? err.message : String(err));
           }
-          await sftpWrite(s, target, content.replace(params.oldText, params.newText));
-          return ok(`Edited ${params.path}`);
-        } catch (err) {
-          return fail(err instanceof Error ? err.message : String(err));
-        }
-      },
-    }));
+        },
+      }),
+    );
 
     // ---- ls ----
-    pi.registerTool(defineTool({
-      name: "ls",
-      label: "Ls",
-      description: "List a remote directory over SFTP.",
-      parameters: Type.Object({
-        path: Type.String({ description: "Directory path (absolute, or relative to the project workdir)" }),
+    pi.registerTool(
+      defineTool({
+        name: "ls",
+        label: "Ls",
+        description: "List a remote directory over SFTP.",
+        parameters: Type.Object({
+          path: Type.String({ description: "Directory path (absolute, or relative to the project workdir)" }),
+        }),
+        execute: async (_id, params, _signal, _onUpdate, ctx) => {
+          const bridged = bridgeRuntimeConfig(params.path, ctx?.cwd);
+          if (bridged) return listLocalDir(bridged.path);
+          try {
+            const c = await client();
+            const s = await sftp(c);
+            const list = await sftpList(s, remotePath(workdir, params.path));
+            const lines = list
+              .map((e) => `${e.attrs.isDirectory() ? "d" : "-"} ${e.filename}`)
+              .sort()
+              .join("\n");
+            return ok(lines || "(empty)");
+          } catch (err) {
+            return fail(err instanceof Error ? err.message : String(err));
+          }
+        },
       }),
-      execute: async (_id, params, _signal, _onUpdate, ctx) => {
-        const bridged = bridgeRuntimeConfig(params.path, ctx?.cwd);
-        if (bridged) return listLocalDir(bridged.path);
-        try {
-          const c = await client();
-          const s = await sftp(c);
-          const list = await sftpList(s, remotePath(workdir, params.path));
-          const lines = list
-            .map((e) => `${e.attrs.isDirectory() ? "d" : "-"} ${e.filename}`)
-            .sort()
-            .join("\n");
-          return ok(lines || "(empty)");
-        } catch (err) {
-          return fail(err instanceof Error ? err.message : String(err));
-        }
-      },
-    }));
+    );
 
     // ---- grep ----
-    pi.registerTool(defineTool({
-      name: "grep",
-      label: "Grep",
-      description: "Search file contents on the remote host with grep.",
-      parameters: Type.Object({
-        pattern: Type.String({ description: "Regex pattern (grep -E)." }),
-        path: Type.Optional(Type.String({ description: "Directory to search (default: project workdir)" })),
-        include: Type.Optional(Type.String({ description: "glob filter, e.g. '*.ts'" })),
+    pi.registerTool(
+      defineTool({
+        name: "grep",
+        label: "Grep",
+        description: "Search file contents on the remote host with grep.",
+        parameters: Type.Object({
+          pattern: Type.String({ description: "Regex pattern (grep -E)." }),
+          path: Type.Optional(Type.String({ description: "Directory to search (default: project workdir)" })),
+          include: Type.Optional(Type.String({ description: "glob filter, e.g. '*.ts'" })),
+        }),
+        execute: async (_id, params) => {
+          try {
+            const c = await client();
+            const base = remotePath(workdir, params.path ?? workdir);
+            const inc = params.include ? ` --include='${params.include.replace(/'/g, "")}'` : "";
+            const r = await sshExec(
+              c,
+              `grep -rnE${inc} -- '${params.pattern.replace(/'/g, `'\\''`)}' ${base} 2>/dev/null | head -100`,
+              workdir,
+            );
+            return ok(r.stdout || "No matches");
+          } catch (err) {
+            return fail(err instanceof Error ? err.message : String(err));
+          }
+        },
       }),
-      execute: async (_id, params) => {
-        try {
-          const c = await client();
-          const base = remotePath(workdir, params.path ?? workdir);
-          const inc = params.include ? ` --include='${params.include.replace(/'/g, "")}'` : "";
-          const r = await sshExec(c, `grep -rnE${inc} -- '${params.pattern.replace(/'/g, `'\\''`)}' ${base} 2>/dev/null | head -100`, workdir);
-          return ok(r.stdout || "No matches");
-        } catch (err) {
-          return fail(err instanceof Error ? err.message : String(err));
-        }
-      },
-    }));
+    );
 
     // ---- find ----
-    pi.registerTool(defineTool({
-      name: "find",
-      label: "Find",
-      description: "Find files by glob on the remote host with find.",
-      parameters: Type.Object({
-        pattern: Type.String({ description: "Glob pattern, e.g. '*.yaml'" }),
-        path: Type.Optional(Type.String({ description: "Directory to search (default: project workdir)" })),
+    pi.registerTool(
+      defineTool({
+        name: "find",
+        label: "Find",
+        description: "Find files by glob on the remote host with find.",
+        parameters: Type.Object({
+          pattern: Type.String({ description: "Glob pattern, e.g. '*.yaml'" }),
+          path: Type.Optional(Type.String({ description: "Directory to search (default: project workdir)" })),
+        }),
+        execute: async (_id, params) => {
+          try {
+            const c = await client();
+            const base = remotePath(workdir, params.path ?? workdir);
+            const pat = params.pattern.replace(/'/g, "");
+            const r = await sshExec(c, `find ${base} -name '${pat}' 2>/dev/null | head -100`, workdir);
+            return ok(r.stdout || "No matches");
+          } catch (err) {
+            return fail(err instanceof Error ? err.message : String(err));
+          }
+        },
       }),
-      execute: async (_id, params) => {
-        try {
-          const c = await client();
-          const base = remotePath(workdir, params.path ?? workdir);
-          const pat = params.pattern.replace(/'/g, "");
-          const r = await sshExec(c, `find ${base} -name '${pat}' 2>/dev/null | head -100`, workdir);
-          return ok(r.stdout || "No matches");
-        } catch (err) {
-          return fail(err instanceof Error ? err.message : String(err));
-        }
-      },
-    }));
+    );
     // ---- user `!`/`!!` commands: execute on the remote host ----
     // pi hands the LOCAL session cwd (the server-side project home); pin it
     // to the remote workdir instead, matching the tools' path semantics.
@@ -292,35 +316,51 @@ export function makeSshToolsExtension(opts: {
       const quotedWorkdir = `'${workdir.replace(/'/g, `'\\''`)}'`;
       return {
         operations: {
-          exec: (command: string, _cwd: string, options: { onData?: (data: Buffer) => void; signal?: AbortSignal; timeout?: number }) =>
+          exec: (
+            command: string,
+            _cwd: string,
+            options: { onData?: (data: Buffer) => void; signal?: AbortSignal; timeout?: number },
+          ) =>
             new Promise<{ exitCode: number | null }>((resolve, reject) => {
-              void client().then((c) => {
-                // `{ ${command}; }` 单行收尾：换行落在 command 与 `;` 之间会让
-                // `;` 成为空语句（bash syntax error near `;`）。
-                c.exec(`cd ${quotedWorkdir} 2>/dev/null || cd /; { ${command}; }`, (err: Error | undefined, stream: {
-                  on(ev: "data", cb: (d: Buffer) => void): unknown;
-                  on(ev: "close", cb: (code: number) => void): unknown;
-                  stderr: { on(ev: "data", cb: (d: Buffer) => void): unknown };
-                  close(): void;
-                }) => {
-                  if (err) return reject(err);
-                  stream.on("data", (d: Buffer) => options.onData?.(d));
-                  stream.stderr.on("data", (d: Buffer) => options.onData?.(d));
-                  const timer = setTimeout(() => {
-                    stream.close();
-                    resolve({ exitCode: null });
-                  }, options.timeout ?? 120_000);
-                  options.signal?.addEventListener("abort", () => {
-                    clearTimeout(timer);
-                    stream.close();
-                    resolve({ exitCode: null });
-                  }, { once: true });
-                  stream.on("close", (code: number) => {
-                    clearTimeout(timer);
-                    resolve({ exitCode: code });
-                  });
-                });
-              }).catch(reject);
+              void client()
+                .then((c) => {
+                  // `{ ${command}; }` 单行收尾：换行落在 command 与 `;` 之间会让
+                  // `;` 成为空语句（bash syntax error near `;`）。
+                  c.exec(
+                    `cd ${quotedWorkdir} 2>/dev/null || cd /; { ${command}; }`,
+                    (
+                      err: Error | undefined,
+                      stream: {
+                        on(ev: "data", cb: (d: Buffer) => void): unknown;
+                        on(ev: "close", cb: (code: number) => void): unknown;
+                        stderr: { on(ev: "data", cb: (d: Buffer) => void): unknown };
+                        close(): void;
+                      },
+                    ) => {
+                      if (err) return reject(err);
+                      stream.on("data", (d: Buffer) => options.onData?.(d));
+                      stream.stderr.on("data", (d: Buffer) => options.onData?.(d));
+                      const timer = setTimeout(() => {
+                        stream.close();
+                        resolve({ exitCode: null });
+                      }, options.timeout ?? 120_000);
+                      options.signal?.addEventListener(
+                        "abort",
+                        () => {
+                          clearTimeout(timer);
+                          stream.close();
+                          resolve({ exitCode: null });
+                        },
+                        { once: true },
+                      );
+                      stream.on("close", (code: number) => {
+                        clearTimeout(timer);
+                        resolve({ exitCode: code });
+                      });
+                    },
+                  );
+                })
+                .catch(reject);
             }),
         },
       };

@@ -5,15 +5,22 @@ interface DisplayOptions {
 }
 
 export function getThinkingPreview(thinking: string): string {
-  return thinking.trimStart().match(/^[^\r\n]{0,240}/u)?.[0].trimEnd() ?? "";
+  return (
+    thinking
+      .trimStart()
+      .match(/^[^\r\n]{0,240}/u)?.[0]
+      .trimEnd() ?? ""
+  );
 }
 
 export function isMessageGroupAnchor(message: { role?: AgentMessage["role"]; customType?: string }): boolean {
-  return message.role === "user"
-    || (message.role === "custom" && message.customType === "compaction");
+  return message.role === "user" || (message.role === "custom" && message.customType === "compaction");
 }
 
-export function isEmptyThinkingBlock(block: AssistantContentBlock, options: DisplayOptions = {}): block is ThinkingContent {
+export function isEmptyThinkingBlock(
+  block: AssistantContentBlock,
+  options: DisplayOptions = {},
+): block is ThinkingContent {
   return block.type === "thinking" && !block.deferred && !options.isStreaming && block.thinking.trim() === "";
 }
 
@@ -24,10 +31,7 @@ export function getDisplayableAssistantBlocks(
   return (message.content ?? []).filter((block) => !isEmptyThinkingBlock(block, options));
 }
 
-export function getAssistantErrorMessage(
-  message: AssistantMessage,
-  options: DisplayOptions = {},
-): string | null {
+export function getAssistantErrorMessage(message: AssistantMessage, options: DisplayOptions = {}): string | null {
   if (options.isStreaming || message.stopReason !== "error") return null;
   return message.errorMessage?.trim() || "Unknown provider error";
 }
@@ -37,10 +41,7 @@ export function getAssistantErrorMessage(
  * (often on reasoning alone) and produced no final answer; without a notice it
  * looks like a hung session. The copy lives in i18n (`chat.truncatedByOutputLimit`).
  */
-export function isAssistantTruncated(
-  message: AssistantMessage,
-  options: DisplayOptions = {},
-): boolean {
+export function isAssistantTruncated(message: AssistantMessage, options: DisplayOptions = {}): boolean {
   return !options.isStreaming && message.stopReason === "length";
 }
 

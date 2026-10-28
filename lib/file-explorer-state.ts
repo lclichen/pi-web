@@ -23,10 +23,7 @@ export function loadExplorerOpen(storage: StorageLike | null = getBrowserStorage
   }
 }
 
-export function saveExplorerOpen(
-  open: boolean,
-  storage: StorageLike | null = getBrowserStorage(),
-): void {
+export function saveExplorerOpen(open: boolean, storage: StorageLike | null = getBrowserStorage()): void {
   if (!storage) return;
   try {
     storage.setItem(EXPLORER_OPEN_STORAGE_KEY, String(open));

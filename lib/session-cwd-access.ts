@@ -31,10 +31,7 @@ async function callerSessionCwds(req: Request): Promise<string[]> {
 }
 
 /** May the caller use `cwd` (e.g. list models / browse files rooted there)? */
-export async function isCallerSessionCwdAllowed(
-  req: Request,
-  cwd: string,
-): Promise<boolean> {
+export async function isCallerSessionCwdAllowed(req: Request, cwd: string): Promise<boolean> {
   const identity = requireUserIdentity(req);
   if (!identity.ok) return false;
   const { user } = identity.session;
@@ -51,10 +48,7 @@ export async function isCallerSessionCwdAllowed(
 /** The request's allowed roots PLUS the caller's sessions' cwds — the
  *  path-fence semantics are preserved (targets must still be inside a root),
  *  but existing sessions keep working across pi-web restarts. */
-export async function allowedRootsWithSessionCwds(
-  req: Request,
-  roots: Set<string>,
-): Promise<Set<string>> {
+export async function allowedRootsWithSessionCwds(req: Request, roots: Set<string>): Promise<Set<string>> {
   const cwds = await callerSessionCwds(req);
   if (cwds.length === 0) return roots;
   const merged = new Set(roots);

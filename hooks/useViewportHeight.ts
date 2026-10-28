@@ -23,10 +23,12 @@ function hasFocusedEditableElement(): boolean {
   const activeElement = document.activeElement;
   if (!(activeElement instanceof HTMLElement)) return false;
 
-  return activeElement.isContentEditable
-    || activeElement.tagName === "INPUT"
-    || activeElement.tagName === "SELECT"
-    || activeElement.tagName === "TEXTAREA";
+  return (
+    activeElement.isContentEditable ||
+    activeElement.tagName === "INPUT" ||
+    activeElement.tagName === "SELECT" ||
+    activeElement.tagName === "TEXTAREA"
+  );
 }
 
 /**

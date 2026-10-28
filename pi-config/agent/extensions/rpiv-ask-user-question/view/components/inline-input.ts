@@ -8,18 +8,18 @@ import { CURSOR_MARKER, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 const graphemeSegmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 
 export interface RenderInlineInputOptions {
-	/** Live inline-input buffer. */
-	buffer: string;
-	/** Cursor offset; `undefined` / out-of-range → end-of-buffer fallback. */
-	cursorOffset: number | undefined;
-	/** Prefix for the first emitted line (e.g. `❯ 4. `). */
-	rowPrefix: string;
-	/** Prefix for continuation lines (whitespace of equal visible width). */
-	continuationPrefix: string;
-	/** Visible columns available for the buffer content (width − prefix width). */
-	contentWidth: number;
-	/** Per-line styling (single-select: `theme.selectedText`; multi-select: accent+bold). */
-	selectedText: (text: string) => string;
+  /** Live inline-input buffer. */
+  buffer: string;
+  /** Cursor offset; `undefined` / out-of-range → end-of-buffer fallback. */
+  cursorOffset: number | undefined;
+  /** Prefix for the first emitted line (e.g. `❯ 4. `). */
+  rowPrefix: string;
+  /** Prefix for continuation lines (whitespace of equal visible width). */
+  continuationPrefix: string;
+  /** Visible columns available for the buffer content (width − prefix width). */
+  contentWidth: number;
+  /** Per-line styling (single-select: `theme.selectedText`; multi-select: accent+bold). */
+  selectedText: (text: string) => string;
 }
 
 /**
@@ -27,8 +27,8 @@ export interface RenderInlineInputOptions {
  * Mirrors the original wrapping-select.resolveOffset exactly.
  */
 function resolveCursorOffset(buffer: string, requested: number | undefined): number {
-	if (requested !== undefined && requested >= 0 && requested <= buffer.length) return requested;
-	return buffer.length;
+  if (requested !== undefined && requested >= 0 && requested <= buffer.length) return requested;
+  return buffer.length;
 }
 
 /**
@@ -40,15 +40,15 @@ function resolveCursorOffset(buffer: string, requested: number | undefined): num
  * is preserved.
  */
 function buildCursorRaw(buffer: string, offset: number): string {
-	const before = buffer.slice(0, offset);
-	const [firstGrapheme] = graphemeSegmenter.segment(buffer.slice(offset));
-	const rawAt = firstGrapheme ? firstGrapheme.segment : "";
-	// A logical newline has no visible cell. Draw the cursor on an NBSP immediately
-	// before it and leave the newline unconsumed so the next logical line still renders.
-	const cursorAtLineEnd = rawAt === "\n";
-	const atCursor = rawAt === "" || rawAt === " " || cursorAtLineEnd ? "\xa0" : rawAt;
-	const after = buffer.slice(offset + (cursorAtLineEnd ? 0 : rawAt.length));
-	return `${before}${CURSOR_MARKER}\x1b[7m${atCursor}\x1b[27m${after}`;
+  const before = buffer.slice(0, offset);
+  const [firstGrapheme] = graphemeSegmenter.segment(buffer.slice(offset));
+  const rawAt = firstGrapheme ? firstGrapheme.segment : "";
+  // A logical newline has no visible cell. Draw the cursor on an NBSP immediately
+  // before it and leave the newline unconsumed so the next logical line still renders.
+  const cursorAtLineEnd = rawAt === "\n";
+  const atCursor = rawAt === "" || rawAt === " " || cursorAtLineEnd ? "\xa0" : rawAt;
+  const after = buffer.slice(offset + (cursorAtLineEnd ? 0 : rawAt.length));
+  return `${before}${CURSOR_MARKER}\x1b[7m${atCursor}\x1b[27m${after}`;
 }
 
 /**
@@ -57,10 +57,10 @@ function buildCursorRaw(buffer: string, offset: number): string {
  * the cursor, with a non-breaking-space cell at end-of-line/end-of-buffer.
  */
 export function renderInlineInputRow(opts: RenderInlineInputOptions): string[] {
-	const { buffer, cursorOffset, rowPrefix, continuationPrefix, contentWidth, selectedText } = opts;
-	const raw = buildCursorRaw(buffer, resolveCursorOffset(buffer, cursorOffset));
-	return wrapTextWithAnsi(raw, contentWidth).map((segment, index) => {
-		const prefix = index === 0 ? rowPrefix : continuationPrefix;
-		return selectedText(`${prefix}${segment}`);
-	});
+  const { buffer, cursorOffset, rowPrefix, continuationPrefix, contentWidth, selectedText } = opts;
+  const raw = buildCursorRaw(buffer, resolveCursorOffset(buffer, cursorOffset));
+  return wrapTextWithAnsi(raw, contentWidth).map((segment, index) => {
+    const prefix = index === 0 ? rowPrefix : continuationPrefix;
+    return selectedText(`${prefix}${segment}`);
+  });
 }

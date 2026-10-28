@@ -3,10 +3,7 @@ import { abortSubagent, getSubagentRun, steerSubagent } from "@/lib/rpc-manager"
 
 export const dynamic = "force-dynamic";
 
-export async function GET(
-  _req: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
+export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   try {
     const run = await getSubagentRun(id);
@@ -17,13 +14,10 @@ export async function GET(
   }
 }
 
-export async function POST(
-  req: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
+export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   try {
-    const body = await req.json() as { action?: unknown; message?: unknown };
+    const body = (await req.json()) as { action?: unknown; message?: unknown };
     if (body.action === "steer") {
       if (typeof body.message !== "string" || !body.message.trim()) {
         return NextResponse.json({ error: "message required" }, { status: 400 });

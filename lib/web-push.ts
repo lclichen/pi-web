@@ -19,11 +19,7 @@ interface PushStateFile {
 }
 
 interface WebPushEnvironment {
-  send: (
-    subscription: PushSubscriptionRecord,
-    payload: string,
-    vapidKeys: PushStateFile["vapidKeys"],
-  ) => Promise<void>;
+  send: (subscription: PushSubscriptionRecord, payload: string, vapidKeys: PushStateFile["vapidKeys"]) => Promise<void>;
   loadState: () => PushStateFile | null;
   saveState: (state: PushStateFile) => void;
   generateVapidKeys: () => PushStateFile["vapidKeys"];
@@ -43,17 +39,13 @@ function stateFilePath(): string {
 function getDefaultEnvironment(): WebPushEnvironment {
   return {
     async send(subscription, payload, vapidKeys) {
-      await webpush.sendNotification(
-        { endpoint: subscription.endpoint, keys: subscription.keys },
-        payload,
-        {
-          vapidDetails: {
-            subject: "mailto:pi-web@localhost",
-            publicKey: vapidKeys.publicKey,
-            privateKey: vapidKeys.privateKey,
-          },
+      await webpush.sendNotification({ endpoint: subscription.endpoint, keys: subscription.keys }, payload, {
+        vapidDetails: {
+          subject: "mailto:pi-web@localhost",
+          publicKey: vapidKeys.publicKey,
+          privateKey: vapidKeys.privateKey,
         },
-      );
+      });
     },
     loadState() {
       const path = stateFilePath();
@@ -119,10 +111,7 @@ export function createWebPushNotifier(environment: WebPushEnvironment): WebPushN
       return state.vapidKeys.publicKey;
     },
     addSubscription(subscription) {
-      state.subscriptions = [
-        ...state.subscriptions.filter((s) => s.endpoint !== subscription.endpoint),
-        subscription,
-      ];
+      state.subscriptions = [...state.subscriptions.filter((s) => s.endpoint !== subscription.endpoint), subscription];
       saveState();
     },
     async notifySessionComplete(sessionId) {
@@ -138,11 +127,7 @@ export function createWebPushNotifier(environment: WebPushEnvironment): WebPushN
       let pruned = false;
       for (const subscription of [...state.subscriptions]) {
         try {
-          await environment.send(
-            subscription,
-            JSON.stringify(payloadFor(subscription.locale)),
-            state.vapidKeys,
-          );
+          await environment.send(subscription, JSON.stringify(payloadFor(subscription.locale)), state.vapidKeys);
         } catch (error) {
           const statusCode = pushStatusCode(error);
           if (statusCode === 404 || statusCode === 410) {

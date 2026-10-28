@@ -43,13 +43,17 @@ function stubFetch(t, handler) {
     calls.push({ input: String(input), init });
     return handler(input, init);
   };
-  t.after(() => { globalThis.fetch = original; });
+  t.after(() => {
+    globalThis.fetch = original;
+  });
   return calls;
 }
 
 test("POST without AGENTGATEWAY_URL answers 503 with empty accepted (outbox keeps)", async (t) => {
   delete process.env.AGENTGATEWAY_URL;
-  const calls = stubFetch(t, () => { throw new Error("must not be called"); });
+  const calls = stubFetch(t, () => {
+    throw new Error("must not be called");
+  });
   const res = await POST(postRequest({ feedback: [{ sessionId: "s1", entryId: "e1", value: "up" }] }));
   assert.equal(res.status, 503);
   assert.deepEqual(await res.json(), { accepted: [] });
@@ -59,10 +63,12 @@ test("POST without AGENTGATEWAY_URL answers 503 with empty accepted (outbox keep
 test("POST re-stamps the session user and passes the batch through", async (t) => {
   process.env.AGENTGATEWAY_URL = "http://127.0.0.1:4001/";
   const calls = stubFetch(t, () => new Response(JSON.stringify({ accepted: ["s1:e1"] }), { status: 200 }));
-  const res = await POST(postRequest({
-    user: "attacker", // spoofed client identity must be dropped
-    feedback: [{ sessionId: "s1", entryId: "e1", value: "up", snippet: "hi", createdAt: 1_700_000_000_000 }],
-  }));
+  const res = await POST(
+    postRequest({
+      user: "attacker", // spoofed client identity must be dropped
+      feedback: [{ sessionId: "s1", entryId: "e1", value: "up", snippet: "hi", createdAt: 1_700_000_000_000 }],
+    }),
+  );
   assert.equal(res.status, 200);
   assert.deepEqual(await res.json(), { accepted: ["s1:e1"] });
   assert.equal(calls.length, 1);
@@ -76,7 +82,10 @@ test("POST re-stamps the session user and passes the batch through", async (t) =
 
 test("POST passes non-2xx gateway answers through unchanged", async (t) => {
   process.env.AGENTGATEWAY_URL = "http://127.0.0.1:4001";
-  stubFetch(t, () => new Response(JSON.stringify({ error: "feedback batch of 51 exceeds the maximum of 50" }), { status: 400 }));
+  stubFetch(
+    t,
+    () => new Response(JSON.stringify({ error: "feedback batch of 51 exceeds the maximum of 50" }), { status: 400 }),
+  );
   const res = await POST(postRequest({ feedback: [{ sessionId: "s", entryId: "e", value: "down" }] }));
   assert.equal(res.status, 400);
   assert.match((await res.json()).error, /maximum/);
@@ -93,18 +102,22 @@ test("POST maps gateway 5xx to the outbox contract instead of leaking the body",
 test("POST rejects non-JSON content types before touching the gateway", async (t) => {
   process.env.AGENTGATEWAY_URL = "http://127.0.0.1:4001";
   const calls = stubFetch(t, () => new Response("{}", { status: 200 }));
-  const res = await POST(new Request("http://localhost/api/feedback", {
-    method: "POST",
-    headers: { host: "localhost", "content-type": "text/plain" },
-    body: "feedback=[]",
-  }));
+  const res = await POST(
+    new Request("http://localhost/api/feedback", {
+      method: "POST",
+      headers: { host: "localhost", "content-type": "text/plain" },
+      body: "feedback=[]",
+    }),
+  );
   assert.equal(res.status, 415);
   assert.equal(calls.length, 0);
 });
 
 test("POST turns transport failures into 502 with empty accepted", async (t) => {
   process.env.AGENTGATEWAY_URL = "http://127.0.0.1:4001";
-  stubFetch(t, () => { throw new Error("connection refused"); });
+  stubFetch(t, () => {
+    throw new Error("connection refused");
+  });
   const res = await POST(postRequest({ feedback: [{ sessionId: "s", entryId: "e", value: "up" }] }));
   assert.equal(res.status, 502);
   assert.deepEqual(await res.json(), { accepted: [] });
@@ -119,7 +132,9 @@ test("POST rejects malformed bodies before contacting the gateway", async (t) =>
     assert.equal(res.status, 400, `expected 400 for ${JSON.stringify(body)}`);
   }
 
-  const oversized = { feedback: Array.from({ length: 51 }, (_, i) => ({ sessionId: "s", entryId: `e${i}`, value: "up" })) };
+  const oversized = {
+    feedback: Array.from({ length: 51 }, (_, i) => ({ sessionId: "s", entryId: `e${i}`, value: "up" })),
+  };
   const res = await POST(postRequest(oversized));
   assert.equal(res.status, 400);
   assert.match((await res.json()).error, /maximum/);
@@ -128,10 +143,14 @@ test("POST rejects malformed bodies before contacting the gateway", async (t) =>
 
 test("GET export streams the gateway JSONL through", async (t) => {
   process.env.AGENTGATEWAY_URL = "http://127.0.0.1:4001";
-  const calls = stubFetch(t, () => new Response('{"sessionId":"s1"}\n', {
-    status: 200,
-    headers: { "content-type": "application/x-ndjson" },
-  }));
+  const calls = stubFetch(
+    t,
+    () =>
+      new Response('{"sessionId":"s1"}\n', {
+        status: 200,
+        headers: { "content-type": "application/x-ndjson" },
+      }),
+  );
   const res = await GET(new Request("http://localhost/api/feedback", { headers: { host: "localhost" } }));
   assert.equal(res.status, 200);
   assert.match(res.headers.get("content-type"), /ndjson/);
@@ -149,7 +168,9 @@ test("GET export without AGENTGATEWAY_URL answers 503", async () => {
 
 test("GET export turns transport failures into 502", async (t) => {
   process.env.AGENTGATEWAY_URL = "http://127.0.0.1:4001";
-  stubFetch(t, () => { throw new Error("connection refused"); });
+  stubFetch(t, () => {
+    throw new Error("connection refused");
+  });
   const res = await GET(new Request("http://localhost/api/feedback", { headers: { host: "localhost" } }));
   assert.equal(res.status, 502);
   assert.match((await res.json()).error, /无法连接/);

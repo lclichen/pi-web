@@ -50,11 +50,7 @@ export async function provisionContainerForProject(
   opts?: { imageId?: number; workspaceId?: number },
 ): Promise<ProvisionResult> {
   const excluded = new Set(excludedContainerIds);
-  const list = await platformGet<{ containers: PlatformContainer[] }>(
-    "/api/v1/containers",
-    apiKey,
-    { filter: "all" },
-  );
+  const list = await platformGet<{ containers: PlatformContainer[] }>("/api/v1/containers", apiKey, { filter: "all" });
   let free = (list.containers ?? []).filter((c) => !excluded.has(c.id));
   // A chosen image constrains reuse: a free container built from a DIFFERENT
   // image must not be silently bound (the user picked the environment).
@@ -69,10 +65,7 @@ export async function provisionContainerForProject(
   // 2. Restore (start) a stopped container.
   const stopped = free.find((c) => c.status === "stopped");
   if (stopped) {
-    const started = await platformPost<{ id: number }>(
-      `/api/v1/containers/${stopped.id}/start`,
-      apiKey,
-    );
+    const started = await platformPost<{ id: number }>(`/api/v1/containers/${stopped.id}/start`, apiKey);
     return { containerId: started.id, status: "restored" };
   }
 
@@ -80,9 +73,7 @@ export async function provisionContainerForProject(
   //    (falls back to the first public image), optionally seeding /workspace
   //    from the user's cloud workspace.
   const images = await platformGet<{ images: PlatformImage[] }>("/api/v1/images", apiKey);
-  const image = opts?.imageId
-    ? (images.images ?? []).find((i) => i.id === opts.imageId)
-    : (images.images ?? [])[0];
+  const image = opts?.imageId ? (images.images ?? []).find((i) => i.id === opts.imageId) : (images.images ?? [])[0];
   if (!image) {
     throw new Error("平台没有可用的镜像：请先在容器平台的 Admin 后台添加一个镜像（SIF），再重试创建沙箱项目");
   }

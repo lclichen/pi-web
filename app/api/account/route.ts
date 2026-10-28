@@ -29,10 +29,16 @@ export async function GET(req: Request) {
   }
 
   try {
-    const me = await platformGet<{ user: { id: number; username: string; email: string | null; role: string; status: string; must_change_password?: boolean } }>(
-      "/api/v1/auth/me",
-      identity.session.apiKey,
-    );
+    const me = await platformGet<{
+      user: {
+        id: number;
+        username: string;
+        email: string | null;
+        role: string;
+        status: string;
+        must_change_password?: boolean;
+      };
+    }>("/api/v1/auth/me", identity.session.apiKey);
     return NextResponse.json({
       authEnabled: true,
       credentialAvailable: true,

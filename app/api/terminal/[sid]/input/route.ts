@@ -4,10 +4,7 @@ import { writeLocalTerminal } from "@/lib/local-terminal";
 export const dynamic = "force-dynamic";
 
 // POST /api/terminal/[sid]/input { data } — forward keystrokes to the PTY.
-export async function POST(
-  req: Request,
-  ctx: { params: Promise<{ sid: string }> },
-): Promise<Response> {
+export async function POST(req: Request, ctx: { params: Promise<{ sid: string }> }): Promise<Response> {
   const { sid } = await ctx.params;
   let body: { data?: unknown };
   try {

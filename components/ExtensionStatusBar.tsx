@@ -39,12 +39,7 @@ export function ExtensionStatusBar({
     >
       {widgets.length > 0 && <ExtensionWidgets widgets={widgets} />}
       {statuses.length > 0 && (
-        <div
-          role="status"
-          className="extension-status-line"
-          aria-label={plainStatusLine}
-          title={plainStatusLine}
-        >
+        <div role="status" className="extension-status-line" aria-label={plainStatusLine} title={plainStatusLine}>
           <span className="extension-status-text">
             <AnsiText text={statusLine} />
           </span>

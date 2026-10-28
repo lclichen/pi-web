@@ -96,8 +96,11 @@ export async function resolveProject(cwd: string): Promise<ProjectInfo> {
     }
     const out = await git(cwd, [
       "rev-parse",
-      "--git-common-dir", "--git-dir", "--show-toplevel",
-      "--abbrev-ref", "HEAD",
+      "--git-common-dir",
+      "--git-dir",
+      "--show-toplevel",
+      "--abbrev-ref",
+      "HEAD",
     ]);
     const [commonDirRaw, gitDirRaw, toplevelRaw, ref] = out.split("\n").map((l) => l.trim());
     // No --path-format=absolute here: it needs git ≥2.31 and older Git for
@@ -109,9 +112,7 @@ export async function resolveProject(cwd: string): Promise<ProjectInfo> {
     const toAbsolute = (p: string) => (isAbsolute(p) ? p : join(cwd, p));
     // Only the first three lines are paths — `ref` is a branch name and must
     // keep its forward slashes (`feature/foo`).
-    const [commonDir, gitDir, toplevel] = [commonDirRaw, gitDirRaw, toplevelRaw]
-      .map(toAbsolute)
-      .map(toNativePath);
+    const [commonDir, gitDir, toplevel] = [commonDirRaw, gitDirRaw, toplevelRaw].map(toAbsolute).map(toNativePath);
     // git prints resolved (symlink-free) paths; normalize cwd the same way
     const realCwd = realPathOrSelf(cwd);
     // For a linked worktree, --git-dir differs from --git-common-dir.
@@ -176,7 +177,10 @@ export async function listWorktrees(cwd: string): Promise<WorktreeInfo[]> {
       flush();
       current = { path: toNativePath(line.slice("worktree ".length).trim()) };
     } else if (line.startsWith("branch ") && current) {
-      current.branch = line.slice("branch ".length).trim().replace(/^refs\/heads\//, "");
+      current.branch = line
+        .slice("branch ".length)
+        .trim()
+        .replace(/^refs\/heads\//, "");
     } else if (line.startsWith("prunable") && current) {
       current.prunable = true;
     } else if (line.trim() === "") {

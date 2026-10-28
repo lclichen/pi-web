@@ -32,16 +32,14 @@ function buildHeaders(api: string, apiKey: string | undefined, configured: Recor
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json() as { providerName?: unknown; provider?: unknown };
+    const body = (await req.json()) as { providerName?: unknown; provider?: unknown };
     const providerName = typeof body.providerName === "string" ? body.providerName.trim() : "";
     if (!providerName) return NextResponse.json({ error: "providerName is required" }, { status: 400 });
     if (!isRecord(body.provider)) return NextResponse.json({ error: "provider is required" }, { status: 400 });
 
     const baseUrl = typeof body.provider.baseUrl === "string" ? body.provider.baseUrl.trim() : "";
     if (!baseUrl) return NextResponse.json({ error: "Base URL is required" }, { status: 400 });
-    const api = typeof body.provider.api === "string" && body.provider.api
-      ? body.provider.api
-      : "openai-completions";
+    const api = typeof body.provider.api === "string" && body.provider.api ? body.provider.api : "openai-completions";
 
     let endpoint: URL;
     try {
@@ -62,10 +60,13 @@ export async function POST(req: Request) {
     });
     const responseText = await response.text();
     if (!response.ok) {
-      return NextResponse.json({
-        error: responseText.slice(0, 500) || `Upstream returned HTTP ${response.status}`,
-        status: response.status,
-      }, { status: 502 });
+      return NextResponse.json(
+        {
+          error: responseText.slice(0, 500) || `Upstream returned HTTP ${response.status}`,
+          status: response.status,
+        },
+        { status: 502 },
+      );
     }
 
     let payload: unknown;

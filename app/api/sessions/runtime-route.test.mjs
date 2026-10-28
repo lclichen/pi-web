@@ -19,12 +19,9 @@ const { DELETE: deleteSession, GET: getSessionDetail, PATCH: renameSession } = a
 const { GET: getSessionList } = await jiti.import("./route.ts");
 const { GET: getRunningSessions } = await jiti.import("../agent/running/route.ts");
 const { GET: getSessionState } = await jiti.import("./[id]/state/route.ts");
-const {
-  cacheSessionPath,
-  invalidateSessionPathCache,
-  spaceBundle,
-  invalidateSessionListCache,
-} = await jiti.import("../../../lib/session-reader.ts");
+const { cacheSessionPath, invalidateSessionPathCache, spaceBundle, invalidateSessionListCache } = await jiti.import(
+  "../../../lib/session-reader.ts",
+);
 const { SessionManager } = await jiti.import("@earendil-works/pi-coding-agent");
 
 test("list versions expose idle session creation, rename and deletion to other windows", async (t) => {
@@ -50,7 +47,11 @@ test("list versions expose idle session creation, rename and deletion to other w
 
   const manager = SessionManager.create(dir);
   manager.appendMessage({ role: "user", content: "Cross-window search fixture", timestamp: Date.now() });
-  manager.appendMessage({ role: "assistant", content: [{ type: "text", text: "Already finished" }], timestamp: Date.now() });
+  manager.appendMessage({
+    role: "assistant",
+    content: [{ type: "text", text: "Already finished" }],
+    timestamp: Date.now(),
+  });
   sessionId = manager.getSessionId();
   invalidateSessionListCache();
   const created = await list();
@@ -60,7 +61,10 @@ test("list versions expose idle session creation, rename and deletion to other w
 
   const context = { params: Promise.resolve({ id: sessionId }) };
   const url = `http://localhost/api/sessions/${sessionId}`;
-  const renamed = await renameSession(new Request(url, { method: "PATCH", body: JSON.stringify({ name: "Renamed elsewhere" }) }), context);
+  const renamed = await renameSession(
+    new Request(url, { method: "PATCH", body: JSON.stringify({ name: "Renamed elsewhere" }) }),
+    context,
+  );
   assert.equal(renamed.status, 200);
   const poll = await (await getRunningSessions()).json();
   assert.deepEqual(poll.runningSessionIds, []);
@@ -95,9 +99,11 @@ test("session listing returns a gzip-compressed response when the client accepts
   manager.appendMessage({ role: "assistant", content: [{ type: "text", text: "done" }], timestamp: Date.now() });
   invalidateSessionListCache();
 
-  const response = await getSessionList(new Request("http://localhost/api/sessions", {
-    headers: { "Accept-Encoding": "gzip" },
-  }));
+  const response = await getSessionList(
+    new Request("http://localhost/api/sessions", {
+      headers: { "Accept-Encoding": "gzip" },
+    }),
+  );
 
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("Content-Encoding"), "gzip");
@@ -135,10 +141,9 @@ test("deleting an unpersisted session shuts down its runtime and invalidates cac
       },
     });
     const before = (await (await getRunningSessions()).json()).sessionListVersion;
-    const response = await deleteSession(
-      new Request(`http://localhost/api/sessions/${id}`, { method: "DELETE" }),
-      { params: Promise.resolve({ id }) },
-    );
+    const response = await deleteSession(new Request(`http://localhost/api/sessions/${id}`, { method: "DELETE" }), {
+      params: Promise.resolve({ id }),
+    });
 
     assert.equal(response.status, 200);
     assert.deepEqual(await response.json(), { ok: true });
@@ -187,44 +192,47 @@ test("deleting an intermediate subagent reparents both relation representations"
   const parentPath = join(dir, "parent.jsonl");
   const childPath = join(dir, "child.jsonl");
   const parentId = "delete-reparent-parent";
-  const header = (id, parentSession) => JSON.stringify({
-    type: "session",
-    version: 3,
-    id,
-    timestamp: "2026-01-01T00:00:00.000Z",
-    cwd: dir,
-    ...(parentSession ? { parentSession } : {}),
-  });
+  const header = (id, parentSession) =>
+    JSON.stringify({
+      type: "session",
+      version: 3,
+      id,
+      timestamp: "2026-01-01T00:00:00.000Z",
+      cwd: dir,
+      ...(parentSession ? { parentSession } : {}),
+    });
   await writeFile(grandparentPath, `${header("delete-reparent-grandparent")}\n`);
   await writeFile(parentPath, `${header(parentId, grandparentPath)}\n`);
-  await writeFile(childPath, [
-    header("delete-reparent-child", parentPath),
-    JSON.stringify({
-      type: "custom",
-      customType: "pi-web:subagent",
-      id: "meta",
-      parentId: null,
-      timestamp: "2026-01-01T00:00:00.000Z",
-      data: {
-        version: 1,
-        parentSessionId: parentId,
-        parentSessionPath: parentPath,
-        profile: "Explore",
-        description: "Inspect parser",
-      },
-    }),
-    "",
-  ].join("\n"));
+  await writeFile(
+    childPath,
+    [
+      header("delete-reparent-child", parentPath),
+      JSON.stringify({
+        type: "custom",
+        customType: "pi-web:subagent",
+        id: "meta",
+        parentId: null,
+        timestamp: "2026-01-01T00:00:00.000Z",
+        data: {
+          version: 1,
+          parentSessionId: parentId,
+          parentSessionPath: parentPath,
+          profile: "Explore",
+          description: "Inspect parser",
+        },
+      }),
+      "",
+    ].join("\n"),
+  );
   cacheSessionPath(parentId, parentPath);
   t.after(async () => {
     invalidateSessionPathCache(parentId);
     await rm(dir, { recursive: true, force: true });
   });
 
-  const response = await deleteSession(
-    new Request(`http://localhost/api/sessions/${parentId}`, { method: "DELETE" }),
-    { params: Promise.resolve({ id: parentId }) },
-  );
+  const response = await deleteSession(new Request(`http://localhost/api/sessions/${parentId}`, { method: "DELETE" }), {
+    params: Promise.resolve({ id: parentId }),
+  });
 
   assert.equal(response.status, 200);
   await assert.rejects(readFile(parentPath), { code: "ENOENT" });
@@ -258,35 +266,37 @@ test("live detail and state routes work without a persisted JSONL file", async (
     getSessionName: () => undefined,
     getSessionFile: () => `/tmp/pi-web-live-route-not-persisted-${process.pid}.jsonl`,
   };
-  globalThis.__piSessions = new Map([[id, {
-    isAlive: () => true,
-    isRunning: () => true,
-    inner: { sessionManager },
-    sessionFile: sessionManager.getSessionFile(),
-    sessionId: id,
-    cwd: "/tmp",
-    send: async () => ({ isStreaming: true }),
-  }]]);
+  globalThis.__piSessions = new Map([
+    [
+      id,
+      {
+        isAlive: () => true,
+        isRunning: () => true,
+        inner: { sessionManager },
+        sessionFile: sessionManager.getSessionFile(),
+        sessionId: id,
+        cwd: "/tmp",
+        send: async () => ({ isStreaming: true }),
+      },
+    ],
+  ]);
   t.after(() => {
     globalThis.__piSessions = previousRegistry;
   });
 
   const routeContext = { params: Promise.resolve({ id }) };
-  const detailResponse = await getSessionDetail(
-    new Request(`http://localhost/api/sessions/${id}`),
-    routeContext,
-  );
-  const stateResponse = await getSessionState(
-    new Request(`http://localhost/api/sessions/${id}/state`),
-    routeContext,
-  );
+  const detailResponse = await getSessionDetail(new Request(`http://localhost/api/sessions/${id}`), routeContext);
+  const stateResponse = await getSessionState(new Request(`http://localhost/api/sessions/${id}/state`), routeContext);
   const detail = await detailResponse.json();
 
   assert.equal(detailResponse.status, 200);
   assert.equal(detail.info.transient, true);
   assert.equal(detail.info.projectRoot, "/tmp");
   assert.equal(typeof detail.info.projectKey, "string");
-  assert.deepEqual(detail.context.messages.map((message) => message.content), ["hello live"]);
+  assert.deepEqual(
+    detail.context.messages.map((message) => message.content),
+    ["hello live"],
+  );
   assert.equal(stateResponse.status, 200);
   assert.deepEqual(await stateResponse.json(), {
     running: true,
@@ -314,14 +324,19 @@ test("session detail returns a gzip-compressed response when the client accepts 
     getSessionName: () => undefined,
     getSessionFile: () => `/tmp/pi-web-live-route-gzip-${process.pid}.jsonl`,
   };
-  globalThis.__piSessions = new Map([[id, {
-    isAlive: () => true,
-    isRunning: () => false,
-    inner: { sessionManager },
-    sessionFile: sessionManager.getSessionFile(),
-    sessionId: id,
-    cwd: "/tmp",
-  }]]);
+  globalThis.__piSessions = new Map([
+    [
+      id,
+      {
+        isAlive: () => true,
+        isRunning: () => false,
+        inner: { sessionManager },
+        sessionFile: sessionManager.getSessionFile(),
+        sessionId: id,
+        cwd: "/tmp",
+      },
+    ],
+  ]);
   t.after(() => {
     globalThis.__piSessions = previousRegistry;
   });

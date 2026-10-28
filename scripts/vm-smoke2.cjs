@@ -1,5 +1,5 @@
-const { Client } = require('ssh2');
-const { loadVmConnection, loadVmAppPassword } = require('./vm-connection.cjs');
+const { Client } = require("ssh2");
+const { loadVmConnection, loadVmAppPassword } = require("./vm-connection.cjs");
 const conn = new Client();
 const cmd = `
 export PATH=/home/llmx/tools/node/bin:$PATH
@@ -22,10 +22,13 @@ node -e '
 '
 exit 0
 `;
-conn.on('ready', () => {
+conn.on("ready", () => {
   conn.exec(cmd, (err, stream) => {
-    stream.on('data', d => process.stdout.write(d)).stderr.on('data', d => process.stderr.write(d));
-    stream.on('close', () => { conn.end(); process.exit(0); });
+    stream.on("data", (d) => process.stdout.write(d)).stderr.on("data", (d) => process.stderr.write(d));
+    stream.on("close", () => {
+      conn.end();
+      process.exit(0);
+    });
   });
 });
 conn.connect(loadVmConnection());

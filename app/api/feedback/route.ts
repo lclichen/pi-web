@@ -35,7 +35,8 @@ export async function POST(req: Request) {
   if (!isApiRequestAllowed(req)) return NextResponse.json({ error: "Untrusted API request" }, { status: 403 });
   const identity = requireUserIdentity(req);
   if (!identity.ok) return NextResponse.json({ error: "登录已失效" }, { status: identity.status });
-  if (!hasJsonContentType(req)) return NextResponse.json({ error: "Content-Type must be application/json" }, { status: 415 });
+  if (!hasJsonContentType(req))
+    return NextResponse.json({ error: "Content-Type must be application/json" }, { status: 415 });
 
   const body = (await req.json().catch(() => null)) as { feedback?: unknown } | null;
   if (!body || !Array.isArray(body.feedback) || body.feedback.length === 0) {

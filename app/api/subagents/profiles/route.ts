@@ -34,7 +34,7 @@ export async function GET(req: Request) {
 
 export async function PUT(req: Request) {
   try {
-    const body = await req.json() as {
+    const body = (await req.json()) as {
       cwd?: unknown;
       scope?: unknown;
       profile?: Omit<SubagentProfile, "scope" | "filePath">;
@@ -53,14 +53,14 @@ export async function PUT(req: Request) {
 
 export async function PATCH(req: Request) {
   try {
-    const body = await req.json() as { cwd?: unknown; scope?: unknown; name?: unknown; enabled?: unknown };
+    const body = (await req.json()) as { cwd?: unknown; scope?: unknown; name?: unknown; enabled?: unknown };
     const cwd = await validateCwd(body.cwd);
     const scope = validateScope(body.scope);
     if (typeof body.name !== "string") return NextResponse.json({ error: "name required" }, { status: 400 });
     if (typeof body.enabled !== "boolean") return NextResponse.json({ error: "enabled required" }, { status: 400 });
     const name = body.name;
-    const source = listSubagentProfileSources(cwd).find((profile) =>
-      profile.scope === scope && profile.name.toLowerCase() === name.toLowerCase()
+    const source = listSubagentProfileSources(cwd).find(
+      (profile) => profile.scope === scope && profile.name.toLowerCase() === name.toLowerCase(),
     );
     if (!source) return NextResponse.json({ error: "Agent profile not found" }, { status: 404 });
     const profile: Omit<SubagentProfile, "scope" | "filePath"> = {
@@ -87,7 +87,7 @@ export async function PATCH(req: Request) {
 
 export async function DELETE(req: Request) {
   try {
-    const body = await req.json() as { cwd?: unknown; scope?: unknown; name?: unknown };
+    const body = (await req.json()) as { cwd?: unknown; scope?: unknown; name?: unknown };
     const cwd = await validateCwd(body.cwd);
     const scope = validateScope(body.scope);
     if (typeof body.name !== "string") return NextResponse.json({ error: "name required" }, { status: 400 });

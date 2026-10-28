@@ -31,7 +31,17 @@ import { dirname, join, resolve } from "node:path";
 import { createHash } from "node:crypto";
 import { Readable } from "node:stream";
 import JSZip from "jszip";
-import { isApkgBytes, readApkgHeader, getApkgKeys, checkApkgLicense, recordApkgImport, recordApkgLockedHome, writeBundleLock, LOCK_BASENAME, type ApkgHeader } from "./apkg.ts";
+import {
+  isApkgBytes,
+  readApkgHeader,
+  getApkgKeys,
+  checkApkgLicense,
+  recordApkgImport,
+  recordApkgLockedHome,
+  writeBundleLock,
+  LOCK_BASENAME,
+  type ApkgHeader,
+} from "./apkg.ts";
 import { openApkgViaTool } from "./apkg-open.ts";
 
 export const BUNDLE_FORMAT = "amedac-project-config";
@@ -158,7 +168,11 @@ export async function exportProjectConfigBundle(
     // no AGENTS.md — nothing to add
   }
 
-  const slug = projectName.trim().replace(/[^\w.-]+/g, "-").replace(/^-+|-+$/g, "") || "project";
+  const slug =
+    projectName
+      .trim()
+      .replace(/[^\w.-]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "project";
   const pkg: BundlePackageMeta = {
     name: options.package?.name ?? slug,
     title: options.package?.title ?? projectName,
@@ -166,13 +180,20 @@ export async function exportProjectConfigBundle(
     version: options.package?.version ?? "1.0.0",
     channel: options.package?.channel ?? "stable",
   };
-  zip.file("manifest.json", JSON.stringify({
-    format: BUNDLE_FORMAT,
-    version: BUNDLE_VERSION,
-    project: projectName,
-    exportedAt: new Date().toISOString(),
-    package: pkg,
-  }, null, 2));
+  zip.file(
+    "manifest.json",
+    JSON.stringify(
+      {
+        format: BUNDLE_FORMAT,
+        version: BUNDLE_VERSION,
+        project: projectName,
+        exportedAt: new Date().toISOString(),
+        package: pkg,
+      },
+      null,
+      2,
+    ),
+  );
 
   const bytes = await zip.generateAsync({
     type: "nodebuffer",
@@ -366,9 +387,29 @@ export function bundleDownloadResponse(bytes: Buffer, filename: string): Respons
 // scoped to skills only.
 
 const SKILL_ALLOWED_EXT = new Set([
-  ".md", ".json", ".yaml", ".yml", ".txt", ".js", ".mjs", ".ts", ".tsx",
-  ".py", ".sh", ".css", ".html", ".svg", ".png", ".jpg", ".jpeg", ".gif",
-  ".webp", ".toml", ".ini", ".csv", ".xml",
+  ".md",
+  ".json",
+  ".yaml",
+  ".yml",
+  ".txt",
+  ".js",
+  ".mjs",
+  ".ts",
+  ".tsx",
+  ".py",
+  ".sh",
+  ".css",
+  ".html",
+  ".svg",
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".gif",
+  ".webp",
+  ".toml",
+  ".ini",
+  ".csv",
+  ".xml",
 ]);
 const SKILL_MAX_ENTRIES = 4_000;
 const SKILL_MAX_BYTES = 200 * 1024 * 1024;
@@ -381,7 +422,7 @@ function skillEntryAllowed(rel: string): boolean {
 }
 
 export interface SkillsImportStats {
-  skill: string;          // folder name created under .pi/skills/
+  skill: string; // folder name created under .pi/skills/
   files: number;
 }
 
@@ -430,7 +471,11 @@ export async function importSkillsZip(
   // or a bare skill mixed with folders) unpacks as-is; each root folder is a
   // skill in its own right.
   const allAtRoot = cleaned.every((f) => !f.rel.includes("/"));
-  const zipBase = zipName.replace(/\.zip$/i, "").replace(/[^\w.-]+/g, "-").replace(/^-+|-+$/g, "") || "skill";
+  const zipBase =
+    zipName
+      .replace(/\.zip$/i, "")
+      .replace(/[^\w.-]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "skill";
   const targetPrefix = allAtRoot ? zipBase : "";
 
   // A skills bundle must yield at least one SKILL.md somewhere.

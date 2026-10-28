@@ -78,9 +78,7 @@ function dedupeById(providers: readonly ProviderListingInput[]): ProviderListing
  * with an OAuth credential is reported as not configured here, so it is listed
  * once — in the OAuth list — instead of twice.
  */
-export function buildApiKeyProviderList(
-  providers: readonly ProviderListingInput[],
-): ApiKeyProviderListing[] {
+export function buildApiKeyProviderList(providers: readonly ProviderListingInput[]): ApiKeyProviderListing[] {
   const result: ApiKeyProviderListing[] = [];
   for (const provider of dedupeById(providers)) {
     if (!provider.hasApiKeyLogin) continue;
@@ -100,9 +98,7 @@ export function buildApiKeyProviderList(
 }
 
 /** Providers that can be authenticated with OAuth. */
-export function buildOAuthProviderList(
-  providers: readonly ProviderListingInput[],
-): OAuthProviderListing[] {
+export function buildOAuthProviderList(providers: readonly ProviderListingInput[]): OAuthProviderListing[] {
   const result: OAuthProviderListing[] = [];
   for (const provider of dedupeById(providers)) {
     if (!provider.hasOAuth) continue;

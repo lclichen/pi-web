@@ -29,10 +29,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "用户名和密码不能为空" }, { status: 400 });
   }
 
-  const res = await platformAnonPost<{ user?: { status?: string }; message?: string }>(
-    "/api/v1/auth/register",
-    { username, password, ...(email ? { email } : {}) },
-  );
+  const res = await platformAnonPost<{ user?: { status?: string }; message?: string }>("/api/v1/auth/register", {
+    username,
+    password,
+    ...(email ? { email } : {}),
+  });
   if (!res.ok) {
     return NextResponse.json(
       { error: res.error.message || "注册失败", ...(res.error.code ? { code: res.error.code } : {}) },
@@ -40,11 +41,12 @@ export async function POST(req: Request) {
     );
   }
   const pending = (res.data as { user?: { status?: string } })?.user?.status === "pending";
-  return NextResponse.json({
-    success: true,
-    pending,
-    message: pending
-      ? "注册已提交，等待管理员审批后即可登录。"
-      : "注册成功，现在可以登录了。",
-  }, { status: 201 });
+  return NextResponse.json(
+    {
+      success: true,
+      pending,
+      message: pending ? "注册已提交，等待管理员审批后即可登录。" : "注册成功，现在可以登录了。",
+    },
+    { status: 201 },
+  );
 }

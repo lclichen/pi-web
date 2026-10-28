@@ -7,7 +7,10 @@ const systemSource = await readFile(new URL("./SystemPromptPanel.tsx", import.me
 const appShellSource = await readFile(new URL("./AppShell.tsx", import.meta.url), "utf8");
 
 test("keeps System and Tools in separate adjacent toolbar actions", () => {
-  assert.match(appShellSource, /handleSystemInfoToggle\("system", mobile\)[\s\S]*?handleSystemInfoToggle\("tools", mobile\)/);
+  assert.match(
+    appShellSource,
+    /handleSystemInfoToggle\("system", mobile\)[\s\S]*?handleSystemInfoToggle\("tools", mobile\)/,
+  );
   assert.match(appShellSource, /activeTopPanel === "system"[\s\S]*?<SystemPromptPanel/);
   assert.match(appShellSource, /activeTopPanel === "tools"[\s\S]*?<ToolDefinitionsPanel/);
   assert.doesNotMatch(systemSource, /ToolEntry|tools/);
@@ -37,5 +40,8 @@ test("preserves the two-column layout on narrow screens", () => {
     panelSource,
     /@media \(max-width: 640px\)[\s\S]*?\.tool-definitions-panel \{[\s\S]*?grid-template-columns: 112px minmax\(0, 1fr\)/,
   );
-  assert.doesNotMatch(panelSource, /@media \(max-width: 640px\)[\s\S]*?\.tool-definitions-panel \{[\s\S]*?display: block/);
+  assert.doesNotMatch(
+    panelSource,
+    /@media \(max-width: 640px\)[\s\S]*?\.tool-definitions-panel \{[\s\S]*?display: block/,
+  );
 });

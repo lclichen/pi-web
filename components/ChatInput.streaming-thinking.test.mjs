@@ -26,7 +26,10 @@ test("session hook layers thinking like the model selector", () => {
   assert.match(session, /displayThinkingLevel = isNew/);
   assert.match(session, /newSessionThinkingLevel \?\? newSessionDefaultThinkingLevel/);
   assert.match(session, /isAutoThinkingSelection: isNew && newSessionThinkingLevel === null/);
-  assert.match(session, /if \(state\?\.thinkingLevel !== undefined\) \{\s*setLiveThinkingLevel\(asConcreteThinkingLevel\(state\.thinkingLevel\)\);/);
+  assert.match(
+    session,
+    /if \(state\?\.thinkingLevel !== undefined\) \{\s*setLiveThinkingLevel\(asConcreteThinkingLevel\(state\.thinkingLevel\)\);/,
+  );
   const start = session.slice(session.indexOf('case "agent_start":'), session.indexOf('case "agent_end":'));
   assert.doesNotMatch(start, /fetch\(`\/api\/agent\/\$\{encodeURIComponent\(sid\)\}`\)/);
   assert.match(session, /if \(level === "auto"\) \{/);

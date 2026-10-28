@@ -16,8 +16,8 @@ export const CANCEL_LABEL = "Cancel";
  * varies per tick. `selectSubmitPickerProps` precomputes `active` per row.
  */
 export interface SubmitPickerProps {
-	/** Per-row active flag. Length always 2: row 0 = Submit, row 1 = Cancel. */
-	rows: ReadonlyArray<{ active: boolean }>;
+  /** Per-row active flag. Length always 2: row 0 = Submit, row 1 = Cancel. */
+  rows: ReadonlyArray<{ active: boolean }>;
 }
 
 /**
@@ -32,34 +32,34 @@ export interface SubmitPickerProps {
  *   re-rendering.
  */
 export class SubmitPicker implements StatefulView<SubmitPickerProps> {
-	private props: SubmitPickerProps;
+  private props: SubmitPickerProps;
 
-	constructor(private readonly theme: Theme) {
-		this.props = { rows: [{ active: false }, { active: false }] };
-	}
+  constructor(private readonly theme: Theme) {
+    this.props = { rows: [{ active: false }, { active: false }] };
+  }
 
-	setProps(props: SubmitPickerProps): void {
-		this.props = props;
-	}
+  setProps(props: SubmitPickerProps): void {
+    this.props = props;
+  }
 
-	handleInput(_data: string): void {}
+  handleInput(_data: string): void {}
 
-	invalidate(): void {}
+  invalidate(): void {}
 
-	naturalHeight(_width: number): number {
-		return 2;
-	}
+  naturalHeight(_width: number): number {
+    return 2;
+  }
 
-	render(width: number): string[] {
-		const lines: string[] = [];
-		for (let i = 0; i < 2; i++) {
-			const text = i === 0 ? t("submit.label", SUBMIT_LABEL) : t("submit.cancel", CANCEL_LABEL);
-			const active = this.props.rows[i]?.active ?? false;
-			const pointer = active ? ACTIVE_POINTER : INACTIVE_POINTER;
-			const number = `${i + 1}${NUMBER_SEPARATOR}`;
-			const label = active ? this.theme.fg("accent", this.theme.bold(text)) : this.theme.fg("text", text);
-			lines.push(truncateToWidth(`${pointer}${number}${label}`, width, ""));
-		}
-		return lines;
-	}
+  render(width: number): string[] {
+    const lines: string[] = [];
+    for (let i = 0; i < 2; i++) {
+      const text = i === 0 ? t("submit.label", SUBMIT_LABEL) : t("submit.cancel", CANCEL_LABEL);
+      const active = this.props.rows[i]?.active ?? false;
+      const pointer = active ? ACTIVE_POINTER : INACTIVE_POINTER;
+      const number = `${i + 1}${NUMBER_SEPARATOR}`;
+      const label = active ? this.theme.fg("accent", this.theme.bold(text)) : this.theme.fg("text", text);
+      lines.push(truncateToWidth(`${pointer}${number}${label}`, width, ""));
+    }
+    return lines;
+  }
 }

@@ -22,7 +22,7 @@ import { registerAskUserQuestionReconciler } from "./reconcile.js";
 import { I18N_NAMESPACE } from "./state/i18n-bridge.js";
 
 type I18nLoader = {
-	registerLocalesFromDir: (namespace: string, packageUrl: string, options?: { label?: string }) => void;
+  registerLocalesFromDir: (namespace: string, packageUrl: string, options?: { label?: string }) => void;
 };
 
 // Dynamic import keeps `@juicesharp/rpiv-i18n` a soft optional peer: when the
@@ -33,22 +33,22 @@ type I18nLoader = {
 // The `/loader` subpath is used instead of the SDK entry so the i18n-ui +
 // pi-tui modules are not pulled into our load graph just to register strings.
 try {
-	const sdk = (await import("@juicesharp/rpiv-i18n/loader")) as I18nLoader;
-	sdk.registerLocalesFromDir(I18N_NAMESPACE, import.meta.url, { label: "rpiv-ask-user-question" });
+  const sdk = (await import("@juicesharp/rpiv-i18n/loader")) as I18nLoader;
+  sdk.registerLocalesFromDir(I18N_NAMESPACE, import.meta.url, { label: "rpiv-ask-user-question" });
 } catch {
-	// SDK absent — extension still loads with English-only UI.
+  // SDK absent — extension still loads with English-only UI.
 }
 
 export {
-	ASK_USER_BLOCKED_EVENT,
-	ASK_USER_PROMPT_EVENT,
-	type AskUserBlockedEventPayload,
-	type AskUserPromptEventPayload,
-	type AskUserPromptOption,
-	type AskUserPromptQuestion,
+  ASK_USER_BLOCKED_EVENT,
+  ASK_USER_PROMPT_EVENT,
+  type AskUserBlockedEventPayload,
+  type AskUserPromptEventPayload,
+  type AskUserPromptOption,
+  type AskUserPromptQuestion,
 } from "./events.js";
 
 export default function (pi: ExtensionAPI) {
-	registerAskUserQuestionTool(pi);
-	registerAskUserQuestionReconciler(pi);
+  registerAskUserQuestionTool(pi);
+  registerAskUserQuestionReconciler(pi);
 }

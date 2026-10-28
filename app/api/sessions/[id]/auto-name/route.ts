@@ -6,10 +6,7 @@ import { restoreSessionOptions } from "@/lib/session-restore-options";
 import { invalidateSessionListCache } from "@/lib/session-reader";
 import { resolveSessionAccess } from "@/lib/session-access";
 
-export async function POST(
-  req: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
+export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
   try {
@@ -41,9 +38,6 @@ export async function POST(
     invalidateSessionListCache();
     return NextResponse.json({ title: result.title, usage: result.usage ?? null });
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : String(error) },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
   }
 }

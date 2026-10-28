@@ -51,7 +51,9 @@ export function PolicyConfig({ embedded = false, cwd }: { embedded?: boolean; cw
     }
   }, [cwd]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   const startEdit = () => {
     if (!state) return;
@@ -91,7 +93,9 @@ export function PolicyConfig({ embedded = false, cwd }: { embedded?: boolean; cw
 
   const removeDecision = async (path: string) => {
     try {
-      const res = await fetch(`/api/policy?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(path)}`, { method: "DELETE" });
+      const res = await fetch(`/api/policy?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(path)}`, {
+        method: "DELETE",
+      });
       const d = (await res.json()) as { ok?: boolean; error?: string };
       if (!res.ok || d.error) throw new Error(d.error ?? `HTTP ${res.status}`);
       await load();
@@ -102,9 +106,15 @@ export function PolicyConfig({ embedded = false, cwd }: { embedded?: boolean; cw
 
   const patternChips = (items: string[]) => (
     <div className="bundle-chip-list" style={{ paddingTop: 0 }}>
-      {items.length === 0 ? <span style={{ fontSize: 11, color: "var(--text-dim)" }}>{t("policy.noPatterns")}</span> : items.map((p) => (
-        <span key={p} className="bundle-chip is-mono">{p}</span>
-      ))}
+      {items.length === 0 ? (
+        <span style={{ fontSize: 11, color: "var(--text-dim)" }}>{t("policy.noPatterns")}</span>
+      ) : (
+        items.map((p) => (
+          <span key={p} className="bundle-chip is-mono">
+            {p}
+          </span>
+        ))
+      )}
     </div>
   );
 
@@ -124,7 +134,11 @@ export function PolicyConfig({ embedded = false, cwd }: { embedded?: boolean; cw
         )}
 
         {loading && <p style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 14 }}>{t("apiKeys.loading")}</p>}
-        {error && <p role="alert" style={{ color: "var(--danger)", fontSize: 12, marginTop: 12 }}>{error}</p>}
+        {error && (
+          <p role="alert" style={{ color: "var(--danger)", fontSize: 12, marginTop: 12 }}>
+            {error}
+          </p>
+        )}
 
         {state && !editing && (
           <>
@@ -143,27 +157,72 @@ export function PolicyConfig({ embedded = false, cwd }: { embedded?: boolean; cw
             </p>
             {state.editable && (
               <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
-                <ConfigButton variant="primary" onClick={startEdit}>{t("policy.edit")}</ConfigButton>
+                <ConfigButton variant="primary" onClick={startEdit}>
+                  {t("policy.edit")}
+                </ConfigButton>
               </div>
             )}
 
-            <div className="policy-section-title" style={{ marginTop: 20 }}>{t("policy.decisions")}</div>
+            <div className="policy-section-title" style={{ marginTop: 20 }}>
+              {t("policy.decisions")}
+            </div>
             {state.decisions.entries.length === 0 ? (
               <p style={{ margin: 0, fontSize: 12, color: "var(--text-dim)" }}>{t("policy.noDecisions")}</p>
             ) : (
               <div style={{ display: "flex", flexDirection: "column" }}>
-                {state.decisions.entries.slice().reverse().map((e) => (
-                  <div key={e.path} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 0", borderBottom: "1px solid var(--border)" }}>
-                    <span className="config-scope-tag" style={e.decision === "deny" ? { color: "var(--danger)", background: "color-mix(in srgb, var(--danger) 8%, transparent)" } : { color: "var(--success)", background: "color-mix(in srgb, var(--success) 8%, transparent)" }}>
-                      {e.decision === "deny" ? t("policy.decisionDeny") : t("policy.decisionAllow")}
-                    </span>
-                    <span style={{ flex: 1, minWidth: 0, fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={e.path}>
-                      {e.path}
-                    </span>
-                    <span style={{ fontSize: 10, color: "var(--text-dim)", flexShrink: 0 }}>{e.at ? new Date(e.at).toLocaleString() : ""}</span>
-                    <ConfigButton size="small" onClick={() => void removeDecision(e.path)}>{t("policy.removeDecision")}</ConfigButton>
-                  </div>
-                ))}
+                {state.decisions.entries
+                  .slice()
+                  .reverse()
+                  .map((e) => (
+                    <div
+                      key={e.path}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        padding: "7px 0",
+                        borderBottom: "1px solid var(--border)",
+                      }}
+                    >
+                      <span
+                        className="config-scope-tag"
+                        style={
+                          e.decision === "deny"
+                            ? {
+                                color: "var(--danger)",
+                                background: "color-mix(in srgb, var(--danger) 8%, transparent)",
+                              }
+                            : {
+                                color: "var(--success)",
+                                background: "color-mix(in srgb, var(--success) 8%, transparent)",
+                              }
+                        }
+                      >
+                        {e.decision === "deny" ? t("policy.decisionDeny") : t("policy.decisionAllow")}
+                      </span>
+                      <span
+                        style={{
+                          flex: 1,
+                          minWidth: 0,
+                          fontFamily: "var(--font-mono)",
+                          fontSize: 11,
+                          color: "var(--text-muted)",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                        title={e.path}
+                      >
+                        {e.path}
+                      </span>
+                      <span style={{ fontSize: 10, color: "var(--text-dim)", flexShrink: 0 }}>
+                        {e.at ? new Date(e.at).toLocaleString() : ""}
+                      </span>
+                      <ConfigButton size="small" onClick={() => void removeDecision(e.path)}>
+                        {t("policy.removeDecision")}
+                      </ConfigButton>
+                    </div>
+                  ))}
                 <p style={{ margin: "8px 0 0", fontSize: 11, color: "var(--text-dim)", lineHeight: 1.6 }}>
                   {t("policy.decisionsExportNote")}
                 </p>
@@ -182,15 +241,32 @@ export function PolicyConfig({ embedded = false, cwd }: { embedded?: boolean; cw
               onChange={(e) => setDraft(e.target.value)}
               spellCheck={false}
               style={{
-                width: "100%", minHeight: 260, marginTop: 8, padding: 10, boxSizing: "border-box",
-                fontFamily: "var(--font-mono)", fontSize: 11.5, lineHeight: 1.6,
-                background: "var(--bg-panel)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 6,
-                outline: "none", resize: "vertical",
+                width: "100%",
+                minHeight: 260,
+                marginTop: 8,
+                padding: 10,
+                boxSizing: "border-box",
+                fontFamily: "var(--font-mono)",
+                fontSize: 11.5,
+                lineHeight: 1.6,
+                background: "var(--bg-panel)",
+                color: "var(--text)",
+                border: "1px solid var(--border)",
+                borderRadius: 6,
+                outline: "none",
+                resize: "vertical",
               }}
             />
             {formMsg && !error && <p style={{ margin: "8px 0 0", fontSize: 12, color: "var(--success)" }}>{formMsg}</p>}
             <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-              <ConfigButton onClick={() => { setEditing(false); setError(null); }}>{t("common.cancel")}</ConfigButton>
+              <ConfigButton
+                onClick={() => {
+                  setEditing(false);
+                  setError(null);
+                }}
+              >
+                {t("common.cancel")}
+              </ConfigButton>
               <ConfigButton variant="primary" disabled={saving} onClick={() => void save()}>
                 {saving ? t("common.saving") : t("common.save")}
               </ConfigButton>

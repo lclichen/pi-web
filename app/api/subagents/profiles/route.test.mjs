@@ -78,7 +78,10 @@ test("profiles route creates, lists, and deletes a project profile", async (t) =
 
   const afterDelete = await GET(new Request(`http://localhost/api/subagents/profiles?cwd=${encodeURIComponent(cwd)}`));
   const afterDeleteBody = await afterDelete.json();
-  assert.equal(afterDeleteBody.profiles.some((item) => item.name === "api-test-agent"), false);
+  assert.equal(
+    afterDeleteBody.profiles.some((item) => item.name === "api-test-agent"),
+    false,
+  );
 });
 
 test("profiles route keeps same-name global and project profiles independently editable", async (t) => {
@@ -86,35 +89,47 @@ test("profiles route keeps same-name global and project profiles independently e
   allowFileRoot(cwd);
   t.after(() => rm(cwd, { recursive: true, force: true }));
 
-  let response = await PUT(jsonRequest("PUT", {
-    cwd,
-    scope: "global",
-    profile: profile({ description: "Global profile" }),
-  }));
+  let response = await PUT(
+    jsonRequest("PUT", {
+      cwd,
+      scope: "global",
+      profile: profile({ description: "Global profile" }),
+    }),
+  );
   assert.equal(response.status, 200);
   assert.equal((await response.json()).profile.scope, "global");
   assert.match(await readFile(join(testAgentDir, "agents", "api-test-agent.md"), "utf8"), /Global profile/);
 
-  response = await PUT(jsonRequest("PUT", {
-    cwd,
-    scope: "project",
-    profile: profile({ description: "Project profile" }),
-  }));
+  response = await PUT(
+    jsonRequest("PUT", {
+      cwd,
+      scope: "project",
+      profile: profile({ description: "Project profile" }),
+    }),
+  );
   assert.equal(response.status, 200);
 
   response = await GET(new Request(`http://localhost/api/subagents/profiles?cwd=${encodeURIComponent(cwd)}`));
   const sources = (await response.json()).profiles
     .filter((item) => item.name === "api-test-agent")
     .sort((a, b) => a.scope.localeCompare(b.scope));
-  assert.deepEqual(sources.map((item) => item.scope), ["global", "project"]);
-  assert.deepEqual(sources.map((item) => item.description), ["Global profile", "Project profile"]);
+  assert.deepEqual(
+    sources.map((item) => item.scope),
+    ["global", "project"],
+  );
+  assert.deepEqual(
+    sources.map((item) => item.description),
+    ["Global profile", "Project profile"],
+  );
 
-  response = await PATCH(jsonRequest("PATCH", {
-    cwd,
-    scope: "global",
-    name: "api-test-agent",
-    enabled: false,
-  }));
+  response = await PATCH(
+    jsonRequest("PATCH", {
+      cwd,
+      scope: "global",
+      name: "api-test-agent",
+      enabled: false,
+    }),
+  );
   assert.equal(response.status, 200);
   assert.equal((await response.json()).profile.enabled, false);
   response = await GET(new Request(`http://localhost/api/subagents/profiles?cwd=${encodeURIComponent(cwd)}`));

@@ -21,9 +21,7 @@ function extractFrontmatter(markdown: string): FrontmatterBlock | null {
   const closing = closingPattern.exec(markdown);
   if (!closing) return null;
 
-  const yaml = markdown
-    .slice(opening[0].length, closing.index)
-    .replace(/(?:\r\n|\n|\r)$/, "");
+  const yaml = markdown.slice(opening[0].length, closing.index).replace(/(?:\r\n|\n|\r)$/, "");
 
   return {
     yaml,

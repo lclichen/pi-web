@@ -9,98 +9,95 @@ import type { GlobalSelector, PerTabBindingContext, PerTabSelector } from "./con
 import { selectConfirmedIndicator } from "./derivations.js";
 
 function emptyMultiSelectProps(ctx: PerTabBindingContext): MultiSelectViewProps {
-	return {
-		rows: [],
-		other: {
-			active: false,
-			inputMode: false,
-			inputBuffer: ctx.inputBuffer,
-			inputCursorOffset: ctx.inputCursorOffset,
-		},
-		nextActive: false,
-		nextLabel: displayLabel("next"),
-	};
+  return {
+    rows: [],
+    other: {
+      active: false,
+      inputMode: false,
+      inputBuffer: ctx.inputBuffer,
+      inputCursorOffset: ctx.inputCursorOffset,
+    },
+    nextActive: false,
+    nextLabel: displayLabel("next"),
+  };
 }
 
 function nextLabelFor(ctx: PerTabBindingContext): string {
-	const isLastQuestion = ctx.i === ctx.questions.length - 1;
-	return isLastQuestion ? MULTI_SUBMIT_LABEL : displayLabel("next");
+  const isLastQuestion = ctx.i === ctx.questions.length - 1;
+  return isLastQuestion ? MULTI_SUBMIT_LABEL : displayLabel("next");
 }
 
 export const selectMultiSelectProps: PerTabSelector<MultiSelectViewProps> = (state, ctx) => {
-	const question = ctx.questions[ctx.i];
-	if (!question) {
-		return emptyMultiSelectProps(ctx);
-	}
-	const focused = ctx.activeView === "options";
-	const rows: { checked: boolean; active: boolean }[] = [];
-	for (let i = 0; i < question.options.length; i++) {
-		rows.push({
-			checked: state.multiSelectChecked.has(i),
-			active: focused && i === state.optionIndex,
-		});
-	}
-	const otherActive = focused && state.optionIndex === question.options.length;
-	const nextActive = focused && state.optionIndex === question.options.length + 1;
-	return {
-		rows,
-		other: {
-			active: otherActive,
-			inputMode: state.inputMode,
-			inputBuffer: ctx.inputBuffer,
-			inputCursorOffset: ctx.inputCursorOffset,
-		},
-		nextActive,
-		nextLabel: nextLabelFor(ctx),
-	};
+  const question = ctx.questions[ctx.i];
+  if (!question) {
+    return emptyMultiSelectProps(ctx);
+  }
+  const focused = ctx.activeView === "options";
+  const rows: { checked: boolean; active: boolean }[] = [];
+  for (let i = 0; i < question.options.length; i++) {
+    rows.push({
+      checked: state.multiSelectChecked.has(i),
+      active: focused && i === state.optionIndex,
+    });
+  }
+  const otherActive = focused && state.optionIndex === question.options.length;
+  const nextActive = focused && state.optionIndex === question.options.length + 1;
+  return {
+    rows,
+    other: {
+      active: otherActive,
+      inputMode: state.inputMode,
+      inputBuffer: ctx.inputBuffer,
+      inputCursorOffset: ctx.inputCursorOffset,
+    },
+    nextActive,
+    nextLabel: nextLabelFor(ctx),
+  };
 };
 
 export const selectOptionListProps: PerTabSelector<OptionListViewProps> = (state, ctx) => {
-	const items = ctx.itemsByTab[ctx.i] ?? [];
-	const focused = ctx.activeView === "options";
-	const confirmed = selectConfirmedIndicator(ctx.questions, state.currentTab, state.answers, items);
-	return {
-		selectedIndex: state.optionIndex,
-		focused,
-		inputBuffer: ctx.inputBuffer,
-		inputCursorOffset: ctx.inputCursorOffset,
-		...(confirmed ? { confirmed } : {}),
-	};
+  const items = ctx.itemsByTab[ctx.i] ?? [];
+  const focused = ctx.activeView === "options";
+  const confirmed = selectConfirmedIndicator(ctx.questions, state.currentTab, state.answers, items);
+  return {
+    selectedIndex: state.optionIndex,
+    focused,
+    inputBuffer: ctx.inputBuffer,
+    inputCursorOffset: ctx.inputCursorOffset,
+    ...(confirmed ? { confirmed } : {}),
+  };
 };
 
 export const selectSubmitPickerProps: GlobalSelector<SubmitPickerProps> = (state, ctx) => {
-	const focused = ctx.activeView === "submit";
-	return {
-		rows: [
-			{ active: focused && state.submitChoiceIndex === 0 },
-			{ active: focused && state.submitChoiceIndex === 1 },
-		],
-	};
+  const focused = ctx.activeView === "submit";
+  return {
+    rows: [{ active: focused && state.submitChoiceIndex === 0 }, { active: focused && state.submitChoiceIndex === 1 }],
+  };
 };
 
 export const selectPreviewPaneProps: PerTabSelector<PreviewPaneProps> = (state, ctx) => ({
-	notesVisible: state.notesVisible,
-	selectedIndex: state.optionIndex,
-	focused: ctx.activeView === "options",
-	inputMode: state.inputMode,
+  notesVisible: state.notesVisible,
+  selectedIndex: state.optionIndex,
+  focused: ctx.activeView === "options",
+  inputMode: state.inputMode,
 });
 
 export const selectTabBarProps: GlobalSelector<TabBarProps> = (state, ctx) => {
-	const tabs = ctx.questions.map((q, i) => ({
-		label: q.header && q.header.length > 0 ? q.header : `Q${i + 1}`,
-		answered: state.answers.has(i),
-		active: i === state.currentTab,
-	}));
-	return {
-		tabs,
-		submit: {
-			active: state.currentTab === ctx.questions.length,
-			allAnswered: state.answers.size === ctx.questions.length && ctx.questions.length > 0,
-		},
-	};
+  const tabs = ctx.questions.map((q, i) => ({
+    label: q.header && q.header.length > 0 ? q.header : `Q${i + 1}`,
+    answered: state.answers.has(i),
+    active: i === state.currentTab,
+  }));
+  return {
+    tabs,
+    submit: {
+      active: state.currentTab === ctx.questions.length,
+      allAnswered: state.answers.size === ctx.questions.length && ctx.questions.length > 0,
+    },
+  };
 };
 
 export const selectDialogProps: GlobalSelector<DialogProps> = (state, ctx) => ({
-	state,
-	activePreviewPane: ctx.activePreviewPane,
+  state,
+  activePreviewPane: ctx.activePreviewPane,
 });

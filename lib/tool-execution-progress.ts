@@ -23,7 +23,5 @@ export function getToolExecutionProgress(partialResult: unknown): string | null 
   if (!latest) return null;
 
   const normalized = latest.replace(/\s+/g, " ");
-  return normalized.length <= MAX_PROGRESS_LENGTH
-    ? normalized
-    : `...${normalized.slice(-(MAX_PROGRESS_LENGTH - 3))}`;
+  return normalized.length <= MAX_PROGRESS_LENGTH ? normalized : `...${normalized.slice(-(MAX_PROGRESS_LENGTH - 3))}`;
 }

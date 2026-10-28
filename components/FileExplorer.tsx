@@ -54,13 +54,34 @@ export interface FileExplorerHandle {
   openUploadPicker: () => void;
 }
 
-function ContextMenuButton({ label, color, onClick, disabled }: { label: string; color: string; onClick: () => void; disabled?: boolean }) {
+function ContextMenuButton({
+  label,
+  color,
+  onClick,
+  disabled,
+}: {
+  label: string;
+  color: string;
+  onClick: () => void;
+  disabled?: boolean;
+}) {
   return (
     <div
       onClick={disabled ? undefined : onClick}
-      style={{ padding: "4px 10px", cursor: disabled ? "default" : "pointer", fontSize: 11, borderRadius: 3, color: disabled ? "var(--text-dim)" : color, opacity: disabled ? 0.6 : 1 }}
-      onMouseEnter={(e) => { if (!disabled) e.currentTarget.style.background = "var(--bg-hover)"; }}
-      onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+      style={{
+        padding: "4px 10px",
+        cursor: disabled ? "default" : "pointer",
+        fontSize: 11,
+        borderRadius: 3,
+        color: disabled ? "var(--text-dim)" : color,
+        opacity: disabled ? 0.6 : 1,
+      }}
+      onMouseEnter={(e) => {
+        if (!disabled) e.currentTarget.style.background = "var(--bg-hover)";
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.background = "transparent";
+      }}
     >
       {label}
     </div>
@@ -108,14 +129,14 @@ async function fetchEntries(dirPath: string, remote?: { sessionId: string } | nu
   if (!res.ok) {
     let message = `Failed to load files (HTTP ${res.status})`;
     try {
-      const data = await res.json() as { error?: string };
+      const data = (await res.json()) as { error?: string };
       if (data.error) message = data.error;
     } catch {
       // ignore non-JSON error bodies
     }
     throw new Error(message);
   }
-  const data = await res.json() as { entries?: FileEntry[] };
+  const data = (await res.json()) as { entries?: FileEntry[] };
   return (data.entries ?? []).map((e) => ({
     name: e.name,
     fullPath: joinFilePath(dirPath, e.name),
@@ -212,7 +233,17 @@ function uploadFiles(
 
 function MentionIcon({ size = 11 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
       <circle cx="12" cy="12" r="4" />
       <path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8" />
     </svg>
@@ -226,11 +257,39 @@ function DismissButton({ onClick, title }: { onClick: () => void; title: string 
       onClick={onClick}
       title={title}
       aria-label={title}
-      style={{ width: 24, height: 24, padding: 0, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, border: "none", borderRadius: 4, background: "none", color: "var(--text-dim)", cursor: "pointer" }}
-      onMouseEnter={(event) => { event.currentTarget.style.color = "var(--text-muted)"; event.currentTarget.style.background = "var(--bg-hover)"; }}
-      onMouseLeave={(event) => { event.currentTarget.style.color = "var(--text-dim)"; event.currentTarget.style.background = "none"; }}
+      style={{
+        width: 24,
+        height: 24,
+        padding: 0,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        flexShrink: 0,
+        border: "none",
+        borderRadius: 4,
+        background: "none",
+        color: "var(--text-dim)",
+        cursor: "pointer",
+      }}
+      onMouseEnter={(event) => {
+        event.currentTarget.style.color = "var(--text-muted)";
+        event.currentTarget.style.background = "var(--bg-hover)";
+      }}
+      onMouseLeave={(event) => {
+        event.currentTarget.style.color = "var(--text-dim)";
+        event.currentTarget.style.background = "none";
+      }}
     >
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
+      <svg
+        width="13"
+        height="13"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.2"
+        strokeLinecap="round"
+        aria-hidden="true"
+      >
         <path d="m6 6 12 12" />
         <path d="m18 6-12 12" />
       </svg>
@@ -293,27 +352,28 @@ function TreeNode({
   const highlighted = highlightedPaths.has(node.fullPath);
   const normalizedPath = normalizeFilePathSlashes(node.fullPath);
   const gitStatus = gitStatusByPath.get(normalizedPath);
-  const containsGitChanges = node.isDir && (
-    gitStatus !== undefined || changedDirectoryPaths.has(normalizedPath)
-  );
+  const containsGitChanges = node.isDir && (gitStatus !== undefined || changedDirectoryPaths.has(normalizedPath));
   const [children, setChildren] = useState<FileNode[]>(node.children ?? []);
   const [loaded, setLoaded] = useState(node.loaded ?? false);
   const [loading, setLoading] = useState(false);
   const [hovered, setHovered] = useState(false);
 
-  const loadChildren = useCallback(async (force = false) => {
-    if (loaded && !force) return;
-    setLoading(true);
-    try {
-      const entries = await fetchEntries(node.fullPath, remote);
-      setChildren(entries);
-      setLoaded(true);
-    } catch {
-      // ignore
-    } finally {
-      setLoading(false);
-    }
-  }, [loaded, node.fullPath]);
+  const loadChildren = useCallback(
+    async (force = false) => {
+      if (loaded && !force) return;
+      setLoading(true);
+      try {
+        const entries = await fetchEntries(node.fullPath, remote);
+        setChildren(entries);
+        setLoaded(true);
+      } catch {
+        // ignore
+      } finally {
+        setLoading(false);
+      }
+    },
+    [loaded, node.fullPath],
+  );
 
   // Re-fetch children when the tree refreshes and the directory is open.
   useEffect(() => {
@@ -356,8 +416,14 @@ function TreeNode({
       >
         {node.isDir && (
           <svg
-            width="10" height="10" viewBox="0 0 10 10" fill="none"
-            stroke="var(--text-dim)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
+            width="10"
+            height="10"
+            viewBox="0 0 10 10"
+            fill="none"
+            stroke="var(--text-dim)"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
             style={{ flexShrink: 0, transform: open ? "rotate(90deg)" : "none", transition: "transform 0.1s" }}
           >
             <polyline points="3 2 7 5 3 8" />
@@ -383,25 +449,45 @@ function TreeNode({
               autoFocus
               value={renamingName ?? ""}
               onChange={(e) => onRenamingNameChange?.(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") onRenamingSubmit?.(); if (e.key === "Escape") onRenamingCancel?.(); }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") onRenamingSubmit?.();
+                if (e.key === "Escape") onRenamingCancel?.();
+              }}
               onBlur={onRenamingSubmit}
               onClick={(e) => e.stopPropagation()}
-              style={{ width: "100%", height: 18, border: "1px solid var(--accent)", borderRadius: 3, background: "var(--bg)", color: "var(--text)", fontSize: 12, padding: "0 4px", outline: "none" }}
+              style={{
+                width: "100%",
+                height: 18,
+                border: "1px solid var(--accent)",
+                borderRadius: 3,
+                background: "var(--bg)",
+                color: "var(--text)",
+                fontSize: 12,
+                padding: "0 4px",
+                outline: "none",
+              }}
             />
-          ) : node.name}
+          ) : (
+            node.name
+          )}
         </span>
         {highlighted && (
           <span
             title={t("files.newlyUploaded")}
             aria-label={t("files.newlyUploaded")}
-            style={{ width: 14, height: 14, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
+            style={{
+              width: 14,
+              height: 14,
+              flexShrink: 0,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
           >
             <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#3b82f6" }} />
           </span>
         )}
-        {!hovered && !node.isDir && gitStatus && (
-          <GitStatusBadge status={gitStatus} t={t} />
-        )}
+        {!hovered && !node.isDir && gitStatus && <GitStatusBadge status={gitStatus} t={t} />}
         {!hovered && containsGitChanges && (
           <span
             title={t("files.containsChangedFiles")}
@@ -419,7 +505,15 @@ function TreeNode({
           </span>
         )}
         {loading && (
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" strokeWidth="2" strokeLinecap="round">
+          <svg
+            width="10"
+            height="10"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="var(--text-dim)"
+            strokeWidth="2"
+            strokeLinecap="round"
+          >
             <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4" />
           </svg>
         )}
@@ -457,9 +551,11 @@ function TreeNode({
         )}
         {hovered && !node.isDir && (
           <a
-            href={remote
-              ? `/api/remotefs/${encodeFilePathForApi(node.fullPath)}?src=${encodeURIComponent(remote.sessionId)}&type=download`
-              : `/api/files/${encodeFilePathForApi(node.fullPath)}?type=download`}
+            href={
+              remote
+                ? `/api/remotefs/${encodeFilePathForApi(node.fullPath)}?src=${encodeURIComponent(remote.sessionId)}&type=download`
+                : `/api/files/${encodeFilePathForApi(node.fullPath)}?type=download`
+            }
             download
             onClick={(e) => e.stopPropagation()}
             title={t("files.download")}
@@ -485,7 +581,16 @@ function TreeNode({
               textDecoration: "none",
             }}
           >
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              width="11"
+              height="11"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
               <polyline points="7 10 12 15 17 10" />
               <line x1="12" y1="15" x2="12" y2="3" />
@@ -496,16 +601,39 @@ function TreeNode({
       {node.isDir && open && (
         <div>
           {creating && creating.dir === node.fullPath && (
-            <div style={{ paddingLeft: 8 + (depth + 1) * 14, paddingRight: 4, height: 24, display: "flex", alignItems: "center", gap: 4 }}>
+            <div
+              style={{
+                paddingLeft: 8 + (depth + 1) * 14,
+                paddingRight: 4,
+                height: 24,
+                display: "flex",
+                alignItems: "center",
+                gap: 4,
+              }}
+            >
               <span style={{ fontSize: 12, flexShrink: 0 }}>{creating.type === "dir" ? "\u{1F4C1}" : "\u{1F4C4}"}</span>
               <input
                 autoFocus
                 value={creatingName ?? ""}
                 onChange={(e) => onCreateNameChange?.(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") onCreateSubmit?.(); if (e.key === "Escape") onCreateCancel?.(); }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") onCreateSubmit?.();
+                  if (e.key === "Escape") onCreateCancel?.();
+                }}
                 onBlur={onCreateSubmit}
                 placeholder={creating.type === "dir" ? "folder name" : "file name"}
-                style={{ flex: 1, minWidth: 0, height: 18, border: "1px solid var(--accent)", borderRadius: 3, background: "var(--bg)", color: "var(--text)", fontSize: 11, padding: "0 4px", outline: "none" }}
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  height: 18,
+                  border: "1px solid var(--accent)",
+                  borderRadius: 3,
+                  background: "var(--bg)",
+                  color: "var(--text)",
+                  fontSize: 11,
+                  padding: "0 4px",
+                  outline: "none",
+                }}
                 onClick={(e) => e.stopPropagation()}
               />
             </div>
@@ -540,7 +668,16 @@ function TreeNode({
             />
           ))}
           {children.length === 0 && loaded && !creating && (
-            <div style={{ paddingLeft: 8 + (depth + 1) * 14, fontSize: 11, color: "var(--text-dim)", height: 22, display: "flex", alignItems: "center" }}>
+            <div
+              style={{
+                paddingLeft: 8 + (depth + 1) * 14,
+                fontSize: 11,
+                color: "var(--text-dim)",
+                height: 22,
+                display: "flex",
+                alignItems: "center",
+              }}
+            >
               empty
             </div>
           )}
@@ -671,21 +808,24 @@ function ChangeRow({
   );
 }
 
-export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileExplorer({
-  cwd,
-  remote = null,
-  onOpenFile,
-  refreshKey,
-  onAtMention,
-  onAtMentions,
-  onUploadBusyChange,
-  onFileDeleted,
-  onFileRenamed,
-  changesCollapsed,
-  onChangesCountChange,
-  fileSearchOpen = false,
-  onFileSearchOpenChange,
-}, ref) {
+export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileExplorer(
+  {
+    cwd,
+    remote = null,
+    onOpenFile,
+    refreshKey,
+    onAtMention,
+    onAtMentions,
+    onUploadBusyChange,
+    onFileDeleted,
+    onFileRenamed,
+    changesCollapsed,
+    onChangesCountChange,
+    fileSearchOpen = false,
+    onFileSearchOpenChange,
+  },
+  ref,
+) {
   const { t } = useI18n();
   const [roots, setRoots] = useState<FileNode[]>([]);
   const [loading, setLoading] = useState(true);
@@ -734,11 +874,24 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
     setSearchError(false);
     const timer = setTimeout(() => {
       const request = remote
-        ? fetch(`/api/remotefs/${encodeFilePathForApi(cwd)}?src=${encodeURIComponent(remote.sessionId)}&type=search&q=${encodeURIComponent(query)}`, { signal: controller.signal })
-            .then((response) => response.ok ? response.json() as Promise<{ matches?: string[] }> : Promise.reject(new Error("Search failed")))
+        ? fetch(
+            `/api/remotefs/${encodeFilePathForApi(cwd)}?src=${encodeURIComponent(remote.sessionId)}&type=search&q=${encodeURIComponent(query)}`,
+            { signal: controller.signal },
+          )
+            .then((response) =>
+              response.ok
+                ? (response.json() as Promise<{ matches?: string[] }>)
+                : Promise.reject(new Error("Search failed")),
+            )
             .then((data) => data.matches ?? [])
-        : fetch(`/api/file-index?cwd=${encodeURIComponent(cwd)}&q=${encodeURIComponent(query)}`, { signal: controller.signal })
-            .then((response) => response.ok ? response.json() as Promise<{ matches?: FileIndexEntry[] }> : Promise.reject(new Error("Search failed")))
+        : fetch(`/api/file-index?cwd=${encodeURIComponent(cwd)}&q=${encodeURIComponent(query)}`, {
+            signal: controller.signal,
+          })
+            .then((response) =>
+              response.ok
+                ? (response.json() as Promise<{ matches?: FileIndexEntry[] }>)
+                : Promise.reject(new Error("Search failed")),
+            )
             .then((data) => (data.matches ?? []).filter((entry) => !entry.isDir).map((entry) => entry.path));
       request
         .then((paths) => setSearchPaths(paths))
@@ -748,9 +901,14 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
             setSearchError(true);
           }
         })
-        .finally(() => { if (!controller.signal.aborted) setSearchLoading(false); });
+        .finally(() => {
+          if (!controller.signal.aborted) setSearchLoading(false);
+        });
     }, 150);
-    return () => { clearTimeout(timer); controller.abort(); };
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
   }, [cwd, fileSearchOpen, searchQuery, remote]);
 
   // Focus the search input whenever the search panel opens.
@@ -775,7 +933,10 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
       let changed = false;
       const next = new Set(prev);
       for (const dir of dirs) {
-        if (!next.has(dir)) { next.add(dir); changed = true; }
+        if (!next.has(dir)) {
+          next.add(dir);
+          changed = true;
+        }
       }
       return changed ? next : prev;
     });
@@ -804,9 +965,10 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
     };
   }, [contextMenu]);
 
-  const gitStatusByPath = useMemo(() => new Map(
-    gitFiles.map((status) => [normalizeFilePathSlashes(status.filePath), status]),
-  ), [gitFiles]);
+  const gitStatusByPath = useMemo(
+    () => new Map(gitFiles.map((status) => [normalizeFilePathSlashes(status.filePath), status])),
+    [gitFiles],
+  );
 
   const changedDirectoryPaths = useMemo(() => {
     const directories = new Set<string>();
@@ -827,119 +989,132 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
   const handleToggleExpanded = useCallback((fullPath: string, open: boolean) => {
     setExpandedPaths((prev) => {
       const next = new Set(prev);
-      if (open) next.add(fullPath); else next.delete(fullPath);
+      if (open) next.add(fullPath);
+      else next.delete(fullPath);
       return next;
     });
   }, []);
 
-  const applyUploadResult = useCallback((data: UploadResponse, targetDir: string) => {
-    const uploaded = data.uploaded ?? [];
-    const skipped = data.skipped ?? [];
-    const errors = data.errors ?? [];
-    setUploadSummary({ uploaded, skipped, errors });
+  const applyUploadResult = useCallback(
+    (data: UploadResponse, targetDir: string) => {
+      const uploaded = data.uploaded ?? [];
+      const skipped = data.skipped ?? [];
+      const errors = data.errors ?? [];
+      setUploadSummary({ uploaded, skipped, errors });
 
-    if (uploaded.length > 0) {
-      setHighlightedPaths(new Set(uploaded.map((name) => joinFilePath(targetDir, name))));
-      // 上传到子文件夹时自动展开它，用户能立刻看到结果
-      if (targetDir !== cwd) {
-        setExpandedPaths((prev) => {
-          const next = new Set(prev);
-          next.add(targetDir);
-          return next;
+      if (uploaded.length > 0) {
+        setHighlightedPaths(new Set(uploaded.map((name) => joinFilePath(targetDir, name))));
+        // 上传到子文件夹时自动展开它，用户能立刻看到结果
+        if (targetDir !== cwd) {
+          setExpandedPaths((prev) => {
+            const next = new Set(prev);
+            next.add(targetDir);
+            return next;
+          });
+        }
+        setTreeRefreshKey((key) => key + 1);
+      }
+    },
+    [cwd],
+  );
+
+  const performUpload = useCallback(
+    async (files: File[], strategy: UploadConflictStrategy, targetDir: string) => {
+      setPendingConflict(null);
+      setUploadError(null);
+      setUploadProgress(0);
+      setUploadPhase("uploading");
+
+      try {
+        const { status, data } = await uploadFiles(targetDir, files, strategy, setUploadProgress, remote);
+        if (status === 409 && data.conflicts?.length) {
+          setPendingConflict({
+            files,
+            conflicts: data.conflicts,
+            nonReplaceable: data.nonReplaceable ?? [],
+            targetDir,
+          });
+          return;
+        }
+        if (status < 200 || status >= 300) {
+          throw new Error(data.error ?? `Upload failed (HTTP ${status})`);
+        }
+        setUploadProgress(100);
+        applyUploadResult(data, targetDir);
+      } catch (uploadFailure) {
+        setUploadError(uploadFailure instanceof Error ? uploadFailure.message : String(uploadFailure));
+      } finally {
+        setUploadPhase("idle");
+      }
+    },
+    [applyUploadResult, remote],
+  );
+
+  const prepareUpload = useCallback(
+    async (files: File[], targetDir: string) => {
+      if (files.length === 0 || uploadBusy) return;
+      setUploadSummary(null);
+      setHighlightedPaths(new Set());
+      setPendingConflict(null);
+      setUploadError(null);
+      setUploadProgress(0);
+      setUploadPhase("checking");
+
+      try {
+        const checkUrl = remote
+          ? `/api/remotefs/${encodeFilePathForApi(targetDir)}?src=${encodeURIComponent(remote.sessionId)}&type=upload-check`
+          : `/api/files/${encodeFilePathForApi(targetDir)}?type=upload-check`;
+        const res = await fetch(checkUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ fileNames: files.map((file) => file.name) }),
         });
+        const data = (await res.json().catch(() => ({}))) as UploadResponse;
+        if (!res.ok) throw new Error(data.error ?? `Upload check failed (HTTP ${res.status})`);
+
+        if (data.conflicts?.length) {
+          setPendingConflict({
+            files,
+            conflicts: data.conflicts,
+            nonReplaceable: data.nonReplaceable ?? [],
+            targetDir,
+          });
+          return;
+        }
+
+        await performUpload(files, "error", targetDir);
+      } catch (uploadFailure) {
+        setUploadError(uploadFailure instanceof Error ? uploadFailure.message : String(uploadFailure));
+      } finally {
+        setUploadPhase("idle");
       }
-      setTreeRefreshKey((key) => key + 1);
-    }
-  }, [cwd]);
-
-  const performUpload = useCallback(async (
-    files: File[],
-    strategy: UploadConflictStrategy,
-    targetDir: string,
-  ) => {
-    setPendingConflict(null);
-    setUploadError(null);
-    setUploadProgress(0);
-    setUploadPhase("uploading");
-
-    try {
-      const { status, data } = await uploadFiles(targetDir, files, strategy, setUploadProgress, remote);
-      if (status === 409 && data.conflicts?.length) {
-        setPendingConflict({
-          files,
-          conflicts: data.conflicts,
-          nonReplaceable: data.nonReplaceable ?? [],
-          targetDir,
-        });
-        return;
-      }
-      if (status < 200 || status >= 300) {
-        throw new Error(data.error ?? `Upload failed (HTTP ${status})`);
-      }
-      setUploadProgress(100);
-      applyUploadResult(data, targetDir);
-    } catch (uploadFailure) {
-      setUploadError(uploadFailure instanceof Error ? uploadFailure.message : String(uploadFailure));
-    } finally {
-      setUploadPhase("idle");
-    }
-  }, [applyUploadResult, remote]);
-
-  const prepareUpload = useCallback(async (files: File[], targetDir: string) => {
-    if (files.length === 0 || uploadBusy) return;
-    setUploadSummary(null);
-    setHighlightedPaths(new Set());
-    setPendingConflict(null);
-    setUploadError(null);
-    setUploadProgress(0);
-    setUploadPhase("checking");
-
-    try {
-      const checkUrl = remote
-        ? `/api/remotefs/${encodeFilePathForApi(targetDir)}?src=${encodeURIComponent(remote.sessionId)}&type=upload-check`
-        : `/api/files/${encodeFilePathForApi(targetDir)}?type=upload-check`;
-      const res = await fetch(checkUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fileNames: files.map((file) => file.name) }),
-      });
-      const data = await res.json().catch(() => ({})) as UploadResponse;
-      if (!res.ok) throw new Error(data.error ?? `Upload check failed (HTTP ${res.status})`);
-
-      if (data.conflicts?.length) {
-        setPendingConflict({
-          files,
-          conflicts: data.conflicts,
-          nonReplaceable: data.nonReplaceable ?? [],
-          targetDir,
-        });
-        return;
-      }
-
-      await performUpload(files, "error", targetDir);
-    } catch (uploadFailure) {
-      setUploadError(uploadFailure instanceof Error ? uploadFailure.message : String(uploadFailure));
-    } finally {
-      setUploadPhase("idle");
-    }
-  }, [performUpload, remote, uploadBusy]);
+    },
+    [performUpload, remote, uploadBusy],
+  );
 
   // 本次上传的目标目录（文件夹右键「上传到此文件夹」设定；工具栏按钮 = cwd）
   const uploadTargetRef = useRef<string | null>(null);
 
-  const handleUploadInput = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files ?? []);
-    event.target.value = "";
-    const targetDir = uploadTargetRef.current ?? cwd;
-    uploadTargetRef.current = null;
-    void prepareUpload(files, targetDir);
-  }, [prepareUpload, cwd]);
-
-  useImperativeHandle(ref, () => ({
-    openUploadPicker() {
-      if (!uploadBusy) uploadInputRef.current?.click();
+  const handleUploadInput = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      const files = Array.from(event.target.files ?? []);
+      event.target.value = "";
+      const targetDir = uploadTargetRef.current ?? cwd;
+      uploadTargetRef.current = null;
+      void prepareUpload(files, targetDir);
     },
-  }), [uploadBusy]);
+    [prepareUpload, cwd],
+  );
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      openUploadPicker() {
+        if (!uploadBusy) uploadInputRef.current?.click();
+      },
+    }),
+    [uploadBusy],
+  );
 
   useEffect(() => {
     onUploadBusyChange?.(uploadBusy);
@@ -963,7 +1138,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
     // Host mode with no usable cwd (e.g. a pending remote session whose "/"
     // leaked in) must not list the filesystem root — /api/files has no root
     // handler and the request would 404/403. Show an empty pane instead.
-    const usableCwd = remote ? cwd : (cwd && cwd !== "/" ? cwd : null);
+    const usableCwd = remote ? cwd : cwd && cwd !== "/" ? cwd : null;
     if (!usableCwd) {
       setRoots([]);
       setLoading(false);
@@ -975,22 +1150,36 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
     setError(null);
     let cancelled = false;
     fetchEntries(usableCwd, remote)
-      .then((entries) => { if (!cancelled) setRoots(entries); })
-      .catch((e) => { if (!cancelled) setError(e instanceof Error ? e.message : String(e)); })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
+      .then((entries) => {
+        if (!cancelled) setRoots(entries);
+      })
+      .catch((e) => {
+        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [cwd, refreshKey, treeRefreshKey, remote]);
 
   useEffect(() => {
-    if (remote) { setGitFiles([]); setGitLineStats({ additions: 0, deletions: 0 }); return; }
+    if (remote) {
+      setGitFiles([]);
+      setGitLineStats({ additions: 0, deletions: 0 });
+      return;
+    }
     let cancelled = false;
     fetchGitStatus(cwd)
       .then((status) => {
         if (!cancelled) {
           setGitFiles(status.isGitRepository ? status.files : []);
-          setGitLineStats(status.isGitRepository
-            ? { additions: status.additions, deletions: status.deletions }
-            : { additions: 0, deletions: 0 });
+          setGitLineStats(
+            status.isGitRepository
+              ? { additions: status.additions, deletions: status.deletions }
+              : { additions: 0, deletions: 0 },
+          );
         }
       })
       .catch(() => {
@@ -999,7 +1188,9 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
           setGitLineStats({ additions: 0, deletions: 0 });
         }
       });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [cwd, refreshKey, treeRefreshKey]);
 
   useEffect(() => {
@@ -1010,13 +1201,14 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
 
   const addUploadedFilesToChat = useCallback(() => {
     if (!uploadSummary || uploadSummary.uploaded.length === 0) return;
-    onAtMentions?.(
-      uploadSummary.uploaded.map((name) => getRelativeFilePath(joinFilePath(cwd, name), cwd)),
-    );
+    onAtMentions?.(uploadSummary.uploaded.map((name) => getRelativeFilePath(joinFilePath(cwd, name), cwd)));
   }, [cwd, onAtMentions, uploadSummary]);
 
   const handleCreate = useCallback(() => {
-    if (!creating || !creatingName.trim()) { setCreating(null); return; }
+    if (!creating || !creatingName.trim()) {
+      setCreating(null);
+      return;
+    }
     const name = creatingName.trim();
     const fullPath = joinFilePath(creating.dir, name);
     const url = remote
@@ -1027,33 +1219,46 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
       headers: { "Content-Type": "application/json" },
       // Both endpoints understand create semantics: {type:"file"|"dir"}.
       body: JSON.stringify({ type: creating.type === "dir" ? "dir" : "file" }),
-    }).then(async (res) => {
-      if (!res.ok) {
-        const d = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(d.error ?? `HTTP ${res.status}`);
-      }
-      setCreating(null); setCreatingName(""); setTreeRefreshKey((k) => k + 1);
-    }).catch((e) => { setError(e instanceof Error ? e.message : String(e)); setCreating(null); });
-  }, [creating, creatingName, remote]);
-
-  const handleDelete = useCallback((fullPath: string) => {
-    const url = remote
-      ? `/api/remotefs/${encodeFilePathForApi(fullPath)}?src=${encodeURIComponent(remote.sessionId)}`
-      : `/api/files/${encodeFilePathForApi(fullPath)}`;
-    fetch(url, { method: "DELETE" })
+    })
       .then(async (res) => {
         if (!res.ok) {
           const d = (await res.json().catch(() => ({}))) as { error?: string };
           throw new Error(d.error ?? `HTTP ${res.status}`);
         }
-        onFileDeleted?.(fullPath);
+        setCreating(null);
+        setCreatingName("");
         setTreeRefreshKey((k) => k + 1);
       })
-      .catch((e) => setError(e instanceof Error ? e.message : String(e)));
-  }, [onFileDeleted, remote]);
+      .catch((e) => {
+        setError(e instanceof Error ? e.message : String(e));
+        setCreating(null);
+      });
+  }, [creating, creatingName, remote]);
+
+  const handleDelete = useCallback(
+    (fullPath: string) => {
+      const url = remote
+        ? `/api/remotefs/${encodeFilePathForApi(fullPath)}?src=${encodeURIComponent(remote.sessionId)}`
+        : `/api/files/${encodeFilePathForApi(fullPath)}`;
+      fetch(url, { method: "DELETE" })
+        .then(async (res) => {
+          if (!res.ok) {
+            const d = (await res.json().catch(() => ({}))) as { error?: string };
+            throw new Error(d.error ?? `HTTP ${res.status}`);
+          }
+          onFileDeleted?.(fullPath);
+          setTreeRefreshKey((k) => k + 1);
+        })
+        .catch((e) => setError(e instanceof Error ? e.message : String(e)));
+    },
+    [onFileDeleted, remote],
+  );
 
   const handleRename = useCallback(() => {
-    if (!renaming || !renamingName.trim()) { setRenaming(null); return; }
+    if (!renaming || !renamingName.trim()) {
+      setRenaming(null);
+      return;
+    }
     const newPath = joinFilePath(getFileDirectory(renaming.oldPath), renamingName.trim());
     const url = remote
       ? `/api/remotefs/${encodeFilePathForApi(renaming.oldPath)}?src=${encodeURIComponent(remote.sessionId)}`
@@ -1062,14 +1267,21 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ newPath }),
-    }).then(async (res) => {
-      if (!res.ok) {
-        const d = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(d.error ?? `HTTP ${res.status}`);
-      }
-      onFileRenamed?.(renaming.oldPath, newPath);
-      setRenaming(null); setRenamingName(""); setTreeRefreshKey((k) => k + 1);
-    }).catch((e) => { setError(e instanceof Error ? e.message : String(e)); setRenaming(null); });
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          const d = (await res.json().catch(() => ({}))) as { error?: string };
+          throw new Error(d.error ?? `HTTP ${res.status}`);
+        }
+        onFileRenamed?.(renaming.oldPath, newPath);
+        setRenaming(null);
+        setRenamingName("");
+        setTreeRefreshKey((k) => k + 1);
+      })
+      .catch((e) => {
+        setError(e instanceof Error ? e.message : String(e));
+        setRenaming(null);
+      });
   }, [renaming, renamingName, onFileRenamed, remote]);
 
   return (
@@ -1077,187 +1289,460 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
       <input ref={uploadInputRef} type="file" multiple hidden onChange={handleUploadInput} />
       {showUploadFeedback && (
         <div style={{ padding: "6px 8px", borderBottom: "1px solid var(--border)" }}>
-        {uploadBusy && (
-          <div role="status" aria-live="polite" aria-label={uploadPhase === "checking" ? t("files.checking") : t("files.uploading", { progress: uploadProgress })}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, minHeight: 14, color: "var(--text-muted)" }}>
-              {uploadPhase === "checking" ? (
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" style={{ animation: "spin 0.8s linear infinite" }} aria-hidden="true">
-                  <path d="M21 12a9 9 0 1 1-5.7-8.4" />
-                </svg>
-              ) : (
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M12 16V4" />
-                  <path d="m7 9 5-5 5 5" />
-                  <path d="M5 20h14" />
-                </svg>
+          {uploadBusy && (
+            <div
+              role="status"
+              aria-live="polite"
+              aria-label={
+                uploadPhase === "checking" ? t("files.checking") : t("files.uploading", { progress: uploadProgress })
+              }
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 8,
+                  minHeight: 14,
+                  color: "var(--text-muted)",
+                }}
+              >
+                {uploadPhase === "checking" ? (
+                  <svg
+                    width="13"
+                    height="13"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.2"
+                    strokeLinecap="round"
+                    style={{ animation: "spin 0.8s linear infinite" }}
+                    aria-hidden="true"
+                  >
+                    <path d="M21 12a9 9 0 1 1-5.7-8.4" />
+                  </svg>
+                ) : (
+                  <svg
+                    width="13"
+                    height="13"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M12 16V4" />
+                    <path d="m7 9 5-5 5 5" />
+                    <path d="M5 20h14" />
+                  </svg>
+                )}
+                {uploadPhase === "uploading" && <span style={{ fontSize: 10 }}>{uploadProgress}%</span>}
+              </div>
+              {uploadPhase === "uploading" && (
+                <div
+                  style={{ height: 3, marginTop: 4, overflow: "hidden", borderRadius: 2, background: "var(--border)" }}
+                >
+                  <div
+                    style={{
+                      width: `${uploadProgress}%`,
+                      height: "100%",
+                      background: "var(--text-muted)",
+                      transition: "width 120ms ease",
+                    }}
+                  />
+                </div>
               )}
-              {uploadPhase === "uploading" && <span style={{ fontSize: 10 }}>{uploadProgress}%</span>}
             </div>
-            {uploadPhase === "uploading" && (
-              <div style={{ height: 3, marginTop: 4, overflow: "hidden", borderRadius: 2, background: "var(--border)" }}>
-                <div style={{ width: `${uploadProgress}%`, height: "100%", background: "var(--text-muted)", transition: "width 120ms ease" }} />
-              </div>
-            )}
-          </div>
-        )}
+          )}
 
-        {pendingConflict && (
-          <div role="alert" style={{ padding: 7, border: "1px solid color-mix(in srgb, #f59e0b 55%, var(--border))", borderRadius: 4, background: "color-mix(in srgb, #f59e0b 9%, var(--bg-panel))" }}>
-            <div style={{ fontSize: 11, color: "var(--text)", lineHeight: 1.35, overflowWrap: "anywhere" }}>
-              {t("files.conflictSummary", { count: pendingConflict.conflicts.length, countSuffix: pendingConflict.conflicts.length === 1 ? "" : "s", files: pendingConflict.conflicts.join(", ") })}
-            </div>
-            {pendingConflict.nonReplaceable.length > 0 && (
-              <div style={{ marginTop: 3, fontSize: 10, color: "#f59e0b", lineHeight: 1.35, overflowWrap: "anywhere" }}>
-                {t("files.cannotReplace", { files: pendingConflict.nonReplaceable.join(", ") })}
+          {pendingConflict && (
+            <div
+              role="alert"
+              style={{
+                padding: 7,
+                border: "1px solid color-mix(in srgb, #f59e0b 55%, var(--border))",
+                borderRadius: 4,
+                background: "color-mix(in srgb, #f59e0b 9%, var(--bg-panel))",
+              }}
+            >
+              <div style={{ fontSize: 11, color: "var(--text)", lineHeight: 1.35, overflowWrap: "anywhere" }}>
+                {t("files.conflictSummary", {
+                  count: pendingConflict.conflicts.length,
+                  countSuffix: pendingConflict.conflicts.length === 1 ? "" : "s",
+                  files: pendingConflict.conflicts.join(", "),
+                })}
               </div>
-            )}
-            <div style={{ display: "flex", gap: 5, marginTop: 7 }}>
-              <button type="button" onClick={() => void performUpload(pendingConflict.files, "overwrite", pendingConflict.targetDir ?? cwd)} style={{ height: 22, padding: "0 7px", border: "1px solid #ef4444", borderRadius: 4, background: "transparent", color: "#ef4444", cursor: "pointer", fontSize: 10 }}>
-                {t("files.replace")}
-              </button>
-              <button type="button" onClick={() => void performUpload(pendingConflict.files, "skip", pendingConflict.targetDir ?? cwd)} style={{ height: 22, padding: "0 7px", border: "1px solid var(--border)", borderRadius: 4, background: "var(--bg-panel)", color: "var(--text)", cursor: "pointer", fontSize: 10 }}>
-                {t("files.skipExisting")}
-              </button>
-              <button type="button" onClick={() => setPendingConflict(null)} style={{ height: 22, padding: "0 7px", border: "none", borderRadius: 4, background: "transparent", color: "var(--text-muted)", cursor: "pointer", fontSize: 10 }}>
-                {t("files.cancel")}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {uploadError && (
-          <div role="alert" style={{ display: "flex", alignItems: "flex-start", gap: 6, fontSize: 11, lineHeight: 1.35, color: "#f87171" }}>
-            <span style={{ minWidth: 0, flex: 1, overflowWrap: "anywhere" }}>{uploadError}</span>
-            <DismissButton onClick={() => setUploadError(null)} title={t("files.dismissError")} />
-          </div>
-        )}
-
-        {uploadSummary && (
-          <div aria-live="polite">
-            <div style={{ display: "flex", alignItems: "center", gap: 8, minHeight: 22, fontSize: 11 }}>
-              <div style={{ minWidth: 0, flex: 1, display: "flex", alignItems: "center", gap: 8 }}>
-                {uploadSummary.uploaded.length > 0 && (
-                  <span title={`${uploadSummary.uploaded.length} uploaded`} aria-label={`${uploadSummary.uploaded.length} uploaded`} style={{ display: "flex", alignItems: "center", gap: 3, color: "#22c55e" }}>
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <path d="m5 12 4 4L19 6" />
-                    </svg>
-                    <span>{uploadSummary.uploaded.length}</span>
-                  </span>
-                )}
-                {uploadSummary.skipped.length > 0 && (
-                  <span title={`${uploadSummary.skipped.length} skipped`} aria-label={`${uploadSummary.skipped.length} skipped`} style={{ display: "flex", alignItems: "center", gap: 3, color: "var(--text-dim)" }}>
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-                      <circle cx="12" cy="12" r="9" />
-                      <path d="M8 12h8" />
-                    </svg>
-                    <span>{uploadSummary.skipped.length}</span>
-                  </span>
-                )}
-                {uploadSummary.errors.length > 0 && (
-                  <span title={`${uploadSummary.errors.length} failed`} aria-label={`${uploadSummary.errors.length} failed`} style={{ display: "flex", alignItems: "center", gap: 3, color: "#f87171" }}>
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <path d="M12 3 2.5 20h19L12 3Z" />
-                      <path d="M12 9v4" />
-                      <path d="M12 17h.01" />
-                    </svg>
-                    <span>{uploadSummary.errors.length}</span>
-                  </span>
-                )}
-              </div>
-              {uploadSummary.uploaded.length > 0 && onAtMentions && (
+              {pendingConflict.nonReplaceable.length > 0 && (
+                <div
+                  style={{ marginTop: 3, fontSize: 10, color: "#f59e0b", lineHeight: 1.35, overflowWrap: "anywhere" }}
+                >
+                  {t("files.cannotReplace", { files: pendingConflict.nonReplaceable.join(", ") })}
+                </div>
+              )}
+              <div style={{ display: "flex", gap: 5, marginTop: 7 }}>
                 <button
                   type="button"
-                  onClick={addUploadedFilesToChat}
-                  title={uploadSummary.uploaded.length === 1 ? t("files.addUploadedFile") : t("files.addAllUploadedFiles")}
-                  aria-label={uploadSummary.uploaded.length === 1 ? t("files.addUploadedFile") : t("files.addAllUploadedFiles")}
-                  style={{ height: 22, padding: "0 7px", display: "flex", alignItems: "center", justifyContent: "center", gap: 4, flexShrink: 0, border: "1px solid var(--border)", borderRadius: 4, background: "var(--bg-panel)", color: "var(--accent)", cursor: "pointer", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap" }}
+                  onClick={() =>
+                    void performUpload(pendingConflict.files, "overwrite", pendingConflict.targetDir ?? cwd)
+                  }
+                  style={{
+                    height: 22,
+                    padding: "0 7px",
+                    border: "1px solid #ef4444",
+                    borderRadius: 4,
+                    background: "transparent",
+                    color: "#ef4444",
+                    cursor: "pointer",
+                    fontSize: 10,
+                  }}
                 >
-                  <MentionIcon />
-                  {t("files.mention")}
+                  {t("files.replace")}
                 </button>
-              )}
-              <DismissButton onClick={() => setUploadSummary(null)} title={t("files.dismissUploadResults")} />
-            </div>
-            {uploadSummary.errors.map((item) => (
-              <div key={item.name} title={item.error} style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 3, minWidth: 0, fontSize: 10, color: "#f87171" }}>
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }} aria-hidden="true">
-                  <circle cx="12" cy="12" r="9" />
-                  <path d="M12 8v5" />
-                  <path d="M12 17h.01" />
-                </svg>
-                <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.name}</span>
+                <button
+                  type="button"
+                  onClick={() => void performUpload(pendingConflict.files, "skip", pendingConflict.targetDir ?? cwd)}
+                  style={{
+                    height: 22,
+                    padding: "0 7px",
+                    border: "1px solid var(--border)",
+                    borderRadius: 4,
+                    background: "var(--bg-panel)",
+                    color: "var(--text)",
+                    cursor: "pointer",
+                    fontSize: 10,
+                  }}
+                >
+                  {t("files.skipExisting")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPendingConflict(null)}
+                  style={{
+                    height: 22,
+                    padding: "0 7px",
+                    border: "none",
+                    borderRadius: 4,
+                    background: "transparent",
+                    color: "var(--text-muted)",
+                    cursor: "pointer",
+                    fontSize: 10,
+                  }}
+                >
+                  {t("files.cancel")}
+                </button>
               </div>
-            ))}
-          </div>
-        )}
+            </div>
+          )}
+
+          {uploadError && (
+            <div
+              role="alert"
+              style={{
+                display: "flex",
+                alignItems: "flex-start",
+                gap: 6,
+                fontSize: 11,
+                lineHeight: 1.35,
+                color: "#f87171",
+              }}
+            >
+              <span style={{ minWidth: 0, flex: 1, overflowWrap: "anywhere" }}>{uploadError}</span>
+              <DismissButton onClick={() => setUploadError(null)} title={t("files.dismissError")} />
+            </div>
+          )}
+
+          {uploadSummary && (
+            <div aria-live="polite">
+              <div style={{ display: "flex", alignItems: "center", gap: 8, minHeight: 22, fontSize: 11 }}>
+                <div style={{ minWidth: 0, flex: 1, display: "flex", alignItems: "center", gap: 8 }}>
+                  {uploadSummary.uploaded.length > 0 && (
+                    <span
+                      title={`${uploadSummary.uploaded.length} uploaded`}
+                      aria-label={`${uploadSummary.uploaded.length} uploaded`}
+                      style={{ display: "flex", alignItems: "center", gap: 3, color: "#22c55e" }}
+                    >
+                      <svg
+                        width="13"
+                        height="13"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2.4"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                      >
+                        <path d="m5 12 4 4L19 6" />
+                      </svg>
+                      <span>{uploadSummary.uploaded.length}</span>
+                    </span>
+                  )}
+                  {uploadSummary.skipped.length > 0 && (
+                    <span
+                      title={`${uploadSummary.skipped.length} skipped`}
+                      aria-label={`${uploadSummary.skipped.length} skipped`}
+                      style={{ display: "flex", alignItems: "center", gap: 3, color: "var(--text-dim)" }}
+                    >
+                      <svg
+                        width="13"
+                        height="13"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        aria-hidden="true"
+                      >
+                        <circle cx="12" cy="12" r="9" />
+                        <path d="M8 12h8" />
+                      </svg>
+                      <span>{uploadSummary.skipped.length}</span>
+                    </span>
+                  )}
+                  {uploadSummary.errors.length > 0 && (
+                    <span
+                      title={`${uploadSummary.errors.length} failed`}
+                      aria-label={`${uploadSummary.errors.length} failed`}
+                      style={{ display: "flex", alignItems: "center", gap: 3, color: "#f87171" }}
+                    >
+                      <svg
+                        width="13"
+                        height="13"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                      >
+                        <path d="M12 3 2.5 20h19L12 3Z" />
+                        <path d="M12 9v4" />
+                        <path d="M12 17h.01" />
+                      </svg>
+                      <span>{uploadSummary.errors.length}</span>
+                    </span>
+                  )}
+                </div>
+                {uploadSummary.uploaded.length > 0 && onAtMentions && (
+                  <button
+                    type="button"
+                    onClick={addUploadedFilesToChat}
+                    title={
+                      uploadSummary.uploaded.length === 1 ? t("files.addUploadedFile") : t("files.addAllUploadedFiles")
+                    }
+                    aria-label={
+                      uploadSummary.uploaded.length === 1 ? t("files.addUploadedFile") : t("files.addAllUploadedFiles")
+                    }
+                    style={{
+                      height: 22,
+                      padding: "0 7px",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 4,
+                      flexShrink: 0,
+                      border: "1px solid var(--border)",
+                      borderRadius: 4,
+                      background: "var(--bg-panel)",
+                      color: "var(--accent)",
+                      cursor: "pointer",
+                      fontSize: 11,
+                      fontWeight: 600,
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    <MentionIcon />
+                    {t("files.mention")}
+                  </button>
+                )}
+                <DismissButton onClick={() => setUploadSummary(null)} title={t("files.dismissUploadResults")} />
+              </div>
+              {uploadSummary.errors.map((item) => (
+                <div
+                  key={item.name}
+                  title={item.error}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 4,
+                    marginTop: 3,
+                    minWidth: 0,
+                    fontSize: 10,
+                    color: "#f87171",
+                  }}
+                >
+                  <svg
+                    width="11"
+                    height="11"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    style={{ flexShrink: 0 }}
+                    aria-hidden="true"
+                  >
+                    <circle cx="12" cy="12" r="9" />
+                    <path d="M12 8v5" />
+                    <path d="M12 17h.01" />
+                  </svg>
+                  <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {item.name}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
       {fileSearchOpen && (
-      <div style={{ padding: "6px 8px", borderBottom: "1px solid var(--border)" }}>
-        <div style={{ position: "relative" }}>
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", color: "var(--text-dim)", pointerEvents: "none" }}>
-            <circle cx="11" cy="11" r="7" /><path d="m20 20-4-4" />
-          </svg>
-          <input
-            ref={searchInputRef}
-            value={searchQuery}
-            onChange={(event) => setSearchQuery(event.target.value)}
-            onKeyDown={(event) => { if (event.key === "Escape") onFileSearchOpenChange?.(false); }}
-            placeholder={t("sidebar.searchFilesPlaceholder")}
-            aria-label={t("sidebar.searchFiles")}
-            style={{ width: "100%", boxSizing: "border-box", padding: "6px 24px", border: "1px solid var(--border)", borderRadius: 5, outline: "none", background: "var(--bg)", color: "var(--text)", fontFamily: "var(--font-mono)", fontSize: 11 }}
-          />
-          {searchQuery && (
-            <button
-              type="button"
-              onClick={() => setSearchQuery("")}
-              title={t("sidebar.clearSearch")}
-              aria-label={t("sidebar.clearSearch")}
-              style={{ position: "absolute", right: 4, top: "50%", transform: "translateY(-50%)", display: "flex", alignItems: "center", justifyContent: "center", width: 18, height: 18, padding: 0, border: "none", borderRadius: 4, background: "none", color: "var(--text-dim)", cursor: "pointer" }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-hover)"; e.currentTarget.style.color = "var(--text)"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = "none"; e.currentTarget.style.color = "var(--text-dim)"; }}
+        <div style={{ padding: "6px 8px", borderBottom: "1px solid var(--border)" }}>
+          <div style={{ position: "relative" }}>
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+              style={{
+                position: "absolute",
+                left: 8,
+                top: "50%",
+                transform: "translateY(-50%)",
+                color: "var(--text-dim)",
+                pointerEvents: "none",
+              }}
             >
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M18 6 6 18" /><path d="m6 6 12 12" />
-              </svg>
-            </button>
-          )}
-        </div>
-        {hasSearchQuery && (
-          <div style={{ paddingTop: 3 }}>
-            {searchLoading && <div role="status" style={{ padding: "6px 2px", fontSize: 10, color: "var(--text-dim)" }}>{t("sidebar.searchingFiles")}</div>}
-            {!searchLoading && searchError && <div role="alert" style={{ padding: "6px 2px", fontSize: 10, color: "#f87171" }}>{t("i18n.networkError")}</div>}
-            {!searchLoading && !searchError && searchPaths.length === 0 && <div style={{ padding: "6px 2px", fontSize: 10, color: "var(--text-dim)" }}>{t("sidebar.noMatchingFiles")}</div>}
-            {!searchLoading && !searchError && searchPaths.length > 0 && (
-              <div>
-                {searchRoots.map((node) => (
-                  <TreeNode
-                    key={`${searchQuery}:${node.fullPath}`}
-                    node={node}
-                    depth={0}
-                    cwd={cwd}
-                    onOpenFile={onOpenFile}
-                    onAtMention={onAtMention}
-                    expandedPaths={searchExpanded}
-                    onToggleExpanded={(fullPath, open) => {
-                      setSearchExpanded((prev) => {
-                        const next = new Set(prev);
-                        if (open) next.add(fullPath); else next.delete(fullPath);
-                        return next;
-                      });
-                    }}
-                    highlightedPaths={highlightedPaths}
-                    gitStatusByPath={gitStatusByPath}
-                    changedDirectoryPaths={changedDirectoryPaths}
-                    t={t}
-                  />
-                ))}
-              </div>
+              <circle cx="11" cy="11" r="7" />
+              <path d="m20 20-4-4" />
+            </svg>
+            <input
+              ref={searchInputRef}
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") onFileSearchOpenChange?.(false);
+              }}
+              placeholder={t("sidebar.searchFilesPlaceholder")}
+              aria-label={t("sidebar.searchFiles")}
+              style={{
+                width: "100%",
+                boxSizing: "border-box",
+                padding: "6px 24px",
+                border: "1px solid var(--border)",
+                borderRadius: 5,
+                outline: "none",
+                background: "var(--bg)",
+                color: "var(--text)",
+                fontFamily: "var(--font-mono)",
+                fontSize: 11,
+              }}
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery("")}
+                title={t("sidebar.clearSearch")}
+                aria-label={t("sidebar.clearSearch")}
+                style={{
+                  position: "absolute",
+                  right: 4,
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  width: 18,
+                  height: 18,
+                  padding: 0,
+                  border: "none",
+                  borderRadius: 4,
+                  background: "none",
+                  color: "var(--text-dim)",
+                  cursor: "pointer",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "var(--bg-hover)";
+                  e.currentTarget.style.color = "var(--text)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "none";
+                  e.currentTarget.style.color = "var(--text-dim)";
+                }}
+              >
+                <svg
+                  width="10"
+                  height="10"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.4"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M18 6 6 18" />
+                  <path d="m6 6 12 12" />
+                </svg>
+              </button>
             )}
           </div>
-        )}
-      </div>
+          {hasSearchQuery && (
+            <div style={{ paddingTop: 3 }}>
+              {searchLoading && (
+                <div role="status" style={{ padding: "6px 2px", fontSize: 10, color: "var(--text-dim)" }}>
+                  {t("sidebar.searchingFiles")}
+                </div>
+              )}
+              {!searchLoading && searchError && (
+                <div role="alert" style={{ padding: "6px 2px", fontSize: 10, color: "#f87171" }}>
+                  {t("i18n.networkError")}
+                </div>
+              )}
+              {!searchLoading && !searchError && searchPaths.length === 0 && (
+                <div style={{ padding: "6px 2px", fontSize: 10, color: "var(--text-dim)" }}>
+                  {t("sidebar.noMatchingFiles")}
+                </div>
+              )}
+              {!searchLoading && !searchError && searchPaths.length > 0 && (
+                <div>
+                  {searchRoots.map((node) => (
+                    <TreeNode
+                      key={`${searchQuery}:${node.fullPath}`}
+                      node={node}
+                      depth={0}
+                      cwd={cwd}
+                      onOpenFile={onOpenFile}
+                      onAtMention={onAtMention}
+                      expandedPaths={searchExpanded}
+                      onToggleExpanded={(fullPath, open) => {
+                        setSearchExpanded((prev) => {
+                          const next = new Set(prev);
+                          if (open) next.add(fullPath);
+                          else next.delete(fullPath);
+                          return next;
+                        });
+                      }}
+                      highlightedPaths={highlightedPaths}
+                      gitStatusByPath={gitStatusByPath}
+                      changedDirectoryPaths={changedDirectoryPaths}
+                      t={t}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       )}
 
       {!changesCollapsed && gitFiles.length > 0 && (
@@ -1270,11 +1755,13 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
             })}
             style={{ display: "flex", alignItems: "center", gap: 6, height: 24, padding: "0 10px", fontSize: 12 }}
           >
-            <span style={{ color: "var(--text-dim)" }}>
-              {t("files.changedCount", { count: gitFiles.length })}
+            <span style={{ color: "var(--text-dim)" }}>{t("files.changedCount", { count: gitFiles.length })}</span>
+            <span style={{ color: GIT_STATUS_COLORS.added, fontFamily: "var(--font-mono)" }}>
+              +{gitLineStats.additions}
             </span>
-            <span style={{ color: GIT_STATUS_COLORS.added, fontFamily: "var(--font-mono)" }}>+{gitLineStats.additions}</span>
-            <span style={{ color: GIT_STATUS_COLORS.deleted, fontFamily: "var(--font-mono)" }}>-{gitLineStats.deletions}</span>
+            <span style={{ color: GIT_STATUS_COLORS.deleted, fontFamily: "var(--font-mono)" }}>
+              -{gitLineStats.deletions}
+            </span>
           </div>
           {gitFiles.map((status) => (
             <ChangeRow
@@ -1293,26 +1780,94 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
         <div style={{ padding: "2px 4px" }}>
           <div style={{ display: "flex", gap: 4, padding: "2px 4px 4px", borderBottom: "1px solid var(--border)" }}>
             <button
-              onClick={() => { setCreating({ type: "file", dir: cwd }); setCreatingName(""); }}
+              onClick={() => {
+                setCreating({ type: "file", dir: cwd });
+                setCreatingName("");
+              }}
               title={t("files.newFile")}
-              style={{ flex: 1, height: 22, border: "1px solid var(--border)", borderRadius: 4, background: "var(--bg-panel)", color: "var(--text-muted)", cursor: "pointer", fontSize: 11, display: "flex", alignItems: "center", justifyContent: "center", gap: 3, whiteSpace: "nowrap" }}
+              style={{
+                flex: 1,
+                height: 22,
+                border: "1px solid var(--border)",
+                borderRadius: 4,
+                background: "var(--bg-panel)",
+                color: "var(--text-muted)",
+                cursor: "pointer",
+                fontSize: 11,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 3,
+                whiteSpace: "nowrap",
+              }}
             >
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+              <svg
+                width="11"
+                height="11"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <path d="M14 2v6h6" />
+              </svg>
               {t("files.newFile")}
             </button>
             <button
-              onClick={() => { setCreating({ type: "dir", dir: cwd }); setCreatingName(""); }}
+              onClick={() => {
+                setCreating({ type: "dir", dir: cwd });
+                setCreatingName("");
+              }}
               title={t("files.newFolder")}
-              style={{ flex: 1, height: 22, border: "1px solid var(--border)", borderRadius: 4, background: "var(--bg-panel)", color: "var(--text-muted)", cursor: "pointer", fontSize: 11, display: "flex", alignItems: "center", justifyContent: "center", gap: 3, whiteSpace: "nowrap" }}
+              style={{
+                flex: 1,
+                height: 22,
+                border: "1px solid var(--border)",
+                borderRadius: 4,
+                background: "var(--bg-panel)",
+                color: "var(--text-muted)",
+                cursor: "pointer",
+                fontSize: 11,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 3,
+                whiteSpace: "nowrap",
+              }}
             >
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>
+              <svg
+                width="11"
+                height="11"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />
+              </svg>
               {t("files.newFolder")}
             </button>
           </div>
 
           {contextMenu && (
             <div
-              style={{ position: "fixed", left: contextMenu.x, top: contextMenu.y, zIndex: 1000, background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: 6, boxShadow: "0 4px 12px rgba(0,0,0,0.2)", padding: 4, minWidth: 120 }}
+              style={{
+                position: "fixed",
+                left: contextMenu.x,
+                top: contextMenu.y,
+                zIndex: 1000,
+                background: "var(--bg-panel)",
+                border: "1px solid var(--border)",
+                borderRadius: 6,
+                boxShadow: "0 4px 12px rgba(0,0,0,0.2)",
+                padding: 4,
+                minWidth: 120,
+              }}
               onClick={(e) => e.stopPropagation()}
             >
               {contextMenu.node.isDir && (
@@ -1327,13 +1882,46 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
                       if (!uploadBusy) uploadInputRef.current?.click();
                     }}
                   />
-                  <ContextMenuButton label={t("files.newFile")} color="var(--text)" onClick={() => { setCreating({ type: "file", dir: contextMenu.node.fullPath }); setCreatingName(""); setContextMenu(null); }} />
-                  <ContextMenuButton label={t("files.newFolder")} color="var(--text)" onClick={() => { setCreating({ type: "dir", dir: contextMenu.node.fullPath }); setCreatingName(""); setContextMenu(null); }} />
+                  <ContextMenuButton
+                    label={t("files.newFile")}
+                    color="var(--text)"
+                    onClick={() => {
+                      setCreating({ type: "file", dir: contextMenu.node.fullPath });
+                      setCreatingName("");
+                      setContextMenu(null);
+                    }}
+                  />
+                  <ContextMenuButton
+                    label={t("files.newFolder")}
+                    color="var(--text)"
+                    onClick={() => {
+                      setCreating({ type: "dir", dir: contextMenu.node.fullPath });
+                      setCreatingName("");
+                      setContextMenu(null);
+                    }}
+                  />
                   <div style={{ height: 1, background: "var(--border)", margin: "2px 0" }} />
                 </>
               )}
-              <ContextMenuButton label={t("common.rename")} color="var(--text)" onClick={() => { const n = contextMenu.node; setRenaming({ oldPath: n.fullPath, oldName: n.name }); setRenamingName(n.name); setContextMenu(null); }} />
-              <ContextMenuButton label={t("common.delete")} color="#f87171" onClick={() => { const n = contextMenu.node; setContextMenu(null); if (window.confirm(`删除 ${n.name}？`)) handleDelete(n.fullPath); }} />
+              <ContextMenuButton
+                label={t("common.rename")}
+                color="var(--text)"
+                onClick={() => {
+                  const n = contextMenu.node;
+                  setRenaming({ oldPath: n.fullPath, oldName: n.name });
+                  setRenamingName(n.name);
+                  setContextMenu(null);
+                }}
+              />
+              <ContextMenuButton
+                label={t("common.delete")}
+                color="#f87171"
+                onClick={() => {
+                  const n = contextMenu.node;
+                  setContextMenu(null);
+                  if (window.confirm(`删除 ${n.name}？`)) handleDelete(n.fullPath);
+                }}
+              />
             </div>
           )}
 
@@ -1347,55 +1935,86 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
             </div>
           ) : (
             <>
-            {creating && creating.dir === cwd && (
-              <div style={{ paddingLeft: 8, paddingRight: 4, height: 24, display: "flex", alignItems: "center", gap: 4 }}>
-                <span style={{ fontSize: 12, flexShrink: 0 }}>{creating.type === "dir" ? "\u{1F4C1}" : "\u{1F4C4}"}</span>
-                <input
-                  autoFocus
-                  value={creatingName}
-                  onChange={(e) => setCreatingName(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter") handleCreate(); if (e.key === "Escape") { setCreating(null); setCreatingName(""); } }}
-                  onBlur={handleCreate}
-                  placeholder={creating.type === "dir" ? "folder name" : "file name"}
-                  style={{ flex: 1, minWidth: 0, height: 18, border: "1px solid var(--accent)", borderRadius: 3, background: "var(--bg)", color: "var(--text)", fontSize: 11, padding: "0 4px", outline: "none" }}
-                  onClick={(e) => e.stopPropagation()}
+              {creating && creating.dir === cwd && (
+                <div
+                  style={{ paddingLeft: 8, paddingRight: 4, height: 24, display: "flex", alignItems: "center", gap: 4 }}
+                >
+                  <span style={{ fontSize: 12, flexShrink: 0 }}>
+                    {creating.type === "dir" ? "\u{1F4C1}" : "\u{1F4C4}"}
+                  </span>
+                  <input
+                    autoFocus
+                    value={creatingName}
+                    onChange={(e) => setCreatingName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleCreate();
+                      if (e.key === "Escape") {
+                        setCreating(null);
+                        setCreatingName("");
+                      }
+                    }}
+                    onBlur={handleCreate}
+                    placeholder={creating.type === "dir" ? "folder name" : "file name"}
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      height: 18,
+                      border: "1px solid var(--accent)",
+                      borderRadius: 3,
+                      background: "var(--bg)",
+                      color: "var(--text)",
+                      fontSize: 11,
+                      padding: "0 4px",
+                      outline: "none",
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                </div>
+              )}
+              {roots.map((node) => (
+                <TreeNode
+                  key={node.fullPath}
+                  node={node}
+                  depth={0}
+                  cwd={cwd}
+                  remote={remote}
+                  onOpenFile={onOpenFile}
+                  onAtMention={onAtMention}
+                  expandedPaths={expandedPaths}
+                  onToggleExpanded={handleToggleExpanded}
+                  refreshToken={refreshToken}
+                  highlightedPaths={highlightedPaths}
+                  gitStatusByPath={gitStatusByPath}
+                  changedDirectoryPaths={changedDirectoryPaths}
+                  onContextMenu={(e, node) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setContextMenu({ x: e.clientX, y: e.clientY, node });
+                  }}
+                  renamingPath={renaming?.oldPath ?? null}
+                  renamingName={renamingName}
+                  onRenamingNameChange={setRenamingName}
+                  onRenamingSubmit={handleRename}
+                  onRenamingCancel={() => {
+                    setRenaming(null);
+                    setRenamingName("");
+                  }}
+                  creating={creating}
+                  creatingName={creatingName}
+                  onCreateNameChange={setCreatingName}
+                  onCreateSubmit={handleCreate}
+                  onCreateCancel={() => {
+                    setCreating(null);
+                    setCreatingName("");
+                  }}
+                  t={t}
                 />
-              </div>
-            )}
-            {roots.map((node) => (
-              <TreeNode
-                key={node.fullPath}
-                node={node}
-                depth={0}
-                cwd={cwd}
-                remote={remote}
-                onOpenFile={onOpenFile}
-                onAtMention={onAtMention}
-                expandedPaths={expandedPaths}
-                onToggleExpanded={handleToggleExpanded}
-                refreshToken={refreshToken}
-                highlightedPaths={highlightedPaths}
-                gitStatusByPath={gitStatusByPath}
-                changedDirectoryPaths={changedDirectoryPaths}
-                onContextMenu={(e, node) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, node }); }}
-                renamingPath={renaming?.oldPath ?? null}
-                renamingName={renamingName}
-                onRenamingNameChange={setRenamingName}
-                onRenamingSubmit={handleRename}
-                onRenamingCancel={() => { setRenaming(null); setRenamingName(""); }}
-                creating={creating}
-                creatingName={creatingName}
-                onCreateNameChange={setCreatingName}
-                onCreateSubmit={handleCreate}
-                onCreateCancel={() => { setCreating(null); setCreatingName(""); }}
-                t={t}
-              />
-            ))}
+              ))}
             </>
           )}
           {!loading && !error && roots.length === 0 && (
             <div style={{ padding: "8px 12px", fontSize: 11, color: "var(--text-dim)" }}>
-              {remote ? t("files.noFiles") : (cwd && cwd !== "/" ? t("files.noFiles") : "请先选择一个项目或目录")}
+              {remote ? t("files.noFiles") : cwd && cwd !== "/" ? t("files.noFiles") : "请先选择一个项目或目录"}
             </div>
           )}
         </div>

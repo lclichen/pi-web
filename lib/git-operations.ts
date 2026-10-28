@@ -41,11 +41,7 @@ export interface GitCommitResult {
   error?: string;
 }
 
-export async function gitCommit(
-  cwd: string,
-  message: string,
-  files?: string[],
-): Promise<GitCommitResult> {
+export async function gitCommit(cwd: string, message: string, files?: string[]): Promise<GitCommitResult> {
   const access = await checkGitAccess(cwd);
   if (!access.ok) return { success: false, error: access.error };
 
@@ -163,10 +159,15 @@ export async function getGitBranchInfo(cwd: string): Promise<GitBranchInfo> {
     try {
       current = (await git(repoRoot, ["rev-parse", "--abbrev-ref", "HEAD"])) || null;
       if (current === "HEAD") current = null;
-    } catch { /* detached HEAD */ }
+    } catch {
+      /* detached HEAD */
+    }
 
     const rawBranches = await git(repoRoot, ["branch", "--list", "--format=%(refname:short)"]);
-    const all = rawBranches.split("\n").map((b) => b.trim()).filter(Boolean);
+    const all = rawBranches
+      .split("\n")
+      .map((b) => b.trim())
+      .filter(Boolean);
 
     let ahead = 0;
     let behind = 0;
@@ -176,7 +177,9 @@ export async function getGitBranchInfo(cwd: string): Promise<GitBranchInfo> {
       try {
         const trackingRaw = await git(repoRoot, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]);
         tracking = trackingRaw || null;
-      } catch { /* no upstream */ }
+      } catch {
+        /* no upstream */
+      }
 
       if (tracking) {
         try {
@@ -184,7 +187,9 @@ export async function getGitBranchInfo(cwd: string): Promise<GitBranchInfo> {
           const parts = counts.split(/\s+/).filter(Boolean);
           behind = parseInt(parts[0] ?? "0", 10) || 0;
           ahead = parseInt(parts[1] ?? "0", 10) || 0;
-        } catch { /* counts failed */ }
+        } catch {
+          /* counts failed */
+        }
       }
     }
 
@@ -258,7 +263,9 @@ export async function gitReviewDiff(cwd: string): Promise<{ ok: boolean; diff?: 
   if (!access.ok) return { ok: false, error: access.error };
   const repoRoot = access.repoRoot!;
   try {
-    const hasHead = await git(repoRoot, ["rev-parse", "--verify", "HEAD"]).then(() => true).catch(() => false);
+    const hasHead = await git(repoRoot, ["rev-parse", "--verify", "HEAD"])
+      .then(() => true)
+      .catch(() => false);
     let diff: string;
     if (hasHead) {
       diff = await git(repoRoot, ["diff", "HEAD"]);

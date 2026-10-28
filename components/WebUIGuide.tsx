@@ -47,7 +47,14 @@ const CONFIG_LINKS: Array<{ section: SettingsSection; key: string; icon: string 
 
 const STEP_STORAGE_KEY = "webui-guide-step";
 
-export function WebUIGuide({ open, onClose, onOpenSettings, onStartQuickSession, onJumpOut, onFinished }: WebUIGuideProps) {
+export function WebUIGuide({
+  open,
+  onClose,
+  onOpenSettings,
+  onStartQuickSession,
+  onJumpOut,
+  onFinished,
+}: WebUIGuideProps) {
   const { t, locale, setLocale } = useI18n();
   const [step, setStep] = useState(0);
 
@@ -58,7 +65,9 @@ export function WebUIGuide({ open, onClose, onOpenSettings, onStartQuickSession,
     try {
       const saved = Number(window.localStorage.getItem(STEP_STORAGE_KEY));
       if (Number.isInteger(saved) && saved >= 0 && saved < STEP_KEYS.length - 1) next = saved;
-    } catch { /* localStorage 不可用则从头开始 */ }
+    } catch {
+      /* localStorage 不可用则从头开始 */
+    }
     setStep(next);
   }, [open]);
 
@@ -66,7 +75,11 @@ export function WebUIGuide({ open, onClose, onOpenSettings, onStartQuickSession,
   // "完成"步才清除——重开即续，无需重走。
   useEffect(() => {
     if (!open || step >= STEP_KEYS.length - 1) return;
-    try { window.localStorage.setItem(STEP_STORAGE_KEY, String(step)); } catch { /* 忽略 */ }
+    try {
+      window.localStorage.setItem(STEP_STORAGE_KEY, String(step));
+    } catch {
+      /* 忽略 */
+    }
   }, [open, step]);
 
   if (!open) return null;
@@ -76,25 +89,40 @@ export function WebUIGuide({ open, onClose, onOpenSettings, onStartQuickSession,
     try {
       window.localStorage.removeItem(STEP_STORAGE_KEY);
       window.localStorage.setItem("webui-guide-done", "1");
-    } catch { /* 忽略 */ }
+    } catch {
+      /* 忽略 */
+    }
     onFinished?.();
     onClose();
   };
 
   return (
     <div
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
       style={{
-        position: "fixed", inset: 0, zIndex: 1180, display: "flex",
-        alignItems: "center", justifyContent: "center",
-        background: "rgba(0,0,0,0.45)", padding: 16,
+        position: "fixed",
+        inset: 0,
+        zIndex: 1180,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "rgba(0,0,0,0.45)",
+        padding: 16,
       }}
     >
       <div
         style={{
-          width: "min(560px, 94vw)", maxHeight: "86vh", display: "flex", flexDirection: "column",
-          background: "var(--bg-panel)", border: "1px solid var(--border)",
-          borderRadius: 12, boxShadow: "0 12px 40px rgba(0,0,0,0.35)", overflow: "hidden",
+          width: "min(560px, 94vw)",
+          maxHeight: "86vh",
+          display: "flex",
+          flexDirection: "column",
+          background: "var(--bg-panel)",
+          border: "1px solid var(--border)",
+          borderRadius: 12,
+          boxShadow: "0 12px 40px rgba(0,0,0,0.35)",
+          overflow: "hidden",
         }}
       >
         {/* 头部：标题 + 进度点 + 关闭 */}
@@ -110,15 +138,26 @@ export function WebUIGuide({ open, onClose, onOpenSettings, onStartQuickSession,
             type="button"
             onClick={onClose}
             aria-label="close"
-            style={{ background: "none", border: "none", color: "var(--text-dim)", cursor: "pointer", fontSize: 16, padding: "2px 6px" }}
-          >✕</button>
+            style={{
+              background: "none",
+              border: "none",
+              color: "var(--text-dim)",
+              cursor: "pointer",
+              fontSize: 16,
+              padding: "2px 6px",
+            }}
+          >
+            ✕
+          </button>
         </div>
         <div style={{ display: "flex", gap: 5, padding: "0 18px 10px" }}>
           {STEP_KEYS.map((k, i) => (
             <div
               key={k}
               style={{
-                flex: 1, height: 3, borderRadius: 2,
+                flex: 1,
+                height: 3,
+                borderRadius: 2,
                 background: i <= step ? "var(--accent)" : "var(--border)",
                 transition: "background 0.15s",
               }}
@@ -127,7 +166,9 @@ export function WebUIGuide({ open, onClose, onOpenSettings, onStartQuickSession,
         </div>
 
         {/* 步骤内容 */}
-        <div style={{ padding: "4px 18px 14px", overflowY: "auto", color: "var(--text)", fontSize: 13, lineHeight: 1.75 }}>
+        <div
+          style={{ padding: "4px 18px 14px", overflowY: "auto", color: "var(--text)", fontSize: 13, lineHeight: 1.75 }}
+        >
           {key === "welcome" && (
             <>
               <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 6 }}>{t("guide.welcomeTitle")}</div>
@@ -146,14 +187,18 @@ export function WebUIGuide({ open, onClose, onOpenSettings, onStartQuickSession,
                     type="button"
                     onClick={() => setLocale(opt.id)}
                     style={{
-                      padding: "7px 14px", borderRadius: 7, cursor: "pointer", fontSize: 13,
+                      padding: "7px 14px",
+                      borderRadius: 7,
+                      cursor: "pointer",
+                      fontSize: 13,
                       border: `1px solid ${locale === opt.id ? "var(--accent)" : "var(--border)"}`,
                       background: locale === opt.id ? "var(--bg-selected)" : "var(--bg)",
                       color: locale === opt.id ? "var(--accent)" : "var(--text)",
                       fontWeight: locale === opt.id ? 700 : 400,
                     }}
                   >
-                    {opt.label}{locale === opt.id ? " ✓" : ""}
+                    {opt.label}
+                    {locale === opt.id ? " ✓" : ""}
                   </button>
                 ))}
               </div>
@@ -169,11 +214,23 @@ export function WebUIGuide({ open, onClose, onOpenSettings, onStartQuickSession,
                   <button
                     key={section}
                     type="button"
-                    onClick={() => { onOpenSettings(section); onJumpOut?.(); onClose(); }}
+                    onClick={() => {
+                      onOpenSettings(section);
+                      onJumpOut?.();
+                      onClose();
+                    }}
                     style={{
-                      display: "flex", alignItems: "center", gap: 8, textAlign: "left",
-                      padding: "9px 12px", borderRadius: 8, cursor: "pointer", fontSize: 12.5,
-                      border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text)",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      textAlign: "left",
+                      padding: "9px 12px",
+                      borderRadius: 8,
+                      cursor: "pointer",
+                      fontSize: 12.5,
+                      border: "1px solid var(--border)",
+                      background: "var(--bg)",
+                      color: "var(--text)",
                     }}
                   >
                     <span style={{ fontSize: 16 }}>{icon}</span>
@@ -192,10 +249,18 @@ export function WebUIGuide({ open, onClose, onOpenSettings, onStartQuickSession,
               <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 6 }}>{t("guide.workspaceTitle")}</div>
               <p style={{ margin: "0 0 8px" }}>{t("guide.workspaceBody")}</p>
               <ul style={{ margin: 0, paddingLeft: 18 }}>
-                <li><b>🔧 {t("guide.modeSandbox")}</b> — {t("guide.modeSandboxDesc")}</li>
-                <li><b>🔒 {t("guide.modeSsh")}</b> — {t("guide.modeSshDesc")}</li>
-                <li><b>💻 {t("guide.modeLocal")}</b> — {t("guide.modeLocalDesc")}</li>
-                <li><b>⚡ {t("guide.modeQuick")}</b> — {t("guide.modeQuickDesc")}</li>
+                <li>
+                  <b>🔧 {t("guide.modeSandbox")}</b> — {t("guide.modeSandboxDesc")}
+                </li>
+                <li>
+                  <b>🔒 {t("guide.modeSsh")}</b> — {t("guide.modeSshDesc")}
+                </li>
+                <li>
+                  <b>💻 {t("guide.modeLocal")}</b> — {t("guide.modeLocalDesc")}
+                </li>
+                <li>
+                  <b>⚡ {t("guide.modeQuick")}</b> — {t("guide.modeQuickDesc")}
+                </li>
               </ul>
             </>
           )}
@@ -207,12 +272,23 @@ export function WebUIGuide({ open, onClose, onOpenSettings, onStartQuickSession,
               {onStartQuickSession && (
                 <button
                   type="button"
-                  onClick={() => { onStartQuickSession(); onClose(); }}
-                  style={{
-                    padding: "8px 16px", borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 600,
-                    border: "1px solid var(--accent)", background: "var(--accent)", color: "#fff",
+                  onClick={() => {
+                    onStartQuickSession();
+                    onClose();
                   }}
-                >⚡ {t("guide.startQuickSession")}</button>
+                  style={{
+                    padding: "8px 16px",
+                    borderRadius: 8,
+                    cursor: "pointer",
+                    fontSize: 13,
+                    fontWeight: 600,
+                    border: "1px solid var(--accent)",
+                    background: "var(--accent)",
+                    color: "#fff",
+                  }}
+                >
+                  ⚡ {t("guide.startQuickSession")}
+                </button>
               )}
             </>
           )}
@@ -226,34 +302,61 @@ export function WebUIGuide({ open, onClose, onOpenSettings, onStartQuickSession,
         </div>
 
         {/* 底部导航 */}
-        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 18px 14px", borderTop: "1px solid var(--border)" }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "10px 18px 14px",
+            borderTop: "1px solid var(--border)",
+          }}
+        >
           <button
             type="button"
             onClick={onClose}
             style={{ background: "none", border: "none", color: "var(--text-dim)", cursor: "pointer", fontSize: 12 }}
-          >{t("guide.skip")}</button>
+          >
+            {t("guide.skip")}
+          </button>
           <div style={{ flex: 1 }} />
           {step > 0 && (
             <button
               type="button"
               onClick={() => setStep((s) => Math.max(0, s - 1))}
-              style={{ padding: "7px 14px", borderRadius: 7, cursor: "pointer", fontSize: 12.5, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text)" }}
-            >{t("guide.prev")}</button>
+              style={{
+                padding: "7px 14px",
+                borderRadius: 7,
+                cursor: "pointer",
+                fontSize: 12.5,
+                border: "1px solid var(--border)",
+                background: "var(--bg)",
+                color: "var(--text)",
+              }}
+            >
+              {t("guide.prev")}
+            </button>
           )}
           <button
             type="button"
             onClick={() => (isLast ? finish() : setStep((s) => Math.min(STEP_KEYS.length - 1, s + 1)))}
             style={{
-              padding: "7px 16px", borderRadius: 7, cursor: "pointer", fontSize: 12.5, fontWeight: 600,
-              border: "1px solid var(--accent)", background: "var(--accent)", color: "#fff",
+              padding: "7px 16px",
+              borderRadius: 7,
+              cursor: "pointer",
+              fontSize: 12.5,
+              fontWeight: 600,
+              border: "1px solid var(--accent)",
+              background: "var(--accent)",
+              color: "#fff",
             }}
-          >{isLast ? t("guide.finish") : t("guide.next")}</button>
+          >
+            {isLast ? t("guide.finish") : t("guide.next")}
+          </button>
         </div>
       </div>
     </div>
   );
 }
-
 
 /**
  * "继续操作教学"悬浮胶囊：只在向导经配置卡片把用户送去设置页时出现
@@ -265,18 +368,35 @@ export function WebUIGuideResumePill({ onResume, onDismiss }: { onResume: () => 
   return (
     <div
       style={{
-        position: "fixed", right: 18, bottom: 18, zIndex: 1100,
-        display: "flex", alignItems: "center", gap: 4,
-        background: "var(--bg-panel)", border: "1px solid var(--accent)", borderRadius: 999,
-        padding: "5px 7px 5px 13px", boxShadow: "0 4px 16px rgba(0,0,0,0.28)",
-        fontSize: 12, fontWeight: 600,
+        position: "fixed",
+        right: 18,
+        bottom: 18,
+        zIndex: 1100,
+        display: "flex",
+        alignItems: "center",
+        gap: 4,
+        background: "var(--bg-panel)",
+        border: "1px solid var(--accent)",
+        borderRadius: 999,
+        padding: "5px 7px 5px 13px",
+        boxShadow: "0 4px 16px rgba(0,0,0,0.28)",
+        fontSize: 12,
+        fontWeight: 600,
       }}
     >
       <button
         type="button"
         onClick={onResume}
         title={t("guide.resumePillTitle")}
-        style={{ background: "none", border: "none", cursor: "pointer", color: "var(--accent)", fontSize: 12, fontWeight: 600, padding: "3px 4px" }}
+        style={{
+          background: "none",
+          border: "none",
+          cursor: "pointer",
+          color: "var(--accent)",
+          fontSize: 12,
+          fontWeight: 600,
+          padding: "3px 4px",
+        }}
       >
         ▶ {t("guide.resumePill")}
       </button>
@@ -284,8 +404,17 @@ export function WebUIGuideResumePill({ onResume, onDismiss }: { onResume: () => 
         type="button"
         onClick={onDismiss}
         aria-label="dismiss"
-        style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-dim)", fontSize: 11, padding: "3px 5px" }}
-      >✕</button>
+        style={{
+          background: "none",
+          border: "none",
+          cursor: "pointer",
+          color: "var(--text-dim)",
+          fontSize: 11,
+          padding: "3px 5px",
+        }}
+      >
+        ✕
+      </button>
     </div>
   );
 }

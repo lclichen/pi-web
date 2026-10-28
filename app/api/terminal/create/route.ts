@@ -24,9 +24,6 @@ export async function POST(req: Request) {
     });
     return NextResponse.json({ success: true, data: { sessionId, shell: shell.label } });
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : String(err) },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 400 });
   }
 }

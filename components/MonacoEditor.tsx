@@ -70,7 +70,12 @@ export function MonacoEditor({
     const highlightLine = (lineNumber: number | null) => {
       oldDecorations.set(
         lineNumber
-          ? [{ range: new monaco.Range(lineNumber, 1, lineNumber, 1), options: { isWholeLine: true, className: hoverClass } }]
+          ? [
+              {
+                range: new monaco.Range(lineNumber, 1, lineNumber, 1),
+                options: { isWholeLine: true, className: hoverClass },
+              },
+            ]
           : [],
       );
     };
@@ -121,7 +126,16 @@ export function MonacoEditor({
         onChange={(v) => onChange?.(v ?? "")}
         onMount={onMount}
         loading={
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--text-dim)", fontSize: 12 }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              height: "100%",
+              color: "var(--text-dim)",
+              fontSize: 12,
+            }}
+          >
             加载编辑器…
           </div>
         }
@@ -132,7 +146,7 @@ export function MonacoEditor({
           minimap: { enabled: false },
           scrollBeyondLastLine: false,
           fontSize: 12.5,
-          fontFamily: "var(--font-mono, Menlo, Consolas, \"Courier New\", monospace)",
+          fontFamily: 'var(--font-mono, Menlo, Consolas, "Courier New", monospace)',
           renderLineHighlight: "none",
           // Only the viewer is clickable for references; in edit mode the
           // gutter remains the reference target so text editing is unimpeded.

@@ -47,12 +47,7 @@ import {
 import { setupPushSubscription } from "@/lib/push-client";
 import { getInitialNavigation } from "@/lib/initial-navigation";
 import { rekeyDraft } from "@/lib/draft-store";
-import {
-  clearLastOpen,
-  getLastOpenSession,
-  setLastOpenSession,
-  workspaceKeyOf,
-} from "@/lib/workspace-memory";
+import { clearLastOpen, getLastOpenSession, setLastOpenSession, workspaceKeyOf } from "@/lib/workspace-memory";
 import {
   getDefaultRightPanelWidth,
   getRightPanelMaxWidth,
@@ -74,11 +69,7 @@ import { getSessionFamily } from "@/lib/session-family";
 import { getLastSettingsSection, type SettingsSection } from "@/lib/settings-navigation";
 
 type SessionCopyField = "file" | "id" | "projectDir" | "gitBranch" | "gitWorktree";
-type AutoNameStatus =
-  | { kind: "idle" }
-  | { kind: "naming" }
-  | { kind: "success" }
-  | { kind: "error"; message: string };
+type AutoNameStatus = { kind: "idle" } | { kind: "naming" } | { kind: "success" } | { kind: "error"; message: string };
 
 const TOP_BAR_ICON_BUTTON_SIZE = 36;
 const LANGUAGE_MENU_WIDTH = 176;
@@ -93,8 +84,7 @@ export function AppShell() {
   const searchParams = useSearchParams();
   const [initialNavigation] = useState(() => getInitialNavigation(searchParams));
   const { preference, toggleTheme } = useTheme();
-  const themeLabelKey =
-    preference === "light" ? "theme.light" : preference === "dark" ? "theme.dark" : "theme.auto";
+  const themeLabelKey = preference === "light" ? "theme.light" : preference === "dark" ? "theme.dark" : "theme.auto";
   const { locale, setLocale, t: translate, supportedLocales } = useI18n();
   const isMobile = useIsMobile();
   const isNarrowMobile = useIsNarrowMobile();
@@ -127,9 +117,12 @@ export function AppShell() {
   // 由周期性身份比对（见 visibilitychange）负责发现切换。
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const id = setInterval(() => {
-      void fetch("/api/webauth/touch", { credentials: "same-origin" }).catch(() => {});
-    }, 60 * 60 * 1000);
+    const id = setInterval(
+      () => {
+        void fetch("/api/webauth/touch", { credentials: "same-origin" }).catch(() => {});
+      },
+      60 * 60 * 1000,
+    );
     return () => clearInterval(id);
   }, []);
   // 身份切换检测：窗口重新可见（切回标签页/另一窗口操作过）时比对 /me 的
@@ -192,10 +185,7 @@ export function AppShell() {
   }, []);
   const sessionsWithSelection = useMemo(() => {
     if (!selectedSession) return sessionCatalog;
-    return [
-      ...sessionCatalog.filter((session) => session.id !== selectedSession.id),
-      selectedSession,
-    ];
+    return [...sessionCatalog.filter((session) => session.id !== selectedSession.id), selectedSession];
   }, [selectedSession, sessionCatalog]);
   const activeSessionFamily = useMemo(
     () => getSessionFamily(sessionsWithSelection, selectedSession?.id),
@@ -222,7 +212,9 @@ export function AppShell() {
   const [newSessionProjectLabel, setNewSessionProjectLabel] = useState<string | null>(null);
   const [sessionSpace, setSessionSpace] = useState<"mine" | "host" | "quick">("mine");
   // Web identity (PI_WEB_AUTH): null while loading, {user} when logged in.
-  const [webUser, setWebUser] = useState<{ id: number; username: string; role: "admin" | "user" } | null | "loading">("loading");
+  const [webUser, setWebUser] = useState<{ id: number; username: string; role: "admin" | "user" } | null | "loading">(
+    "loading",
+  );
   // Deployment-wide Lab Training toggle (PI_WEB_LAB_TRAINING seeds the
   // default, seeded from the PI_WEB_LAB_TRAINING startup parameter).
   const [labTrainingEnabled, setLabTrainingEnabled] = useState(true);
@@ -234,13 +226,19 @@ export function AppShell() {
     try {
       // 首次访问（既没完成过、也没中途进度）才自动弹出；有进度的回访者
       // 不再打扰，顶栏按钮或胶囊负责续读。
-      if (!window.localStorage.getItem("webui-guide-done")
-        && !window.localStorage.getItem("webui-guide-step")) setWebGuideOpen(true);
-    } catch { /* localStorage 不可用则不自动弹出 */ }
+      if (!window.localStorage.getItem("webui-guide-done") && !window.localStorage.getItem("webui-guide-step"))
+        setWebGuideOpen(true);
+    } catch {
+      /* localStorage 不可用则不自动弹出 */
+    }
   }, []);
   const closeWebGuide = useCallback(() => {
     setWebGuideOpen(false);
-    try { window.localStorage.setItem("webui-guide-done", "1"); } catch { /* 忽略 */ }
+    try {
+      window.localStorage.setItem("webui-guide-done", "1");
+    } catch {
+      /* 忽略 */
+    }
   }, []);
   const [authEnabled, setAuthEnabled] = useState(true);
   // In-app platform admin panel (all management pages migrated; the legacy
@@ -248,9 +246,11 @@ export function AppShell() {
   const [platformAdminOpen, setPlatformAdminOpen] = useState(false);
   // Sandbox manager dialog: null = closed; bind = project context (optional).
   const [myWorkspaceOpen, setMyWorkspaceOpen] = useState(false);
-  const [sandboxManager, setSandboxManager] = useState<
-    { projectId?: string; projectName?: string; containerId?: number } | null
-  >(null);
+  const [sandboxManager, setSandboxManager] = useState<{
+    projectId?: string;
+    projectName?: string;
+    containerId?: number;
+  } | null>(null);
   const [projectsRefreshKey, setProjectsRefreshKey] = useState(0);
   useEffect(() => {
     fetch("/api/webauth/me")
@@ -295,8 +295,8 @@ export function AppShell() {
   }, [authEnabled, webUser, router]);
   const [newSessionDraftId, setNewSessionDraftId] = useState("initial");
   const activeNewSessionDraftKeyRef = useRef<string | null>(null);
-  const [initialCwdStatus, setInitialCwdStatus] = useState<"idle" | "validating" | "ready" | "error">(
-    () => initialNavigation.requestedCwd ? "validating" : "idle",
+  const [initialCwdStatus, setInitialCwdStatus] = useState<"idle" | "validating" | "ready" | "error">(() =>
+    initialNavigation.requestedCwd ? "validating" : "idle",
   );
   const [initialCwdError, setInitialCwdError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -305,9 +305,11 @@ export function AppShell() {
   const handleSessionScrollPositionChange = useCallback((sessionId: string, position: ChatScrollPosition) => {
     sessionScrollPositionsRef.current.set(sessionId, position);
   }, []);
-  const [searchTarget, setSearchTarget] = useState<{ sessionId: string; entryId: string; blockIndex?: number } | null>(null);
+  const [searchTarget, setSearchTarget] = useState<{ sessionId: string; entryId: string; blockIndex?: number } | null>(
+    null,
+  );
   const handleSearchTargetHandled = useCallback((target: { sessionId: string; entryId: string }) => {
-    setSearchTarget((current) => current === target ? null : current);
+    setSearchTarget((current) => (current === target ? null : current));
   }, []);
   const [explorerRefreshKey, setExplorerRefreshKey] = useState(0);
   const [settingsSection, setSettingsSection] = useState<SettingsSection | null>(null);
@@ -334,7 +336,9 @@ export function AppShell() {
       const next = !prev;
       try {
         window.localStorage.setItem("pi-right-panel-split", next ? "1" : "0");
-      } catch { /* 存储不可用时仅本次会话生效 */ }
+      } catch {
+        /* 存储不可用时仅本次会话生效 */
+      }
       return next;
     });
   }, []);
@@ -344,7 +348,9 @@ export function AppShell() {
       if (!prev) return prev;
       try {
         window.localStorage.setItem("pi-right-panel-split", "0");
-      } catch { /* 同上 */ }
+      } catch {
+        /* 同上 */
+      }
       return false;
     });
   }, []);
@@ -357,29 +363,29 @@ export function AppShell() {
   const sidebarWidthRef = useRef(SIDEBAR_DEFAULT_WIDTH);
   const rightPanelWidthRef = useRef(RIGHT_PANEL_FALLBACK_WIDTH);
   const getResponsiveRightPanelWidth = useCallback(
-    () => typeof window === "undefined"
-      ? RIGHT_PANEL_FALLBACK_WIDTH
-      : getDefaultRightPanelWidth(window.innerWidth),
+    () => (typeof window === "undefined" ? RIGHT_PANEL_FALLBACK_WIDTH : getDefaultRightPanelWidth(window.innerWidth)),
     [],
   );
   const getResponsiveSidebarMaxWidth = useCallback(
-    () => typeof window === "undefined"
-      ? SIDEBAR_MAX_WIDTH
-      : getSidebarMaxWidth({
-        viewportWidth: window.innerWidth,
-        rightPanelOpen,
-        rightPanelWidth: rightPanelWidthRef.current,
-      }),
+    () =>
+      typeof window === "undefined"
+        ? SIDEBAR_MAX_WIDTH
+        : getSidebarMaxWidth({
+            viewportWidth: window.innerWidth,
+            rightPanelOpen,
+            rightPanelWidth: rightPanelWidthRef.current,
+          }),
     [rightPanelOpen],
   );
   const getResponsiveRightPanelMaxWidth = useCallback(
-    () => typeof window === "undefined"
-      ? RIGHT_PANEL_MAX_WIDTH
-      : getRightPanelMaxWidth({
-        viewportWidth: window.innerWidth,
-        sidebarOpen,
-        sidebarWidth: sidebarWidthRef.current,
-      }),
+    () =>
+      typeof window === "undefined"
+        ? RIGHT_PANEL_MAX_WIDTH
+        : getRightPanelMaxWidth({
+            viewportWidth: window.innerWidth,
+            sidebarOpen,
+            sidebarWidth: sidebarWidthRef.current,
+          }),
     [sidebarOpen],
   );
   const sidebarResizer = useResizablePanel({
@@ -412,12 +418,8 @@ export function AppShell() {
     axis: "vertical",
     cssVariable: "--right-split-height",
     defaultWidth: 420,
-    getDefaultWidth: () => (typeof window === "undefined"
-      ? 420
-      : Math.round((window.innerHeight - 120) * 0.55)),
-    getMaxWidth: () => (typeof window === "undefined"
-      ? 2000
-      : Math.max(240, window.innerHeight - 220)),
+    getDefaultWidth: () => (typeof window === "undefined" ? 420 : Math.round((window.innerHeight - 120) * 0.55)),
+    getMaxWidth: () => (typeof window === "undefined" ? 2000 : Math.max(240, window.innerHeight - 220)),
     growthDirection: "down",
     maxWidth: 4000,
     minWidth: 120,
@@ -451,11 +453,14 @@ export function AppShell() {
   const branchLeafChangeFnRef = useRef<((leafId: string | null) => void) | null>(null);
   const sessionHasBranches = hasSessionBranches(branchTree);
 
-  const handleBranchDataChange = useCallback((tree: SessionTreeNode[], activeLeafId: string | null, onLeafChange: (leafId: string | null) => void) => {
-    setBranchTree(tree);
-    setBranchActiveLeafId(activeLeafId);
-    branchLeafChangeFnRef.current = onLeafChange;
-  }, []);
+  const handleBranchDataChange = useCallback(
+    (tree: SessionTreeNode[], activeLeafId: string | null, onLeafChange: (leafId: string | null) => void) => {
+      setBranchTree(tree);
+      setBranchActiveLeafId(activeLeafId);
+      branchLeafChangeFnRef.current = onLeafChange;
+    },
+    [],
+  );
 
   const handleBranchLeafChange = useCallback((leafId: string | null) => {
     branchLeafChangeFnRef.current?.(leafId);
@@ -510,24 +515,33 @@ export function AppShell() {
   }, []);
 
   // Context usage — populated by ChatWindow, displayed in top bar
-  const [contextUsage, setContextUsage] = useState<{ percent: number | null; contextWindow: number; tokens: number | null } | null>(null);
-  const handleContextUsageChange = useCallback((usage: { percent: number | null; contextWindow: number; tokens: number | null } | null) => {
-    setContextUsage(usage);
-  }, []);
+  const [contextUsage, setContextUsage] = useState<{
+    percent: number | null;
+    contextWindow: number;
+    tokens: number | null;
+  } | null>(null);
+  const handleContextUsageChange = useCallback(
+    (usage: { percent: number | null; contextWindow: number; tokens: number | null } | null) => {
+      setContextUsage(usage);
+    },
+    [],
+  );
 
   // Single active panel — only one dropdown open at a time
-  const [activeTopPanel, setActiveTopPanel] = useState<"agents" | "branches" | "system" | "tools" | "session" | "language" | null>(null);
+  const [activeTopPanel, setActiveTopPanel] = useState<
+    "agents" | "branches" | "system" | "tools" | "session" | "language" | null
+  >(null);
   const [topPanelPos, setTopPanelPos] = useState<{ top: number; left: number; width: number } | null>(null);
 
   useEffect(() => {
     if (!sessionHasBranches) {
-      setActiveTopPanel((panel) => panel === "branches" ? null : panel);
+      setActiveTopPanel((panel) => (panel === "branches" ? null : panel));
     }
   }, [sessionHasBranches]);
 
   useEffect(() => {
     if (!hasSubagentSessions) {
-      setActiveTopPanel((panel) => panel === "agents" ? null : panel);
+      setActiveTopPanel((panel) => (panel === "agents" ? null : panel));
     }
   }, [hasSubagentSessions]);
 
@@ -535,35 +549,37 @@ export function AppShell() {
     if (rightPanelFullWidth) setActiveTopPanel(null);
   }, [rightPanelFullWidth]);
 
-  const toggleTopPanel = useCallback((
-    panel: "agents" | "branches" | "system" | "tools" | "session" | "language",
-    keepMobileToolbarOpen = false,
-  ) => {
-    if (isMobile) setSidebarOpen(false);
-    setActiveTopPanel((cur) => cur === panel ? null : panel);
-    if (isMobile && isNarrowMobile && keepMobileToolbarOpen) setMobileToolbarMoreOpen(true);
-  }, [isMobile, isNarrowMobile]);
+  const toggleTopPanel = useCallback(
+    (panel: "agents" | "branches" | "system" | "tools" | "session" | "language", keepMobileToolbarOpen = false) => {
+      if (isMobile) setSidebarOpen(false);
+      setActiveTopPanel((cur) => (cur === panel ? null : panel));
+      if (isMobile && isNarrowMobile && keepMobileToolbarOpen) setMobileToolbarMoreOpen(true);
+    },
+    [isMobile, isNarrowMobile],
+  );
 
-  const handleSystemInfoToggle = useCallback((
-    panel: "system" | "tools",
-    keepMobileToolbarOpen = false,
-  ) => {
-    const opening = activeTopPanel !== panel;
-    toggleTopPanel(panel, keepMobileToolbarOpen);
-    if (!opening || systemInfoLoading) return;
+  const handleSystemInfoToggle = useCallback(
+    (panel: "system" | "tools", keepMobileToolbarOpen = false) => {
+      const opening = activeTopPanel !== panel;
+      toggleTopPanel(panel, keepMobileToolbarOpen);
+      if (!opening || systemInfoLoading) return;
 
-    const load = systemInfoLoaderRef.current;
-    if (!load) return;
-    const loadId = ++systemInfoLoadIdRef.current;
-    setSystemInfoLoading(true);
-    void load().catch((error) => {
-      console.error("Failed to load system information:", error);
-    }).finally(() => {
-      if (systemInfoLoadIdRef.current === loadId) {
-        setSystemInfoLoading(false);
-      }
-    });
-  }, [activeTopPanel, systemInfoLoading, toggleTopPanel]);
+      const load = systemInfoLoaderRef.current;
+      if (!load) return;
+      const loadId = ++systemInfoLoadIdRef.current;
+      setSystemInfoLoading(true);
+      void load()
+        .catch((error) => {
+          console.error("Failed to load system information:", error);
+        })
+        .finally(() => {
+          if (systemInfoLoadIdRef.current === loadId) {
+            setSystemInfoLoading(false);
+          }
+        });
+    },
+    [activeTopPanel, systemInfoLoading, toggleTopPanel],
+  );
 
   const openSessionStatsPanel = useCallback(() => {
     if (isMobile) setSidebarOpen(false);
@@ -633,10 +649,7 @@ export function AppShell() {
       if (activeTopPanel === "language" && !isMobile && languageBtnRef.current) {
         const buttonRect = languageBtnRef.current.getBoundingClientRect();
         const width = Math.min(LANGUAGE_MENU_WIDTH, topBarRect.width);
-        const left = Math.min(
-          buttonRect.left - 1,
-          Math.max(topBarRect.left, topBarRect.right - width),
-        );
+        const left = Math.min(buttonRect.left - 1, Math.max(topBarRect.left, topBarRect.right - width));
         setTopPanelPos({ top: topBarRect.bottom, left, width });
         return;
       }
@@ -669,25 +682,32 @@ export function AppShell() {
   const [terminalDrawerMounted, setTerminalDrawerMounted] = useState(false);
   const [terminalDrawerHeight, setTerminalDrawerHeight] = useState(280);
   // 活动会话的执行模式：选中会话带 mode；新建会话用 newSessionMode。
-  const activeSessionMode = selectedSession?.mode ?? (selectedSession === null && newSessionCwd !== null ? newSessionMode : undefined);
+  const activeSessionMode =
+    selectedSession?.mode ?? (selectedSession === null && newSessionCwd !== null ? newSessionMode : undefined);
   // Memoized identity: consumers (WorkspaceTerminal effect deps, FileExplorer)
   // treat this object as "the remote context" — a fresh object per render would
   // tear down and recreate the container PTY on every stats update.
   const remoteSessionCtx = useMemo(
-    () => (activeSessionMode && activeSessionMode !== "host" && activeSessionMode !== "quick" && selectedSession
-      ? { sessionId: selectedSession.id, label: activeSessionMode === "sandbox" ? translate("app.sandboxContainer") : activeSessionMode === "ssh" ? translate("app.sshRemoteHost") : translate("app.localMachine") }
-      : null),
+    () =>
+      activeSessionMode && activeSessionMode !== "host" && activeSessionMode !== "quick" && selectedSession
+        ? {
+            sessionId: selectedSession.id,
+            label:
+              activeSessionMode === "sandbox"
+                ? translate("app.sandboxContainer")
+                : activeSessionMode === "ssh"
+                  ? translate("app.sshRemoteHost")
+                  : translate("app.localMachine"),
+          }
+        : null,
     [activeSessionMode, selectedSession, translate],
   );
   // A remote-mode session that has not materialized yet (no first message):
   // file/terminal panels must wait instead of hitting the local APIs. Binds to
   // the explicit new-session intent (mode + projectId), never to a cwd value —
   // a remote session's "/" cwd must never fall through to host behavior.
-  const pendingRemoteSession = selectedSession === null
-    && newSessionCwd !== null
-    && newSessionMode !== "host"
-    ? newSessionMode
-    : null;
+  const pendingRemoteSession =
+    selectedSession === null && newSessionCwd !== null && newSessionMode !== "host" ? newSessionMode : null;
 
   // Live subagent calls lifted from the active ChatWindow (useAgentSession).
   const [subagentCalls, setSubagentCalls] = useState<SubagentCall[]>([]);
@@ -701,15 +721,17 @@ export function AppShell() {
   // 打开终端抽屉/文件面板。按 stepId 记忆已触发的步骤，避免同一步重复弹开。
   const handledSuggestStepRef = useRef<string | null>(null);
   const labSuggest = (labWidget?.metadata as LabWidgetState | undefined)?.suggest as
-    | { openTerminal?: boolean; openFile?: string }
-    | undefined;
+    { openTerminal?: boolean; openFile?: string } | undefined;
   const labSuggestStepId = (labWidget?.metadata as LabWidgetState | undefined)?.currentStep?.stepId ?? null;
   useEffect(() => {
     if (!labSuggest || !labSuggestStepId) return;
     if (handledSuggestStepRef.current === labSuggestStepId) return;
     handledSuggestStepRef.current = labSuggestStepId;
     if (labSuggest.openTerminal) setTerminalDrawerOpen(true);
-    if (labSuggest.openFile) handleOpenFile(labSuggest.openFile, getFileName(labSuggest.openFile), { sourceSessionId: selectedSession?.id ?? null });
+    if (labSuggest.openFile)
+      handleOpenFile(labSuggest.openFile, getFileName(labSuggest.openFile), {
+        sourceSessionId: selectedSession?.id ?? null,
+      });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [labSuggestStepId, labSuggest?.openTerminal, labSuggest?.openFile]);
 
@@ -736,31 +758,48 @@ export function AppShell() {
     }, 100);
   }, [selectedSession?.cwd, newSessionCwd, router]);
 
-  const handleFileViewerStateChange = useCallback((
-    tabId: string,
-    viewerRevision: number,
-    viewerState: FileViewerState,
-  ) => {
-    setFileTabs((prev) => saveFileViewerState(prev, tabId, viewerRevision, viewerState));
-  }, []);
+  const handleFileViewerStateChange = useCallback(
+    (tabId: string, viewerRevision: number, viewerState: FileViewerState) => {
+      setFileTabs((prev) => saveFileViewerState(prev, tabId, viewerRevision, viewerState));
+    },
+    [],
+  );
 
   // Same @mention format as the chat input's @ autocomplete, so the agent's
   // read tool resolves it the same way (it strips the @ prefix).
-  const handleAtMention = useCallback((relativePath: string, isDir: boolean) => {
-    chatInputRef.current?.insertText(buildAtMentionText(relativePath, isDir));
-    if (isMobile) { setRightPanelOpen(false); setSidebarOpen(false); }
-  }, [isMobile]);
+  const handleAtMention = useCallback(
+    (relativePath: string, isDir: boolean) => {
+      chatInputRef.current?.insertText(buildAtMentionText(relativePath, isDir));
+      if (isMobile) {
+        setRightPanelOpen(false);
+        setSidebarOpen(false);
+      }
+    },
+    [isMobile],
+  );
 
-  const handleAtMentions = useCallback((relativePaths: string[]) => {
-    const mentions = buildFileAtMentionsText(relativePaths);
-    if (mentions) chatInputRef.current?.insertText(mentions);
-    if (isMobile) { setRightPanelOpen(false); setSidebarOpen(false); }
-  }, [isMobile]);
+  const handleAtMentions = useCallback(
+    (relativePaths: string[]) => {
+      const mentions = buildFileAtMentionsText(relativePaths);
+      if (mentions) chatInputRef.current?.insertText(mentions);
+      if (isMobile) {
+        setRightPanelOpen(false);
+        setSidebarOpen(false);
+      }
+    },
+    [isMobile],
+  );
 
-  const handleFileLineMention = useCallback((relativePath: string, startLine: number, endLine: number) => {
-    chatInputRef.current?.insertText(buildFileLineMentionText(relativePath, startLine, endLine));
-    if (isMobile) { setRightPanelOpen(false); setSidebarOpen(false); }
-  }, [isMobile]);
+  const handleFileLineMention = useCallback(
+    (relativePath: string, startLine: number, endLine: number) => {
+      chatInputRef.current?.insertText(buildFileLineMentionText(relativePath, startLine, endLine));
+      if (isMobile) {
+        setRightPanelOpen(false);
+        setSidebarOpen(false);
+      }
+    },
+    [isMobile],
+  );
 
   const initialSessionId = initialNavigation.sessionId;
   const [activeCwd, setActiveCwd] = useState<string | null>(null);
@@ -772,7 +811,7 @@ export function AppShell() {
   const [planActivityTick, setPlanActivityTick] = useState(0);
   const { plan: sessionPlan } = useSessionPlan({
     sessionId: selectedSession?.id ?? null,
-    cwd: (activeCwd ?? selectedSession?.cwd ?? newSessionCwd) ?? undefined,
+    cwd: activeCwd ?? selectedSession?.cwd ?? newSessionCwd ?? undefined,
     remote: remoteSessionCtx,
     reprobeSignal: planActivityTick,
   });
@@ -800,75 +839,163 @@ export function AppShell() {
       id: "files",
       label: translate("app.files"),
       icon: (
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><polyline points="13 2 13 9 20 9" />
+        <svg
+          width="12"
+          height="12"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" />
+          <polyline points="13 2 13 9 20 9" />
         </svg>
       ),
       // 分栏态下主条的 files tab 即"退出分栏回到整栏文件视图"。
-      activate: () => { exitRightPanelSplit(); setRightPanelMode("files"); },
+      activate: () => {
+        exitRightPanelSplit();
+        setRightPanelMode("files");
+      },
     },
     // 快速会话没有工作区，也就没有仓库——Git tab 不出现。
-    ...(activeSessionMode === "quick" ? [] : [{
-      id: "git" as const,
-      label: "Git",
-      icon: (
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <circle cx="6" cy="6" r="3" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="6" r="3" /><path d="M18 9v2c0 2-2 3-4 3H9" /><path d="M6 9v6" />
-        </svg>
-      ),
-      activate: () => { setRightPanelMode("git"); setRightPanelOpen(true); },
-    }]),
+    ...(activeSessionMode === "quick"
+      ? []
+      : [
+          {
+            id: "git" as const,
+            label: "Git",
+            icon: (
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <circle cx="6" cy="6" r="3" />
+                <circle cx="6" cy="18" r="3" />
+                <circle cx="18" cy="6" r="3" />
+                <path d="M18 9v2c0 2-2 3-4 3H9" />
+                <path d="M6 9v6" />
+              </svg>
+            ),
+            activate: () => {
+              setRightPanelMode("git");
+              setRightPanelOpen(true);
+            },
+          },
+        ]),
     {
       id: "agents" as const,
       label: translate("app.agents"),
       title: translate("app.subagentDirectory"),
       icon: (
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <rect x="4" y="8" width="16" height="12" rx="2" /><path d="M12 8V4" /><circle cx="9" cy="14" r="0.5" /><circle cx="15" cy="14" r="0.5" />
+        <svg
+          width="12"
+          height="12"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <rect x="4" y="8" width="16" height="12" rx="2" />
+          <path d="M12 8V4" />
+          <circle cx="9" cy="14" r="0.5" />
+          <circle cx="15" cy="14" r="0.5" />
         </svg>
       ),
-      activate: () => { setRightPanelMode("agents"); setRightPanelOpen(true); },
+      activate: () => {
+        setRightPanelMode("agents");
+        setRightPanelOpen(true);
+      },
     },
     // 教学训练 tab（2026-10-20 迁自侧栏底部分节）：部署开关
     // （server-settings.labTraining，经 webauth/me 下发）关闭时不出现。
-    ...(labTrainingEnabled ? [{
-      id: "lab" as const,
-      label: translate("app.teachingSection"),
-      icon: (
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <path d="M22 10v6M2 10l10-5 10 5-10 5z" /><path d="M6 12v5c3 3 9 3 12 0v-5" />
-        </svg>
-      ),
-      activate: () => { setRightPanelMode("lab"); setRightPanelOpen(true); },
-    }] : []),
+    ...(labTrainingEnabled
+      ? [
+          {
+            id: "lab" as const,
+            label: translate("app.teachingSection"),
+            icon: (
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="var(--accent)"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M22 10v6M2 10l10-5 10 5-10 5z" />
+                <path d="M6 12v5c3 3 9 3 12 0v-5" />
+              </svg>
+            ),
+            activate: () => {
+              setRightPanelMode("lab");
+              setRightPanelOpen(true);
+            },
+          },
+        ]
+      : []),
     // 计划 tab: only when a plan exists (per-session file or legacy).
     ...(planTabVisible
-      ? [{
-          id: "plan" as const,
-          label: translate("app.plan"),
-          icon: (
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M9 4h6a2 2 0 0 1 2 2v14H7V6a2 2 0 0 1 2-2Z" /><path d="M7 20h10" /><path d="M10 8h4" />
-            </svg>
-          ),
-          activate: () => { setRightPanelMode("plan"); setRightPanelOpen(true); },
-        }]
+      ? [
+          {
+            id: "plan" as const,
+            label: translate("app.plan"),
+            icon: (
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M9 4h6a2 2 0 0 1 2 2v14H7V6a2 2 0 0 1 2-2Z" />
+                <path d="M7 20h10" />
+                <path d="M10 8h4" />
+              </svg>
+            ),
+            activate: () => {
+              setRightPanelMode("plan");
+              setRightPanelOpen(true);
+            },
+          },
+        ]
       : []),
   ];
-  const renderRightPanelTab = (
-    tab: (typeof rightPanelTabs)[number],
-    active: boolean,
-  ) => (
+  const renderRightPanelTab = (tab: (typeof rightPanelTabs)[number], active: boolean) => (
     <button
       key={tab.id}
       onClick={tab.activate}
       title={tab.title ?? tab.label}
       style={{
-        display: "flex", alignItems: "center", gap: 5,
-        height: "100%", padding: "0 12px", border: "none",
+        display: "flex",
+        alignItems: "center",
+        gap: 5,
+        height: "100%",
+        padding: "0 12px",
+        border: "none",
         background: "transparent",
         color: active ? "var(--text)" : "var(--text-dim)",
-        fontSize: 11, fontWeight: active ? 700 : 500,
+        fontSize: 11,
+        fontWeight: active ? 700 : 500,
         letterSpacing: 0.2,
         cursor: "pointer",
         borderBottom: `2px solid ${active ? "var(--accent)" : "transparent"}`,
@@ -897,7 +1024,7 @@ export function AppShell() {
   // right-panel terminal did: switching key unmounts (and closes) the drawer.
   const terminalDrawerKey = remoteSessionCtx
     ? remoteSessionCtx.sessionId
-    : (activeCwd ?? selectedSession?.cwd ?? newSessionCwd) ?? null;
+    : (activeCwd ?? selectedSession?.cwd ?? newSessionCwd ?? null);
   useEffect(() => {
     setTerminalDrawerMounted(false);
     setTerminalDrawerOpen(false);
@@ -908,26 +1035,29 @@ export function AppShell() {
   }, []);
   // Drag the top edge to resize the drawer (min 140px, max 75% of the chat column).
   const terminalDrawerRef = useRef<HTMLDivElement | null>(null);
-  const startTerminalDrawerResize = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    const startY = e.clientY;
-    const startHeight = terminalDrawerHeight;
-    const maxHeight = Math.max(200, (terminalDrawerRef.current?.parentElement?.clientHeight ?? 600) * 0.75);
-    const onMove = (ev: MouseEvent) => {
-      const next = startHeight + (startY - ev.clientY);
-      setTerminalDrawerHeight(Math.min(maxHeight, Math.max(140, next)));
-    };
-    const onUp = () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-    };
-    document.body.style.cursor = "row-resize";
-    document.body.style.userSelect = "none";
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-  }, [terminalDrawerHeight]);
+  const startTerminalDrawerResize = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      const startY = e.clientY;
+      const startHeight = terminalDrawerHeight;
+      const maxHeight = Math.max(200, (terminalDrawerRef.current?.parentElement?.clientHeight ?? 600) * 0.75);
+      const onMove = (ev: MouseEvent) => {
+        const next = startHeight + (startY - ev.clientY);
+        setTerminalDrawerHeight(Math.min(maxHeight, Math.max(140, next)));
+      };
+      const onUp = () => {
+        window.removeEventListener("mousemove", onMove);
+        window.removeEventListener("mouseup", onUp);
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+      };
+      document.body.style.cursor = "row-resize";
+      document.body.style.userSelect = "none";
+      window.addEventListener("mousemove", onMove);
+      window.addEventListener("mouseup", onUp);
+    },
+    [terminalDrawerHeight],
+  );
 
   const activeProjectKeyRef = useRef<string | null>(null);
   // True once the initial ?session= URL param has been resolved (or confirmed absent)
@@ -947,9 +1077,7 @@ export function AppShell() {
   // carry projectKey, so use the active project identity until hydration.
   useEffect(() => {
     if (!selectedSession) return;
-    const projectKey = selectedSession.projectKey
-      ?? activeProjectKeyRef.current
-      ?? workspaceKeyOf(selectedSession);
+    const projectKey = selectedSession.projectKey ?? activeProjectKeyRef.current ?? workspaceKeyOf(selectedSession);
     setLastOpenSession(projectKey, selectedSession.id);
   }, [selectedSession]);
 
@@ -968,7 +1096,7 @@ export function AppShell() {
       signal: controller.signal,
     })
       .then(async (response) => {
-        const data = await response.json().catch(() => ({})) as { cwd?: string; error?: string };
+        const data = (await response.json().catch(() => ({}))) as { cwd?: string; error?: string };
         if (!response.ok || !data.cwd) {
           throw new Error(data.error ?? `HTTP ${response.status}`);
         }
@@ -1000,225 +1128,243 @@ export function AppShell() {
   // from handleCwdChange once the outgoing context has been reset. The session
   // is looked up against the live list so a deleted or drifted session falls
   // back to the default welcome page instead of erroring.
-  const restoreWorkspaceContext = useCallback((projectKey: string, cwd: string) => {
-    const token = ++workspaceRestoreTokenRef.current;
-    const lastOpenSessionId = getLastOpenSession(projectKey);
-    if (!lastOpenSessionId) return;
-    void fetch("/api/sessions")
-      .then((r) => (r.ok ? (r.json() as Promise<{ sessions: SessionInfo[] }>) : null))
-      .then((d) => {
-        if (token !== workspaceRestoreTokenRef.current) return; // stale switch
-        const s = d?.sessions.find((x) => x.id === lastOpenSessionId);
-        if (!s) {
-          // The list loaded but the remembered session is gone — forget it.
-          // When the list itself failed (d === null) keep the memory so a
-          // later switch retries the restore.
-          if (d) clearLastOpen(projectKey);
-          return;
-        }
-        if (workspaceKeyOf(s) !== projectKey) {
-          // Defensive: the remembered session drifted out of this workspace.
-          clearLastOpen(projectKey);
-          return;
-        }
-        // Keep the temporary composer's draft in its cwd, even when the
-        // remembered session belongs to another worktree of this project.
-        const activeDraftKey = activeNewSessionDraftKeyRef.current;
-        if (activeDraftKey) {
-          rekeyDraft(activeDraftKey, parkedNewSessionDraftKey(cwd));
-        }
-        activeNewSessionDraftKeyRef.current = null;
-        // Selecting the session must remount the chat with the session
-        // present: useAgentSession loads content in a mount-only effect, so
-        // the null-session welcome mount from the switch would never load
-        // the restored session's messages.
-        setSelectedSession(s);
-        setSessionKey((k) => k + 1);
-        if (new URLSearchParams(window.location.search).get("session") !== s.id) {
-          router.replace(`?session=${encodeURIComponent(s.id)}`, { scroll: false });
-        }
-      })
-      .catch(() => {
-        // Network hiccup: keep the remembered session for a later retry.
-      });
-  }, [router]);
-
-  const handleCwdChange = useCallback((
-    cwd: string | null,
-    projectRoot?: string | null,
-    projectKey?: string | null,
-  ) => {
-    invalidateWorkspaceRestore();
-    const currentFreshCwd = newSessionCwd ?? activeCwd;
-    setActiveCwd(cwd);
-    // Skip if cwd is null (initial mount).
-    if (!cwd) return;
-    const newProject = projectKey ?? projectRoot ?? cwd;
-    const currentProject = activeProjectKeyRef.current
-      ?? (selectedSession ? workspaceKeyOf(selectedSession) : null);
-    activeProjectKeyRef.current = newProject;
-
-    // Keep the project identity in sync during the initial URL restore without
-    // remounting the just-created or restored chat.
-    if (suppressCwdBumpRef.current) {
-      suppressCwdBumpRef.current = false;
-      return;
-    }
-    // The server may hydrate a normalized key after a custom cwd is already
-    // active. Updating identity for the exact same cwd is not a user switch.
-    if (currentFreshCwd === cwd && currentProject !== newProject) return;
-    // Existing sessions stay open when the worktree selector moves within the
-    // same project. A fresh composer must remount when its effective cwd moves,
-    // otherwise its already-created runtime would keep sending to the old cwd.
-    if (
-      currentProject === newProject
-      && (selectedSession !== null || currentFreshCwd === cwd)
-    ) {
-      return;
-    }
-    // Close any session that belongs to a different project — it no longer
-    // matches the selected project directory.
-    const previousDraftKey = activeNewSessionDraftKeyRef.current;
-    if (previousDraftKey && currentFreshCwd) {
-      rekeyDraft(previousDraftKey, parkedNewSessionDraftKey(currentFreshCwd));
-    }
-    const draftId = typeof crypto.randomUUID === "function"
-      ? crypto.randomUUID()
-      : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
-    const draftKey = `new:${draftId}:${cwd}`;
-    rekeyDraft(parkedNewSessionDraftKey(cwd), draftKey);
-    setNewSessionDraftId(draftId);
-    activeNewSessionDraftKeyRef.current = draftKey;
-    setSelectedSession(null);
-    // Switching project directories (e.g. the admin directory picker) starts
-    // a HOST session in the new folder: stale newSessionMode/newSessionProjectId
-    // from a previously open project would silently route the new session back
-    // into that project (server-side projectId branch wins over cwd).
-    setNewSessionMode("host");
-    setNewSessionProjectId(null);
-    setNewSessionCwd((prev) => {
-      if (prev && prev !== cwd) return null;
-      return prev;
-    });
-    setSessionKey((k) => k + 1);
-    setBranchTree([]);
-    setBranchActiveLeafId(null);
-    setSystemPrompt(null);
-    setSystemTools(null);
-    setSystemInfoLoading(false);
-    setActiveTopPanel(null);
-    if (currentProject !== newProject) {
-      // File tabs are keyed by absolute path, so tabs opened in the previous
-      // project must not linger. Same-project worktree switches keep them.
-      setFileTabs([]);
-      if (!activeFileTabId || activeFileTabId.startsWith("file:")) {
-        setActiveFileTabId(null);
-        setRightPanelOpen(false);
-      }
-      // Restore the workspace we switched to: its last open session, or keep
-      // the default welcome page when none is remembered.
-      restoreWorkspaceContext(newProject, cwd);
-    }
-    router.replace(typeof window !== "undefined" ? window.location.pathname : "/", { scroll: false });
-  }, [activeCwd, activeFileTabId, invalidateWorkspaceRestore, newSessionCwd, router, selectedSession, restoreWorkspaceContext]);
-
-  const handleSelectSession = useCallback((session: SessionInfo, isRestore = false, entryId?: string, blockIndex?: number) => {
-    setSearchTarget(entryId ? { sessionId: session.id, entryId, blockIndex } : null);
-    invalidateWorkspaceRestore();
-    const activeDraftKey = activeNewSessionDraftKeyRef.current;
-    const activeDraftCwd = newSessionCwd ?? (selectedSession === null ? activeCwd : null);
-    if (activeDraftKey && activeDraftCwd) {
-      rekeyDraft(activeDraftKey, parkedNewSessionDraftKey(activeDraftCwd));
-    }
-    activeNewSessionDraftKeyRef.current = null;
-    // Adopt an explicitly selected session before the sidebar reports its cwd.
-    const projectKey = workspaceKeyOf(session);
-    if (activeProjectKeyRef.current !== projectKey) {
-      setFileTabs([]);
-      if (!activeFileTabId || activeFileTabId.startsWith("file:")) {
-        setActiveFileTabId(null);
-        setRightPanelOpen(false);
-      }
-      setActiveTopPanel(null);
-    }
-    activeProjectKeyRef.current = projectKey;
-    // Re-clicking the already-open session must not remount the chat and
-    // re-run the full load/positioning cycle. Only skip when the effective
-    // cwd context already matches — otherwise a pending cwd move still needs
-    // the full re-select flow.
-    if (!isRestore && selectedSession) {
-      const sameProject =
-        workspaceKeyOf(selectedSession) === workspaceKeyOf(session);
-      if (selectedSession.id === session.id && sameProject) {
-        if (isMobile) setSidebarOpen(false);
-        return;
-      }
-    }
-    setNewSessionCwd(null);
-    setSelectedSession(session);
-    setSessionKey((k) => k + 1);
-    setBranchTree([]);
-    setBranchActiveLeafId(null);
-    branchLeafChangeFnRef.current = null;
-    setSystemPrompt(null);
-    setSystemTools(null);
-    setSystemInfoLoading(false);
-    setInitialSessionRestored(true);
-    // On mobile, collapse the overlay drawer so the chat is revealed after pick.
-    if (isMobile && !isRestore) setSidebarOpen(false);
-    // Skip router.replace when restoring from URL — the param is already correct
-    // and calling replace in production Next.js triggers a Suspense remount loop
-    if (!isRestore) {
-      router.replace(`?session=${encodeURIComponent(session.id)}`, { scroll: false });
-    }
-  }, [activeCwd, activeFileTabId, invalidateWorkspaceRestore, router, isMobile, newSessionCwd, selectedSession]);
-
-  const handleNewSession = useCallback((sessionId: string, cwd: string, mode?: "host" | "sandbox" | "local-machine" | "ssh" | "quick", projectId?: string, projectLabel?: string) => {
-    invalidateWorkspaceRestore();
-    const draftKey = `new:${sessionId}:${cwd}`;
-    rekeyDraft(parkedNewSessionDraftKey(cwd), draftKey);
-    activeNewSessionDraftKeyRef.current = draftKey;
-    setNewSessionDraftId(sessionId);
-    setSelectedSession(null);
-    setNewSessionCwd(cwd);
-    if (mode) setNewSessionMode(mode);
-    // 未传 mode 的入口（键盘快捷键等）回默认 host——不清理会残留上次草稿的
-    // quick，普通新会话会被当快速会话创建。
-    else setNewSessionMode("host");
-    // ⚡ 快速会话把模板 id 放在 projectId 槽位传入（onNewSession 签名共用）；
-    // 归位到专门的 templateId 通道——否则 ensure_session 会拿着模板 id 去查
-    // 项目表（404 项目不存在），模型列表也会按不存在的项目解析。
-    if (mode === "quick") {
-      setNewSessionTemplateId(projectId ?? null);
-      setNewSessionProjectId(null);
-      // 类似 host 模式：前端解析工作区路径作为 cwd——服务端直接用（不再
-      // 靠哨兵/服务端覆写）。模板+版本决定目录（同版本复用），与
-      // ensureQuickSessionWorkspace 的 slug 约定一致。
-      const tplId = projectId ?? "default";
-      setNewSessionCwd(`/api/quick-workspace/${tplId}`);
-      // 异步解析真实路径（slug 含 hash 需服务端算）
-      void fetch(`/api/quick-workspace/${encodeURIComponent(tplId)}`)
-        .then((r) => (r.ok ? r.json() : null))
-        .then((d: { cwd?: string } | null) => {
-          if (d?.cwd) setNewSessionCwd(d.cwd);
+  const restoreWorkspaceContext = useCallback(
+    (projectKey: string, cwd: string) => {
+      const token = ++workspaceRestoreTokenRef.current;
+      const lastOpenSessionId = getLastOpenSession(projectKey);
+      if (!lastOpenSessionId) return;
+      void fetch("/api/sessions")
+        .then((r) => (r.ok ? (r.json() as Promise<{ sessions: SessionInfo[] }>) : null))
+        .then((d) => {
+          if (token !== workspaceRestoreTokenRef.current) return; // stale switch
+          const s = d?.sessions.find((x) => x.id === lastOpenSessionId);
+          if (!s) {
+            // The list loaded but the remembered session is gone — forget it.
+            // When the list itself failed (d === null) keep the memory so a
+            // later switch retries the restore.
+            if (d) clearLastOpen(projectKey);
+            return;
+          }
+          if (workspaceKeyOf(s) !== projectKey) {
+            // Defensive: the remembered session drifted out of this workspace.
+            clearLastOpen(projectKey);
+            return;
+          }
+          // Keep the temporary composer's draft in its cwd, even when the
+          // remembered session belongs to another worktree of this project.
+          const activeDraftKey = activeNewSessionDraftKeyRef.current;
+          if (activeDraftKey) {
+            rekeyDraft(activeDraftKey, parkedNewSessionDraftKey(cwd));
+          }
+          activeNewSessionDraftKeyRef.current = null;
+          // Selecting the session must remount the chat with the session
+          // present: useAgentSession loads content in a mount-only effect, so
+          // the null-session welcome mount from the switch would never load
+          // the restored session's messages.
+          setSelectedSession(s);
+          setSessionKey((k) => k + 1);
+          if (new URLSearchParams(window.location.search).get("session") !== s.id) {
+            router.replace(`?session=${encodeURIComponent(s.id)}`, { scroll: false });
+          }
         })
         .catch(() => {
-          // 解析失败保持占位 URL——服务端 quick 分支会兜底
+          // Network hiccup: keep the remembered session for a later retry.
         });
-    } else {
-      setNewSessionTemplateId(null);
-      setNewSessionProjectId(projectId ?? null);
-    }
-    setSessionKey((k) => k + 1);
-    setBranchTree([]);
-    setBranchActiveLeafId(null);
-    setSystemPrompt(null);
-    setSystemTools(null);
-    setSystemInfoLoading(false);
-    setActiveTopPanel(null);
-    if (isMobile) setSidebarOpen(false);
-    router.replace(typeof window !== "undefined" ? window.location.pathname : "/", { scroll: false });
-  }, [invalidateWorkspaceRestore, router, isMobile]);
+    },
+    [router],
+  );
+
+  const handleCwdChange = useCallback(
+    (cwd: string | null, projectRoot?: string | null, projectKey?: string | null) => {
+      invalidateWorkspaceRestore();
+      const currentFreshCwd = newSessionCwd ?? activeCwd;
+      setActiveCwd(cwd);
+      // Skip if cwd is null (initial mount).
+      if (!cwd) return;
+      const newProject = projectKey ?? projectRoot ?? cwd;
+      const currentProject = activeProjectKeyRef.current ?? (selectedSession ? workspaceKeyOf(selectedSession) : null);
+      activeProjectKeyRef.current = newProject;
+
+      // Keep the project identity in sync during the initial URL restore without
+      // remounting the just-created or restored chat.
+      if (suppressCwdBumpRef.current) {
+        suppressCwdBumpRef.current = false;
+        return;
+      }
+      // The server may hydrate a normalized key after a custom cwd is already
+      // active. Updating identity for the exact same cwd is not a user switch.
+      if (currentFreshCwd === cwd && currentProject !== newProject) return;
+      // Existing sessions stay open when the worktree selector moves within the
+      // same project. A fresh composer must remount when its effective cwd moves,
+      // otherwise its already-created runtime would keep sending to the old cwd.
+      if (currentProject === newProject && (selectedSession !== null || currentFreshCwd === cwd)) {
+        return;
+      }
+      // Close any session that belongs to a different project — it no longer
+      // matches the selected project directory.
+      const previousDraftKey = activeNewSessionDraftKeyRef.current;
+      if (previousDraftKey && currentFreshCwd) {
+        rekeyDraft(previousDraftKey, parkedNewSessionDraftKey(currentFreshCwd));
+      }
+      const draftId =
+        typeof crypto.randomUUID === "function"
+          ? crypto.randomUUID()
+          : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+      const draftKey = `new:${draftId}:${cwd}`;
+      rekeyDraft(parkedNewSessionDraftKey(cwd), draftKey);
+      setNewSessionDraftId(draftId);
+      activeNewSessionDraftKeyRef.current = draftKey;
+      setSelectedSession(null);
+      // Switching project directories (e.g. the admin directory picker) starts
+      // a HOST session in the new folder: stale newSessionMode/newSessionProjectId
+      // from a previously open project would silently route the new session back
+      // into that project (server-side projectId branch wins over cwd).
+      setNewSessionMode("host");
+      setNewSessionProjectId(null);
+      setNewSessionCwd((prev) => {
+        if (prev && prev !== cwd) return null;
+        return prev;
+      });
+      setSessionKey((k) => k + 1);
+      setBranchTree([]);
+      setBranchActiveLeafId(null);
+      setSystemPrompt(null);
+      setSystemTools(null);
+      setSystemInfoLoading(false);
+      setActiveTopPanel(null);
+      if (currentProject !== newProject) {
+        // File tabs are keyed by absolute path, so tabs opened in the previous
+        // project must not linger. Same-project worktree switches keep them.
+        setFileTabs([]);
+        if (!activeFileTabId || activeFileTabId.startsWith("file:")) {
+          setActiveFileTabId(null);
+          setRightPanelOpen(false);
+        }
+        // Restore the workspace we switched to: its last open session, or keep
+        // the default welcome page when none is remembered.
+        restoreWorkspaceContext(newProject, cwd);
+      }
+      router.replace(typeof window !== "undefined" ? window.location.pathname : "/", { scroll: false });
+    },
+    [
+      activeCwd,
+      activeFileTabId,
+      invalidateWorkspaceRestore,
+      newSessionCwd,
+      router,
+      selectedSession,
+      restoreWorkspaceContext,
+    ],
+  );
+
+  const handleSelectSession = useCallback(
+    (session: SessionInfo, isRestore = false, entryId?: string, blockIndex?: number) => {
+      setSearchTarget(entryId ? { sessionId: session.id, entryId, blockIndex } : null);
+      invalidateWorkspaceRestore();
+      const activeDraftKey = activeNewSessionDraftKeyRef.current;
+      const activeDraftCwd = newSessionCwd ?? (selectedSession === null ? activeCwd : null);
+      if (activeDraftKey && activeDraftCwd) {
+        rekeyDraft(activeDraftKey, parkedNewSessionDraftKey(activeDraftCwd));
+      }
+      activeNewSessionDraftKeyRef.current = null;
+      // Adopt an explicitly selected session before the sidebar reports its cwd.
+      const projectKey = workspaceKeyOf(session);
+      if (activeProjectKeyRef.current !== projectKey) {
+        setFileTabs([]);
+        if (!activeFileTabId || activeFileTabId.startsWith("file:")) {
+          setActiveFileTabId(null);
+          setRightPanelOpen(false);
+        }
+        setActiveTopPanel(null);
+      }
+      activeProjectKeyRef.current = projectKey;
+      // Re-clicking the already-open session must not remount the chat and
+      // re-run the full load/positioning cycle. Only skip when the effective
+      // cwd context already matches — otherwise a pending cwd move still needs
+      // the full re-select flow.
+      if (!isRestore && selectedSession) {
+        const sameProject = workspaceKeyOf(selectedSession) === workspaceKeyOf(session);
+        if (selectedSession.id === session.id && sameProject) {
+          if (isMobile) setSidebarOpen(false);
+          return;
+        }
+      }
+      setNewSessionCwd(null);
+      setSelectedSession(session);
+      setSessionKey((k) => k + 1);
+      setBranchTree([]);
+      setBranchActiveLeafId(null);
+      branchLeafChangeFnRef.current = null;
+      setSystemPrompt(null);
+      setSystemTools(null);
+      setSystemInfoLoading(false);
+      setInitialSessionRestored(true);
+      // On mobile, collapse the overlay drawer so the chat is revealed after pick.
+      if (isMobile && !isRestore) setSidebarOpen(false);
+      // Skip router.replace when restoring from URL — the param is already correct
+      // and calling replace in production Next.js triggers a Suspense remount loop
+      if (!isRestore) {
+        router.replace(`?session=${encodeURIComponent(session.id)}`, { scroll: false });
+      }
+    },
+    [activeCwd, activeFileTabId, invalidateWorkspaceRestore, router, isMobile, newSessionCwd, selectedSession],
+  );
+
+  const handleNewSession = useCallback(
+    (
+      sessionId: string,
+      cwd: string,
+      mode?: "host" | "sandbox" | "local-machine" | "ssh" | "quick",
+      projectId?: string,
+      projectLabel?: string,
+    ) => {
+      invalidateWorkspaceRestore();
+      const draftKey = `new:${sessionId}:${cwd}`;
+      rekeyDraft(parkedNewSessionDraftKey(cwd), draftKey);
+      activeNewSessionDraftKeyRef.current = draftKey;
+      setNewSessionDraftId(sessionId);
+      setSelectedSession(null);
+      setNewSessionCwd(cwd);
+      if (mode) setNewSessionMode(mode);
+      // 未传 mode 的入口（键盘快捷键等）回默认 host——不清理会残留上次草稿的
+      // quick，普通新会话会被当快速会话创建。
+      else setNewSessionMode("host");
+      // ⚡ 快速会话把模板 id 放在 projectId 槽位传入（onNewSession 签名共用）；
+      // 归位到专门的 templateId 通道——否则 ensure_session 会拿着模板 id 去查
+      // 项目表（404 项目不存在），模型列表也会按不存在的项目解析。
+      if (mode === "quick") {
+        setNewSessionTemplateId(projectId ?? null);
+        setNewSessionProjectId(null);
+        // 类似 host 模式：前端解析工作区路径作为 cwd——服务端直接用（不再
+        // 靠哨兵/服务端覆写）。模板+版本决定目录（同版本复用），与
+        // ensureQuickSessionWorkspace 的 slug 约定一致。
+        const tplId = projectId ?? "default";
+        setNewSessionCwd(`/api/quick-workspace/${tplId}`);
+        // 异步解析真实路径（slug 含 hash 需服务端算）
+        void fetch(`/api/quick-workspace/${encodeURIComponent(tplId)}`)
+          .then((r) => (r.ok ? r.json() : null))
+          .then((d: { cwd?: string } | null) => {
+            if (d?.cwd) setNewSessionCwd(d.cwd);
+          })
+          .catch(() => {
+            // 解析失败保持占位 URL——服务端 quick 分支会兜底
+          });
+      } else {
+        setNewSessionTemplateId(null);
+        setNewSessionProjectId(projectId ?? null);
+      }
+      setSessionKey((k) => k + 1);
+      setBranchTree([]);
+      setBranchActiveLeafId(null);
+      setSystemPrompt(null);
+      setSystemTools(null);
+      setSystemInfoLoading(false);
+      setActiveTopPanel(null);
+      if (isMobile) setSidebarOpen(false);
+      router.replace(typeof window !== "undefined" ? window.location.pathname : "/", { scroll: false });
+    },
+    [invalidateWorkspaceRestore, router, isMobile],
+  );
 
   // Global keyboard shortcuts (handles Esc, Ctrl+Alt+N etc.)
   useGlobalKeyboardShortcuts({
@@ -1236,79 +1382,86 @@ export function AppShell() {
       .then((d) => {
         const full = d?.sessions.find((s) => s.id === sessionId);
         if (!full) return;
-        setSelectedSession((prev) => (
-          prev?.id === sessionId
-            ? { ...prev, ...full, transient: full.transient ?? false }
-            : prev
-        ));
+        setSelectedSession((prev) =>
+          prev?.id === sessionId ? { ...prev, ...full, transient: full.transient ?? false } : prev,
+        );
       })
       .catch(() => {});
   }, []);
 
-  const handleOpenSession = useCallback(async (sessionId: string) => {
-    try {
-      const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, { cache: "no-store" });
-      const data = await response.json() as { info?: SessionInfo; error?: string };
-      if (!response.ok || !data.info) throw new Error(data.error ?? `HTTP ${response.status}`);
-      handleSelectSession(data.info);
-    } catch (error) {
-      console.error("[pi-web] failed to open session:", error instanceof Error ? error.message : error);
-    }
-  }, [handleSelectSession]);
+  const handleOpenSession = useCallback(
+    async (sessionId: string) => {
+      try {
+        const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, { cache: "no-store" });
+        const data = (await response.json()) as { info?: SessionInfo; error?: string };
+        if (!response.ok || !data.info) throw new Error(data.error ?? `HTTP ${response.status}`);
+        handleSelectSession(data.info);
+      } catch (error) {
+        console.error("[pi-web] failed to open session:", error instanceof Error ? error.message : error);
+      }
+    },
+    [handleSelectSession],
+  );
 
   // Called by ChatWindow when a new session gets its real id from pi
-  const handleSessionCreated = useCallback((session: SessionInfo, sourceDraftKey: string) => {
-    setRefreshKey((k) => k + 1);
-    if (activeNewSessionDraftKeyRef.current !== sourceDraftKey) return;
-    invalidateWorkspaceRestore();
-    activeNewSessionDraftKeyRef.current = null;
-    setNewSessionCwd(null);
-    // transient SessionInfo 不带 mode，/api/sessions/[id] 也不合并 session-metas
-    // ——按草稿模式补上，否则 quick 会话首条消息后 hideFileExplorer/quickMode 失效。
-    setSelectedSession(session.mode ? session : { ...session, mode: newSessionModeRef.current });
-    hydrateSelectedSession(session.id);
-    router.replace(`?session=${encodeURIComponent(session.id)}`, { scroll: false });
-  }, [invalidateWorkspaceRestore, router, hydrateSelectedSession]);
+  const handleSessionCreated = useCallback(
+    (session: SessionInfo, sourceDraftKey: string) => {
+      setRefreshKey((k) => k + 1);
+      if (activeNewSessionDraftKeyRef.current !== sourceDraftKey) return;
+      invalidateWorkspaceRestore();
+      activeNewSessionDraftKeyRef.current = null;
+      setNewSessionCwd(null);
+      // transient SessionInfo 不带 mode，/api/sessions/[id] 也不合并 session-metas
+      // ——按草稿模式补上，否则 quick 会话首条消息后 hideFileExplorer/quickMode 失效。
+      setSelectedSession(session.mode ? session : { ...session, mode: newSessionModeRef.current });
+      hydrateSelectedSession(session.id);
+      router.replace(`?session=${encodeURIComponent(session.id)}`, { scroll: false });
+    },
+    [invalidateWorkspaceRestore, router, hydrateSelectedSession],
+  );
 
-  const deliverSessionNotification = useCallback(({
-    targetSession,
-    title,
-    body,
-    tag,
-  }: {
-    targetSession: SessionInfo | null;
-    title: string;
-    body: string;
-    tag?: string;
-  }) => {
-    if (!("Notification" in window)) return;
+  const deliverSessionNotification = useCallback(
+    ({
+      targetSession,
+      title,
+      body,
+      tag,
+    }: {
+      targetSession: SessionInfo | null;
+      title: string;
+      body: string;
+      tag?: string;
+    }) => {
+      if (!("Notification" in window)) return;
 
-    const fire = () => {
-      const sessionUrl = targetSession ? `/?session=${encodeURIComponent(targetSession.id)}` : "/";
-      void showBrowserNotification({
-        title,
-        body,
-        sessionUrl,
-        tag,
-        onClick: () => {
-          window.focus();
-          if (targetSession) handleSelectSession(targetSession);
-        },
-      });
-    };
+      const fire = () => {
+        const sessionUrl = targetSession ? `/?session=${encodeURIComponent(targetSession.id)}` : "/";
+        void showBrowserNotification({
+          title,
+          body,
+          sessionUrl,
+          tag,
+          onClick: () => {
+            window.focus();
+            if (targetSession) handleSelectSession(targetSession);
+          },
+        });
+      };
 
-    if (Notification.permission === "granted") {
-      fire();
-      void setupPushSubscription(locale);
-    } else if (Notification.permission === "default") {
-      void Notification.requestPermission().then((p) => {
-        if (p === "granted") {
-          fire();
-          void setupPushSubscription(locale);
-        }
-      });
-    }
-  }, [handleSelectSession, locale]);
+      if (Notification.permission === "granted") {
+        fire();
+        void setupPushSubscription(locale);
+      } else if (Notification.permission === "default") {
+        void Notification.requestPermission().then((p) => {
+          if (p === "granted") {
+            fire();
+            void setupPushSubscription(locale);
+          }
+        });
+      }
+    },
+    [handleSelectSession, locale],
+  );
 
   const handleAgentEnd = useCallback(() => {
     setRefreshKey((k) => k + 1);
@@ -1326,20 +1479,21 @@ export function AppShell() {
     });
   }, [deliverSessionNotification, hydrateSelectedSession, selectedSession, translate]);
 
-  const handleAttentionNeeded = useCallback((request: BlockingExtensionUiRequest) => {
-    if (selectedSession?.relation?.kind === "subagent") return;
-    if (!shouldShowBrowserNotification()) return;
-    if (!claimExtensionAttentionNotification(request, notifiedAttentionRequestIdsRef.current)) return;
+  const handleAttentionNeeded = useCallback(
+    (request: BlockingExtensionUiRequest) => {
+      if (selectedSession?.relation?.kind === "subagent") return;
+      if (!shouldShowBrowserNotification()) return;
+      if (!claimExtensionAttentionNotification(request, notifiedAttentionRequestIdsRef.current)) return;
 
-    deliverSessionNotification({
-      targetSession: selectedSession,
-      title: translate("i18n.attentionNeeded"),
-      body: request.method === "custom"
-        ? translate("i18n.extensionInputNeeded")
-        : request.title,
-      tag: `pi-extension-ui:${request.id}`,
-    });
-  }, [deliverSessionNotification, selectedSession, translate]);
+      deliverSessionNotification({
+        targetSession: selectedSession,
+        title: translate("i18n.attentionNeeded"),
+        body: request.method === "custom" ? translate("i18n.extensionInputNeeded") : request.title,
+        tag: `pi-extension-ui:${request.id}`,
+      });
+    },
+    [deliverSessionNotification, selectedSession, translate],
+  );
 
   const handleAutoName = useCallback(async () => {
     const sessionId = selectedSession?.id;
@@ -1360,8 +1514,8 @@ export function AppShell() {
       const title = body.title.trim();
       setRefreshKey((key) => key + 1);
       if (activeSessionIdRef.current !== sessionId) return;
-      setSelectedSession((current) => current?.id === sessionId ? { ...current, name: title } : current);
-      setSessionStats((current) => current?.sessionId === sessionId ? { ...current, sessionName: title } : current);
+      setSelectedSession((current) => (current?.id === sessionId ? { ...current, name: title } : current));
+      setSessionStats((current) => (current?.sessionId === sessionId ? { ...current, sessionName: title } : current));
       setAutoNameStatus({ kind: "success" });
       autoNameTimerRef.current = setTimeout(() => setAutoNameStatus({ kind: "idle" }), 1800);
     } catch (error) {
@@ -1381,111 +1535,128 @@ export function AppShell() {
     setExplorerRefreshKey((k) => k + 1);
   }, []);
 
-  const handleSessionForked = useCallback((newSessionId: string) => {
-    invalidateWorkspaceRestore();
-    activeNewSessionDraftKeyRef.current = null;
-    setRefreshKey((k) => k + 1);
-    setSessionKey((k) => k + 1);
-    setNewSessionCwd(null);
-    setSelectedSession((prev) => ({
-      ...(prev ?? { path: "", cwd: "", created: "", modified: "", messageCount: 0, firstMessage: "" }),
-      id: newSessionId,
-      transient: false,
-    }));
-    hydrateSelectedSession(newSessionId);
-    router.replace(`?session=${encodeURIComponent(newSessionId)}`, { scroll: false });
-  }, [invalidateWorkspaceRestore, router, hydrateSelectedSession]);
+  const handleSessionForked = useCallback(
+    (newSessionId: string) => {
+      invalidateWorkspaceRestore();
+      activeNewSessionDraftKeyRef.current = null;
+      setRefreshKey((k) => k + 1);
+      setSessionKey((k) => k + 1);
+      setNewSessionCwd(null);
+      setSelectedSession((prev) => ({
+        ...(prev ?? { path: "", cwd: "", created: "", modified: "", messageCount: 0, firstMessage: "" }),
+        id: newSessionId,
+        transient: false,
+      }));
+      hydrateSelectedSession(newSessionId);
+      router.replace(`?session=${encodeURIComponent(newSessionId)}`, { scroll: false });
+    },
+    [invalidateWorkspaceRestore, router, hydrateSelectedSession],
+  );
 
-  const handleAskInNewChat = useCallback(async (
-    prompt: string,
-    sourceSessionId: string,
-    sourceEntryId: string,
-  ) => {
-    const result = await sendAgentCommand<{ newSessionId?: string }>(sourceSessionId, {
-      type: "fork_branch",
-      entryId: sourceEntryId,
-    });
-    if (!result?.newSessionId) throw new Error(translate("chat.quoteForkFailed"));
-    setPendingQuotePrompt({ sessionId: result.newSessionId, text: prompt });
-    handleSessionForked(result.newSessionId);
-  }, [handleSessionForked, translate]);
+  const handleAskInNewChat = useCallback(
+    async (prompt: string, sourceSessionId: string, sourceEntryId: string) => {
+      const result = await sendAgentCommand<{ newSessionId?: string }>(sourceSessionId, {
+        type: "fork_branch",
+        entryId: sourceEntryId,
+      });
+      if (!result?.newSessionId) throw new Error(translate("chat.quoteForkFailed"));
+      setPendingQuotePrompt({ sessionId: result.newSessionId, text: prompt });
+      handleSessionForked(result.newSessionId);
+    },
+    [handleSessionForked, translate],
+  );
 
   const handleInitialRestoreDone = useCallback(() => {
     setInitialSessionRestored(true);
   }, []);
 
-  const handleSessionDeleted = useCallback((sessionId: string) => {
-    invalidateWorkspaceRestore();
-    setRefreshKey((k) => k + 1);
-    if (selectedSession?.id === sessionId) {
-      const cwd = selectedSession.cwd;
-      const draftId = typeof crypto.randomUUID === "function"
-        ? crypto.randomUUID()
-        : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
-      setNewSessionDraftId(draftId);
-      activeNewSessionDraftKeyRef.current = cwd ? `new:${draftId}:${cwd}` : null;
-      setSelectedSession(null);
-      setNewSessionCwd(cwd ?? null);
-      setSessionKey((k) => k + 1);
-      setBranchTree([]);
-      setBranchActiveLeafId(null);
-      setSystemPrompt(null);
-      setSystemTools(null);
-      setSystemInfoLoading(false);
-      setActiveTopPanel(null);
-      router.replace(typeof window !== "undefined" ? window.location.pathname : "/", { scroll: false });
-    }
-  }, [invalidateWorkspaceRestore, selectedSession, router]);
+  const handleSessionDeleted = useCallback(
+    (sessionId: string) => {
+      invalidateWorkspaceRestore();
+      setRefreshKey((k) => k + 1);
+      if (selectedSession?.id === sessionId) {
+        const cwd = selectedSession.cwd;
+        const draftId =
+          typeof crypto.randomUUID === "function"
+            ? crypto.randomUUID()
+            : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+        setNewSessionDraftId(draftId);
+        activeNewSessionDraftKeyRef.current = cwd ? `new:${draftId}:${cwd}` : null;
+        setSelectedSession(null);
+        setNewSessionCwd(cwd ?? null);
+        setSessionKey((k) => k + 1);
+        setBranchTree([]);
+        setBranchActiveLeafId(null);
+        setSystemPrompt(null);
+        setSystemTools(null);
+        setSystemInfoLoading(false);
+        setActiveTopPanel(null);
+        router.replace(typeof window !== "undefined" ? window.location.pathname : "/", { scroll: false });
+      }
+    },
+    [invalidateWorkspaceRestore, selectedSession, router],
+  );
 
-  const handleOpenFile = useCallback((
-    filePath: string,
-    fileName: string,
-    options?: { sourceSessionId?: string | null; modeHint?: "diff"; page?: number },
-  ) => {
-    const sourceSessionId = options?.sourceSessionId;
-    const modeHint = options?.modeHint;
-    const page = options?.page;
-    const tabId = `file:${filePath}`;
-    setFileTabs((prev) => openFileTab(prev, {
-      fileName,
-      filePath,
-      modeHint,
-      page,
-      sourceSessionId,
-      tabId,
-    }));
-    setActiveFileTabId(tabId);
-    setRightPanelOpen(true);
-    // On mobile the file panel is full-screen; close the drawer so it shows.
-    if (isMobile) setSidebarOpen(false);
-  }, [isMobile]);
+  const handleOpenFile = useCallback(
+    (
+      filePath: string,
+      fileName: string,
+      options?: { sourceSessionId?: string | null; modeHint?: "diff"; page?: number },
+    ) => {
+      const sourceSessionId = options?.sourceSessionId;
+      const modeHint = options?.modeHint;
+      const page = options?.page;
+      const tabId = `file:${filePath}`;
+      setFileTabs((prev) =>
+        openFileTab(prev, {
+          fileName,
+          filePath,
+          modeHint,
+          page,
+          sourceSessionId,
+          tabId,
+        }),
+      );
+      setActiveFileTabId(tabId);
+      setRightPanelOpen(true);
+      // On mobile the file panel is full-screen; close the drawer so it shows.
+      if (isMobile) setSidebarOpen(false);
+    },
+    [isMobile],
+  );
 
-  const handleOpenLinkedFile = useCallback((filePath: string, page?: number) => {
-    handleOpenFile(filePath, getFileName(filePath), { sourceSessionId: selectedSession?.id ?? null, page });
-  }, [handleOpenFile, selectedSession?.id]);
+  const handleOpenLinkedFile = useCallback(
+    (filePath: string, page?: number) => {
+      handleOpenFile(filePath, getFileName(filePath), { sourceSessionId: selectedSession?.id ?? null, page });
+    },
+    [handleOpenFile, selectedSession?.id],
+  );
 
   // Dirty flag of the active file tab (only the active tab can be dirty —
   // switching tabs hard-resets edit state in FileViewer). Closing the active
   // dirty tab confirms before discarding.
   const [activeFileDirty, setActiveFileDirty] = useState(false);
 
-  const handleCloseFileTab = useCallback((tabId: string) => {
-    if (tabId === activeFileTabId && activeFileDirty) {
-      const discard = window.confirm(translate("app.fileUnsavedChangesCloseDiscard"));
-      if (!discard) return;
-      setActiveFileDirty(false);
-    }
-    setFileTabs((prev) => {
-      const next = prev.filter((t) => t.id !== tabId);
-      if (next.length === 0) setRightPanelOpen(false);
-      return next;
-    });
-    setActiveFileTabId((cur) => {
-      if (cur !== tabId) return cur;
-      const remaining = fileTabs.filter((t) => t.id !== tabId);
-      return remaining.length > 0 ? remaining[remaining.length - 1].id : null;
-    });
-  }, [fileTabs, activeFileTabId, activeFileDirty]);
+  const handleCloseFileTab = useCallback(
+    (tabId: string) => {
+      if (tabId === activeFileTabId && activeFileDirty) {
+        const discard = window.confirm(translate("app.fileUnsavedChangesCloseDiscard"));
+        if (!discard) return;
+        setActiveFileDirty(false);
+      }
+      setFileTabs((prev) => {
+        const next = prev.filter((t) => t.id !== tabId);
+        if (next.length === 0) setRightPanelOpen(false);
+        return next;
+      });
+      setActiveFileTabId((cur) => {
+        if (cur !== tabId) return cur;
+        const remaining = fileTabs.filter((t) => t.id !== tabId);
+        return remaining.length > 0 ? remaining[remaining.length - 1].id : null;
+      });
+    },
+    [fileTabs, activeFileTabId, activeFileDirty],
+  );
 
   const handleViewFullHistory = useCallback(() => {
     if (!selectedSession) return;
@@ -1498,9 +1669,8 @@ export function AppShell() {
 
   // Show chat area if a session is selected, or if we have a cwd to start a new session in
   const effectiveNewSessionCwd = newSessionCwd ?? (selectedSession === null && activeCwd ? activeCwd : null);
-  const newSessionDraftKey = selectedSession === null && effectiveNewSessionCwd
-    ? `new:${newSessionDraftId}:${effectiveNewSessionCwd}`
-    : null;
+  const newSessionDraftKey =
+    selectedSession === null && effectiveNewSessionCwd ? `new:${newSessionDraftId}:${effectiveNewSessionCwd}` : null;
   useLayoutEffect(() => {
     activeNewSessionDraftKeyRef.current = newSessionDraftKey;
   }, [newSessionDraftKey]);
@@ -1525,7 +1695,7 @@ export function AppShell() {
       signal: controller.signal,
     })
       .then(async (response) => {
-        const data = await response.json() as ProjectTrustStatus & { error?: string };
+        const data = (await response.json()) as ProjectTrustStatus & { error?: string };
         if (!response.ok || data.error) throw new Error(data.error ?? `HTTP ${response.status}`);
         setProjectTrust(data);
       })
@@ -1546,7 +1716,7 @@ export function AppShell() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ cwd: projectTrustCwd }),
       });
-      const data = await response.json() as ProjectTrustStatus & { error?: string };
+      const data = (await response.json()) as ProjectTrustStatus & { error?: string };
       if (!response.ok || data.error) throw new Error(data.error ?? `HTTP ${response.status}`);
       setProjectTrust(data);
       setProjectTrustDialogOpen(false);
@@ -1580,11 +1750,12 @@ export function AppShell() {
   // caused by the fetch's own onSessionsChange → setSessionCatalog, i.e. an
   // unbounded /api/sessions request loop.
   const sidebarAuthInfo = useMemo(
-    () => webUser === "loading"
-      ? { enabled: false, user: null }
-      : webUser
-        ? { enabled: true, user: webUser }
-        : { enabled: true, user: null },
+    () =>
+      webUser === "loading"
+        ? { enabled: false, user: null }
+        : webUser
+          ? { enabled: true, user: webUser }
+          : { enabled: true, user: null },
     [webUser],
   );
 
@@ -1613,11 +1784,11 @@ export function AppShell() {
         }}
         onFileRenamed={(oldPath, newPath) => {
           const oldTabId = `file:${oldPath}`;
-          setFileTabs((prev) => prev.map((t) =>
-            t.id === oldTabId
-              ? { ...t, id: `file:${newPath}`, filePath: newPath, label: getFileName(newPath) }
-              : t,
-          ));
+          setFileTabs((prev) =>
+            prev.map((t) =>
+              t.id === oldTabId ? { ...t, id: `file:${newPath}`, filePath: newPath, label: getFileName(newPath) } : t,
+            ),
+          );
           if (activeFileTabId === oldTabId) {
             setActiveFileTabId(`file:${newPath}`);
           }
@@ -1632,23 +1803,31 @@ export function AppShell() {
           setSandboxManager({ projectId: project.id, projectName: project.name, containerId: project.containerId })
         }
         projectsRefreshKey={projectsRefreshKey}
-              onProjectsChanged={() => setProjectsRefreshKey((k) => k + 1)}
+        onProjectsChanged={() => setProjectsRefreshKey((k) => k + 1)}
         pendingRemoteMode={pendingRemoteSession}
         remoteSessionProp={remoteSessionCtx}
         pendingProjectLabel={
           pendingRemoteSession
-            ? newSessionProjectLabel ?? translate("app.newSession")
-            : (selectedSession?.mode && selectedSession.mode !== "host" ? (selectedSession.name ? translate("app.session", { name: selectedSession.name }) : translate("app.remoteSession")) : null)
+            ? (newSessionProjectLabel ?? translate("app.newSession"))
+            : selectedSession?.mode && selectedSession.mode !== "host"
+              ? selectedSession.name
+                ? translate("app.session", { name: selectedSession.name })
+                : translate("app.remoteSession")
+              : null
         }
         onBackgroundTaskDone={handleBackgroundTaskDone}
         onRunningSessionIdsChange={handleRunningSessionIdsChange}
         onSessionsChange={handleSessionsChange}
       />
-      <div style={{ padding: "6px 8px", flexShrink: 0, display: "flex", flexWrap: "wrap", gap: 3, whiteSpace: "nowrap" }}>
-        {([
-          ["models", translate("common.models")],
-          ["skills", translate("common.skills")],
-        ] as const).map(([section, label]) => {
+      <div
+        style={{ padding: "6px 8px", flexShrink: 0, display: "flex", flexWrap: "wrap", gap: 3, whiteSpace: "nowrap" }}
+      >
+        {(
+          [
+            ["models", translate("common.models")],
+            ["skills", translate("common.skills")],
+          ] as const
+        ).map(([section, label]) => {
           const disabled = section !== "models" && !projectTrustCwd;
           return (
             <button
@@ -1659,14 +1838,32 @@ export function AppShell() {
               title={disabled ? translate("settings.projectRequired") : label}
               aria-label={label}
               style={{
-                flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
-                height: 32, padding: 0, background: "none", border: "none",
-                borderRadius: 9, color: "var(--text-muted)", cursor: disabled ? "default" : "pointer",
-                fontSize: 12, opacity: disabled ? 0.35 : 1,
+                flex: 1,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 4,
+                height: 32,
+                padding: 0,
+                background: "none",
+                border: "none",
+                borderRadius: 9,
+                color: "var(--text-muted)",
+                cursor: disabled ? "default" : "pointer",
+                fontSize: 12,
+                opacity: disabled ? 0.35 : 1,
                 transition: "background 0.12s, color 0.12s",
               }}
-              onMouseEnter={(event) => { if (!disabled) { event.currentTarget.style.background = "var(--bg-hover)"; event.currentTarget.style.color = "var(--text)"; } }}
-              onMouseLeave={(event) => { event.currentTarget.style.background = "none"; event.currentTarget.style.color = "var(--text-muted)"; }}
+              onMouseEnter={(event) => {
+                if (!disabled) {
+                  event.currentTarget.style.background = "var(--bg-hover)";
+                  event.currentTarget.style.color = "var(--text)";
+                }
+              }}
+              onMouseLeave={(event) => {
+                event.currentTarget.style.background = "none";
+                event.currentTarget.style.color = "var(--text-muted)";
+              }}
             >
               <SettingsSectionIcon section={section} size={14} strokeWidth={2} />
               <span>{label}</span>
@@ -1679,13 +1876,29 @@ export function AppShell() {
           title={translate("common.settings")}
           aria-label={translate("common.settings")}
           style={{
-            flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
-            height: 32, padding: 0, background: "none", border: "none",
-            borderRadius: 9, color: "var(--text-muted)", cursor: "pointer",
-            fontSize: 12, transition: "background 0.12s, color 0.12s",
+            flex: 1,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 4,
+            height: 32,
+            padding: 0,
+            background: "none",
+            border: "none",
+            borderRadius: 9,
+            color: "var(--text-muted)",
+            cursor: "pointer",
+            fontSize: 12,
+            transition: "background 0.12s, color 0.12s",
           }}
-          onMouseEnter={(event) => { event.currentTarget.style.background = "var(--bg-hover)"; event.currentTarget.style.color = "var(--text)"; }}
-          onMouseLeave={(event) => { event.currentTarget.style.background = "none"; event.currentTarget.style.color = "var(--text-muted)"; }}
+          onMouseEnter={(event) => {
+            event.currentTarget.style.background = "var(--bg-hover)";
+            event.currentTarget.style.color = "var(--text)";
+          }}
+          onMouseLeave={(event) => {
+            event.currentTarget.style.background = "none";
+            event.currentTarget.style.color = "var(--text-muted)";
+          }}
         >
           <SettingsSectionIcon section="general" size={14} strokeWidth={2} />
           <span>{translate("common.settings")}</span>
@@ -1699,17 +1912,41 @@ export function AppShell() {
           title="Agents"
           aria-label="Agents"
           style={{
-            flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
-            height: 32, padding: 0, background: "none", border: "none",
-            borderRadius: 9, color: "var(--text-muted)",
-            cursor: (!activeCwd && !selectedSession?.cwd && !newSessionCwd) ? "default" : "pointer",
-            fontSize: 12, opacity: (!activeCwd && !selectedSession?.cwd && !newSessionCwd) ? 0.35 : 1,
+            flex: 1,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 4,
+            height: 32,
+            padding: 0,
+            background: "none",
+            border: "none",
+            borderRadius: 9,
+            color: "var(--text-muted)",
+            cursor: !activeCwd && !selectedSession?.cwd && !newSessionCwd ? "default" : "pointer",
+            fontSize: 12,
+            opacity: !activeCwd && !selectedSession?.cwd && !newSessionCwd ? 0.35 : 1,
             transition: "background 0.12s, color 0.12s",
           }}
-          onMouseEnter={(event) => { event.currentTarget.style.background = "var(--bg-hover)"; event.currentTarget.style.color = "var(--text)"; }}
-          onMouseLeave={(event) => { event.currentTarget.style.background = "none"; event.currentTarget.style.color = "var(--text-muted)"; }}
+          onMouseEnter={(event) => {
+            event.currentTarget.style.background = "var(--bg-hover)";
+            event.currentTarget.style.color = "var(--text)";
+          }}
+          onMouseLeave={(event) => {
+            event.currentTarget.style.background = "none";
+            event.currentTarget.style.color = "var(--text-muted)";
+          }}
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
             <circle cx="12" cy="8" r="4" />
             <path d="M5.5 21a6.5 6.5 0 0 1 13 0" />
           </svg>
@@ -1722,17 +1959,41 @@ export function AppShell() {
           title="MCP"
           aria-label="MCP"
           style={{
-            flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
-            height: 32, padding: 0, background: "none", border: "none",
-            borderRadius: 9, color: "var(--text-muted)",
-            cursor: (!activeCwd && !selectedSession?.cwd && !newSessionCwd) ? "default" : "pointer",
-            fontSize: 12, opacity: (!activeCwd && !selectedSession?.cwd && !newSessionCwd) ? 0.35 : 1,
+            flex: 1,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 4,
+            height: 32,
+            padding: 0,
+            background: "none",
+            border: "none",
+            borderRadius: 9,
+            color: "var(--text-muted)",
+            cursor: !activeCwd && !selectedSession?.cwd && !newSessionCwd ? "default" : "pointer",
+            fontSize: 12,
+            opacity: !activeCwd && !selectedSession?.cwd && !newSessionCwd ? 0.35 : 1,
             transition: "background 0.12s, color 0.12s",
           }}
-          onMouseEnter={(event) => { event.currentTarget.style.background = "var(--bg-hover)"; event.currentTarget.style.color = "var(--text)"; }}
-          onMouseLeave={(event) => { event.currentTarget.style.background = "none"; event.currentTarget.style.color = "var(--text-muted)"; }}
+          onMouseEnter={(event) => {
+            event.currentTarget.style.background = "var(--bg-hover)";
+            event.currentTarget.style.color = "var(--text)";
+          }}
+          onMouseLeave={(event) => {
+            event.currentTarget.style.background = "none";
+            event.currentTarget.style.color = "var(--text-muted)";
+          }}
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
             <rect x="3" y="3" width="7" height="7" rx="1" />
             <rect x="14" y="3" width="7" height="7" rx="1" />
             <rect x="3" y="14" width="7" height="7" rx="1" />
@@ -1756,29 +2017,76 @@ export function AppShell() {
       title={translate(themeLabelKey)}
       aria-label={translate(themeLabelKey)}
       style={{
-        display: "flex", alignItems: "center", justifyContent: "center",
-        width: TOP_BAR_ICON_BUTTON_SIZE, height: TOP_BAR_ICON_BUTTON_SIZE, padding: 0,
-        background: "none", border: "none", borderRight: "1px solid var(--border)",
-        color: "var(--text-muted)", cursor: "pointer", flexShrink: 0, transition: "color 0.12s",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        width: TOP_BAR_ICON_BUTTON_SIZE,
+        height: TOP_BAR_ICON_BUTTON_SIZE,
+        padding: 0,
+        background: "none",
+        border: "none",
+        borderRight: "1px solid var(--border)",
+        color: "var(--text-muted)",
+        cursor: "pointer",
+        flexShrink: 0,
+        transition: "color 0.12s",
       }}
-      onMouseEnter={(event) => { event.currentTarget.style.color = "var(--text)"; }}
-      onMouseLeave={(event) => { event.currentTarget.style.color = "var(--text-muted)"; }}
+      onMouseEnter={(event) => {
+        event.currentTarget.style.color = "var(--text)";
+      }}
+      onMouseLeave={(event) => {
+        event.currentTarget.style.color = "var(--text-muted)";
+      }}
       data-mobile-toolbar-action={mobile ? "theme" : undefined}
     >
       {preference === "light" ? (
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
           <circle cx="12" cy="12" r="5" />
-          <line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" />
-          <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
-          <line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" />
-          <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+          <line x1="12" y1="1" x2="12" y2="3" />
+          <line x1="12" y1="21" x2="12" y2="23" />
+          <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
+          <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+          <line x1="1" y1="12" x2="3" y2="12" />
+          <line x1="21" y1="12" x2="23" y2="12" />
+          <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
+          <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
         </svg>
       ) : preference === "dark" ? (
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
           <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
         </svg>
       ) : (
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
           <rect x="2" y="3" width="20" height="14" rx="2" />
           <line x1="8" y1="21" x2="16" y2="21" />
           <line x1="12" y1="17" x2="12" y2="21" />
@@ -1798,14 +2106,23 @@ export function AppShell() {
       aria-expanded={activeTopPanel === "language"}
       aria-pressed={activeTopPanel === "language"}
       style={{
-        display: "flex", alignItems: "center", justifyContent: "center",
-        width: TOP_BAR_ICON_BUTTON_SIZE, height: TOP_BAR_ICON_BUTTON_SIZE, padding: 0,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        width: TOP_BAR_ICON_BUTTON_SIZE,
+        height: TOP_BAR_ICON_BUTTON_SIZE,
+        padding: 0,
         background: activeTopPanel === "language" ? "var(--bg-selected)" : "none",
-        border: "none", borderRight: "1px solid var(--border)",
+        border: "none",
+        borderRight: "1px solid var(--border)",
         color: activeTopPanel === "language" ? "var(--text)" : "var(--text-muted)",
-        cursor: "pointer", flexShrink: 0, transition: "color 0.12s",
+        cursor: "pointer",
+        flexShrink: 0,
+        transition: "color 0.12s",
       }}
-      onMouseEnter={(event) => { event.currentTarget.style.color = "var(--text)"; }}
+      onMouseEnter={(event) => {
+        event.currentTarget.style.color = "var(--text)";
+      }}
       onMouseLeave={(event) => {
         event.currentTarget.style.color = activeTopPanel === "language" ? "var(--text)" : "var(--text-muted)";
       }}
@@ -1954,26 +2271,28 @@ export function AppShell() {
         {(() => {
           // 上下文压缩后当前消息可能不再包含 user 消息，需同时参考会话文件的消息总数。
           const hasMessages = Boolean(
-            selectedSession
-            && ((sessionStats?.userMessages ?? 0) > 0 || selectedSession.messageCount > 0),
+            selectedSession && ((sessionStats?.userMessages ?? 0) > 0 || selectedSession.messageCount > 0),
           );
-          const disabled = !selectedSession || selectedSession.transient || !hasMessages || autoNameStatus.kind === "naming";
+          const disabled =
+            !selectedSession || selectedSession.transient || !hasMessages || autoNameStatus.kind === "naming";
           const isSuccess = autoNameStatus.kind === "success";
           const isError = autoNameStatus.kind === "error";
-          const label = autoNameStatus.kind === "naming"
-            ? translate("title.generating")
-            : isSuccess
-              ? translate("title.updated")
-              : isError
-                ? translate("title.failed")
-                : translate("title.generate");
-          const title = !selectedSession || selectedSession.transient
-            ? translate("title.unsaved")
-            : !hasMessages
-              ? translate("title.noMessages")
-              : isError
-                ? autoNameStatus.message
-                : translate("title.generateSession");
+          const label =
+            autoNameStatus.kind === "naming"
+              ? translate("title.generating")
+              : isSuccess
+                ? translate("title.updated")
+                : isError
+                  ? translate("title.failed")
+                  : translate("title.generate");
+          const title =
+            !selectedSession || selectedSession.transient
+              ? translate("title.unsaved")
+              : !hasMessages
+                ? translate("title.noMessages")
+                : isError
+                  ? autoNameStatus.message
+                  : translate("title.generateSession");
 
           return (
             <button
@@ -1986,16 +2305,29 @@ export function AppShell() {
               title={title}
               aria-label={label}
               style={{
-                display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 6,
                 width: mobile ? TOP_BAR_ICON_BUTTON_SIZE : undefined,
-                height: "100%", padding: mobile ? 0 : "0 12px",
-                background: "none", border: "none",
+                height: "100%",
+                padding: mobile ? 0 : "0 12px",
+                background: "none",
+                border: "none",
                 borderTop: "2px solid transparent",
                 borderRight: "1px solid var(--border)",
-                color: isError ? "#dc2626" : isSuccess ? "var(--accent)" : disabled ? "var(--text-dim)" : "var(--text-muted)",
+                color: isError
+                  ? "#dc2626"
+                  : isSuccess
+                    ? "var(--accent)"
+                    : disabled
+                      ? "var(--text-dim)"
+                      : "var(--text-muted)",
                 cursor: disabled ? "not-allowed" : "pointer",
                 opacity: disabled && autoNameStatus.kind !== "naming" ? 0.45 : 1,
-                flexShrink: 0, fontSize: 11, whiteSpace: "nowrap",
+                flexShrink: 0,
+                fontSize: 11,
+                whiteSpace: "nowrap",
                 transition: "color 0.1s, background 0.1s, opacity 0.1s",
               }}
               onMouseEnter={(event) => {
@@ -2004,7 +2336,13 @@ export function AppShell() {
                 event.currentTarget.style.background = "var(--bg-hover)";
               }}
               onMouseLeave={(event) => {
-                event.currentTarget.style.color = isError ? "#dc2626" : isSuccess ? "var(--accent)" : disabled ? "var(--text-dim)" : "var(--text-muted)";
+                event.currentTarget.style.color = isError
+                  ? "#dc2626"
+                  : isSuccess
+                    ? "var(--accent)"
+                    : disabled
+                      ? "var(--text-dim)"
+                      : "var(--text-muted)";
                 event.currentTarget.style.background = "none";
               }}
               data-mobile-toolbar-action={mobile ? "name" : undefined}
@@ -2015,11 +2353,31 @@ export function AppShell() {
                   <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
                 </svg>
               ) : isSuccess ? (
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
                   <polyline points="20 6 9 17 4 12" />
                 </svg>
               ) : (
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
                   <path d="m15 4 5 5L7 22l-5-5Z" />
                   <path d="m14 5 5 5" />
                   <path d="M6 4V2M5 3H3M19 19v3M17.5 20.5h3" />
@@ -2038,74 +2396,119 @@ export function AppShell() {
             aria-pressed={activeTopPanel === "agents"}
             style={{
               position: "relative",
-              display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 6,
               width: mobile ? TOP_BAR_ICON_BUTTON_SIZE : undefined,
-              height: "100%", padding: mobile ? 0 : "0 12px",
+              height: "100%",
+              padding: mobile ? 0 : "0 12px",
               background: activeTopPanel === "agents" ? "var(--bg-selected)" : "none",
               border: "none",
               borderTop: activeTopPanel === "agents" ? "2px solid var(--accent)" : "2px solid transparent",
               borderRight: "1px solid var(--border)",
               color: activeTopPanel === "agents" ? "var(--text)" : "var(--text-muted)",
-              cursor: "pointer", flexShrink: 0, fontSize: 11, whiteSpace: "nowrap",
+              cursor: "pointer",
+              flexShrink: 0,
+              fontSize: 11,
+              whiteSpace: "nowrap",
               transition: "color 0.1s, background 0.1s",
             }}
             data-mobile-toolbar-action={mobile ? "agents" : undefined}
           >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <rect x="5" y="7" width="14" height="11" rx="2" /><path d="M9 11h.01M15 11h.01M9 15h6M12 7V4M10 4h4" />
+            <svg
+              width="13"
+              height="13"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.9"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <rect x="5" y="7" width="14" height="11" rx="2" />
+              <path d="M9 11h.01M15 11h.01M9 15h6M12 7V4M10 4h4" />
             </svg>
             {!mobile && <span>{translate("agentSwitcher.title")}</span>}
             <span
               aria-hidden="true"
               style={{
-                minWidth: 15, height: 15, padding: "0 4px", display: "grid", placeItems: "center",
-                borderRadius: 7, background: "var(--bg-selected)", color: "var(--accent)",
-                fontSize: 10, lineHeight: 1, fontVariantNumeric: "tabular-nums",
-                ...(mobile ? { position: "absolute", top: 2, right: 2, minWidth: 13, height: 13, padding: "0 3px", fontSize: 9 } : {}),
+                minWidth: 15,
+                height: 15,
+                padding: "0 4px",
+                display: "grid",
+                placeItems: "center",
+                borderRadius: 7,
+                background: "var(--bg-selected)",
+                color: "var(--accent)",
+                fontSize: 10,
+                lineHeight: 1,
+                fontVariantNumeric: "tabular-nums",
+                ...(mobile
+                  ? { position: "absolute", top: 2, right: 2, minWidth: 13, height: 13, padding: "0 3px", fontSize: 9 }
+                  : {}),
               }}
             >
               {activeSessionFamily!.subagents.length}
             </span>
           </button>
         )}
-        {sessionHasBranches && (mobile ? (
-          <button
-            type="button"
-            onClick={() => toggleTopPanel("branches", true)}
-            title={translate("i18n.branches")}
-            aria-label={translate("i18n.branches")}
-            aria-pressed={activeTopPanel === "branches"}
-            style={{
-              display: "flex", alignItems: "center", justifyContent: "center",
-              width: TOP_BAR_ICON_BUTTON_SIZE, height: "100%", padding: 0,
-              background: activeTopPanel === "branches" ? "var(--bg-selected)" : "none",
-              border: "none",
-              borderTop: activeTopPanel === "branches" ? "2px solid var(--accent)" : "2px solid transparent",
-              borderRight: "1px solid var(--border)",
-              color: activeTopPanel === "branches" ? "var(--text)" : "var(--text-muted)",
-              cursor: "pointer", flexShrink: 0,
-            }}
-            data-mobile-toolbar-action="branches"
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: branchTree.length > 0 ? "var(--accent)" : "var(--text-dim)" }} aria-hidden="true">
-              <line x1="6" y1="3" x2="6" y2="15" />
-              <circle cx="18" cy="6" r="3" />
-              <circle cx="6" cy="18" r="3" />
-              <path d="M18 9a9 9 0 0 1-9 9" />
-            </svg>
-          </button>
-        ) : (
-          <BranchNavigator
-            tree={branchTree}
-            activeLeafId={branchActiveLeafId}
-            onLeafChange={handleBranchLeafChange}
-            inline
-            containerRef={topBarRef}
-            open={activeTopPanel === "branches"}
-            onToggle={() => toggleTopPanel("branches")}
-            hasSession
-          />
-        ))}
+        {sessionHasBranches &&
+          (mobile ? (
+            <button
+              type="button"
+              onClick={() => toggleTopPanel("branches", true)}
+              title={translate("i18n.branches")}
+              aria-label={translate("i18n.branches")}
+              aria-pressed={activeTopPanel === "branches"}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                width: TOP_BAR_ICON_BUTTON_SIZE,
+                height: "100%",
+                padding: 0,
+                background: activeTopPanel === "branches" ? "var(--bg-selected)" : "none",
+                border: "none",
+                borderTop: activeTopPanel === "branches" ? "2px solid var(--accent)" : "2px solid transparent",
+                borderRight: "1px solid var(--border)",
+                color: activeTopPanel === "branches" ? "var(--text)" : "var(--text-muted)",
+                cursor: "pointer",
+                flexShrink: 0,
+              }}
+              data-mobile-toolbar-action="branches"
+            >
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                style={{ color: branchTree.length > 0 ? "var(--accent)" : "var(--text-dim)" }}
+                aria-hidden="true"
+              >
+                <line x1="6" y1="3" x2="6" y2="15" />
+                <circle cx="18" cy="6" r="3" />
+                <circle cx="6" cy="18" r="3" />
+                <path d="M18 9a9 9 0 0 1-9 9" />
+              </svg>
+            </button>
+          ) : (
+            <BranchNavigator
+              tree={branchTree}
+              activeLeafId={branchActiveLeafId}
+              onLeafChange={handleBranchLeafChange}
+              inline
+              containerRef={topBarRef}
+              open={activeTopPanel === "branches"}
+              onToggle={() => toggleTopPanel("branches")}
+              hasSession
+            />
+          ))}
         <button
           ref={systemBtnRef}
           type="button"
@@ -2115,9 +2518,13 @@ export function AppShell() {
           aria-label={translate("system.prompt")}
           aria-pressed={activeTopPanel === "system"}
           style={{
-            display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 6,
             width: mobile ? TOP_BAR_ICON_BUTTON_SIZE : undefined,
-            height: "100%", padding: mobile ? 0 : "0 12px",
+            height: "100%",
+            padding: mobile ? 0 : "0 12px",
             background: activeTopPanel === "system" ? "var(--bg-selected)" : "none",
             border: "none",
             borderTop: activeTopPanel === "system" ? "2px solid var(--accent)" : "2px solid transparent",
@@ -2125,7 +2532,9 @@ export function AppShell() {
             cursor: mobile && !showChat ? "not-allowed" : "pointer",
             color: activeTopPanel === "system" ? "var(--text)" : "var(--text-muted)",
             opacity: mobile && !showChat ? 0.45 : 1,
-            fontSize: 11, whiteSpace: "nowrap", transition: "color 0.1s, background 0.1s",
+            fontSize: 11,
+            whiteSpace: "nowrap",
+            transition: "color 0.1s, background 0.1s",
           }}
           onMouseEnter={(event) => {
             if (mobile && !showChat) return;
@@ -2136,7 +2545,18 @@ export function AppShell() {
           }}
           data-mobile-toolbar-action={mobile ? "system" : undefined}
         >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: systemPrompt ? "var(--accent)" : "var(--text-dim)", flexShrink: 0 }} aria-hidden="true">
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            style={{ color: systemPrompt ? "var(--accent)" : "var(--text-dim)", flexShrink: 0 }}
+            aria-hidden="true"
+          >
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
             <polyline points="14 2 14 8 20 8" />
             <line x1="8" y1="13" x2="16" y2="13" />
@@ -2152,9 +2572,13 @@ export function AppShell() {
           aria-label={translate("tools.title")}
           aria-pressed={activeTopPanel === "tools"}
           style={{
-            display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 6,
             width: mobile ? TOP_BAR_ICON_BUTTON_SIZE : undefined,
-            height: "100%", padding: mobile ? 0 : "0 12px",
+            height: "100%",
+            padding: mobile ? 0 : "0 12px",
             background: activeTopPanel === "tools" ? "var(--bg-selected)" : "none",
             border: "none",
             borderTop: activeTopPanel === "tools" ? "2px solid var(--accent)" : "2px solid transparent",
@@ -2162,7 +2586,9 @@ export function AppShell() {
             cursor: mobile && !showChat ? "not-allowed" : "pointer",
             color: activeTopPanel === "tools" ? "var(--text)" : "var(--text-muted)",
             opacity: mobile && !showChat ? 0.45 : 1,
-            fontSize: 11, whiteSpace: "nowrap", transition: "color 0.1s, background 0.1s",
+            fontSize: 11,
+            whiteSpace: "nowrap",
+            transition: "color 0.1s, background 0.1s",
           }}
           onMouseEnter={(event) => {
             if (mobile && !showChat) return;
@@ -2173,7 +2599,21 @@ export function AppShell() {
           }}
           data-mobile-toolbar-action={mobile ? "tools" : undefined}
         >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: systemTools?.some((tool) => tool.active) ? "var(--accent)" : "var(--text-dim)", flexShrink: 0 }} aria-hidden="true">
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            style={{
+              color: systemTools?.some((tool) => tool.active) ? "var(--accent)" : "var(--text-dim)",
+              flexShrink: 0,
+            }}
+            aria-hidden="true"
+          >
             <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.8-3.8a6 6 0 0 1-7.9 7.9l-6.9 6.9a2.1 2.1 0 0 1-3-3l6.9-6.9a6 6 0 0 1 7.9-7.9z" />
           </svg>
           {!mobile && <span>{translate("tools.label")}</span>}
@@ -2189,11 +2629,12 @@ export function AppShell() {
 
     const tokens = sessionStats?.tokens;
     const cost = sessionStats?.cost ?? 0;
-    const formatCompact = (value: number) => value >= 1_000_000
-      ? `${(value / 1_000_000).toFixed(1)}M`
-      : value >= 1000
-        ? `${(value / 1000).toFixed(0)}k`
-        : String(value);
+    const formatCompact = (value: number) =>
+      value >= 1_000_000
+        ? `${(value / 1_000_000).toFixed(1)}M`
+        : value >= 1000
+          ? `${(value / 1000).toFixed(0)}k`
+          : String(value);
     const costText = cost > 0 ? (cost >= 0.01 ? `$${cost.toFixed(2)}` : `<$0.01`) : null;
 
     let contextColor = "var(--text-muted)";
@@ -2203,9 +2644,10 @@ export function AppShell() {
       const percent = contextUsage.percent;
       if (percent !== null && percent > 90) contextColor = "#ef4444";
       else if (percent !== null && percent > 70) contextColor = "rgba(234,179,8,0.95)";
-      desktopContextText = percent !== null
-        ? `${percent.toFixed(0)}% / ${formatCompact(contextUsage.contextWindow)}`
-        : `? / ${formatCompact(contextUsage.contextWindow)}`;
+      desktopContextText =
+        percent !== null
+          ? `${percent.toFixed(0)}% / ${formatCompact(contextUsage.contextWindow)}`
+          : `? / ${formatCompact(contextUsage.contextWindow)}`;
       mobileContextText = percent !== null ? `${percent.toFixed(0)}%` : null;
     }
 
@@ -2219,14 +2661,14 @@ export function AppShell() {
     }
     if (contextUsage?.contextWindow) {
       const percent = contextUsage.percent;
-      tooltipParts.push(`context: ${percent !== null ? percent.toFixed(1) + "%" : "unknown"} of ${contextUsage.contextWindow.toLocaleString()} tokens`);
+      tooltipParts.push(
+        `context: ${percent !== null ? percent.toFixed(1) + "%" : "unknown"} of ${contextUsage.contextWindow.toLocaleString()} tokens`,
+      );
     }
     const tooltip = tooltipParts.join("  |  ");
     const covered = mobile && isNarrowMobile && mobileToolbarMoreOpen;
     const hasMobileValues = Boolean(
-      (tokens && (tokens.input > 0 || tokens.output > 0))
-      || costText
-      || mobileContextText,
+      (tokens && (tokens.input > 0 || tokens.output > 0)) || costText || mobileContextText,
     );
 
     return (
@@ -2243,7 +2685,9 @@ export function AppShell() {
         data-mobile-toolbar-stats={mobile ? "true" : undefined}
         style={{
           marginLeft: mobile ? 0 : "auto",
-          display: "flex", alignItems: "center", justifyContent: "flex-end",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "flex-end",
           flex: mobile ? 1 : undefined,
           minWidth: 0,
           gap: mobile ? 7 : 10,
@@ -2256,8 +2700,10 @@ export function AppShell() {
           background: activeTopPanel === "session" ? "var(--bg-selected)" : "none",
           border: "none",
           borderTop: activeTopPanel === "session" ? "2px solid var(--accent)" : "2px solid transparent",
-          fontSize: 11, color: "var(--text-muted)",
-          whiteSpace: "nowrap", cursor: showChat ? "pointer" : "default",
+          fontSize: 11,
+          color: "var(--text-muted)",
+          whiteSpace: "nowrap",
+          cursor: showChat ? "pointer" : "default",
           fontVariantNumeric: "tabular-nums",
           transition: "color 0.1s, background 0.1s",
         }}
@@ -2271,31 +2717,58 @@ export function AppShell() {
         {mobile ? (
           <>
             {tokens && tokens.input > 0 && (
-              <span className="mobile-session-stat-io" style={{ display: "flex", alignItems: "center", gap: 2, flexShrink: 0 }}>
-                <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <line x1="5" y1="8.5" x2="5" y2="1.5" /><polyline points="2 4 5 1.5 8 4" />
+              <span
+                className="mobile-session-stat-io"
+                style={{ display: "flex", alignItems: "center", gap: 2, flexShrink: 0 }}
+              >
+                <svg
+                  width="10"
+                  height="10"
+                  viewBox="0 0 10 10"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <line x1="5" y1="8.5" x2="5" y2="1.5" />
+                  <polyline points="2 4 5 1.5 8 4" />
                 </svg>
                 {formatCompact(tokens.input)}
               </span>
             )}
             {tokens && tokens.output > 0 && (
-              <span className="mobile-session-stat-io" style={{ display: "flex", alignItems: "center", gap: 2, flexShrink: 0 }}>
-                <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <line x1="5" y1="1.5" x2="5" y2="8.5" /><polyline points="2 6 5 8.5 8 6" />
+              <span
+                className="mobile-session-stat-io"
+                style={{ display: "flex", alignItems: "center", gap: 2, flexShrink: 0 }}
+              >
+                <svg
+                  width="10"
+                  height="10"
+                  viewBox="0 0 10 10"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <line x1="5" y1="1.5" x2="5" y2="8.5" />
+                  <polyline points="2 6 5 8.5 8 6" />
                 </svg>
                 {formatCompact(tokens.output)}
               </span>
             )}
             {costText && (
-              <span className="mobile-session-stat-cost" style={{ color: "var(--text)", fontWeight: 500, flexShrink: 0 }}>
+              <span
+                className="mobile-session-stat-cost"
+                style={{ color: "var(--text)", fontWeight: 500, flexShrink: 0 }}
+              >
                 {costText}
               </span>
             )}
-            {mobileContextText && (
-              <span style={{ color: contextColor, flexShrink: 0 }}>
-                {mobileContextText}
-              </span>
-            )}
+            {mobileContextText && <span style={{ color: contextColor, flexShrink: 0 }}>{mobileContextText}</span>}
             {!hasMobileValues && showChat && (
               <span style={{ overflow: "hidden", textOverflow: "ellipsis", color: "var(--text-dim)" }}>
                 {translate("session.title")}
@@ -2306,24 +2779,57 @@ export function AppShell() {
           <>
             {tokens && tokens.input > 0 && (
               <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                <svg width="12" height="12" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <line x1="5" y1="8.5" x2="5" y2="1.5" /><polyline points="2 4 5 1.5 8 4" />
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 10 10"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <line x1="5" y1="8.5" x2="5" y2="1.5" />
+                  <polyline points="2 4 5 1.5 8 4" />
                 </svg>
                 {formatCompact(tokens.input)}
               </span>
             )}
             {tokens && tokens.output > 0 && (
               <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                <svg width="12" height="12" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <line x1="5" y1="1.5" x2="5" y2="8.5" /><polyline points="2 6 5 8.5 8 6" />
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 10 10"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <line x1="5" y1="1.5" x2="5" y2="8.5" />
+                  <polyline points="2 6 5 8.5 8 6" />
                 </svg>
                 {formatCompact(tokens.output)}
               </span>
             )}
             {tokens && tokens.cacheRead > 0 && (
               <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                <svg width="12" height="12" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M8.5 5a3.5 3.5 0 1 1-1-2.45" /><polyline points="6.5 1.5 8.5 2.5 7.5 4.5" />
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 10 10"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M8.5 5a3.5 3.5 0 1 1-1-2.45" />
+                  <polyline points="6.5 1.5 8.5 2.5 7.5 4.5" />
                 </svg>
                 {formatCompact(tokens.cacheRead)}
               </span>
@@ -2335,8 +2841,19 @@ export function AppShell() {
             )}
             {desktopContextText && (
               <span style={{ display: "flex", alignItems: "center", gap: 4, color: contextColor }}>
-                <svg width="12" height="12" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M1 9 L1 5 Q1 1 5 1 Q9 1 9 5 L9 9" /><line x1="1" y1="9" x2="9" y2="9" />
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 10 10"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M1 9 L1 5 Q1 1 5 1 Q9 1 9 5 L9 9" />
+                  <line x1="1" y1="9" x2="9" y2="9" />
                 </svg>
                 {desktopContextText}
               </span>
@@ -2363,20 +2880,42 @@ export function AppShell() {
         data-mobile-toolbar-file={mobile ? "true" : undefined}
         style={{
           marginLeft: !mobile && !sessionStats && !contextUsage ? "auto" : 0,
-          display: "flex", alignItems: "center", justifyContent: "center",
-          width: TOP_BAR_ICON_BUTTON_SIZE, height: TOP_BAR_ICON_BUTTON_SIZE, padding: 0,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          width: TOP_BAR_ICON_BUTTON_SIZE,
+          height: TOP_BAR_ICON_BUTTON_SIZE,
+          padding: 0,
           visibility: covered ? "hidden" : "visible",
           pointerEvents: covered ? "none" : "auto",
           background: rightPanelOpen ? "var(--bg-selected)" : "none",
-          border: "none", borderLeft: "1px solid var(--border)",
+          border: "none",
+          borderLeft: "1px solid var(--border)",
           color: rightPanelOpen ? "var(--text)" : "var(--text-muted)",
-          cursor: "pointer", flexShrink: 0, transition: "color 0.12s, background 0.12s",
+          cursor: "pointer",
+          flexShrink: 0,
+          transition: "color 0.12s, background 0.12s",
         }}
-        onMouseEnter={(event) => { if (!covered) event.currentTarget.style.color = "var(--text)"; }}
-        onMouseLeave={(event) => { event.currentTarget.style.color = rightPanelOpen ? "var(--text)" : "var(--text-muted)"; }}
+        onMouseEnter={(event) => {
+          if (!covered) event.currentTarget.style.color = "var(--text)";
+        }}
+        onMouseLeave={(event) => {
+          event.currentTarget.style.color = rightPanelOpen ? "var(--text)" : "var(--text-muted)";
+        }}
       >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <rect x="3" y="3" width="18" height="18" rx="2" /><line x1="15" y1="3" x2="15" y2="21" />
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <rect x="3" y="3" width="18" height="18" rx="2" />
+          <line x1="15" y1="3" x2="15" y2="21" />
         </svg>
       </button>
     );
@@ -2384,7 +2923,7 @@ export function AppShell() {
 
   return (
     <>
-    <style>{`
+      <style>{`
       @keyframes session-info-pop {
         0% {
           opacity: 0;
@@ -2468,1002 +3007,1471 @@ export function AppShell() {
         }
       }
     `}</style>
-    <div style={{
-      display: "flex",
-      width: "100%",
-      height: "var(--app-viewport-height, 100dvh)",
-      paddingLeft: "env(safe-area-inset-left)",
-      paddingRight: "env(safe-area-inset-right)",
-      overflow: "hidden",
-      background: "var(--bg)",
-    }}>
-      {/* Mobile overlay backdrop */}
       <div
-        className={`sidebar-overlay-backdrop${mobileSidebarReady ? "" : " sidebar-mobile-pending"}`}
-        onClick={() => setSidebarOpen(false)}
         style={{
-          position: "fixed",
-          inset: 0,
-          zIndex: 199,
-          background: "rgba(0,0,0,0.4)",
-          opacity: sidebarOpen ? 1 : 0,
-          pointerEvents: sidebarOpen ? "auto" : "none",
-          transition: "opacity 0.25s ease",
-        }}
-      />
-
-      {/* Left sidebar */}
-      <div
-        ref={sidebarResizer.panelRef}
-        id="session-sidebar"
-        inert={rightPanelFullWidth}
-        className={`sidebar-container${sidebarOpen ? " sidebar-open" : " sidebar-closed"}${mobileSidebarReady ? "" : " sidebar-mobile-pending"}${sidebarResizer.isResizing ? " sidebar-resizing" : ""}`}
-        style={{
-          "--sidebar-width": `${sidebarResizer.width}px`,
-          background: "var(--bg-panel)",
-          borderRight: "1px solid var(--border)",
           display: "flex",
-          flexDirection: "column",
-          flexShrink: 0,
-          paddingTop: "env(safe-area-inset-top)",
-          paddingBottom: "env(safe-area-inset-bottom)",
-          zIndex: 200,
-        } as React.CSSProperties}
+          width: "100%",
+          height: "var(--app-viewport-height, 100dvh)",
+          paddingLeft: "env(safe-area-inset-left)",
+          paddingRight: "env(safe-area-inset-right)",
+          overflow: "hidden",
+          background: "var(--bg)",
+        }}
       >
-        {sidebarContent}
-      </div>
-      {sidebarOpen && (
+        {/* Mobile overlay backdrop */}
         <div
-          {...sidebarResizer.separatorProps}
-          inert={rightPanelFullWidth}
-          aria-controls="session-sidebar"
-          className={`panel-resize-handle sidebar-resize-handle${sidebarResizer.isResizing ? " is-resizing" : ""}`}
-          data-resize-handle="sidebar"
-          title={`${translate("layout.resizeSidebar")}: ${translate("layout.resizeHint")}`}
+          className={`sidebar-overlay-backdrop${mobileSidebarReady ? "" : " sidebar-mobile-pending"}`}
+          onClick={() => setSidebarOpen(false)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 199,
+            background: "rgba(0,0,0,0.4)",
+            opacity: sidebarOpen ? 1 : 0,
+            pointerEvents: sidebarOpen ? "auto" : "none",
+            transition: "opacity 0.25s ease",
+          }}
         />
-      )}
 
-      {/* Center: chat */}
-      <div inert={rightPanelFullWidth} style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minWidth: 0 }}>
-        {/* Top bar with sidebar toggle */}
-        <div ref={topBarRef} style={{ flexShrink: 0, background: "var(--bg-panel)" }}>
-        <div style={{ display: "flex", alignItems: "center", position: "relative", borderBottom: "1px solid var(--border)", height: "calc(36px + env(safe-area-inset-top))", paddingTop: "env(safe-area-inset-top)" }}>
-          <button
-            onClick={handleSidebarToggle}
-             title={sidebarOpen ? translate("sidebar.hide") : translate("sidebar.show")}
-             aria-label={sidebarOpen ? translate("sidebar.hide") : translate("sidebar.show")}
-            style={{
-              display: "flex", alignItems: "center", justifyContent: "center",
-              width: TOP_BAR_ICON_BUTTON_SIZE, height: TOP_BAR_ICON_BUTTON_SIZE, padding: 0,
-              background: "none", border: "none", borderRight: "1px solid var(--border)",
-              color: "var(--text-muted)", cursor: "pointer", flexShrink: 0, transition: "color 0.12s",
-            }}
-            onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text)"; }}
-            onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-muted)"; }}
-          >
-            {sidebarOpen ? (
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="3" y="3" width="18" height="18" rx="2" /><line x1="9" y1="3" x2="9" y2="21" />
-              </svg>
-            ) : (
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" />
-              </svg>
-            )}
-          </button>
-          {/* Theme/language toggles moved to renderThemeButton/renderLanguageButton. */}
-          {/* 环境：本地机器 / 我的工作区 / 沙箱容器 统一收纳入口（EnvironmentsMenu）。 */}
-          <EnvironmentsMenu
-            signedIn={Boolean(webUser && webUser !== "loading")}
-            onOpenWorkspace={() => setMyWorkspaceOpen(true)}
-            onOpenSandbox={() => setSandboxManager({})}
+        {/* Left sidebar */}
+        <div
+          ref={sidebarResizer.panelRef}
+          id="session-sidebar"
+          inert={rightPanelFullWidth}
+          className={`sidebar-container${sidebarOpen ? " sidebar-open" : " sidebar-closed"}${mobileSidebarReady ? "" : " sidebar-mobile-pending"}${sidebarResizer.isResizing ? " sidebar-resizing" : ""}`}
+          style={
+            {
+              "--sidebar-width": `${sidebarResizer.width}px`,
+              background: "var(--bg-panel)",
+              borderRight: "1px solid var(--border)",
+              display: "flex",
+              flexDirection: "column",
+              flexShrink: 0,
+              paddingTop: "env(safe-area-inset-top)",
+              paddingBottom: "env(safe-area-inset-bottom)",
+              zIndex: 200,
+            } as React.CSSProperties
+          }
+        >
+          {sidebarContent}
+        </div>
+        {sidebarOpen && (
+          <div
+            {...sidebarResizer.separatorProps}
+            inert={rightPanelFullWidth}
+            aria-controls="session-sidebar"
+            className={`panel-resize-handle sidebar-resize-handle${sidebarResizer.isResizing ? " is-resizing" : ""}`}
+            data-resize-handle="sidebar"
+            title={`${translate("layout.resizeSidebar")}: ${translate("layout.resizeHint")}`}
           />
-          {webUser && webUser !== "loading" && webUser.role === "admin" && (
-            <button
-              type="button"
-              onClick={() => setPlatformAdminOpen(true)}
-              title={translate("app.platformAdmin")}
-              style={{
-                display: "flex", alignItems: "center", gap: 6, height: "100%",
-                padding: "0 12px", background: "none",
-                border: "none", borderTop: "2px solid transparent", borderRight: "1px solid var(--border)",
-                color: "var(--text-muted)", cursor: "pointer", fontSize: 11,
-                whiteSpace: "nowrap", flexShrink: 0,
-                transition: "color 0.1s, background 0.1s",
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text)"; e.currentTarget.style.background = "var(--bg-hover)"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-muted)"; e.currentTarget.style.background = "none"; }}
-            >
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
-                <rect x="2" y="3" width="20" height="14" rx="2" />
-                <line x1="8" y1="21" x2="16" y2="21" />
-                <line x1="12" y1="17" x2="12" y2="21" />
-              </svg>
-              <span>{translate("app.platformAdmin")}</span>
-            </button>
-          )}
-          {/* 「受限模式」提示只保留右侧 renderProjectTrustWarning 一处——
-              这里曾并列渲染过第二枚同义按钮，顶部出现两条重复提示。 */}
-          {isMobile && (
+        )}
+
+        {/* Center: chat */}
+        <div
+          inert={rightPanelFullWidth}
+          style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minWidth: 0 }}
+        >
+          {/* Top bar with sidebar toggle */}
+          <div ref={topBarRef} style={{ flexShrink: 0, background: "var(--bg-panel)" }}>
             <div
-              ref={mobileToolbarRef}
-              data-mobile-toolbar="true"
               style={{
-                position: "relative",
                 display: "flex",
-                alignItems: "stretch",
-                flex: 1,
-                minWidth: 0,
-                height: "100%",
+                alignItems: "center",
+                position: "relative",
+                borderBottom: "1px solid var(--border)",
+                height: "calc(36px + env(safe-area-inset-top))",
+                paddingTop: "env(safe-area-inset-top)",
               }}
             >
-              {isNarrowMobile && (
-                <button
-                  type="button"
-                  onClick={handleMobileToolbarMoreToggle}
-                  title={mobileToolbarMoreOpen ? translate("chat.close") : translate("chat.moreControls")}
-                  aria-label={mobileToolbarMoreOpen ? translate("chat.close") : translate("chat.moreControls")}
-                  aria-controls="mobile-toolbar-actions"
-                  aria-expanded={mobileToolbarMoreOpen}
-                  data-mobile-toolbar-more="true"
-                  style={{
-                    position: "relative",
-                    zIndex: mobileToolbarMoreOpen ? 21 : undefined,
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    width: TOP_BAR_ICON_BUTTON_SIZE, height: TOP_BAR_ICON_BUTTON_SIZE, padding: 0,
-                    background: mobileToolbarMoreOpen ? "var(--bg-selected)" : "none",
-                    border: "none", borderRight: "1px solid var(--border)",
-                    color: mobileToolbarMoreOpen ? "var(--text)" : "var(--text-muted)",
-                    cursor: "pointer", flexShrink: 0, transition: "color 0.12s, background 0.12s",
-                  }}
-                >
-                  {mobileToolbarMoreOpen ? (
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-                      <line x1="5" y1="5" x2="19" y2="19" /><line x1="19" y1="5" x2="5" y2="19" />
-                    </svg>
-                  ) : (
-                    <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                      <circle cx="5" cy="12" r="1.5" /><circle cx="12" cy="12" r="1.5" /><circle cx="19" cy="12" r="1.5" />
-                    </svg>
-                  )}
-                </button>
-              )}
-              {!isNarrowMobile && renderChatToolbarActions(true)}
-              {renderSessionStatsButton(true)}
-              {renderMainFileToggle(true)}
-              {isNarrowMobile && mobileToolbarMoreOpen && (
-                <div
-                  id="mobile-toolbar-actions"
-                  role="toolbar"
-                  aria-label={translate("chat.moreControls")}
-                  data-mobile-toolbar-actions="true"
-                  style={{
-                    position: "absolute",
-                    top: 0,
-                    right: 0,
-                    bottom: 0,
-                    left: TOP_BAR_ICON_BUTTON_SIZE,
-                    zIndex: 20,
-                    display: "flex",
-                    alignItems: "stretch",
-                    background: "color-mix(in srgb, var(--bg-panel) 94%, var(--bg))",
-                    boxShadow: "4px 0 18px rgba(0,0,0,0.12)",
-                    backdropFilter: "blur(10px)",
-                  }}
-                >
-                  {renderChatToolbarActions(true)}
-                </div>
-              )}
-            </div>
-          )}
-          {!isMobile && (
-            <>
-              {renderThemeButton(false)}
-              {renderLanguageButton(false)}
-              {renderProjectTrustWarning(false)}
-              {renderChatToolbarActions(false)}
-              {renderSessionStatsButton(false)}
-              {/* Platform controls: WebUI 操作教学 + logout。教学面板显隐已改为启动参数
-                  （PI_WEB_LAB_TRAINING，server-settings env 播种），不再由顶栏按钮运行时切换。 */}
               <button
-                type="button"
-                onClick={() => setWebGuideOpen(true)}
-                title={translate("guide.buttonTitle")}
+                onClick={handleSidebarToggle}
+                title={sidebarOpen ? translate("sidebar.hide") : translate("sidebar.show")}
+                aria-label={sidebarOpen ? translate("sidebar.hide") : translate("sidebar.show")}
                 style={{
-                  display: "flex", alignItems: "center", gap: 6, height: "100%",
-                  padding: "0 10px", background: "none",
-                  border: "none", borderLeft: "1px solid var(--border)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  width: TOP_BAR_ICON_BUTTON_SIZE,
+                  height: TOP_BAR_ICON_BUTTON_SIZE,
+                  padding: 0,
+                  background: "none",
+                  border: "none",
+                  borderRight: "1px solid var(--border)",
                   color: "var(--text-muted)",
-                  cursor: "pointer", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", flexShrink: 0,
-                  transition: "color 0.1s, background 0.1s",
+                  cursor: "pointer",
+                  flexShrink: 0,
+                  transition: "color 0.12s",
                 }}
-                onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-hover)"; }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = "none"; }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.color = "var(--text)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.color = "var(--text-muted)";
+                }}
               >
-                <span style={{ fontSize: 13, lineHeight: 1 }}>🎓</span>
-                <span>{translate("guide.button")}</span>
+                {sidebarOpen ? (
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <rect x="3" y="3" width="18" height="18" rx="2" />
+                    <line x1="9" y1="3" x2="9" y2="21" />
+                  </svg>
+                ) : (
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                  >
+                    <line x1="3" y1="6" x2="21" y2="6" />
+                    <line x1="3" y1="12" x2="21" y2="12" />
+                    <line x1="3" y1="18" x2="21" y2="18" />
+                  </svg>
+                )}
               </button>
-              {webUser && webUser !== "loading" && (
+              {/* Theme/language toggles moved to renderThemeButton/renderLanguageButton. */}
+              {/* 环境：本地机器 / 我的工作区 / 沙箱容器 统一收纳入口（EnvironmentsMenu）。 */}
+              <EnvironmentsMenu
+                signedIn={Boolean(webUser && webUser !== "loading")}
+                onOpenWorkspace={() => setMyWorkspaceOpen(true)}
+                onOpenSandbox={() => setSandboxManager({})}
+              />
+              {webUser && webUser !== "loading" && webUser.role === "admin" && (
                 <button
                   type="button"
-                  onClick={async () => { await fetch("/api/webauth/logout", { method: "POST" }).catch(() => {}); window.location.href = "/login"; }}
-                  title={translate("app.logOut", { name: webUser.username })}
-                  aria-label={translate("app.logOut", { name: webUser.username })}
+                  onClick={() => setPlatformAdminOpen(true)}
+                  title={translate("app.platformAdmin")}
                   style={{
-                    display: "flex", alignItems: "center", gap: 6, height: "100%",
-                    padding: "0 10px", background: "none",
-                    border: "none", borderLeft: "1px solid var(--border)",
-                    color: "var(--text-muted)", cursor: "pointer", fontSize: 11, whiteSpace: "nowrap", flexShrink: 0,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    height: "100%",
+                    padding: "0 12px",
+                    background: "none",
+                    border: "none",
+                    borderTop: "2px solid transparent",
+                    borderRight: "1px solid var(--border)",
+                    color: "var(--text-muted)",
+                    cursor: "pointer",
+                    fontSize: 11,
+                    whiteSpace: "nowrap",
+                    flexShrink: 0,
                     transition: "color 0.1s, background 0.1s",
                   }}
-                  onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text)"; e.currentTarget.style.background = "var(--bg-hover)"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-muted)"; e.currentTarget.style.background = "none"; }}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
-                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-                    <polyline points="16 17 21 12 16 7" />
-                    <line x1="21" y1="12" x2="9" y2="12" />
-                  </svg>
-                  <span>{translate("app.logOut2")}</span>
-                </button>
-              )}
-            </>
-          )}
-          {!isMobile && renderMainFileToggle(false)}
-          {isMobile && sessionHasBranches && (
-            <BranchNavigator
-              tree={branchTree}
-              activeLeafId={branchActiveLeafId}
-              onLeafChange={handleBranchLeafChange}
-              inline
-              compact
-              containerRef={topBarRef}
-              open={activeTopPanel === "branches"}
-              onToggle={() => toggleTopPanel("branches")}
-              hasSession={showChat}
-              hideInlineButton
-            />
-          )}
-          {/* Top panel dropdown — shared, only one active at a time */}
-          {activeTopPanel && topPanelPos && (
-            <div style={{
-              position: "fixed",
-              top: topPanelPos.top,
-              left: topPanelPos.left,
-              width: topPanelPos.width,
-              maxHeight: `calc(100dvh - ${topPanelPos.top}px)`,
-              overflowY: "auto",
-              zIndex: 500,
-            }}>
-              {activeTopPanel === "language" && (
-                <div
-                  role="menu"
-                  aria-label={translate("common.language")}
-                  style={{
-                    background: "var(--bg-panel)",
-                    borderLeft: "1px solid var(--border)",
-                    borderRight: "1px solid var(--border)",
-                    borderBottom: "1px solid var(--border)",
-                    overflow: "hidden",
-                    padding: 4,
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.color = "var(--text)";
+                    e.currentTarget.style.background = "var(--bg-hover)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.color = "var(--text-muted)";
+                    e.currentTarget.style.background = "none";
                   }}
                 >
-                  {supportedLocales.map((plugin) => (
+                  <svg
+                    width="11"
+                    height="11"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                    style={{ flexShrink: 0 }}
+                  >
+                    <rect x="2" y="3" width="20" height="14" rx="2" />
+                    <line x1="8" y1="21" x2="16" y2="21" />
+                    <line x1="12" y1="17" x2="12" y2="21" />
+                  </svg>
+                  <span>{translate("app.platformAdmin")}</span>
+                </button>
+              )}
+              {/* 「受限模式」提示只保留右侧 renderProjectTrustWarning 一处——
+              这里曾并列渲染过第二枚同义按钮，顶部出现两条重复提示。 */}
+              {isMobile && (
+                <div
+                  ref={mobileToolbarRef}
+                  data-mobile-toolbar="true"
+                  style={{
+                    position: "relative",
+                    display: "flex",
+                    alignItems: "stretch",
+                    flex: 1,
+                    minWidth: 0,
+                    height: "100%",
+                  }}
+                >
+                  {isNarrowMobile && (
                     <button
-                      key={plugin.id}
                       type="button"
-                      onClick={() => {
-                        setLocale(plugin.id as typeof locale);
-                        setActiveTopPanel(null);
-                      }}
-                      role="menuitemradio"
-                      aria-checked={locale === plugin.id}
+                      onClick={handleMobileToolbarMoreToggle}
+                      title={mobileToolbarMoreOpen ? translate("chat.close") : translate("chat.moreControls")}
+                      aria-label={mobileToolbarMoreOpen ? translate("chat.close") : translate("chat.moreControls")}
+                      aria-controls="mobile-toolbar-actions"
+                      aria-expanded={mobileToolbarMoreOpen}
+                      data-mobile-toolbar-more="true"
                       style={{
-                        display: "flex", alignItems: "center",
-                        width: "100%", height: 34, padding: "0 10px",
-                        border: "none", borderRadius: 4,
-                        background: locale === plugin.id ? "var(--bg-selected)" : "transparent",
-                        color: "var(--text)", cursor: "pointer", textAlign: "left", fontSize: 12,
-                        transition: "background 0.1s",
-                      }}
-                      onMouseEnter={(e) => {
-                        if (locale !== plugin.id) e.currentTarget.style.background = "var(--bg-hover)";
-                      }}
-                      onMouseLeave={(e) => {
-                        if (locale !== plugin.id) e.currentTarget.style.background = "transparent";
+                        position: "relative",
+                        zIndex: mobileToolbarMoreOpen ? 21 : undefined,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        width: TOP_BAR_ICON_BUTTON_SIZE,
+                        height: TOP_BAR_ICON_BUTTON_SIZE,
+                        padding: 0,
+                        background: mobileToolbarMoreOpen ? "var(--bg-selected)" : "none",
+                        border: "none",
+                        borderRight: "1px solid var(--border)",
+                        color: mobileToolbarMoreOpen ? "var(--text)" : "var(--text-muted)",
+                        cursor: "pointer",
+                        flexShrink: 0,
+                        transition: "color 0.12s, background 0.12s",
                       }}
                     >
-                      <span>{plugin.label}</span>
+                      {mobileToolbarMoreOpen ? (
+                        <svg
+                          width="15"
+                          height="15"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          aria-hidden="true"
+                        >
+                          <line x1="5" y1="5" x2="19" y2="19" />
+                          <line x1="19" y1="5" x2="5" y2="19" />
+                        </svg>
+                      ) : (
+                        <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                          <circle cx="5" cy="12" r="1.5" />
+                          <circle cx="12" cy="12" r="1.5" />
+                          <circle cx="19" cy="12" r="1.5" />
+                        </svg>
+                      )}
                     </button>
-                  ))}
+                  )}
+                  {!isNarrowMobile && renderChatToolbarActions(true)}
+                  {renderSessionStatsButton(true)}
+                  {renderMainFileToggle(true)}
+                  {isNarrowMobile && mobileToolbarMoreOpen && (
+                    <div
+                      id="mobile-toolbar-actions"
+                      role="toolbar"
+                      aria-label={translate("chat.moreControls")}
+                      data-mobile-toolbar-actions="true"
+                      style={{
+                        position: "absolute",
+                        top: 0,
+                        right: 0,
+                        bottom: 0,
+                        left: TOP_BAR_ICON_BUTTON_SIZE,
+                        zIndex: 20,
+                        display: "flex",
+                        alignItems: "stretch",
+                        background: "color-mix(in srgb, var(--bg-panel) 94%, var(--bg))",
+                        boxShadow: "4px 0 18px rgba(0,0,0,0.12)",
+                        backdropFilter: "blur(10px)",
+                      }}
+                    >
+                      {renderChatToolbarActions(true)}
+                    </div>
+                  )}
                 </div>
               )}
-              {activeTopPanel === "agents" && activeSessionFamily && selectedSession && (
-                <AgentSessionPanel
-                  rootSession={activeSessionFamily.root}
-                  subagents={activeSessionFamily.subagents}
-                  selectedSessionId={selectedSession.id}
-                  runningSessionIds={runningSessionIds}
-                  onSelectSession={handleSelectSession}
+              {!isMobile && (
+                <>
+                  {renderThemeButton(false)}
+                  {renderLanguageButton(false)}
+                  {renderProjectTrustWarning(false)}
+                  {renderChatToolbarActions(false)}
+                  {renderSessionStatsButton(false)}
+                  {/* Platform controls: WebUI 操作教学 + logout。教学面板显隐已改为启动参数
+                  （PI_WEB_LAB_TRAINING，server-settings env 播种），不再由顶栏按钮运行时切换。 */}
+                  <button
+                    type="button"
+                    onClick={() => setWebGuideOpen(true)}
+                    title={translate("guide.buttonTitle")}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      height: "100%",
+                      padding: "0 10px",
+                      background: "none",
+                      border: "none",
+                      borderLeft: "1px solid var(--border)",
+                      color: "var(--text-muted)",
+                      cursor: "pointer",
+                      fontSize: 11,
+                      fontWeight: 600,
+                      whiteSpace: "nowrap",
+                      flexShrink: 0,
+                      transition: "color 0.1s, background 0.1s",
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = "var(--bg-hover)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = "none";
+                    }}
+                  >
+                    <span style={{ fontSize: 13, lineHeight: 1 }}>🎓</span>
+                    <span>{translate("guide.button")}</span>
+                  </button>
+                  {webUser && webUser !== "loading" && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        await fetch("/api/webauth/logout", { method: "POST" }).catch(() => {});
+                        window.location.href = "/login";
+                      }}
+                      title={translate("app.logOut", { name: webUser.username })}
+                      aria-label={translate("app.logOut", { name: webUser.username })}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                        height: "100%",
+                        padding: "0 10px",
+                        background: "none",
+                        border: "none",
+                        borderLeft: "1px solid var(--border)",
+                        color: "var(--text-muted)",
+                        cursor: "pointer",
+                        fontSize: 11,
+                        whiteSpace: "nowrap",
+                        flexShrink: 0,
+                        transition: "color 0.1s, background 0.1s",
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.color = "var(--text)";
+                        e.currentTarget.style.background = "var(--bg-hover)";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.color = "var(--text-muted)";
+                        e.currentTarget.style.background = "none";
+                      }}
+                    >
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                        style={{ flexShrink: 0 }}
+                      >
+                        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                        <polyline points="16 17 21 12 16 7" />
+                        <line x1="21" y1="12" x2="9" y2="12" />
+                      </svg>
+                      <span>{translate("app.logOut2")}</span>
+                    </button>
+                  )}
+                </>
+              )}
+              {!isMobile && renderMainFileToggle(false)}
+              {isMobile && sessionHasBranches && (
+                <BranchNavigator
+                  tree={branchTree}
+                  activeLeafId={branchActiveLeafId}
+                  onLeafChange={handleBranchLeafChange}
+                  inline
+                  compact
+                  containerRef={topBarRef}
+                  open={activeTopPanel === "branches"}
+                  onToggle={() => toggleTopPanel("branches")}
+                  hasSession={showChat}
+                  hideInlineButton
                 />
               )}
-              {activeTopPanel === "system" && (
-                <SystemPromptPanel
-                  loading={systemInfoLoading}
-                  prompt={systemPrompt}
-                  translate={translate}
-                />
-              )}
-              {activeTopPanel === "tools" && (
-                <ToolDefinitionsPanel
-                  loading={systemInfoLoading}
-                  tools={systemTools}
-                  translate={translate}
-                />
-              )}
-              {activeTopPanel === "session" && (
-                <div className="session-info-popover" style={{
-                  background: "var(--bg-panel)",
-                  borderBottom: "1px solid var(--border)",
-                  boxShadow: "0 10px 28px rgba(0,0,0,0.10)",
-                  padding: "12px 16px",
-                }}>
-                  {sessionStats ? (() => {
-                    const formatDuration = (ms: number) => {
-                      if (ms <= 0) return "0s";
-                      const totalSec = Math.floor(ms / 1000);
-                      const h = Math.floor(totalSec / 3600);
-                      const m = Math.floor((totalSec % 3600) / 60);
-                      const s = totalSec % 60;
-                      if (h > 0) return `${h}h ${m}m`;
-                      if (m > 0) return `${m}m ${s}s`;
-                      return `${s}s`;
-                    };
-                    const totalActiveMs = sessionStats.totalActiveMs ?? 0;
-                    const ws = selectedSession;
-                    const sessionRows = [
-                       ...(sessionStats.sessionName ? [{ label: translate("session.name"), value: sessionStats.sessionName, copyField: null }] : []),
-                       { label: translate("session.file"), value: sessionStats.sessionFile ?? translate("session.inMemory"), copyField: "file" as const },
-                       { label: translate("session.id"), value: sessionStats.sessionId, copyField: "id" as const },
-                       ...(totalActiveMs > 0 ? [{ label: translate("session.totalActive"), value: formatDuration(totalActiveMs), copyField: null }] : []),
-                    ];
-                    const projectRows = [
-                      ...(ws ? [{ label: translate("session.projectDir"), value: ws.projectRoot ?? ws.cwd, copyField: "projectDir" as const }] : []),
-                      ...(ws?.branch ? [{ label: translate("session.gitBranch"), value: ws.branch, copyField: "gitBranch" as const }] : []),
-                      ...(ws?.isWorktree ? [{ label: translate("session.gitWorktree"), value: ws.cwd, copyField: "gitWorktree" as const }] : []),
-                    ];
-                    const messageRows = [
-                       [translate("session.user"), sessionStats.userMessages.toLocaleString(locale)],
-                       [translate("session.assistant"), sessionStats.assistantMessages.toLocaleString(locale)],
-                       [translate("session.toolCalls"), sessionStats.toolCalls.toLocaleString(locale)],
-                       [translate("session.toolResults"), sessionStats.toolResults.toLocaleString(locale)],
-                       [translate("session.total"), sessionStats.totalMessages.toLocaleString(locale)],
-                    ];
-                    const tokenRows = [
-                       [translate("session.input"), sessionStats.tokens.input.toLocaleString(locale)],
-                       [translate("session.output"), sessionStats.tokens.output.toLocaleString(locale)],
-                       ...(sessionStats.tokens.cacheRead > 0 ? [[translate("session.cacheRead"), sessionStats.tokens.cacheRead.toLocaleString(locale)]] : []),
-                       ...(sessionStats.tokens.cacheWrite > 0 ? [[translate("session.cacheWrite"), sessionStats.tokens.cacheWrite.toLocaleString(locale)]] : []),
-                       [translate("session.total"), sessionStats.tokens.total.toLocaleString(locale)],
-                    ];
-                    const ctx = contextUsage ?? sessionStats.contextUsage;
-                    const formatCompact = (n: number) => n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(0)}k` : String(n);
-                    const extraTokenRows = [
-                       ...(sessionStats.cost > 0 ? [[translate("session.cost"), `$${sessionStats.cost.toFixed(4)}`]] : []),
-                       ...(ctx?.contextWindow ? [[translate("session.context"), `${ctx.percent !== null ? `${ctx.percent.toFixed(1)}%` : "?"} / ${formatCompact(ctx.contextWindow)}`]] : []),
-                       // Cache hit rate = cache reads / (input + cache writes + cache reads) — the denominator covers all input-class tokens.
-                       ...(sessionStats.tokens.cacheRead + sessionStats.tokens.cacheWrite > 0 && sessionStats.tokens.cacheRead + sessionStats.tokens.cacheWrite + sessionStats.tokens.input > 0
-                         ? [[translate("session.cacheHitRate"), `${(sessionStats.tokens.cacheRead / (sessionStats.tokens.cacheRead + sessionStats.tokens.cacheWrite + sessionStats.tokens.input) * 100).toFixed(1)}%`]]
-                         : []),
-                    ];
-                    const section = (
-                      title: string,
-                      sectionRows: string[][],
-                      valueAlign: "left" | "right" = "left",
-                      compact = false,
-                    ) => (
-                        <div style={{ minWidth: 0 }}>
-                          <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>{title}</div>
-                          <div style={{
-                            display: "grid",
-                            gridTemplateColumns: compact ? "max-content max-content" : "auto minmax(0, 1fr)",
-                            columnGap: compact ? 14 : 12,
-                            rowGap: 4,
-                            justifyContent: compact ? "start" : undefined,
-                          }}>
-                            {sectionRows.map(([label, value]) => (
-                              <div key={`${title}:${label}`} style={{ display: "contents" }}>
-                                <div style={{ color: "var(--text-dim)", whiteSpace: "nowrap" }}>{label}</div>
-                                <div style={{
-                                  color: "var(--text-muted)",
-                                  minWidth: 0,
-                                  overflowWrap: compact ? "normal" : "anywhere",
-                                  textAlign: valueAlign,
-                                  whiteSpace: valueAlign === "right" ? "nowrap" : "normal",
-                                }}>{value}</div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      );
-                    const copyTitleKey: Record<SessionCopyField, string> = {
-                      file: "session.copyFile",
-                      id: "session.copyId",
-                      projectDir: "session.copyProjectDir",
-                      gitBranch: "session.copyGitBranch",
-                      gitWorktree: "session.copyGitWorktree",
-                    };
-                    const copyButton = (field: SessionCopyField, value: string) => {
-                      const copied = copiedSessionField === field;
-                      return (
+              {/* Top panel dropdown — shared, only one active at a time */}
+              {activeTopPanel && topPanelPos && (
+                <div
+                  style={{
+                    position: "fixed",
+                    top: topPanelPos.top,
+                    left: topPanelPos.left,
+                    width: topPanelPos.width,
+                    maxHeight: `calc(100dvh - ${topPanelPos.top}px)`,
+                    overflowY: "auto",
+                    zIndex: 500,
+                  }}
+                >
+                  {activeTopPanel === "language" && (
+                    <div
+                      role="menu"
+                      aria-label={translate("common.language")}
+                      style={{
+                        background: "var(--bg-panel)",
+                        borderLeft: "1px solid var(--border)",
+                        borderRight: "1px solid var(--border)",
+                        borderBottom: "1px solid var(--border)",
+                        overflow: "hidden",
+                        padding: 4,
+                      }}
+                    >
+                      {supportedLocales.map((plugin) => (
                         <button
+                          key={plugin.id}
                           type="button"
-                          title={copied ? translate("session.copied") : translate(copyTitleKey[field])}
-                          onClick={() => handleCopySessionField(field, value)}
+                          onClick={() => {
+                            setLocale(plugin.id as typeof locale);
+                            setActiveTopPanel(null);
+                          }}
+                          role="menuitemradio"
+                          aria-checked={locale === plugin.id}
                           style={{
-                            alignSelf: "start",
-                            display: "inline-flex",
+                            display: "flex",
                             alignItems: "center",
-                            justifyContent: "center",
-                            width: 22,
-                            height: 22,
-                            marginTop: -2,
-                            color: copied ? "var(--accent)" : "var(--text-dim)",
-                            background: "transparent",
-                            border: "1px solid var(--border)",
+                            width: "100%",
+                            height: 34,
+                            padding: "0 10px",
+                            border: "none",
                             borderRadius: 4,
+                            background: locale === plugin.id ? "var(--bg-selected)" : "transparent",
+                            color: "var(--text)",
                             cursor: "pointer",
-                            flex: "0 0 auto",
-                            transition: "color 0.12s, border-color 0.12s, background 0.12s",
+                            textAlign: "left",
+                            fontSize: 12,
+                            transition: "background 0.1s",
                           }}
                           onMouseEnter={(e) => {
-                            e.currentTarget.style.color = "var(--accent)";
-                            e.currentTarget.style.borderColor = "var(--accent)";
-                            e.currentTarget.style.background = "var(--bg-hover)";
+                            if (locale !== plugin.id) e.currentTarget.style.background = "var(--bg-hover)";
                           }}
                           onMouseLeave={(e) => {
-                            e.currentTarget.style.color = copied ? "var(--accent)" : "var(--text-dim)";
-                            e.currentTarget.style.borderColor = "var(--border)";
-                            e.currentTarget.style.background = "transparent";
+                            if (locale !== plugin.id) e.currentTarget.style.background = "transparent";
                           }}
                         >
-                          {copied ? (
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                              <polyline points="20 6 9 17 4 12" />
-                            </svg>
-                          ) : (
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                              <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-                              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-                            </svg>
-                          )}
+                          <span>{plugin.label}</span>
                         </button>
-                      );
-                    };
-                    const sessionInfoSection = (
-                      <div style={{ minWidth: 0 }}>
-                         <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>{translate("session.infoSection")}</div>
-                        <div style={{ display: "grid", gridTemplateColumns: "auto minmax(0, 1fr) auto", columnGap: 12, rowGap: 8, alignItems: "start" }}>
-                          {sessionRows.map((row) => (
-                            <div key={`session-info:${row.label}`} style={{ display: "contents" }}>
-                              <div style={{ color: "var(--text-dim)", whiteSpace: "nowrap" }}>{row.label}</div>
-                              <div style={{
-                                color: "var(--text-muted)",
-                                minWidth: 0,
-                                overflowWrap: "anywhere",
-                                wordBreak: "break-word",
-                                whiteSpace: "normal",
-                              }}>{row.value}</div>
-                              <div>{row.copyField ? copyButton(row.copyField, row.value) : null}</div>
+                      ))}
+                    </div>
+                  )}
+                  {activeTopPanel === "agents" && activeSessionFamily && selectedSession && (
+                    <AgentSessionPanel
+                      rootSession={activeSessionFamily.root}
+                      subagents={activeSessionFamily.subagents}
+                      selectedSessionId={selectedSession.id}
+                      runningSessionIds={runningSessionIds}
+                      onSelectSession={handleSelectSession}
+                    />
+                  )}
+                  {activeTopPanel === "system" && (
+                    <SystemPromptPanel loading={systemInfoLoading} prompt={systemPrompt} translate={translate} />
+                  )}
+                  {activeTopPanel === "tools" && (
+                    <ToolDefinitionsPanel loading={systemInfoLoading} tools={systemTools} translate={translate} />
+                  )}
+                  {activeTopPanel === "session" && (
+                    <div
+                      className="session-info-popover"
+                      style={{
+                        background: "var(--bg-panel)",
+                        borderBottom: "1px solid var(--border)",
+                        boxShadow: "0 10px 28px rgba(0,0,0,0.10)",
+                        padding: "12px 16px",
+                      }}
+                    >
+                      {sessionStats ? (
+                        (() => {
+                          const formatDuration = (ms: number) => {
+                            if (ms <= 0) return "0s";
+                            const totalSec = Math.floor(ms / 1000);
+                            const h = Math.floor(totalSec / 3600);
+                            const m = Math.floor((totalSec % 3600) / 60);
+                            const s = totalSec % 60;
+                            if (h > 0) return `${h}h ${m}m`;
+                            if (m > 0) return `${m}m ${s}s`;
+                            return `${s}s`;
+                          };
+                          const totalActiveMs = sessionStats.totalActiveMs ?? 0;
+                          const ws = selectedSession;
+                          const sessionRows = [
+                            ...(sessionStats.sessionName
+                              ? [{ label: translate("session.name"), value: sessionStats.sessionName, copyField: null }]
+                              : []),
+                            {
+                              label: translate("session.file"),
+                              value: sessionStats.sessionFile ?? translate("session.inMemory"),
+                              copyField: "file" as const,
+                            },
+                            { label: translate("session.id"), value: sessionStats.sessionId, copyField: "id" as const },
+                            ...(totalActiveMs > 0
+                              ? [
+                                  {
+                                    label: translate("session.totalActive"),
+                                    value: formatDuration(totalActiveMs),
+                                    copyField: null,
+                                  },
+                                ]
+                              : []),
+                          ];
+                          const projectRows = [
+                            ...(ws
+                              ? [
+                                  {
+                                    label: translate("session.projectDir"),
+                                    value: ws.projectRoot ?? ws.cwd,
+                                    copyField: "projectDir" as const,
+                                  },
+                                ]
+                              : []),
+                            ...(ws?.branch
+                              ? [
+                                  {
+                                    label: translate("session.gitBranch"),
+                                    value: ws.branch,
+                                    copyField: "gitBranch" as const,
+                                  },
+                                ]
+                              : []),
+                            ...(ws?.isWorktree
+                              ? [
+                                  {
+                                    label: translate("session.gitWorktree"),
+                                    value: ws.cwd,
+                                    copyField: "gitWorktree" as const,
+                                  },
+                                ]
+                              : []),
+                          ];
+                          const messageRows = [
+                            [translate("session.user"), sessionStats.userMessages.toLocaleString(locale)],
+                            [translate("session.assistant"), sessionStats.assistantMessages.toLocaleString(locale)],
+                            [translate("session.toolCalls"), sessionStats.toolCalls.toLocaleString(locale)],
+                            [translate("session.toolResults"), sessionStats.toolResults.toLocaleString(locale)],
+                            [translate("session.total"), sessionStats.totalMessages.toLocaleString(locale)],
+                          ];
+                          const tokenRows = [
+                            [translate("session.input"), sessionStats.tokens.input.toLocaleString(locale)],
+                            [translate("session.output"), sessionStats.tokens.output.toLocaleString(locale)],
+                            ...(sessionStats.tokens.cacheRead > 0
+                              ? [[translate("session.cacheRead"), sessionStats.tokens.cacheRead.toLocaleString(locale)]]
+                              : []),
+                            ...(sessionStats.tokens.cacheWrite > 0
+                              ? [
+                                  [
+                                    translate("session.cacheWrite"),
+                                    sessionStats.tokens.cacheWrite.toLocaleString(locale),
+                                  ],
+                                ]
+                              : []),
+                            [translate("session.total"), sessionStats.tokens.total.toLocaleString(locale)],
+                          ];
+                          const ctx = contextUsage ?? sessionStats.contextUsage;
+                          const formatCompact = (n: number) =>
+                            n >= 1_000_000
+                              ? `${(n / 1_000_000).toFixed(1)}M`
+                              : n >= 1000
+                                ? `${(n / 1000).toFixed(0)}k`
+                                : String(n);
+                          const extraTokenRows = [
+                            ...(sessionStats.cost > 0
+                              ? [[translate("session.cost"), `$${sessionStats.cost.toFixed(4)}`]]
+                              : []),
+                            ...(ctx?.contextWindow
+                              ? [
+                                  [
+                                    translate("session.context"),
+                                    `${ctx.percent !== null ? `${ctx.percent.toFixed(1)}%` : "?"} / ${formatCompact(ctx.contextWindow)}`,
+                                  ],
+                                ]
+                              : []),
+                            // Cache hit rate = cache reads / (input + cache writes + cache reads) — the denominator covers all input-class tokens.
+                            ...(sessionStats.tokens.cacheRead + sessionStats.tokens.cacheWrite > 0 &&
+                            sessionStats.tokens.cacheRead + sessionStats.tokens.cacheWrite + sessionStats.tokens.input >
+                              0
+                              ? [
+                                  [
+                                    translate("session.cacheHitRate"),
+                                    `${((sessionStats.tokens.cacheRead / (sessionStats.tokens.cacheRead + sessionStats.tokens.cacheWrite + sessionStats.tokens.input)) * 100).toFixed(1)}%`,
+                                  ],
+                                ]
+                              : []),
+                          ];
+                          const section = (
+                            title: string,
+                            sectionRows: string[][],
+                            valueAlign: "left" | "right" = "left",
+                            compact = false,
+                          ) => (
+                            <div style={{ minWidth: 0 }}>
+                              <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>
+                                {title}
+                              </div>
+                              <div
+                                style={{
+                                  display: "grid",
+                                  gridTemplateColumns: compact ? "max-content max-content" : "auto minmax(0, 1fr)",
+                                  columnGap: compact ? 14 : 12,
+                                  rowGap: 4,
+                                  justifyContent: compact ? "start" : undefined,
+                                }}
+                              >
+                                {sectionRows.map(([label, value]) => (
+                                  <div key={`${title}:${label}`} style={{ display: "contents" }}>
+                                    <div style={{ color: "var(--text-dim)", whiteSpace: "nowrap" }}>{label}</div>
+                                    <div
+                                      style={{
+                                        color: "var(--text-muted)",
+                                        minWidth: 0,
+                                        overflowWrap: compact ? "normal" : "anywhere",
+                                        textAlign: valueAlign,
+                                        whiteSpace: valueAlign === "right" ? "nowrap" : "normal",
+                                      }}
+                                    >
+                                      {value}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
                             </div>
-                          ))}
-                        </div>
-                      </div>
-                    );
-                    const projectInfoSection = projectRows.length > 0 ? (
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>{translate("session.projectSection")}</div>
-                        <div style={{ display: "grid", gridTemplateColumns: "auto minmax(0, 1fr) auto", columnGap: 12, rowGap: 8, alignItems: "start" }}>
-                          {projectRows.map((row) => (
-                            <div key={`project-info:${row.label}`} style={{ display: "contents" }}>
-                              <div style={{ color: "var(--text-dim)", whiteSpace: "nowrap" }}>{row.label}</div>
-                              <div style={{
-                                color: "var(--text-muted)",
-                                minWidth: 0,
-                                overflowWrap: "anywhere",
-                                wordBreak: "break-word",
-                                whiteSpace: "normal",
-                              }}>{row.value}</div>
-                              <div>{row.copyField ? copyButton(row.copyField, row.value) : null}</div>
+                          );
+                          const copyTitleKey: Record<SessionCopyField, string> = {
+                            file: "session.copyFile",
+                            id: "session.copyId",
+                            projectDir: "session.copyProjectDir",
+                            gitBranch: "session.copyGitBranch",
+                            gitWorktree: "session.copyGitWorktree",
+                          };
+                          const copyButton = (field: SessionCopyField, value: string) => {
+                            const copied = copiedSessionField === field;
+                            return (
+                              <button
+                                type="button"
+                                title={copied ? translate("session.copied") : translate(copyTitleKey[field])}
+                                onClick={() => handleCopySessionField(field, value)}
+                                style={{
+                                  alignSelf: "start",
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  width: 22,
+                                  height: 22,
+                                  marginTop: -2,
+                                  color: copied ? "var(--accent)" : "var(--text-dim)",
+                                  background: "transparent",
+                                  border: "1px solid var(--border)",
+                                  borderRadius: 4,
+                                  cursor: "pointer",
+                                  flex: "0 0 auto",
+                                  transition: "color 0.12s, border-color 0.12s, background 0.12s",
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.color = "var(--accent)";
+                                  e.currentTarget.style.borderColor = "var(--accent)";
+                                  e.currentTarget.style.background = "var(--bg-hover)";
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.color = copied ? "var(--accent)" : "var(--text-dim)";
+                                  e.currentTarget.style.borderColor = "var(--border)";
+                                  e.currentTarget.style.background = "transparent";
+                                }}
+                              >
+                                {copied ? (
+                                  <svg
+                                    width="12"
+                                    height="12"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="2"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    aria-hidden="true"
+                                  >
+                                    <polyline points="20 6 9 17 4 12" />
+                                  </svg>
+                                ) : (
+                                  <svg
+                                    width="12"
+                                    height="12"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="2"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    aria-hidden="true"
+                                  >
+                                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                                  </svg>
+                                )}
+                              </button>
+                            );
+                          };
+                          const sessionInfoSection = (
+                            <div style={{ minWidth: 0 }}>
+                              <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>
+                                {translate("session.infoSection")}
+                              </div>
+                              <div
+                                style={{
+                                  display: "grid",
+                                  gridTemplateColumns: "auto minmax(0, 1fr) auto",
+                                  columnGap: 12,
+                                  rowGap: 8,
+                                  alignItems: "start",
+                                }}
+                              >
+                                {sessionRows.map((row) => (
+                                  <div key={`session-info:${row.label}`} style={{ display: "contents" }}>
+                                    <div style={{ color: "var(--text-dim)", whiteSpace: "nowrap" }}>{row.label}</div>
+                                    <div
+                                      style={{
+                                        color: "var(--text-muted)",
+                                        minWidth: 0,
+                                        overflowWrap: "anywhere",
+                                        wordBreak: "break-word",
+                                        whiteSpace: "normal",
+                                      }}
+                                    >
+                                      {row.value}
+                                    </div>
+                                    <div>{row.copyField ? copyButton(row.copyField, row.value) : null}</div>
+                                  </div>
+                                ))}
+                              </div>
                             </div>
-                          ))}
-                        </div>
-                      </div>
-                    ) : null;
+                          );
+                          const projectInfoSection =
+                            projectRows.length > 0 ? (
+                              <div style={{ minWidth: 0 }}>
+                                <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>
+                                  {translate("session.projectSection")}
+                                </div>
+                                <div
+                                  style={{
+                                    display: "grid",
+                                    gridTemplateColumns: "auto minmax(0, 1fr) auto",
+                                    columnGap: 12,
+                                    rowGap: 8,
+                                    alignItems: "start",
+                                  }}
+                                >
+                                  {projectRows.map((row) => (
+                                    <div key={`project-info:${row.label}`} style={{ display: "contents" }}>
+                                      <div style={{ color: "var(--text-dim)", whiteSpace: "nowrap" }}>{row.label}</div>
+                                      <div
+                                        style={{
+                                          color: "var(--text-muted)",
+                                          minWidth: 0,
+                                          overflowWrap: "anywhere",
+                                          wordBreak: "break-word",
+                                          whiteSpace: "normal",
+                                        }}
+                                      >
+                                        {row.value}
+                                      </div>
+                                      <div>{row.copyField ? copyButton(row.copyField, row.value) : null}</div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            ) : null;
 
-                    return (
-                      <div style={{
-                        display: "grid",
-                        gridTemplateColumns: isMobile
-                          ? "1fr"
-                          : "minmax(360px, 1.7fr) minmax(140px, 0.55fr) minmax(190px, 0.75fr)",
-                        gap: isMobile ? 16 : 24,
-                        fontSize: 12,
-                        lineHeight: 1.5,
-                        fontFamily: "var(--font-mono)",
-                      }}>
-                        <div style={{ display: "flex", flexDirection: "column", gap: isMobile ? 16 : 20 }}>
-                          {sessionInfoSection}
-                          {projectInfoSection}
+                          return (
+                            <div
+                              style={{
+                                display: "grid",
+                                gridTemplateColumns: isMobile
+                                  ? "1fr"
+                                  : "minmax(360px, 1.7fr) minmax(140px, 0.55fr) minmax(190px, 0.75fr)",
+                                gap: isMobile ? 16 : 24,
+                                fontSize: 12,
+                                lineHeight: 1.5,
+                                fontFamily: "var(--font-mono)",
+                              }}
+                            >
+                              <div style={{ display: "flex", flexDirection: "column", gap: isMobile ? 16 : 20 }}>
+                                {sessionInfoSection}
+                                {projectInfoSection}
+                              </div>
+                              {section(translate("session.messages"), messageRows)}
+                              {section(translate("session.tokens"), [...tokenRows, ...extraTokenRows], "right", true)}
+                            </div>
+                          );
+                        })()
+                      ) : (
+                        <div style={{ fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>
+                          {translate("session.load")}
                         </div>
-                         {section(translate("session.messages"), messageRows)}
-                         {section(translate("session.tokens"), [...tokenRows, ...extraTokenRows], "right", true)}
-                      </div>
-                    );
-                  })() : (
-                    <div style={{ fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>
-                       {translate("session.load")}
+                      )}
                     </div>
                   )}
                 </div>
               )}
             </div>
-          )}
+            {isMobile && renderProjectTrustWarning(true)}
+          </div>
 
-        </div>
-        {isMobile && renderProjectTrustWarning(true)}
-        </div>
-
-        {/* Chat content + terminal bottom drawer */}
-        <div style={{ flex: 1, overflow: "hidden", position: "relative", display: "flex", flexDirection: "column" }}>
-          <div style={{ flex: 1, overflow: "hidden", position: "relative", minHeight: 0 }}>
-          {showChat ? (
-            <ChatWindow
-              key={sessionKey}
-              session={selectedSession}
-              searchTarget={searchTarget?.sessionId === selectedSession?.id ? searchTarget : null}
-              onSearchTargetHandled={handleSearchTargetHandled}
-              initialScrollPosition={selectedSession ? sessionScrollPositionsRef.current.get(selectedSession.id) ?? null : null}
-              onScrollPositionChange={handleSessionScrollPositionChange}
-              sessionRunning={Boolean(selectedSession && runningSessionIds.has(selectedSession.id))}
-              newSessionCwd={effectiveNewSessionCwd}
-              newSessionMode={newSessionMode}
-              newSessionTemplateId={newSessionTemplateId}
-              onNewSessionTemplateChange={(id) => {
-                setNewSessionTemplateId(id);
-                // 模板切换 = 工作区切换：fetch 新模板的工作区路径并更新 cwd，
-                // 工具栏 MCP / 提示词的 cwd 随之变化。
-                void fetch(`/api/quick-workspace/${encodeURIComponent(id)}`)
-                  .then((r) => (r.ok ? r.json() : null))
-                  .then((d: { cwd?: string } | null) => {
-                    if (d?.cwd) setNewSessionCwd(d.cwd);
-                  })
-                  .catch(() => { /* 解析失败保持当前 cwd */ });
-              }}
-              newSessionProjectId={newSessionProjectId}
-              newSessionDraftKey={newSessionDraftKey}
-              onAgentEnd={handleAgentEnd}
-              onAttentionNeeded={handleAttentionNeeded}
-              onSessionCreated={handleSessionCreated}
-              onSessionForked={handleSessionForked}
-              modelsRefreshKey={modelsRefreshKey}
-              chatInputRef={chatInputRef}
-              onBranchDataChange={handleBranchDataChange}
-              onSystemPromptChange={handleSystemPromptChange}
-              onSystemToolsChange={handleSystemToolsChange}
-              onSystemInfoLoaderChange={handleSystemInfoLoaderChange}
-              onSessionStatsChange={handleSessionStatsChange}
-              onSessionStatsPanelOpen={openSessionStatsPanel}
-              onContextUsageChange={handleContextUsageChange}
-              onOpenFile={handleOpenLinkedFile}
-              onLabStateChange={(w, has) => { setLabWidget(w); setHasLabTraining(has); }}
-              onOpenAgentsPanel={() => { setRightPanelMode("agents"); setRightPanelOpen(true); }}
-              onOpenPlanPanel={() => { setRightPanelMode("plan"); setRightPanelOpen(true); }}
-              planPanelActive={rightPanelMode === "plan"}
-              quickMode={activeSessionMode === "quick"}
-              plan={sessionPlan}
-              onToggleTerminalPanel={() => {
-                if (terminalDrawerMounted) setTerminalDrawerOpen((v) => !v);
-                else openTerminalDrawer();
-              }}
-              terminalPanelActive={terminalDrawerOpen}
-              remoteSession={remoteSessionCtx}
-              onSubagentCallsChange={setSubagentCalls}
-              onPlanActivity={() => setPlanActivityTick((n) => n + 1)}
-              sendCommandRef={sendCommandRef}
-              onOpenSession={handleOpenSession}
-              onAskInNewChat={handleAskInNewChat}
-              quoteSelectionEnabled={quoteSelectionEnabled}
-              initialPrompt={pendingQuotePrompt?.sessionId === selectedSession?.id ? pendingQuotePrompt?.text : undefined}
-              onInitialPromptConsumed={() => setPendingQuotePrompt(null)}
-              soundEnabled={soundEnabled}
-              onSoundToggle={onSoundToggle}
-              playDoneSound={playDoneSound}
-              unlockAudio={unlockAudio}
-            />
-          ) : initialCwdStatus === "validating" ? (
-            <div
-              role="status"
-              style={{ height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, padding: 24, color: "var(--text-muted)", textAlign: "center" }}
-            >
-               <div style={{ fontSize: 14, color: "var(--text)" }}>{translate("workspace.opening")}</div>
-              <div style={{ maxWidth: "min(720px, 100%)", overflowWrap: "anywhere", fontFamily: "var(--font-mono)", fontSize: 12 }}>
-                {initialNavigation.requestedCwd}
-              </div>
-            </div>
-          ) : initialCwdStatus === "error" ? (
-            <div
-              role="alert"
-              style={{ height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, padding: 24, color: "var(--text-muted)", textAlign: "center" }}
-            >
-               <div style={{ fontSize: 14, color: "#dc2626" }}>{translate("workspace.unable")}</div>
-              <div style={{ maxWidth: "min(720px, 100%)", overflowWrap: "anywhere", fontFamily: "var(--font-mono)", fontSize: 12 }}>
-                {initialNavigation.requestedCwd}
-              </div>
-              <div style={{ maxWidth: 720, fontSize: 12 }}>{initialCwdError}</div>
-            </div>
-          ) : showPlaceholder ? (
-            activeCwd ? (
-              <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", fontSize: 15 }}>
-                 {translate("workspace.selectSession")}
-              </div>
-            ) : (
-              <div style={{ position: "absolute", top: 12, left: 12, display: "flex", alignItems: "flex-start", gap: 8, userSelect: "none", pointerEvents: "none" }}>
-                <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.7, flexShrink: 0 }}>
-                  <line x1="20" y1="12" x2="4" y2="12" /><polyline points="10 6 4 12 10 18" />
-                </svg>
-                <div>
-                   <div style={{ fontSize: 18, fontWeight: 600, color: "var(--text)", marginBottom: 8 }}>{translate("workspace.getStarted")}</div>
-                  <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.8 }}>
-                     <span style={{ color: "var(--text-dim)", marginRight: 6 }}>1.</span>{translate("workspace.selectProject")}<br />
-                     <span style={{ color: "var(--text-dim)", marginRight: 6 }}>2.</span>{translate("workspace.addModels")}
+          {/* Chat content + terminal bottom drawer */}
+          <div style={{ flex: 1, overflow: "hidden", position: "relative", display: "flex", flexDirection: "column" }}>
+            <div style={{ flex: 1, overflow: "hidden", position: "relative", minHeight: 0 }}>
+              {showChat ? (
+                <ChatWindow
+                  key={sessionKey}
+                  session={selectedSession}
+                  searchTarget={searchTarget?.sessionId === selectedSession?.id ? searchTarget : null}
+                  onSearchTargetHandled={handleSearchTargetHandled}
+                  initialScrollPosition={
+                    selectedSession ? (sessionScrollPositionsRef.current.get(selectedSession.id) ?? null) : null
+                  }
+                  onScrollPositionChange={handleSessionScrollPositionChange}
+                  sessionRunning={Boolean(selectedSession && runningSessionIds.has(selectedSession.id))}
+                  newSessionCwd={effectiveNewSessionCwd}
+                  newSessionMode={newSessionMode}
+                  newSessionTemplateId={newSessionTemplateId}
+                  onNewSessionTemplateChange={(id) => {
+                    setNewSessionTemplateId(id);
+                    // 模板切换 = 工作区切换：fetch 新模板的工作区路径并更新 cwd，
+                    // 工具栏 MCP / 提示词的 cwd 随之变化。
+                    void fetch(`/api/quick-workspace/${encodeURIComponent(id)}`)
+                      .then((r) => (r.ok ? r.json() : null))
+                      .then((d: { cwd?: string } | null) => {
+                        if (d?.cwd) setNewSessionCwd(d.cwd);
+                      })
+                      .catch(() => {
+                        /* 解析失败保持当前 cwd */
+                      });
+                  }}
+                  newSessionProjectId={newSessionProjectId}
+                  newSessionDraftKey={newSessionDraftKey}
+                  onAgentEnd={handleAgentEnd}
+                  onAttentionNeeded={handleAttentionNeeded}
+                  onSessionCreated={handleSessionCreated}
+                  onSessionForked={handleSessionForked}
+                  modelsRefreshKey={modelsRefreshKey}
+                  chatInputRef={chatInputRef}
+                  onBranchDataChange={handleBranchDataChange}
+                  onSystemPromptChange={handleSystemPromptChange}
+                  onSystemToolsChange={handleSystemToolsChange}
+                  onSystemInfoLoaderChange={handleSystemInfoLoaderChange}
+                  onSessionStatsChange={handleSessionStatsChange}
+                  onSessionStatsPanelOpen={openSessionStatsPanel}
+                  onContextUsageChange={handleContextUsageChange}
+                  onOpenFile={handleOpenLinkedFile}
+                  onLabStateChange={(w, has) => {
+                    setLabWidget(w);
+                    setHasLabTraining(has);
+                  }}
+                  onOpenAgentsPanel={() => {
+                    setRightPanelMode("agents");
+                    setRightPanelOpen(true);
+                  }}
+                  onOpenPlanPanel={() => {
+                    setRightPanelMode("plan");
+                    setRightPanelOpen(true);
+                  }}
+                  planPanelActive={rightPanelMode === "plan"}
+                  quickMode={activeSessionMode === "quick"}
+                  plan={sessionPlan}
+                  onToggleTerminalPanel={() => {
+                    if (terminalDrawerMounted) setTerminalDrawerOpen((v) => !v);
+                    else openTerminalDrawer();
+                  }}
+                  terminalPanelActive={terminalDrawerOpen}
+                  remoteSession={remoteSessionCtx}
+                  onSubagentCallsChange={setSubagentCalls}
+                  onPlanActivity={() => setPlanActivityTick((n) => n + 1)}
+                  sendCommandRef={sendCommandRef}
+                  onOpenSession={handleOpenSession}
+                  onAskInNewChat={handleAskInNewChat}
+                  quoteSelectionEnabled={quoteSelectionEnabled}
+                  initialPrompt={
+                    pendingQuotePrompt?.sessionId === selectedSession?.id ? pendingQuotePrompt?.text : undefined
+                  }
+                  onInitialPromptConsumed={() => setPendingQuotePrompt(null)}
+                  soundEnabled={soundEnabled}
+                  onSoundToggle={onSoundToggle}
+                  playDoneSound={playDoneSound}
+                  unlockAudio={unlockAudio}
+                />
+              ) : initialCwdStatus === "validating" ? (
+                <div
+                  role="status"
+                  style={{
+                    height: "100%",
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 8,
+                    padding: 24,
+                    color: "var(--text-muted)",
+                    textAlign: "center",
+                  }}
+                >
+                  <div style={{ fontSize: 14, color: "var(--text)" }}>{translate("workspace.opening")}</div>
+                  <div
+                    style={{
+                      maxWidth: "min(720px, 100%)",
+                      overflowWrap: "anywhere",
+                      fontFamily: "var(--font-mono)",
+                      fontSize: 12,
+                    }}
+                  >
+                    {initialNavigation.requestedCwd}
                   </div>
                 </div>
-              </div>
-            )
-          ) : null}
-          </div>
-
-          {/* Terminal bottom drawer — mounts on first open for the current
-              session/cwd, then collapses to height 0 (PTY survives). */}
-          {terminalDrawerMounted && terminalDrawerKey && (
-            <div
-              ref={terminalDrawerRef}
-              style={{
-                height: terminalDrawerOpen ? terminalDrawerHeight : 0,
-                flexShrink: 0,
-                overflow: "hidden",
-                borderTop: terminalDrawerOpen ? "1px solid var(--border)" : "none",
-                background: "#000",
-                transition: "height 0.18s ease",
-              }}
-            >
-              <div
-                onMouseDown={startTerminalDrawerResize}
-                onDoubleClick={() => setTerminalDrawerHeight(280)}
-                title={translate("app.dragResizeDoubleClickReset")}
-                style={{
-                  height: 5, cursor: "row-resize", background: "var(--bg-panel)",
-                  borderBottom: "1px solid var(--border)", flexShrink: 0,
-                }}
-              />
-              <div style={{ height: terminalDrawerOpen ? `calc(100% - 6px)` : 0 }}>
-                {pendingRemoteSession ? (
-                  <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-dim)", fontSize: 12, padding: 20, textAlign: "center", background: "var(--bg)" }}>
-                    {translate("app.sendFirstMessageEnableRemote", { kind: pendingRemoteSession === "sandbox" ? translate("app.sandbox") : pendingRemoteSession === "ssh" ? translate("SSH") : translate("app.localMachine") })}
+              ) : initialCwdStatus === "error" ? (
+                <div
+                  role="alert"
+                  style={{
+                    height: "100%",
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 8,
+                    padding: 24,
+                    color: "var(--text-muted)",
+                    textAlign: "center",
+                  }}
+                >
+                  <div style={{ fontSize: 14, color: "#dc2626" }}>{translate("workspace.unable")}</div>
+                  <div
+                    style={{
+                      maxWidth: "min(720px, 100%)",
+                      overflowWrap: "anywhere",
+                      fontFamily: "var(--font-mono)",
+                      fontSize: 12,
+                    }}
+                  >
+                    {initialNavigation.requestedCwd}
+                  </div>
+                  <div style={{ maxWidth: 720, fontSize: 12 }}>{initialCwdError}</div>
+                </div>
+              ) : showPlaceholder ? (
+                activeCwd ? (
+                  <div
+                    style={{
+                      height: "100%",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      color: "var(--text-muted)",
+                      fontSize: 15,
+                    }}
+                  >
+                    {translate("workspace.selectSession")}
                   </div>
                 ) : (
-                  <WorkspaceTerminal
-                    key={terminalDrawerKey}
-                    cwd={terminalDrawerKey}
-                    visible={terminalDrawerOpen}
-                    remote={remoteSessionCtx}
-                    onClose={() => setTerminalDrawerOpen(false)}
-                  />
-                )}
-              </div>
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: 12,
+                      left: 12,
+                      display: "flex",
+                      alignItems: "flex-start",
+                      gap: 8,
+                      userSelect: "none",
+                      pointerEvents: "none",
+                    }}
+                  >
+                    <svg
+                      width="44"
+                      height="44"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="var(--accent)"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      style={{ opacity: 0.7, flexShrink: 0 }}
+                    >
+                      <line x1="20" y1="12" x2="4" y2="12" />
+                      <polyline points="10 6 4 12 10 18" />
+                    </svg>
+                    <div>
+                      <div style={{ fontSize: 18, fontWeight: 600, color: "var(--text)", marginBottom: 8 }}>
+                        {translate("workspace.getStarted")}
+                      </div>
+                      <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.8 }}>
+                        <span style={{ color: "var(--text-dim)", marginRight: 6 }}>1.</span>
+                        {translate("workspace.selectProject")}
+                        <br />
+                        <span style={{ color: "var(--text-dim)", marginRight: 6 }}>2.</span>
+                        {translate("workspace.addModels")}
+                      </div>
+                    </div>
+                  </div>
+                )
+              ) : null}
             </div>
-          )}
-        </div>
-      </div>
 
-      <div
-        aria-hidden="true"
-        className={`right-panel-overlay-backdrop${rightPanelOpen ? " is-open" : ""}`}
-        onClick={() => setRightPanelOpen(false)}
-      />
-      {rightPanelOpen && (
-        <div
-          {...rightPanelResizer.separatorProps}
-          inert={rightPanelFullWidth}
-          aria-controls="file-panel"
-          className={`panel-resize-handle right-panel-resize-handle${rightPanelResizer.isResizing ? " is-resizing" : ""}`}
-          data-resize-handle="right-panel"
-          title={`${translate("layout.resizeFilePanel")}: ${translate("layout.resizeHint")}`}
-        />
-      )}
-
-      {/* Right panel: file viewer — always mounted, width animated via CSS */}
-      <div
-        ref={rightPanelResizer.panelRef}
-        id="file-panel"
-        className={`right-panel-container${rightPanelOpen ? " right-panel-open" : " right-panel-closed"}${rightPanelFullWidth ? " right-panel-full-width" : ""}${rightPanelResizer.isResizing ? " right-panel-resizing" : ""}`}
-        style={{
-          "--right-panel-width": `${rightPanelResizer.width}px`,
-          display: "flex",
-          flexDirection: "column",
-          borderLeft: "1px solid var(--border)",
-          background: "var(--bg)",
-        } as React.CSSProperties}
-      >
-        {/* Right panel tab bar — single-row tabs: icon + label, hover feedback,
-            active = bold near-white text + accent rounded indicator floating
-            above the container's hairline (no triple emphasis). */}
-        <div style={{
-          display: "flex",
-          alignItems: "stretch",
-          flexShrink: 0,
-          height: "calc(36px + env(safe-area-inset-top))",
-          paddingTop: "env(safe-area-inset-top)",
-          background: "var(--bg-panel)",
-          borderBottom: "1px solid var(--border)",
-        }}>
-          {/* 分栏态主条只留文件（其余面板移到下栏子 tab 条）；整栏态显示全部。 */}
-          {(splitViewActive
-            ? rightPanelTabs.filter((tab) => tab.id === "files")
-            : rightPanelTabs
-          ).map((tab) => renderRightPanelTab(tab, splitViewActive ? tab.id === "files" : rightPanelMode === tab.id))}
-          <div style={{ flex: 1, overflow: "hidden" }}>
-            {/* 分栏态文件标签栏常驻（上=文件预览）——切到其它子面板不再丢失
-                已打开文件的快速切换入口。 */}
-            {(rightPanelMode === "files" || splitViewActive) && (
-              <TabBar
-                tabs={fileTabs}
-                activeTabId={activeFileTabId ?? ""}
-                onSelectTab={setActiveFileTabId}
-                onCloseTab={handleCloseFileTab}
-              />
+            {/* Terminal bottom drawer — mounts on first open for the current
+              session/cwd, then collapses to height 0 (PTY survives). */}
+            {terminalDrawerMounted && terminalDrawerKey && (
+              <div
+                ref={terminalDrawerRef}
+                style={{
+                  height: terminalDrawerOpen ? terminalDrawerHeight : 0,
+                  flexShrink: 0,
+                  overflow: "hidden",
+                  borderTop: terminalDrawerOpen ? "1px solid var(--border)" : "none",
+                  background: "#000",
+                  transition: "height 0.18s ease",
+                }}
+              >
+                <div
+                  onMouseDown={startTerminalDrawerResize}
+                  onDoubleClick={() => setTerminalDrawerHeight(280)}
+                  title={translate("app.dragResizeDoubleClickReset")}
+                  style={{
+                    height: 5,
+                    cursor: "row-resize",
+                    background: "var(--bg-panel)",
+                    borderBottom: "1px solid var(--border)",
+                    flexShrink: 0,
+                  }}
+                />
+                <div style={{ height: terminalDrawerOpen ? `calc(100% - 6px)` : 0 }}>
+                  {pendingRemoteSession ? (
+                    <div
+                      style={{
+                        height: "100%",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        color: "var(--text-dim)",
+                        fontSize: 12,
+                        padding: 20,
+                        textAlign: "center",
+                        background: "var(--bg)",
+                      }}
+                    >
+                      {translate("app.sendFirstMessageEnableRemote", {
+                        kind:
+                          pendingRemoteSession === "sandbox"
+                            ? translate("app.sandbox")
+                            : pendingRemoteSession === "ssh"
+                              ? translate("SSH")
+                              : translate("app.localMachine"),
+                      })}
+                    </div>
+                  ) : (
+                    <WorkspaceTerminal
+                      key={terminalDrawerKey}
+                      cwd={terminalDrawerKey}
+                      visible={terminalDrawerOpen}
+                      remote={remoteSessionCtx}
+                      onClose={() => setTerminalDrawerOpen(false)}
+                    />
+                  )}
+                </div>
+              </div>
             )}
           </div>
-          {/* 上下分栏开关：上=文件预览常驻（多文件标签始终可见可切），
-              下=Git/子智能体/计划/教学训练切换组。 */}
-          <button
-            type="button"
-            onClick={toggleRightPanelSplit}
-            aria-pressed={rightPanelSplit}
-            disabled={isMobile || rightPanelFullWidth}
-            title={translate(rightPanelSplit ? "layout.splitFilePanelOff" : "layout.splitFilePanel")}
-            aria-label={translate(rightPanelSplit ? "layout.splitFilePanelOff" : "layout.splitFilePanel")}
-            style={{
-              display: "flex", alignItems: "center", justifyContent: "center",
-              width: TOP_BAR_ICON_BUTTON_SIZE, height: TOP_BAR_ICON_BUTTON_SIZE, padding: 0,
-              background: rightPanelSplit ? "var(--bg-selected)" : "transparent",
-              border: "none", borderLeft: "1px solid var(--border)",
-              color: rightPanelSplit ? "var(--accent)" : "var(--text)",
-              cursor: isMobile || rightPanelFullWidth ? "not-allowed" : "pointer",
-              opacity: isMobile || rightPanelFullWidth ? 0.4 : 1,
-              flexShrink: 0, transition: "color 0.12s",
-            }}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <rect x="3" y="3" width="18" height="18" rx="2" /><line x1="3" y1="12" x2="21" y2="12" />
-            </svg>
-          </button>
-          <button
-            type="button"
-            className="file-panel-expand-button"
-            onClick={handleRightPanelExpandToggle}
-            aria-controls="file-panel"
-            aria-pressed={rightPanelFullWidth}
-            title={translate(rightPanelFullWidth ? "files.restorePanelWidth" : "files.expandPanel")}
-            aria-label={translate(rightPanelFullWidth ? "files.restorePanelWidth" : "files.expandPanel")}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d={rightPanelFullWidth
-                ? "M9 3v6H3m12-6v6h6M9 21v-6H3m12 6v-6h6M3 3l6 6m12-6-6 6M3 21l6-6m12 6-6-6"
-                : "M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5M3 3l6 6m12-6-6 6M3 21l6-6m12 6-6-6"} />
-            </svg>
-          </button>
-          <button
-            type="button"
-            onClick={() => setRightPanelOpen(false)}
-            aria-controls="file-panel"
-            aria-expanded={rightPanelOpen}
-            title={translate("files.hidePanel")}
-            aria-label={translate("files.hidePanel")}
-            style={{
-              display: "flex", alignItems: "center", justifyContent: "center",
-              width: TOP_BAR_ICON_BUTTON_SIZE, height: TOP_BAR_ICON_BUTTON_SIZE, padding: 0,
-              background: "var(--bg-selected)", border: "none", borderLeft: "1px solid var(--border)",
-              color: "var(--text)", cursor: "pointer", flexShrink: 0, transition: "color 0.12s",
-            }}
-            onMouseEnter={(event) => { event.currentTarget.style.color = "var(--accent)"; }}
-            onMouseLeave={(event) => { event.currentTarget.style.color = "var(--text)"; }}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <rect x="3" y="3" width="18" height="18" rx="2" /><line x1="15" y1="3" x2="15" y2="21" />
-            </svg>
-          </button>
         </div>
 
-        {/* Only the active viewer is mounted. Lightweight per-tab state is restored on activation. */}
-        <div style={{ flex: 1, minHeight: 0, overflow: "hidden", paddingBottom: "env(safe-area-inset-bottom)" }}>
-          {(() => {
-            /* 布局地基 C（2026-10-20）：分栏态 = 上（文件预览，高度可拖拽）
+        <div
+          aria-hidden="true"
+          className={`right-panel-overlay-backdrop${rightPanelOpen ? " is-open" : ""}`}
+          onClick={() => setRightPanelOpen(false)}
+        />
+        {rightPanelOpen && (
+          <div
+            {...rightPanelResizer.separatorProps}
+            inert={rightPanelFullWidth}
+            aria-controls="file-panel"
+            className={`panel-resize-handle right-panel-resize-handle${rightPanelResizer.isResizing ? " is-resizing" : ""}`}
+            data-resize-handle="right-panel"
+            title={`${translate("layout.resizeFilePanel")}: ${translate("layout.resizeHint")}`}
+          />
+        )}
+
+        {/* Right panel: file viewer — always mounted, width animated via CSS */}
+        <div
+          ref={rightPanelResizer.panelRef}
+          id="file-panel"
+          className={`right-panel-container${rightPanelOpen ? " right-panel-open" : " right-panel-closed"}${rightPanelFullWidth ? " right-panel-full-width" : ""}${rightPanelResizer.isResizing ? " right-panel-resizing" : ""}`}
+          style={
+            {
+              "--right-panel-width": `${rightPanelResizer.width}px`,
+              display: "flex",
+              flexDirection: "column",
+              borderLeft: "1px solid var(--border)",
+              background: "var(--bg)",
+            } as React.CSSProperties
+          }
+        >
+          {/* Right panel tab bar — single-row tabs: icon + label, hover feedback,
+            active = bold near-white text + accent rounded indicator floating
+            above the container's hairline (no triple emphasis). */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "stretch",
+              flexShrink: 0,
+              height: "calc(36px + env(safe-area-inset-top))",
+              paddingTop: "env(safe-area-inset-top)",
+              background: "var(--bg-panel)",
+              borderBottom: "1px solid var(--border)",
+            }}
+          >
+            {/* 分栏态主条只留文件（其余面板移到下栏子 tab 条）；整栏态显示全部。 */}
+            {(splitViewActive ? rightPanelTabs.filter((tab) => tab.id === "files") : rightPanelTabs).map((tab) =>
+              renderRightPanelTab(tab, splitViewActive ? tab.id === "files" : rightPanelMode === tab.id),
+            )}
+            <div style={{ flex: 1, overflow: "hidden" }}>
+              {/* 分栏态文件标签栏常驻（上=文件预览）——切到其它子面板不再丢失
+                已打开文件的快速切换入口。 */}
+              {(rightPanelMode === "files" || splitViewActive) && (
+                <TabBar
+                  tabs={fileTabs}
+                  activeTabId={activeFileTabId ?? ""}
+                  onSelectTab={setActiveFileTabId}
+                  onCloseTab={handleCloseFileTab}
+                />
+              )}
+            </div>
+            {/* 上下分栏开关：上=文件预览常驻（多文件标签始终可见可切），
+              下=Git/子智能体/计划/教学训练切换组。 */}
+            <button
+              type="button"
+              onClick={toggleRightPanelSplit}
+              aria-pressed={rightPanelSplit}
+              disabled={isMobile || rightPanelFullWidth}
+              title={translate(rightPanelSplit ? "layout.splitFilePanelOff" : "layout.splitFilePanel")}
+              aria-label={translate(rightPanelSplit ? "layout.splitFilePanelOff" : "layout.splitFilePanel")}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                width: TOP_BAR_ICON_BUTTON_SIZE,
+                height: TOP_BAR_ICON_BUTTON_SIZE,
+                padding: 0,
+                background: rightPanelSplit ? "var(--bg-selected)" : "transparent",
+                border: "none",
+                borderLeft: "1px solid var(--border)",
+                color: rightPanelSplit ? "var(--accent)" : "var(--text)",
+                cursor: isMobile || rightPanelFullWidth ? "not-allowed" : "pointer",
+                opacity: isMobile || rightPanelFullWidth ? 0.4 : 1,
+                flexShrink: 0,
+                transition: "color 0.12s",
+              }}
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.7"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <rect x="3" y="3" width="18" height="18" rx="2" />
+                <line x1="3" y1="12" x2="21" y2="12" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              className="file-panel-expand-button"
+              onClick={handleRightPanelExpandToggle}
+              aria-controls="file-panel"
+              aria-pressed={rightPanelFullWidth}
+              title={translate(rightPanelFullWidth ? "files.restorePanelWidth" : "files.expandPanel")}
+              aria-label={translate(rightPanelFullWidth ? "files.restorePanelWidth" : "files.expandPanel")}
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.7"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path
+                  d={
+                    rightPanelFullWidth
+                      ? "M9 3v6H3m12-6v6h6M9 21v-6H3m12 6v-6h6M3 3l6 6m12-6-6 6M3 21l6-6m12 6-6-6"
+                      : "M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5M3 3l6 6m12-6-6 6M3 21l6-6m12 6-6-6"
+                  }
+                />
+              </svg>
+            </button>
+            <button
+              type="button"
+              onClick={() => setRightPanelOpen(false)}
+              aria-controls="file-panel"
+              aria-expanded={rightPanelOpen}
+              title={translate("files.hidePanel")}
+              aria-label={translate("files.hidePanel")}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                width: TOP_BAR_ICON_BUTTON_SIZE,
+                height: TOP_BAR_ICON_BUTTON_SIZE,
+                padding: 0,
+                background: "var(--bg-selected)",
+                border: "none",
+                borderLeft: "1px solid var(--border)",
+                color: "var(--text)",
+                cursor: "pointer",
+                flexShrink: 0,
+                transition: "color 0.12s",
+              }}
+              onMouseEnter={(event) => {
+                event.currentTarget.style.color = "var(--accent)";
+              }}
+              onMouseLeave={(event) => {
+                event.currentTarget.style.color = "var(--text)";
+              }}
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <rect x="3" y="3" width="18" height="18" rx="2" />
+                <line x1="15" y1="3" x2="15" y2="21" />
+              </svg>
+            </button>
+          </div>
+
+          {/* Only the active viewer is mounted. Lightweight per-tab state is restored on activation. */}
+          <div style={{ flex: 1, minHeight: 0, overflow: "hidden", paddingBottom: "env(safe-area-inset-bottom)" }}>
+            {(() => {
+              /* 布局地基 C（2026-10-20）：分栏态 = 上（文件预览，高度可拖拽）
                + 下（git/agents/plan/lab 切换组）；整栏态维持单内容区。
                FileViewer 切换形态会重挂载——per-tab viewerState 已持久化，
                激活时恢复（与模式切换一致）。 */
-            const filesContent = activeFileTab?.filePath ? (
-              <FileViewer
-                key={`${activeFileTab.id}:${activeFileTab.viewerRevision ?? 0}`}
-                filePath={activeFileTab.filePath}
-                cwd={activeCwd ?? undefined}
-                sourceSessionId={activeFileTab.sourceSessionId}
-                gitRefreshKey={explorerRefreshKey}
-                initialDisplayMode={activeFileTab.initialDisplayMode}
-                initialPage={activeFileTab.page}
-                onDirtyChange={setActiveFileDirty}
-                remote={remoteSessionCtx}
-                initialState={activeFileTab.viewerState}
-                watchEnabled={rightPanelOpen}
-                onStateChange={(viewerState) => handleFileViewerStateChange(
-                  activeFileTab.id,
-                  activeFileTab.viewerRevision ?? 0,
-                  viewerState,
-                )}
-                onMentionLines={rightPanelOpen ? handleFileLineMention : undefined}
-                onAtMention={handleAtMention}
-                onOpenFile={(filePath, page) => handleOpenFile(
-                  filePath,
-                  getFileName(filePath),
-                  { sourceSessionId: activeFileTab.sourceSessionId, page },
-                )}
-              />
-            ) : (
-              <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-dim)", fontSize: 12 }}>
-                 {translate("files.noneOpen")}
-              </div>
-            );
-            /* Subagent directory: stays mounted while the panel is open so its
+              const filesContent = activeFileTab?.filePath ? (
+                <FileViewer
+                  key={`${activeFileTab.id}:${activeFileTab.viewerRevision ?? 0}`}
+                  filePath={activeFileTab.filePath}
+                  cwd={activeCwd ?? undefined}
+                  sourceSessionId={activeFileTab.sourceSessionId}
+                  gitRefreshKey={explorerRefreshKey}
+                  initialDisplayMode={activeFileTab.initialDisplayMode}
+                  initialPage={activeFileTab.page}
+                  onDirtyChange={setActiveFileDirty}
+                  remote={remoteSessionCtx}
+                  initialState={activeFileTab.viewerState}
+                  watchEnabled={rightPanelOpen}
+                  onStateChange={(viewerState) =>
+                    handleFileViewerStateChange(activeFileTab.id, activeFileTab.viewerRevision ?? 0, viewerState)
+                  }
+                  onMentionLines={rightPanelOpen ? handleFileLineMention : undefined}
+                  onAtMention={handleAtMention}
+                  onOpenFile={(filePath, page) =>
+                    handleOpenFile(filePath, getFileName(filePath), {
+                      sourceSessionId: activeFileTab.sourceSessionId,
+                      page,
+                    })
+                  }
+                />
+              ) : (
+                <div
+                  style={{
+                    height: "100%",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    color: "var(--text-dim)",
+                    fontSize: 12,
+                  }}
+                >
+                  {translate("files.noneOpen")}
+                </div>
+              );
+              /* Subagent directory: stays mounted while the panel is open so its
                5s record polling keeps the finished list fresh for the widget;
                keyed by session, hidden via display:none.
                （0.9.0 合并时此块连同 git/plan 挂载一起丢失，tab 切过去渲染空白——恢复。） */
-            const agentsMounted = selectedSession?.id ? (
-              <div style={{ display: rightPanelMode === "agents" ? "flex" : "none", height: "100%", flexDirection: "column" }}>
-                <SubagentDirectoryPanel
-                  key={selectedSession.id}
-                  sessionId={selectedSession.id}
-                  subagentCalls={subagentCalls}
-                />
-              </div>
-            ) : null;
-            const bottomContent = rightPanelMode === "plan" ? (
-              <PlanPanel plan={sessionPlan} sessionId={selectedSession?.id ?? null} />
-            ) : rightPanelMode === "agents" && !selectedSession?.id ? (
-              <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-dim)", fontSize: 12 }}>
-                {translate("app.selectCreateSessionViewSubagent")}
-              </div>
-            ) : (rightPanelMode === "git" && activeSessionMode !== "quick") ? (
-              <GitPanel
-                cwd={(activeCwd ?? selectedSession?.cwd ?? newSessionCwd) ?? ""}
-                sessionId={selectedSession?.id ?? null}
-                refreshKey={explorerRefreshKey}
-                onClose={() => {
-                  // 分栏态下栏没有 files 位，关闭 Git 落回智能体面板。
-                  setRightPanelMode(splitViewActive ? "agents" : "files");
-                }}
-              />
-            ) : rightPanelMode === "lab" ? (
-              <LabTrainingSidePanel
-                hideHeader
-                widgetState={(labWidget?.metadata as LabWidgetState | undefined) ?? null}
-                hasLabTraining={hasLabTraining}
-                onSendCommand={handleSendCommand}
-                onStartLabTraining={handleStartLabTraining}
-              />
-            ) : null;
+              const agentsMounted = selectedSession?.id ? (
+                <div
+                  style={{
+                    display: rightPanelMode === "agents" ? "flex" : "none",
+                    height: "100%",
+                    flexDirection: "column",
+                  }}
+                >
+                  <SubagentDirectoryPanel
+                    key={selectedSession.id}
+                    sessionId={selectedSession.id}
+                    subagentCalls={subagentCalls}
+                  />
+                </div>
+              ) : null;
+              const bottomContent =
+                rightPanelMode === "plan" ? (
+                  <PlanPanel plan={sessionPlan} sessionId={selectedSession?.id ?? null} />
+                ) : rightPanelMode === "agents" && !selectedSession?.id ? (
+                  <div
+                    style={{
+                      height: "100%",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      color: "var(--text-dim)",
+                      fontSize: 12,
+                    }}
+                  >
+                    {translate("app.selectCreateSessionViewSubagent")}
+                  </div>
+                ) : rightPanelMode === "git" && activeSessionMode !== "quick" ? (
+                  <GitPanel
+                    cwd={activeCwd ?? selectedSession?.cwd ?? newSessionCwd ?? ""}
+                    sessionId={selectedSession?.id ?? null}
+                    refreshKey={explorerRefreshKey}
+                    onClose={() => {
+                      // 分栏态下栏没有 files 位，关闭 Git 落回智能体面板。
+                      setRightPanelMode(splitViewActive ? "agents" : "files");
+                    }}
+                  />
+                ) : rightPanelMode === "lab" ? (
+                  <LabTrainingSidePanel
+                    hideHeader
+                    widgetState={(labWidget?.metadata as LabWidgetState | undefined) ?? null}
+                    hasLabTraining={hasLabTraining}
+                    onSendCommand={handleSendCommand}
+                    onStartLabTraining={handleStartLabTraining}
+                  />
+                ) : null;
 
-            if (splitViewActive) {
+              if (splitViewActive) {
+                return (
+                  <>
+                    <div
+                      ref={rightSplitResizer.panelRef}
+                      style={{ height: "var(--right-split-height)", flexShrink: 0, minHeight: 0, overflow: "hidden" }}
+                    >
+                      {filesContent}
+                    </div>
+                    <div
+                      {...rightSplitResizer.separatorProps}
+                      className={`panel-resize-handle right-split-resize-handle${rightSplitResizer.isResizing ? " is-resizing" : ""}`}
+                      data-resize-handle="right-split"
+                      title={`${translate("layout.splitFilePanel")}: ${translate("layout.resizeHint")}`}
+                    />
+                    <div
+                      style={{ flex: 1, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}
+                    >
+                      {/* 下栏子 tab 条：Git/智能体/教学训练/计划（files 独占上栏） */}
+                      <div
+                        role="tablist"
+                        aria-label={translate("layout.splitFilePanel")}
+                        style={{
+                          display: "flex",
+                          alignItems: "stretch",
+                          flexShrink: 0,
+                          height: 32,
+                          background: "var(--bg-panel)",
+                          borderBottom: "1px solid var(--border)",
+                          overflowX: "auto",
+                          scrollbarWidth: "none",
+                        }}
+                      >
+                        {rightPanelTabs
+                          .filter((tab) => tab.id !== "files")
+                          .map((tab) => renderRightPanelTab(tab, rightPanelMode === tab.id))}
+                      </div>
+                      <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+                        {agentsMounted}
+                        {bottomContent}
+                      </div>
+                    </div>
+                  </>
+                );
+              }
               return (
                 <>
-                  <div
-                    ref={rightSplitResizer.panelRef}
-                    style={{ height: "var(--right-split-height)", flexShrink: 0, minHeight: 0, overflow: "hidden" }}
-                  >
-                    {filesContent}
-                  </div>
-                  <div
-                    {...rightSplitResizer.separatorProps}
-                    className={`panel-resize-handle right-split-resize-handle${rightSplitResizer.isResizing ? " is-resizing" : ""}`}
-                    data-resize-handle="right-split"
-                    title={`${translate("layout.splitFilePanel")}: ${translate("layout.resizeHint")}`}
-                  />
-                  <div style={{ flex: 1, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-                    {/* 下栏子 tab 条：Git/智能体/教学训练/计划（files 独占上栏） */}
-                    <div
-                      role="tablist"
-                      aria-label={translate("layout.splitFilePanel")}
-                      style={{
-                        display: "flex", alignItems: "stretch", flexShrink: 0, height: 32,
-                        background: "var(--bg-panel)", borderBottom: "1px solid var(--border)",
-                        overflowX: "auto", scrollbarWidth: "none",
-                      }}
-                    >
-                      {rightPanelTabs.filter((tab) => tab.id !== "files")
-                        .map((tab) => renderRightPanelTab(tab, rightPanelMode === tab.id))}
-                    </div>
-                    <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-                      {agentsMounted}
-                      {bottomContent}
-                    </div>
-                  </div>
+                  {agentsMounted}
+                  {rightPanelMode === "files" ? filesContent : bottomContent}
                 </>
               );
-            }
-            return (
-              <>
-                {agentsMounted}
-                {rightPanelMode === "files" ? filesContent : bottomContent}
-              </>
-            );
-          })()}
+            })()}
+          </div>
         </div>
       </div>
-    </div>
-    {settingsSection && (
-      <SettingsPanel
-        cwd={activeSessionMode === "quick" ? null : projectTrustCwd}
-        sessionId={selectedSession?.id ?? null}
-        initialSection={settingsSection}
-        isAdmin={!authEnabled /* auth-off 单用户模式 = 隐式 host 管理员，后端同样放行管理面 */
-          || (webUser !== "loading" && webUser !== null && webUser.role === "admin")}
-        quoteSelectionEnabled={quoteSelectionEnabled}
-        onQuoteSelectionChange={handleQuoteSelectionChange}
-        onClose={() => {
-          setSettingsSection(null);
-          setModelsRefreshKey((key) => key + 1);
-        }}
-        onSessionReloaded={() => setSessionKey((key) => key + 1)}
+      {settingsSection && (
+        <SettingsPanel
+          cwd={activeSessionMode === "quick" ? null : projectTrustCwd}
+          sessionId={selectedSession?.id ?? null}
+          initialSection={settingsSection}
+          isAdmin={
+            !authEnabled /* auth-off 单用户模式 = 隐式 host 管理员，后端同样放行管理面 */ ||
+            (webUser !== "loading" && webUser !== null && webUser.role === "admin")
+          }
+          quoteSelectionEnabled={quoteSelectionEnabled}
+          onQuoteSelectionChange={handleQuoteSelectionChange}
+          onClose={() => {
+            setSettingsSection(null);
+            setModelsRefreshKey((key) => key + 1);
+          }}
+          onSessionReloaded={() => setSessionKey((key) => key + 1)}
+        />
+      )}
+      {myWorkspaceOpen && <MyWorkspaceDialog onClose={() => setMyWorkspaceOpen(false)} />}
+      <WebUIGuide
+        open={webGuideOpen}
+        onClose={closeWebGuide}
+        onOpenSettings={(section) => setSettingsSection(section)}
+        onStartQuickSession={() => handleNewSession(`guide-${Date.now()}`, "", "quick")}
+        onJumpOut={() => setGuideResumeVisible(true)}
+        onFinished={() => setGuideResumeVisible(false)}
       />
-    )}
-    {myWorkspaceOpen && <MyWorkspaceDialog onClose={() => setMyWorkspaceOpen(false)} />}
-    <WebUIGuide
-      open={webGuideOpen}
-      onClose={closeWebGuide}
-      onOpenSettings={(section) => setSettingsSection(section)}
-      onStartQuickSession={() => handleNewSession(`guide-${Date.now()}`, "", "quick")}
-      onJumpOut={() => setGuideResumeVisible(true)}
-      onFinished={() => setGuideResumeVisible(false)}
-    />
-    {guideResumeVisible && !webGuideOpen && (
-      <WebUIGuideResumePill
-        onResume={() => setWebGuideOpen(true)}
-        onDismiss={() => setGuideResumeVisible(false)}
-      />
-    )}
-    <PlatformAdminDialog
-      open={platformAdminOpen}
-      onClose={() => setPlatformAdminOpen(false)}
-    />
-    {sandboxManager !== null && (
-      <SandboxManagerDialog
-        bind={sandboxManager.projectId ? { projectId: sandboxManager.projectId, projectName: sandboxManager.projectName ?? "", containerId: sandboxManager.containerId } : null}
-        onClose={() => setSandboxManager(null)}
-        onChanged={() => setProjectsRefreshKey((k) => k + 1)}
-      />
-    )}
-    {projectTrustDialogOpen && projectTrustCwd && (
-      <ProjectTrustDialog
-        cwd={projectTrustCwd}
-        busy={projectTrustBusy}
-        error={projectTrustError}
-        onCancel={() => {
-          if (!projectTrustBusy) setProjectTrustDialogOpen(false);
-        }}
-        onConfirm={() => void handleTrustProject()}
-      />
-    )}
-    {/* Skills/plugins/agents/mcp config all live in the upstream
+      {guideResumeVisible && !webGuideOpen && (
+        <WebUIGuideResumePill onResume={() => setWebGuideOpen(true)} onDismiss={() => setGuideResumeVisible(false)} />
+      )}
+      <PlatformAdminDialog open={platformAdminOpen} onClose={() => setPlatformAdminOpen(false)} />
+      {sandboxManager !== null && (
+        <SandboxManagerDialog
+          bind={
+            sandboxManager.projectId
+              ? {
+                  projectId: sandboxManager.projectId,
+                  projectName: sandboxManager.projectName ?? "",
+                  containerId: sandboxManager.containerId,
+                }
+              : null
+          }
+          onClose={() => setSandboxManager(null)}
+          onChanged={() => setProjectsRefreshKey((k) => k + 1)}
+        />
+      )}
+      {projectTrustDialogOpen && projectTrustCwd && (
+        <ProjectTrustDialog
+          cwd={projectTrustCwd}
+          busy={projectTrustBusy}
+          error={projectTrustError}
+          onCancel={() => {
+            if (!projectTrustBusy) setProjectTrustDialogOpen(false);
+          }}
+          onConfirm={() => void handleTrustProject()}
+        />
+      )}
+      {/* Skills/plugins/agents/mcp config all live in the upstream
         SettingsPanel sections now; the top-bar Agents/MCP buttons open it. */}
     </>
   );

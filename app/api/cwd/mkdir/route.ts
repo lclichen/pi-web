@@ -18,7 +18,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const body = await req.json() as { path?: unknown };
+    const body = (await req.json()) as { path?: unknown };
     const rawPath = typeof body.path === "string" ? body.path.trim() : "";
     if (!rawPath) {
       return NextResponse.json({ error: "Path is required" }, { status: 400 });

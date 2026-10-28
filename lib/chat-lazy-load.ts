@@ -2,7 +2,10 @@ export const VISIBLE_PAGE_SIZE = 50;
 export const CHAT_SCROLL_TAIL_TOLERANCE = 8;
 export const CHAT_SCROLL_REATTACH_TOLERANCE = 96;
 
-export function getVisibleRenderWindow(totalCount: number, visibleCount: number): {
+export function getVisibleRenderWindow(
+  totalCount: number,
+  visibleCount: number,
+): {
   startIndex: number;
   hasMore: boolean;
 } {
@@ -43,10 +46,11 @@ export function getLiveFollowAttached(
   if (isScrollAtTail(scrollTop, clientHeight, scrollHeight)) return true;
   if (scrollTop < previousScrollTop) return false;
   if (
-    !wasAttached
-    && scrollTop > previousScrollTop
-    && isScrollAtTail(scrollTop, clientHeight, scrollHeight, reattachTolerance)
-  ) return true;
+    !wasAttached &&
+    scrollTop > previousScrollTop &&
+    isScrollAtTail(scrollTop, clientHeight, scrollHeight, reattachTolerance)
+  )
+    return true;
   return wasAttached;
 }
 
@@ -60,15 +64,9 @@ export function shouldShowScrollToLatest(
   return !isScrollAtTail(scrollTop, clientHeight, scrollHeight, tolerance);
 }
 
-export function getPromptAnchorSpacerHeight(
-  targetTop: number,
-  contentEnd: number,
-  clientHeight: number,
-): number {
+export function getPromptAnchorSpacerHeight(targetTop: number, contentEnd: number, clientHeight: number): number {
   const clampedTargetTop = Math.max(0, targetTop);
   if (clampedTargetTop === 0) return 0;
 
-  return Math.max(0, Math.ceil(
-    clampedTargetTop + clientHeight - Math.max(0, contentEnd),
-  ));
+  return Math.max(0, Math.ceil(clampedTargetTop + clientHeight - Math.max(0, contentEnd)));
 }

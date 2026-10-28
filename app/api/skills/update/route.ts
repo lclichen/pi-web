@@ -9,16 +9,14 @@ export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json() as {
+    const body = (await req.json()) as {
       cwd?: unknown;
       package?: unknown;
       scope?: unknown;
     };
     const cwd = typeof body.cwd === "string" ? body.cwd : "";
     const pkg = typeof body.package === "string" ? body.package : "";
-    const scope = body.scope === "global" || body.scope === "project"
-      ? body.scope as SkillInstallScope
-      : undefined;
+    const scope = body.scope === "global" || body.scope === "project" ? (body.scope as SkillInstallScope) : undefined;
     if (!cwd || !pkg || !scope) {
       return NextResponse.json({ error: "cwd, package, and scope are required" }, { status: 400 });
     }
@@ -28,9 +26,7 @@ export async function POST(req: Request) {
     }
 
     const { skills } = await loadSkillsWithInstallInfo(cwd);
-    const skill = skills.find(
-      (item) => item.install?.package === pkg && item.install.scope === scope,
-    );
+    const skill = skills.find((item) => item.install?.package === pkg && item.install.scope === scope);
     if (!skill?.install) {
       return NextResponse.json({ error: "Installed skill not found" }, { status: 404 });
     }
@@ -45,9 +41,7 @@ export async function POST(req: Request) {
     });
 
     const refreshed = await loadSkillsWithInstallInfo(cwd);
-    const updatedSkill = refreshed.skills.find(
-      (item) => item.install?.package === pkg && item.install.scope === scope,
-    );
+    const updatedSkill = refreshed.skills.find((item) => item.install?.package === pkg && item.install.scope === scope);
     return NextResponse.json({
       success: true,
       skill: updatedSkill,
@@ -56,9 +50,6 @@ export async function POST(req: Request) {
   } catch (error: unknown) {
     const detail = error as { stdout?: string; stderr?: string; message?: string };
     const output = `${detail.stdout ?? ""}${detail.stderr ?? ""}`;
-    return NextResponse.json(
-      { error: output || detail.message || String(error) },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: output || detail.message || String(error) }, { status: 500 });
   }
 }

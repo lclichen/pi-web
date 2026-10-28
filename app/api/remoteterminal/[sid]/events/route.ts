@@ -5,10 +5,7 @@ export const dynamic = "force-dynamic";
 
 // GET /api/remoteterminal/[sid]/events — SSE output stream (same frame shape
 // as the local and relay terminals).
-export async function GET(
-  req: Request,
-  ctx: { params: Promise<{ sid: string }> },
-): Promise<Response> {
+export async function GET(req: Request, ctx: { params: Promise<{ sid: string }> }): Promise<Response> {
   const { sid } = await ctx.params;
   const auth = authorizeRemoteTerminal(req, sid);
   if (!auth.ok) {

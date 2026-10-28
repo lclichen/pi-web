@@ -88,7 +88,12 @@ export function getSessionMeta(sessionId: string): SessionMeta | undefined {
 }
 
 /** Sessions a user may see in listings: their own plus (admin) host-space ones. */
-export function metaVisibleTo(meta: SessionMeta | undefined, ownerId: number, role: "admin" | "user", viewingHostSpace: boolean): boolean {
+export function metaVisibleTo(
+  meta: SessionMeta | undefined,
+  ownerId: number,
+  role: "admin" | "user",
+  viewingHostSpace: boolean,
+): boolean {
   if (!meta) return viewingHostSpace || role === "admin"; // unknown provenance: only host/admin view
   if (viewingHostSpace) return role === "admin" || meta.ownerId === ownerId;
   return meta.ownerId === ownerId;

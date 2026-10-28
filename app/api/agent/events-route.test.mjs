@@ -9,7 +9,10 @@ test("agent SSE starts sessions asynchronously and disables response buffering",
   assert.match(agentEventsSource, /createAgentEventStream\(req, id, sessionPromise\)/);
   // This fork restores mode extensions (sandbox bridge) via restoreSessionOptions
   // before starting the session, so the promise chain is two .then hops.
-  assert.match(agentEventsSource, /sessionPromise = restoreSessionOptions\(req, id\)[\s\S]*?startRpcSession\([\s\S]*?\.then\(\(result\) => result\.session\)/);
+  assert.match(
+    agentEventsSource,
+    /sessionPromise = restoreSessionOptions\(req, id\)[\s\S]*?startRpcSession\([\s\S]*?\.then\(\(result\) => result\.session\)/,
+  );
   assert.doesNotMatch(agentEventsSource, /await startRpcSession\(/);
   assert.match(agentEventsSource, /if \(req\.signal\.aborted\) return new Response\(null, \{ status: 204 \}\)/);
   assert.match(agentEventsSource, /"Cache-Control": "no-cache, no-transform"/);

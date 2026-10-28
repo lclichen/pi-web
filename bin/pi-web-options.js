@@ -73,9 +73,7 @@ function parseLaunchOptions(args = process.argv.slice(2), env = process.env) {
   }
 
   if (positionals.length > 0) {
-    throw new Error(
-      `Unexpected argument(s): ${positionals.join(" ")}\nUse --help to see available options.`,
-    );
+    throw new Error(`Unexpected argument(s): ${positionals.join(" ")}\nUse --help to see available options.`);
   }
 
   return {

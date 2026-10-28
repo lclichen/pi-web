@@ -21,7 +21,13 @@ import { makeRelayToolsExtension } from "@/lib/extensions/relay-tools";
 import { sessionDirsForProject } from "@/lib/session-context";
 import { makeRemoteVerifyExtension } from "@/lib/extensions/remote-verify";
 import { makeEnvironmentInfoExtension } from "@/lib/extensions/environment-info";
-import { ensureProjectHome, removeLegacySandboxExtensionLink, getOwnedProject, writeSandboxConfig, type ProjectRecord } from "@/lib/projects";
+import {
+  ensureProjectHome,
+  removeLegacySandboxExtensionLink,
+  getOwnedProject,
+  writeSandboxConfig,
+  type ProjectRecord,
+} from "@/lib/projects";
 import { makeSandboxToolsExtension } from "@/lib/extensions/sandbox-tools";
 import { requireCompatibleAgent } from "@/lib/relay/agent-gate";
 import { isApiRequestAllowed } from "@/lib/request-security";
@@ -46,14 +52,10 @@ function parseThinkingLevel(value: unknown): ThinkingLevel | undefined {
  * auto-picked; several require an explicit binding (clear 409); none leaves
  * it unset so the extension's out-of-box auto-provision still applies.
  */
-async function resolveAutoContainer(
-  apiKey: string,
-): Promise<{ containerId?: number; conflict?: string }> {
-  const list = await platformGet<{ containers: Array<{ id: number; name: string }> }>(
-    "/api/v1/containers",
-    apiKey,
-    { filter: "running" },
-  );
+async function resolveAutoContainer(apiKey: string): Promise<{ containerId?: number; conflict?: string }> {
+  const list = await platformGet<{ containers: Array<{ id: number; name: string }> }>("/api/v1/containers", apiKey, {
+    filter: "running",
+  });
   const running = list.containers ?? [];
   if (running.length === 1) return { containerId: running[0].id };
   if (running.length > 1) {
@@ -80,7 +82,7 @@ export async function POST(req: Request) {
   let commandType: string | undefined;
   let promptAccepted = false;
   try {
-    const body = await req.json() as { cwd?: string; mode?: unknown; [key: string]: unknown };
+    const body = (await req.json()) as { cwd?: string; mode?: unknown; [key: string]: unknown };
     const { cwd, ...command } = body;
     commandType = typeof command.type === "string" ? command.type : undefined;
     const rawMode = body.mode;
@@ -91,9 +93,10 @@ export async function POST(req: Request) {
     // absent client mode must not register the live session as "host": the
     // ownership registry outranks sidecar metas in the remote file/terminal
     // APIs, so a host-registered sandbox session breaks remotefs/remoteterminal.
-    const projectForMode = typeof body.projectId === "string" && body.projectId
-      ? getOwnedProject(body.projectId, user.id, user.role === "admin")
-      : undefined;
+    const projectForMode =
+      typeof body.projectId === "string" && body.projectId
+        ? getOwnedProject(body.projectId, user.id, user.role === "admin")
+        : undefined;
     const mode = projectForMode?.mode ?? (rawMode as SessionMode | undefined) ?? "host";
     const effectiveMode = mode;
     const permission = modeAllowedForUser(effectiveMode, { id: user.id, role: user.role });
@@ -160,7 +163,9 @@ export async function POST(req: Request) {
             mode: "sandbox",
             username: user.username,
             projectName: project.name,
-            ...(project.containerId !== undefined && project.containerId !== null ? { containerId: Number(project.containerId) } : {}),
+            ...(project.containerId !== undefined && project.containerId !== null
+              ? { containerId: Number(project.containerId) }
+              : {}),
           }),
         ];
       } else if (project.mode === "ssh") {
@@ -173,8 +178,18 @@ export async function POST(req: Request) {
           return NextResponse.json({ error: "SSH 项目缺少连接配置（.pi/ssh.json 缺失）" }, { status: 400 });
         }
         extensionFactories = [
-          makeSshToolsExtension({ projectId: project.id, sshConfig, workdir: project.workdir ?? "/", projectHome: home }),
-          makeEnvironmentInfoExtension({ mode: "ssh", username: user.username, projectName: project.name, workspaceDir: dirs.workspaceDir }),
+          makeSshToolsExtension({
+            projectId: project.id,
+            sshConfig,
+            workdir: project.workdir ?? "/",
+            projectHome: home,
+          }),
+          makeEnvironmentInfoExtension({
+            mode: "ssh",
+            username: user.username,
+            projectName: project.name,
+            workspaceDir: dirs.workspaceDir,
+          }),
         ];
       } else {
         const gate = requireCompatibleAgent(user.id, project.machineId);
@@ -188,7 +203,12 @@ export async function POST(req: Request) {
             ...(project.machineId ? { machineId: project.machineId } : {}),
           }),
           makeRemoteVerifyExtension("local-machine", user.id),
-          makeEnvironmentInfoExtension({ mode: "local-machine", username: user.username, projectName: project.name, workspaceDir: dirs.workspaceDir }),
+          makeEnvironmentInfoExtension({
+            mode: "local-machine",
+            username: user.username,
+            projectName: project.name,
+            workspaceDir: dirs.workspaceDir,
+          }),
         ];
       }
       // 目录契约（lib/session-context.ts）：SDK 会话 cwd 一律 = 服务器侧
@@ -217,8 +237,8 @@ export async function POST(req: Request) {
         const auto = await resolveAutoContainer(identity.session.apiKey);
         if (auto.conflict) {
           return NextResponse.json({ error: auto.conflict }, { status: 409 });
-      }
-      if (auto.containerId) setSandboxContainer(user.id, auto.containerId);
+        }
+        if (auto.containerId) setSandboxContainer(user.id, auto.containerId);
       }
       removeLegacySandboxExtensionLink(effectiveCwd!);
       extensionFactories = [
@@ -240,29 +260,34 @@ export async function POST(req: Request) {
     } else {
       // Host mode keeps the caller-supplied server directory.
       if (mode !== "quick" && (!effectiveCwd || !existsSync(effectiveCwd))) {
-        return NextResponse.json({
-          error: `Directory does not exist: ${String(effectiveCwd)}`,
-          ...(commandType === "prompt"
-            ? { code: "prompt_rejected", accepted: false }
-            : {}),
-        }, { status: 400 });
+        return NextResponse.json(
+          {
+            error: `Directory does not exist: ${String(effectiveCwd)}`,
+            ...(commandType === "prompt" ? { code: "prompt_rejected", accepted: false } : {}),
+          },
+          { status: 400 },
+        );
       }
-      extensionFactories = [makeEnvironmentInfoExtension({ mode: "host", username: user.username, hostDir: effectiveCwd })];
+      extensionFactories = [
+        makeEnvironmentInfoExtension({ mode: "host", username: user.username, hostDir: effectiveCwd }),
+      ];
     }
 
     if (!effectiveCwd && mode !== "quick") {
-      return NextResponse.json({
-        error: "cwd is required",
-        ...(commandType === "prompt"
-          ? { code: "prompt_rejected", accepted: false }
-          : {}),
-      }, { status: 400 });
+      return NextResponse.json(
+        {
+          error: "cwd is required",
+          ...(commandType === "prompt" ? { code: "prompt_rejected", accepted: false } : {}),
+        },
+        { status: 400 },
+      );
     }
 
     // Quick mode: no workspace — a per-user scratch home is only used for the
     // session file layout and MCP-config fallback. The template pins model /
     // system prompt / MCP allowlist.
-    let quickOptions: { systemPrompt?: string; model?: { provider: string; modelId: string }; mcpServers?: string[] } | undefined;
+    let quickOptions:
+      { systemPrompt?: string; model?: { provider: string; modelId: string }; mcpServers?: string[] } | undefined;
     if (mode === "quick") {
       const templateId = typeof body.templateId === "string" ? body.templateId : DEFAULT_TEMPLATE_ID;
       const template = getQuickTemplate(templateId);
@@ -292,7 +317,13 @@ export async function POST(req: Request) {
     }
 
     // Use a one-time key so startRpcSession's lock doesn't conflict with real session ids
-    const { provider, modelId, toolNames, thinkingLevel, ...promptCommand } = command as { provider?: string; modelId?: string; toolNames?: string[]; thinkingLevel?: unknown; [key: string]: unknown };
+    const { provider, modelId, toolNames, thinkingLevel, ...promptCommand } = command as {
+      provider?: string;
+      modelId?: string;
+      toolNames?: string[];
+      thinkingLevel?: unknown;
+      [key: string]: unknown;
+    };
     if ((provider && !modelId) || (!provider && modelId)) {
       throw new Error("provider and modelId must be provided together");
     }
@@ -321,7 +352,14 @@ export async function POST(req: Request) {
       ...(projectRef ? { projectCredentialDir: effectiveCwd } : {}),
     });
 
-    recordSessionMeta(realSessionId, { mode: effectiveMode, ownerId: user.id, ownerName: user.username, ...(projectRef ? { projectId: projectRef.id } : {}), ...(templateIdForMeta ? { templateId: templateIdForMeta } : {}), ...(quickSlugForMeta ? { quickDir: quickSlugForMeta } : {}) });
+    recordSessionMeta(realSessionId, {
+      mode: effectiveMode,
+      ownerId: user.id,
+      ownerName: user.username,
+      ...(projectRef ? { projectId: projectRef.id } : {}),
+      ...(templateIdForMeta ? { templateId: templateIdForMeta } : {}),
+      ...(quickSlugForMeta ? { quickDir: quickSlugForMeta } : {}),
+    });
     invalidateSessionListCache();
 
     // Host-mode sessions keep the files-route allowed-roots cache in sync so
@@ -334,7 +372,7 @@ export async function POST(req: Request) {
       allowFileRoot(effectiveCwd);
     }
 
-    const state = await session.send({ type: "get_state" }) as {
+    const state = (await session.send({ type: "get_state" })) as {
       model?: { id: string; provider: string };
       thinkingLevel?: string;
     };
@@ -345,9 +383,7 @@ export async function POST(req: Request) {
         sessionId: realSessionId,
         data: null,
         mode: effectiveMode,
-        model: state.model
-          ? { provider: state.model.provider, modelId: state.model.id }
-          : null,
+        model: state.model ? { provider: state.model.provider, modelId: state.model.id } : null,
         thinkingLevel: state.thinkingLevel,
       });
     }
@@ -360,17 +396,16 @@ export async function POST(req: Request) {
       sessionId: realSessionId,
       data: result,
       mode,
-      model: state.model
-        ? { provider: state.model.provider, modelId: state.model.id }
-        : null,
+      model: state.model ? { provider: state.model.provider, modelId: state.model.id } : null,
       thinkingLevel: state.thinkingLevel,
     });
   } catch (error) {
-    return NextResponse.json({
-      error: error instanceof Error ? error.message : String(error),
-      ...(commandType === "prompt" && !promptAccepted
-        ? { code: "prompt_rejected", accepted: false }
-        : {}),
-    }, { status: 500 });
+    return NextResponse.json(
+      {
+        error: error instanceof Error ? error.message : String(error),
+        ...(commandType === "prompt" && !promptAccepted ? { code: "prompt_rejected", accepted: false } : {}),
+      },
+      { status: 500 },
+    );
   }
 }

@@ -66,12 +66,7 @@ export function getFeedback(sessionId: string, entryId: string): FeedbackValue |
  * delivery is attempted immediately and the record stays in the outbox until
  * the gateway acknowledges it.
  */
-export function setFeedback(
-  sessionId: string,
-  entryId: string,
-  value: FeedbackValue | null,
-  snippet = "",
-): void {
+export function setFeedback(sessionId: string, entryId: string, value: FeedbackValue | null, snippet = ""): void {
   const store = loadStore();
   const key = keyOf(sessionId, entryId);
   if (value === null) {

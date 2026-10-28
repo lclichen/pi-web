@@ -59,8 +59,12 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab }: Props) {
               } else if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) {
                 event.preventDefault();
                 const index = tabs.findIndex((item) => item.id === tab.id);
-                const next = event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1
-                  : (index + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
+                const next =
+                  event.key === "Home"
+                    ? 0
+                    : event.key === "End"
+                      ? tabs.length - 1
+                      : (index + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
                 onSelectTab(tabs[next].id);
                 (event.currentTarget.parentElement?.children[next] as HTMLElement)?.focus();
               }
@@ -97,10 +101,23 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab }: Props) {
           >
             <span style={{ flexShrink: 0, opacity: isActive ? 1 : 0.7, display: "flex", alignItems: "center" }}>
               {tab.kind === "terminal" ? (
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <polyline points="4 17 10 11 4 5" /><line x1="12" y1="19" x2="20" y2="19" />
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <polyline points="4 17 10 11 4 5" />
+                  <line x1="12" y1="19" x2="20" y2="19" />
                 </svg>
-              ) : getFileIcon(tab.label, 13)}
+              ) : (
+                getFileIcon(tab.label, 13)
+              )}
             </span>
             <span
               style={{
@@ -115,12 +132,18 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab }: Props) {
             </span>
             <button
               disabled={tab.closing}
-              onClick={(e) => { e.stopPropagation(); onCloseTab(tab.id); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                onCloseTab(tab.id);
+              }}
               onMouseEnter={() => setHoveredClose(tab.id)}
               onMouseLeave={() => setHoveredClose(null)}
               style={{
-                display: "flex", alignItems: "center", justifyContent: "center",
-                width: 24, height: 24,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                width: 24,
+                height: 24,
                 background: hoveredClose === tab.id ? "var(--bg-hover)" : "transparent",
                 border: "none",
                 borderRadius: 4,
@@ -130,10 +153,19 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab }: Props) {
                 flexShrink: 0,
                 transition: "background 0.1s, color 0.1s",
               }}
-               title={t(tab.kind === "terminal" ? "terminal.close" : "i18n.close")}
-               aria-label={`${t(tab.kind === "terminal" ? "terminal.close" : "i18n.close")} ${tab.label}`}
+              title={t(tab.kind === "terminal" ? "terminal.close" : "i18n.close")}
+              aria-label={`${t(tab.kind === "terminal" ? "terminal.close" : "i18n.close")} ${tab.label}`}
             >
-              <svg width="11" height="11" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+              <svg
+                width="11"
+                height="11"
+                viewBox="0 0 10 10"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                aria-hidden="true"
+              >
                 <line x1="2" y1="2" x2="8" y2="8" />
                 <line x1="8" y1="2" x2="2" y2="8" />
               </svg>

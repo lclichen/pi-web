@@ -46,9 +46,7 @@ export type CollapsedSummary =
  */
 export function buildCollapsedSummary(inputs: CapsuleInputs): CollapsedSummary {
   const current =
-    inputs.todos.find((t) => t.status === "in_progress") ??
-    inputs.todos.find((t) => t.status === "pending") ??
-    null;
+    inputs.todos.find((t) => t.status === "in_progress") ?? inputs.todos.find((t) => t.status === "pending") ?? null;
   if (current && inputs.todos.length > 0) {
     return {
       kind: "todo",
@@ -70,7 +68,8 @@ export function buildCollapsedSummary(inputs: CapsuleInputs): CollapsedSummary {
       bash: inputs.bashRunning,
       agent: inputs.agentRunning,
       mixed:
-        [inputs.runningSubagents > 0, inputs.bashRunning || inputs.bgRunning > 0, inputs.agentRunning].filter(Boolean).length > 1,
+        [inputs.runningSubagents > 0, inputs.bashRunning || inputs.bgRunning > 0, inputs.agentRunning].filter(Boolean)
+          .length > 1,
     };
   }
   return { kind: "idle" };
@@ -81,9 +80,7 @@ export function capsuleVisible(summary: CollapsedSummary, planMode: boolean): bo
   return planMode || summary.kind !== "idle";
 }
 
-export type TodoWindowEntry =
-  | { type: "item"; item: TodoItem }
-  | { type: "marker"; hidden: TodoItem[] };
+export type TodoWindowEntry = { type: "item"; item: TodoItem } | { type: "marker"; hidden: TodoItem[] };
 
 /**
  * Long-list focus window (ZCode 对标): with more than `threshold` steps the

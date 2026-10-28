@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 // PUT /api/mcp/settings  body: { cwd|projectId, scope?, settings }
 export async function PUT(req: Request) {
   try {
-    const body = await req.json() as {
+    const body = (await req.json()) as {
       cwd?: string;
       projectId?: string;
       scope?: string;
@@ -24,15 +24,9 @@ export async function PUT(req: Request) {
       writeMcpSettings(guard.cwd, scope, body.settings);
       return NextResponse.json({ success: true });
     } catch (e) {
-      return NextResponse.json(
-        { error: e instanceof Error ? e.message : String(e) },
-        { status: 409 },
-      );
+      return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 409 });
     }
   } catch (e) {
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : String(e) },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 });
   }
 }

@@ -94,7 +94,11 @@ function parseInstallCount(installs: string): number {
 // 播种）> 默认 skills.sh 流程。配置了 SkillHub 即走内网搜索（内网无外联）。
 export async function POST(req: Request) {
   try {
-    const { query, limit: rawLimit, baseUrl } = await req.json() as { query?: string; limit?: unknown; baseUrl?: unknown };
+    const {
+      query,
+      limit: rawLimit,
+      baseUrl,
+    } = (await req.json()) as { query?: string; limit?: unknown; baseUrl?: unknown };
     if (!query?.trim()) return NextResponse.json({ error: "query required" }, { status: 400 });
     const limit = parseLimit(rawLimit);
 

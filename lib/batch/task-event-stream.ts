@@ -17,12 +17,7 @@
  *   buffered event, so a reconnect to a finished task replays to the end.
  */
 import { registerEventStreamCloser } from "../agent-event-stream.ts";
-import {
-  getTask,
-  getTaskEventBufferInfo,
-  subscribeTaskEvents,
-  type BatchTaskEventEnvelope,
-} from "./task-store.ts";
+import { getTask, getTaskEventBufferInfo, subscribeTaskEvents, type BatchTaskEventEnvelope } from "./task-store.ts";
 
 const HEARTBEAT_INTERVAL_MS = 30_000;
 
@@ -30,7 +25,7 @@ export function batchSseHeaders(): Record<string, string> {
   return {
     "Content-Type": "text/event-stream",
     "Cache-Control": "no-cache, no-transform",
-    "Connection": "keep-alive",
+    Connection: "keep-alive",
     "X-Accel-Buffering": "no",
   };
 }
@@ -58,9 +53,17 @@ export function createBatchTaskEventStream(taskId: string, req: Request): Readab
         unsubscribe = null;
         if (abortHandler) req.signal.removeEventListener("abort", abortHandler);
         if (closeController === "error") {
-          try { controller.error(new Error("pi-web server shutting down")); } catch { /* already closed */ }
+          try {
+            controller.error(new Error("pi-web server shutting down"));
+          } catch {
+            /* already closed */
+          }
         } else if (closeController) {
-          try { controller.close(); } catch { /* stream already closed */ }
+          try {
+            controller.close();
+          } catch {
+            /* stream already closed */
+          }
         }
       };
       cancelStream = cleanup;

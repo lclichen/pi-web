@@ -24,25 +24,33 @@ import { resolveDirentIsDirectory } from "@/lib/file-dirent";
 import { isFilePathReferencedBySession } from "@/lib/session-file-references";
 import { isApiRequestAllowed } from "@/lib/request-security";
 import { allowedRootsWithSessionCwds } from "@/lib/session-cwd-access";
-import {
-  inspectUploadTargets,
-  parseUploadConflictStrategy,
-  validateUploadFileNames,
-} from "@/lib/file-upload";
+import { inspectUploadTargets, parseUploadConflictStrategy, validateUploadFileNames } from "@/lib/file-upload";
 import { parseFormDataWithinLimit, RequestBodyTooLargeError } from "@/lib/bounded-form-data";
 import { filePathFromApiSegments, samePath } from "@/lib/paths";
 import { readTextPreviewChunk } from "@/lib/text-preview";
 
 const IGNORED_NAMES = new Set([
-  "node_modules", ".git", ".next", "dist", "build", "__pycache__",
-  ".turbo", ".cache", "coverage", ".pytest_cache", ".mypy_cache",
-  "target", "vendor", ".DS_Store", ".git",
+  "node_modules",
+  ".git",
+  ".next",
+  "dist",
+  "build",
+  "__pycache__",
+  ".turbo",
+  ".cache",
+  "coverage",
+  ".pytest_cache",
+  ".mypy_cache",
+  "target",
+  "vendor",
+  ".DS_Store",
+  ".git",
 ]);
 
 const IGNORED_SUFFIXES = [".pyc"];
 
 const FILE_REQUEST_TYPES = ["list", "read", "download", "meta", "preview", "watch"] as const;
-type FileRequestType = typeof FILE_REQUEST_TYPES[number];
+type FileRequestType = (typeof FILE_REQUEST_TYPES)[number];
 const FILE_REQUEST_TYPE_SET = new Set<string>(FILE_REQUEST_TYPES);
 const MAX_UPLOAD_FILE_BYTES = 25 * 1024 * 1024;
 const MAX_UPLOAD_TOTAL_BYTES = 100 * 1024 * 1024;
@@ -50,18 +58,52 @@ const MAX_UPLOAD_TOTAL_BYTES = 100 * 1024 * 1024;
 const MAX_UPLOAD_REQUEST_BYTES = MAX_UPLOAD_TOTAL_BYTES + 1024 * 1024;
 
 const EXT_TO_LANGUAGE: Record<string, string> = {
-  ts: "typescript", tsx: "typescript", js: "javascript", jsx: "javascript",
-  mjs: "javascript", cjs: "javascript", py: "python", rb: "ruby",
-  go: "go", rs: "rust", java: "java", kt: "kotlin", swift: "swift",
-  c: "c", cpp: "cpp", h: "c", hpp: "cpp", cs: "csharp",
-  html: "html", htm: "html", css: "css", scss: "css", less: "css",
-  json: "json", jsonl: "json", yaml: "yaml", yml: "yaml",
-  toml: "toml", xml: "xml", md: "markdown", mdx: "markdown",
-  sh: "bash", bash: "bash", zsh: "bash", fish: "bash",
-  sql: "sql", graphql: "graphql", gql: "graphql",
-  dockerfile: "dockerfile", tf: "hcl", hcl: "hcl",
-  env: "bash", gitignore: "bash", txt: "text",
-  pdf: "pdf", docx: "word",
+  ts: "typescript",
+  tsx: "typescript",
+  js: "javascript",
+  jsx: "javascript",
+  mjs: "javascript",
+  cjs: "javascript",
+  py: "python",
+  rb: "ruby",
+  go: "go",
+  rs: "rust",
+  java: "java",
+  kt: "kotlin",
+  swift: "swift",
+  c: "c",
+  cpp: "cpp",
+  h: "c",
+  hpp: "cpp",
+  cs: "csharp",
+  html: "html",
+  htm: "html",
+  css: "css",
+  scss: "css",
+  less: "css",
+  json: "json",
+  jsonl: "json",
+  yaml: "yaml",
+  yml: "yaml",
+  toml: "toml",
+  xml: "xml",
+  md: "markdown",
+  mdx: "markdown",
+  sh: "bash",
+  bash: "bash",
+  zsh: "bash",
+  fish: "bash",
+  sql: "sql",
+  graphql: "graphql",
+  gql: "graphql",
+  dockerfile: "dockerfile",
+  tf: "hcl",
+  hcl: "hcl",
+  env: "bash",
+  gitignore: "bash",
+  txt: "text",
+  pdf: "pdf",
+  docx: "word",
 };
 
 function getLanguage(filePath: string): string {
@@ -78,9 +120,10 @@ function parseFileRequestType(value: string): FileRequestType | null {
   return FILE_REQUEST_TYPE_SET.has(value) ? (value as FileRequestType) : null;
 }
 
-async function getUploadDirectory(request: NextRequest, segments: string[]): Promise<
-  { directory: string } | { response: NextResponse }
-> {
+async function getUploadDirectory(
+  request: NextRequest,
+  segments: string[],
+): Promise<{ directory: string } | { response: NextResponse }> {
   const directory = filePathFromApiSegments(segments);
   const allowedRoots = await allowedRootsWithSessionCwds(request, await getAllowedFileRootsForRequest(request));
   if (!isFilePathAllowed(directory, allowedRoots)) {
@@ -120,10 +163,7 @@ function parseUploadFileNames(value: unknown): string[] | null {
   return value;
 }
 
-export async function POST(
-  request: NextRequest,
-  { params }: { params: Promise<{ path: string[] }> }
-) {
+export async function POST(request: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
   if (!isApiRequestAllowed(request)) {
     return NextResponse.json({ error: "Untrusted API request" }, { status: 403 });
   }
@@ -136,7 +176,7 @@ export async function POST(
     const type = request.nextUrl.searchParams.get("type") ?? "upload";
 
     if (type === "upload-check") {
-      const body = await request.json().catch(() => null) as { fileNames?: unknown } | null;
+      const body = (await request.json().catch(() => null)) as { fileNames?: unknown } | null;
       const fileNames = parseUploadFileNames(body?.fileNames);
       if (!fileNames) {
         return NextResponse.json({ error: "fileNames must be an array of strings" }, { status: 400 });
@@ -181,11 +221,14 @@ export async function POST(
 
     const inspection = inspectUploadTargets(directory, fileNames);
     if (strategy === "error" && inspection.conflicts.length > 0) {
-      return NextResponse.json({
-        error: "One or more files already exist",
-        conflicts: inspection.conflicts,
-        nonReplaceable: inspection.nonReplaceable,
-      }, { status: 409 });
+      return NextResponse.json(
+        {
+          error: "One or more files already exist",
+          conflicts: inspection.conflicts,
+          nonReplaceable: inspection.nonReplaceable,
+        },
+        { status: 409 },
+      );
     }
 
     const conflictSet = new Set(inspection.conflicts);
@@ -230,10 +273,7 @@ export async function POST(
       }
     }
 
-    return NextResponse.json(
-      { uploaded, skipped, errors },
-      { status: errors.length > 0 ? 207 : 200 },
-    );
+    return NextResponse.json({ uploaded, skipped, errors }, { status: errors.length > 0 ? 207 : 200 });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
   }
@@ -281,9 +321,7 @@ function createFileBodyStream(filePath: string, range?: { start: number; end: nu
 }
 
 function encodeHeaderValue(value: string): string {
-  return encodeURIComponent(value).replace(/[!'()*]/g, (ch) =>
-    `%${ch.charCodeAt(0).toString(16).toUpperCase()}`
-  );
+  return encodeURIComponent(value).replace(/[!'()*]/g, (ch) => `%${ch.charCodeAt(0).toString(16).toUpperCase()}`);
 }
 
 function getContentDisposition(filePath: string, asDownload = false): string {
@@ -293,7 +331,13 @@ function getContentDisposition(filePath: string, asDownload = false): string {
   return `${disposition}; filename="${fallback}"; filename*=UTF-8''${encodeHeaderValue(fileName)}`;
 }
 
-function streamFile(filePath: string, stat: fs.Stats, contentType: string, rangeHeader: string | null, asDownload = false): Response {
+function streamFile(
+  filePath: string,
+  stat: fs.Stats,
+  contentType: string,
+  rangeHeader: string | null,
+  asDownload = false,
+): Response {
   const headers: Record<string, string> = {
     "Content-Type": contentType,
     "Cache-Control": "no-cache",
@@ -420,10 +464,7 @@ ${bodyHtml}
 </html>`;
 }
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ path: string[] }> }
-) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
   try {
     const { path: segments } = await params;
     const filePath = filePathFromApiSegments(segments);
@@ -437,9 +478,7 @@ export async function GET(
     const allowedRoots = await allowedRootsWithSessionCwds(request, await getAllowedFileRootsForRequest(request));
     const allowedByRoot = isFilePathAllowed(filePath, allowedRoots);
     const allowedBySessionReference =
-      !allowedByRoot &&
-      type !== "list" &&
-      await isFilePathReferencedBySession(filePath, sessionId);
+      !allowedByRoot && type !== "list" && (await isFilePathReferencedBySession(filePath, sessionId));
     if (!allowedByRoot && !allowedBySessionReference) {
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
@@ -454,10 +493,7 @@ export async function GET(
     }
 
     const existingAuthorizationPath = stat ? filePath : path.dirname(filePath);
-    if (
-      !allowedBySessionReference
-      && !isExistingFilePathAllowed(existingAuthorizationPath, allowedRoots)
-    ) {
+    if (!allowedBySessionReference && !isExistingFilePathAllowed(existingAuthorizationPath, allowedRoots)) {
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
 
@@ -501,7 +537,12 @@ export async function GET(
       if (!stat?.isFile()) {
         return NextResponse.json({ error: "Not a file" }, { status: 400 });
       }
-      const mime = getImageMime(filePath) || getAudioMime(filePath) || getVideoMime(filePath) || getDocumentMime(filePath) || "application/octet-stream";
+      const mime =
+        getImageMime(filePath) ||
+        getAudioMime(filePath) ||
+        getVideoMime(filePath) ||
+        getDocumentMime(filePath) ||
+        "application/octet-stream";
       return streamFile(filePath, stat, mime, request.headers.get("range"), true);
     }
 
@@ -538,14 +579,15 @@ export async function GET(
         {
           externalFileAccess: false,
           convertImage: mammoth.images.dataUri,
-        }
+        },
       );
       const html = wrapDocxPreviewHtml(result.value, path.basename(filePath));
       return new Response(html, {
         headers: {
           "Content-Type": "text/html; charset=utf-8",
           "Cache-Control": "no-cache",
-          "Content-Security-Policy": "default-src 'none'; img-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'",
+          "Content-Security-Policy":
+            "default-src 'none'; img-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'",
           "Referrer-Policy": "no-referrer",
           "X-Content-Type-Options": "nosniff",
         },
@@ -575,21 +617,20 @@ export async function GET(
           try {
             const watchedDirectory = path.dirname(filePath);
             watcher = fs.watch(watchedDirectory, (_eventType, changedName) => {
-              if (
-                changedName != null
-                && !samePath(path.join(watchedDirectory, changedName.toString()), filePath)
-              ) return;
+              if (changedName != null && !samePath(path.join(watchedDirectory, changedName.toString()), filePath))
+                return;
               try {
                 const s = fs.statSync(filePath);
                 // Some platforms emit watch events for file reads/attribute
                 // access. Ignore those or the client's refresh read loops.
                 if (
-                  lastExists
-                  && s.mtimeMs === lastMtimeMs
-                  && s.ctimeMs === lastCtimeMs
-                  && s.ino === lastIno
-                  && s.size === lastSize
-                ) return;
+                  lastExists &&
+                  s.mtimeMs === lastMtimeMs &&
+                  s.ctimeMs === lastCtimeMs &&
+                  s.ino === lastIno &&
+                  s.size === lastSize
+                )
+                  return;
                 lastExists = true;
                 lastMtimeMs = s.mtimeMs;
                 lastCtimeMs = s.ctimeMs;
@@ -603,9 +644,17 @@ export async function GET(
               }
             });
             watcher.on("error", () => {
-              try { watcher?.close(); } catch { /* ignore */ }
+              try {
+                watcher?.close();
+              } catch {
+                /* ignore */
+              }
               watcher = null;
-              try { controller.close(); } catch { /* ignore */ }
+              try {
+                controller.close();
+              } catch {
+                /* ignore */
+              }
             });
             // The client snapshots only after this event, so emit it after the
             // watcher exists to avoid dropping changes between those steps.
@@ -616,7 +665,11 @@ export async function GET(
           }
         },
         cancel() {
-          try { watcher?.close(); } catch { /* ignore */ }
+          try {
+            watcher?.close();
+          } catch {
+            /* ignore */
+          }
         },
       });
       return new Response(stream, {
@@ -641,9 +694,7 @@ export async function GET(
       .filter((d) => !IGNORED_NAMES.has(d.name) && !IGNORED_SUFFIXES.some((s) => d.name.endsWith(s)))
       .flatMap((d) => {
         const isDir = resolveDirentIsDirectory(d, path.join(filePath, d.name));
-        return isDir === null
-          ? []
-          : [{ name: d.name, isDir, size: 0, modified: "" }];
+        return isDir === null ? [] : [{ name: d.name, isDir, size: 0, modified: "" }];
       })
       .sort((a, b) => {
         // Dirs first, then files, both alphabetically
@@ -659,10 +710,7 @@ export async function GET(
 
 // PUT /api/files/[...path]  — Create file or directory, or save file content
 // Body: { type?: "file" | "dir", content?: string }
-export async function PUT(
-  request: NextRequest,
-  { params }: { params: Promise<{ path: string[] }> },
-) {
+export async function PUT(request: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
   try {
     const { path: segments } = await params;
     const filePath = filePathFromApiSegments(segments);
@@ -671,7 +719,7 @@ export async function PUT(
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
 
-    const body = await request.json().catch(() => ({})) as {
+    const body = (await request.json().catch(() => ({}))) as {
       type?: string;
       content?: string;
     };
@@ -704,10 +752,7 @@ export async function PUT(
 }
 
 // DELETE /api/files/[...path]  — Delete a file or directory
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: Promise<{ path: string[] }> },
-) {
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
   try {
     const { path: segments } = await params;
     const filePath = filePathFromApiSegments(segments);
@@ -735,10 +780,7 @@ export async function DELETE(
 
 // PATCH /api/files/[...path]  — Rename or move a file/directory
 // Body: { newPath: string }
-export async function PATCH(
-  request: NextRequest,
-  { params }: { params: Promise<{ path: string[] }> },
-) {
+export async function PATCH(request: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
   try {
     const { path: segments } = await params;
     const oldPath = filePathFromApiSegments(segments);
@@ -747,7 +789,7 @@ export async function PATCH(
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
 
-    const body = await request.json().catch(() => ({})) as { newPath?: string };
+    const body = (await request.json().catch(() => ({}))) as { newPath?: string };
     if (!body.newPath) {
       return NextResponse.json({ error: "newPath required" }, { status: 400 });
     }

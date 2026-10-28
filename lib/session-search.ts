@@ -60,11 +60,18 @@ export async function searchSessionContents(
           continue;
         }
         let entry;
-        try { entry = JSON.parse(line); } catch { continue; }
+        try {
+          entry = JSON.parse(line);
+        } catch {
+          continue;
+        }
         if (entry?.type !== "message" || !["user", "assistant"].includes(entry.message?.role)) continue;
         const content: unknown = entry.message.content;
-        const blocks = typeof content === "string" ? [{ type: "text", text: content }] : Array.isArray(content) ? content : [];
-        const textBlocks = blocks.flatMap((block, blockIndex) => block?.type === "text" && typeof block.text === "string" ? [{ text: block.text as string, blockIndex }] : []);
+        const blocks =
+          typeof content === "string" ? [{ type: "text", text: content }] : Array.isArray(content) ? content : [];
+        const textBlocks = blocks.flatMap((block, blockIndex) =>
+          block?.type === "text" && typeof block.text === "string" ? [{ text: block.text as string, blockIndex }] : [],
+        );
         const text = textBlocks.map((block) => block.text).join("\n");
         const match = matcher.exec(text);
         if (!match) continue;
@@ -80,9 +87,18 @@ export async function searchSessionContents(
           session,
           ...(typeof entry.id === "string" ? { entryId: entry.id } : {}),
           blockIndex: matchedBlock!.blockIndex,
-          before: (start > 80 ? "..." : "") + text.slice(Math.max(0, start - 80), start).replace(/\s+/g, " ").trimStart(),
+          before:
+            (start > 80 ? "..." : "") +
+            text
+              .slice(Math.max(0, start - 80), start)
+              .replace(/\s+/g, " ")
+              .trimStart(),
           match: match[0].replace(/\s+/g, " "),
-          after: text.slice(end, end + 80).replace(/\s+/g, " ").trimEnd() + (end + 80 < text.length ? "..." : ""),
+          after:
+            text
+              .slice(end, end + 80)
+              .replace(/\s+/g, " ")
+              .trimEnd() + (end + 80 < text.length ? "..." : ""),
         });
         found = true;
         break;

@@ -8,8 +8,8 @@ import { WrappingSelect, type WrappingSelectItem, type WrappingSelectTheme } fro
 export const MAX_VISIBLE_OPTIONS = 10;
 
 export interface OptionListViewConfig {
-	items: readonly WrappingSelectItem[];
-	theme: WrappingSelectTheme;
+  items: readonly WrappingSelectItem[];
+  theme: WrappingSelectTheme;
 }
 
 /**
@@ -20,12 +20,12 @@ export interface OptionListViewConfig {
  * read-back getters are gone.
  */
 export interface OptionListViewProps {
-	selectedIndex: number;
-	focused: boolean;
-	inputBuffer: string;
-	inputCursorOffset?: number;
-	/** Optional previously-confirmed indicator. Omit when no marker should be drawn. */
-	confirmed?: { index: number; labelOverride?: string };
+  selectedIndex: number;
+  focused: boolean;
+  inputBuffer: string;
+  inputCursorOffset?: number;
+  /** Optional previously-confirmed indicator. Omit when no marker should be drawn. */
+  confirmed?: { index: number; labelOverride?: string };
 }
 
 /**
@@ -35,34 +35,34 @@ export interface OptionListViewProps {
  * received.
  */
 export class OptionListView implements StatefulView<OptionListViewProps> {
-	private readonly select: WrappingSelect;
+  private readonly select: WrappingSelect;
 
-	constructor(config: OptionListViewConfig) {
-		this.select = new WrappingSelect(config.items, Math.min(config.items.length, MAX_VISIBLE_OPTIONS), config.theme, {
-			numberStartOffset: 0,
-			totalItemsForNumbering: config.items.length,
-		});
-	}
+  constructor(config: OptionListViewConfig) {
+    this.select = new WrappingSelect(config.items, Math.min(config.items.length, MAX_VISIBLE_OPTIONS), config.theme, {
+      numberStartOffset: 0,
+      totalItemsForNumbering: config.items.length,
+    });
+  }
 
-	setProps(props: OptionListViewProps): void {
-		this.select.setSelectedIndex(props.selectedIndex);
-		this.select.setFocused(props.focused);
-		this.select.setConfirmedIndex(props.confirmed?.index, props.confirmed?.labelOverride);
-		this.select.setInputBuffer(props.inputBuffer);
-		this.select.setInputCursorOffset(props.inputCursorOffset);
-	}
+  setProps(props: OptionListViewProps): void {
+    this.select.setSelectedIndex(props.selectedIndex);
+    this.select.setFocused(props.focused);
+    this.select.setConfirmedIndex(props.confirmed?.index, props.confirmed?.labelOverride);
+    this.select.setInputBuffer(props.inputBuffer);
+    this.select.setInputCursorOffset(props.inputCursorOffset);
+  }
 
-	handleInput(_data: string): void {}
+  handleInput(_data: string): void {}
 
-	invalidate(): void {
-		this.select.invalidate();
-	}
+  invalidate(): void {
+    this.select.invalidate();
+  }
 
-	render(width: number): string[] {
-		return this.select.render(width);
-	}
+  render(width: number): string[] {
+    return this.select.render(width);
+  }
 
-	focusedItemRowRange(width: number): [number, number] {
-		return this.select.focusedItemRowRange(width);
-	}
+  focusedItemRowRange(width: number): [number, number] {
+    return this.select.focusedItemRowRange(width);
+  }
 }

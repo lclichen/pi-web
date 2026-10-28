@@ -12,7 +12,11 @@ import { join } from "node:path";
 import { dataDir } from "./mode-homes.ts";
 import { importProjectConfigBundle } from "./project-config-bundle.ts";
 import { isApkgBytes, readApkgHeader } from "./apkg.ts";
-import { BUILTIN_AGENT_BUILDER_NAME, BUILTIN_AGENT_BUILDER_VERSION, builtinAgentBuilderBytes } from "./builtin-agent-builder.ts";
+import {
+  BUILTIN_AGENT_BUILDER_NAME,
+  BUILTIN_AGENT_BUILDER_VERSION,
+  builtinAgentBuilderBytes,
+} from "./builtin-agent-builder.ts";
 
 export interface BundleMeta {
   name: string;
@@ -76,7 +80,11 @@ export function isProtectedBundleName(name: string): boolean {
 /** 首次访问时播种内置 Agent Builder 定义（存在即跳过；异步：zip 构建是异步的）。 */
 export async function ensureBuiltinBundles(): Promise<void> {
   const dir = bundlesDir();
-  if (existsSync(join(dir, `${BUILTIN_AGENT_BUILDER_NAME}.zip`)) || existsSync(join(dir, `${BUILTIN_AGENT_BUILDER_NAME}.apkg`))) return;
+  if (
+    existsSync(join(dir, `${BUILTIN_AGENT_BUILDER_NAME}.zip`)) ||
+    existsSync(join(dir, `${BUILTIN_AGENT_BUILDER_NAME}.apkg`))
+  )
+    return;
   const bytes = await builtinAgentBuilderBytes();
   saveBundle(BUILTIN_AGENT_BUILDER_NAME, "内置：套用后在项目内对话式开发 Agent 定义（.pi/ 全流程 + 打包规范）", bytes);
   // 明文 zip 的版本不在 .apkg 头里——补写 meta 让列表/详情显示版本。

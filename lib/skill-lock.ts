@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "fs";
 import { homedir } from "os";
 import { isAbsolute, join, relative, resolve, sep } from "path";
-import type { SkillInfo, SkillInstallInfo, SkillInstallScope }  from "./api-types";
+import type { SkillInfo, SkillInstallInfo, SkillInstallScope } from "./api-types";
 
 interface SkillLockEntry {
   source?: unknown;
@@ -32,9 +32,7 @@ export function getGlobalSkillsLockPath({
   homeDir = homedir(),
   xdgStateHome = process.env.XDG_STATE_HOME,
 }: GlobalLockPathOptions = {}): string {
-  return xdgStateHome
-    ? join(xdgStateHome, "skills", ".skill-lock.json")
-    : join(homeDir, ".agents", ".skill-lock.json");
+  return xdgStateHome ? join(xdgStateHome, "skills", ".skill-lock.json") : join(homeDir, ".agents", ".skill-lock.json");
 }
 
 function readSkillLock(path: string): Record<string, SkillLockEntry> {
@@ -51,10 +49,7 @@ function isWithin(path: string, root: string): boolean {
   return rel !== "" && rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
 }
 
-function findLockEntry(
-  entries: Record<string, SkillLockEntry>,
-  skillName: string,
-): SkillLockEntry | undefined {
+function findLockEntry(entries: Record<string, SkillLockEntry>, skillName: string): SkillLockEntry | undefined {
   if (entries[skillName]) return entries[skillName];
   const normalizedName = skillName.toLowerCase();
   const key = Object.keys(entries).find((name) => name.toLowerCase() === normalizedName);
@@ -73,11 +68,7 @@ function normalizeSource(source: string, sourceType?: string): string {
 
 function buildSkillsShUrl(source: string, skillName: string): string | undefined {
   if (!source || source.includes("://") || source.startsWith("git@")) return undefined;
-  const sourcePath = source
-    .split("/")
-    .filter(Boolean)
-    .map(encodeURIComponent)
-    .join("/");
+  const sourcePath = source.split("/").filter(Boolean).map(encodeURIComponent).join("/");
   if (!sourcePath) return undefined;
   return `https://skills.sh/${sourcePath}/${encodeURIComponent(skillName)}`;
 }
@@ -96,11 +87,8 @@ function getInstallInfo(
   const skillPath = typeof entry.skillPath === "string" ? entry.skillPath : undefined;
   const ref = typeof entry.ref === "string" ? entry.ref : undefined;
   const rawVersionHash = scope === "global" ? entry.skillFolderHash : entry.computedHash;
-  const versionHash = typeof rawVersionHash === "string" && rawVersionHash
-    ? rawVersionHash
-    : undefined;
-  const isGitHubSource =
-    sourceType === "github" && /^[\w.-]+\/[\w.-]+$/.test(source);
+  const versionHash = typeof rawVersionHash === "string" && rawVersionHash ? rawVersionHash : undefined;
+  const isGitHubSource = sourceType === "github" && /^[\w.-]+\/[\w.-]+$/.test(source);
   const hasComparableVersion = scope === "global" || !ref;
 
   return {
@@ -112,9 +100,7 @@ function getInstallInfo(
     ...(skillPath && { skillPath }),
     ...(ref && { ref }),
     ...(versionHash && { versionHash }),
-    canCheckForUpdates: Boolean(
-      isGitHubSource && skillPath && versionHash && hasComparableVersion,
-    ),
+    canCheckForUpdates: Boolean(isGitHubSource && skillPath && versionHash && hasComparableVersion),
   };
 }
 

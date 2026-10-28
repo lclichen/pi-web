@@ -24,18 +24,12 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   try {
     const home = ensureProjectHome(project);
     if (isExportLocked(home)) {
-      return NextResponse.json(
-        { error: "该项目的配置来自加密配置包（.apkg），不允许再导出" },
-        { status: 403 },
-      );
+      return NextResponse.json({ error: "该项目的配置来自加密配置包（.apkg），不允许再导出" }, { status: 403 });
     }
     const { bytes } = await exportProjectConfigBundle(home, project.name);
     const safeName = project.name.replace(/[\\/:*?"<>|]/g, "_").trim() || "project";
     return bundleDownloadResponse(bytes, `${safeName}-config.zip`);
   } catch (e) {
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : String(e) },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 });
   }
 }

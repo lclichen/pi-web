@@ -25,9 +25,6 @@ export async function PUT(req: Request) {
     writePreferences(body.cwd, prefs);
     return NextResponse.json({ success: true });
   } catch (e) {
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : String(e) },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 });
   }
 }

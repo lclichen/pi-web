@@ -96,11 +96,11 @@ export async function browseAgentDirectory(
 
   // Listing "." against `start` as the workspace: the agent reports the
   // direct children, and we rebuild absolute paths client-side.
-  const entries = await relayRpc(
+  const entries = (await relayRpc(
     "fs.list",
     { path: toRelayPath(".", scope, start), ...(scope.base ? { base: scope.base } : {}) },
     { userId, machineId },
-  ) as FsEntry[];
+  )) as FsEntry[];
 
   const directories = (entries ?? [])
     .filter((entry) => entry.isDir)
@@ -159,11 +159,11 @@ export async function validateAgentDirectory(
   const scope = resolveRelayWorkspaceScope(parent, info);
   if (scope.error) throw new Error(scope.error);
   const leaf = dir === parent ? "." : dir.slice(parent.replace(/\/+$/, "").length + 1);
-  const stat = await relayRpc(
+  const stat = (await relayRpc(
     "fs.stat",
     { path: toRelayPath(leaf, scope, parent), ...(scope.base ? { base: scope.base } : {}) },
     { userId, machineId },
-  ) as FsStatResult;
+  )) as FsStatResult;
   if (!stat?.exists) throw new Error(`目录不存在：${dir}`);
   if (!stat.isDir) throw new Error(`不是目录：${dir}`);
   return dir;

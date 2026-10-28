@@ -30,7 +30,9 @@ export function readRuntimeVersion(): RuntimeVersion {
     };
     if (raw.version) version = raw.version;
     if (raw.channel) channel = raw.channel;
-  } catch { /* dev 环境无 version.json：保留构建期值 */ }
+  } catch {
+    /* dev 环境无 version.json：保留构建期值 */
+  }
   cached = { version, channel };
   return cached;
 }
@@ -57,7 +59,10 @@ export function updateStatusPath(): string | null {
 /** 更新器脚本是否存在（package-linux 打平进 <root>/scripts/apply-update.cjs）。 */
 export function applierPath(): string | null {
   const root = getAppRoot() ?? process.cwd();
-  for (const candidate of [join(root, "scripts", "apply-update.cjs"), join(root, "app", "scripts", "apply-update.cjs")]) {
+  for (const candidate of [
+    join(root, "scripts", "apply-update.cjs"),
+    join(root, "app", "scripts", "apply-update.cjs"),
+  ]) {
     if (existsSync(candidate)) return candidate;
   }
   return null;

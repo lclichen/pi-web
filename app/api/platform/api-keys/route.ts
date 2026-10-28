@@ -44,7 +44,11 @@ export async function GET(req: Request) {
           revokedAt: row.revoked_at,
           ...(plaintext ? { key: plaintext } : {}),
           canReveal,
-          source: canReveal ? ("manual" as const) : AUTO_SESSION_KEY_NAME.test(row.name) ? ("auto" as const) : ("external" as const),
+          source: canReveal
+            ? ("manual" as const)
+            : AUTO_SESSION_KEY_NAME.test(row.name)
+              ? ("auto" as const)
+              : ("external" as const),
           ...(String(row.id) === String(session.apiKeyId) ? { isCurrent: true } : {}),
         };
       });
@@ -79,7 +83,7 @@ export async function POST(req: Request) {
   }
   let name: unknown;
   try {
-    ({ name } = await req.json() as { name?: unknown });
+    ({ name } = (await req.json()) as { name?: unknown });
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
@@ -87,9 +91,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "密钥名称必填（≤128 字符）" }, { status: 400 });
   }
   try {
-    const created = await platformPost<PlatformKeyRow & { key: string }>(
-      "/api/v1/auth/api-keys", session.apiKey, { name: name.trim() },
-    );
+    const created = await platformPost<PlatformKeyRow & { key: string }>("/api/v1/auth/api-keys", session.apiKey, {
+      name: name.trim(),
+    });
     if (!created?.key?.startsWith("sk_")) {
       return NextResponse.json({ error: "平台返回的密钥格式异常" }, { status: 502 });
     }
@@ -102,20 +106,23 @@ export async function POST(req: Request) {
       vaulted = false;
       console.error("[api-keys] 保管失败（本次返回明文，之后不可回显）:", e instanceof Error ? e.message : e);
     }
-    return NextResponse.json({
-      key: {
-        id: created.id,
-        name: created.name,
-        keyPrefix: created.key_prefix,
-        createdAt: created.created_at,
-        lastUsedAt: created.last_used_at,
-        revokedAt: created.revoked_at,
-        key: created.key,
-        canReveal: vaulted,
-        source: "manual" as const,
+    return NextResponse.json(
+      {
+        key: {
+          id: created.id,
+          name: created.name,
+          keyPrefix: created.key_prefix,
+          createdAt: created.created_at,
+          lastUsedAt: created.last_used_at,
+          revokedAt: created.revoked_at,
+          key: created.key,
+          canReveal: vaulted,
+          source: "manual" as const,
+        },
+        vaulted,
       },
-      vaulted,
-    }, { status: 201 });
+      { status: 201 },
+    );
   } catch (e) {
     return NextResponse.json({ error: `平台请求失败: ${e instanceof Error ? e.message : String(e)}` }, { status: 502 });
   }

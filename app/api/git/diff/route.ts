@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUserIdentity } from "@/lib/web-session";
-import { getAllowedFileRootsForRequest, isExistingFilePathAllowed, isFilePathAllowed, isWindowsAbsolutePath } from "@/lib/file-access";
+import {
+  getAllowedFileRootsForRequest,
+  isExistingFilePathAllowed,
+  isFilePathAllowed,
+  isWindowsAbsolutePath,
+} from "@/lib/file-access";
 import { getGitFileDiff } from "@/lib/git-changes";
 
 export async function GET(request: NextRequest) {

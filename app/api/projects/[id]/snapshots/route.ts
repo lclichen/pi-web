@@ -28,13 +28,8 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   const project = getOwnedProject(id, identity.session.user.id, identity.session.user.role === "admin");
   if (!project || project.mode !== "sandbox") return NextResponse.json({ error: "项目不存在" }, { status: 404 });
   try {
-    const list = await platformGet<{ snapshots: PlatformSnapshot[] }>(
-      "/api/v1/snapshots",
-      identity.session.apiKey,
-    );
-    const mine = (list.snapshots ?? []).filter(
-      (s) => project.snapshotSlots?.some((slot) => slot.id === s.id) ?? false,
-    );
+    const list = await platformGet<{ snapshots: PlatformSnapshot[] }>("/api/v1/snapshots", identity.session.apiKey);
+    const mine = (list.snapshots ?? []).filter((s) => project.snapshotSlots?.some((slot) => slot.id === s.id) ?? false);
     return NextResponse.json({ snapshots: mine, containerId: project.containerId ?? null });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 502 });
@@ -49,7 +44,8 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
 //   { action: "delete", snapshotId }       — drop one save slot
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   if (!isApiRequestAllowed(req)) return NextResponse.json({ error: "Untrusted API request" }, { status: 403 });
-  if (!hasJsonContentType(req)) return NextResponse.json({ error: "Content-Type must be application/json" }, { status: 415 });
+  if (!hasJsonContentType(req))
+    return NextResponse.json({ error: "Content-Type must be application/json" }, { status: 415 });
   const identity = requireUserIdentity(req);
   if (!identity.ok) return NextResponse.json({ error: "登录已失效" }, { status: identity.status });
   const { id } = await ctx.params;

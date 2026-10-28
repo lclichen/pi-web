@@ -53,7 +53,10 @@ export async function POST(req: Request) {
   // Validate required fields
   const mode = body.mode === "host" || body.mode === "sandbox" || body.mode === "local-machine" ? body.mode : null;
   if (!mode) {
-    return NextResponse.json({ error: "mode must be 'host', 'sandbox' or 'local-machine' (ssh not yet supported)" }, { status: 400 });
+    return NextResponse.json(
+      { error: "mode must be 'host', 'sandbox' or 'local-machine' (ssh not yet supported)" },
+      { status: 400 },
+    );
   }
   if (typeof body.prompt !== "string" || body.prompt.trim().length === 0) {
     return NextResponse.json({ error: "prompt is required" }, { status: 400 });
@@ -64,7 +67,10 @@ export async function POST(req: Request) {
   let workDir = "";
   if (mode === "host") {
     if (typeof body.workDir !== "string" || body.workDir.trim().length === 0) {
-      return NextResponse.json({ error: "workDir is required in host mode (absolute or server-relative path)" }, { status: 400 });
+      return NextResponse.json(
+        { error: "workDir is required in host mode (absolute or server-relative path)" },
+        { status: 400 },
+      );
     }
     workDir = body.workDir;
   }
@@ -80,10 +86,19 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "沙盒模式未配置（缺少 PI_WEB_PLATFORM_URL）" }, { status: 400 });
     }
     if (typeof body.containerId !== "number") {
-      return NextResponse.json({ error: "containerId is required in sandbox mode (pre-provisioned platform container)" }, { status: 400 });
+      return NextResponse.json(
+        { error: "containerId is required in sandbox mode (pre-provisioned platform container)" },
+        { status: 400 },
+      );
     }
     if (body.files !== undefined || body.filePackagePath !== undefined) {
-      return NextResponse.json({ error: "files/filePackagePath are not supported in sandbox mode — the workspace lives inside the container image" }, { status: 400 });
+      return NextResponse.json(
+        {
+          error:
+            "files/filePackagePath are not supported in sandbox mode — the workspace lives inside the container image",
+        },
+        { status: 400 },
+      );
     }
   }
   // local-machine: the task runs on the key owner's paired machine. The
@@ -96,13 +111,20 @@ export async function POST(req: Request) {
   let resolvedProject: ReturnType<typeof getOwnedProject>;
   if (mode === "local-machine") {
     if (body.files !== undefined || body.filePackagePath !== undefined) {
-      return NextResponse.json({ error: "files/filePackagePath are not supported in local-machine mode — the workspace lives on the paired machine" }, { status: 400 });
+      return NextResponse.json(
+        {
+          error:
+            "files/filePackagePath are not supported in local-machine mode — the workspace lives on the paired machine",
+        },
+        { status: 400 },
+      );
     }
-    const rawProject = typeof body.projectId === "string"
-      ? body.projectId.trim()
-      : typeof body.projectId === "number"
-        ? String(body.projectId)
-        : "";
+    const rawProject =
+      typeof body.projectId === "string"
+        ? body.projectId.trim()
+        : typeof body.projectId === "number"
+          ? String(body.projectId)
+          : "";
     if (rawProject) {
       resolvedProject = getOwnedProject(rawProject, auth.identity.user.id, auth.identity.user.role === "admin");
       if (!resolvedProject) return NextResponse.json({ error: "项目不存在" }, { status: 404 });
@@ -115,7 +137,10 @@ export async function POST(req: Request) {
     const explicitWorkDir = typeof body.workDir === "string" ? body.workDir.trim() : "";
     if (explicitWorkDir) {
       if (relayWorkspaceDir) {
-        return NextResponse.json({ error: "projectId 与 workDir 只能二选一（projectId 已绑定工作区）" }, { status: 400 });
+        return NextResponse.json(
+          { error: "projectId 与 workDir 只能二选一（projectId 已绑定工作区）" },
+          { status: 400 },
+        );
       }
       relayWorkspaceDir = explicitWorkDir;
     }
@@ -136,13 +161,16 @@ export async function POST(req: Request) {
     }
   }
   if (
-    body.toolNames !== undefined
-    && (!Array.isArray(body.toolNames) || body.toolNames.some((n) => typeof n !== "string"))
+    body.toolNames !== undefined &&
+    (!Array.isArray(body.toolNames) || body.toolNames.some((n) => typeof n !== "string"))
   ) {
     return NextResponse.json({ error: "toolNames must be an array of strings" }, { status: 400 });
   }
   const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
-  if (body.thinkingLevel !== undefined && !THINKING_LEVELS.includes(body.thinkingLevel as typeof THINKING_LEVELS[number])) {
+  if (
+    body.thinkingLevel !== undefined &&
+    !THINKING_LEVELS.includes(body.thinkingLevel as (typeof THINKING_LEVELS)[number])
+  ) {
     return NextResponse.json({ error: "thinkingLevel must be one of: " + THINKING_LEVELS.join(", ") }, { status: 400 });
   }
   const num = (v: unknown, def: number, min: number, max: number): number => {
@@ -173,9 +201,10 @@ export async function POST(req: Request) {
     requestedWorkDir: workDir,
     actualWorkDir: "",
     prompt: body.prompt,
-    model: typeof body.model === "object" && body.model !== null && "provider" in body.model
-      ? body.model as { provider: string; modelId: string }
-      : undefined,
+    model:
+      typeof body.model === "object" && body.model !== null && "provider" in body.model
+        ? (body.model as { provider: string; modelId: string })
+        : undefined,
     timeoutMs: num(body.timeoutMs, 600_000, 30_000, MAX_TIMEOUT_MS),
     // Auto-answer must fire WELL BEFORE the dialog's own timeout (exit_plan_mode
     // dialogs expire at 300s resolving as "not approved" — an equal default here
@@ -186,12 +215,12 @@ export async function POST(req: Request) {
     // stopContainer only ever applied to host-managed state and is ignored.
     stopContainer: mode === "sandbox" ? false : body.stopContainer !== false,
     containerId: typeof body.containerId === "number" ? body.containerId : undefined,
-    projectId: resolvedProject?.id
-      ?? (typeof body.projectId === "number" ? body.projectId : undefined),
+    projectId: resolvedProject?.id ?? (typeof body.projectId === "number" ? body.projectId : undefined),
     ...(mode === "local-machine" && relayWorkspaceDir ? { workspaceDir: relayWorkspaceDir } : {}),
     ...(mode === "local-machine" && relayMachineId ? { machineId: relayMachineId } : {}),
-    toolNames: Array.isArray(body.toolNames) ? body.toolNames as string[] : undefined,
-    thinkingLevel: typeof body.thinkingLevel === "string" ? body.thinkingLevel as typeof THINKING_LEVELS[number] : undefined,
+    toolNames: Array.isArray(body.toolNames) ? (body.toolNames as string[]) : undefined,
+    thinkingLevel:
+      typeof body.thinkingLevel === "string" ? (body.thinkingLevel as (typeof THINKING_LEVELS)[number]) : undefined,
   });
 
   // Fire-and-forget: the task runs in the background; the caller polls or
@@ -200,7 +229,7 @@ export async function POST(req: Request) {
     taskId,
     prompt: body.prompt,
     workDir,
-    files: typeof body.files === "object" && body.files !== null ? body.files as Record<string, string> : undefined,
+    files: typeof body.files === "object" && body.files !== null ? (body.files as Record<string, string>) : undefined,
     filePackagePath: typeof body.filePackagePath === "string" ? body.filePackagePath : undefined,
     mode,
     model: task.model,

@@ -47,36 +47,43 @@ export function isPlanProfile(profile: string | undefined): boolean {
 
 export function makeSessionPlanExtension(): InlineExtension {
   return (pi: ExtensionAPI): void => {
-    pi.registerTool(defineTool({
-      name: "plan_save",
-      label: "Plan",
-      description:
-        "Save (or update) this session's implementation plan as markdown. It is stored at " +
-        ".pi/plans/plan-sess_<sessionId>.md in the project and shown in the WebUI 计划 panel " +
-        "and status capsule. Call it whenever a plan is created or meaningfully revised.",
-      promptSnippet: "plan_save — persist the session implementation plan (markdown)",
-      // 中文版备查：产出或实质性修订实施计划后，用 plan_save 保存完整 markdown 计划
-      // （含步骤清单，未完成步骤用 `- [ ]` 复选框表达）；不要把计划只留在对话里。
-      promptGuidelines: [
-        "After producing or materially revising an implementation plan, save the full markdown with plan_save (steps expressed as `- [ ]` checkboxes); never leave the plan only in the conversation.",
-      ],
-      parameters: Type.Object({
-        content: Type.String({ description: "Full markdown plan. Use `- [ ]` / `- [x]` checkboxes for steps." }),
+    pi.registerTool(
+      defineTool({
+        name: "plan_save",
+        label: "Plan",
+        description:
+          "Save (or update) this session's implementation plan as markdown. It is stored at " +
+          ".pi/plans/plan-sess_<sessionId>.md in the project and shown in the WebUI 计划 panel " +
+          "and status capsule. Call it whenever a plan is created or meaningfully revised.",
+        promptSnippet: "plan_save — persist the session implementation plan (markdown)",
+        // 中文版备查：产出或实质性修订实施计划后，用 plan_save 保存完整 markdown 计划
+        // （含步骤清单，未完成步骤用 `- [ ]` 复选框表达）；不要把计划只留在对话里。
+        promptGuidelines: [
+          "After producing or materially revising an implementation plan, save the full markdown with plan_save (steps expressed as `- [ ]` checkboxes); never leave the plan only in the conversation.",
+        ],
+        parameters: Type.Object({
+          content: Type.String({ description: "Full markdown plan. Use `- [ ]` / `- [x]` checkboxes for steps." }),
+        }),
+        execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
+          const sessionId = ctx.sessionManager.getSessionId();
+          const result = saveSessionPlan(ctx.cwd, sessionId, params.content);
+          return result.ok
+            ? {
+                content: [
+                  {
+                    type: "text",
+                    text: `Plan saved (${params.content.length} chars) to ${PLAN_DIR_NAME}/plan-sess_${sessionId.slice(0, 8)}….md`,
+                  },
+                ],
+                details: { saved: true, path: sessionPlanPath(ctx.cwd, sessionId) },
+              }
+            : {
+                content: [{ type: "text", text: `Failed to save plan: ${result.error}` }],
+                details: { saved: false },
+                isError: true,
+              };
+        },
       }),
-      execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
-        const sessionId = ctx.sessionManager.getSessionId();
-        const result = saveSessionPlan(ctx.cwd, sessionId, params.content);
-        return result.ok
-          ? {
-              content: [{ type: "text", text: `Plan saved (${params.content.length} chars) to ${PLAN_DIR_NAME}/plan-sess_${sessionId.slice(0, 8)}….md` }],
-              details: { saved: true, path: sessionPlanPath(ctx.cwd, sessionId) },
-            }
-          : {
-              content: [{ type: "text", text: `Failed to save plan: ${result.error}` }],
-              details: { saved: false },
-              isError: true,
-            };
-      },
-    }));
+    );
   };
 }

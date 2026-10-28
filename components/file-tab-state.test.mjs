@@ -57,10 +57,7 @@ test("changing the source session remounts the viewer without losing its state",
 test("opening from the same source session preserves the viewer revision", () => {
   const tab = { ...tabA, sourceSessionId: "session-1" };
   const tabs = [tab];
-  assert.strictEqual(
-    openFileTab(tabs, { ...openA, sourceSessionId: "session-1" }),
-    tabs,
-  );
+  assert.strictEqual(openFileTab(tabs, { ...openA, sourceSessionId: "session-1" }), tabs);
 });
 
 test("changing source while forcing diff increments the revision once", () => {

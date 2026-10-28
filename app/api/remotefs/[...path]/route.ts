@@ -24,10 +24,7 @@ function filePathFromSegments(segments: string[]): string {
   return ("/" + joined).replace(/\/{2,}/g, "/");
 }
 
-export async function GET(
-  req: Request,
-  ctx: { params: Promise<{ path: string[] }> },
-): Promise<Response> {
+export async function GET(req: Request, ctx: { params: Promise<{ path: string[] }> }): Promise<Response> {
   const url = new URL(req.url);
   const sessionId = url.searchParams.get("src");
   const type = url.searchParams.get("type") ?? "read";
@@ -71,10 +68,7 @@ export async function GET(
   }
 }
 
-export async function PUT(
-  req: Request,
-  ctx: { params: Promise<{ path: string[] }> },
-): Promise<Response> {
+export async function PUT(req: Request, ctx: { params: Promise<{ path: string[] }> }): Promise<Response> {
   if (!isApiRequestAllowed(req)) {
     return NextResponse.json({ error: "Untrusted API request" }, { status: 403 });
   }
@@ -107,7 +101,7 @@ export async function PUT(
         return NextResponse.json({ success: true, path: filePath });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-    return NextResponse.json({ error: msg }, { status: /No such file|ENOENT|not exist/i.test(msg) ? 404 : 502 });
+        return NextResponse.json({ error: msg }, { status: /No such file|ENOENT|not exist/i.test(msg) ? 404 : 502 });
       }
     }
     return NextResponse.json({ error: "content required" }, { status: 400 });
@@ -129,10 +123,7 @@ export async function PUT(
 // ?type=upload&conflict=error|replace|skip takes multipart "files" entries.
 // Powers the file explorer's upload button / folder context menu for sandbox,
 // local-machine and SSH sessions.
-export async function POST(
-  req: Request,
-  ctx: { params: Promise<{ path: string[] }> },
-): Promise<Response> {
+export async function POST(req: Request, ctx: { params: Promise<{ path: string[] }> }): Promise<Response> {
   if (!isApiRequestAllowed(req)) {
     return NextResponse.json({ error: "Untrusted API request" }, { status: 403 });
   }
@@ -207,7 +198,10 @@ export async function POST(
     const conflicts = (names as string[]).filter((n) => byName.has(n));
     if (strategy === "error" && conflicts.length > 0) {
       const nonReplaceable = conflicts.filter((n) => byName.get(n)?.isDir);
-      return NextResponse.json({ error: "One or more files already exist", conflicts, nonReplaceable }, { status: 409 });
+      return NextResponse.json(
+        { error: "One or more files already exist", conflicts, nonReplaceable },
+        { status: 409 },
+      );
     }
 
     const uploaded: string[] = [];
@@ -240,10 +234,7 @@ export async function POST(
   }
 }
 
-export async function DELETE(
-  req: Request,
-  ctx: { params: Promise<{ path: string[] }> },
-): Promise<Response> {
+export async function DELETE(req: Request, ctx: { params: Promise<{ path: string[] }> }): Promise<Response> {
   if (!isApiRequestAllowed(req)) {
     return NextResponse.json({ error: "Untrusted API request" }, { status: 403 });
   }
@@ -265,10 +256,7 @@ export async function DELETE(
   }
 }
 
-export async function PATCH(
-  req: Request,
-  ctx: { params: Promise<{ path: string[] }> },
-): Promise<Response> {
+export async function PATCH(req: Request, ctx: { params: Promise<{ path: string[] }> }): Promise<Response> {
   if (!isApiRequestAllowed(req)) {
     return NextResponse.json({ error: "Untrusted API request" }, { status: 403 });
   }

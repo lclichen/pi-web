@@ -29,7 +29,7 @@ export function Terminal({ cwd, onClose, machineId }: Props) {
     const term = new XTerm({
       cursorBlink: true,
       fontSize: 13,
-      fontFamily: "Menlo, Consolas, \"Courier New\", monospace",
+      fontFamily: 'Menlo, Consolas, "Courier New", monospace',
       scrollback: 5000,
     });
     const fitAddon = new FitAddon();
@@ -84,7 +84,9 @@ export function Terminal({ cwd, onClose, machineId }: Props) {
           error?: string;
         };
         if (!res.ok || !body?.success || !body.data?.sessionId) {
-          term.writeln(`\x1b[31m无法启动终端：${body?.error ?? `HTTP ${res.status}（响应无内容，服务器路由可能崩溃）`}\x1b[0m`);
+          term.writeln(
+            `\x1b[31m无法启动终端：${body?.error ?? `HTTP ${res.status}（响应无内容，服务器路由可能崩溃）`}\x1b[0m`,
+          );
           if (body?.error?.includes("not supported on this build")) {
             term.writeln("PTY 仅在 Linux/macOS Agent 上可用。请在 CentOS 7 等目标机上运行 Agent。");
           }
@@ -121,26 +123,60 @@ export function Terminal({ cwd, onClose, machineId }: Props) {
 
   return (
     <div
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
       style={{
-        position: "fixed", inset: 0, zIndex: 1150, display: "flex",
-        alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.5)",
+        position: "fixed",
+        inset: 0,
+        zIndex: 1150,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "rgba(0,0,0,0.5)",
       }}
     >
       <div
         role="dialog"
         aria-modal="true"
         style={{
-          width: "min(900px, 92vw)", height: "min(70vh, 640px)",
-          background: "#000", border: "1px solid var(--border)", borderRadius: 8,
-          boxShadow: "0 12px 36px rgba(0,0,0,0.4)", display: "flex", flexDirection: "column", overflow: "hidden",
+          width: "min(900px, 92vw)",
+          height: "min(70vh, 640px)",
+          background: "#000",
+          border: "1px solid var(--border)",
+          borderRadius: 8,
+          boxShadow: "0 12px 36px rgba(0,0,0,0.4)",
+          display: "flex",
+          flexDirection: "column",
+          overflow: "hidden",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", padding: "4px 10px", background: "var(--bg-panel)", borderBottom: "1px solid var(--border)" }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            padding: "4px 10px",
+            background: "var(--bg-panel)",
+            borderBottom: "1px solid var(--border)",
+          }}
+        >
           <span style={{ fontSize: 12, fontWeight: 600 }}>终端</span>
-          <span style={{ fontSize: 11, color: "var(--text-muted)", marginLeft: 8, fontFamily: "var(--font-mono)" }}>{cwd}</span>
+          <span style={{ fontSize: 11, color: "var(--text-muted)", marginLeft: 8, fontFamily: "var(--font-mono)" }}>
+            {cwd}
+          </span>
           <span style={{ flex: 1 }} />
-          <button onClick={onClose} style={{ background: "transparent", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 16 }}>×</button>
+          <button
+            onClick={onClose}
+            style={{
+              background: "transparent",
+              border: "none",
+              color: "var(--text-muted)",
+              cursor: "pointer",
+              fontSize: 16,
+            }}
+          >
+            ×
+          </button>
         </div>
         <div ref={containerRef} style={{ flex: 1, minHeight: 0, padding: 4, background: "#000" }} />
       </div>

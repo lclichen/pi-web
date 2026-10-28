@@ -23,10 +23,7 @@ Use these capabilities when they genuinely help the user — plots, screenshots,
  * empty, or a prompt still unset) are returned untouched so the caller's
  * "no system prompt" decision survives.
  */
-export function appendWebUiAddendum(
-  systemPrompt: string,
-  addendum: string = WEB_UI_SYSTEM_PROMPT_ADDENDUM,
-): string {
+export function appendWebUiAddendum(systemPrompt: string, addendum: string = WEB_UI_SYSTEM_PROMPT_ADDENDUM): string {
   const base = systemPrompt.trimEnd();
   if (!base || base.includes(addendum)) return systemPrompt;
   return `${base}\n\n${addendum}`;

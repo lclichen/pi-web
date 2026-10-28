@@ -23,11 +23,7 @@ export interface ForwardOpts {
 }
 
 /** One-shot request → resolves with `result`, rejects on error/timeout/offline. */
-export function relayRpc(
-  method: RpcMethod,
-  params?: Record<string, unknown>,
-  opts?: ForwardOpts,
-): Promise<unknown> {
+export function relayRpc(method: RpcMethod, params?: Record<string, unknown>, opts?: ForwardOpts): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const agent = getReadyAgent(opts);
     if (!agent) {
@@ -86,9 +82,7 @@ function agentUnavailable(opts: ForwardOpts | undefined): AgentUnavailableError 
 
 function getReadyAgent(opts?: ForwardOpts): AgentConn | null {
   const agent =
-    opts?.userId === undefined && !opts?.machineId
-      ? getAgent()
-      : getAgentForUser(opts?.userId ?? 0, opts?.machineId);
+    opts?.userId === undefined && !opts?.machineId ? getAgent() : getAgentForUser(opts?.userId ?? 0, opts?.machineId);
   // info is set once the agent's hello frame arrives; treat pre-hello as offline
   if (!agent || !agent.info) return null;
   return agent;

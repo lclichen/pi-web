@@ -30,9 +30,7 @@ async function getPiPackageDir(): Promise<string | null> {
 }
 
 function encodeHeaderValue(value: string): string {
-  return encodeURIComponent(value).replace(/[!'()*]/g, (ch) =>
-    `%${ch.charCodeAt(0).toString(16).toUpperCase()}`
-  );
+  return encodeURIComponent(value).replace(/[!'()*]/g, (ch) => `%${ch.charCodeAt(0).toString(16).toUpperCase()}`);
 }
 
 function getContentDisposition(fileName: string, inline: boolean): string {
@@ -50,9 +48,11 @@ async function getPiCliPath(): Promise<string | null> {
   }
 
   try {
-    const resolver = (import.meta as ImportMeta & {
-      resolve?: (specifier: string) => string | Promise<string>;
-    }).resolve;
+    const resolver = (
+      import.meta as ImportMeta & {
+        resolve?: (specifier: string) => string | Promise<string>;
+      }
+    ).resolve;
     if (typeof resolver === "function") {
       const indexUrl = await resolver("@earendil-works/pi-coding-agent");
       candidates.add(join(dirname(fileURLToPath(indexUrl)), "cli.js"));
@@ -61,16 +61,7 @@ async function getPiCliPath(): Promise<string | null> {
     // Next.js production bundles can strip import.meta.resolve.
   }
 
-  candidates.add(
-    join(
-      process.cwd(),
-      "node_modules",
-      "@earendil-works",
-      "pi-coding-agent",
-      "dist",
-      "cli.js"
-    )
-  );
+  candidates.add(join(process.cwd(), "node_modules", "@earendil-works", "pi-coding-agent", "dist", "cli.js"));
 
   for (const candidate of candidates) {
     if (existsSync(candidate)) return candidate;
@@ -157,7 +148,7 @@ function patchExportHtml(html: string): string {
               stack.push(node.children[i]);
             }
           }
-        }`
+        }`,
   );
 
   html = replaceRequired(
@@ -175,7 +166,7 @@ function patchExportHtml(html: string): string {
             for (let i = node.children.length - 1; i >= 0; i--) {
               stack.push(node.children[i]);
             }
-          }`
+          }`,
   );
 
   html = replaceRequired(
@@ -208,7 +199,7 @@ function patchExportHtml(html: string): string {
             }
             containsActive.set(node, has);
           }
-        }`
+        }`,
   );
 
   return html;
@@ -238,10 +229,7 @@ async function exportSession(filePath: string, outputPath: string): Promise<void
   await exportFromFile(filePath, outputPath);
 }
 
-export async function GET(
-  req: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const inline = new URL(req.url).searchParams.get("inline") === "1";
 

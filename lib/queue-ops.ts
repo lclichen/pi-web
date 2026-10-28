@@ -51,10 +51,7 @@ export interface QueueState {
   followUp: string[];
 }
 
-export type QueueOpError =
-  | "index_out_of_bounds"
-  | "empty_text"
-  | "image_protected";
+export type QueueOpError = "index_out_of_bounds" | "empty_text" | "image_protected";
 
 export type QueueOpResult =
   | {

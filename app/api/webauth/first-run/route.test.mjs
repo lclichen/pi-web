@@ -12,7 +12,9 @@ const jiti = createJiti(import.meta.url, {
   moduleCache: false,
 });
 const { GET } = await jiti.import("./route.ts");
-const { isLoopbackHost, readInitialPassword, consumeInitialPasswordIfMatch } = await jiti.import("../../../../lib/initial-password.ts");
+const { isLoopbackHost, readInitialPassword, consumeInitialPasswordIfMatch } = await jiti.import(
+  "../../../../lib/initial-password.ts",
+);
 
 const SAVED_FILE = process.env.PI_WEB_INITIAL_PASSWORD_FILE;
 

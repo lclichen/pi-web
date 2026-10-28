@@ -41,11 +41,7 @@ export interface SkillInstallInfo {
   canCheckForUpdates: boolean;
 }
 
-export type SkillUpdateState =
-  | "up-to-date"
-  | "update-available"
-  | "unsupported"
-  | "error";
+export type SkillUpdateState = "up-to-date" | "update-available" | "unsupported" | "error";
 
 export interface SkillUpdateResult {
   package: string;
@@ -145,11 +141,7 @@ export interface PluginResourceInfo {
   relativePath: string;
 }
 
-export type PluginUpdateState =
-  | "update-available"
-  | "up-to-date"
-  | "unsupported"
-  | "error";
+export type PluginUpdateState = "update-available" | "up-to-date" | "unsupported" | "error";
 
 export interface PluginUpdateResult {
   source: string;

@@ -22,10 +22,7 @@ export interface NodeCliLookupOptions {
  * it directly through the current `node` binary, which works identically on
  * every platform and needs no shell.
  */
-export function findNodeCliScript(
-  name: NodeCliName,
-  options: NodeCliLookupOptions = {},
-): string | null {
+export function findNodeCliScript(name: NodeCliName, options: NodeCliLookupOptions = {}): string | null {
   const nodeDir = options.nodeDir ?? dirname(execPath);
   const fileExists = options.fileExists ?? existsSync;
   const candidates = [
@@ -60,7 +57,5 @@ export function nodeCliInvocation(
   options: NodeCliLookupOptions = {},
 ): NodeCliInvocation {
   const script = findNodeCliScript(name, options);
-  return script
-    ? { command: execPath, args: [script, ...args] }
-    : { command: name, args };
+  return script ? { command: execPath, args: [script, ...args] } : { command: name, args };
 }

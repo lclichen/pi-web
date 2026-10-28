@@ -21,12 +21,9 @@ import { readSubagentRun, readSubagentSessionResources, SUBAGENT_META_TYPE } fro
 import { readSessionToolSelection } from "@/lib/session-tool-selection";
 import { jsonResponse } from "@/lib/json-response";
 
-export async function GET(
-  req: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
-    const { id } = await params;
-    try {
+export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  try {
     // Fast path for live sessions mirrors dev's events route; everything else
     // goes through dev's per-user access fence instead of upstream's global
     // resolveSessionPath (MERGE-NOTE(upgrade/0.84): space-aware lookup).
@@ -69,65 +66,83 @@ export async function GET(
 
     const header = sm.getHeader();
     let modified = header?.timestamp ?? new Date().toISOString();
-    try { modified = statSync(filePath).mtime.toISOString(); } catch { /* use header timestamp */ }
-    const parentSessionId = header?.parentSession
-      ? await resolveSessionIdByPath(header.parentSession)
-      : undefined;
-    const subagent = header
-      ? readSubagentRun(entries as never, header.id, filePath)
+    try {
+      modified = statSync(filePath).mtime.toISOString();
+    } catch {
+      /* use header timestamp */
+    }
+    const parentSessionId = header?.parentSession ? await resolveSessionIdByPath(header.parentSession) : undefined;
+    const subagent = header ? readSubagentRun(entries as never, header.id, filePath) : null;
+    const toolNames =
+      readSubagentSessionResources(entries as never)?.tools ?? readSessionToolSelection(entries as never);
+    const info = header
+      ? (
+          await attachSessionProjectInfo([
+            {
+              path: filePath,
+              id: header.id,
+              cwd: header.cwd ?? "",
+              name: sessionName,
+              created: header.timestamp,
+              modified,
+              messageCount: stats.totalMessages,
+              firstMessage: firstUserMessage
+                ? (() => {
+                    const c = (firstUserMessage as { content: unknown }).content;
+                    return typeof c === "string"
+                      ? c
+                      : (Array.isArray(c)
+                          ? ((c.find((b: { type: string }) => b.type === "text") as { text: string } | undefined)
+                              ?.text ?? "")
+                          : "") || "(no messages)";
+                  })()
+                : "(no messages)",
+              parentSessionId,
+              ...(subagent
+                ? {
+                    relation: {
+                      kind: "subagent" as const,
+                      parentSessionId: subagent.parentSessionId,
+                      profile: subagent.profile,
+                      description: subagent.description,
+                      status: liveRpc?.isRunning() ? ("running" as const) : subagent.status,
+                    },
+                  }
+                : header.parentSession
+                  ? {
+                      relation: {
+                        kind: "fork" as const,
+                        ...(parentSessionId ? { originSessionId: parentSessionId } : {}),
+                      },
+                    }
+                  : {}),
+              transient: !filePath || !existsSync(filePath),
+            },
+          ])
+        )[0]
       : null;
-    const toolNames = readSubagentSessionResources(entries as never)?.tools
-      ?? readSessionToolSelection(entries as never);
-    const info = header ? (await attachSessionProjectInfo([{
-      path: filePath,
-      id: header.id,
-      cwd: header.cwd ?? "",
-      name: sessionName,
-      created: header.timestamp,
-      modified,
-      messageCount: stats.totalMessages,
-      firstMessage: firstUserMessage
-        ? (() => {
-            const c = (firstUserMessage as { content: unknown }).content;
-            return typeof c === "string" ? c : (Array.isArray(c) ? (c.find((b: { type: string }) => b.type === "text") as { text: string } | undefined)?.text ?? "" : "") || "(no messages)";
-          })()
-        : "(no messages)",
-      parentSessionId,
-      ...(subagent
-        ? { relation: { kind: "subagent" as const, parentSessionId: subagent.parentSessionId, profile: subagent.profile, description: subagent.description, status: liveRpc?.isRunning() ? "running" as const : subagent.status } }
-        : header.parentSession
-          ? { relation: { kind: "fork" as const, ...(parentSessionId ? { originSessionId: parentSessionId } : {}) } }
-          : {}),
-      transient: !filePath || !existsSync(filePath),
-    }]))[0] : null;
 
-    return jsonResponse(
-      req,
-      {
-        sessionId: id,
-        filePath,
-        info,
-        leafId,
-        tree,
-        context,
-        stats,
-        totalActiveMs,
-        ...(toolNames !== undefined ? { toolNames } : {}),
-      },
-    );
+    return jsonResponse(req, {
+      sessionId: id,
+      filePath,
+      info,
+      leafId,
+      tree,
+      context,
+      stats,
+      totalActiveMs,
+      ...(toolNames !== undefined ? { toolNames } : {}),
+    });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
   }
 }
 
 // PATCH /api/sessions/[id]  body: { name: string }
-export async function PATCH(
-  req: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   try {
-    const { name } = await req.json() as { name?: string };
+    const { name } = (await req.json()) as { name?: string };
     if (typeof name !== "string") {
       return NextResponse.json({ error: "name is required" }, { status: 400 });
     }
@@ -147,10 +162,7 @@ export async function PATCH(
 }
 
 // DELETE /api/sessions/[id]
-export async function DELETE(
-  req: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   try {
     const access = await resolveSessionAccess(req, id, new URL(req.url).searchParams);
@@ -209,12 +221,13 @@ export async function DELETE(
                   continue;
                 }
                 if (
-                  entry.type !== "custom"
-                  || entry.customType !== SUBAGENT_META_TYPE
-                  || typeof entry.data !== "object"
-                  || entry.data === null
-                  || Array.isArray(entry.data)
-                ) continue;
+                  entry.type !== "custom" ||
+                  entry.customType !== SUBAGENT_META_TYPE ||
+                  typeof entry.data !== "object" ||
+                  entry.data === null ||
+                  Array.isArray(entry.data)
+                )
+                  continue;
                 entry.data = {
                   ...entry.data,
                   parentSessionId,
@@ -226,9 +239,13 @@ export async function DELETE(
             }
             writeFileSync(childPath, lines.join("\n"));
           }
-        } catch { /* skip malformed */ }
+        } catch {
+          /* skip malformed */
+        }
       }
-    } catch { /* skip if dir unreadable */ }
+    } catch {
+      /* skip if dir unreadable */
+    }
 
     await getRpcSession(id)?.shutdown();
     try {

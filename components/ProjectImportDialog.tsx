@@ -78,41 +78,80 @@ export function ProjectImportDialog({ projectId, hostDir, projectName, onClose, 
 
   return (
     <div
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
       style={{
-        position: "fixed", inset: 0, zIndex: 1150, display: "flex",
-        alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.35)",
+        position: "fixed",
+        inset: 0,
+        zIndex: 1150,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "rgba(0,0,0,0.35)",
       }}
     >
       <div
         role="dialog"
         aria-modal="true"
         style={{
-          width: "min(520px, 92vw)", display: "flex", flexDirection: "column", gap: 14,
-          padding: "20px 22px", borderRadius: 12,
-          background: "var(--bg-panel)", border: "1px solid var(--border)",
+          width: "min(520px, 92vw)",
+          display: "flex",
+          flexDirection: "column",
+          gap: 14,
+          padding: "20px 22px",
+          borderRadius: 12,
+          background: "var(--bg-panel)",
+          border: "1px solid var(--border)",
         }}
       >
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <span style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>
-            {t("projects.importProjectConfig")} <span style={{ fontWeight: 400, fontSize: 12, color: "var(--text-muted)" }}>— {projectName}</span>
+            {t("projects.importProjectConfig")}{" "}
+            <span style={{ fontWeight: 400, fontSize: 12, color: "var(--text-muted)" }}>— {projectName}</span>
           </span>
-          <button type="button" onClick={onClose} style={{ background: "transparent", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 16 }}>×</button>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{
+              background: "transparent",
+              border: "none",
+              color: "var(--text-muted)",
+              cursor: "pointer",
+              fontSize: 16,
+            }}
+          >
+            ×
+          </button>
         </div>
 
         {!result && (
           <>
             <div
               onClick={() => inputRef.current?.click()}
-              onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setDragOver(true);
+              }}
               onDragLeave={() => setDragOver(false)}
-              onDrop={(e) => { e.preventDefault(); setDragOver(false); pickFile(e.dataTransfer.files?.[0] ?? null); }}
+              onDrop={(e) => {
+                e.preventDefault();
+                setDragOver(false);
+                pickFile(e.dataTransfer.files?.[0] ?? null);
+              }}
               style={{
                 border: `1px dashed ${dragOver ? "var(--accent)" : "var(--border)"}`,
-                borderRadius: 8, padding: file ? "18px 16px" : "26px 16px",
-                display: "flex", flexDirection: "column", alignItems: "center", gap: 6,
-                color: dragOver ? "var(--accent)" : "var(--text-dim)", fontSize: 12, textAlign: "center",
-                cursor: "pointer", background: dragOver ? "var(--bg-hover)" : "transparent",
+                borderRadius: 8,
+                padding: file ? "18px 16px" : "26px 16px",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: 6,
+                color: dragOver ? "var(--accent)" : "var(--text-dim)",
+                fontSize: 12,
+                textAlign: "center",
+                cursor: "pointer",
+                background: dragOver ? "var(--bg-hover)" : "transparent",
                 transition: "border-color 0.12s, background 0.12s",
               }}
             >
@@ -126,7 +165,8 @@ export function ProjectImportDialog({ projectId, hostDir, projectName, onClose, 
                 <span>{t("projects.clickChooseDropZipConfig")}</span>
               )}
               <span style={{ fontSize: 11 }}>
-                {t("projects.contentsPiConfigSubagentsSkills")}<br />
+                {t("projects.contentsPiConfigSubagentsSkills")}
+                <br />
                 {t("projects.sameNamedFilesOverwriteRest")}
               </span>
             </div>
@@ -145,9 +185,14 @@ export function ProjectImportDialog({ projectId, hostDir, projectName, onClose, 
                 type="button"
                 onClick={onClose}
                 style={{
-                  height: 30, padding: "0 16px", borderRadius: 6,
-                  border: "1px solid var(--border)", background: "transparent",
-                  color: "var(--text)", fontSize: 12, cursor: "pointer",
+                  height: 30,
+                  padding: "0 16px",
+                  borderRadius: 6,
+                  border: "1px solid var(--border)",
+                  background: "transparent",
+                  color: "var(--text)",
+                  fontSize: 12,
+                  cursor: "pointer",
                 }}
               >
                 {t("common.cancel")}
@@ -157,9 +202,15 @@ export function ProjectImportDialog({ projectId, hostDir, projectName, onClose, 
                 onClick={upload}
                 disabled={!file || busy}
                 style={{
-                  height: 30, padding: "0 18px", borderRadius: 6,
-                  border: "none", background: "var(--accent)", color: "#fff",
-                  fontSize: 12, fontWeight: 500, cursor: !file || busy ? "default" : "pointer",
+                  height: 30,
+                  padding: "0 18px",
+                  borderRadius: 6,
+                  border: "none",
+                  background: "var(--accent)",
+                  color: "#fff",
+                  fontSize: 12,
+                  fontWeight: 500,
+                  cursor: !file || busy ? "default" : "pointer",
                   opacity: !file || busy ? 0.5 : 1,
                 }}
               >
@@ -179,24 +230,36 @@ export function ProjectImportDialog({ projectId, hostDir, projectName, onClose, 
             </div>
             <div
               style={{
-                maxHeight: 180, overflowY: "auto", border: "1px solid var(--border)", borderRadius: 6,
-                padding: "6px 10px", fontFamily: "var(--font-mono)", fontSize: 11,
-                color: "var(--text-muted)", background: "var(--bg)",
+                maxHeight: 180,
+                overflowY: "auto",
+                border: "1px solid var(--border)",
+                borderRadius: 6,
+                padding: "6px 10px",
+                fontFamily: "var(--font-mono)",
+                fontSize: 11,
+                color: "var(--text-muted)",
+                background: "var(--bg)",
               }}
             >
-              {result.files.map((f) => <div key={f}>{f}</div>)}
+              {result.files.map((f) => (
+                <div key={f}>{f}</div>
+              ))}
             </div>
-            <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
-              {t("projects.reopenProjectSessionNewConfig")}
-            </div>
+            <div style={{ fontSize: 11, color: "var(--text-dim)" }}>{t("projects.reopenProjectSessionNewConfig")}</div>
             <div style={{ display: "flex", justifyContent: "flex-end" }}>
               <button
                 type="button"
                 onClick={onClose}
                 style={{
-                  height: 30, padding: "0 18px", borderRadius: 6,
-                  border: "none", background: "var(--accent)", color: "#fff",
-                  fontSize: 12, fontWeight: 500, cursor: "pointer",
+                  height: 30,
+                  padding: "0 18px",
+                  borderRadius: 6,
+                  border: "none",
+                  background: "var(--accent)",
+                  color: "#fff",
+                  fontSize: 12,
+                  fontWeight: 500,
+                  cursor: "pointer",
                 }}
               >
                 {t("common.finish")}

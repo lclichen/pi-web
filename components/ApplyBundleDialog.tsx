@@ -11,7 +11,13 @@ import { useI18n } from "@/hooks/useI18n";
  *  - hostDir：Host 模式服务器目录（POST /api/host/apply-bundle）。仅限
  *    未初始化（无 .pi/）的目录——服务端 409 拒绝，防止覆盖既有配置。
  */
-export function ApplyBundleDialog({ projectId, hostDir, projectName, onClose, onApplied }: {
+export function ApplyBundleDialog({
+  projectId,
+  hostDir,
+  projectName,
+  onClose,
+  onApplied,
+}: {
   projectId?: string;
   hostDir?: string;
   projectName: string;
@@ -63,16 +69,41 @@ export function ApplyBundleDialog({ projectId, hostDir, projectName, onClose, on
   };
 
   const btnStyle: React.CSSProperties = {
-    height: 30, padding: "0 14px", borderRadius: 6, border: "1px solid var(--border)",
-    background: "var(--bg-panel)", color: "var(--text)", fontSize: 12, cursor: "pointer",
+    height: 30,
+    padding: "0 14px",
+    borderRadius: 6,
+    border: "1px solid var(--border)",
+    background: "var(--bg-panel)",
+    color: "var(--text)",
+    fontSize: 12,
+    cursor: "pointer",
   };
 
   return (
     <div
-      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200 }}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.4)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 200,
+      }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
     >
-      <div style={{ background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: 10, padding: 18, width: "min(440px, calc(100vw - 32px))", boxShadow: "0 12px 36px rgba(0,0,0,0.2)" }}>
+      <div
+        style={{
+          background: "var(--bg-panel)",
+          border: "1px solid var(--border)",
+          borderRadius: 10,
+          padding: 18,
+          width: "min(440px, calc(100vw - 32px))",
+          boxShadow: "0 12px 36px rgba(0,0,0,0.2)",
+        }}
+      >
         {done ? (
           <>
             <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>{t("bundles.applied", { name: done })}</div>
@@ -80,7 +111,16 @@ export function ApplyBundleDialog({ projectId, hostDir, projectName, onClose, on
               {t("bundles.applyResultHint")}
             </div>
             <div style={{ display: "flex", justifyContent: "flex-end" }}>
-              <button type="button" style={{ ...btnStyle, borderColor: "rgba(37,99,235,0.35)", color: "var(--accent)" }} onClick={() => { onApplied(); onClose(); }}>{t("common.finish")}</button>
+              <button
+                type="button"
+                style={{ ...btnStyle, borderColor: "rgba(37,99,235,0.35)", color: "var(--accent)" }}
+                onClick={() => {
+                  onApplied();
+                  onClose();
+                }}
+              >
+                {t("common.finish")}
+              </button>
             </div>
           </>
         ) : (
@@ -88,23 +128,42 @@ export function ApplyBundleDialog({ projectId, hostDir, projectName, onClose, on
             <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>{t("bundles.applyTitle")}</div>
             <div style={{ fontSize: 11, color: "var(--text-dim)", marginBottom: 12 }}>{projectName}</div>
             {loading ? (
-              <div style={{ fontSize: 12, color: "var(--text-dim)", padding: "8px 0" }}>{t("bundles.loadingTemplates")}</div>
+              <div style={{ fontSize: 12, color: "var(--text-dim)", padding: "8px 0" }}>
+                {t("bundles.loadingTemplates")}
+              </div>
             ) : bundles.length === 0 ? (
               <div style={{ fontSize: 12, color: "var(--text-dim)", padding: "8px 0", lineHeight: 1.6 }}>
                 {t("bundles.noneAvailable")}
               </div>
             ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 12, maxHeight: 240, overflowY: "auto" }}>
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 4,
+                  marginBottom: 12,
+                  maxHeight: 240,
+                  overflowY: "auto",
+                }}
+              >
                 {bundles.map((b) => (
                   <button
                     key={b.name}
                     type="button"
                     onClick={() => setSelected(b.name)}
                     style={{
-                      display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 2,
-                      padding: "7px 10px", border: `1px solid ${selected === b.name ? "var(--accent)" : "var(--border)"}`,
-                      borderRadius: 7, background: selected === b.name ? "rgba(37,99,235,0.07)" : "transparent",
-                      color: "var(--text)", fontSize: 12, cursor: "pointer", textAlign: "left",
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "flex-start",
+                      gap: 2,
+                      padding: "7px 10px",
+                      border: `1px solid ${selected === b.name ? "var(--accent)" : "var(--border)"}`,
+                      borderRadius: 7,
+                      background: selected === b.name ? "rgba(37,99,235,0.07)" : "transparent",
+                      color: "var(--text)",
+                      fontSize: 12,
+                      cursor: "pointer",
+                      textAlign: "left",
                     }}
                   >
                     <span style={{ fontFamily: "var(--font-mono)", fontWeight: 600 }}>{b.name}</span>
@@ -115,12 +174,20 @@ export function ApplyBundleDialog({ projectId, hostDir, projectName, onClose, on
             )}
             {error && <div style={{ color: "#f87171", fontSize: 11, marginBottom: 8 }}>{error}</div>}
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-              <button type="button" style={btnStyle} onClick={onClose}>{t("common.cancel")}</button>
+              <button type="button" style={btnStyle} onClick={onClose}>
+                {t("common.cancel")}
+              </button>
               <button
                 type="button"
                 disabled={!selected || applying}
                 onClick={() => void apply()}
-                style={{ ...btnStyle, borderColor: "rgba(37,99,235,0.35)", color: "var(--accent)", fontWeight: 600, opacity: !selected || applying ? 0.5 : 1 }}
+                style={{
+                  ...btnStyle,
+                  borderColor: "rgba(37,99,235,0.35)",
+                  color: "var(--accent)",
+                  fontWeight: 600,
+                  opacity: !selected || applying ? 0.5 : 1,
+                }}
               >
                 {applying ? t("bundles.applying") : t("bundles.apply")}
               </button>

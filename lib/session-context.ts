@@ -52,7 +52,12 @@ export function sessionDirsForProject(project: ProjectRecord, home: string): Ses
     case "sandbox":
       return { mode: project.mode, projectDir: home, workspaceDir: "/workspace", workspaceKind: "container" };
     case "ssh":
-      return { mode: project.mode, projectDir: home, workspaceDir: project.workdir ?? "/", workspaceKind: "remote-ssh" };
+      return {
+        mode: project.mode,
+        projectDir: home,
+        workspaceDir: project.workdir ?? "/",
+        workspaceKind: "remote-ssh",
+      };
     case "local-machine":
       return {
         mode: project.mode,

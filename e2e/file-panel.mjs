@@ -18,14 +18,14 @@ export async function checkFilePanel(page, filePath) {
   await frame.locator("#filter").selectOption({ label: "Pending" });
   await frame.evaluate(() => scrollTo(0, 120));
   const instance = await frame.evaluate(() => window.previewInstance);
-  const width = () => panel.evaluate(async el => {
-    await new Promise(requestAnimationFrame);
-    await Promise.all(el.getAnimations().map(animation => animation.finished.catch(() => {})));
-    return el.getBoundingClientRect().width;
-  });
-  const storedWidths = () => page.evaluate(() => [
-    localStorage.getItem("pi-sidebar-width"), localStorage.getItem("pi-right-panel-width"),
-  ]);
+  const width = () =>
+    panel.evaluate(async (el) => {
+      await new Promise(requestAnimationFrame);
+      await Promise.all(el.getAnimations().map((animation) => animation.finished.catch(() => {})));
+      return el.getBoundingClientRect().width;
+    });
+  const storedWidths = () =>
+    page.evaluate(() => [localStorage.getItem("pi-sidebar-width"), localStorage.getItem("pi-right-panel-width")]);
   const toggle = panel.getByRole("button", { name: "Expand file panel", exact: true });
   if (page.viewportSize().width <= 640) {
     assert.equal(await toggle.isVisible(), false, "Mobile already uses full width");
@@ -42,9 +42,12 @@ export async function checkFilePanel(page, filePath) {
       await sessionPopover.waitFor();
       await toggle.click();
       assert.equal(await sessionPopover.count(), 0, "Full-width mode dismisses inert top-bar menus");
-      assert.equal(await panel.getByRole("button", { name: "Restore file panel width", exact: true }).getAttribute("aria-pressed"), "true");
+      assert.equal(
+        await panel.getByRole("button", { name: "Restore file panel width", exact: true }).getAttribute("aria-pressed"),
+        "true",
+      );
       assert.equal(Math.round(await width()), page.viewportSize().width);
-      assert.equal(await page.locator("#session-sidebar").evaluate(el => el.inert), true);
+      assert.equal(await page.locator("#session-sidebar").evaluate((el) => el.inert), true);
       assert.equal(await frame.evaluate(() => window.previewInstance), instance);
       assert.equal(await frame.evaluate(() => scrollY), 120);
       assert.equal(await frame.locator("#notes").inputValue(), "Keep this note");
@@ -52,7 +55,7 @@ export async function checkFilePanel(page, filePath) {
       await panel.getByRole("button", { name: "Restore file panel width", exact: true }).press("Enter");
       assert.equal(await width(), originalWidth);
       assert.deepEqual(await storedWidths(), originalStored);
-      assert.equal(await page.locator("#session-sidebar").evaluate(el => el.inert), false);
+      assert.equal(await page.locator("#session-sidebar").evaluate((el) => el.inert), false);
     }
     await toggle.click();
     await panel.getByRole("button", { name: "Hide file panel", exact: true }).click();

@@ -8,9 +8,6 @@ test("uses the server-resolved current worktree identity", () => {
   assert.match(source, /currentWorktreePath: string \| null/);
   // This fork keys worktree identity off the server-resolved path instead of
   // upstream's inline projectRoot assignment in the sync effect.
-  assert.match(
-    source,
-    /const isCurrent = wt\.path === currentWorktreePath/,
-  );
+  assert.match(source, /const isCurrent = wt\.path === currentWorktreePath/);
   assert.doesNotMatch(source, /const isCurrent = wt\.path === selectedCwd/);
 });

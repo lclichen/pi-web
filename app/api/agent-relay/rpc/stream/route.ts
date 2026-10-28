@@ -68,11 +68,12 @@ export async function POST(req: Request) {
       req.signal?.addEventListener("abort", close);
 
       const machineId =
-        typeof body.machineId === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(body.machineId)
-          ? body.machineId
-          : undefined;
+        typeof body.machineId === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(body.machineId) ? body.machineId : undefined;
       try {
-        const result = await relayStream(method, params, (data) => send({ type: "chunk", data }), { userId: identity.session.user.id, machineId });
+        const result = await relayStream(method, params, (data) => send({ type: "chunk", data }), {
+          userId: identity.session.user.id,
+          machineId,
+        });
         send({ type: "end", ok: true, result });
       } catch (err) {
         if (err instanceof AgentUnavailableError) {

@@ -38,10 +38,10 @@ test("settings route defaults off and persists both switch states", async () => 
   response = await PUT(request({ enabled: true }));
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { enabled: true });
-  assert.deepEqual(
-    JSON.parse(await readFile(join(testAgentDir, "agents", "settings.json"), "utf8")),
-    { version: 1, builtInEnabled: true },
-  );
+  assert.deepEqual(JSON.parse(await readFile(join(testAgentDir, "agents", "settings.json"), "utf8")), {
+    version: 1,
+    builtInEnabled: true,
+  });
 
   response = await PUT(request({ enabled: false }));
   assert.deepEqual(await response.json(), { enabled: false });

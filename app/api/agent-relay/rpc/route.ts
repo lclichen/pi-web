@@ -29,9 +29,7 @@ export async function POST(req: Request) {
       ? (body.params as Record<string, unknown>)
       : undefined;
   const machineId =
-    typeof body.machineId === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(body.machineId)
-      ? body.machineId
-      : undefined;
+    typeof body.machineId === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(body.machineId) ? body.machineId : undefined;
 
   try {
     const data = await relayRpc(method, params, { userId: identity.session.user.id, machineId });
@@ -40,9 +38,6 @@ export async function POST(req: Request) {
     if (err instanceof AgentUnavailableError) {
       return NextResponse.json({ error: err.message }, { status: 503 });
     }
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : String(err) },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
   }
 }

@@ -29,7 +29,7 @@ function decodeBoundedBase64(data: string): Uint8Array | null {
   // Reject malformed and obviously oversized payloads before allocating.
   if (
     data.length === 0 ||
-    data.length > Math.ceil(MAX_TOOL_RESULT_IMAGE_BYTES * 4 / 3) + 4 ||
+    data.length > Math.ceil((MAX_TOOL_RESULT_IMAGE_BYTES * 4) / 3) + 4 ||
     data.length % 4 !== 0 ||
     !/^[A-Za-z0-9+/]*={0,2}$/.test(data)
   ) {
@@ -41,10 +41,7 @@ function decodeBoundedBase64(data: string): Uint8Array | null {
   return new Uint8Array(bytes);
 }
 
-export async function GET(
-  req: Request,
-  { params }: { params: Promise<{ id: string; entryId: string }> },
-) {
+export async function GET(req: Request, { params }: { params: Promise<{ id: string; entryId: string }> }) {
   const { id, entryId } = await params;
   const blockIndexParam = new URL(req.url).searchParams.get("blockIndex");
   const blockIndex = blockIndexParam === null ? Number.NaN : Number(blockIndexParam);

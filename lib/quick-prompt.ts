@@ -120,7 +120,9 @@ export function createQuickPromptExtension(
         const base = liveBase ?? event.systemPrompt ?? "";
         const next = composeQuickSystemPrompt(base, holder.current);
         if (process.env.PI_WEB_LOG_PROMPT_HASH) {
-          console.log(`[pi-web] prompt-hash base=${promptHash(base)}(${base.length}) out=${promptHash(next)}(${next.length})${liveBase !== undefined && liveBase !== event.systemPrompt ? " [live]" : ""}`);
+          console.log(
+            `[pi-web] prompt-hash base=${promptHash(base)}(${base.length}) out=${promptHash(next)}(${next.length})${liveBase !== undefined && liveBase !== event.systemPrompt ? " [live]" : ""}`,
+          );
         }
         return next === base ? undefined : { systemPrompt: next };
       });

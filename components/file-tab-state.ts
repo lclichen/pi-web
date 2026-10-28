@@ -13,26 +13,29 @@ interface OpenFileTabInput {
 export function openFileTab(tabs: Tab[], input: OpenFileTabInput): Tab[] {
   const existing = tabs.find((tab) => tab.id === input.tabId);
   if (!existing) {
-    return [...tabs, {
-      id: input.tabId,
-      label: input.fileName,
-      filePath: input.filePath,
-      sourceSessionId: input.sourceSessionId,
-      initialDisplayMode: input.modeHint,
-      page: input.page,
-      viewerState: input.modeHint ? {
-        displayMode: input.modeHint,
-        wrapLines: false,
-        scrollTop: 0,
-        scrollLeft: 0,
-      } : undefined,
-      viewerRevision: 0,
-    }];
+    return [
+      ...tabs,
+      {
+        id: input.tabId,
+        label: input.fileName,
+        filePath: input.filePath,
+        sourceSessionId: input.sourceSessionId,
+        initialDisplayMode: input.modeHint,
+        page: input.page,
+        viewerState: input.modeHint
+          ? {
+              displayMode: input.modeHint,
+              wrapLines: false,
+              scrollTop: 0,
+              scrollLeft: 0,
+            }
+          : undefined,
+        viewerRevision: 0,
+      },
+    ];
   }
 
-  const sourceChanged = Boolean(
-    input.sourceSessionId && existing.sourceSessionId !== input.sourceSessionId,
-  );
+  const sourceChanged = Boolean(input.sourceSessionId && existing.sourceSessionId !== input.sourceSessionId);
   const sourceUnchanged = !sourceChanged;
   const pageChanged = existing.page !== input.page;
   if (sourceUnchanged && !input.modeHint && !pageChanged) return tabs;

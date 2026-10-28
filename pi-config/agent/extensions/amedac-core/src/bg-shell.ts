@@ -22,7 +22,12 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { closeSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
-import { defineTool, type ExtensionAPI, type ExtensionContext, type InlineExtension } from "@earendil-works/pi-coding-agent";
+import {
+  defineTool,
+  type ExtensionAPI,
+  type ExtensionContext,
+  type InlineExtension,
+} from "@earendil-works/pi-coding-agent";
 import { Type } from "@earendil-works/pi-ai";
 
 export const BG_TASKS_WIDGET_KEY = "bg-tasks";
@@ -127,10 +132,20 @@ function localChannel(cwd: string): BgExecChannel {
         let stdout = "";
         let stderr = "";
         const timer = setTimeout(() => child.kill(), timeoutMs);
-        child.stdout?.on("data", (d: Buffer) => { stdout += d.toString(); });
-        child.stderr?.on("data", (d: Buffer) => { stderr += d.toString(); });
-        child.on("error", (e) => { clearTimeout(timer); resolve({ stdout, stderr: `${stderr}${e.message}`, exitCode: null }); });
-        child.on("close", (code) => { clearTimeout(timer); resolve({ stdout, stderr, exitCode: code }); });
+        child.stdout?.on("data", (d: Buffer) => {
+          stdout += d.toString();
+        });
+        child.stderr?.on("data", (d: Buffer) => {
+          stderr += d.toString();
+        });
+        child.on("error", (e) => {
+          clearTimeout(timer);
+          resolve({ stdout, stderr: `${stderr}${e.message}`, exitCode: null });
+        });
+        child.on("close", (code) => {
+          clearTimeout(timer);
+          resolve({ stdout, stderr, exitCode: code });
+        });
       }),
   };
 }
@@ -148,7 +163,11 @@ async function killPid(task: BgTask): Promise<void> {
     if (process.platform === "win32") {
       spawn("taskkill", ["/PID", String(child.pid), "/T", "/F"], { windowsHide: true });
     } else if (child.pid) {
-      try { process.kill(-child.pid, "SIGTERM"); } catch { /* group gone */ }
+      try {
+        process.kill(-child.pid, "SIGTERM");
+      } catch {
+        /* group gone */
+      }
     }
     return;
   }
@@ -207,7 +226,18 @@ export function makeBgShellExtension(): InlineExtension {
           );
           return;
         }
-        setWidget(BG_TASKS_WIDGET_KEY, [JSON.stringify(tasks.map(({ taskId, name, status, startedAt, pid, outputFile }) => ({ taskId, name, status, startedAt, pid, outputFile })))]);
+        setWidget(BG_TASKS_WIDGET_KEY, [
+          JSON.stringify(
+            tasks.map(({ taskId, name, status, startedAt, pid, outputFile }) => ({
+              taskId,
+              name,
+              status,
+              startedAt,
+              pid,
+              outputFile,
+            })),
+          ),
+        ]);
       } catch {
         // best-effort
       }
@@ -222,9 +252,11 @@ export function makeBgShellExtension(): InlineExtension {
      */
     const notifyTaskExit = async (task: BgTask, ctx: ExtensionContext) => {
       try {
-        const send = (ctx as ExtensionContext & {
-          sendUserMessage?: (content: string, options?: { deliverAs?: "steer" | "followUp" }) => void;
-        }).sendUserMessage;
+        const send = (
+          ctx as ExtensionContext & {
+            sendUserMessage?: (content: string, options?: { deliverAs?: "steer" | "followUp" }) => void;
+          }
+        ).sendUserMessage;
         if (typeof send !== "function") return; // headless host without the channel
         const tail = await tailLog(task, task.sessionId ?? "");
         const tailTrimmed = tail.length > 2048 ? `\n${tail.slice(-2048)}\n(tailed)` : tail ? `\n${tail}` : "";
@@ -298,152 +330,203 @@ export function makeBgShellExtension(): InlineExtension {
       // best-effort kill so dev servers don't outlive their session.
       for (const t of listBgTasks(sessionId)) {
         if (t.status !== "running" && t.status !== "lost") continue;
-        try { await killPid(t); t.status = "cancelled"; } catch { /* best-effort */ }
+        try {
+          await killPid(t);
+          t.status = "cancelled";
+        } catch {
+          /* best-effort */
+        }
       }
       for (const timer of registry().timers.values()) clearInterval(timer);
       registry().timers.clear();
       publish(ctx);
     });
 
-    pi.registerTool(defineTool({
-      name: "bg_run",
-      label: "Background Run",
-      description:
-        "Start a LONG-RUNNING command as a background task that keeps running across turns (dev servers, build watchers, " +
-        "compilers in watch mode). Returns a taskId, the pid and the output file path — read that file with the `read` tool to " +
-        "check progress (e.g. wait for the \"listening on\" line). When the task exits on its own you receive a " +
-        "<task-notification> message with the exit code and output tail. Do NOT use this for one-shot commands; use bash for those.",
-      promptSnippet: "bg_run — start a long-running background task (dev server / watcher); you are notified when it exits",
-      promptGuidelines: [
-        "When a task needs a long-running process (dev server, build --watch, API mock), start it with bg_run instead of blocking bash; then read the output file to confirm it is ready (look for the port/ready line) before testing against it.",
-        "You will receive a <task-notification> when a background task exits — react to it (inspect the tail, verify, continue) instead of polling forever. Clean up remaining tasks with bg_stop when the verification is done.",
-      ],
-      parameters: Type.Object({
-        command: Type.String({ description: "Shell command to run detached (it keeps running across turns)." }),
-        name: Type.Optional(Type.String({ description: "Short label for lists/UI, e.g. 'web' or 'api'." })),
-      }),
-      execute: async (_id, params, _signal, _onUpdate, ctx) => {
-        const command = params.command?.trim();
-        if (!command) return { content: [textBlock("Error: command is required")], details: {}, isError: true };
-        const reg = registry();
-        const tasks = reg.tasks.get(sessionId) ?? new Map();
-        reg.tasks.set(sessionId, tasks);
-        const live = [...tasks.values()].filter((t) => t.status === "running").length;
-        if (live >= MAX_TASKS_PER_SESSION) {
-          return { content: [textBlock(`Error: already ${live} running background tasks (max ${MAX_TASKS_PER_SESSION}). Stop one with bg_stop first.`)], details: {}, isError: true };
-        }
-        const taskId = `bg-${randomUUID().slice(0, 8)}`;
-        const outputFile = `${BG_DIR}/${taskId}.log`;
-        const task: BgTask = {
-          taskId,
-          name: params.name?.trim() || command.split(/\s+/).slice(0, 3).join(" ").slice(0, 40),
-          command,
-          channel: channel?.label ?? "host",
-          pid: "",
-          outputFile,
-          startedAt: Date.now(),
-          status: "running",
-          sessionId,
-        };
-
-        try {
-          if (channel?.kind === "local") {
-            const absLog = join(cwd, ...BG_DIR_LOCAL);
-            mkdirSync(absLog, { recursive: true });
-            // Windows: `shell:true` re-quoting through `cmd /d /s /c` pops a
-            // conhost window (spawn error 0x800700e8 / ERROR_NO_DATA). Write
-            // the command to a script file first — same pattern as the remote
-            // nohup path — and spawn the interpreter directly, detached and
-            // hidden, so no console host is ever created.
-            const isWin = process.platform === "win32";
-            const scriptPath = join(absLog, `${taskId}${isWin ? ".cmd" : ".sh"}`);
-            writeFileSync(scriptPath, isWin ? `@echo off\r\n${command}\r\n` : `${command}\n`, "utf8");
-            const fd = openSync(join(absLog, `${taskId}.log`), "a");
-            const child = isWin
-              ? spawn(process.env.ComSpec ?? "cmd.exe", ["/d", "/c", scriptPath], {
-                  cwd, detached: true, windowsHide: true,
-                  stdio: ["ignore", fd, fd],
-                })
-              : spawn("/bin/sh", [scriptPath], {
-                  cwd, detached: true,
-                  stdio: ["ignore", fd, fd],
-                });
-            child.unref();
-            // The parent must close its copy of the log fd after spawning —
-            // otherwise the session process leaks one fd per task AND keeps
-            // the log file locked on Windows (rm/EBUSY).
-            try { closeSync(fd); } catch { /* already closed */ }
-            task.pid = String(child.pid);
-            task.outputFileAbs = join(absLog, `${taskId}.log`);
-            reg.children.set(taskId, child);
-          } else if (channel) {
-            // Remote nohup pattern: script via base64 to dodge quoting hell,
-            // detached with nohup + /dev/null stdin, pid echoed back.
-            const b64 = Buffer.from(command, "utf8").toString("base64");
-            await channel.run(`mkdir -p ${BG_DIR} && printf %s ${shQuote(b64)} | base64 -d > ${BG_DIR}/${taskId}.sh`);
-            const r = await channel.run(`nohup sh ${BG_DIR}/${taskId}.sh > ${BG_DIR}/${taskId}.log 2>&1 < /dev/null & echo $!`);
-            const pid = r.stdout.trim().split("\n").pop() ?? "";
-            if (!/^\d+$/.test(pid)) {
-              return { content: [textBlock(`Error: 远端启动失败（未取得 pid）: ${r.stderr || r.stdout || "unknown"}`)], details: {}, isError: true };
-            }
-            task.pid = pid;
-          } else {
-            return { content: [textBlock("Error: no execution channel")], details: {}, isError: true };
+    pi.registerTool(
+      defineTool({
+        name: "bg_run",
+        label: "Background Run",
+        description:
+          "Start a LONG-RUNNING command as a background task that keeps running across turns (dev servers, build watchers, " +
+          "compilers in watch mode). Returns a taskId, the pid and the output file path — read that file with the `read` tool to " +
+          'check progress (e.g. wait for the "listening on" line). When the task exits on its own you receive a ' +
+          "<task-notification> message with the exit code and output tail. Do NOT use this for one-shot commands; use bash for those.",
+        promptSnippet:
+          "bg_run — start a long-running background task (dev server / watcher); you are notified when it exits",
+        promptGuidelines: [
+          "When a task needs a long-running process (dev server, build --watch, API mock), start it with bg_run instead of blocking bash; then read the output file to confirm it is ready (look for the port/ready line) before testing against it.",
+          "You will receive a <task-notification> when a background task exits — react to it (inspect the tail, verify, continue) instead of polling forever. Clean up remaining tasks with bg_stop when the verification is done.",
+        ],
+        parameters: Type.Object({
+          command: Type.String({ description: "Shell command to run detached (it keeps running across turns)." }),
+          name: Type.Optional(Type.String({ description: "Short label for lists/UI, e.g. 'web' or 'api'." })),
+        }),
+        execute: async (_id, params, _signal, _onUpdate, ctx) => {
+          const command = params.command?.trim();
+          if (!command) return { content: [textBlock("Error: command is required")], details: {}, isError: true };
+          const reg = registry();
+          const tasks = reg.tasks.get(sessionId) ?? new Map();
+          reg.tasks.set(sessionId, tasks);
+          const live = [...tasks.values()].filter((t) => t.status === "running").length;
+          if (live >= MAX_TASKS_PER_SESSION) {
+            return {
+              content: [
+                textBlock(
+                  `Error: already ${live} running background tasks (max ${MAX_TASKS_PER_SESSION}). Stop one with bg_stop first.`,
+                ),
+              ],
+              details: {},
+              isError: true,
+            };
           }
-        } catch (e) {
-          task.status = "failed";
-          return { content: [textBlock(`Error starting background task: ${e instanceof Error ? e.message : String(e)}`)], details: {}, isError: true };
-        }
+          const taskId = `bg-${randomUUID().slice(0, 8)}`;
+          const outputFile = `${BG_DIR}/${taskId}.log`;
+          const task: BgTask = {
+            taskId,
+            name: params.name?.trim() || command.split(/\s+/).slice(0, 3).join(" ").slice(0, 40),
+            command,
+            channel: channel?.label ?? "host",
+            pid: "",
+            outputFile,
+            startedAt: Date.now(),
+            status: "running",
+            sessionId,
+          };
 
-        tasks.set(taskId, task);
-        await new Promise((r) => setTimeout(r, 400)); // let the first output lines land
-        const tail = await tailLog(task, sessionId);
-        publish(ctx);
-        monitor(task, ctx);
-        return {
-          content: [
-            textBlock(
-              `Background task started (id ${taskId}, pid ${task.pid}, ${task.channel}).\n` +
-              `Output file: ${outputFile} — read it with the read tool to watch progress (it keeps running across turns).\n` +
-              `First output:\n${tail || "(no output yet)"}` +
-              (tail.length >= TAIL_BYTES ? "\n(tailed)" : ""),
-            ),
-          ],
-          details: { taskId, pid: task.pid, outputFile },
-        };
-      },
-    }));
+          try {
+            if (channel?.kind === "local") {
+              const absLog = join(cwd, ...BG_DIR_LOCAL);
+              mkdirSync(absLog, { recursive: true });
+              // Windows: `shell:true` re-quoting through `cmd /d /s /c` pops a
+              // conhost window (spawn error 0x800700e8 / ERROR_NO_DATA). Write
+              // the command to a script file first — same pattern as the remote
+              // nohup path — and spawn the interpreter directly, detached and
+              // hidden, so no console host is ever created.
+              const isWin = process.platform === "win32";
+              const scriptPath = join(absLog, `${taskId}${isWin ? ".cmd" : ".sh"}`);
+              writeFileSync(scriptPath, isWin ? `@echo off\r\n${command}\r\n` : `${command}\n`, "utf8");
+              const fd = openSync(join(absLog, `${taskId}.log`), "a");
+              const child = isWin
+                ? spawn(process.env.ComSpec ?? "cmd.exe", ["/d", "/c", scriptPath], {
+                    cwd,
+                    detached: true,
+                    windowsHide: true,
+                    stdio: ["ignore", fd, fd],
+                  })
+                : spawn("/bin/sh", [scriptPath], {
+                    cwd,
+                    detached: true,
+                    stdio: ["ignore", fd, fd],
+                  });
+              child.unref();
+              // The parent must close its copy of the log fd after spawning —
+              // otherwise the session process leaks one fd per task AND keeps
+              // the log file locked on Windows (rm/EBUSY).
+              try {
+                closeSync(fd);
+              } catch {
+                /* already closed */
+              }
+              task.pid = String(child.pid);
+              task.outputFileAbs = join(absLog, `${taskId}.log`);
+              reg.children.set(taskId, child);
+            } else if (channel) {
+              // Remote nohup pattern: script via base64 to dodge quoting hell,
+              // detached with nohup + /dev/null stdin, pid echoed back.
+              const b64 = Buffer.from(command, "utf8").toString("base64");
+              await channel.run(`mkdir -p ${BG_DIR} && printf %s ${shQuote(b64)} | base64 -d > ${BG_DIR}/${taskId}.sh`);
+              const r = await channel.run(
+                `nohup sh ${BG_DIR}/${taskId}.sh > ${BG_DIR}/${taskId}.log 2>&1 < /dev/null & echo $!`,
+              );
+              const pid = r.stdout.trim().split("\n").pop() ?? "";
+              if (!/^\d+$/.test(pid)) {
+                return {
+                  content: [textBlock(`Error: 远端启动失败（未取得 pid）: ${r.stderr || r.stdout || "unknown"}`)],
+                  details: {},
+                  isError: true,
+                };
+              }
+              task.pid = pid;
+            } else {
+              return { content: [textBlock("Error: no execution channel")], details: {}, isError: true };
+            }
+          } catch (e) {
+            task.status = "failed";
+            return {
+              content: [textBlock(`Error starting background task: ${e instanceof Error ? e.message : String(e)}`)],
+              details: {},
+              isError: true,
+            };
+          }
 
-    pi.registerTool(defineTool({
-      name: "bg_list",
-      label: "Background Tasks",
-      description: "List this session's background tasks (id, name, status, pid, output file).",
-      promptSnippet: "bg_list — list background tasks",
-      parameters: Type.Object({}),
-      execute: async () => {
-        const tasks = listBgTasks(sessionId);
-        if (tasks.length === 0) {
-          return { content: [textBlock("No background tasks in this session. (The registry is in-memory — tasks started before a service restart show up in later calls as lost; kill such pids manually via bash if needed.)")], details: { tasks: [] } };
-        }
-        const lines = tasks.map((t) =>
-          `${t.taskId}  ${t.status.padEnd(9)}  pid ${t.pid.padEnd(7)}  ${t.name}  → ${t.outputFile}`,
-        );
-        return { content: [textBlock(`Background tasks (${tasks.filter((t) => t.status === "running").length} running):\n${lines.join("\n")}`)], details: { tasks } };
-      },
-    }));
+          tasks.set(taskId, task);
+          await new Promise((r) => setTimeout(r, 400)); // let the first output lines land
+          const tail = await tailLog(task, sessionId);
+          publish(ctx);
+          monitor(task, ctx);
+          return {
+            content: [
+              textBlock(
+                `Background task started (id ${taskId}, pid ${task.pid}, ${task.channel}).\n` +
+                  `Output file: ${outputFile} — read it with the read tool to watch progress (it keeps running across turns).\n` +
+                  `First output:\n${tail || "(no output yet)"}` +
+                  (tail.length >= TAIL_BYTES ? "\n(tailed)" : ""),
+              ),
+            ],
+            details: { taskId, pid: task.pid, outputFile },
+          };
+        },
+      }),
+    );
 
-    pi.registerTool(defineTool({
-      name: "bg_stop",
-      label: "Stop Background Task",
-      description: "Stop a running background task by id (kills its process tree).",
-      promptSnippet: "bg_stop — stop a background task",
-      parameters: Type.Object({ taskId: Type.String({ description: "Task id from bg_run / bg_list." }) }),
-      execute: async (_id, params, _signal, _onUpdate, ctx) => {
-        const result = await stopBgTask(sessionId, params.taskId?.trim() ?? "");
-        publish(ctx);
-        if (!result.ok) return { content: [textBlock(`Error: ${result.error}`)], details: {}, isError: true };
-        return { content: [textBlock(`Background task ${params.taskId} stopped.`)], details: { stopped: true } };
-      },
-    }));
+    pi.registerTool(
+      defineTool({
+        name: "bg_list",
+        label: "Background Tasks",
+        description: "List this session's background tasks (id, name, status, pid, output file).",
+        promptSnippet: "bg_list — list background tasks",
+        parameters: Type.Object({}),
+        execute: async () => {
+          const tasks = listBgTasks(sessionId);
+          if (tasks.length === 0) {
+            return {
+              content: [
+                textBlock(
+                  "No background tasks in this session. (The registry is in-memory — tasks started before a service restart show up in later calls as lost; kill such pids manually via bash if needed.)",
+                ),
+              ],
+              details: { tasks: [] },
+            };
+          }
+          const lines = tasks.map(
+            (t) => `${t.taskId}  ${t.status.padEnd(9)}  pid ${t.pid.padEnd(7)}  ${t.name}  → ${t.outputFile}`,
+          );
+          return {
+            content: [
+              textBlock(
+                `Background tasks (${tasks.filter((t) => t.status === "running").length} running):\n${lines.join("\n")}`,
+              ),
+            ],
+            details: { tasks },
+          };
+        },
+      }),
+    );
+
+    pi.registerTool(
+      defineTool({
+        name: "bg_stop",
+        label: "Stop Background Task",
+        description: "Stop a running background task by id (kills its process tree).",
+        promptSnippet: "bg_stop — stop a background task",
+        parameters: Type.Object({ taskId: Type.String({ description: "Task id from bg_run / bg_list." }) }),
+        execute: async (_id, params, _signal, _onUpdate, ctx) => {
+          const result = await stopBgTask(sessionId, params.taskId?.trim() ?? "");
+          publish(ctx);
+          if (!result.ok) return { content: [textBlock(`Error: ${result.error}`)], details: {}, isError: true };
+          return { content: [textBlock(`Background task ${params.taskId} stopped.`)], details: { stopped: true } };
+        },
+      }),
+    );
   };
 }

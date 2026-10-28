@@ -130,10 +130,12 @@ export function filterFileEntries(
     const score = scoreEntry(entry, lowerQuery);
     if (score > 0) scored.push({ entry, score });
   }
-  scored.sort((a, b) =>
-    b.score - a.score
-    || pathDepth(a.entry.path) - pathDepth(b.entry.path)
-    || a.entry.path.localeCompare(b.entry.path));
+  scored.sort(
+    (a, b) =>
+      b.score - a.score ||
+      pathDepth(a.entry.path) - pathDepth(b.entry.path) ||
+      a.entry.path.localeCompare(b.entry.path),
+  );
   return scored.slice(0, limit).map((s) => s.entry);
 }
 
@@ -147,7 +149,7 @@ export interface AtInsertion {
 /**
  * Replacement for the @token when a suggestion is confirmed. Mirrors the
  * TUI's buildCompletionValue/applyCompletion:
- * - Files close the token: "@path " (quoted when the path contains spaces),
+ * - Files close the token: "@path " (quoted when the path contains spaces), // secret-scan:allow — 文档示例
  *   caret after the trailing space.
  * - Directories keep the menu open for drill-down: "@dir/" with no trailing
  *   space. Quoted directories are inserted CLOSED (@"my dir/") with the caret

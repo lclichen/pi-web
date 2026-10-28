@@ -36,9 +36,7 @@ function withUndiciErrorListener<T extends undici.Dispatcher>(dispatcher: T): T 
 }
 
 function createUndiciClient(origin: string | URL, options: object): undici.Dispatcher {
-  return withUndiciErrorListener(
-    new undici.Client(origin, options as undici.Client.Options),
-  );
+  return withUndiciErrorListener(new undici.Client(origin, options as undici.Client.Options));
 }
 
 function createUndiciOriginDispatcher(origin: string | URL, options: object): undici.Dispatcher {
@@ -55,9 +53,7 @@ function createUndiciOriginDispatcher(origin: string | URL, options: object): un
   );
 }
 
-export function configureHttpDispatcher(
-  timeoutMs: number = DEFAULT_HTTP_IDLE_TIMEOUT_MS,
-): void {
+export function configureHttpDispatcher(timeoutMs: number = DEFAULT_HTTP_IDLE_TIMEOUT_MS): void {
   if (dispatcherGlobal.__piWebHttpDispatcherConfigured) return;
 
   const normalizedTimeoutMs = parseHttpIdleTimeoutMs(timeoutMs);

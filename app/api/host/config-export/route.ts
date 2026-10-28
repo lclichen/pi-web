@@ -32,24 +32,15 @@ export async function GET(req: Request) {
 
   try {
     if (isExportLocked(cwd)) {
-      return NextResponse.json(
-        { error: "该目录的配置来自加密配置包（.apkg），不允许再导出" },
-        { status: 403 },
-      );
+      return NextResponse.json({ error: "该目录的配置来自加密配置包（.apkg），不允许再导出" }, { status: 403 });
     }
     const name = cwd.replace(/\/+$/, "").split("/").filter(Boolean).pop() || "directory";
     const { bytes, stats } = await exportProjectConfigBundle(cwd, name);
     if (stats.files === 0) {
-      return NextResponse.json(
-        { error: "该目录没有可导出的配置（缺少 .pi/ 与 labs/）" },
-        { status: 400 },
-      );
+      return NextResponse.json({ error: "该目录没有可导出的配置（缺少 .pi/ 与 labs/）" }, { status: 400 });
     }
     return bundleDownloadResponse(bytes, `${name}-config.zip`);
   } catch (e) {
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : String(e) },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 });
   }
 }

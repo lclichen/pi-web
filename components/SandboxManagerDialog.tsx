@@ -80,7 +80,9 @@ export function SandboxManagerDialog({ bind, onClose, onChanged }: Props) {
     }
   }, []);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   // Default the create form to the platform's provisioning default image.
   useEffect(() => {
@@ -185,32 +187,67 @@ export function SandboxManagerDialog({ bind, onClose, onChanged }: Props) {
 
   return (
     <div
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
       style={{
-        position: "fixed", inset: 0, zIndex: 1150, display: "flex",
-        alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.35)",
+        position: "fixed",
+        inset: 0,
+        zIndex: 1150,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "rgba(0,0,0,0.35)",
       }}
     >
       <div
         role="dialog"
         aria-modal="true"
         style={{
-          width: "min(560px, 92vw)", maxHeight: "86vh", overflowY: "auto",
-          display: "flex", flexDirection: "column", gap: 14,
-          padding: "20px 22px", borderRadius: 12,
-          background: "var(--bg-panel)", border: "1px solid var(--border)",
+          width: "min(560px, 92vw)",
+          maxHeight: "86vh",
+          overflowY: "auto",
+          display: "flex",
+          flexDirection: "column",
+          gap: 14,
+          padding: "20px 22px",
+          borderRadius: 12,
+          background: "var(--bg-panel)",
+          border: "1px solid var(--border)",
         }}
       >
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <span style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>
             沙箱容器管理
-            {bind && <span style={{ fontWeight: 400, fontSize: 12, color: "var(--text-muted)" }}> — 项目「{bind.projectName}」</span>}
+            {bind && (
+              <span style={{ fontWeight: 400, fontSize: 12, color: "var(--text-muted)" }}>
+                {" "}
+                — 项目「{bind.projectName}」
+              </span>
+            )}
           </span>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <button type="button" onClick={() => void load()} disabled={loading || busyId !== null} style={smallBtnStyle}>
+            <button
+              type="button"
+              onClick={() => void load()}
+              disabled={loading || busyId !== null}
+              style={smallBtnStyle}
+            >
               刷新
             </button>
-            <button type="button" onClick={onClose} style={{ background: "transparent", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 16 }}>×</button>
+            <button
+              type="button"
+              onClick={onClose}
+              style={{
+                background: "transparent",
+                border: "none",
+                color: "var(--text-muted)",
+                cursor: "pointer",
+                fontSize: 16,
+              }}
+            >
+              ×
+            </button>
           </div>
         </div>
 
@@ -232,14 +269,23 @@ export function SandboxManagerDialog({ bind, onClose, onChanged }: Props) {
             <div
               key={c.id}
               style={{
-                border: "1px solid var(--border)", borderRadius: 8,
+                border: "1px solid var(--border)",
+                borderRadius: 8,
                 background: isBound ? "var(--bg-selected, rgba(79,124,255,0.08))" : "transparent",
               }}
             >
               <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px" }}>
                 <span style={{ width: 8, height: 8, borderRadius: "50%", background: meta.color, flexShrink: 0 }} />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 12, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: "var(--text)",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
                     {c.name} <span style={{ color: "var(--text-dim)" }}>#{c.id}</span>
                     {isBound && <span style={{ color: "var(--accent)", marginLeft: 6 }}>当前项目容器</span>}
                   </div>
@@ -251,16 +297,31 @@ export function SandboxManagerDialog({ bind, onClose, onChanged }: Props) {
                 </div>
                 <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
                   {bind && !isBound && (
-                    <button type="button" disabled={busyId !== null} onClick={() => void bindToProject(c)} style={smallBtnStyle}>
+                    <button
+                      type="button"
+                      disabled={busyId !== null}
+                      onClick={() => void bindToProject(c)}
+                      style={smallBtnStyle}
+                    >
                       绑定
                     </button>
                   )}
                   {c.status === "running" ? (
-                    <button type="button" disabled={busyId !== null} onClick={() => void act(() => post({ action: "stop", containerId: c.id }), c.id)} style={smallBtnStyle}>
+                    <button
+                      type="button"
+                      disabled={busyId !== null}
+                      onClick={() => void act(() => post({ action: "stop", containerId: c.id }), c.id)}
+                      style={smallBtnStyle}
+                    >
                       停止
                     </button>
                   ) : c.status === "stopped" ? (
-                    <button type="button" disabled={busyId !== null} onClick={() => void act(() => post({ action: "start", containerId: c.id }), c.id)} style={smallBtnStyle}>
+                    <button
+                      type="button"
+                      disabled={busyId !== null}
+                      onClick={() => void act(() => post({ action: "start", containerId: c.id }), c.id)}
+                      style={smallBtnStyle}
+                    >
                       启动
                     </button>
                   ) : null}
@@ -284,24 +345,47 @@ export function SandboxManagerDialog({ bind, onClose, onChanged }: Props) {
                 </div>
               </div>
               {snapsOpen && (
-                <div style={{ borderTop: "1px dashed var(--border)", padding: "8px 10px", display: "flex", flexDirection: "column", gap: 6 }}>
+                <div
+                  style={{
+                    borderTop: "1px dashed var(--border)",
+                    padding: "8px 10px",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 6,
+                  }}
+                >
                   {snaps === null ? (
                     <div style={{ fontSize: 11, color: "var(--text-dim)" }}>快照加载中…</div>
                   ) : (
                     <>
                       {snaps.length === 0 && (
-                        <div style={{ fontSize: 11, color: "var(--text-dim)" }}>暂无快照——做危险实验前先打一个恢复点。</div>
+                        <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
+                          暂无快照——做危险实验前先打一个恢复点。
+                        </div>
                       )}
                       {snaps.map((s) => (
                         <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11 }}>
-                          <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text)" }}>
-                            {s.name} <span style={{ color: "var(--text-dim)" }}>{s.created_at ? `· ${new Date(s.created_at).toLocaleString()}` : ""}</span>
+                          <span
+                            style={{
+                              flex: 1,
+                              minWidth: 0,
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                              color: "var(--text)",
+                            }}
+                          >
+                            {s.name}{" "}
+                            <span style={{ color: "var(--text-dim)" }}>
+                              {s.created_at ? `· ${new Date(s.created_at).toLocaleString()}` : ""}
+                            </span>
                           </span>
                           <button
                             type="button"
                             disabled={busyId !== null}
                             onClick={() => {
-                              if (!window.confirm(`恢复到快照「${s.name}」？当前 /workspace 在快照之后的改动将丢失。`)) return;
+                              if (!window.confirm(`恢复到快照「${s.name}」？当前 /workspace 在快照之后的改动将丢失。`))
+                                return;
                               void snapshotAction(c, "snapshot-restore", { snapshotId: s.id });
                             }}
                             style={smallBtnStyle}
@@ -330,11 +414,18 @@ export function SandboxManagerDialog({ bind, onClose, onChanged }: Props) {
                             if (name === null) return;
                             void snapshotAction(c, "snapshot-create", ...(name.trim() ? [{ name: name.trim() }] : []));
                           }}
-                          style={{ ...smallBtnStyle, color: "white", background: "var(--accent)", borderColor: "var(--accent)" }}
+                          style={{
+                            ...smallBtnStyle,
+                            color: "white",
+                            background: "var(--accent)",
+                            borderColor: "var(--accent)",
+                          }}
                         >
                           创建快照
                         </button>
-                        <span style={{ fontSize: 10, color: "var(--text-dim)" }}>快照保存 /workspace 当前状态，恢复会覆盖之后的改动。</span>
+                        <span style={{ fontSize: 10, color: "var(--text-dim)" }}>
+                          快照保存 /workspace 当前状态，恢复会覆盖之后的改动。
+                        </span>
                       </div>
                     </>
                   )}
@@ -345,7 +436,15 @@ export function SandboxManagerDialog({ bind, onClose, onChanged }: Props) {
         })}
 
         {images.length > 0 && (
-          <div style={{ borderTop: "1px solid var(--border)", paddingTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+          <div
+            style={{
+              borderTop: "1px solid var(--border)",
+              paddingTop: 12,
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+            }}
+          >
             <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text)" }}>新建容器</span>
             <div style={{ display: "flex", gap: 8 }}>
               <select
@@ -354,7 +453,9 @@ export function SandboxManagerDialog({ bind, onClose, onChanged }: Props) {
                 style={{ ...inputStyle, flex: 1 }}
               >
                 {images.map((i) => (
-                  <option key={i.id} value={i.id}>{i.name}</option>
+                  <option key={i.id} value={i.id}>
+                    {i.name}
+                  </option>
                 ))}
               </select>
               <input
@@ -368,7 +469,11 @@ export function SandboxManagerDialog({ bind, onClose, onChanged }: Props) {
                 disabled={busyId !== null || createImageId === null}
                 onClick={() =>
                   void act(async () => {
-                    await post({ action: "create", imageId: createImageId, ...(createName.trim() ? { name: createName.trim() } : {}) });
+                    await post({
+                      action: "create",
+                      imageId: createImageId,
+                      ...(createName.trim() ? { name: createName.trim() } : {}),
+                    });
                     setCreateName("");
                     setNotice("容器已创建并启动。");
                   }, "create")

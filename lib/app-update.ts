@@ -55,9 +55,8 @@ export function parseSemver(version: string): ParsedSemver | null {
   if (!match) return null;
   const [major, minor, patch] = [Number(match[1]), Number(match[2]), Number(match[3])];
   if (![major, minor, patch].every((p) => Number.isSafeInteger(p) && p >= 0)) return null;
-  const prerelease = match[4] !== undefined && match[4] !== ""
-    ? match[4].split(".").filter((part) => part.length > 0)
-    : null;
+  const prerelease =
+    match[4] !== undefined && match[4] !== "" ? match[4].split(".").filter((part) => part.length > 0) : null;
   return { major, minor, patch, prerelease };
 }
 
@@ -195,10 +194,7 @@ export function parseUpdateCatalog(value: unknown): UpdateCatalog {
 }
 
 /** 按 channel 选目标版本（latest_versions[channel] → default_version → 该 channel 最新）。 */
-export function selectCatalogTarget(
-  catalog: UpdateCatalog,
-  channel: string,
-): CatalogVersion | null {
+export function selectCatalogTarget(catalog: UpdateCatalog, channel: string): CatalogVersion | null {
   const wanted = catalog.latestVersions[channel] ?? catalog.defaultVersion;
   const byVersion = catalog.versions.find((v) => v.version === wanted && v.channel === channel);
   if (byVersion) return byVersion;

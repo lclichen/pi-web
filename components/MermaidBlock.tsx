@@ -30,9 +30,7 @@ export function downloadMermaidSvg(svg: SVGSVGElement): void {
 }
 
 type RenderState =
-  | { key: string; status: "loading" }
-  | { key: string; status: "error" }
-  | { key: string; status: "ready"; svg: string };
+  { key: string; status: "loading" } | { key: string; status: "error" } | { key: string; status: "ready"; svg: string };
 
 export function MermaidBlock({ code, isStreaming, defaultPreview = false }: MermaidBlockProps) {
   const { isDark } = useTheme();
@@ -81,23 +79,33 @@ export function MermaidBlock({ code, isStreaming, defaultPreview = false }: Merm
     };
   }, [code, currentKey, isDark, previewVisible]);
 
-  const previewButton = useMemo(() => (
-    <button
-      type="button"
-      onClick={() => setShowPreview((v) => !v)}
-      disabled={isStreaming}
-      title={isStreaming ? t("i18n.previewAfterStreaming") : (previewVisible ? t("i18n.showMermaidSource") : t("i18n.previewMermaid"))}
-      className={["markdown-code-action", previewVisible ? "is-active" : ""].filter(Boolean).join(" ")}
-    >
-      {previewVisible ? t("i18n.source") : t("i18n.preview")}
-    </button>
-  ), [isStreaming, previewVisible, t]);
+  const previewButton = useMemo(
+    () => (
+      <button
+        type="button"
+        onClick={() => setShowPreview((v) => !v)}
+        disabled={isStreaming}
+        title={
+          isStreaming
+            ? t("i18n.previewAfterStreaming")
+            : previewVisible
+              ? t("i18n.showMermaidSource")
+              : t("i18n.previewMermaid")
+        }
+        className={["markdown-code-action", previewVisible ? "is-active" : ""].filter(Boolean).join(" ")}
+      >
+        {previewVisible ? t("i18n.source") : t("i18n.preview")}
+      </button>
+    ),
+    [isStreaming, previewVisible, t],
+  );
 
   if (!previewVisible) {
     return <CodeBlock code={code} lang="mermaid" headerAction={previewButton} isStreaming={isStreaming} />;
   }
 
-  const body = renderState?.key === currentKey && renderState.status === "error" ? (
+  const body =
+    renderState?.key === currentKey && renderState.status === "error" ? (
       <div className="mermaid-block mermaid-block-error">{t("i18n.invalidMermaid")}</div>
     ) : renderState?.key !== currentKey || renderState.status !== "ready" ? (
       <div className="mermaid-block mermaid-block-loading" aria-label={t("i18n.renderingMermaid")} />
@@ -191,7 +199,16 @@ function MermaidZoomDialog({ svg, onClose }: { svg: string; onClose: () => void 
                 title={t("i18n.zoomOut")}
                 aria-label={t("i18n.zoomOut")}
               >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  aria-hidden="true"
+                >
                   <path d="M5 12h14" />
                 </svg>
               </button>
@@ -203,7 +220,16 @@ function MermaidZoomDialog({ svg, onClose }: { svg: string; onClose: () => void 
                 title={t("i18n.zoomIn")}
                 aria-label={t("i18n.zoomIn")}
               >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  aria-hidden="true"
+                >
                   <path d="M12 5v14M5 12h14" />
                 </svg>
               </button>
@@ -215,7 +241,17 @@ function MermaidZoomDialog({ svg, onClose }: { svg: string; onClose: () => void 
               title={t("i18n.fitToWidth")}
               aria-label={t("i18n.fitToWidth")}
             >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <svg
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
                 <path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5" />
               </svg>
             </button>
@@ -226,7 +262,16 @@ function MermaidZoomDialog({ svg, onClose }: { svg: string; onClose: () => void 
               title={t("i18n.close")}
               aria-label={t("i18n.close")}
             >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+              <svg
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                aria-hidden="true"
+              >
                 <path d="M6 6l12 12M18 6 6 18" />
               </svg>
             </button>
@@ -284,10 +329,7 @@ export const CodeBlock = memo(function CodeBlock({ code, lang, headerAction, isS
         <span className="markdown-code-lang">{lang || "text"}</span>
         <div className="markdown-code-actions">
           {headerAction}
-          <button
-            onClick={copy}
-            className="markdown-code-action"
-          >
+          <button onClick={copy} className="markdown-code-action">
             {copied ? t("i18n.copied") : t("i18n.copy")}
           </button>
         </div>

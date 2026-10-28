@@ -118,9 +118,7 @@ export async function runBenchTask(
       },
     });
     const sessionManager = SessionManager.create(cwd, join(root, "sessions"));
-    session = (
-      await createAgentSessionFromServices({ services, sessionManager, model })
-    ).session;
+    session = (await createAgentSessionFromServices({ services, sessionManager, model })).session;
 
     const abort = new AbortController();
     const timeout = setTimeout(() => abort.abort(), task.timeoutMs ?? 300_000);
@@ -129,8 +127,7 @@ export async function runBenchTask(
       abort.signal.addEventListener("abort", () => void session?.abort(), { once: true });
       await session.prompt(task.prompt);
       const last = [...session.messages].reverse().find((m) => (m as { role?: string }).role === "assistant") as
-        | { stopReason?: string; errorMessage?: string }
-        | undefined;
+        { stopReason?: string; errorMessage?: string } | undefined;
       if (last && last.stopReason !== "stop") {
         error = last.errorMessage ?? `agent run ended with stopReason=${last.stopReason}`;
       }

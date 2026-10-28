@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 
 export const UPLOAD_CONFLICT_STRATEGIES = ["error", "overwrite", "skip"] as const;
-export type UploadConflictStrategy = typeof UPLOAD_CONFLICT_STRATEGIES[number];
+export type UploadConflictStrategy = (typeof UPLOAD_CONFLICT_STRATEGIES)[number];
 
 const UPLOAD_CONFLICT_STRATEGY_SET = new Set<string>(UPLOAD_CONFLICT_STRATEGIES);
 
@@ -13,9 +13,7 @@ export interface UploadTargetInspection {
 
 export function parseUploadConflictStrategy(value: string | null): UploadConflictStrategy | null {
   const candidate = value ?? "error";
-  return UPLOAD_CONFLICT_STRATEGY_SET.has(candidate)
-    ? candidate as UploadConflictStrategy
-    : null;
+  return UPLOAD_CONFLICT_STRATEGY_SET.has(candidate) ? (candidate as UploadConflictStrategy) : null;
 }
 
 export function validateUploadFileNames(fileNames: string[]): string | null {

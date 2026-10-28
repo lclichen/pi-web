@@ -21,9 +21,10 @@ export function buildSubagentPromptPlan(options: {
   return {
     chatOnly,
     appendSystemPrompt,
-    delegatedTask: options.inheritedParentContext && chatOnly
-      ? `${options.task}\n\n${options.inheritedParentContext}`
-      : options.task,
+    delegatedTask:
+      options.inheritedParentContext && chatOnly
+        ? `${options.task}\n\n${options.inheritedParentContext}`
+        : options.task,
     ...(chatOnly ? { exactSystemPrompt: options.profileSystemPrompt } : {}),
   };
 }

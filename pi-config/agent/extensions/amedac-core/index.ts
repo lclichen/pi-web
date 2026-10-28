@@ -31,7 +31,14 @@ import { makeBgShellExtension } from "./src/bg-shell.ts";
 import { makeSandboxToolsExtension } from "./src/sandbox/index.ts";
 import { sandboxConfigPresent } from "./src/sandbox/config-bridge.ts";
 
-export { makeBgShellExtension, makeContextStatusExtension, makePathGuardExtension, makePlanModeExtension, makeSessionPlanExtension, makeTodoExtension };
+export {
+  makeBgShellExtension,
+  makeContextStatusExtension,
+  makePathGuardExtension,
+  makePlanModeExtension,
+  makeSessionPlanExtension,
+  makeTodoExtension,
+};
 export { makeSandboxToolsExtension, sandboxConfigPresent };
 
 export default function amedacCore(pi: ExtensionAPI): void {

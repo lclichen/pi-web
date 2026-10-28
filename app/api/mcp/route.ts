@@ -24,13 +24,12 @@ export async function GET(req: Request) {
   if (!dir.ok) return NextResponse.json({ error: dir.error }, { status: dir.status });
   try {
     const scopes = scopesParam
-      ? scopesParam.split(",").filter((s) => s === "project" || s === "quick" || s === "global") as ConfigScope[]
+      ? (scopesParam.split(",").filter((s) => s === "project" || s === "quick" || s === "global") as ConfigScope[])
       : undefined;
-    return NextResponse.json(readMcpConfig(dir.cwd, { ...(scopes ? { scopes } : {}), ...(includeShadowed ? { includeShadowed: true } : {}) }));
-  } catch (e) {
     return NextResponse.json(
-      { error: e instanceof Error ? e.message : String(e) },
-      { status: 500 },
+      readMcpConfig(dir.cwd, { ...(scopes ? { scopes } : {}), ...(includeShadowed ? { includeShadowed: true } : {}) }),
     );
+  } catch (e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 });
   }
 }

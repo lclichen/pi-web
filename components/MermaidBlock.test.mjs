@@ -17,13 +17,7 @@ const mermaidSrc = `sequenceDiagram
     Bob-->>Alice: Hi`;
 
 function renderMermaid(props) {
-  return renderToStaticMarkup(
-    React.createElement(
-      I18nProvider,
-      null,
-      React.createElement(MermaidBlock, props),
-    ),
-  );
+  return renderToStaticMarkup(React.createElement(I18nProvider, null, React.createElement(MermaidBlock, props)));
 }
 
 test("MermaidBlock renders source by default", () => {
@@ -59,13 +53,7 @@ test("MermaidBlock renders empty graph without error", () => {
 });
 
 function renderCode(props) {
-  return renderToStaticMarkup(
-    React.createElement(
-      I18nProvider,
-      null,
-      React.createElement(CodeBlock, props),
-    ),
-  );
+  return renderToStaticMarkup(React.createElement(I18nProvider, null, React.createElement(CodeBlock, props)));
 }
 
 test("CodeBlock highlights code when not streaming", () => {
@@ -99,8 +87,16 @@ test("downloadMermaidSvg downloads XML-serialized SVG and releases its URL", asy
   const originalCreateObjectURL = URL.createObjectURL;
   const originalRevokeObjectURL = URL.revokeObjectURL;
   const svgElement = { nodeName: "svg" };
-  const serializedSvg = '<svg xmlns="http://www.w3.org/2000/svg"><foreignObject><div xmlns="http://www.w3.org/1999/xhtml">first<br />second</div></foreignObject></svg>';
-  const link = { href: "", download: "", clicked: false, click() { this.clicked = true; } };
+  const serializedSvg =
+    '<svg xmlns="http://www.w3.org/2000/svg"><foreignObject><div xmlns="http://www.w3.org/1999/xhtml">first<br />second</div></foreignObject></svg>';
+  const link = {
+    href: "",
+    download: "",
+    clicked: false,
+    click() {
+      this.clicked = true;
+    },
+  };
   let downloadedBlob;
   globalThis.document = { createElement: () => link };
   globalThis.XMLSerializer = class {
@@ -115,7 +111,9 @@ test("downloadMermaidSvg downloads XML-serialized SVG and releases its URL", asy
     return "blob:mermaid";
   };
   let revoked = null;
-  URL.revokeObjectURL = (url) => { revoked = url; };
+  URL.revokeObjectURL = (url) => {
+    revoked = url;
+  };
 
   try {
     downloadMermaidSvg(svgElement);

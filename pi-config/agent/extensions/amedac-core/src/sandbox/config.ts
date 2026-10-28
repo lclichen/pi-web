@@ -115,7 +115,9 @@ export function saveConfig(patch: Partial<PlatformConfig>, cwd?: string): void {
   } else {
     for (const [key, entry] of cache) cache.set(key, { ...entry, ...patch });
   }
-  const current = cwd ? (cache.get(normalizeCwd(cwd)) ?? { ...DEFAULTS }) : (cache.values().next().value ?? { ...DEFAULTS });
+  const current = cwd
+    ? (cache.get(normalizeCwd(cwd)) ?? { ...DEFAULTS })
+    : (cache.values().next().value ?? { ...DEFAULTS });
   const path = globalConfigPath();
   try {
     mkdirSync(join(path, ".."), { recursive: true });

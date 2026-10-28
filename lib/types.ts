@@ -294,13 +294,7 @@ export interface BranchPreview {
   text: string;
 }
 
-export type SubagentSessionStatus =
-  | "starting"
-  | "running"
-  | "completed"
-  | "failed"
-  | "aborted"
-  | "interrupted";
+export type SubagentSessionStatus = "starting" | "running" | "completed" | "failed" | "aborted" | "interrupted";
 
 export interface SessionTreeNode {
   entry: SessionEntry;
@@ -338,7 +332,7 @@ export interface SessionInfo {
    *  Derived from the workspace snapshot, so it survives template deletion
    *  (orphan groups keep their sessions instead of merging together). */
   quickGroupKey?: string;
-    relation?:
+  relation?:
     | { kind: "fork"; originSessionId?: string }
     | {
         kind: "subagent";

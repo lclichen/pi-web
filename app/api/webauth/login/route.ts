@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
-import { platformAnonPost, platformPostBearer, type PlatformApiKeyCreated, type PlatformLoginResponse } from "@/lib/platform/client";
+import {
+  platformAnonPost,
+  platformPostBearer,
+  type PlatformApiKeyCreated,
+  type PlatformLoginResponse,
+} from "@/lib/platform/client";
 import { createWebSession, isWebAuthEnabled, sessionCookieHeader } from "@/lib/web-session";
 import { isApiRequestAllowed, hasJsonContentType } from "@/lib/request-security";
 import { clientIpOf, consumeRateLimit } from "@/lib/rate-limit";
@@ -85,11 +90,9 @@ export async function POST(req: Request) {
   // wiped data dir can orphan them).
   let key: PlatformApiKeyCreated;
   try {
-    key = await platformPostBearer<PlatformApiKeyCreated>(
-      "/api/v1/auth/api-keys",
-      login.data.accessToken,
-      { name: `pi-web ${new Date().toISOString().slice(0, 10)}` },
-    );
+    key = await platformPostBearer<PlatformApiKeyCreated>("/api/v1/auth/api-keys", login.data.accessToken, {
+      name: `pi-web ${new Date().toISOString().slice(0, 10)}`,
+    });
   } catch (err) {
     return NextResponse.json(
       { error: `创建平台 API Key 失败：${err instanceof Error ? err.message : String(err)}` },

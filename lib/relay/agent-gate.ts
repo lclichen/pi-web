@@ -7,8 +7,7 @@ import type { AgentInfo } from "./protocol";
 import { getAgentForUser } from "./registry";
 
 export type AgentGateResult =
-  | { ok: true; info: AgentInfo; machineId: string }
-  | { ok: false; status: 400 | 503; error: string };
+  { ok: true; info: AgentInfo; machineId: string } | { ok: false; status: 400 | 503; error: string };
 
 export function requireCompatibleAgent(
   userId: number,

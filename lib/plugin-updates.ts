@@ -2,11 +2,7 @@ import { execFile } from "child_process";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import { promisify } from "util";
-import {
-  DefaultPackageManager,
-  getAgentDir,
-  SettingsManager,
-} from "@earendil-works/pi-coding-agent";
+import { DefaultPackageManager, getAgentDir, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { gt, maxSatisfying, rcompare, valid, validRange } from "semver";
 import type { PluginScope, PluginUpdateResult } from "@/lib/api-types";
 import { nodeCliInvocation } from "./node-cli";
@@ -77,11 +73,7 @@ export function isPluginSourceCheckable(source: string): boolean {
   return false;
 }
 
-function result(
-  pkg: ConfiguredPackage,
-  state: PluginUpdateResult["state"],
-  message?: string,
-): PluginUpdateResult {
+function result(pkg: ConfiguredPackage, state: PluginUpdateResult["state"], message?: string): PluginUpdateResult {
   const npm = parseNpmSource(pkg.source);
   return {
     source: pkg.source,
@@ -145,20 +137,13 @@ async function checkNpmPackage(
   const [command = "npm", ...commandArgs] = npmCommand ?? [];
   if (!command) return result(pkg, "error", "Invalid npmCommand.");
   const current = readInstalledVersion(pkg.installedPath);
-  const stdout = await runner(
-    command,
-    [...commandArgs, "view", npm.spec, "version", "--json"],
-    { cwd },
-  );
-  const range = npm.version ? validRange(npm.version) ?? undefined : undefined;
+  const stdout = await runner(command, [...commandArgs, "view", npm.spec, "version", "--json"], { cwd });
+  const range = npm.version ? (validRange(npm.version) ?? undefined) : undefined;
   const latest = readLatestVersion(stdout, range);
   return result(pkg, gt(latest, current) ? "update-available" : "up-to-date");
 }
 
-async function checkGitPackage(
-  pkg: ConfiguredPackage,
-  runner: CommandRunner,
-): Promise<PluginUpdateResult> {
+async function checkGitPackage(pkg: ConfiguredPackage, runner: CommandRunner): Promise<PluginUpdateResult> {
   if (!pkg.installedPath || !existsSync(pkg.installedPath)) {
     return result(pkg, "error", "Package is not installed.");
   }
@@ -170,9 +155,7 @@ async function checkGitPackage(
   const upstream = await runner("git", ["rev-parse", "--abbrev-ref", "@{upstream}"], options)
     .then((value) => value.trim())
     .catch(() => "");
-  const ref = upstream.startsWith("origin/")
-    ? `refs/heads/${upstream.slice("origin/".length)}`
-    : "HEAD";
+  const ref = upstream.startsWith("origin/") ? `refs/heads/${upstream.slice("origin/".length)}` : "HEAD";
   const remoteOutput = await runner("git", ["ls-remote", "origin", ref], options);
   const remote = remoteOutput.match(/^([0-9a-f]{40,64})\s+/m)?.[1];
   if (!remote) throw new Error(`Failed to determine remote ${ref}.`);
@@ -206,19 +189,21 @@ export async function checkPluginUpdates(
   });
   const runner = options.runCommand ?? runCommand;
 
-  return Promise.all(selected.map(async (pkg) => {
-    if (!isPluginSourceCheckable(pkg.source)) {
-      return result(pkg, "unsupported", "Pinned or local packages cannot be checked automatically.");
-    }
-    if (isOffline()) {
-      return result(pkg, "error", "Update checks are disabled while PI_OFFLINE=1.");
-    }
-    try {
-      return parseNpmSource(pkg.source)
-        ? await checkNpmPackage(pkg, cwd, npmCommand, runner)
-        : await checkGitPackage(pkg, runner);
-    } catch (error) {
-      return result(pkg, "error", error instanceof Error ? error.message : String(error));
-    }
-  }));
+  return Promise.all(
+    selected.map(async (pkg) => {
+      if (!isPluginSourceCheckable(pkg.source)) {
+        return result(pkg, "unsupported", "Pinned or local packages cannot be checked automatically.");
+      }
+      if (isOffline()) {
+        return result(pkg, "error", "Update checks are disabled while PI_OFFLINE=1.");
+      }
+      try {
+        return parseNpmSource(pkg.source)
+          ? await checkNpmPackage(pkg, cwd, npmCommand, runner)
+          : await checkGitPackage(pkg, runner);
+      } catch (error) {
+        return result(pkg, "error", error instanceof Error ? error.message : String(error));
+      }
+    }),
+  );
 }

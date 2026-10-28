@@ -64,8 +64,8 @@ export function loadSubagentInputFiles(cwd: string, requestedPaths: readonly str
 
 export function appendSubagentInputFiles(task: string, files: readonly SubagentInputFile[]): string {
   if (files.length === 0) return task;
-  const documents = files.map((file) =>
-    `<document path=${JSON.stringify(file.path)}>\n${file.content}\n</document>`
-  ).join("\n\n");
+  const documents = files
+    .map((file) => `<document path=${JSON.stringify(file.path)}>\n${file.content}\n</document>`)
+    .join("\n\n");
   return `${task}\n\n<documents>\n${documents}\n</documents>`;
 }

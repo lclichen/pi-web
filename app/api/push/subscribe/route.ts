@@ -7,13 +7,16 @@ interface SubscribeRequestBody {
   locale?: string;
 }
 
-function isValidSubscription(subscription: Partial<PushSubscriptionRecord> | undefined): subscription is PushSubscriptionRecord {
+function isValidSubscription(
+  subscription: Partial<PushSubscriptionRecord> | undefined,
+): subscription is PushSubscriptionRecord {
   if (typeof subscription !== "object" || subscription === null) return false;
   if (typeof subscription.endpoint !== "string" || !/^https:\/\//.test(subscription.endpoint)) return false;
   const keys = subscription.keys;
   if (typeof keys !== "object" || keys === null) return false;
-  return typeof keys.p256dh === "string" && keys.p256dh.length > 0
-    && typeof keys.auth === "string" && keys.auth.length > 0;
+  return (
+    typeof keys.p256dh === "string" && keys.p256dh.length > 0 && typeof keys.auth === "string" && keys.auth.length > 0
+  );
 }
 
 // POST /api/push/subscribe - register a browser push subscription. Upserts by

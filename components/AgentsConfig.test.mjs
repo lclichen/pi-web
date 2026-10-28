@@ -81,7 +81,10 @@ test("reuses the ChatInput model selector with scoped models", () => {
   assert.match(chatInputSource, /<ModelSelector[\s\S]*?options=\{modelOptions\}/);
   assert.match(modelSelectorSource, /filterModelOptions\(sortedOptions, filter\)/);
   assert.match(modelSelectorSource, /modelsByProvider\.map/);
-  assert.match(modelSelectorSource, /event\.key !== "Escape" \|\| !open[\s\S]*?event\.preventDefault\(\)[\s\S]*?event\.stopPropagation\(\)/);
+  assert.match(
+    modelSelectorSource,
+    /event\.key !== "Escape" \|\| !open[\s\S]*?event\.preventDefault\(\)[\s\S]*?event\.stopPropagation\(\)/,
+  );
   assert.match(source, /agents\.modelUnavailable/);
   assert.doesNotMatch(source, /placeholder="provider\/modelId"/);
 });
@@ -109,7 +112,10 @@ test("uses the same form controls for editable and readonly profiles", () => {
 test("shows disabled controls with a gray background", () => {
   const disabledStyle = source.match(/const disabledInputStyle: CSSProperties = \{([\s\S]*?)\n\};/)?.[1] ?? "";
   assert.match(source, /<textarea[^>]*aria-label=\{t\("agents\.prompt"\)\}[\s\S]*?disabled=\{disabled\}/);
-  assert.match(source, /height: 195,[\s\S]*?minHeight: 195,[\s\S]*?maxHeight: "60vh"[\s\S]*?resize: disabled \? "none" : "vertical"/);
+  assert.match(
+    source,
+    /height: 195,[\s\S]*?minHeight: 195,[\s\S]*?maxHeight: "60vh"[\s\S]*?resize: disabled \? "none" : "vertical"/,
+  );
   assert.doesNotMatch(source, /agents-system-prompt[^\n]*fontFamily/);
   assert.match(disabledStyle, /background: "var\(--bg-panel\)"/);
   assert.match(disabledStyle, /color: "var\(--text-dim\)"/);
@@ -125,7 +131,10 @@ test("keeps a larger resize corner when system instructions need a scrollbar", (
 
 test("duplicates any selected profile through the existing create flow", () => {
   assert.match(source, /function duplicateProfileName\(name: string, profiles: readonly SubagentProfile\[\]\)/);
-  assert.match(source, /while \(existing\.has\(candidate\.toLowerCase\(\)\)\) candidate = `\$\{base\}-\$\{suffix\+\+\}`/);
+  assert.match(
+    source,
+    /while \(existing\.has\(candidate\.toLowerCase\(\)\)\) candidate = `\$\{base\}-\$\{suffix\+\+\}`/,
+  );
   assert.match(source, /const beginDuplicate = \(\) =>/);
   assert.match(source, /\.\.\.editableProfile\(selected\),[\s\S]*?name,[\s\S]*?displayName: t\("agents\.copyName"/);
   assert.match(source, /setMode\("create"\)/);
@@ -134,7 +143,10 @@ test("duplicates any selected profile through the existing create flow", () => {
 });
 
 test("places duplicate and delete immediately before the enabled switch", () => {
-  assert.match(source, /onClick=\{beginDuplicate\}[\s\S]*?onClick=\{\(\) => void remove\(\)\}[\s\S]*?<ConfigSwitch checked=\{draft\.enabled\}/);
+  assert.match(
+    source,
+    /onClick=\{beginDuplicate\}[\s\S]*?onClick=\{\(\) => void remove\(\)\}[\s\S]*?<ConfigSwitch checked=\{draft\.enabled\}/,
+  );
 });
 
 test("confirms deletion and limits it to writable profiles", () => {

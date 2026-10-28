@@ -16,15 +16,18 @@ test("renders temporary notices once at the top right of the chat column", () =>
 });
 
 test("pauses only for a visible notice", () => {
-  assert.match(
-    hookSource,
-    /noticeState\.visible\.some\(\(notice\) => notice\.id === pausedNoticeId\)\) return/,
-  );
+  assert.match(hookSource, /noticeState\.visible\.some\(\(notice\) => notice\.id === pausedNoticeId\)\) return/);
 });
 
 test("lets keyboard users pause and scroll long notices", () => {
   assert.match(source, /onFocus=\{\(\) => onPauseChange\?\.\(notice\.id\)\}/);
-  assert.match(source, /onBlur=\{\(event\) => \{\s*if \(!event\.currentTarget\.matches\(":hover"\)\) onPauseChange\?\.\(null\)/);
-  assert.match(source, /onMouseLeave=\{\(event\) => \{\s*if \(!event\.currentTarget\.contains\(document\.activeElement\)\) onPauseChange\?\.\(null\)/);
+  assert.match(
+    source,
+    /onBlur=\{\(event\) => \{\s*if \(!event\.currentTarget\.matches\(":hover"\)\) onPauseChange\?\.\(null\)/,
+  );
+  assert.match(
+    source,
+    /onMouseLeave=\{\(event\) => \{\s*if \(!event\.currentTarget\.contains\(document\.activeElement\)\) onPauseChange\?\.\(null\)/,
+  );
   assert.match(source, /<span\s+tabIndex=\{0\}\s+style=\{\{[^}]*overflowY: "auto"/);
 });

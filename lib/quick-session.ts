@@ -42,11 +42,13 @@ export function quickTemplateHash(template: {
   model?: { provider: string; modelId: string };
 }): string {
   return createHash("sha256")
-    .update(JSON.stringify({
-      systemPrompt: template.systemPrompt,
-      mcpServers: [...(template.mcpServers ?? [])].sort(),
-      model: template.model ?? null,
-    }))
+    .update(
+      JSON.stringify({
+        systemPrompt: template.systemPrompt,
+        mcpServers: [...(template.mcpServers ?? [])].sort(),
+        model: template.model ?? null,
+      }),
+    )
     .digest("hex")
     .slice(0, 8);
 }
@@ -116,20 +118,22 @@ export function writeQuickTemplateSnapshot(dir: string, snapshot: QuickTemplateS
 function writeWorkspaceMcp(userId: number, dir: string, allowlist: string[] | undefined): void {
   const readMcpFromFile = (path: string): Record<string, unknown> => {
     try {
-      const parsed: unknown = JSON.parse(readFileSync(path, 'utf8'));
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
         const servers = (parsed as { mcpServers?: unknown }).mcpServers;
-        if (servers && typeof servers === 'object' && !Array.isArray(servers)) {
+        if (servers && typeof servers === "object" && !Array.isArray(servers)) {
           return servers as Record<string, unknown>;
         }
       }
-    } catch { /* 文件不存在或格式错——忽略 */ }
+    } catch {
+      /* 文件不存在或格式错——忽略 */
+    }
     return {};
   };
 
   // 候选池：部署级 quick MCP + 全局 agent mcp.json（同名时 quick 优先）
   const quickServers = readMcpFromFile(deploymentQuickMcpPath());
-  const globalServers = readMcpFromFile(join(getAgentDir(), 'mcp.json'));
+  const globalServers = readMcpFromFile(join(getAgentDir(), "mcp.json"));
   const pool = { ...globalServers, ...quickServers };
 
   // 写入工作区 .pi/mcp.json（最高优先级层）：
@@ -147,15 +151,23 @@ function writeWorkspaceMcp(userId: number, dir: string, allowlist: string[] | un
     }
   }
 
-  const target = join(dir, '.pi', 'mcp.json');
-  mkdirSync(join(dir, '.pi'), { recursive: true });
+  const target = join(dir, ".pi", "mcp.json");
+  mkdirSync(join(dir, ".pi"), { recursive: true });
   // settings.disableProxyTool：quick 封闭世界只经直接工具（<server>_ 前缀）
   // 暴露白名单服务器；网关元工具 mcp/mcpScript 不该出现——adapter 的
   // syncProxyTool 每回合可能把它加回活动集，配置层先让它自我抑制。
-  writeFileSync(target, JSON.stringify({
-    settings: { disableProxyTool: true },
-    mcpServers: filtered,
-  }, null, 2), 'utf8');
+  writeFileSync(
+    target,
+    JSON.stringify(
+      {
+        settings: { disableProxyTool: true },
+        mcpServers: filtered,
+      },
+      null,
+      2,
+    ),
+    "utf8",
+  );
 }
 /**
  * 取得（或复用）快速会话工作区：目录名 = 模板 id + 内容 hash——同模板同

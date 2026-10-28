@@ -23,7 +23,10 @@ test("large source previews bypass the per-line syntax highlighter", () => {
   assert.match(lightweightSource, /className="file-source-view is-lightweight"/);
   // Upstream 0.9.0 memoizes the lightweight rows (lightweightSourceLines);
   // the row markup lives in that memo instead of the inline branch.
-  assert.match(source, /lightweightSourceLines = useMemo\(\s*\(\) => useLightweightSource \? sourceLines\.map\(\(line, lineIndex\) =>/);
+  assert.match(
+    source,
+    /lightweightSourceLines = useMemo\(\s*\(\) => useLightweightSource \? sourceLines\.map\(\(line, lineIndex\) =>/,
+  );
   assert.match(source, /className="file-source-line"/);
   assert.match(source, /className="file-source-line-content"/);
 
@@ -40,19 +43,37 @@ test("lightweight source rows are skipped for highlighted, diff, and preview vie
   // Execute the source-view calculations without mounting the file-fetching component.
   const file = ts.createSourceFile("FileViewer.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const viewer = file.statements.find((node) => ts.isFunctionDeclaration(node) && node.name?.text === "TextFileViewer");
-  const calculations = viewer.body.statements.filter((node) =>
-    ts.isVariableStatement(node) && node.declarationList.declarations.some((declaration) =>
-      ["viewerContent", "sourceLines", "language", "isHtml", "isMarkdown", "hasPreview", "effectiveDisplayMode", "useLightweightSource", "lightweightSourceLines"].includes(declaration.name.getText(file)),
-    ),
-  ).map((node) => node.getText(file)).join("\n");
-  const { outputText } = ts.transpileModule(`
+  const calculations = viewer.body.statements
+    .filter(
+      (node) =>
+        ts.isVariableStatement(node) &&
+        node.declarationList.declarations.some((declaration) =>
+          [
+            "viewerContent",
+            "sourceLines",
+            "language",
+            "isHtml",
+            "isMarkdown",
+            "hasPreview",
+            "effectiveDisplayMode",
+            "useLightweightSource",
+            "lightweightSourceLines",
+          ].includes(declaration.name.getText(file)),
+        ),
+    )
+    .map((node) => node.getText(file))
+    .join("\n");
+  const { outputText } = ts.transpileModule(
+    `
     return (data, displayMode, hasGitDiff = false, isDeletedDiff = false, wrapLines = false) => {
       const SOURCE_HIGHLIGHT_MAX_LINES = 1_000;
       const FILE_LINE_NUMBER_STYLE = {};
       ${calculations}
       return lightweightSourceLines;
     };
-  `, { compilerOptions: { jsx: ts.JsxEmit.React } });
+  `,
+    { compilerOptions: { jsx: ts.JsxEmit.React } },
+  );
   const render = new Function("React", "useMemo", outputText)(React, (calculate) => calculate());
   const large = { content: "line\n".repeat(1_000), language: "text" };
 

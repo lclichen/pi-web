@@ -2,10 +2,7 @@ import { NextResponse } from "next/server";
 import { getSessionEntries } from "@/lib/session-reader";
 import { resolveSessionAccess } from "@/lib/session-access";
 
-export async function GET(
-  req: Request,
-  { params }: { params: Promise<{ id: string; entryId: string }> },
-) {
+export async function GET(req: Request, { params }: { params: Promise<{ id: string; entryId: string }> }) {
   const { id, entryId } = await params;
   const blockIndexParam = new URL(req.url).searchParams.get("blockIndex");
   const blockIndex = blockIndexParam === null ? Number.NaN : Number(blockIndexParam);

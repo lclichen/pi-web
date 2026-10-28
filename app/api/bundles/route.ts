@@ -2,7 +2,14 @@ import { NextResponse } from "next/server";
 import JSZip from "jszip";
 import { requireUserIdentity } from "@/lib/web-session";
 import { isApiRequestAllowed } from "@/lib/request-security";
-import { deleteBundle, ensureBuiltinBundles, isProtectedBundleName, listBundles, isValidBundleName, saveBundle } from "@/lib/config-bundles-store";
+import {
+  deleteBundle,
+  ensureBuiltinBundles,
+  isProtectedBundleName,
+  listBundles,
+  isValidBundleName,
+  saveBundle,
+} from "@/lib/config-bundles-store";
 import { isApkgBytes, readApkgHeader } from "@/lib/apkg";
 
 export const dynamic = "force-dynamic";
@@ -62,10 +69,7 @@ export async function POST(req: Request) {
     try {
       readApkgHeader(data);
     } catch (e) {
-      return NextResponse.json(
-        { error: e instanceof Error ? e.message : "加密配置包格式无效" },
-        { status: 400 },
-      );
+      return NextResponse.json({ error: e instanceof Error ? e.message : "加密配置包格式无效" }, { status: 400 });
     }
   } else {
     // Plain zip integrity check before storing.

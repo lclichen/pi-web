@@ -2,7 +2,8 @@
  * Display-only restoration for the exact envelope emitted by pi's
  * `_expandSkillCommand`. The expanded text remains the stored session input.
  */
-const SKILL_EXPANSION_RE = /^<skill name="([^"\n]+)" location="([^"\n]+)">\nReferences are relative to [^\n]+\.\n\n([\s\S]*)\n<\/skill>(?:\n\n([\s\S]+))?$/;
+const SKILL_EXPANSION_RE =
+  /^<skill name="([^"\n]+)" location="([^"\n]+)">\nReferences are relative to [^\n]+\.\n\n([\s\S]*)\n<\/skill>(?:\n\n([\s\S]+))?$/;
 
 /**
  * Restore a complete SDK skill expansion to its compact command form.

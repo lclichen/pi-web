@@ -47,7 +47,13 @@ test("detail route bounds history to the tail window (default 50 over 5000 entri
 test("detail route with an out-of-range tail still caps at 1000", () => {
   const entries = [];
   for (let i = 0; i < 5000; i++) {
-    entries.push({ id: `e${i}`, parentId: i === 0 ? null : `e${i - 1}`, type: "message", timestamp: new Date(1000 + i * 1000).toISOString(), message: { role: "user", content: `m${i}` } });
+    entries.push({
+      id: `e${i}`,
+      parentId: i === 0 ? null : `e${i - 1}`,
+      type: "message",
+      timestamp: new Date(1000 + i * 1000).toISOString(),
+      message: { role: "user", content: `m${i}` },
+    });
   }
   const ctx = buildSessionContext(entries, "e4999", { tail: 5000 });
   assert.equal(ctx.messages.length, 5000);

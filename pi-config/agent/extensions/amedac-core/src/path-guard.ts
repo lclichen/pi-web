@@ -62,12 +62,7 @@ function persistDecisions(cwd: string, decisions: PolicyDecisions): void {
   }
 }
 
-function recordDecision(
-  cwd: string,
-  loaded: LoadedPolicy,
-  absPath: string,
-  decision: "allow" | "deny",
-): void {
+function recordDecision(cwd: string, loaded: LoadedPolicy, absPath: string, decision: "allow" | "deny"): void {
   const norm = normalizePolicyPath(absPath);
   loaded.decisions.entries = loaded.decisions.entries.filter((e) => e.path !== norm);
   loaded.decisions.entries.push({ path: norm, decision, at: Date.now() });

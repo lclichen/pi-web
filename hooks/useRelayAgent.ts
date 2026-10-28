@@ -46,7 +46,6 @@ export function useRelayAgent(): UseRelayAgent {
     stoppedRef.current = false;
     let stopped = false;
 
-
     // Seed relayPort/advertiseUrl + initial status from a one-shot fetch so the
     // pairing command is correct even before the SSE frame lands.
     const seed = async () => {
@@ -97,7 +96,9 @@ export function useRelayAgent(): UseRelayAgent {
   const refresh = useCallback(() => {
     fetch("/api/agent-relay/status", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (d && !stoppedRef.current) apply(d as Partial<RelayStatusResponse>); })
+      .then((d) => {
+        if (d && !stoppedRef.current) apply(d as Partial<RelayStatusResponse>);
+      })
       .catch(() => {});
   }, [apply]);
   return { ...state, ready, refresh };

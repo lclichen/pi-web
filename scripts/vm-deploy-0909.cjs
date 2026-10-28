@@ -1,6 +1,6 @@
-const { Client } = require('ssh2');
-const { loadVmConnection } = require('./vm-connection.cjs');
-const fs = require('fs');
+const { Client } = require("ssh2");
+const { loadVmConnection } = require("./vm-connection.cjs");
+const fs = require("fs");
 const conn = new Client();
 
 const cmd = `
@@ -27,11 +27,17 @@ cat /tmp/deploy0909.log
 exit 0
 `;
 
-conn.on('ready', () => {
+conn.on("ready", () => {
   conn.exec(cmd, (err, stream) => {
-    if (err) { console.error(err); process.exit(1); }
-    stream.on('data', d => process.stdout.write(d)).stderr.on('data', d => process.stderr.write(d));
-    stream.on('close', () => { conn.end(); process.exit(0); });
+    if (err) {
+      console.error(err);
+      process.exit(1);
+    }
+    stream.on("data", (d) => process.stdout.write(d)).stderr.on("data", (d) => process.stderr.write(d));
+    stream.on("close", () => {
+      conn.end();
+      process.exit(0);
+    });
   });
 });
 conn.connect(loadVmConnection());

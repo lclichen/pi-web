@@ -6,10 +6,7 @@ import { deleteBundle, isProtectedBundleName, isValidBundleName } from "@/lib/co
 export const dynamic = "force-dynamic";
 
 // DELETE /api/bundles/:name — admin removes a preset config bundle.
-export async function DELETE(
-  req: Request,
-  ctx: { params: Promise<{ name: string }> },
-) {
+export async function DELETE(req: Request, ctx: { params: Promise<{ name: string }> }) {
   if (!isApiRequestAllowed(req)) {
     return NextResponse.json({ error: "Untrusted API request" }, { status: 403 });
   }

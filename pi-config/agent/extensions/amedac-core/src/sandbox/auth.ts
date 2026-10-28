@@ -51,10 +51,7 @@ export function makeClient(cwd: string): { client: PlatformClient; config: Platf
 }
 
 /** Ensure we are authenticated; verify the token via /me. */
-export async function ensureAuthenticated(
-  client: PlatformClient,
-  ctx: ExtensionContext,
-): Promise<boolean> {
+export async function ensureAuthenticated(client: PlatformClient, ctx: ExtensionContext): Promise<boolean> {
   if (!client.config.token && !client.config.apiKey) {
     ctx.ui.notify("Not logged in. Run /sandbox-login first.", "warning");
     return false;
@@ -119,10 +116,7 @@ export async function ensureContainer(
  * then synced into the container's /workspace so the agent sees the same
  * files as the user.
  */
-async function autoCreateContainer(
-  ctx: ExtensionContext,
-  client: PlatformClient,
-): Promise<number | undefined> {
+async function autoCreateContainer(ctx: ExtensionContext, client: PlatformClient): Promise<number | undefined> {
   try {
     const images = await client.listImages();
     if (images.length === 0) {
@@ -131,10 +125,7 @@ async function autoCreateContainer(
     }
     const image = images[0];
     const defaults = image.default_resources;
-    ctx.ui.setStatus(
-      "sandbox",
-      ctx.ui.theme.fg("accent", `Sandbox: creating container from ${image.name}…`),
-    );
+    ctx.ui.setStatus("sandbox", ctx.ui.theme.fg("accent", `Sandbox: creating container from ${image.name}…`));
     const created = await client.createContainer({
       imageId: image.id,
       name: `auto-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "")}`,
@@ -145,8 +136,7 @@ async function autoCreateContainer(
     ctx.ui.notify(`Auto-created container #${created.id} from ${image.name}.`, "info");
     // Seed the container's /workspace with the local project.
     await syncWorkspaceToContainer(client, created.id, ctx.cwd, {
-      onFile: (rel, index, total) =>
-        ctx.ui.setStatus("sandbox", `Sandbox: syncing ${index}/${total} ${rel}`),
+      onFile: (rel, index, total) => ctx.ui.setStatus("sandbox", `Sandbox: syncing ${index}/${total} ${rel}`),
     });
     ctx.ui.notify("Local project synced into the container's /workspace.", "info");
     return setContainer(ctx, client, created.id);
@@ -156,21 +146,14 @@ async function autoCreateContainer(
   }
 }
 
-async function setContainer(
-  ctx: ExtensionContext,
-  client: PlatformClient,
-  id: number,
-): Promise<number> {
+async function setContainer(ctx: ExtensionContext, client: PlatformClient, id: number): Promise<number> {
   try {
     const info = await client.connectContainer(id);
     const state = states.get(key(ctx.cwd));
     if (!state) throw new Error("Connection state missing");
     state.containerId = id;
     state.instanceName = info.instanceName;
-    ctx.ui.setStatus(
-      "sandbox",
-      ctx.ui.theme.fg("accent", `🔒 sandbox:${REMOTE_WORKSPACE} (container ${id} · remote)`),
-    );
+    ctx.ui.setStatus("sandbox", ctx.ui.theme.fg("accent", `🔒 sandbox:${REMOTE_WORKSPACE} (container ${id} · remote)`));
     return id;
   } catch (err) {
     ctx.ui.notify(`Connect failed: ${err instanceof Error ? err.message : String(err)}`, "error");

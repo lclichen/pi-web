@@ -26,9 +26,7 @@ type ProjectCommandBashOperationsOptions = {
 
 function isHostRuntimeVariable(name: string, platform: NodeJS.Platform): boolean {
   const comparableName = platform === "win32" ? name.toUpperCase() : name;
-  return comparableName === "PORT"
-    || comparableName === "NODE_ENV"
-    || comparableName.startsWith("NEXT_");
+  return comparableName === "PORT" || comparableName === "NODE_ENV" || comparableName.startsWith("NEXT_");
 }
 
 export function sanitizeProjectCommandEnvironment(
@@ -47,9 +45,8 @@ function withAgentBinDirectory(
   agentBinDir: string,
   platform: NodeJS.Platform,
 ): NodeJS.ProcessEnv {
-  const pathKey = platform === "win32"
-    ? Object.keys(environment).find((name) => name.toUpperCase() === "PATH") ?? "PATH"
-    : "PATH";
+  const pathKey =
+    platform === "win32" ? (Object.keys(environment).find((name) => name.toUpperCase() === "PATH") ?? "PATH") : "PATH";
   const pathDelimiter = platform === "win32" ? ";" : ":";
   const currentPath = environment[pathKey] ?? "";
   const pathEntries = currentPath.split(pathDelimiter).filter(Boolean);
@@ -59,9 +56,7 @@ function withAgentBinDirectory(
   return environment;
 }
 
-export function createProjectCommandBashOperations(
-  options: ProjectCommandBashOperationsOptions = {},
-): BashOperations {
+export function createProjectCommandBashOperations(options: ProjectCommandBashOperationsOptions = {}): BashOperations {
   const {
     agentBinDir = join(getAgentDir(), "bin"),
     baseEnvironment = process.env,
@@ -113,17 +108,15 @@ export function preferUserBashExtension(base: LoadExtensionsResult): LoadExtensi
   const hostExtensionIndex = base.extensions.findIndex((extension) => extension.path === HOST_EXTENSION_PATH);
   if (hostExtensionIndex < 0) return base;
 
-  const userBashOwner = base.extensions
-    .slice(0, hostExtensionIndex)
-    .find((extension) => extension.tools.has("bash"));
+  const userBashOwner = base.extensions.slice(0, hostExtensionIndex).find((extension) => extension.tools.has("bash"));
   if (!userBashOwner) return base;
 
   return {
     ...base,
     extensions: base.extensions.filter((_, index) => index !== hostExtensionIndex),
-    errors: base.errors.filter((error) => !(
-      error.path === HOST_EXTENSION_PATH
-      && error.error === `Tool "bash" conflicts with ${userBashOwner.path}`
-    )),
+    errors: base.errors.filter(
+      (error) =>
+        !(error.path === HOST_EXTENSION_PATH && error.error === `Tool "bash" conflicts with ${userBashOwner.path}`),
+    ),
   };
 }

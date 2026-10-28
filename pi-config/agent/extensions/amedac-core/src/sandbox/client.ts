@@ -145,8 +145,26 @@ export class PlatformClient {
     return this.request("/api/v1/auth/api-keys", { method: "POST", body: { name } });
   }
 
-  async listApiKeys(): Promise<Array<{ id: number; name: string; key_prefix: string; created_at: string; last_used_at: string | null; revoked_at: string | null }>> {
-    const res = await this.request<{ apiKeys: Array<{ id: number; name: string; key_prefix: string; created_at: string; last_used_at: string | null; revoked_at: string | null }> }>("/api/v1/auth/api-keys");
+  async listApiKeys(): Promise<
+    Array<{
+      id: number;
+      name: string;
+      key_prefix: string;
+      created_at: string;
+      last_used_at: string | null;
+      revoked_at: string | null;
+    }>
+  > {
+    const res = await this.request<{
+      apiKeys: Array<{
+        id: number;
+        name: string;
+        key_prefix: string;
+        created_at: string;
+        last_used_at: string | null;
+        revoked_at: string | null;
+      }>;
+    }>("/api/v1/auth/api-keys");
     return res.apiKeys;
   }
 
@@ -155,8 +173,22 @@ export class PlatformClient {
   }
 
   // ---- images (public listing, for choosing a base when creating a container) ----
-  async listImages(): Promise<Array<{ id: number; name: string; display_name: string; default_resources?: { cpu: number; memoryMb: number; diskGb: number } | null }>> {
-    const res = await this.request<{ images: Array<{ id: number; name: string; display_name: string; default_resources?: { cpu: number; memoryMb: number; diskGb: number } | null }> }>("/api/v1/images");
+  async listImages(): Promise<
+    Array<{
+      id: number;
+      name: string;
+      display_name: string;
+      default_resources?: { cpu: number; memoryMb: number; diskGb: number } | null;
+    }>
+  > {
+    const res = await this.request<{
+      images: Array<{
+        id: number;
+        name: string;
+        display_name: string;
+        default_resources?: { cpu: number; memoryMb: number; diskGb: number } | null;
+      }>;
+    }>("/api/v1/images");
     return res.images;
   }
 
@@ -180,16 +212,28 @@ export class PlatformClient {
     return this.request("/api/v1/llm/me");
   }
 
-  async listMyLlmKeys(): Promise<Array<{
-    id: number;
-    name: string;
-    key_prefix: string;
-    models: string[] | null;
-    max_budget: number | null;
-    created_at: string;
-    revoked_at: string | null;
-  }>> {
-    const res = await this.request<{ keys: Array<{ id: number; name: string; key_prefix: string; models: string[] | null; max_budget: number | null; created_at: string; revoked_at: string | null }> }>("/api/v1/llm/me/keys");
+  async listMyLlmKeys(): Promise<
+    Array<{
+      id: number;
+      name: string;
+      key_prefix: string;
+      models: string[] | null;
+      max_budget: number | null;
+      created_at: string;
+      revoked_at: string | null;
+    }>
+  > {
+    const res = await this.request<{
+      keys: Array<{
+        id: number;
+        name: string;
+        key_prefix: string;
+        models: string[] | null;
+        max_budget: number | null;
+        created_at: string;
+        revoked_at: string | null;
+      }>;
+    }>("/api/v1/llm/me/keys");
     return res.keys;
   }
 
@@ -210,9 +254,9 @@ export class PlatformClient {
 
   // ---- containers ----
   async listContainers(): Promise<Array<{ id: number; name: string; status: string; instance_name: string | null }>> {
-    const res = await this.request<{ containers: Array<{ id: number; name: string; status: string; instance_name: string | null }> }>(
-      "/api/v1/containers",
-    );
+    const res = await this.request<{
+      containers: Array<{ id: number; name: string; status: string; instance_name: string | null }>;
+    }>("/api/v1/containers");
     return res.containers;
   }
 
@@ -228,18 +272,16 @@ export class PlatformClient {
   }
 
   async connectContainer(id: number): Promise<{ sessionId: number; instanceName: string }> {
-    const res = await this.request<{ sessionId: number; instanceName: string }>(
-      `/api/v1/containers/${id}/connect`,
-    );
+    const res = await this.request<{ sessionId: number; instanceName: string }>(`/api/v1/containers/${id}/connect`);
     return res;
   }
 
   // ---- tool operations (relay into the container) ----
   async toolRead(containerId: number, path: string): Promise<Buffer> {
-    const res = await this.request<{ contentBase64: string }>(
-      `/api/v1/containers/${containerId}/tools/read`,
-      { method: "POST", body: { path } },
-    );
+    const res = await this.request<{ contentBase64: string }>(`/api/v1/containers/${containerId}/tools/read`, {
+      method: "POST",
+      body: { path },
+    });
     return Buffer.from(res.contentBase64, "base64");
   }
 
@@ -250,12 +292,7 @@ export class PlatformClient {
     });
   }
 
-  async toolEdit(
-    containerId: number,
-    path: string,
-    oldText: string,
-    newText: string,
-  ): Promise<{ applied: boolean }> {
+  async toolEdit(containerId: number, path: string, oldText: string, newText: string): Promise<{ applied: boolean }> {
     return this.request(`/api/v1/containers/${containerId}/tools/edit`, {
       method: "POST",
       body: { path, oldText, newText },
@@ -269,7 +306,10 @@ export class PlatformClient {
     return res.exists;
   }
 
-  async toolStat(containerId: number, path: string): Promise<{
+  async toolStat(
+    containerId: number,
+    path: string,
+  ): Promise<{
     isDirectory: boolean;
     isFile: boolean;
     size: number;
@@ -278,10 +318,13 @@ export class PlatformClient {
     return this.request(`/api/v1/containers/${containerId}/tools/stat?path=${encodeURIComponent(path)}`);
   }
 
-  async toolLs(containerId: number, path: string): Promise<Array<{ name: string; isDirectory: boolean; isFile: boolean; size: number }>> {
-    const res = await this.request<{ entries: Array<{ name: string; isDirectory: boolean; isFile: boolean; size: number }> }>(
-      `/api/v1/containers/${containerId}/tools/ls?path=${encodeURIComponent(path)}`,
-    );
+  async toolLs(
+    containerId: number,
+    path: string,
+  ): Promise<Array<{ name: string; isDirectory: boolean; isFile: boolean; size: number }>> {
+    const res = await this.request<{
+      entries: Array<{ name: string; isDirectory: boolean; isFile: boolean; size: number }>;
+    }>(`/api/v1/containers/${containerId}/tools/ls?path=${encodeURIComponent(path)}`);
     return res.entries;
   }
 
@@ -333,11 +376,7 @@ export class PlatformClient {
       } catch {
         // non-JSON error
       }
-      throw new PlatformError(
-        res.status,
-        payload.code ?? "http_error",
-        payload.message ?? `HTTP ${res.status}`,
-      );
+      throw new PlatformError(res.status, payload.code ?? "http_error", payload.message ?? `HTTP ${res.status}`);
     }
 
     const reader = res.body?.getReader();
@@ -364,7 +403,7 @@ export class PlatformClient {
                 } else if (event.event === "end") {
                   void reader.cancel();
                   resolveFn({
-                    exitCode: event.data.timedOut ? null : (Number(event.data.exitCode) || 0),
+                    exitCode: event.data.timedOut ? null : Number(event.data.exitCode) || 0,
                     timedOut: Boolean(event.data.timedOut),
                   });
                   return;
@@ -396,7 +435,15 @@ export class PlatformClient {
 
   async toolGrep(
     containerId: number,
-    params: { pattern: string; path?: string; glob?: string; literal?: boolean; ignoreCase?: boolean; context?: number; limit?: number },
+    params: {
+      pattern: string;
+      path?: string;
+      glob?: string;
+      literal?: boolean;
+      ignoreCase?: boolean;
+      context?: number;
+      limit?: number;
+    },
   ): Promise<string> {
     const res = await this.request<{ output: string }>(`/api/v1/containers/${containerId}/tools/grep`, {
       method: "POST",
@@ -405,10 +452,7 @@ export class PlatformClient {
     return res.output;
   }
 
-  async toolFind(
-    containerId: number,
-    params: { pattern: string; path?: string; limit?: number },
-  ): Promise<string[]> {
+  async toolFind(containerId: number, params: { pattern: string; path?: string; limit?: number }): Promise<string[]> {
     const res = await this.request<{ results: string[] }>(`/api/v1/containers/${containerId}/tools/find`, {
       method: "POST",
       body: params,

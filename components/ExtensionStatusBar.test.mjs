@@ -9,21 +9,12 @@ const jiti = createJiti(import.meta.url, {
 });
 const React = await jiti.import("react");
 const { renderToStaticMarkup } = await jiti.import("react-dom/server");
-const {
-  ExtensionStatusBar,
-  formatExtensionStatusLine,
-  sanitizeExtensionStatusText,
-} = await jiti.import("./ExtensionStatusBar.tsx");
+const { ExtensionStatusBar, formatExtensionStatusLine, sanitizeExtensionStatusText } =
+  await jiti.import("./ExtensionStatusBar.tsx");
 const { I18nProvider } = await jiti.import("@/hooks/useI18n");
 
 function renderStatusBar(props) {
-  return renderToStaticMarkup(
-    React.createElement(
-      I18nProvider,
-      null,
-      React.createElement(ExtensionStatusBar, props),
-    ),
-  );
+  return renderToStaticMarkup(React.createElement(I18nProvider, null, React.createElement(ExtensionStatusBar, props)));
 }
 
 test("sorts status text by hidden key like the Pi CLI footer", () => {
@@ -34,17 +25,11 @@ test("sorts status text by hidden key like the Pi CLI footer", () => {
     { key: "05-ponytail", text: "ponytail" },
   ];
 
-  assert.equal(
-    formatExtensionStatusLine(statuses),
-    "ponytail permissions memory notify",
-  );
+  assert.equal(formatExtensionStatusLine(statuses), "ponytail permissions memory notify");
 });
 
 test("preserves status line breaks while normalizing horizontal whitespace", () => {
-  assert.equal(
-    sanitizeExtensionStatusText("  first\tsecond \r\n third  "),
-    "first second\nthird",
-  );
+  assert.equal(sanitizeExtensionStatusText("  first\tsecond \r\n third  "), "first second\nthird");
 });
 
 test("preserves explicit status lines without wrapping and scrolls long or tall output", async () => {
@@ -81,11 +66,13 @@ test("renders a single status line without identifier keys", () => {
 test("renders widgets and status text in one footer", () => {
   const html = renderStatusBar({
     statuses: [{ key: "status", text: "connected" }],
-    widgets: [{
-      key: "usage",
-      lines: ["42%"],
-      placement: "aboveEditor",
-    }],
+    widgets: [
+      {
+        key: "usage",
+        lines: ["42%"],
+        placement: "aboveEditor",
+      },
+    ],
   });
 
   assert.match(html, /extension-status-shelf has-widgets has-status/);

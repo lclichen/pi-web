@@ -151,7 +151,9 @@
   font-size: 12px;
   font-weight: 400;
   text-align: left;
-  transition: background-color 0.12s ease, color 0.12s ease;
+  transition:
+    background-color 0.12s ease,
+    color 0.12s ease;
 }
 
 .config-sidebar-item:not(:disabled):hover,
@@ -548,7 +550,11 @@
   letter-spacing: 0;
   line-height: 1;
   white-space: nowrap;
-  transition: background-color 0.14s ease, border-color 0.14s ease, color 0.14s ease, box-shadow 0.14s ease;
+  transition:
+    background-color 0.14s ease,
+    border-color 0.14s ease,
+    color 0.14s ease,
+    box-shadow 0.14s ease;
 }
 
 .config-button-default {
@@ -641,7 +647,9 @@
   border-radius: 9px;
   background: var(--bg-selected);
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
 }
 
 .config-switch[aria-checked="true"] {
@@ -681,7 +689,9 @@
   height: 12px;
   border-radius: 50%;
   background: var(--text-muted);
-  transition: transform 0.15s, background 0.15s;
+  transition:
+    transform 0.15s,
+    background 0.15s;
 }
 
 .config-switch[aria-checked="true"] .config-switch-knob {
@@ -900,7 +910,9 @@
   content: "";
   opacity: 0;
   transform: translateX(-50%) scaleX(0.5);
-  transition: opacity 0.15s ease, transform 0.15s ease;
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease;
 }
 
 .settings-section-tab[aria-current="page"] {
@@ -1245,14 +1257,29 @@
 }
 
 @keyframes saved-pop {
-  0%   { transform: scale(1); box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.55); }
-  40%  { transform: scale(1.08); box-shadow: 0 0 0 6px rgba(74, 222, 128, 0.25); }
-  100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(74, 222, 128, 0); }
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.55);
+  }
+  40% {
+    transform: scale(1.08);
+    box-shadow: 0 0 0 6px rgba(74, 222, 128, 0.25);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(74, 222, 128, 0);
+  }
 }
 
 @keyframes saved-check-draw {
-  from { stroke-dashoffset: 18; opacity: 0; }
-  to   { stroke-dashoffset: 0;  opacity: 1; }
+  from {
+    stroke-dashoffset: 18;
+    opacity: 0;
+  }
+  to {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
 }
 
 /* iOS standalone: env() can report 0, so keep a device-sized fallback on the

@@ -72,7 +72,9 @@ function createRegistry(): SessionLivenessRegistry {
       };
     },
     hasActiveProvider(session) {
-      const identities = new Set([session.sessionId, session.sessionFile].filter((value): value is string => Boolean(value)));
+      const identities = new Set(
+        [session.sessionId, session.sessionFile].filter((value): value is string => Boolean(value)),
+      );
       for (const provider of providers.values()) {
         if (!identities.has(provider.sessionId) && (!provider.sessionFile || !identities.has(provider.sessionFile))) {
           continue;
@@ -96,9 +98,11 @@ function createRegistry(): SessionLivenessRegistry {
 function isCompatibleRegistry(value: unknown): value is SessionLivenessRegistry {
   if (!value || typeof value !== "object") return false;
   const candidate = value as Partial<SessionLivenessRegistry>;
-  return candidate.version === SESSION_LIVENESS_PROTOCOL_VERSION
-    && typeof candidate.register === "function"
-    && typeof candidate.hasActiveProvider === "function";
+  return (
+    candidate.version === SESSION_LIVENESS_PROTOCOL_VERSION &&
+    typeof candidate.register === "function" &&
+    typeof candidate.hasActiveProvider === "function"
+  );
 }
 
 function getRegistry(): SessionLivenessRegistry {
@@ -125,10 +129,13 @@ function getLeaseStore(): LeaseStore {
 
 function scheduleLeaseExpiry(lease: LeaseRecord): void {
   if (lease.timer) clearTimeout(lease.timer);
-  lease.timer = setTimeout(() => {
-    if (!lease.released && lease.expiresAt <= Date.now()) lease.release();
-    else if (!lease.released) scheduleLeaseExpiry(lease);
-  }, Math.max(1, lease.expiresAt - Date.now()));
+  lease.timer = setTimeout(
+    () => {
+      if (!lease.released && lease.expiresAt <= Date.now()) lease.release();
+      else if (!lease.released) scheduleLeaseExpiry(lease);
+    },
+    Math.max(1, lease.expiresAt - Date.now()),
+  );
   const unref = (lease.timer as unknown as { unref?: () => void }).unref;
   unref?.call(lease.timer);
 }

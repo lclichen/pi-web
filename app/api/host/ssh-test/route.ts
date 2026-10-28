@@ -41,9 +41,6 @@ export async function POST(req: Request) {
     const { whoami } = await sshTestConnection(fullConfig as import("@/lib/ssh").SshConfig);
     return NextResponse.json({ ok: true, whoami });
   } catch (e) {
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : String(e) },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 400 });
   }
 }

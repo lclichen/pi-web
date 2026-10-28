@@ -129,7 +129,9 @@ export async function inspectBundleZip(zipData: Buffer): Promise<BundleInspectio
     manifest: null,
   };
 
-  const entries = Object.values(archive.files).filter((e) => !e.dir).slice(0, MAX_PREVIEW_ENTRIES);
+  const entries = Object.values(archive.files)
+    .filter((e) => !e.dir)
+    .slice(0, MAX_PREVIEW_ENTRIES);
   const jsonReads: Array<{ path: string; text: string }> = [];
 
   for (const e of entries) {

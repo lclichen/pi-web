@@ -18,7 +18,10 @@ export function guardMcpRequest(
       return { ok: false, response: NextResponse.json({ error: "Untrusted API request" }, { status: 403 }) };
     }
     if (hasJsonContentType(req) === false && req.method !== "DELETE") {
-      return { ok: false, response: NextResponse.json({ error: "Content-Type must be application/json" }, { status: 415 }) };
+      return {
+        ok: false,
+        response: NextResponse.json({ error: "Content-Type must be application/json" }, { status: 415 }),
+      };
     }
   }
   const dir = resolveConfigCwdSync(req, { projectId: params.projectId, cwd: params.cwd });

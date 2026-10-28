@@ -27,7 +27,12 @@
  *   模式徽标。
  */
 import { existsSync, readFileSync } from "node:fs";
-import { defineTool, type ExtensionAPI, type ExtensionContext, type InlineExtension } from "@earendil-works/pi-coding-agent";
+import {
+  defineTool,
+  type ExtensionAPI,
+  type ExtensionContext,
+  type InlineExtension,
+} from "@earendil-works/pi-coding-agent";
 import { Type } from "@earendil-works/pi-ai";
 import { sessionPlanPath } from "./session-plan.ts";
 import { buildReminderMessage } from "./reminder-channel.ts";
@@ -51,12 +56,22 @@ const MUTATING_COMMAND_RE =
  * mutations). Adding a genuinely read-only custom tool = add its name here. */
 const PLAN_ALLOWED_TOOLS = new Set([
   // read-only exploration built-ins
-  "read", "ls", "find", "grep", "glob",
+  "read",
+  "ls",
+  "find",
+  "grep",
+  "glob",
   // shells: additionally gated by the mutating-command heuristic below
-  "bash", "powershell",
+  "bash",
+  "powershell",
   // planning + interaction surface (session-scope, non-mutating)
-  "plan_save", "enter_plan_mode", "exit_plan_mode", "context_status",
-  "ask_user_question", "skills", "skill",
+  "plan_save",
+  "enter_plan_mode",
+  "exit_plan_mode",
+  "context_status",
+  "ask_user_question",
+  "skills",
+  "skill",
 ]);
 
 const PLAN_MODE_INSTRUCTIONS = `<collaboration_mode>
@@ -80,8 +95,7 @@ const APPROVED_HANDOFF =
 
 /** Codex's "clear context and implement" variant: the plan file becomes the
  *  source of user intent for a context that is about to be compacted. */
-const FRESH_CONTEXT_HANDOFF =
-  (path: string) =>
+const FRESH_CONTEXT_HANDOFF = (path: string) =>
   `User approved the plan and chose to implement in a FRESH context. Switched to EXECUTE mode and a context ` +
   `compaction is running. Treat the saved plan as the source of user intent: first read ${path}, write its steps ` +
   `into the todo list (mark exactly one in_progress), then implement step by step. Do not rely on details of the ` +
@@ -100,7 +114,9 @@ interface PlanModeEntryData {
 }
 
 /** Rebuild the mode from the branch's plan-mode entries (last wins). */
-export function reconstructPlanMode(entries: Iterable<{ type: string; customType?: string; data?: unknown }>): PlanMode {
+export function reconstructPlanMode(
+  entries: Iterable<{ type: string; customType?: string; data?: unknown }>,
+): PlanMode {
   let mode: PlanMode = "execute";
   for (const entry of entries) {
     if (entry.type !== "custom" || entry.customType !== PLAN_MODE_ENTRY_TYPE) continue;
@@ -122,9 +138,7 @@ const PLAN_REINJECT_MAX_CHARS = 8_000;
 /** True when the branch's last compaction postdates its last plan_save
  *  result — the LLM context no longer contains the plan, but the file on
  *  disk still does (ZCode's plan-file-continuity pattern). */
-export function compactionAfterLastPlanSave(
-  entries: Iterable<{ type?: string; message?: unknown }>,
-): boolean {
+export function compactionAfterLastPlanSave(entries: Iterable<{ type?: string; message?: unknown }>): boolean {
   let lastPlanSaveIdx = -1;
   let lastCompactionIdx = -1;
   let i = 0;
@@ -268,181 +282,221 @@ export function makePlanModeExtension(): InlineExtension {
       return undefined;
     });
 
-    pi.registerTool(defineTool({
-      name: "enter_plan_mode",
-      label: "Enter Plan Mode",
-      description:
-        "Switch this session to PLAN mode before starting work on a task that needs planning. While planning you " +
-        "explore read-only, save an implementation plan with plan_save, then request approval with exit_plan_mode. " +
-        "Mutating tools are blocked in PLAN mode. Do NOT enter for small single-file edits, quick lookups, or simple questions.",
-      promptSnippet: "enter_plan_mode — switch to read-only planning for multi-step/architectural tasks",
-      // 中文版备查（P0-2 决策：system prompt 统一纯英文）：
-      // 1) 任务涉及多个文件或模块、需要 3 步以上的有序实施、存在架构/接口/方案取舍、
-      //    或是高风险变更（重构、迁移、删除）时，在动手探索之前先进入；用户明确要求
-      //    先出计划时同样进入。
-      // 2) 不要为单文件小改动、查询/解释类请求、两步以内的琐事进入计划模式。
-      promptGuidelines: [
-        "Enter plan mode when the task clearly spans multiple files or modules, needs 3 or more ordered implementation steps, involves architecture/API/design trade-offs, or is a high-risk change (refactor, migration, deletion) — enter BEFORE exploring. Also enter when the user explicitly asks for a plan first.",
-        "Do NOT enter for single-file small edits, lookup/explanation requests, or trivial two-step chores — planning there only slows the response down.",
-      ],
-      parameters: Type.Object({}),
-      execute: async (_toolCallId, _params, _signal, _onUpdate, ctx) => {
-        if (mode === "plan") {
-          return { content: [textBlock("Already in PLAN mode. Explore, save the plan with plan_save, then call exit_plan_mode.")], details: { mode: "plan", changed: false } };
-        }
-        setMode("plan", pi, ctx);
-        return {
-          content: [
-            textBlock(
-              "Entered PLAN mode. Explore the task read-only (mutating tools are blocked), save the implementation " +
-                "plan with plan_save (context / recommended approach / `- [ ]` step checklist / verification), then " +
-                "call exit_plan_mode for user approval.",
-            ),
-          ],
-          details: { mode: "plan", changed: true },
-        };
-      },
-    }));
-
-    pi.registerTool(defineTool({
-      name: "exit_plan_mode",
-      label: "Exit Plan Mode",
-      description:
-        "Request user approval for the saved plan and switch back to EXECUTE mode. Only valid in PLAN mode and " +
-        "after the plan has been saved with plan_save. The user picks: implement now / implement in a fresh " +
-        "context (compaction runs; the saved plan becomes the source of intent) / give feedback (decline with " +
-        "revision notes — revise the plan accordingly and request again) / keep planning. On approval the " +
-        "agent starts implementing, first writing the plan steps into the todo list.",
-      promptSnippet: "exit_plan_mode — request plan approval and return to execution",
-      // 中文版备查：计划保存（plan_save）之后调用 exit_plan_mode 请求用户批准；
-      // 未经批准不要开始实施。用户选"反馈意见"时按回灌的具体意见修订计划后
-      // 再次请求；被拒或未响应时根据对话反馈修订后重试。
-      promptGuidelines: [
-        "After the plan is saved (plan_save), call exit_plan_mode to request user approval; never start implementing before approval. When the user declines with feedback, revise the plan to address every point and request approval again.",
-      ],
-      parameters: Type.Object({
-        summary: Type.Optional(
-          Type.String({ description: "One-line summary of the plan being submitted for approval (shown in the confirmation dialog)." }),
-        ),
-      }),
-      execute: async (_toolCallId, params, signal, _onUpdate, ctx) => {
-        if (mode !== "plan") {
-          return { content: [textBlock("Not in PLAN mode — nothing to exit. Use enter_plan_mode first if the task needs planning.")], details: { mode: "execute" }, isError: true };
-        }
-        const planPath = savedPlanPath(ctx);
-        if (!planPath) {
+    pi.registerTool(
+      defineTool({
+        name: "enter_plan_mode",
+        label: "Enter Plan Mode",
+        description:
+          "Switch this session to PLAN mode before starting work on a task that needs planning. While planning you " +
+          "explore read-only, save an implementation plan with plan_save, then request approval with exit_plan_mode. " +
+          "Mutating tools are blocked in PLAN mode. Do NOT enter for small single-file edits, quick lookups, or simple questions.",
+        promptSnippet: "enter_plan_mode — switch to read-only planning for multi-step/architectural tasks",
+        // 中文版备查（P0-2 决策：system prompt 统一纯英文）：
+        // 1) 任务涉及多个文件或模块、需要 3 步以上的有序实施、存在架构/接口/方案取舍、
+        //    或是高风险变更（重构、迁移、删除）时，在动手探索之前先进入；用户明确要求
+        //    先出计划时同样进入。
+        // 2) 不要为单文件小改动、查询/解释类请求、两步以内的琐事进入计划模式。
+        promptGuidelines: [
+          "Enter plan mode when the task clearly spans multiple files or modules, needs 3 or more ordered implementation steps, involves architecture/API/design trade-offs, or is a high-risk change (refactor, migration, deletion) — enter BEFORE exploring. Also enter when the user explicitly asks for a plan first.",
+          "Do NOT enter for single-file small edits, lookup/explanation requests, or trivial two-step chores — planning there only slows the response down.",
+        ],
+        parameters: Type.Object({}),
+        execute: async (_toolCallId, _params, _signal, _onUpdate, ctx) => {
+          if (mode === "plan") {
+            return {
+              content: [
+                textBlock("Already in PLAN mode. Explore, save the plan with plan_save, then call exit_plan_mode."),
+              ],
+              details: { mode: "plan", changed: false },
+            };
+          }
+          setMode("plan", pi, ctx);
           return {
             content: [
               textBlock(
-                "No plan saved yet for this session. Save the implementation plan with plan_save " +
-                  "(context / approach / `- [ ]` steps / verification) before calling exit_plan_mode.",
+                "Entered PLAN mode. Explore the task read-only (mutating tools are blocked), save the implementation " +
+                  "plan with plan_save (context / recommended approach / `- [ ]` step checklist / verification), then " +
+                  "call exit_plan_mode for user approval.",
               ),
             ],
-            details: { mode: "plan", approved: false, reason: "no-plan" },
-            isError: true,
+            details: { mode: "plan", changed: true },
           };
-        }
-        // Four-way approval over the blocking RPC UI channel (#8): implement
-        // now / implement in a fresh context (compact; the plan file becomes
-        // the source of intent — codex's clear-context handoff) / give
-        // feedback (decline-with-revision-notes, ZCode-style) / keep
-        // planning. NO timeout: the dialog waits for the user indefinitely
-        // (codex/CC/ZCode semantics — an absent user is not a rejection; the
-        // old 300s expiry fed "not approved" back to the model and trapped
-        // agents in a re-planning loop). Abort / dialog-dismissal keep
-        // planning, but the message says the user was ABSENT, not rejecting.
-        // A headless host (bench, print mode) has no human to ask — detect it
-        // via ctx.hasUI === false (the SDK's no-op UI still exposes callable
-        // select/confirm that silently decline, so checking for the method
-        // alone is not enough) and auto-approve as "implement now" there so
-        // the workflow can never dead-lock.
-        let choice: string | undefined;
-        let note = "";
-        if (ctx.hasUI === false || typeof ctx.ui?.select !== "function") {
-          choice = APPROVAL_CHOICE_IMPLEMENT;
-          note = "（当前宿主无交互确认 UI，自动批准）";
-        } else {
-          try {
-            choice = await ctx.ui.select(
-              "实施此计划？",
-              [APPROVAL_CHOICE_IMPLEMENT, APPROVAL_CHOICE_FRESH, APPROVAL_CHOICE_FEEDBACK, APPROVAL_CHOICE_STAY],
-              { signal },
-            );
-          } catch {
-            choice = undefined;
-            note = "（确认框异常）";
+        },
+      }),
+    );
+
+    pi.registerTool(
+      defineTool({
+        name: "exit_plan_mode",
+        label: "Exit Plan Mode",
+        description:
+          "Request user approval for the saved plan and switch back to EXECUTE mode. Only valid in PLAN mode and " +
+          "after the plan has been saved with plan_save. The user picks: implement now / implement in a fresh " +
+          "context (compaction runs; the saved plan becomes the source of intent) / give feedback (decline with " +
+          "revision notes — revise the plan accordingly and request again) / keep planning. On approval the " +
+          "agent starts implementing, first writing the plan steps into the todo list.",
+        promptSnippet: "exit_plan_mode — request plan approval and return to execution",
+        // 中文版备查：计划保存（plan_save）之后调用 exit_plan_mode 请求用户批准；
+        // 未经批准不要开始实施。用户选"反馈意见"时按回灌的具体意见修订计划后
+        // 再次请求；被拒或未响应时根据对话反馈修订后重试。
+        promptGuidelines: [
+          "After the plan is saved (plan_save), call exit_plan_mode to request user approval; never start implementing before approval. When the user declines with feedback, revise the plan to address every point and request approval again.",
+        ],
+        parameters: Type.Object({
+          summary: Type.Optional(
+            Type.String({
+              description:
+                "One-line summary of the plan being submitted for approval (shown in the confirmation dialog).",
+            }),
+          ),
+        }),
+        execute: async (_toolCallId, params, signal, _onUpdate, ctx) => {
+          if (mode !== "plan") {
+            return {
+              content: [
+                textBlock("Not in PLAN mode — nothing to exit. Use enter_plan_mode first if the task needs planning."),
+              ],
+              details: { mode: "execute" },
+              isError: true,
+            };
           }
-        }
-        if (choice === APPROVAL_CHOICE_FEEDBACK) {
-          // Free-text decline: the notes go back to the model verbatim —
-          // this is the revision loop fixed options cannot express.
-          let feedback = "";
-          if (typeof ctx.ui?.input === "function") {
+          const planPath = savedPlanPath(ctx);
+          if (!planPath) {
+            return {
+              content: [
+                textBlock(
+                  "No plan saved yet for this session. Save the implementation plan with plan_save " +
+                    "(context / approach / `- [ ]` steps / verification) before calling exit_plan_mode.",
+                ),
+              ],
+              details: { mode: "plan", approved: false, reason: "no-plan" },
+              isError: true,
+            };
+          }
+          // Four-way approval over the blocking RPC UI channel (#8): implement
+          // now / implement in a fresh context (compact; the plan file becomes
+          // the source of intent — codex's clear-context handoff) / give
+          // feedback (decline-with-revision-notes, ZCode-style) / keep
+          // planning. NO timeout: the dialog waits for the user indefinitely
+          // (codex/CC/ZCode semantics — an absent user is not a rejection; the
+          // old 300s expiry fed "not approved" back to the model and trapped
+          // agents in a re-planning loop). Abort / dialog-dismissal keep
+          // planning, but the message says the user was ABSENT, not rejecting.
+          // A headless host (bench, print mode) has no human to ask — detect it
+          // via ctx.hasUI === false (the SDK's no-op UI still exposes callable
+          // select/confirm that silently decline, so checking for the method
+          // alone is not enough) and auto-approve as "implement now" there so
+          // the workflow can never dead-lock.
+          let choice: string | undefined;
+          let note = "";
+          if (ctx.hasUI === false || typeof ctx.ui?.select !== "function") {
+            choice = APPROVAL_CHOICE_IMPLEMENT;
+            note = "（当前宿主无交互确认 UI，自动批准）";
+          } else {
             try {
-              feedback = ((await ctx.ui.input("对计划的修改意见：", "例如：第 2 步不要改公共接口，改用适配器…", { signal })) ?? "").trim();
+              choice = await ctx.ui.select(
+                "实施此计划？",
+                [APPROVAL_CHOICE_IMPLEMENT, APPROVAL_CHOICE_FRESH, APPROVAL_CHOICE_FEEDBACK, APPROVAL_CHOICE_STAY],
+                { signal },
+              );
             } catch {
-              feedback = "";
+              choice = undefined;
+              note = "（确认框异常）";
             }
           }
-          return {
-            content: [
-              textBlock(
-                feedback
-                  ? `用户未批准计划，并给出反馈：${feedback}\n仍在 PLAN 模式：按反馈逐条修订计划（plan_save 更新后再次调用 exit_plan_mode）。计划文件：${planPath}`
-                  : `用户选择了"反馈意见"但未填写内容。仍在 PLAN 模式：询问用户具体要调整哪些部分，或根据对话中的反馈修订计划（plan_save 更新后再次调用 exit_plan_mode）。计划文件：${planPath}`,
-              ),
-            ],
-            details: {
-              mode: "plan",
-              approved: false,
-              reason: feedback ? "declined-with-feedback" : "declined",
-              ...(feedback ? { feedback } : {}),
-            },
-          };
-        }
-        // The submitted plan rides along in the details so the WebUI tool
-        // card can render a preview + panel link without a server round-trip.
-        const planContent = (() => { try { return readFileSync(planPath, "utf8"); } catch { return ""; } })();
-        const planMarkdown = planContent.length > 20_000 ? `${planContent.slice(0, 20_000)}\n…(truncated)` : planContent;
-        if (choice !== APPROVAL_CHOICE_IMPLEMENT && choice !== APPROVAL_CHOICE_FRESH) {
-          // choice undefined = the dialog was dismissed or the run aborted —
-          // the user did NOT answer, so say exactly that. Attributing an
-          // absent user to rejection sent models into pointless re-planning.
-          const dismissed = choice === undefined;
-          return {
-            content: [
-              textBlock(
-                (dismissed
-                  ? `用户关闭了确认框、尚未作出选择（这不代表拒绝）${note}。仍在 PLAN 模式：等待用户回复后再次调用 exit_plan_mode，或根据对话上下文完善计划`
-                  : `用户选择继续规划${note}。仍在 PLAN 模式：根据对话中的反馈修订计划`) +
-                  `（plan_save 更新后可再次调用 exit_plan_mode）；用户也可随时用 /plan-exit 手动切换到执行模式。计划文件：${planPath}`,
-              ),
-            ],
-            details: { mode: "plan", approved: false, reason: dismissed ? "dismissed" : "declined", planPath, planMarkdown },
-          };
-        }
-        setMode("execute", pi, ctx);
-        if (choice === APPROVAL_CHOICE_FRESH) {
-          // Fire-and-forget: pi queues the compaction safely relative to the
-          // running tool batch; the handoff tells the model not to lean on
-          // pre-approval context either way.
-          try {
-            ctx.compact();
-          } catch {
-            // compaction is an optimization of the fresh-context choice, not
-            // a requirement — the plan-driven handoff works without it.
+          if (choice === APPROVAL_CHOICE_FEEDBACK) {
+            // Free-text decline: the notes go back to the model verbatim —
+            // this is the revision loop fixed options cannot express.
+            let feedback = "";
+            if (typeof ctx.ui?.input === "function") {
+              try {
+                feedback = (
+                  (await ctx.ui.input("对计划的修改意见：", "例如：第 2 步不要改公共接口，改用适配器…", { signal })) ??
+                  ""
+                ).trim();
+              } catch {
+                feedback = "";
+              }
+            }
+            return {
+              content: [
+                textBlock(
+                  feedback
+                    ? `用户未批准计划，并给出反馈：${feedback}\n仍在 PLAN 模式：按反馈逐条修订计划（plan_save 更新后再次调用 exit_plan_mode）。计划文件：${planPath}`
+                    : `用户选择了"反馈意见"但未填写内容。仍在 PLAN 模式：询问用户具体要调整哪些部分，或根据对话中的反馈修订计划（plan_save 更新后再次调用 exit_plan_mode）。计划文件：${planPath}`,
+                ),
+              ],
+              details: {
+                mode: "plan",
+                approved: false,
+                reason: feedback ? "declined-with-feedback" : "declined",
+                ...(feedback ? { feedback } : {}),
+              },
+            };
+          }
+          // The submitted plan rides along in the details so the WebUI tool
+          // card can render a preview + panel link without a server round-trip.
+          const planContent = (() => {
+            try {
+              return readFileSync(planPath, "utf8");
+            } catch {
+              return "";
+            }
+          })();
+          const planMarkdown =
+            planContent.length > 20_000 ? `${planContent.slice(0, 20_000)}\n…(truncated)` : planContent;
+          if (choice !== APPROVAL_CHOICE_IMPLEMENT && choice !== APPROVAL_CHOICE_FRESH) {
+            // choice undefined = the dialog was dismissed or the run aborted —
+            // the user did NOT answer, so say exactly that. Attributing an
+            // absent user to rejection sent models into pointless re-planning.
+            const dismissed = choice === undefined;
+            return {
+              content: [
+                textBlock(
+                  (dismissed
+                    ? `用户关闭了确认框、尚未作出选择（这不代表拒绝）${note}。仍在 PLAN 模式：等待用户回复后再次调用 exit_plan_mode，或根据对话上下文完善计划`
+                    : `用户选择继续规划${note}。仍在 PLAN 模式：根据对话中的反馈修订计划`) +
+                    `（plan_save 更新后可再次调用 exit_plan_mode）；用户也可随时用 /plan-exit 手动切换到执行模式。计划文件：${planPath}`,
+                ),
+              ],
+              details: {
+                mode: "plan",
+                approved: false,
+                reason: dismissed ? "dismissed" : "declined",
+                planPath,
+                planMarkdown,
+              },
+            };
+          }
+          setMode("execute", pi, ctx);
+          if (choice === APPROVAL_CHOICE_FRESH) {
+            // Fire-and-forget: pi queues the compaction safely relative to the
+            // running tool batch; the handoff tells the model not to lean on
+            // pre-approval context either way.
+            try {
+              ctx.compact();
+            } catch {
+              // compaction is an optimization of the fresh-context choice, not
+              // a requirement — the plan-driven handoff works without it.
+            }
+            return {
+              content: [textBlock(FRESH_CONTEXT_HANDOFF(planPath))],
+              details: { mode: "execute", approved: true, freshContext: true, planPath, planMarkdown },
+            };
           }
           return {
-            content: [textBlock(FRESH_CONTEXT_HANDOFF(planPath))],
-            details: { mode: "execute", approved: true, freshContext: true, planPath, planMarkdown },
+            content: [textBlock(note ? `${APPROVED_HANDOFF}${note}` : APPROVED_HANDOFF)],
+            details: {
+              mode: "execute",
+              approved: true,
+              planPath,
+              planMarkdown,
+              ...(note ? { autoApproved: true } : {}),
+            },
           };
-        }
-        return {
-          content: [textBlock(note ? `${APPROVED_HANDOFF}${note}` : APPROVED_HANDOFF)],
-          details: { mode: "execute", approved: true, planPath, planMarkdown, ...(note ? { autoApproved: true } : {}) },
-        };
-      },
-    }));
+        },
+      }),
+    );
 
     pi.registerCommand("plan", {
       description: "进入 PLAN 模式（只读规划）",

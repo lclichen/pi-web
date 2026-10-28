@@ -12,9 +12,7 @@ const { TurnWrittenFiles } = await jiti.import("./TurnWrittenFiles.tsx");
 const { I18nProvider } = await jiti.import("@/hooks/useI18n");
 
 function render(props) {
-  return renderToStaticMarkup(
-    React.createElement(I18nProvider, null, React.createElement(TurnWrittenFiles, props)),
-  );
+  return renderToStaticMarkup(React.createElement(I18nProvider, null, React.createElement(TurnWrittenFiles, props)));
 }
 
 test("renders a button per file showing the basename and full path", () => {

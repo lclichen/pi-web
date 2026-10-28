@@ -60,7 +60,14 @@ function modelOptionValue(provider: string, modelId: string): string {
   return JSON.stringify([provider, modelId]);
 }
 
-const emptyDraft: Draft = { name: "", description: "", systemPrompt: "", modelProvider: "", modelId: "", mcpServers: [] };
+const emptyDraft: Draft = {
+  name: "",
+  description: "",
+  systemPrompt: "",
+  modelProvider: "",
+  modelId: "",
+  mcpServers: [],
+};
 
 function toDraft(t: QuickTemplate): Draft {
   return {
@@ -76,17 +83,25 @@ function toDraft(t: QuickTemplate): Draft {
 // 草稿是否有未保存修改：新建态与任意非空字段比较；编辑态与所选模板快照逐字段比较。
 function isDraftDirty(creating: boolean, draft: Draft, selected: QuickTemplate | null): boolean {
   if (creating) {
-    return draft.name !== "" || draft.description !== "" || draft.systemPrompt !== ""
-      || draft.modelProvider !== "" || draft.modelId !== "" || draft.mcpServers.length > 0;
+    return (
+      draft.name !== "" ||
+      draft.description !== "" ||
+      draft.systemPrompt !== "" ||
+      draft.modelProvider !== "" ||
+      draft.modelId !== "" ||
+      draft.mcpServers.length > 0
+    );
   }
   if (!selected) return false;
   const base = toDraft(selected);
-  return draft.name !== base.name
-    || draft.description !== base.description
-    || draft.systemPrompt !== base.systemPrompt
-    || draft.modelProvider !== base.modelProvider
-    || draft.modelId !== base.modelId
-    || draft.mcpServers.join("\n") !== base.mcpServers.join("\n");
+  return (
+    draft.name !== base.name ||
+    draft.description !== base.description ||
+    draft.systemPrompt !== base.systemPrompt ||
+    draft.modelProvider !== base.modelProvider ||
+    draft.modelId !== base.modelId ||
+    draft.mcpServers.join("\n") !== base.mcpServers.join("\n")
+  );
 }
 
 export function QuickTemplatesConfig({ embedded = false }: { embedded?: boolean }) {
@@ -131,7 +146,9 @@ export function QuickTemplatesConfig({ embedded = false }: { embedded?: boolean 
     }
   }, []);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   // 可选模型列表：从全局模型配置拉取，模板编辑用下拉直接选择，
   // 取代手填 provider/modelId（手填拼写对不上时保存报错，是"模型ID
@@ -144,13 +161,17 @@ export function QuickTemplatesConfig({ embedded = false }: { embedded?: boolean 
         if (!res.ok) return;
         const data = (await res.json()) as { modelList?: ModelOption[] };
         if (!cancelled && Array.isArray(data.modelList)) {
-          setModelOptions(data.modelList.filter((m) => m && typeof m.id === "string" && typeof m.provider === "string"));
+          setModelOptions(
+            data.modelList.filter((m) => m && typeof m.id === "string" && typeof m.provider === "string"),
+          );
         }
       } catch {
         // 列表拉不到时下面仍渲染手填输入，功能不回退
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // 已配置的 MCP 服务器名（/api/mcp 的 servers 列表）——白名单多选数据源；
@@ -164,14 +185,21 @@ export function QuickTemplatesConfig({ embedded = false }: { embedded?: boolean 
         const data = (await res.json()) as { servers?: Array<{ name?: string }> };
         if (!cancelled && Array.isArray(data.servers)) {
           const all = data.servers
-            .map((s: { name?: string; scope?: string }) => ({ name: typeof s?.name === "string" ? s.name : "", scope: typeof s?.scope === "string" ? s.scope : "" }))
+            .map((s: { name?: string; scope?: string }) => ({
+              name: typeof s?.name === "string" ? s.name : "",
+              scope: typeof s?.scope === "string" ? s.scope : "",
+            }))
             .filter((x) => x.name.length > 0);
           setMcpServerNames(all.map((x) => x.name));
           setQuickScopedServers(new Set(all.filter((x) => x.scope === "quick").map((x) => x.name)));
         }
-      } catch { /* 忽略：退回手填 */ }
+      } catch {
+        /* 忽略：退回手填 */
+      }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // 切换/新建前，若有未保存草稿先请求放弃确认（此前是无声丢弃）。
@@ -233,18 +261,24 @@ export function QuickTemplatesConfig({ embedded = false }: { embedded?: boolean 
       };
       const res = creating
         ? await fetch("/api/quick-templates", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        })
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          })
         : await fetch("/api/quick-templates", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id: selectedId, template: payload }),
-        });
-      const data = (await res.json()) as { template?: QuickTemplate; errors?: Array<{ field: string; reason: string }>; error?: string };
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: selectedId, template: payload }),
+          });
+      const data = (await res.json()) as {
+        template?: QuickTemplate;
+        errors?: Array<{ field: string; reason: string }>;
+        error?: string;
+      };
       if (!res.ok) {
-        throw new Error(data.errors?.map((e) => `${e.field}: ${e.reason}`).join("；") ?? data.error ?? `HTTP ${res.status}`);
+        throw new Error(
+          data.errors?.map((e) => `${e.field}: ${e.reason}`).join("；") ?? data.error ?? `HTTP ${res.status}`,
+        );
       }
       await load();
       setFormMsg(creating ? t("quickTemplates.templateCreated") : t("quickTemplates.templateSaved"));
@@ -284,25 +318,40 @@ export function QuickTemplatesConfig({ embedded = false }: { embedded?: boolean 
   };
 
   return (
-    <ConfigPanelShell embedded={embedded} title={t("quickTemplates.quickSessionTemplates")} closeLabel={t("i18n.close")} onClose={() => {}}>
-
+    <ConfigPanelShell
+      embedded={embedded}
+      title={t("quickTemplates.quickSessionTemplates")}
+      closeLabel={t("i18n.close")}
+      onClose={() => {}}
+    >
       {/* Body */}
       <ConfigSplitView>
         {/* Left: template list（与模型页同构：列表 + 左下角新建） */}
         <ConfigSidebar>
           <ConfigSidebarList>
-            {loading ? <div className="config-sidebar-message">{t("quickTemplates.loading")}</div>
-            : error ? <div className="config-sidebar-message is-error">{error}</div>
-            : templates.length === 0 ? <div className="config-sidebar-message is-empty">{t("quickTemplates.emptyList")}</div>
-            : templates.map((tpl) => (
-              <ConfigSidebarItem key={tpl.id} active={!creating && selectedId === tpl.id} onClick={() => void selectTemplate(tpl)}>
-                <ConfigSidebarText className="is-grow">{tpl.name}</ConfigSidebarText>
-                {tpl.builtin && <span className="config-scope-tag is-project">{t("quickTemplates.default")}</span>}
-              </ConfigSidebarItem>
-            ))}
+            {loading ? (
+              <div className="config-sidebar-message">{t("quickTemplates.loading")}</div>
+            ) : error ? (
+              <div className="config-sidebar-message is-error">{error}</div>
+            ) : templates.length === 0 ? (
+              <div className="config-sidebar-message is-empty">{t("quickTemplates.emptyList")}</div>
+            ) : (
+              templates.map((tpl) => (
+                <ConfigSidebarItem
+                  key={tpl.id}
+                  active={!creating && selectedId === tpl.id}
+                  onClick={() => void selectTemplate(tpl)}
+                >
+                  <ConfigSidebarText className="is-grow">{tpl.name}</ConfigSidebarText>
+                  {tpl.builtin && <span className="config-scope-tag is-project">{t("quickTemplates.default")}</span>}
+                </ConfigSidebarItem>
+              ))
+            )}
           </ConfigSidebarList>
           {/* 新建入口固定在侧栏左下角（与模型页「添加 Provider」一致） */}
-          <ConfigListAction onClick={() => void startCreate()} active={creating}>{t("quickTemplates.newTemplate")}</ConfigListAction>
+          <ConfigListAction onClick={() => void startCreate()} active={creating}>
+            {t("quickTemplates.newTemplate")}
+          </ConfigListAction>
         </ConfigSidebar>
 
         {/* Right: detail / form */}
@@ -314,30 +363,57 @@ export function QuickTemplatesConfig({ embedded = false }: { embedded?: boolean 
               <>
                 <ConfigDetailHeader>
                   <ConfigDetailHeaderInfo>
-                    <ConfigDetailTitle>{creating ? t("quickTemplates.newTemplate") : draft.name || selected?.name}</ConfigDetailTitle>
-                    {selected?.builtin && <span className="config-scope-tag is-project">{t("quickTemplates.defaultDeletable")}</span>}
+                    <ConfigDetailTitle>
+                      {creating ? t("quickTemplates.newTemplate") : draft.name || selected?.name}
+                    </ConfigDetailTitle>
+                    {selected?.builtin && (
+                      <span className="config-scope-tag is-project">{t("quickTemplates.defaultDeletable")}</span>
+                    )}
                   </ConfigDetailHeaderInfo>
                   <ConfigDetailActions>
                     {!creating && selected && !selected.builtin && (
-                      <ConfigButton variant="danger" size="small" onClick={() => void remove(selected)} disabled={saving}>{t("common.delete")}</ConfigButton>
+                      <ConfigButton
+                        variant="danger"
+                        size="small"
+                        onClick={() => void remove(selected)}
+                        disabled={saving}
+                      >
+                        {t("common.delete")}
+                      </ConfigButton>
                     )}
                   </ConfigDetailActions>
                 </ConfigDetailHeader>
 
                 <ConfigField label={t("quickTemplates.templateNameUserVisibleE")}>
-                  <input className="config-input" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} maxLength={60} />
+                  <input
+                    className="config-input"
+                    value={draft.name}
+                    onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+                    maxLength={60}
+                  />
                 </ConfigField>
                 <ConfigField label={t("common.descriptionOptional")}>
-                  <input className="config-input" value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} maxLength={300} />
+                  <input
+                    className="config-input"
+                    value={draft.description}
+                    onChange={(e) => setDraft({ ...draft, description: e.target.value })}
+                    maxLength={300}
+                  />
                 </ConfigField>
                 <ConfigField label={t("quickTemplates.systemPrompt")}>
-                  <textarea className="config-input is-mono config-textarea" value={draft.systemPrompt} onChange={(e) => setDraft({ ...draft, systemPrompt: e.target.value })} />
+                  <textarea
+                    className="config-input is-mono config-textarea"
+                    value={draft.systemPrompt}
+                    onChange={(e) => setDraft({ ...draft, systemPrompt: e.target.value })}
+                  />
                 </ConfigField>
                 {modelOptions.length > 0 ? (
                   <ConfigField label={t("quickTemplates.modelOptionalPick")}>
                     <select
                       className="config-input is-mono"
-                      value={draft.modelProvider && draft.modelId ? modelOptionValue(draft.modelProvider, draft.modelId) : ""}
+                      value={
+                        draft.modelProvider && draft.modelId ? modelOptionValue(draft.modelProvider, draft.modelId) : ""
+                      }
                       onChange={(e) => {
                         if (!e.target.value) {
                           setDraft({ ...draft, modelProvider: "", modelId: "" });
@@ -346,13 +422,18 @@ export function QuickTemplatesConfig({ embedded = false }: { embedded?: boolean 
                         try {
                           const [provider, modelId] = JSON.parse(e.target.value) as [string, string];
                           setDraft({ ...draft, modelProvider: provider, modelId });
-                      } catch { /* 非法选项值按清空处理 */ }
-                    }}
+                        } catch {
+                          /* 非法选项值按清空处理 */
+                        }
+                      }}
                     >
                       <option value="">{t("quickTemplates.modelFollowDefault")}</option>
-                      {((draft.modelProvider.trim() && draft.modelId.trim()
-                        && !modelOptions.some((m) => m.provider === draft.modelProvider && m.id === draft.modelId))
-                        ? ([{ id: draft.modelId, name: draft.modelId, provider: draft.modelProvider }] as ModelOption[]).concat(modelOptions)
+                      {(draft.modelProvider.trim() &&
+                      draft.modelId.trim() &&
+                      !modelOptions.some((m) => m.provider === draft.modelProvider && m.id === draft.modelId)
+                        ? (
+                            [{ id: draft.modelId, name: draft.modelId, provider: draft.modelProvider }] as ModelOption[]
+                          ).concat(modelOptions)
                         : modelOptions
                       ).map((m) => (
                         <option key={`${m.provider}/${m.id}`} value={modelOptionValue(m.provider, m.id)}>
@@ -364,10 +445,20 @@ export function QuickTemplatesConfig({ embedded = false }: { embedded?: boolean 
                 ) : (
                   <div style={{ display: "flex", gap: 10 }}>
                     <ConfigField label={t("quickTemplates.modelProviderOptionalEG")} style={{ flex: 1 }}>
-                      <input className="config-input is-mono" value={draft.modelProvider} onChange={(e) => setDraft({ ...draft, modelProvider: e.target.value })} placeholder={t("quickTemplates.defaultsUsersCurrentModel")} />
+                      <input
+                        className="config-input is-mono"
+                        value={draft.modelProvider}
+                        onChange={(e) => setDraft({ ...draft, modelProvider: e.target.value })}
+                        placeholder={t("quickTemplates.defaultsUsersCurrentModel")}
+                      />
                     </ConfigField>
                     <ConfigField label={t("quickTemplates.modelIdOptional")} style={{ flex: 1 }}>
-                      <input className="config-input is-mono" value={draft.modelId} onChange={(e) => setDraft({ ...draft, modelId: e.target.value })} placeholder="Qwen/Qwen3.5-27B" />
+                      <input
+                        className="config-input is-mono"
+                        value={draft.modelId}
+                        onChange={(e) => setDraft({ ...draft, modelId: e.target.value })}
+                        placeholder="Qwen/Qwen3.5-27B"
+                      />
                     </ConfigField>
                   </div>
                 )}
@@ -377,11 +468,7 @@ export function QuickTemplatesConfig({ embedded = false }: { embedded?: boolean 
                       {mcpServerNames.map((server: string) => {
                         const checked = draft.mcpServers.includes(server);
                         return (
-                          <label
-                            key={server}
-                            className="quick-mcp-chip"
-                            data-checked={checked}
-                          >
+                          <label key={server} className="quick-mcp-chip" data-checked={checked}>
                             <input
                               type="checkbox"
                               checked={checked}
@@ -394,20 +481,33 @@ export function QuickTemplatesConfig({ embedded = false }: { embedded?: boolean 
                                 });
                               }}
                             />
-                            {server}{quickScopedServers.has(server) ? " ⚡" : ""}
+                            {server}
+                            {quickScopedServers.has(server) ? " ⚡" : ""}
                           </label>
                         );
                       })}
                       {mcpServerNames.length === 0 && (
-                        <span style={{ alignSelf: "center", fontSize: 11, color: "var(--text-dim)" }}>{t("quickTemplates.mcpNoServers")}</span>
+                        <span style={{ alignSelf: "center", fontSize: 11, color: "var(--text-dim)" }}>
+                          {t("quickTemplates.mcpNoServers")}
+                        </span>
                       )}
-                      <span style={{ alignSelf: "center", fontSize: 11, color: "var(--text-dim)" }}>{t("quickTemplates.mcpAllowlistEmptyMeansAll")}</span>
+                      <span style={{ alignSelf: "center", fontSize: 11, color: "var(--text-dim)" }}>
+                        {t("quickTemplates.mcpAllowlistEmptyMeansAll")}
+                      </span>
                     </div>
                   ) : (
                     <input
                       className="config-input is-mono"
                       value={draft.mcpServers.join(", ")}
-                      onChange={(e) => setDraft({ ...draft, mcpServers: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) })}
+                      onChange={(e) =>
+                        setDraft({
+                          ...draft,
+                          mcpServers: e.target.value
+                            .split(",")
+                            .map((s) => s.trim())
+                            .filter(Boolean),
+                        })
+                      }
                       placeholder="weather, db-query"
                     />
                   )}
@@ -419,13 +519,15 @@ export function QuickTemplatesConfig({ embedded = false }: { embedded?: boolean 
       </ConfigSplitView>
 
       {/* Footer：状态 + 右下角操作（与模型页一致） */}
-      <ConfigFooter status={
-        <>
-          {error && <span style={{ color: "var(--danger)" }}>{error}</span>}
-          {formError && <span style={{ color: "var(--danger)" }}>{formError}</span>}
-          {formMsg && !formError && <span style={{ color: "var(--accent)" }}>{formMsg}</span>}
-        </>
-      }>
+      <ConfigFooter
+        status={
+          <>
+            {error && <span style={{ color: "var(--danger)" }}>{error}</span>}
+            {formError && <span style={{ color: "var(--danger)" }}>{formError}</span>}
+            {formMsg && !formError && <span style={{ color: "var(--accent)" }}>{formMsg}</span>}
+          </>
+        }
+      >
         {showForm && (
           <>
             <ConfigButton onClick={cancel}>{t("common.cancel")}</ConfigButton>

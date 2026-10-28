@@ -6,20 +6,22 @@
    runtime never need to reach Google Fonts — works in offline / intranet
    environments. The two subsets mirror the previous next/font/google config. */
 @font-face {
-  font-family: 'Noto Sans Mono';
+  font-family: "Noto Sans Mono";
   font-style: normal;
   font-weight: 100 900;
   font-display: swap;
-  src: url('/fonts/noto-sans-mono-cyrillic.woff2') format('woff2');
+  src: url("/fonts/noto-sans-mono-cyrillic.woff2") format("woff2");
   unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
 }
 @font-face {
-  font-family: 'Noto Sans Mono';
+  font-family: "Noto Sans Mono";
   font-style: normal;
   font-weight: 100 900;
   font-display: swap;
-  src: url('/fonts/noto-sans-mono-latin.woff2') format('woff2');
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+  src: url("/fonts/noto-sans-mono-latin.woff2") format("woff2");
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC,
+    U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
 @theme {
@@ -54,7 +56,7 @@
   --user-bg: #eff6ff;
   --assistant-bg: #ffffff;
   --tool-bg: #f9fafb;
-  --bg-subtle: rgba(0,0,0,0.03);
+  --bg-subtle: rgba(0, 0, 0, 0.03);
   /* Status colors. --success must carry white text on a filled badge in light
      mode, so use green-600 (not the brighter green-500) here. */
   --success: #16a34a;
@@ -78,7 +80,7 @@ html.dark {
   --user-bg: #1e293b;
   --assistant-bg: #1a1a1a;
   --tool-bg: #1f2937;
-  --bg-subtle: rgba(255,255,255,0.04);
+  --bg-subtle: rgba(255, 255, 255, 0.04);
   --success: #22c55e;
   --danger: #f87171;
   --warning: #f59e0b;
@@ -138,7 +140,8 @@ html.dark .catppuccin-file-icon {
   box-sizing: border-box;
 }
 
-html, body {
+html,
+body {
   width: 100%;
   height: 100vh;
   height: 100dvh;
@@ -148,7 +151,7 @@ html, body {
   overflow: hidden;
   background: var(--bg);
   color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   font-size: 14px;
   overscroll-behavior: none;
 }
@@ -202,9 +205,13 @@ body {
   background: #facc15;
 }
 
-.terminal-status-dot.is-ready { background: #4ade80; }
+.terminal-status-dot.is-ready {
+  background: #4ade80;
+}
 .terminal-status-dot.is-exited,
-.terminal-status-dot.is-error { background: #f87171; }
+.terminal-status-dot.is-error {
+  background: #f87171;
+}
 
 .terminal-panel-header button {
   display: inline-flex;
@@ -274,7 +281,6 @@ body {
   background: var(--border);
   border-radius: 2px;
 }
-
 
 .extension-status-shelf {
   display: flex;
@@ -385,13 +391,19 @@ body {
 }
 
 @keyframes extension-widget-update-pulse {
-  from { opacity: 0.18; }
-  to { opacity: 0.06; }
+  from {
+    opacity: 0.18;
+  }
+  to {
+    opacity: 0.06;
+  }
 }
 
 button.extension-widget-trigger {
   cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
 
 button.extension-widget-trigger:hover,
@@ -502,10 +514,13 @@ button.extension-widget-trigger:focus-visible {
 }
 
 :root {
-  --font-mono: 'Noto Sans Mono', 'JetBrains Mono', 'Fira Code', 'Consolas', ui-monospace, 'PingFang SC', 'Microsoft YaHei', monospace;
+  --font-mono:
+    "Noto Sans Mono", "JetBrains Mono", "Fira Code", "Consolas", ui-monospace, "PingFang SC", "Microsoft YaHei",
+    monospace;
 }
 
-pre, code {
+pre,
+code {
   font-family: var(--font-mono);
 }
 
@@ -523,28 +538,53 @@ pre, code {
   color: var(--text);
   word-break: break-word;
 }
-.markdown-body p { margin: 0 0 8px; }
-.markdown-body p:last-child { margin-bottom: 0; }
-.markdown-body h1, .markdown-body h2, .markdown-body h3,
-.markdown-body h4, .markdown-body h5, .markdown-body h6 {
+.markdown-body p {
+  margin: 0 0 8px;
+}
+.markdown-body p:last-child {
+  margin-bottom: 0;
+}
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 {
   font-weight: 600;
   margin: 10px 0 5px;
   color: var(--text);
   line-height: 1.35;
   letter-spacing: 0;
 }
-.markdown-body h1 { font-size: 1.16em; }
-.markdown-body h2 { font-size: 1.08em; }
-.markdown-body h3 { font-size: 0.98em; color: color-mix(in srgb, var(--text) 88%, var(--text-muted)); }
-.markdown-body ul, .markdown-body ol {
+.markdown-body h1 {
+  font-size: 1.16em;
+}
+.markdown-body h2 {
+  font-size: 1.08em;
+}
+.markdown-body h3 {
+  font-size: 0.98em;
+  color: color-mix(in srgb, var(--text) 88%, var(--text-muted));
+}
+.markdown-body ul,
+.markdown-body ol {
   padding-left: 22px;
   margin: 5px 0 8px;
   list-style-position: outside;
 }
-.markdown-body li { margin: 3px 0; padding-left: 2px; }
-.markdown-body ul > li { list-style-type: disc; }
-.markdown-body ol > li { list-style-type: decimal; }
-.markdown-body li > p { margin: 0; }
+.markdown-body li {
+  margin: 3px 0;
+  padding-left: 2px;
+}
+.markdown-body ul > li {
+  list-style-type: disc;
+}
+.markdown-body ol > li {
+  list-style-type: decimal;
+}
+.markdown-body li > p {
+  margin: 0;
+}
 .markdown-body li::marker {
   color: color-mix(in srgb, var(--accent) 72%, var(--text-muted));
   font-weight: 600;
@@ -553,7 +593,9 @@ pre, code {
   color: color-mix(in srgb, var(--text) 88%, var(--accent));
   font-weight: 700;
 }
-.markdown-body em { color: var(--text-muted); }
+.markdown-body em {
+  color: var(--text-muted);
+}
 .markdown-body a {
   color: var(--accent);
   text-decoration: underline;
@@ -561,7 +603,9 @@ pre, code {
   text-underline-offset: 3px;
   text-decoration-color: color-mix(in srgb, var(--accent) 45%, transparent);
 }
-.markdown-body a:hover { text-decoration-color: var(--accent); }
+.markdown-body a:hover {
+  text-decoration-color: var(--accent);
+}
 .markdown-body img {
   display: block;
   max-width: 100%;
@@ -587,7 +631,9 @@ pre, code {
   position: relative;
   padding-left: 25px;
 }
-.markdown-body .task-list-item::marker { content: ""; }
+.markdown-body .task-list-item::marker {
+  content: "";
+}
 .markdown-body .task-list-item > input[type="checkbox"],
 .markdown-body .task-list-item > p:first-child > input[type="checkbox"]:first-child {
   appearance: none;
@@ -639,21 +685,28 @@ pre, code {
   min-width: 100%;
   font-size: calc(13px + var(--chat-font-size-offset, 0px));
 }
-.markdown-table-wrap > table { width: max-content; }
-.markdown-body th, .markdown-body td {
+.markdown-table-wrap > table {
+  width: max-content;
+}
+.markdown-body th,
+.markdown-body td {
   border: 0;
   border-bottom: 1px solid var(--border);
   padding: 6px 10px;
   text-align: left;
   vertical-align: top;
 }
-.markdown-body tr:last-child td { border-bottom: 0; }
+.markdown-body tr:last-child td {
+  border-bottom: 0;
+}
 .markdown-body th {
   background: var(--bg-panel);
   color: color-mix(in srgb, var(--text) 88%, var(--text-muted));
   font-weight: 650;
 }
-.markdown-body tbody tr:nth-child(even) td { background: var(--bg-subtle); }
+.markdown-body tbody tr:nth-child(even) td {
+  background: var(--bg-subtle);
+}
 .markdown-body hr {
   border: none;
   height: 1px;
@@ -676,7 +729,9 @@ pre, code {
 .markdown-custom-message {
   line-height: 1.32;
 }
-.markdown-custom-message p { margin: 0; }
+.markdown-custom-message p {
+  margin: 0;
+}
 .markdown-custom-message h1,
 .markdown-custom-message h2,
 .markdown-custom-message h3,
@@ -690,7 +745,9 @@ pre, code {
 .markdown-custom-message ol {
   margin: 2px 0 3px;
 }
-.markdown-custom-message li { margin: 0; }
+.markdown-custom-message li {
+  margin: 0;
+}
 .markdown-custom-message blockquote {
   margin: 3px 0;
   padding: 4px 8px;
@@ -703,7 +760,9 @@ pre, code {
 .markdown-compaction-message {
   line-height: 1.5;
 }
-.markdown-compaction-message p { margin: 0 0 7px; }
+.markdown-compaction-message p {
+  margin: 0 0 7px;
+}
 .markdown-compaction-message h1,
 .markdown-compaction-message h2,
 .markdown-compaction-message h3,
@@ -717,7 +776,9 @@ pre, code {
 .markdown-compaction-message ol {
   margin: 4px 0 8px;
 }
-.markdown-compaction-message li { margin: 2px 0; }
+.markdown-compaction-message li {
+  margin: 2px 0;
+}
 .markdown-compaction-message .markdown-table-wrap,
 .markdown-compaction-message .markdown-code-block {
   margin: 6px 0;
@@ -912,7 +973,9 @@ pre, code {
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.28);
   cursor: pointer;
   touch-action: manipulation;
-  transition: background-color 0.12s, color 0.12s;
+  transition:
+    background-color 0.12s,
+    color 0.12s;
 }
 
 .image-preview-close:hover {
@@ -1297,10 +1360,18 @@ pre, code {
 }
 
 /* File viewer markdown preview — larger headings */
-.markdown-file-preview h1 { font-size: 1.8em; }
-.markdown-file-preview h2 { font-size: 1.4em; }
-.markdown-file-preview h3 { font-size: 1.15em; }
-.markdown-file-preview p { margin: 0 0 12px; }
+.markdown-file-preview h1 {
+  font-size: 1.8em;
+}
+.markdown-file-preview h2 {
+  font-size: 1.4em;
+}
+.markdown-file-preview h3 {
+  font-size: 1.15em;
+}
+.markdown-file-preview p {
+  margin: 0 0 12px;
+}
 .markdown-file-preview pre {
   background: var(--bg-panel);
   border: 1px solid var(--border);
@@ -1394,38 +1465,76 @@ span.token.table {
 }
 
 @keyframes drop-zone-in {
-  from { opacity: 0; transform: scale(0.97); }
-  to   { opacity: 1; transform: scale(1); }
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 @keyframes drop-icon-float {
-  0%, 100% { transform: translateY(0px); }
-  50%       { transform: translateY(-6px); }
+  0%,
+  100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
 }
 
 @keyframes drop-ring-pulse {
-  0%, 100% { opacity: 0.5; transform: scale(1); }
-  50%       { opacity: 1;   transform: scale(1.06); }
+  0%,
+  100% {
+    opacity: 0.5;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.06);
+  }
 }
 
 @keyframes drop-ripple {
-  0%   { transform: scale(0); opacity: 0.6; }
-  100% { transform: scale(1); opacity: 0; }
+  0% {
+    transform: scale(0);
+    opacity: 0.6;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 0;
+  }
 }
 
 @keyframes blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.3; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
 }
 
 @keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
 }
 
 @keyframes notice-shelf-in {
@@ -1528,7 +1637,9 @@ span.token.table {
   .sidebar-container {
     position: relative;
     overflow: hidden;
-    transition: width 0.2s ease, min-width 0.2s ease;
+    transition:
+      width 0.2s ease,
+      min-width 0.2s ease;
   }
   .sidebar-container.sidebar-open {
     width: var(--sidebar-width, 260px);
@@ -1554,7 +1665,9 @@ span.token.table {
 @media (min-width: 960px) {
   .right-panel-container {
     overflow: hidden;
-    transition: width 0.2s ease, min-width 0.2s ease;
+    transition:
+      width 0.2s ease,
+      min-width 0.2s ease;
     flex-shrink: 0;
   }
   .right-panel-container.right-panel-open {
@@ -1676,11 +1789,13 @@ span.token.table {
     width: 280px;
     max-width: 85vw;
     height: var(--app-viewport-height, 100dvh);
-    transition: transform 0.25s ease, box-shadow 0.25s ease;
+    transition:
+      transform 0.25s ease,
+      box-shadow 0.25s ease;
   }
   .sidebar-container.sidebar-open {
     transform: translateX(0);
-    box-shadow: 4px 0 20px rgba(0,0,0,0.15);
+    box-shadow: 4px 0 20px rgba(0, 0, 0, 0.15);
   }
   .sidebar-container.sidebar-closed {
     transform: translateX(calc(-100% - env(safe-area-inset-left)));
@@ -1829,8 +1944,13 @@ span.token.table {
   animation: chat-status-pulse-anim 1.6s ease-in-out infinite;
 }
 @keyframes chat-status-pulse-anim {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.35; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
 }
 
 /* 右列上下分栏的垂直拖拽条（2026-10-20 布局地基 C）：与水平 panel-resize-handle
@@ -1868,7 +1988,9 @@ span.token.table {
   font-size: 13px;
   overflow-wrap: anywhere;
   scroll-margin: 14px;
-  transition: border-color 0.1s ease, background 0.1s ease;
+  transition:
+    border-color 0.1s ease,
+    background 0.1s ease;
 }
 
 .ext-select-option:hover {
@@ -1902,7 +2024,10 @@ span.token.table {
   font-size: 11px;
   font-weight: 600;
   line-height: 1;
-  transition: border-color 0.1s ease, background 0.1s ease, color 0.1s ease;
+  transition:
+    border-color 0.1s ease,
+    background 0.1s ease,
+    color 0.1s ease;
 }
 
 .ext-select-label {

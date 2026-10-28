@@ -25,9 +25,7 @@ function readStoredSettings(settingsPath: string): StoredSubagentSettings {
   return parsed as StoredSubagentSettings;
 }
 
-export function readSubagentSettings(
-  settingsPath = getSubagentSettingsPath(),
-): SubagentSettings {
+export function readSubagentSettings(settingsPath = getSubagentSettingsPath()): SubagentSettings {
   const stored = readStoredSettings(settingsPath);
   return { builtInEnabled: stored.builtInEnabled === true };
 }
@@ -39,9 +37,7 @@ export function readSubagentSettings(
  * stays disabled regardless of settings — enabling it would register a
  * competing Agent tool in every session.
  */
-export function isBuiltInSubagentsEnabled(
-  _settingsPath = getSubagentSettingsPath(),
-): boolean {
+export function isBuiltInSubagentsEnabled(_settingsPath = getSubagentSettingsPath()): boolean {
   return false;
 }
 
@@ -51,10 +47,17 @@ export function writeBuiltInSubagentsEnabled(
 ): SubagentSettings {
   const stored = readStoredSettings(settingsPath);
   mkdirSync(dirname(settingsPath), { recursive: true });
-  writePrivateFileAtomicSync(settingsPath, JSON.stringify({
-    ...stored,
-    version: 1,
-    builtInEnabled: enabled,
-  }, null, 2));
+  writePrivateFileAtomicSync(
+    settingsPath,
+    JSON.stringify(
+      {
+        ...stored,
+        version: 1,
+        builtInEnabled: enabled,
+      },
+      null,
+      2,
+    ),
+  );
   return { builtInEnabled: enabled };
 }

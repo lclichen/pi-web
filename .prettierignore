@@ -1,0 +1,14 @@
+node_modules
+.next
+.git
+data
+dist
+coverage
+public
+agent/dist
+agent/node_modules
+pi-config/**/node_modules
+*.md
+package-lock.json
+lib/teaching.ts
+lib/teaching-server.ts

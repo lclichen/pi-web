@@ -40,10 +40,13 @@ export async function restoreSessionOptions(req: Request, sessionId: string): Pr
   const meta = resolveSessionMode(sessionId);
   // 项目记录的模式高于过期 sidecar meta（lib/session-metas.ts）。
   const mode = meta?.mode ?? "host";
-  const project = meta?.projectId ? getOwnedProject(meta.projectId, meta.ownerId ?? user.id, user.role === "admin") : undefined;
+  const project = meta?.projectId
+    ? getOwnedProject(meta.projectId, meta.ownerId ?? user.id, user.role === "admin")
+    : undefined;
 
   let additionalExtensionPaths: string[] | undefined;
-  let quickForRestore: { systemPrompt?: string; model?: { provider: string; modelId: string }; mcpServers?: string[] } | undefined;
+  let quickForRestore:
+    { systemPrompt?: string; model?: { provider: string; modelId: string }; mcpServers?: string[] } | undefined;
   let extensionFactories: InlineExtension[] | undefined;
   let effectiveCwd: string | undefined;
 
@@ -118,7 +121,10 @@ export async function restoreSessionOptions(req: Request, sessionId: string): Pr
     ];
     // bg-shell channel: tasks run on the user's paired machine via relay
     // exec.run (nohup pattern); machine follows the project binding.
-    registerBgChannel(sessionId, makeRelayBgChannel(meta?.ownerId ?? user.id, project?.machineId ?? undefined, project?.workdir));
+    registerBgChannel(
+      sessionId,
+      makeRelayBgChannel(meta?.ownerId ?? user.id, project?.machineId ?? undefined, project?.workdir),
+    );
   } else if (mode === "ssh") {
     // SSH mode: the SDK session runs server-side in the project home; the
     // ssh-tools extension routes the seven coding tools to the remote host.
@@ -128,7 +134,12 @@ export async function restoreSessionOptions(req: Request, sessionId: string): Pr
       const sshConfig = readSshConfig(effectiveCwd);
       if (sshConfig) {
         extensionFactories = [
-          makeSshToolsExtension({ projectId: project.id, sshConfig, workdir: project.workdir ?? "/", projectHome: effectiveCwd }),
+          makeSshToolsExtension({
+            projectId: project.id,
+            sshConfig,
+            workdir: project.workdir ?? "/",
+            projectHome: effectiveCwd,
+          }),
           makeEnvironmentInfoExtension({
             mode: "ssh",
             username: identity.session.user.username,
@@ -163,7 +174,6 @@ export async function restoreSessionOptions(req: Request, sessionId: string): Pr
     // 恢复时按 meta.templateId 重建 quick 选项：quickToolSet（MCP 白名单）与
     // 提示词扩展（模板附加）都挂在 quick 选项上——不重建则恢复的快速会话
     // 丢工具策略与模板提示词。
-
   } else {
     extensionFactories = [makeEnvironmentInfoExtension({ mode: "host", username: identity.session.user.username })];
   }

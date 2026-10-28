@@ -4,7 +4,12 @@ import { createContext, useContext, useMemo, type ComponentProps, type MouseEven
 import ReactMarkdown, { type Components, type ExtraProps } from "react-markdown";
 import { parsePdfPageFragment, resolveLocalFileHref, shouldOpenLocalFileInApp } from "@/lib/file-links";
 import { encodeFilePathForApi } from "@/lib/file-paths";
-import { markdownRehypePlugins, markdownRemarkPlugins, markdownUrlTransform, normalizeDisplayMath } from "@/lib/markdown";
+import {
+  markdownRehypePlugins,
+  markdownRemarkPlugins,
+  markdownUrlTransform,
+  normalizeDisplayMath,
+} from "@/lib/markdown";
 import { ImagePreview } from "./ImagePreview";
 import { MermaidBlock, CodeBlock } from "./MermaidBlock";
 
@@ -26,12 +31,7 @@ interface MarkdownBodyProps {
   onOpenFile?: (filePath: string, page?: number) => void;
 }
 
-function MarkdownImage({
-  src,
-  alt,
-  cwd,
-  ...props
-}: ComponentProps<"img"> & ExtraProps & { cwd?: string }) {
+function MarkdownImage({ src, alt, cwd, ...props }: ComponentProps<"img"> & ExtraProps & { cwd?: string }) {
   const insideLink = useContext(MarkdownLinkContext);
   const remoteSessionId = useContext(RemoteFileSessionContext);
   delete props.node;
@@ -56,77 +56,71 @@ function MarkdownImage({
 export function MarkdownBody({ children, className, isStreaming, cwd, onOpenFile }: MarkdownBodyProps) {
   const normalizedMarkdown = useMemo(() => normalizeDisplayMath(children), [children]);
   // Stable renderer identities keep stateful blocks mounted across message hover updates.
-  const components = useMemo<Components>(() => ({
-    code({ className, children, ...props }) {
-      const lang = className?.replace("language-", "").toLowerCase() ?? "";
-      const raw = String(children);
-      const isBlock = className?.includes("language-") || raw.includes("\n");
-      if (isBlock) {
-        if (lang === "mermaid") {
+  const components = useMemo<Components>(
+    () => ({
+      code({ className, children, ...props }) {
+        const lang = className?.replace("language-", "").toLowerCase() ?? "";
+        const raw = String(children);
+        const isBlock = className?.includes("language-") || raw.includes("\n");
+        if (isBlock) {
+          if (lang === "mermaid") {
+            return <MermaidBlock code={raw.replace(/\n$/, "")} isStreaming={isStreaming} defaultPreview />;
+          }
+          return <CodeBlock code={raw.replace(/\n$/, "")} lang={lang} isStreaming={isStreaming} />;
+        }
+        return (
+          <code className="markdown-inline-code" {...props}>
+            {children}
+          </code>
+        );
+      },
+      pre({ children }) {
+        return <>{children}</>;
+      },
+      a({ href, children, ...props }) {
+        // `node` is react-markdown metadata, not a DOM attribute.
+        delete props.node;
+        const filePath = onOpenFile ? resolveLocalFileHref(href, cwd) : null;
+        const openFile = onOpenFile;
+        if (!filePath || !openFile) {
           return (
-            <MermaidBlock
-              code={raw.replace(/\n$/, "")}
-              isStreaming={isStreaming}
-              defaultPreview
-            />
+            <MarkdownLinkContext.Provider value={true}>
+              <a href={href} {...props} target="_blank" rel="noopener noreferrer">
+                {children}
+              </a>
+            </MarkdownLinkContext.Provider>
           );
         }
-        return <CodeBlock code={raw.replace(/\n$/, "")} lang={lang} isStreaming={isStreaming} />;
-      }
-      return (
-        <code
-          className="markdown-inline-code"
-          {...props}
-        >
-          {children}
-        </code>
-      );
-    },
-    pre({ children }) {
-      return <>{children}</>;
-    },
-    a({ href, children, ...props }) {
-      // `node` is react-markdown metadata, not a DOM attribute.
-      delete props.node;
-      const filePath = onOpenFile ? resolveLocalFileHref(href, cwd) : null;
-      const openFile = onOpenFile;
-      if (!filePath || !openFile) {
+
+        const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {
+          if (!shouldOpenLocalFileInApp(event)) return;
+          const target = event.currentTarget.getAttribute("target");
+          if (target && target !== "_self") return;
+          event.preventDefault();
+          openFile(filePath, parsePdfPageFragment(href) ?? undefined);
+        };
+
         return (
           <MarkdownLinkContext.Provider value={true}>
-            <a href={href} {...props} target="_blank" rel="noopener noreferrer">
+            <a href={href} {...props} onClick={handleClick}>
               {children}
             </a>
           </MarkdownLinkContext.Provider>
         );
-      }
-
-      const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {
-        if (!shouldOpenLocalFileInApp(event)) return;
-        const target = event.currentTarget.getAttribute("target");
-        if (target && target !== "_self") return;
-        event.preventDefault();
-        openFile(filePath, parsePdfPageFragment(href) ?? undefined);
-      };
-
-      return (
-        <MarkdownLinkContext.Provider value={true}>
-          <a href={href} {...props} onClick={handleClick}>
-            {children}
-          </a>
-        </MarkdownLinkContext.Provider>
-      );
-    },
-    img(props) {
-      return <MarkdownImage cwd={cwd} {...props} />;
-    },
-    table({ children }) {
-      return (
-        <div className="markdown-table-wrap">
-          <table>{children}</table>
-        </div>
-      );
-    },
-  }), [cwd, isStreaming, onOpenFile]);
+      },
+      img(props) {
+        return <MarkdownImage cwd={cwd} {...props} />;
+      },
+      table({ children }) {
+        return (
+          <div className="markdown-table-wrap">
+            <table>{children}</table>
+          </div>
+        );
+      },
+    }),
+    [cwd, isStreaming, onOpenFile],
+  );
 
   return (
     <div className={["markdown-body", className].filter(Boolean).join(" ")}>

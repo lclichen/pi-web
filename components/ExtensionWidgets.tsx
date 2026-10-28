@@ -12,9 +12,7 @@ export function formatExtensionWidgetContent(lines: string[]): string {
   return lines.join("\n");
 }
 
-export function snapshotExtensionWidgetContents(
-  widgets: ExtensionWidgetItem[],
-): Map<string, string[]> {
+export function snapshotExtensionWidgetContents(widgets: ExtensionWidgetItem[]): Map<string, string[]> {
   return new Map(widgets.map((widget) => [widget.key, [...widget.lines]]));
 }
 
@@ -33,16 +31,15 @@ export function getUpdatedExtensionWidgetKeys(
 }
 
 function getDefaultExpandedWidgetKey(widgets: ExtensionWidgetItem[]): string | null {
-  return widgets.find((widget) => {
-    const lineCount = widget.lines.length;
-    return lineCount > 1 && lineCount <= DEFAULT_EXPANDED_WIDGET_LINES;
-  })?.key ?? null;
+  return (
+    widgets.find((widget) => {
+      const lineCount = widget.lines.length;
+      return lineCount > 1 && lineCount <= DEFAULT_EXPANDED_WIDGET_LINES;
+    })?.key ?? null
+  );
 }
 
-export function getNextExpandedWidgetKey(
-  currentKey: string | null,
-  requestedKey: string,
-): string | null {
+export function getNextExpandedWidgetKey(currentKey: string | null, requestedKey: string): string | null {
   return currentKey === requestedKey ? null : requestedKey;
 }
 
@@ -51,19 +48,12 @@ export function ExtensionWidgets({ widgets }: { widgets: ExtensionWidgetItem[] }
   const idPrefix = useId();
   const previousContentsRef = useRef<Map<string, string[]> | null>(null);
   const updateClearTimersRef = useRef(new Map<string, ReturnType<typeof setTimeout>>());
-  const [expandedWidgetKey, setExpandedWidgetKey] = useState<string | null>(
-    () => getDefaultExpandedWidgetKey(widgets),
-  );
-  const [updatingWidgetKeys, setUpdatingWidgetKeys] = useState<ReadonlySet<string>>(
-    () => new Set(),
-  );
+  const [expandedWidgetKey, setExpandedWidgetKey] = useState<string | null>(() => getDefaultExpandedWidgetKey(widgets));
+  const [updatingWidgetKeys, setUpdatingWidgetKeys] = useState<ReadonlySet<string>>(() => new Set());
 
   useEffect(() => {
     const nextContents = snapshotExtensionWidgetContents(widgets);
-    const updatedKeys = getUpdatedExtensionWidgetKeys(
-      previousContentsRef.current,
-      nextContents,
-    );
+    const updatedKeys = getUpdatedExtensionWidgetKeys(previousContentsRef.current, nextContents);
     previousContentsRef.current = nextContents;
 
     for (const [key, timer] of updateClearTimersRef.current) {
@@ -75,39 +65,39 @@ export function ExtensionWidgets({ widgets }: { widgets: ExtensionWidgetItem[] }
     setUpdatingWidgetKeys((current) => {
       const next = new Set(Array.from(current).filter((key) => nextContents.has(key)));
       for (const key of updatedKeys) next.add(key);
-      if (
-        next.size === current.size
-        && Array.from(next).every((key) => current.has(key))
-      ) return current;
+      if (next.size === current.size && Array.from(next).every((key) => current.has(key))) return current;
       return next;
     });
 
     for (const key of updatedKeys) {
       const currentTimer = updateClearTimersRef.current.get(key);
       if (currentTimer) clearTimeout(currentTimer);
-      updateClearTimersRef.current.set(key, setTimeout(() => {
-        updateClearTimersRef.current.delete(key);
-        setUpdatingWidgetKeys((current) => {
-          if (!current.has(key)) return current;
-          const next = new Set(current);
-          next.delete(key);
-          return next;
-        });
-      }, WIDGET_UPDATE_IDLE_MS));
+      updateClearTimersRef.current.set(
+        key,
+        setTimeout(() => {
+          updateClearTimersRef.current.delete(key);
+          setUpdatingWidgetKeys((current) => {
+            if (!current.has(key)) return current;
+            const next = new Set(current);
+            next.delete(key);
+            return next;
+          });
+        }, WIDGET_UPDATE_IDLE_MS),
+      );
     }
   }, [widgets]);
 
-  useEffect(() => () => {
-    for (const timer of updateClearTimersRef.current.values()) clearTimeout(timer);
-    updateClearTimersRef.current.clear();
-  }, []);
+  useEffect(
+    () => () => {
+      for (const timer of updateClearTimersRef.current.values()) clearTimeout(timer);
+      updateClearTimersRef.current.clear();
+    },
+    [],
+  );
 
   if (widgets.length === 0) return null;
 
-  const expandedWidget = widgets.find((widget) => (
-    widget.key === expandedWidgetKey
-    && widget.lines.length > 0
-  ));
+  const expandedWidget = widgets.find((widget) => widget.key === expandedWidgetKey && widget.lines.length > 0);
 
   const toggleWidget = (widget: ExtensionWidgetItem) => {
     setExpandedWidgetKey((current) => getNextExpandedWidgetKey(current, widget.key));
@@ -123,12 +113,7 @@ export function ExtensionWidgets({ widgets }: { widgets: ExtensionWidgetItem[] }
             const triggerId = `${idPrefix}-trigger-${index}`;
             const panelId = `${idPrefix}-panel-${index}`;
             return (
-              <section
-                key={widget.key}
-                id={panelId}
-                className="extension-widget-panel"
-                aria-labelledby={triggerId}
-              >
+              <section key={widget.key} id={panelId} className="extension-widget-panel" aria-labelledby={triggerId}>
                 <div className="extension-widget-panel-heading">{widget.key}</div>
                 <pre className="extension-widget-content">
                   <AnsiText text={formatExtensionWidgetContent(widget.lines)} />
@@ -148,9 +133,7 @@ export function ExtensionWidgets({ widgets }: { widgets: ExtensionWidgetItem[] }
             { count: widget.lines.length },
           );
           const placementLabel = t(
-            widget.placement === "belowEditor"
-              ? "chat.extensionWidgetBelow"
-              : "chat.extensionWidgetAbove",
+            widget.placement === "belowEditor" ? "chat.extensionWidgetBelow" : "chat.extensionWidgetAbove",
           );
           const triggerId = `${idPrefix}-trigger-${index}`;
           const panelId = `${idPrefix}-panel-${index}`;
@@ -166,11 +149,7 @@ export function ExtensionWidgets({ widgets }: { widgets: ExtensionWidgetItem[] }
                   data-direction={widget.placement === "belowEditor" ? "down" : "up"}
                   focusable="false"
                 >
-                  <path
-                    d={widget.placement === "belowEditor"
-                      ? "M0 0h8L4 6z"
-                      : "M4 0l4 6H0z"}
-                  />
+                  <path d={widget.placement === "belowEditor" ? "M0 0h8L4 6z" : "M4 0l4 6H0z"} />
                 </svg>
               </span>
               <span className="extension-widget-key">{widget.key}</span>

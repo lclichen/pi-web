@@ -97,7 +97,8 @@ export const BUILTIN_PROFILES: SubagentProfile[] = [
     name: "general-purpose",
     displayName: "General purpose",
     description: "Handle a focused implementation or investigation task",
-    systemPrompt: "Work autonomously on the delegated task. Keep the final answer concise and include important files, decisions, and remaining risks.",
+    systemPrompt:
+      "Work autonomously on the delegated task. Keep the final answer concise and include important files, decisions, and remaining risks.",
     tools: DEFAULT_TOOLS,
     loadSkills: false,
     loadExtensions: false,
@@ -110,7 +111,8 @@ export const BUILTIN_PROFILES: SubagentProfile[] = [
     name: "explore",
     displayName: "Explore",
     description: "Quickly inspect a codebase without modifying it",
-    systemPrompt: "Explore the codebase to answer the delegated question. Do not modify files. Report concrete findings with file paths and relevant symbols.",
+    systemPrompt:
+      "Explore the codebase to answer the delegated question. Do not modify files. Report concrete findings with file paths and relevant symbols.",
     tools: [...PRESET_READ_ONLY],
     loadSkills: false,
     loadExtensions: false,
@@ -123,7 +125,8 @@ export const BUILTIN_PROFILES: SubagentProfile[] = [
     name: "plan",
     displayName: "Plan",
     description: "Design an implementation plan without modifying files",
-    systemPrompt: "Produce an implementation-ready plan for the delegated task. Inspect the repository as needed, do not modify files, and call out dependencies, risks, and verification steps.",
+    systemPrompt:
+      "Produce an implementation-ready plan for the delegated task. Inspect the repository as needed, do not modify files, and call out dependencies, risks, and verification steps.",
     tools: [...PRESET_READ_ONLY],
     loadSkills: false,
     loadExtensions: false,
@@ -143,11 +146,7 @@ function booleanValue(value: unknown, fallback: boolean): boolean {
 }
 
 function parseTools(value: unknown, fallback: string[]): string[] {
-  const values = Array.isArray(value)
-    ? value
-    : typeof value === "string"
-      ? value.split(",")
-      : [];
+  const values = Array.isArray(value) ? value : typeof value === "string" ? value.split(",") : [];
   const tools = values.map((item) => String(item).trim()).filter(Boolean);
   if (tools.includes("none")) return [];
   if (tools.includes("all") || tools.includes("*")) return [...DEFAULT_TOOLS];
@@ -217,7 +216,9 @@ export function listSubagentProfileSources(cwd: string): SubagentProfile[] {
 }
 
 export function listSubagentProfiles(cwd: string): SubagentProfile[] {
-  const byName = new Map(BUILTIN_PROFILES.map((profile) => [profile.name.toLowerCase(), { ...profile, tools: [...profile.tools] }]));
+  const byName = new Map(
+    BUILTIN_PROFILES.map((profile) => [profile.name.toLowerCase(), { ...profile, tools: [...profile.tools] }]),
+  );
   for (const [dir, scope] of profileDirectories(cwd)) {
     for (const profile of readProfileDirectory(dir, scope, cwd)) byName.set(profile.name.toLowerCase(), profile);
   }
@@ -225,7 +226,9 @@ export function listSubagentProfiles(cwd: string): SubagentProfile[] {
 }
 
 export function resolveSubagentProfile(cwd: string, name: string): SubagentProfile | undefined {
-  return listSubagentProfiles(cwd).find((profile) => profile.name.toLowerCase() === name.trim().toLowerCase() && profile.enabled);
+  return listSubagentProfiles(cwd).find(
+    (profile) => profile.name.toLowerCase() === name.trim().toLowerCase() && profile.enabled,
+  );
 }
 
 function assertProfileName(name: string): string {
@@ -271,9 +274,7 @@ export function saveSubagentProfile(
   if (profile.maxTurns !== undefined && (!Number.isFinite(profile.maxTurns) || profile.maxTurns < 0)) {
     throw new Error("Max turns must be a non-negative number");
   }
-  const maxTurns = profile.maxTurns && profile.maxTurns > 0
-    ? Math.floor(profile.maxTurns)
-    : undefined;
+  const maxTurns = profile.maxTurns && profile.maxTurns > 0 ? Math.floor(profile.maxTurns) : undefined;
   const displayName = profile.displayName.trim() || name;
   const description = profile.description.trim() || name;
   const systemPrompt = profile.systemPrompt.trim();
@@ -323,7 +324,10 @@ export function deleteSubagentProfile(cwd: string, scope: SubagentWritableScope,
   if (existsSync(filePath)) unlinkSync(filePath);
 }
 
-export function saveProjectSubagentProfile(cwd: string, profile: Omit<SubagentProfile, "scope" | "filePath">): SubagentProfile {
+export function saveProjectSubagentProfile(
+  cwd: string,
+  profile: Omit<SubagentProfile, "scope" | "filePath">,
+): SubagentProfile {
   return saveSubagentProfile(cwd, "project", profile);
 }
 
@@ -345,30 +349,30 @@ function subagentMetadataData(entries: readonly SessionEntry[]): ValidSubagentMe
   const metaEntry = entries.find((entry) => entry.type === "custom" && entry.customType === SUBAGENT_META_TYPE);
   if (!metaEntry || metaEntry.type !== "custom" || !isRecord(metaEntry.data)) return null;
   const data = metaEntry.data;
-  if (data.version !== 1 || typeof data.parentSessionId !== "string" || typeof data.parentSessionPath !== "string") return null;
+  if (data.version !== 1 || typeof data.parentSessionId !== "string" || typeof data.parentSessionPath !== "string")
+    return null;
   return data as ValidSubagentMetadataData;
 }
 
 /** Restore the isolated prompt and tool scope used by a persisted subagent session. */
-export function readSubagentSessionResources(
-  entries: readonly SessionEntry[],
-): SubagentSessionResources | null {
+export function readSubagentSessionResources(entries: readonly SessionEntry[]): SubagentSessionResources | null {
   const data = subagentMetadataData(entries);
   if (!data) return null;
   const snapshot = data.resourceSnapshot;
   const loadSkills = isRecord(snapshot) && snapshot.loadSkills === true;
   const loadExtensions = isRecord(snapshot) && snapshot.loadExtensions === true;
   if (
-    isRecord(snapshot)
-    && snapshot.version === 1
-    && Array.isArray(snapshot.appendSystemPrompt)
-    && snapshot.appendSystemPrompt.every((item) => typeof item === "string")
-    && Array.isArray(snapshot.tools)
-    && snapshot.tools.every((item) =>
-      typeof item === "string"
-      && item.length > 0
-      && !SUBAGENT_CONTROL_TOOLS.has(item)
-      && (BUILTIN_TOOLS.has(item) || loadExtensions)
+    isRecord(snapshot) &&
+    snapshot.version === 1 &&
+    Array.isArray(snapshot.appendSystemPrompt) &&
+    snapshot.appendSystemPrompt.every((item) => typeof item === "string") &&
+    Array.isArray(snapshot.tools) &&
+    snapshot.tools.every(
+      (item) =>
+        typeof item === "string" &&
+        item.length > 0 &&
+        !SUBAGENT_CONTROL_TOOLS.has(item) &&
+        (BUILTIN_TOOLS.has(item) || loadExtensions),
     )
   ) {
     return {
@@ -385,20 +389,26 @@ export function withSubagentExtensionTools(
   profileTools: readonly string[],
   extensionToolNames: Iterable<string>,
 ): string[] {
-  return [...new Set([
-    ...profileTools,
-    ...[...extensionToolNames].filter((name) => !SUBAGENT_CONTROL_TOOLS.has(name)),
-  ])];
+  return [
+    ...new Set([...profileTools, ...[...extensionToolNames].filter((name) => !SUBAGENT_CONTROL_TOOLS.has(name))]),
+  ];
 }
 
-export function readSubagentRun(entries: readonly SessionEntry[], sessionId: string, sessionPath: string): SubagentRunInfo | null {
+export function readSubagentRun(
+  entries: readonly SessionEntry[],
+  sessionId: string,
+  sessionPath: string,
+): SubagentRunInfo | null {
   const data = subagentMetadataData(entries);
   if (!data) return null;
-  const resultEntry = [...entries].reverse().find((entry) => entry.type === "custom" && entry.customType === SUBAGENT_RESULT_TYPE);
+  const resultEntry = [...entries]
+    .reverse()
+    .find((entry) => entry.type === "custom" && entry.customType === SUBAGENT_RESULT_TYPE);
   const result = resultEntry?.type === "custom" && isRecord(resultEntry.data) ? resultEntry.data : undefined;
-  const persistedStatus = result && (result.status === "completed" || result.status === "failed" || result.status === "aborted")
-    ? result.status
-    : "interrupted";
+  const persistedStatus =
+    result && (result.status === "completed" || result.status === "failed" || result.status === "aborted")
+      ? result.status
+      : "interrupted";
   return {
     sessionId,
     sessionPath,

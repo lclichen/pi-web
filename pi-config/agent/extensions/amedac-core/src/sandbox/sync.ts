@@ -91,7 +91,11 @@ async function loadManifest(localRoot: string, containerId: number): Promise<Rec
   }
 }
 
-async function saveManifest(localRoot: string, containerId: number, files: Record<string, SyncManifestEntry>): Promise<void> {
+async function saveManifest(
+  localRoot: string,
+  containerId: number,
+  files: Record<string, SyncManifestEntry>,
+): Promise<void> {
   const path = manifestPath(localRoot);
   try {
     await mkdir(join(path, ".."), { recursive: true });
@@ -112,10 +116,7 @@ export interface LocalFile {
 }
 
 /** Walk the local project, returning uploadable files (ignore/caps applied). */
-export async function collectLocalFiles(
-  root: string,
-  opts: SyncOptions = {},
-): Promise<LocalFile[]> {
+export async function collectLocalFiles(root: string, opts: SyncOptions = {}): Promise<LocalFile[]> {
   const ignore = opts.ignoreDirs ?? DEFAULT_SYNC_IGNORE;
   const maxBytes = opts.maxFileBytes ?? DEFAULT_MAX_FILE_BYTES;
   const out: LocalFile[] = [];

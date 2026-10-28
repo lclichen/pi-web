@@ -17,8 +17,5 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: false }, { status: 401 });
   }
   const refreshCookie = sessionCookieRefreshHeader(req);
-  return NextResponse.json(
-    { ok: true },
-    refreshCookie ? { headers: { "Set-Cookie": refreshCookie } } : undefined,
-  );
+  return NextResponse.json({ ok: true }, refreshCookie ? { headers: { "Set-Cookie": refreshCookie } } : undefined);
 }

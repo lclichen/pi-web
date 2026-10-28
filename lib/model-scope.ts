@@ -1,20 +1,8 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
-import {
-  resolveModelScopeWithDiagnostics,
-  type ModelRuntime,
-  type ScopedModel,
-} from "@earendil-works/pi-coding-agent";
+import { resolveModelScopeWithDiagnostics, type ModelRuntime, type ScopedModel } from "@earendil-works/pi-coding-agent";
 import type { Api, Model } from "@earendil-works/pi-ai";
 
-const THINKING_LEVEL_SUFFIXES = new Set<ThinkingLevel>([
-  "off",
-  "minimal",
-  "low",
-  "medium",
-  "high",
-  "xhigh",
-  "max",
-]);
+const THINKING_LEVEL_SUFFIXES = new Set<ThinkingLevel>(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
 
 /**
  * Model scoping shared by the UI selector and AgentSession startup.
@@ -50,10 +38,7 @@ export interface InitialModelScopeResult {
   scopedModels: ScopedModel[];
 }
 
-function matchesModel(
-  model: { provider: string; id: string },
-  ref: { provider: string; modelId: string },
-): boolean {
+function matchesModel(model: { provider: string; id: string }, ref: { provider: string; modelId: string }): boolean {
   return model.provider === ref.provider && model.id === ref.modelId;
 }
 
@@ -64,23 +49,17 @@ function hasGlob(pattern: string): boolean {
 function isSuppressibleUnmatchedGlob(pattern: string): boolean {
   if (!hasGlob(pattern)) return false;
   const colonIndex = pattern.lastIndexOf(":");
-  return colonIndex < 0
-    || THINKING_LEVEL_SUFFIXES.has(pattern.slice(colonIndex + 1) as ThinkingLevel);
+  return colonIndex < 0 || THINKING_LEVEL_SUFFIXES.has(pattern.slice(colonIndex + 1) as ThinkingLevel);
 }
 
 function exactReferenceMatches(pattern: string, models: readonly Model<Api>[]): Model<Api>[] {
   const normalized = pattern.toLowerCase();
-  const canonical = models.filter(
-    (model) => `${model.provider}/${model.id}`.toLowerCase() === normalized,
-  );
+  const canonical = models.filter((model) => `${model.provider}/${model.id}`.toLowerCase() === normalized);
   if (canonical.length > 0) return canonical;
   return models.filter((model) => model.id.toLowerCase() === normalized);
 }
 
-function assertNoAmbiguousExactPatterns(
-  patterns: readonly string[],
-  models: readonly Model<Api>[],
-): void {
+function assertNoAmbiguousExactPatterns(patterns: readonly string[], models: readonly Model<Api>[]): void {
   for (const pattern of patterns) {
     if (hasGlob(pattern)) continue;
 
@@ -138,11 +117,10 @@ export async function resolveVisibleModels(
   // the UI falls back to every available model and the user needs to know the
   // scope did not apply.
   const warnings = diagnostics
-    .filter((diagnostic) => (
-      diagnostic.code !== "no-match"
-      || scopedModels.length === 0
-      || !isSuppressibleUnmatchedGlob(diagnostic.pattern)
-    ))
+    .filter(
+      (diagnostic) =>
+        diagnostic.code !== "no-match" || scopedModels.length === 0 || !isSuppressibleUnmatchedGlob(diagnostic.pattern),
+    )
     .map((diagnostic) => diagnostic.message);
   if (scopedModels.length === 0) {
     return {
@@ -184,26 +162,25 @@ export function selectInitialModelScope(
 ): InitialModelScopeResult {
   const requestedRef = options.requestedModel;
   const defaultRef = options.defaultModel;
-  const requested = requestedRef
-    ? scope.visible.find((model) => matchesModel(model, requestedRef))
-    : undefined;
+  const requested = requestedRef ? scope.visible.find((model) => matchesModel(model, requestedRef)) : undefined;
   if (requestedRef && !requested) {
-    throw new Error(
-      `Model is not available in the enabled scope: ${requestedRef.provider}/${requestedRef.modelId}`,
-    );
+    throw new Error(`Model is not available in the enabled scope: ${requestedRef.provider}/${requestedRef.modelId}`);
   }
 
   const requestedScoped = requested
-    ? scope.scopedModels.find((scoped) => scoped.model === requested
-      || matchesModel(scoped.model, { provider: requested.provider, modelId: requested.id }))
+    ? scope.scopedModels.find(
+        (scoped) =>
+          scoped.model === requested ||
+          matchesModel(scoped.model, { provider: requested.provider, modelId: requested.id }),
+      )
     : undefined;
-  const defaultScoped = !requested && defaultRef
-    ? scope.scopedModels.find((scoped) => matchesModel(scoped.model, defaultRef))
-    : undefined;
+  const defaultScoped =
+    !requested && defaultRef ? scope.scopedModels.find((scoped) => matchesModel(scoped.model, defaultRef)) : undefined;
   const fallbackScoped = !requested ? (defaultScoped ?? scope.scopedModels[0]) : undefined;
-  const defaultVisible = !requested && !fallbackScoped && defaultRef
-    ? scope.visible.find((model) => matchesModel(model, defaultRef))
-    : undefined;
+  const defaultVisible =
+    !requested && !fallbackScoped && defaultRef
+      ? scope.visible.find((model) => matchesModel(model, defaultRef))
+      : undefined;
   const selectedModel = requested ?? fallbackScoped?.model ?? defaultVisible;
   const scopedSelection = requestedScoped ?? fallbackScoped;
   const thinkingLevel = options.thinkingLevel ?? scopedSelection?.thinkingLevel;

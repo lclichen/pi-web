@@ -11,19 +11,37 @@ const jiti = createJiti(import.meta.url, {
 });
 const React = await jiti.import("react");
 const { renderToStaticMarkup } = await jiti.import("react-dom/server");
-const { ChatInput, ModelErrorBanner, ModelScopeWarningBanner, canClearBuiltinCommandInput, canRestoreUserMessage, canRunBuiltinSlashCommandWhileStreaming, compressImageFile, cycleListIndex, filterModelOptions, getUpwardMenuMaxHeight, getUserMessageText, getUserMessageDraftImages, isExactSlashCommand, modelSupportsImageInput, replaceLinksWithMarkdown, shouldCompressImageFile } = await jiti.import("./ChatInput.tsx");
+const {
+  ChatInput,
+  ModelErrorBanner,
+  ModelScopeWarningBanner,
+  canClearBuiltinCommandInput,
+  canRestoreUserMessage,
+  canRunBuiltinSlashCommandWhileStreaming,
+  compressImageFile,
+  cycleListIndex,
+  filterModelOptions,
+  getUpwardMenuMaxHeight,
+  getUserMessageText,
+  getUserMessageDraftImages,
+  isExactSlashCommand,
+  modelSupportsImageInput,
+  replaceLinksWithMarkdown,
+  shouldCompressImageFile,
+} = await jiti.import("./ChatInput.tsx");
 const { ModelSelector } = await jiti.import("./ModelSelector.tsx");
-const { clearDraft, getDraft, mergeRestoredSubmissionDraft, mergeRestoredSubmissionText, rekeyDraft, setDraft } = await jiti.import("@/lib/draft-store.ts");
+const { clearDraft, getDraft, mergeRestoredSubmissionDraft, mergeRestoredSubmissionText, rekeyDraft, setDraft } =
+  await jiti.import("@/lib/draft-store.ts");
 const { I18nProvider } = await jiti.import("@/hooks/useI18n");
 
 test("preserves pasted HTML links as Markdown without changing plain text layout", () => {
   const link = (label, href, occurrence = 0) => ({ label, href, occurrence });
 
   assert.equal(
-    replaceLinksWithMarkdown(
-      "Jobs:\nEngineer\nEngineer\nDone",
-      [link("Engineer", "https://example.com/1"), link("Engineer", "https://example.com/2", 1)],
-    ),
+    replaceLinksWithMarkdown("Jobs:\nEngineer\nEngineer\nDone", [
+      link("Engineer", "https://example.com/1"),
+      link("Engineer", "https://example.com/2", 1),
+    ]),
     "Jobs:\n[Engineer](https://example.com/1)\n[Engineer](https://example.com/2)\nDone",
   );
   assert.equal(
@@ -38,7 +56,13 @@ test("preserves pasted HTML links as Markdown without changing plain text layout
 });
 
 test("follow-up shortcuts preserve newline, IME, mobile and completion behavior", () => {
-  const source = ts.createSourceFile("ChatInput.tsx", readFileSync(new URL("./ChatInput.tsx", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const source = ts.createSourceFile(
+    "ChatInput.tsx",
+    readFileSync(new URL("./ChatInput.tsx", import.meta.url), "utf8"),
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX,
+  );
   function findHandler(node) {
     if (ts.isVariableDeclaration(node) && node.name.getText(source) === "handleKeyDown") {
       return node.initializer.arguments[0];
@@ -46,9 +70,11 @@ test("follow-up shortcuts preserve newline, IME, mobile and completion behavior"
     return ts.forEachChild(node, findHandler);
   }
   // Execute the component's actual callback without mounting the rest of the UI.
-  const script = new Script(ts.transpileModule(findHandler(source).getText(source), {
-    compilerOptions: { target: ts.ScriptTarget.ES2020 },
-  }).outputText);
+  const script = new Script(
+    ts.transpileModule(findHandler(source).getText(source), {
+      compilerOptions: { target: ts.ScriptTarget.ES2020 },
+    }).outputText,
+  );
   const cases = [
     ["Enter steers", {}, {}, "steer"],
     ["Alt+Enter follows up", { altKey: true }, {}, "followup"],
@@ -60,14 +86,34 @@ test("follow-up shortcuts preserve newline, IME, mobile and completion behavior"
     ["IME keyCode blocks sending", { altKey: true, nativeEvent: { keyCode: 229 } }, {}, "native"],
     ["composition grace blocks sending", { altKey: true }, { lastCompositionEndAtRef: { current: 950 } }, "prevented"],
     ["mobile Alt+Enter keeps native behavior", { altKey: true }, { isMobile: true }, "native"],
-    ["mobile composition grace cannot send", { altKey: true }, { isMobile: true, lastCompositionEndAtRef: { current: 950 } }, "native"],
+    [
+      "mobile composition grace cannot send",
+      { altKey: true },
+      { isMobile: true, lastCompositionEndAtRef: { current: 950 } },
+      "native",
+    ],
     ["mobile Ctrl+Alt+Enter follows up", { altKey: true, ctrlKey: true }, { isMobile: true }, "followup"],
     ["mobile Cmd+Alt+Enter follows up", { altKey: true, metaKey: true }, { isMobile: true }, "followup"],
-    ["mobile modified Enter respects composition grace", { altKey: true, ctrlKey: true }, { isMobile: true, lastCompositionEndAtRef: { current: 950 } }, "prevented"],
+    [
+      "mobile modified Enter respects composition grace",
+      { altKey: true, ctrlKey: true },
+      { isMobile: true, lastCompositionEndAtRef: { current: 950 } },
+      "prevented",
+    ],
     ["Enter falls back to follow-up", {}, { onSteer: undefined }, "followup"],
     ["Alt+Enter falls back to steer", { altKey: true }, { onFollowUp: undefined }, "steer"],
     ["slash completion takes priority", { altKey: true }, { slashMenuOpen: true, slashQuery: "help" }, "slash"],
-    ["available built-in commands take priority", { altKey: true }, { slashMenuOpen: true, slashQuery: "copy", value: "/copy", displayedSlashCommands: [{ name: "copy", source: "builtin", availableWhileStreaming: true }] }, "send"],
+    [
+      "available built-in commands take priority",
+      { altKey: true },
+      {
+        slashMenuOpen: true,
+        slashQuery: "copy",
+        value: "/copy",
+        displayedSlashCommands: [{ name: "copy", source: "builtin", availableWhileStreaming: true }],
+      },
+      "send",
+    ],
     ["file completion takes priority", { altKey: true }, { atMenuOpen: true, atQuery: {} }, "file"],
     ["history selection takes priority", { altKey: true }, { historyMenuOpen: true }, "history"],
   ];
@@ -76,23 +122,53 @@ test("follow-up shortcuts preserve newline, IME, mobile and completion behavior"
     const handler = script.runInNewContext({
       Date: { now: () => 1000 },
       COMPOSITION_END_ENTER_GRACE_MS: 100,
-      isMobile: false, isStreaming: true,
-      isComposingRef: { current: false }, lastCompositionEndAtRef: { current: 0 },
-      historyMenuOpen: false, inputHistory: ["previous"], historyActiveIndex: 0,
-      slashMenuOpen: false, slashQuery: null, displayedSlashCommands: [{}], slashActiveIndex: 0,
-      atMenuOpen: false, atQuery: null, atMatches: [{}], atActiveIndex: 0,
-      onSteer() {}, onFollowUp() {},
-      sendQueued(mode) { action = mode; }, handleSend() { action = "send"; },
-      applySlashCommand() { action = "slash"; },
-      isExactSlashCommand, value: "", setSlashMenuOpen() {},
-      applyAtCompletion() { action = "file"; },
-      applyHistoryInput() { action = "history"; },
+      isMobile: false,
+      isStreaming: true,
+      isComposingRef: { current: false },
+      lastCompositionEndAtRef: { current: 0 },
+      historyMenuOpen: false,
+      inputHistory: ["previous"],
+      historyActiveIndex: 0,
+      slashMenuOpen: false,
+      slashQuery: null,
+      displayedSlashCommands: [{}],
+      slashActiveIndex: 0,
+      atMenuOpen: false,
+      atQuery: null,
+      atMatches: [{}],
+      atActiveIndex: 0,
+      onSteer() {},
+      onFollowUp() {},
+      sendQueued(mode) {
+        action = mode;
+      },
+      handleSend() {
+        action = "send";
+      },
+      applySlashCommand() {
+        action = "slash";
+      },
+      isExactSlashCommand,
+      value: "",
+      setSlashMenuOpen() {},
+      applyAtCompletion() {
+        action = "file";
+      },
+      applyHistoryInput() {
+        action = "history";
+      },
       ...state,
     });
     handler({
-      key: "Enter", shiftKey: false, altKey: false, ctrlKey: false, metaKey: false,
+      key: "Enter",
+      shiftKey: false,
+      altKey: false,
+      ctrlKey: false,
+      metaKey: false,
       nativeEvent: { isComposing: false, keyCode: 13 },
-      preventDefault() { action = "prevented"; },
+      preventDefault() {
+        action = "prevented";
+      },
       ...keys,
     });
     assert.equal(action, expected, name);
@@ -100,32 +176,56 @@ test("follow-up shortcuts preserve newline, IME, mobile and completion behavior"
 });
 
 test("file mention arrows wrap around the match list", () => {
-  const source = ts.createSourceFile("ChatInput.tsx", readFileSync(new URL("./ChatInput.tsx", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const source = ts.createSourceFile(
+    "ChatInput.tsx",
+    readFileSync(new URL("./ChatInput.tsx", import.meta.url), "utf8"),
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX,
+  );
   function findHandler(node) {
     if (ts.isVariableDeclaration(node) && node.name.getText(source) === "handleKeyDown") {
       return node.initializer.arguments[0];
     }
     return ts.forEachChild(node, findHandler);
   }
-  const script = new Script(ts.transpileModule(findHandler(source).getText(source), {
-    compilerOptions: { target: ts.ScriptTarget.ES2020 },
-  }).outputText);
+  const script = new Script(
+    ts.transpileModule(findHandler(source).getText(source), {
+      compilerOptions: { target: ts.ScriptTarget.ES2020 },
+    }).outputText,
+  );
 
   function move(key, atActiveIndex, length) {
     let next = null;
     const handler = script.runInNewContext({
       Date: { now: () => 1000 },
       COMPOSITION_END_ENTER_GRACE_MS: 100,
-      isMobile: false, isStreaming: false,
-      isComposingRef: { current: false }, lastCompositionEndAtRef: { current: 0 },
-      historyMenuOpen: false, inputHistory: [], historyActiveIndex: 0,
-      slashMenuOpen: false, slashQuery: null, displayedSlashCommands: [], slashActiveIndex: 0,
-      atMenuOpen: true, atQuery: {}, atMatches: Array.from({ length }, () => ({})), atActiveIndex,
-      onSteer() {}, onFollowUp() {},
-      sendQueued() {}, handleSend() {},
+      isMobile: false,
+      isStreaming: false,
+      isComposingRef: { current: false },
+      lastCompositionEndAtRef: { current: 0 },
+      historyMenuOpen: false,
+      inputHistory: [],
+      historyActiveIndex: 0,
+      slashMenuOpen: false,
+      slashQuery: null,
+      displayedSlashCommands: [],
+      slashActiveIndex: 0,
+      atMenuOpen: true,
+      atQuery: {},
+      atMatches: Array.from({ length }, () => ({})),
+      atActiveIndex,
+      onSteer() {},
+      onFollowUp() {},
+      sendQueued() {},
+      handleSend() {},
       applySlashCommand() {},
-      isExactSlashCommand() { return false; }, value: "@file",
-      setSlashMenuOpen() {}, setAtMenuOpen() {},
+      isExactSlashCommand() {
+        return false;
+      },
+      value: "@file",
+      setSlashMenuOpen() {},
+      setAtMenuOpen() {},
       applyAtCompletion() {},
       applyHistoryInput() {},
       cycleListIndex,
@@ -134,7 +234,11 @@ test("file mention arrows wrap around the match list", () => {
       },
     });
     handler({
-      key, shiftKey: false, altKey: false, ctrlKey: false, metaKey: false,
+      key,
+      shiftKey: false,
+      altKey: false,
+      ctrlKey: false,
+      metaKey: false,
       nativeEvent: { isComposing: false, keyCode: 0 },
       preventDefault() {},
     });
@@ -161,9 +265,16 @@ test("cycleListIndex wraps in both directions", () => {
 
 test("shows the follow-up shortcut in the button tooltip", () => {
   const html = renderToStaticMarkup(
-    React.createElement(I18nProvider, null, React.createElement(ChatInput, {
-      onSend() {}, onAbort() {}, onFollowUp() {}, isStreaming: true,
-    })),
+    React.createElement(
+      I18nProvider,
+      null,
+      React.createElement(ChatInput, {
+        onSend() {},
+        onAbort() {},
+        onFollowUp() {},
+        isStreaming: true,
+      }),
+    ),
   );
 
   assert.match(html, /title="Queue this message to send after the current run finishes \(Alt\/Option\+Enter\)"/);
@@ -376,7 +487,7 @@ test("file mention menu applies the measured upward height cap", () => {
   assert.match(block, /min\(48vh, 400px, \$\{atMenuMaxHeight\}px\)/);
   assert.match(block, /flexDirection: "column"/);
   assert.match(block, /minHeight: 0/);
-  assert.equal(block.includes("maxHeight: \"min(48vh, 400px)\""), false);
+  assert.equal(block.includes('maxHeight: "min(48vh, 400px)"'), false);
 });
 
 test("file mention menu remeasures when its layout container shifts the anchor", () => {
@@ -415,7 +526,13 @@ test("compresses large images while preserving small images and GIFs", async () 
   };
   globalThis.createImageBitmap = async () => {
     bitmapCalls += 1;
-    return { width: 2048, height: 1024, close() { closed = true; } };
+    return {
+      width: 2048,
+      height: 1024,
+      close() {
+        closed = true;
+      },
+    };
   };
   globalThis.document = { createElement: () => canvas };
 
@@ -463,16 +580,23 @@ test("locks built-in command submission until it settles", async () => {
     }
     return ts.forEachChild(node, findCallback);
   }
-  const callback = new Script(ts.transpileModule(findCallback(source).getText(source), {
-    compilerOptions: { target: ts.ScriptTarget.ES2020 },
-  }).outputText).runInNewContext({
+  const callback = new Script(
+    ts.transpileModule(findCallback(source).getText(source), {
+      compilerOptions: { target: ts.ScriptTarget.ES2020 },
+    }).outputText,
+  ).runInNewContext({
     attachedImages: [],
     attachedImagesRef: { current: [] },
     builtinCommandPendingRef: { current: false },
     canClearBuiltinCommandInput,
     clearInput() {},
-    onBuiltinCommand: async () => new Promise((resolve) => { callback.resolve = resolve; }),
-    setBuiltinCommandPending(value) { callback.pendingStates.push(value); },
+    onBuiltinCommand: async () =>
+      new Promise((resolve) => {
+        callback.resolve = resolve;
+      }),
+    setBuiltinCommandPending(value) {
+      callback.pendingStates.push(value);
+    },
     valueRef: { current: "/reload" },
   });
   callback.pendingStates = [];
@@ -504,22 +628,16 @@ test("restores text and base64 images when editing a user message", () => {
   };
 
   assert.equal(getUserMessageText(message), "Review this image @src/example.ts ");
-  assert.deepEqual(getUserMessageDraftImages(message), [
-    { data: "AQID", mimeType: "image/png" },
-  ]);
+  assert.deepEqual(getUserMessageDraftImages(message), [{ data: "AQID", mimeType: "image/png" }]);
 });
 
 test("restores legacy flat image entries when editing a user message", () => {
   const message = {
     role: "user",
-    content: [
-      { type: "image", data: "AQID", mimeType: "image/jpeg" },
-    ],
+    content: [{ type: "image", data: "AQID", mimeType: "image/jpeg" }],
   };
 
-  assert.deepEqual(getUserMessageDraftImages(message), [
-    { data: "AQID", mimeType: "image/jpeg" },
-  ]);
+  assert.deepEqual(getUserMessageDraftImages(message), [{ data: "AQID", mimeType: "image/jpeg" }]);
 });
 
 test("does not restore a historical message over a pending image attachment", () => {
@@ -531,18 +649,12 @@ test("does not restore a historical message over a pending image attachment", ()
 
 test("restores a cleared submission using the queued React state", () => {
   let value = "failed submission";
-  const updates = [
-    () => "",
-    (current) => mergeRestoredSubmissionText("failed submission", current),
-  ];
+  const updates = [() => "", (current) => mergeRestoredSubmissionText("failed submission", current)];
 
   for (const update of updates) value = update(value);
 
   assert.equal(value, "failed submission");
-  assert.equal(
-    mergeRestoredSubmissionText("failed submission", "new draft"),
-    "failed submission\n\nnew draft",
-  );
+  assert.equal(mergeRestoredSubmissionText("failed submission", "new draft"), "failed submission\n\nnew draft");
   assert.equal(
     mergeRestoredSubmissionText("failed submission", "failed submission"),
     "failed submission\n\nfailed submission",
@@ -551,24 +663,16 @@ test("restores a cleared submission using the queued React state", () => {
 
 test("keeps a failed first submission recoverable across a composer remount", () => {
   const image = { data: "AQID", mimeType: "image/png" };
-  const restored = mergeRestoredSubmissionDraft(
-    "failed submission",
-    [image],
-    "",
-    [],
-  );
+  const restored = mergeRestoredSubmissionDraft("failed submission", [image], "", []);
 
   assert.deepEqual(restored, {
     value: "failed submission",
     images: [image],
   });
-  assert.deepEqual(
-    mergeRestoredSubmissionDraft("failed submission", [image], "new draft", []),
-    {
-      value: "failed submission\n\nnew draft",
-      images: [image],
-    },
-  );
+  assert.deepEqual(mergeRestoredSubmissionDraft("failed submission", [image], "new draft", []), {
+    value: "failed submission\n\nnew draft",
+    images: [image],
+  });
 });
 
 test("preserves duplicate image attachments when restoring a submission", () => {
@@ -605,10 +709,10 @@ test("rekey keeps a synchronously restored draft when React state is still empty
   clearDraft(sessionKey);
   setDraft(provisionalKey, { value: "restored before state flush", images: [] });
 
-  assert.deepEqual(
-    rekeyDraft(provisionalKey, sessionKey, { value: "", images: [] }),
-    { value: "restored before state flush", images: [] },
-  );
+  assert.deepEqual(rekeyDraft(provisionalKey, sessionKey, { value: "", images: [] }), {
+    value: "restored before state flush",
+    images: [],
+  });
   assert.equal(getDraft(provisionalKey), null);
   assert.deepEqual(getDraft(sessionKey), {
     value: "restored before state flush",
@@ -658,44 +762,55 @@ test("modelSupportsImageInput warns only when modality info is known and lacks i
   assert.equal(modelSupportsImageInput({ provider: "ollama", modelId: "text-only" }, undefined), true);
 });
 
-test("renders image warnings for known text-only defaults without an explicit model selection", { skip: "jiti splits the in-memory draft store instance on Windows; warning code verified at ChatInput.tsx:899/1496 — covered instead by VM E2E" }, () => {
-  const draftKey = "new:/tmp/image-warning-default";
-  const modelList = [
-    { id: "text-only", name: "Text Only", provider: "custom", input: ["text"] },
-    { id: "vision", name: "Vision", provider: "custom", input: ["text", "image"] },
-    { id: "unknown", name: "Unknown", provider: "custom" },
-  ];
-  setDraft(draftKey, {
-    value: "Describe this image",
-    images: [{ data: "aW1hZ2U=", mimeType: "image/png" }],
-  });
+test(
+  "renders image warnings for known text-only defaults without an explicit model selection",
+  {
+    skip: "jiti splits the in-memory draft store instance on Windows; warning code verified at ChatInput.tsx:899/1496 — covered instead by VM E2E",
+  },
+  () => {
+    const draftKey = "new:/tmp/image-warning-default";
+    const modelList = [
+      { id: "text-only", name: "Text Only", provider: "custom", input: ["text"] },
+      { id: "vision", name: "Vision", provider: "custom", input: ["text", "image"] },
+      { id: "unknown", name: "Unknown", provider: "custom" },
+    ];
+    setDraft(draftKey, {
+      value: "Describe this image",
+      images: [{ data: "aW1hZ2U=", mimeType: "image/png" }],
+    });
 
-  try {
-    for (const [modelId, warningExpected] of [["text-only", true], ["vision", false], ["unknown", false], [null, false]]) {
-      const html = renderToStaticMarkup(
-        React.createElement(
-          I18nProvider,
-          null,
-          React.createElement(ChatInput, {
-            onSend() {},
-            onAbort() {},
-            isStreaming: false,
-            isAutoModelSelection: true,
-            model: modelId ? { provider: "custom", modelId } : null,
-            modelList,
-            draftKey,
-          }),
-        ),
-      );
+    try {
+      for (const [modelId, warningExpected] of [
+        ["text-only", true],
+        ["vision", false],
+        ["unknown", false],
+        [null, false],
+      ]) {
+        const html = renderToStaticMarkup(
+          React.createElement(
+            I18nProvider,
+            null,
+            React.createElement(ChatInput, {
+              onSend() {},
+              onAbort() {},
+              isStreaming: false,
+              isAutoModelSelection: true,
+              model: modelId ? { provider: "custom", modelId } : null,
+              modelList,
+              draftKey,
+            }),
+          ),
+        );
 
-      assert.match(html, /<img/);
-      assert.equal(html.includes("Images may not be sent"), warningExpected, `default model: ${modelId}`);
-      if (warningExpected) {
-        assert.match(html, /The selected model \(Text Only\) does not support image input/);
-        assert.ok(html.indexOf('role="alert"') < html.indexOf("<textarea"));
+        assert.match(html, /<img/);
+        assert.equal(html.includes("Images may not be sent"), warningExpected, `default model: ${modelId}`);
+        if (warningExpected) {
+          assert.match(html, /The selected model \(Text Only\) does not support image input/);
+          assert.ok(html.indexOf('role="alert"') < html.indexOf("<textarea"));
+        }
       }
+    } finally {
+      clearDraft(draftKey);
     }
-  } finally {
-    clearDraft(draftKey);
-  }
-});
+  },
+);

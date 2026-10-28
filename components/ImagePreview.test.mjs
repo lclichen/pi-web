@@ -18,7 +18,10 @@ test("uses a native modal dialog and restores focus to its trigger", () => {
   assert.match(source, /useRef<HTMLDialogElement>\(null\)/);
   assert.match(source, /dialog\.showModal\(\)/);
   assert.match(source, /closeButtonRef\.current\?\.focus\(\{ preventScroll: true \}\)/);
-  assert.match(source, /const trigger = triggerRef\.current[\s\S]*?trigger\?\.isConnected[\s\S]*?trigger\.focus\(\{ preventScroll: true \}\)/);
+  assert.match(
+    source,
+    /const trigger = triggerRef\.current[\s\S]*?trigger\?\.isConnected[\s\S]*?trigger\.focus\(\{ preventScroll: true \}\)/,
+  );
   assert.doesNotMatch(source, /createPortal/);
 });
 
@@ -50,6 +53,9 @@ test("keeps the preview and Pi-style close button inside mobile safe areas", () 
     cssSource,
     /\.image-preview-close \{[\s\S]*?top: max\(12px, env\(safe-area-inset-top\)\)[\s\S]*?right: max\(12px, env\(safe-area-inset-right\)\)[\s\S]*?border-radius: 6px[\s\S]*?background: var\(--bg-panel\)/,
   );
-  assert.match(cssSource, /@media \(pointer: coarse\) \{[\s\S]*?\.image-preview-close \{[\s\S]*?width: 44px;[\s\S]*?height: 44px;/);
+  assert.match(
+    cssSource,
+    /@media \(pointer: coarse\) \{[\s\S]*?\.image-preview-close \{[\s\S]*?width: 44px;[\s\S]*?height: 44px;/,
+  );
   assert.match(source, /<path d="M6 6l12 12M18 6 6 18" \/>/);
 });

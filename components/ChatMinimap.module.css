@@ -25,7 +25,9 @@
   padding: 0;
   border-bottom: 1px solid color-mix(in srgb, var(--border) 68%, transparent);
   background: transparent;
-  transition: background 120ms ease, box-shadow 120ms ease;
+  transition:
+    background 120ms ease,
+    box-shadow 120ms ease;
 }
 
 .turn[data-located="true"] {
@@ -125,7 +127,9 @@
   line-height: 26px;
   text-align: center;
   cursor: pointer;
-  transition: color 100ms ease, background 100ms ease;
+  transition:
+    color 100ms ease,
+    background 100ms ease;
 }
 
 .assistantJump:hover {
@@ -167,7 +171,9 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   cursor: pointer;
-  transition: background 100ms ease, color 100ms ease;
+  transition:
+    background 100ms ease,
+    color 100ms ease;
 }
 
 .heading:hover,

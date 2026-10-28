@@ -21,7 +21,11 @@
 const { withConnection, restartScript, REMOTE_APP, REMOTE_LOG } = require("./lib.cjs");
 
 const [cmd, ...args] = process.argv.slice(2);
-const needConn = (fn) => withConnection(async (vm) => { await fn(vm); vm.end(); });
+const needConn = (fn) =>
+  withConnection(async (vm) => {
+    await fn(vm);
+    vm.end();
+  });
 
 const HELP = __filename
   ? `用法见文件头注释：node scripts/vm/vm.cjs <status|probe|build|restart|deploy|hot-sync|logs|npm-install|test>`
@@ -30,33 +34,48 @@ const HELP = __filename
 async function main() {
   switch (cmd) {
     case "status":
-      return needConn((vm) => vm.exec(`
+      return needConn((vm) =>
+        vm.exec(
+          `
 echo "== 端口"; ss -tlnp | grep -E ":3000|:30141|:30142" | head -5
 PID=$(ss -tlnp | grep :30141 | grep -oE "pid=[0-9]+" | head -1 | cut -d= -f2)
 echo "== pi-web pid=$PID"; [ -n "$PID" ] && tr "\\0" "\\n" < /proc/$PID/environ | grep -E "^PI_WEB" | sed "s/=/=<set>/"
 echo "== 磁盘"; df -h / | tail -1
 echo "== 数据目录"; du -sh ~/amedac/piweb-data 2>/dev/null | head -1
-`, { timeoutSec: 30 }));
+`,
+          { timeoutSec: 30 },
+        ),
+      );
 
     case "probe": {
       const script = args[0];
-      if (!script) { console.error("probe 需要 '<shell 片段>'"); process.exit(1); }
+      if (!script) {
+        console.error("probe 需要 '<shell 片段>'");
+        process.exit(1);
+      }
       return needConn((vm) => vm.exec(script, { timeoutSec: 300 }));
     }
 
     case "build":
-      return needConn((vm) => vm.exec(`
+      return needConn((vm) =>
+        vm.exec(
+          `
 export PATH=/home/llmx/tools/node/bin:$PATH
 cd ${REMOTE_APP}
 if npm run build > /tmp/vm-build.log 2>&1; then echo BUILD-OK; else echo BUILD-FAIL; tail -30 /tmp/vm-build.log; exit 1; fi
-`, { timeoutSec: 300 }));
+`,
+          { timeoutSec: 300 },
+        ),
+      );
 
     case "restart":
       return needConn((vm) => vm.exec(restartScript(), { timeoutSec: 60 }));
 
     case "deploy": {
       const branch = args.includes("--branch") ? args[args.indexOf("--branch") + 1] : "dev";
-      return needConn((vm) => vm.exec(`
+      return needConn((vm) =>
+        vm.exec(
+          `
 export PATH=/home/llmx/tools/node/bin:$PATH
 set -e
 cd ${REMOTE_APP}
@@ -70,24 +89,33 @@ ${restartScript()}
 echo "== 冒烟"
 # /api/webauth/config 是 pre-session 路由（proxy 白名单），无需登录即可探活
 curl -s -o /dev/null -w "webauth-config: %{http_code}\\n" -m 10 http://127.0.0.1:30141/api/webauth/config
-`, { timeoutSec: 600 }));
+`,
+          { timeoutSec: 600 },
+        ),
+      );
     }
 
     case "hot-sync": {
       const files = args.filter((a) => !a.startsWith("--"));
-      if (!files.length) { console.error("hot-sync 需要 <file...>（相对仓根路径）"); process.exit(1); }
+      if (!files.length) {
+        console.error("hot-sync 需要 <file...>（相对仓根路径）");
+        process.exit(1);
+      }
       return needConn(async (vm) => {
         console.log("⚠ 热同步未提交文件 —— 验证后请提交并走 deploy 转正，或 git checkout 恢复 VM 树");
         for (const f of files) {
           await vm.put(f);
           console.log("synced", f);
         }
-        await vm.exec(`
+        await vm.exec(
+          `
 export PATH=/home/llmx/tools/node/bin:$PATH
 cd ${REMOTE_APP}
 if npm run build > /tmp/vm-build.log 2>&1; then echo BUILD-OK; else echo BUILD-FAIL; tail -30 /tmp/vm-build.log; exit 1; fi
 ${restartScript()}
-`, { timeoutSec: 600 });
+`,
+          { timeoutSec: 600 },
+        );
       });
     }
 
@@ -97,12 +125,17 @@ ${restartScript()}
     }
 
     case "npm-install":
-      return needConn((vm) => vm.exec(`
+      return needConn((vm) =>
+        vm.exec(
+          `
 export PATH=/home/llmx/tools/node/bin:$PATH
 cd ${REMOTE_APP}
 npm install --no-audit --no-fund 2>&1 | tail -5
 ls node_modules/typescript >/dev/null && echo "typescript: OK"
-`, { timeoutSec: 900 }));
+`,
+          { timeoutSec: 900 },
+        ),
+      );
 
     case "test": {
       const map = {
@@ -112,9 +145,14 @@ ls node_modules/typescript >/dev/null && echo "typescript: OK"
         firstrun: "scripts/vm-firstrun-verify.cjs",
       };
       const target = map[args[0]];
-      if (!target) { console.error(`未知测试 ${args[0]}；可用：${Object.keys(map).join(" | ")}`); process.exit(1); }
+      if (!target) {
+        console.error(`未知测试 ${args[0]}；可用：${Object.keys(map).join(" | ")}`);
+        process.exit(1);
+      }
       const { spawnSync } = require("node:child_process");
-      const r = spawnSync(process.execPath, [require("node:path").join(__dirname, "..", "..", target)], { stdio: "inherit" });
+      const r = spawnSync(process.execPath, [require("node:path").join(__dirname, "..", "..", target)], {
+        stdio: "inherit",
+      });
       process.exit(r.status ?? 1);
     }
 
@@ -124,4 +162,7 @@ ls node_modules/typescript >/dev/null && echo "typescript: OK"
   }
 }
 
-main().catch((e) => { console.error(e); process.exit(1); });
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});

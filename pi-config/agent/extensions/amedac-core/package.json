@@ -4,7 +4,9 @@
   "private": true,
   "description": "Core session extensions shared by the pi CLI and pi-web: todo (full-list write), session plan persistence, PLAN/EXECUTE mode. Distributed via pi-config; pi-web loads the same source through lib/extensions re-export shims.",
   "pi": {
-    "extensions": ["./index.ts"]
+    "extensions": [
+      "./index.ts"
+    ]
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",

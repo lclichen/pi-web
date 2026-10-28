@@ -78,7 +78,9 @@ export function useResizablePanel(options: UseResizablePanelOptions) {
   const [width, setWidth] = useState(defaultWidth);
   const [isResizing, setIsResizing] = useState(false);
   const [mounted, setMounted] = useState(false);
-  useEffect(() => { setMounted(true); }, []);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const effectiveMaxWidth = useCallback(
     () => Math.min(maxWidth, Math.max(minWidth, getMaxWidth())),
@@ -90,95 +92,119 @@ export function useResizablePanel(options: UseResizablePanelOptions) {
     [effectiveMaxWidth, minWidth],
   );
 
-  const applyLiveWidth = useCallback((nextWidth: number) => {
-    widthRef.current = nextWidth;
-    panelRef.current?.style.setProperty(cssVariable, `${nextWidth}px`);
-  }, [cssVariable, widthRef]);
+  const applyLiveWidth = useCallback(
+    (nextWidth: number) => {
+      widthRef.current = nextWidth;
+      panelRef.current?.style.setProperty(cssVariable, `${nextWidth}px`);
+    },
+    [cssVariable, widthRef],
+  );
 
-  const commitWidth = useCallback((candidate: number, commitOptions: CommitOptions = {}) => {
-    const { forcePersist = false, persist = true } = commitOptions;
-    const nextWidth = clampWidth(candidate);
-    const changed = nextWidth !== widthRef.current;
-    applyLiveWidth(nextWidth);
-    setWidth(nextWidth);
-    if (persist && (changed || forcePersist)) writeStoredWidth(storageKey, nextWidth);
-    return nextWidth;
-  }, [applyLiveWidth, clampWidth, storageKey, widthRef]);
+  const commitWidth = useCallback(
+    (candidate: number, commitOptions: CommitOptions = {}) => {
+      const { forcePersist = false, persist = true } = commitOptions;
+      const nextWidth = clampWidth(candidate);
+      const changed = nextWidth !== widthRef.current;
+      applyLiveWidth(nextWidth);
+      setWidth(nextWidth);
+      if (persist && (changed || forcePersist)) writeStoredWidth(storageKey, nextWidth);
+      return nextWidth;
+    },
+    [applyLiveWidth, clampWidth, storageKey, widthRef],
+  );
 
   const restoreBodyState = useCallback((drag: DragState) => {
     document.body.style.cursor = drag.previousCursor;
     document.body.style.userSelect = drag.previousUserSelect;
   }, []);
 
-  const finishResize = useCallback((pointerId: number) => {
-    const drag = dragRef.current;
-    if (!drag || drag.pointerId !== pointerId) return;
-    dragRef.current = null;
-    restoreBodyState(drag);
-    setIsResizing(false);
-    commitWidth(widthRef.current, { forcePersist: true });
+  const finishResize = useCallback(
+    (pointerId: number) => {
+      const drag = dragRef.current;
+      if (!drag || drag.pointerId !== pointerId) return;
+      dragRef.current = null;
+      restoreBodyState(drag);
+      setIsResizing(false);
+      commitWidth(widthRef.current, { forcePersist: true });
 
-    try {
-      if (drag.target.hasPointerCapture(pointerId)) {
-        drag.target.releasePointerCapture(pointerId);
+      try {
+        if (drag.target.hasPointerCapture(pointerId)) {
+          drag.target.releasePointerCapture(pointerId);
+        }
+      } catch {
+        // The browser may have already released capture after pointer cancellation.
       }
-    } catch {
-      // The browser may have already released capture after pointer cancellation.
-    }
-  }, [commitWidth, restoreBodyState, widthRef]);
+    },
+    [commitWidth, restoreBodyState, widthRef],
+  );
 
-  const onPointerDown = useCallback((event: PointerEvent<HTMLDivElement>) => {
-    if (event.pointerType === "mouse" && event.button !== 0) return;
-    event.preventDefault();
-    event.stopPropagation();
+  const onPointerDown = useCallback(
+    (event: PointerEvent<HTMLDivElement>) => {
+      if (event.pointerType === "mouse" && event.button !== 0) return;
+      event.preventDefault();
+      event.stopPropagation();
 
-    const activeDrag = dragRef.current;
-    if (activeDrag) finishResize(activeDrag.pointerId);
+      const activeDrag = dragRef.current;
+      if (activeDrag) finishResize(activeDrag.pointerId);
 
-    const target = event.currentTarget;
-    target.focus({ preventScroll: true });
-    target.setPointerCapture(event.pointerId);
-    dragRef.current = {
-      pointerId: event.pointerId,
-      startPosition: axis === "vertical" ? event.clientY : event.clientX,
-      startWidth: widthRef.current,
-      target,
-      previousCursor: document.body.style.cursor,
-      previousUserSelect: document.body.style.userSelect,
-    };
-    document.body.style.cursor = axis === "vertical" ? "row-resize" : "col-resize";
-    document.body.style.userSelect = "none";
-    setIsResizing(true);
-  }, [axis, finishResize, widthRef]);
+      const target = event.currentTarget;
+      target.focus({ preventScroll: true });
+      target.setPointerCapture(event.pointerId);
+      dragRef.current = {
+        pointerId: event.pointerId,
+        startPosition: axis === "vertical" ? event.clientY : event.clientX,
+        startWidth: widthRef.current,
+        target,
+        previousCursor: document.body.style.cursor,
+        previousUserSelect: document.body.style.userSelect,
+      };
+      document.body.style.cursor = axis === "vertical" ? "row-resize" : "col-resize";
+      document.body.style.userSelect = "none";
+      setIsResizing(true);
+    },
+    [axis, finishResize, widthRef],
+  );
 
-  const onPointerMove = useCallback((event: PointerEvent<HTMLDivElement>) => {
-    const drag = dragRef.current;
-    if (!drag || drag.pointerId !== event.pointerId) return;
-    if (event.pointerType === "mouse" && event.buttons === 0) {
+  const onPointerMove = useCallback(
+    (event: PointerEvent<HTMLDivElement>) => {
+      const drag = dragRef.current;
+      if (!drag || drag.pointerId !== event.pointerId) return;
+      if (event.pointerType === "mouse" && event.buttons === 0) {
+        finishResize(event.pointerId);
+        return;
+      }
+      event.preventDefault();
+
+      const direction = growthDirection === "right" || growthDirection === "down" ? 1 : -1;
+      const position = axis === "vertical" ? event.clientY : event.clientX;
+      const nextWidth = clampWidth(drag.startWidth + (position - drag.startPosition) * direction);
+      applyLiveWidth(nextWidth);
+      event.currentTarget.setAttribute("aria-valuenow", String(nextWidth));
+      event.currentTarget.setAttribute("aria-valuetext", `${nextWidth} px`);
+    },
+    [applyLiveWidth, axis, clampWidth, finishResize, growthDirection],
+  );
+
+  const onPointerUp = useCallback(
+    (event: PointerEvent<HTMLDivElement>) => {
       finishResize(event.pointerId);
-      return;
-    }
-    event.preventDefault();
+    },
+    [finishResize],
+  );
 
-    const direction = growthDirection === "right" || growthDirection === "down" ? 1 : -1;
-    const position = axis === "vertical" ? event.clientY : event.clientX;
-    const nextWidth = clampWidth(drag.startWidth + ((position - drag.startPosition) * direction));
-    applyLiveWidth(nextWidth);
-    event.currentTarget.setAttribute("aria-valuenow", String(nextWidth));
-    event.currentTarget.setAttribute("aria-valuetext", `${nextWidth} px`);
-  }, [applyLiveWidth, axis, clampWidth, finishResize, growthDirection]);
+  const onPointerCancel = useCallback(
+    (event: PointerEvent<HTMLDivElement>) => {
+      finishResize(event.pointerId);
+    },
+    [finishResize],
+  );
 
-  const onPointerUp = useCallback((event: PointerEvent<HTMLDivElement>) => {
-    finishResize(event.pointerId);
-  }, [finishResize]);
-
-  const onPointerCancel = useCallback((event: PointerEvent<HTMLDivElement>) => {
-    finishResize(event.pointerId);
-  }, [finishResize]);
-
-  const onLostPointerCapture = useCallback((event: PointerEvent<HTMLDivElement>) => {
-    finishResize(event.pointerId);
-  }, [finishResize]);
+  const onLostPointerCapture = useCallback(
+    (event: PointerEvent<HTMLDivElement>) => {
+      finishResize(event.pointerId);
+    },
+    [finishResize],
+  );
 
   const resetWidth = useCallback(() => {
     const nextDefault = getDefaultWidth?.() ?? defaultWidth;
@@ -189,31 +215,34 @@ export function useResizablePanel(options: UseResizablePanelOptions) {
     commitWidth(widthRef.current);
   }, [commitWidth, widthRef]);
 
-  const onKeyDown = useCallback((event: KeyboardEvent<HTMLDivElement>) => {
-    const step = event.shiftKey ? 32 : 12;
-    const positiveDirection = growthDirection === "right" || growthDirection === "down";
-    const positiveKey = axis === "vertical" ? "ArrowDown" : "ArrowRight";
-    const negativeKey = axis === "vertical" ? "ArrowUp" : "ArrowLeft";
-    const growKey = positiveDirection ? positiveKey : negativeKey;
-    const shrinkKey = positiveDirection ? negativeKey : positiveKey;
+  const onKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLDivElement>) => {
+      const step = event.shiftKey ? 32 : 12;
+      const positiveDirection = growthDirection === "right" || growthDirection === "down";
+      const positiveKey = axis === "vertical" ? "ArrowDown" : "ArrowRight";
+      const negativeKey = axis === "vertical" ? "ArrowUp" : "ArrowLeft";
+      const growKey = positiveDirection ? positiveKey : negativeKey;
+      const shrinkKey = positiveDirection ? negativeKey : positiveKey;
 
-    if (event.key === growKey) {
-      event.preventDefault();
-      commitWidth(widthRef.current + step, { forcePersist: true });
-    } else if (event.key === shrinkKey) {
-      event.preventDefault();
-      commitWidth(widthRef.current - step, { forcePersist: true });
-    } else if (event.key === "Home") {
-      event.preventDefault();
-      commitWidth(minWidth, { forcePersist: true });
-    } else if (event.key === "End") {
-      event.preventDefault();
-      commitWidth(effectiveMaxWidth(), { forcePersist: true });
-    } else if (event.key === "Enter") {
-      event.preventDefault();
-      resetWidth();
-    }
-  }, [axis, commitWidth, effectiveMaxWidth, growthDirection, minWidth, resetWidth, widthRef]);
+      if (event.key === growKey) {
+        event.preventDefault();
+        commitWidth(widthRef.current + step, { forcePersist: true });
+      } else if (event.key === shrinkKey) {
+        event.preventDefault();
+        commitWidth(widthRef.current - step, { forcePersist: true });
+      } else if (event.key === "Home") {
+        event.preventDefault();
+        commitWidth(minWidth, { forcePersist: true });
+      } else if (event.key === "End") {
+        event.preventDefault();
+        commitWidth(effectiveMaxWidth(), { forcePersist: true });
+      } else if (event.key === "Enter") {
+        event.preventDefault();
+        resetWidth();
+      }
+    },
+    [axis, commitWidth, effectiveMaxWidth, growthDirection, minWidth, resetWidth, widthRef],
+  );
 
   useEffect(() => {
     if (restoredRef.current) return;
@@ -271,7 +300,7 @@ export function useResizablePanel(options: UseResizablePanelOptions) {
     resetWidth,
     separatorProps: {
       "aria-label": ariaLabel,
-      "aria-orientation": axis === "vertical" ? "horizontal" as const : "vertical" as const,
+      "aria-orientation": axis === "vertical" ? ("horizontal" as const) : ("vertical" as const),
       "aria-valuemax": mounted ? effectiveMaxWidth() : maxWidth,
       "aria-valuemin": minWidth,
       "aria-valuenow": width,

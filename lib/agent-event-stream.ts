@@ -1,8 +1,4 @@
-import {
-  isEventIncludedInSnapshot,
-  toClientAgentEvent,
-  type AgentEventLike,
-} from "./agent-event-wire.ts";
+import { isEventIncludedInSnapshot, toClientAgentEvent, type AgentEventLike } from "./agent-event-wire.ts";
 import { acquireSessionLivenessLease } from "./session-liveness.ts";
 
 export interface AgentEventStreamSession {
@@ -30,8 +26,8 @@ const HEARTBEAT_INTERVAL_MS = 30_000;
  */
 const CLOSER_REGISTRY: symbol = Symbol.for("pi-web.agentEventStreamClosers");
 export type StreamCloser = (closeController: boolean | "error") => void;
-const activeStreamClosers: Set<StreamCloser> =
-  ((globalThis as Record<symbol, Set<StreamCloser>>)[CLOSER_REGISTRY] ??= new Set<StreamCloser>());
+const activeStreamClosers: Set<StreamCloser> = ((globalThis as Record<symbol, Set<StreamCloser>>)[CLOSER_REGISTRY] ??=
+  new Set<StreamCloser>());
 
 /**
  * Register an SSE stream closer in the shared shutdown registry (invoked by
@@ -48,7 +44,11 @@ export function registerEventStreamCloser(closer: StreamCloser): () => void {
 /** Close every live SSE stream (called on process shutdown signals). */
 export function closeAllAgentEventStreams(): void {
   for (const close of [...activeStreamClosers]) {
-    try { close("error"); } catch { /* stream already closed */ }
+    try {
+      close("error");
+    } catch {
+      /* stream already closed */
+    }
   }
 }
 
@@ -93,9 +93,17 @@ export function createAgentEventStream(
         unsubscribe = null;
         if (abortHandler) req.signal.removeEventListener("abort", abortHandler);
         if (closeController === "error") {
-          try { controller.error(new Error("pi-web server shutting down")); } catch { /* already closed */ }
+          try {
+            controller.error(new Error("pi-web server shutting down"));
+          } catch {
+            /* already closed */
+          }
         } else if (closeController) {
-          try { controller.close(); } catch { /* stream already closed */ }
+          try {
+            controller.close();
+          } catch {
+            /* stream already closed */
+          }
         }
       };
       cancelStream = cleanup;

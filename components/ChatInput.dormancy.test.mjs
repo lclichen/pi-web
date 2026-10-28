@@ -25,10 +25,7 @@ test("uses the rendered slash command order for selection indices", () => {
     source: "builtin",
   };
 
-  const layout = buildSlashCommandLayout(
-    [dormant, active, builtin],
-    { alpha: true, beta: false },
-  );
+  const layout = buildSlashCommandLayout([dormant, active, builtin], { alpha: true, beta: false });
 
   assert.deepEqual(
     layout.commands.map((command) => command.name),

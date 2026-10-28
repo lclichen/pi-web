@@ -72,9 +72,10 @@ const SESSION_SWEEP_MS = 10 * 60 * 1000;
  *  back to defaults with a warning; an absolute cap below the idle window is
  *  clamped up to the idle window (the cap must not expire sessions faster
  *  than inactivity would). */
-export function resolveSessionTtls(
-  env: Record<string, string | undefined> = process.env,
-): { idleTtlMs: number; absoluteTtlMs: number } {
+export function resolveSessionTtls(env: Record<string, string | undefined> = process.env): {
+  idleTtlMs: number;
+  absoluteTtlMs: number;
+} {
   const readDays = (name: string, fallbackMs: number): number => {
     const raw = env[name]?.trim();
     if (!raw) return fallbackMs;
@@ -136,8 +137,9 @@ function persist(sessions: Map<string, WebSession>): void {
  */
 function revokeSessionKey(session: WebSession): void {
   if (!session.apiKey || !session.apiKeyId) return;
-  void platformDelete(`/api/v1/auth/api-keys/${encodeURIComponent(String(session.apiKeyId))}`, session.apiKey)
-    .catch(() => {});
+  void platformDelete(`/api/v1/auth/api-keys/${encodeURIComponent(String(session.apiKeyId))}`, session.apiKey).catch(
+    () => {},
+  );
 }
 
 /** Sliding idle window from lastSeenAt + absolute cap from createdAt. */
@@ -176,7 +178,12 @@ export function isWebAuthEnabled(): boolean {
   return process.env.PI_WEB_AUTH === "on";
 }
 
-export function createWebSession(user: PlatformUser, apiKey: string, apiKeyId: number | string, changeTicket?: string): WebSession {
+export function createWebSession(
+  user: PlatformUser,
+  apiKey: string,
+  apiKeyId: number | string,
+  changeTicket?: string,
+): WebSession {
   const session: WebSession = {
     sid: randomUUID(),
     user,
@@ -263,9 +270,14 @@ export function hostIdentity(): PlatformUser {
  * implicit host admin; with auth on it requires a valid web session. A
  * password-change ticket session is NOT a usable identity.
  */
-export function requireUserIdentity(request: Request): { ok: true; session: WebSession } | { ok: false; status: number } {
+export function requireUserIdentity(
+  request: Request,
+): { ok: true; session: WebSession } | { ok: false; status: number } {
   if (!isWebAuthEnabled()) {
-    return { ok: true, session: { sid: "", user: hostIdentity(), apiKey: "", apiKeyId: "", createdAt: 0, lastSeenAt: 0 } };
+    return {
+      ok: true,
+      session: { sid: "", user: hostIdentity(), apiKey: "", apiKeyId: "", createdAt: 0, lastSeenAt: 0 },
+    };
   }
   const session = getWebSession(request);
   if (!session || session.changeTicket) return { ok: false, status: 401 };
@@ -278,7 +290,9 @@ export function requireUserIdentity(request: Request): { ok: true; session: WebS
  * the platform itself authorized at login — X-API-Key forwarding means the
  * platform re-checks admin rights on every call (defense in depth).
  */
-export function requireAdminIdentity(request: Request): { ok: true; session: WebSession } | { ok: false; status: number } {
+export function requireAdminIdentity(
+  request: Request,
+): { ok: true; session: WebSession } | { ok: false; status: number } {
   const identity = requireUserIdentity(request);
   if (!identity.ok) return identity;
   if (identity.session.user.role !== "admin") return { ok: false, status: 403 };

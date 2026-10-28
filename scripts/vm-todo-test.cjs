@@ -1,5 +1,5 @@
-const { Client } = require('ssh2');
-const { loadVmConnection } = require('./vm-connection.cjs');
+const { Client } = require("ssh2");
+const { loadVmConnection } = require("./vm-connection.cjs");
 const conn = new Client();
 
 const remote = `#!/bin/bash
@@ -50,13 +50,23 @@ PYEOF
 echo DONE >> $OUT
 `;
 
-const b64 = Buffer.from(remote, 'utf8').toString('base64');
-conn.on('ready', () => {
-  conn.exec(`printf %s '${b64}' | base64 -d > /tmp/todo-test.sh && timeout 300 bash /tmp/todo-test.sh; cat /tmp/todo-results.txt`, (err, stream) => {
-    if (err) { console.error(err); process.exit(1); }
-    let out = '';
-    stream.on('data', (d) => out += d).stderr.on('data', (d) => out += d);
-    stream.on('close', () => { console.log(out.trim()); conn.end(); process.exit(0); });
-  });
+const b64 = Buffer.from(remote, "utf8").toString("base64");
+conn.on("ready", () => {
+  conn.exec(
+    `printf %s '${b64}' | base64 -d > /tmp/todo-test.sh && timeout 300 bash /tmp/todo-test.sh; cat /tmp/todo-results.txt`,
+    (err, stream) => {
+      if (err) {
+        console.error(err);
+        process.exit(1);
+      }
+      let out = "";
+      stream.on("data", (d) => (out += d)).stderr.on("data", (d) => (out += d));
+      stream.on("close", () => {
+        console.log(out.trim());
+        conn.end();
+        process.exit(0);
+      });
+    },
+  );
 });
 conn.connect(loadVmConnection());

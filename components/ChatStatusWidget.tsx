@@ -52,6 +52,10 @@ interface Props {
   goal?: string | null;
   /** Collaboration mode from the plan-mode extension ("plan" shows a badge). */
   planMode?: "execute" | "plan" | null;
+  /** Reports the top reserve (px) the transcript should pad so the first
+   *  message clears the floating pill; 0 when the capsule is hidden. The
+   *  expanded panel intentionally overlays content (popover semantics). */
+  onTopReserveChange?: (px: number) => void;
 }
 
 /**
@@ -61,10 +65,13 @@ interface Props {
  * 折叠兜底链（lib/chat-status-model 的 buildCollapsedSummary）:
  *   TODO 当前步 → 目标 → git ±N → 会话计划 → 运行活动计数 → idle(整体退场)
  *
- * 同一 shell 的两态形变（ZCode 同款）：折叠 pill 与展开 panel 是同一个
- * 容器——mini 宽度经隐藏测量元素 + ResizeObserver 实测（两个状态都有
- * 显式宽度，width/radius/padding/shadow 才能平滑过渡）。auto 变体按对话
- * 容器宽度（≥1180px 默认展开、否则 mini），用户点击可覆盖，会话切换重置。
+ * 同一 shell 的两态形变（ZCode ConversationStatusPanel 同款）：折叠 pill
+ * 与展开 panel 是同一个容器，mini 宽度经隐藏测量元素 + ResizeObserver
+ * 实测。形变只动画表面属性（radius/shadow 300ms ease-in-out）——尺寸
+ * （width/max-height）瞬时切换，壳右上角锚定，视觉上即自右上角铺开；
+ * 几何参与过渡会让文本中途回流、并与圆角逐阶段失步（实测两段式跳动）。
+ * auto 变体按对话容器宽度（≥1180px 默认展开、否则 mini），用户点击可
+ * 覆盖，会话切换重置。
  *
  * Expanded sections: goal row / 进程（Todo >6 条聚焦窗口，折叠边缘带
  * title 预览）/ 智能体（运行中 + 停止；已结束收进"已结束 N"页脚目录）/
@@ -77,6 +84,7 @@ export function ChatStatusWidget({
   planActive,
   plan = null, todos = [], goal = null,
   planMode = null,
+  onTopReserveChange,
 }: Props) {
   const { t } = useI18n();
   const [hovered, setHovered] = useState(false);
@@ -204,6 +212,13 @@ export function ChatStatusWidget({
     [todos, goal, gitSummary, runningCount, endedCalls.length, bashRunning, agentRunning, bgTasks, plan],
   );
   const visible = capsuleVisible(summary, planMode === "plan");
+
+  // Transcript top reserve: keep the first message clear of the collapsed
+  // pill (collapsed height + root top offset − the column's existing pt-4,
+  // plus breathing room; the plan badge stacks above the pill).
+  useEffect(() => {
+    onTopReserveChange?.(visible ? 30 + (planMode === "plan" ? 24 : 0) : 0);
+  }, [visible, planMode, onTopReserveChange]);
 
   const todoDone = todos.filter((x) => x.status === "completed").length;
   const formatElapsed = (startedAt: number): string => {
@@ -361,7 +376,7 @@ export function ChatStatusWidget({
         background: "transparent",
         color: hovered && !panelOpen ? "var(--accent)" : "var(--text)",
         border: "none",
-        transition: "padding 0.22s ease, color 0.12s",
+        transition: "color 0.12s",
       }}
     >
       {headerRow}
@@ -407,7 +422,7 @@ export function ChatStatusWidget({
           boxShadow: panelOpen ? "0 10px 28px rgba(0,0,0,0.14)" : "none",
           overflow: "hidden",
           display: "flex", flexDirection: "column",
-          transition: "width 0.22s ease, border-radius 0.22s ease, box-shadow 0.22s ease, background 0.12s, border-color 0.12s",
+          transition: `border-radius ${SURFACE_MS}ms ease-in-out, box-shadow ${SURFACE_MS}ms ease-in-out, background 0.12s, border-color 0.12s`,
         }}
       >
         {headerButton}
@@ -631,8 +646,9 @@ export function ChatStatusWidget({
         )}
       </div>
 
-      {/* Hidden measuring clone: carries the natural mini width for the
-          shell's width transition (never visible, never interactive). */}
+      {/* Hidden measuring clone: carries the natural mini width so both shell
+          states have an explicit width (stable top-right-anchored swap —
+          never visible, never interactive). */}
       <div
         ref={measureRef}
         aria-hidden="true"
@@ -651,6 +667,10 @@ const chipStyle: React.CSSProperties = {
   flexShrink: 0, fontSize: 10, lineHeight: "16px", padding: "0 6px", borderRadius: 999,
   background: "var(--bg-selected)", color: "var(--text-muted)", fontFamily: "var(--font-mono)",
 };
+
+/** Pill↔panel morph follows ZCode ConversationStatusPanel: geometry snaps
+ *  (top-right anchored), only surface props settle — see component docblock. */
+const SURFACE_MS = 300;
 
 /** in_progress 优先、缺省回落首个 pending —— 与 model 层的链头一致。 */
 function currentTodoId(todos: TodoItem[]): number | null {

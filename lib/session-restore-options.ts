@@ -12,6 +12,7 @@ import { makeRelayToolsExtension } from "./extensions/relay-tools";
 import { makeRemoteVerifyExtension } from "./extensions/remote-verify";
 import { makeEnvironmentInfoExtension } from "./extensions/environment-info";
 import { makeSshToolsExtension } from "./extensions/ssh-tools";
+import { makeSandboxToolsExtension } from "./extensions/sandbox-tools";
 import { makeBgTasksExtension } from "./extensions/bg-tasks";
 import { registerBgChannel } from "./extensions/bg-shell";
 import { makeRelayBgChannel, makeSandboxBgChannel, makeSshBgChannel } from "./extensions/bg-channels";
@@ -47,9 +48,8 @@ export async function restoreSessionOptions(req: Request, sessionId: string): Pr
   let effectiveCwd: string | undefined;
 
   if (mode === "sandbox") {
-    const extPath = process.env.PI_WEB_SANDBOX_EXTENSION_PATH;
     const apiKey = identity.session.apiKey;
-    if (process.env.PI_WEB_PLATFORM_URL && extPath && existsSync(extPath) && apiKey) {
+    if (process.env.PI_WEB_PLATFORM_URL && apiKey) {
       if (project && project.mode === "sandbox") {
         const home = ensureProjectHome(project);
         // Refresh credentials in the project's sandbox-platform.json exactly
@@ -64,8 +64,11 @@ export async function restoreSessionOptions(req: Request, sessionId: string): Pr
           disableLocalFallback: true,
         });
       }
-      additionalExtensionPaths = [extPath];
+      // Container tool routing comes from the amedac-core sandbox module,
+      // injected inline (merged from the retired pi-sandbox-extension; the
+      // old PI_WEB_SANDBOX_EXTENSION_PATH wiring is gone).
       extensionFactories = [
+        makeSandboxToolsExtension(),
         makeRemoteVerifyExtension("sandbox", meta?.ownerId ?? user.id),
         makeEnvironmentInfoExtension({
           mode: "sandbox",

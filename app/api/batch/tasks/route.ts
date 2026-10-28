@@ -74,8 +74,10 @@ export async function POST(req: Request) {
   if (mode === "sandbox") {
     // Sandbox mode requires the platform to be wired; refusing here beats the
     // old behavior of silently running tools on the pi-web server host.
-    if (!process.env.PI_WEB_PLATFORM_URL || !process.env.PI_WEB_SANDBOX_EXTENSION_PATH) {
-      return NextResponse.json({ error: "沙盒模式未配置（缺少 PI_WEB_PLATFORM_URL / PI_WEB_SANDBOX_EXTENSION_PATH）" }, { status: 400 });
+    // (Container tool routing itself comes from the amedac-core sandbox
+    // module injected by the task runner — no extension path env anymore.)
+    if (!process.env.PI_WEB_PLATFORM_URL) {
+      return NextResponse.json({ error: "沙盒模式未配置（缺少 PI_WEB_PLATFORM_URL）" }, { status: 400 });
     }
     if (typeof body.containerId !== "number") {
       return NextResponse.json({ error: "containerId is required in sandbox mode (pre-provisioned platform container)" }, { status: 400 });

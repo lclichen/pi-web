@@ -79,7 +79,6 @@ fi
 mkdir -p "$RUN_DIR" "$LOG_DIR" "$DATA_DIR" "$CONFIG_DIR"
 
 PLATFORM_DIR="$PKG/sandbox/platform"
-EXTENSION_DIR="$PKG/sandbox/extension"
 PLATFORM_ENV_FILE="$CONFIG_DIR/platform.env"
 WEB_ENV_FILE="$CONFIG_DIR/piweb.env"
 ADMIN_PW_FILE="$CONFIG_DIR/admin-password.txt"
@@ -331,9 +330,8 @@ start_web() {
 # 平台地址默认自动跟随探测到的平台端口；固定：加一行 PI_WEB_PLATFORM_URL=http://…
 PI_WEB_AUTH=on
 PI_WEB_DATA_DIR=$DATA_DIR/piweb
-# PI_WEB_SANDBOX_EXTENSION_PATH 默认每次启动按当前包目录注入（AppImage 挂载点
-# 每次启动都会变化）；如需指向自建扩展目录，取消注释并改为你的绝对路径。
-# PI_WEB_SANDBOX_EXTENSION_PATH=/abs/path/to/pi-sandbox-extension
+# （容器工具桥接已合并进 amedac-core 扩展，随 pi-config 模板安装；
+#  旧版 PI_WEB_SANDBOX_EXTENSION_PATH 已废弃——残留在本文件里也无害。）
 PI_WEB_LAB_TRAINING=off
 # agent 会话空闲多久后自动关闭（运行时会话驱逐，会话文件保留、重开可恢复；
 # 非登录态。0=禁用空闲关闭）。代码默认 10 分钟对整日使用的工作会话太激进，
@@ -362,15 +360,8 @@ EOF
     export PORT="$WEB_PORT"
     # 平台地址跟随本次探测结果（env 文件里显式写了则以文件为准）
     export PI_WEB_PLATFORM_URL="${PI_WEB_PLATFORM_URL:-http://127.0.0.1:$PLATFORM_PORT}"
-    # 扩展桥接路径每次按“当前包目录”注入：文件里自定义的有效值优先；指向已
-    # 不存在目录的陈旧值（旧版写死过 AppImage 临时挂载点）会被识别并回落到
-    # 本次包内扩展，避免扩展软链指向已卸载目录。
-    export PI_WEB_SANDBOX_EXTENSION_PATH="${PI_WEB_SANDBOX_EXTENSION_PATH:-$EXTENSION_DIR}"
-    if [ "${PI_WEB_SANDBOX_EXTENSION_PATH:-}" != "$EXTENSION_DIR" ] \
-       && [ ! -d "${PI_WEB_SANDBOX_EXTENSION_PATH:-/nonexistent}" ]; then
-      warn "piweb.env 的 PI_WEB_SANDBOX_EXTENSION_PATH 指向不存在的目录，已回落当前包内扩展: $EXTENSION_DIR"
-      export PI_WEB_SANDBOX_EXTENSION_PATH="$EXTENSION_DIR"
-    fi
+    # （旧版在此注入 PI_WEB_SANDBOX_EXTENSION_PATH；容器工具桥接已合并进
+    #  amedac-core，无需扩展路径注入。）
     # 自有版本体系：暴露应用根与部署形态给更新器。pkg-kind 文件缺失的旧包按
     # AppImage 环境变量识别（squashfs 只读，更新策略不同，不能误判成 tarball）。
     export AMEDAC_APP_ROOT="$PKG"

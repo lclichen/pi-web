@@ -21,7 +21,8 @@ import { makeRelayToolsExtension } from "@/lib/extensions/relay-tools";
 import { sessionDirsForProject } from "@/lib/session-context";
 import { makeRemoteVerifyExtension } from "@/lib/extensions/remote-verify";
 import { makeEnvironmentInfoExtension } from "@/lib/extensions/environment-info";
-import { ensureProjectHome, ensureSandboxExtensionLink, getOwnedProject, writeSandboxConfig, type ProjectRecord } from "@/lib/projects";
+import { ensureProjectHome, removeLegacySandboxExtensionLink, getOwnedProject, writeSandboxConfig, type ProjectRecord } from "@/lib/projects";
+import { makeSandboxToolsExtension } from "@/lib/extensions/sandbox-tools";
 import { requireCompatibleAgent } from "@/lib/relay/agent-gate";
 import { isApiRequestAllowed } from "@/lib/request-security";
 import { platformGet } from "@/lib/platform/client";
@@ -129,16 +130,12 @@ export async function POST(req: Request) {
         if (!identity.session.apiKey) {
           return NextResponse.json({ error: "沙箱模式需要平台凭证，请重新登录" }, { status: 401 });
         }
-        const extPath = process.env.PI_WEB_SANDBOX_EXTENSION_PATH;
-        if (!extPath || !existsSync(extPath)) {
-          return NextResponse.json({ error: "沙箱模式未配置（PI_WEB_SANDBOX_EXTENSION_PATH 无效）" }, { status: 400 });
-        }
         // Project's own .pi/sandbox-platform.json carries url/container; refresh credentials.
         writeSandboxConfig(home, { apiKey: identity.session.apiKey });
-        // Ensure the sandbox extension symlink exists (created at project
-        // creation, but re-check as a safety net — .pi/extensions/ discovery
-        // handles loading, no additionalExtensionPaths needed).
-        ensureSandboxExtensionLink(home);
+        // Legacy cleanup: projects created before the amedac-core merge carry
+        // a .pi/extensions/pi-sandbox-extension symlink that would now double-
+        // register the container tools.
+        removeLegacySandboxExtensionLink(home);
         if (project.containerId) {
           writeSandboxConfig(home, { containerId: project.containerId });
         } else {
@@ -155,6 +152,9 @@ export async function POST(req: Request) {
           if (containerId) writeSandboxConfig(home, { containerId });
         }
         extensionFactories = [
+          // Container tool routing: amedac-core sandbox module, inline
+          // (merged from the retired pi-sandbox-extension package).
+          makeSandboxToolsExtension(),
           makeRemoteVerifyExtension("sandbox", user.id),
           makeEnvironmentInfoExtension({
             mode: "sandbox",
@@ -204,10 +204,6 @@ export async function POST(req: Request) {
       if (user.id !== 0 && !identity.session.apiKey) {
         return NextResponse.json({ error: "沙箱模式需要平台凭证，请重新登录" }, { status: 401 });
       }
-      const extPath = process.env.PI_WEB_SANDBOX_EXTENSION_PATH;
-      if (!extPath || !existsSync(extPath)) {
-        return NextResponse.json({ error: "沙箱模式未配置（PI_WEB_SANDBOX_EXTENSION_PATH 无效）" }, { status: 400 });
-      }
       // Per-user stub home carries the sandbox config (url/apiKey/container/
       // disableLocalFallback) via <home>/.pi/sandbox-platform.json.
       effectiveCwd = ensureSandboxHome(user.id, {
@@ -224,8 +220,9 @@ export async function POST(req: Request) {
       }
       if (auto.containerId) setSandboxContainer(user.id, auto.containerId);
       }
-      ensureSandboxExtensionLink(effectiveCwd!);
+      removeLegacySandboxExtensionLink(effectiveCwd!);
       extensionFactories = [
+        makeSandboxToolsExtension(),
         makeRemoteVerifyExtension("sandbox", user.id),
         makeEnvironmentInfoExtension({ mode: "sandbox", username: user.username }),
       ];

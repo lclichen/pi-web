@@ -31,6 +31,7 @@ import { registerBgChannel } from "../extensions/bg-shell.ts";
 import { makeSandboxBgChannel, makeRelayBgChannel } from "../extensions/bg-channels.ts";
 import { requireCompatibleAgent } from "../relay/agent-gate.ts";
 import { makeRelayToolsExtension } from "../extensions/relay-tools.ts";
+import { makeSandboxToolsExtension } from "../extensions/sandbox-tools.ts";
 import { countActiveTasks, getTask, publishTaskEvent, updateTask, type BatchTask, type BatchStopReason } from "./task-store.ts";
 
 // ---------------------------------------------------------------------------
@@ -322,9 +323,7 @@ export async function runBatchTask(options: RunTaskOptions): Promise<void> {
     //      local-machine sessions. The machine's own workspace is the target.
     let sessionCwd: string;
     if (options.mode === "sandbox") {
-      const extPath = process.env.PI_WEB_SANDBOX_EXTENSION_PATH;
       if (!process.env.PI_WEB_PLATFORM_URL) throw new Error("沙盒模式未配置（缺少 PI_WEB_PLATFORM_URL）");
-      if (!extPath || !existsSync(extPath)) throw new Error("沙盒模式未配置（PI_WEB_SANDBOX_EXTENSION_PATH 无效）");
       if (options.containerId === undefined) throw new Error("sandbox mode requires containerId");
       if (!options.platformApiKey) throw new Error("sandbox mode requires platformApiKey");
       sessionCwd = ensureBatchHome(taskId);
@@ -374,9 +373,10 @@ export async function runBatchTask(options: RunTaskOptions): Promise<void> {
       isSandbox
         ? {
             ...coreOptions,
-            additionalExtensionPaths: resolveCoreExtensionPaths([process.env.PI_WEB_SANDBOX_EXTENSION_PATH!]),
+            additionalExtensionPaths: resolveCoreExtensionPaths(),
             extensionFactories: [
               makeBgTasksExtension(),
+              makeSandboxToolsExtension(),
               makeRemoteVerifyExtension("sandbox", options.ownerId),
               makeEnvironmentInfoExtension({
                 mode: "sandbox",

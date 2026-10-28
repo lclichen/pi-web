@@ -1,6 +1,7 @@
 import type { InlineExtension } from "@earendil-works/pi-coding-agent";
 import { makeRelayToolsExtension } from "./extensions/relay-tools";
 import { makeSshToolsExtension } from "./extensions/ssh-tools";
+import { makeSandboxToolsExtension } from "./extensions/sandbox-tools";
 import { makeEnvironmentInfoExtension } from "./extensions/environment-info";
 import { makeRemoteVerifyExtension } from "./extensions/remote-verify";
 import { resolveSessionMode } from "./session-metas";
@@ -92,6 +93,11 @@ export function childExtensionsFor(
     }
     case "sandbox": {
       return [
+        // Container tool routing for child sessions: pre-merge children got
+        // the sandbox extension via .pi/extensions file discovery in the
+        // project home; post-merge that link is removed, so the factory
+        // rides the inline bridge like every other mode tool layer.
+        makeSandboxToolsExtension(),
         makeRemoteVerifyExtension("sandbox", info.ownerId),
         makeEnvironmentInfoExtension({
           mode: "sandbox",

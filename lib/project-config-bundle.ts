@@ -135,6 +135,47 @@ export interface ExportOptions {
   package?: Partial<BundlePackageMeta>;
 }
 
+/** Project-side package declaration carried INSIDE the bundle as
+ *  `.pi/bundle.json` (written by the Agent Builder per agent-packaging).
+ *  Export lifts it into manifest.package so Agents 管理 shows the name /
+ *  version / dependencies the builder declared. */
+const BUNDLE_DECL_FILE = ".pi/bundle.json";
+
+interface BundleDeclaration {
+  name?: string;
+  title?: string;
+  description?: string;
+  version?: string;
+  channel?: string;
+  dependencies?: string[];
+}
+
+function sanitizeDeclaration(raw: unknown): BundleDeclaration {
+  const out: BundleDeclaration = {};
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return out;
+  const src = raw as Record<string, unknown>;
+  for (const key of ["name", "title", "description", "version", "channel"] as const) {
+    const value = src[key];
+    if (typeof value === "string" && value.trim()) out[key] = value.trim().slice(0, 200);
+  }
+  if (Array.isArray(src.dependencies)) {
+    out.dependencies = src.dependencies
+      .filter((d): d is string => typeof d === "string" && d.trim().length > 0)
+      .map((d) => d.trim().slice(0, 100))
+      .slice(0, 50);
+  }
+  return out;
+}
+
+async function readBundleDeclaration(home: string): Promise<BundleDeclaration> {
+  try {
+    const raw = await readFile(join(home, ...BUNDLE_DECL_FILE.split("/")), "utf8");
+    return sanitizeDeclaration(JSON.parse(raw));
+  } catch {
+    return {}; // missing / malformed declaration — fall back to defaults
+  }
+}
+
 /** Build a config bundle zip for a project home. Returns the archive bytes. */
 export async function exportProjectConfigBundle(
   home: string,
@@ -173,12 +214,16 @@ export async function exportProjectConfigBundle(
       .trim()
       .replace(/[^\w.-]+/g, "-")
       .replace(/^-+|-+$/g, "") || "project";
-  const pkg: BundlePackageMeta = {
-    name: options.package?.name ?? slug,
-    title: options.package?.title ?? projectName,
-    description: options.package?.description ?? "",
-    version: options.package?.version ?? "1.0.0",
-    channel: options.package?.channel ?? "stable",
+  // `.pi/bundle.json` (Agent Builder declaration) fills anything the caller
+  // did not set; explicit options still win.
+  const declared = await readBundleDeclaration(home);
+  const pkg: BundlePackageMeta & { dependencies?: string[] } = {
+    name: options.package?.name ?? declared.name ?? slug,
+    title: options.package?.title ?? declared.title ?? projectName,
+    description: options.package?.description ?? declared.description ?? "",
+    version: options.package?.version ?? declared.version ?? "1.0.0",
+    channel: options.package?.channel ?? declared.channel ?? "stable",
+    ...(declared.dependencies && declared.dependencies.length > 0 ? { dependencies: declared.dependencies } : {}),
   };
   zip.file(
     "manifest.json",

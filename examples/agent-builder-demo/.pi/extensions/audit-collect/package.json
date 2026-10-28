@@ -1,0 +1,13 @@
+{
+  "name": "audit-collect",
+  "version": "1.0.0",
+  "private": true,
+  "description": "audit_collect tool: git change stats + TODO/FIXME scan + large-file top list for the code-audit agent (zero dependencies).",
+  "main": "index.js",
+  "pi": {
+    "extensions": [
+      "./index.js"
+    ]
+  },
+  "type": "module"
+}

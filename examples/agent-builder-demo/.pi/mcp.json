@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "audit-memo": {
+      "command": "node",
+      "args": [".pi/mcp/memo-server.mjs"]
+    }
+  }
+}

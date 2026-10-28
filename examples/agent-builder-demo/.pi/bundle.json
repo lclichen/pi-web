@@ -1,0 +1,8 @@
+{
+  "name": "code-audit",
+  "title": "代码巡检 Agent",
+  "description": "对任意代码仓库做结构化巡检：变更概览、TODO 分布、风险清单与覆盖率缺口，产出可进评审纪要的报告。",
+  "version": "1.0.0",
+  "channel": "stable",
+  "dependencies": ["node>=20", "git"]
+}

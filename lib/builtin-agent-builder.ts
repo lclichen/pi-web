@@ -61,19 +61,19 @@ const AGENTS_MD = `# Agent Builder
 - 不使用 labs/ 目录（已废弃；历史包兼容导入，新定义一律 .pi/）。
 - 凭据文件（auth.json、ssh.json、sandbox-platform.json）绝不创建或改动。
 
-## manifest.json 规范（打包导出时由导出器生成；开发时按此声明依赖）
+## 包声明 .pi/bundle.json（导出时并入 manifest.package）
+
+开发时在 .pi/bundle.json 写包身份与环境依赖；「导出配置包」会把它并入
+manifest.package（Agents 管理的名称/版本/依赖展示都来自这里）：
 
 \`\`\`json
 {
-  "format": { "version": 2, "exportedAt": "<ISO 8601>" },
-  "package": {
-    "name": "<kebab-case 标识>",
-    "title": "<展示名>",
-    "description": "<一句话描述>",
-    "version": "<semver>",
-    "channel": "stable",
-    "dependencies": ["node>=20", "ripgrep"]
-  }
+  "name": "<kebab-case 标识>",
+  "title": "<展示名>",
+  "description": "<一句话描述>",
+  "version": "<semver>",
+  "channel": "stable",
+  "dependencies": ["node>=20", "ripgrep"]
 }
 \`\`\`
 
@@ -93,6 +93,7 @@ description: Agent 定义（配置包）的打包规范与自检清单——开�
 
 \`\`\`
 .pi/
+  bundle.json             # 包声明（name/title/description/version/channel/dependencies）
   agents/<name>.md        # 子代理定义（名称、提示词、工具）
   agents/<name>/          # 子代理专属配置（可选）
   extensions/<name>/      # nodejs 扩展（package.json + index.js，依赖随包携带）
@@ -110,7 +111,8 @@ AGENTS.md                 # 项目指令（Agent 的系统提示载体之一）
    node --check 语法校验通过。
 3. skills/*/SKILL.md 的 frontmatter 含 name 与 description。
 4. models.json / mcp.json 是合法 JSON 且键名与文档一致。
-5. 环境依赖已声明（导出后在 manifest.package.dependencies 展示）。
+5. .pi/bundle.json 已写、version 已递增、dependencies 已声明
+   （导出后进 manifest.package.dependencies，展示在 Agents 管理）。
 6. 无凭据、无运行态文件（sessions/tmp/bin/cache/plans/.git）。
 
 ## 版本与交付

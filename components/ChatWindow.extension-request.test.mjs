@@ -44,12 +44,12 @@ test("preserves title newlines like pi's TUI and keeps long titles from hiding t
     dialogSource.indexOf('role="dialog"'),
     dialogSource.indexOf('{request.method === "confirm"'),
   );
-  assert.match(header, /whiteSpace: "pre-wrap", overflowWrap: "anywhere" \}\}>\{request\.title\}/);
-  assert.match(header, /maxHeight: "50%", overflowY: "auto" \}\}>[\s\S]*?\{request\.title\}/);
+  assert.match(header, /whiteSpace:\s+"pre-wrap",\s+overflowWrap:\s+"anywhere",?\s*\}\}\s*>\s*\{request\.title\}/);
+  assert.match(header, /maxHeight:\s+"50%",\s+overflowY:\s+"auto",?\s*\}\}\s*>[\s\S]*?\{request\.title\}/);
 });
 
 test("resets collapse state when a new extension request arrives", () => {
   assert.match(source, /<ExtensionDialog key=\{extensionDialog.id\}/);
-  assert.match(source, /<ExtensionCustomPanel key=\{extensionCustomUi.id\}/);
+  assert.match(source, /<ExtensionCustomPanel\s+key=\{extensionCustomUi.id\}/);
   assert.match(customSource, /if \(!collapsed\) inputRef.current\?\.focus\(\);\s*}, \[collapsed\]\)/);
 });

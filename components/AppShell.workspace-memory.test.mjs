@@ -44,7 +44,7 @@ test("keeps chat scroll positions in page memory by session id", () => {
   assert.match(source, /sessionScrollPositionsRef\.current\.set\(sessionId, position\)/);
   assert.match(
     source,
-    /initialScrollPosition=\{selectedSession \? sessionScrollPositionsRef\.current\.get\(selectedSession\.id\) \?\? null : null\}/,
+    /initialScrollPosition=\{\s*selectedSession\s+\?\s*\(?\s*\(?\s*sessionScrollPositionsRef\.current\.get\(selectedSession\.id\)\s+\?\?\s+null\)?\s*:\s+null\s*\}/,
   );
   assert.match(source, /onScrollPositionChange=\{handleSessionScrollPositionChange\}/);
   assert.doesNotMatch(source, /localStorage[^\n]*sessionScroll/i);

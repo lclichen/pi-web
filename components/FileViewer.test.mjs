@@ -8,7 +8,7 @@ const source = await readFile(new URL("./FileViewer.tsx", import.meta.url), "utf
 
 test("large source previews bypass the per-line syntax highlighter", () => {
   assert.match(source, /const SOURCE_HIGHLIGHT_MAX_LINES = 1_000;/);
-  assert.match(source, /const useLightweightSource = sourceLines\.length > SOURCE_HIGHLIGHT_MAX_LINES/);
+  assert.match(source, /const\s+useLightweightSource\s+=\s+sourceLines\.length\s+>\s+SOURCE_HIGHLIGHT_MAX_LINES/);
 
   const lightweightStart = source.indexOf(") : useLightweightSource ? (");
   assert.notEqual(lightweightStart, -1);
@@ -25,7 +25,7 @@ test("large source previews bypass the per-line syntax highlighter", () => {
   // the row markup lives in that memo instead of the inline branch.
   assert.match(
     source,
-    /lightweightSourceLines = useMemo\(\s*\(\) => useLightweightSource \? sourceLines\.map\(\(line, lineIndex\) =>/,
+    /lightweightSourceLines = useMemo\(\s*\(\)\s*=>\s*useLightweightSource\s*\?\s*sourceLines.map\(\(line,\s*lineIndex\)\s*=>/,
   );
   assert.match(source, /className="file-source-line"/);
   assert.match(source, /className="file-source-line-content"/);

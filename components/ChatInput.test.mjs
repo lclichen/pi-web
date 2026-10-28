@@ -480,7 +480,7 @@ test("caps an upward menu to the visible space above its anchor", () => {
 
 test("file mention menu applies the measured upward height cap", () => {
   const source = readFileSync(new URL("./ChatInput.tsx", import.meta.url), "utf8");
-  const start = source.indexOf("{atMenuOpen && atQuery !== null && (() => {");
+  const start = source.indexOf("{atMenuOpen &&");
   assert.notEqual(start, -1);
   const block = source.slice(start, start + 4000);
   assert.match(block, /ref=\{atMenuRef\}/);

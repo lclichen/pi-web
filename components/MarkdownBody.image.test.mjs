@@ -20,7 +20,7 @@ test("markdown images route through remotefs for remote-mode sessions", () => {
 
 test("ChatWindow provides the context for sandbox/local-machine/ssh sessions", () => {
   assert.match(chatSource, /RemoteFileSessionContext/);
-  assert.match(chatSource, /remoteFileSessionId = session\?\.id/);
+  assert.match(chatSource, /remoteFileSessionId\s+=\s+session\?\.id/);
   assert.match(chatSource, /mode === "sandbox" \|\| session\.mode === "local-machine" \|\| session\.mode === "ssh"/);
   // 历史消息与流式消息都在 Provider 内。
   const providers = (chatSource.match(/RemoteFileSessionContext\.Provider/g) ?? []).length;

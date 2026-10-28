@@ -9,7 +9,10 @@ test("压缩后的会话仍可根据持久化消息数生成标题", () => {
 });
 
 test("尚未落盘的会话不会触发依赖 JSONL 的自动命名", () => {
-  assert.match(source, /const disabled = !selectedSession \|\| selectedSession\.transient \|\| !hasMessages/);
+  assert.match(
+    source,
+    /const\s+disabled\s+=\s+!selectedSession\s+\|\|\s+selectedSession\.transient\s+\|\|\s+!hasMessages/,
+  );
 });
 
 test("会话落盘后会用服务端记录清除临时状态", () => {

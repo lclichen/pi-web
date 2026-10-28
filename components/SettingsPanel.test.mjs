@@ -32,12 +32,12 @@ test("keeps enabled configuration surfaces inside the settings panel", () => {
     assert.match(panelSource, new RegExp(`id: "${section}"`));
   }
   for (const component of ["ModelsConfig", "SkillsConfig", "SubagentsConfig", "PluginsConfig"]) {
-    assert.match(panelSource, new RegExp(`<${component} embedded`));
+    assert.match(panelSource, new RegExp(`<${component}\\s+embedded`));
   }
   // This fork surfaces the tintinweb subagents config and the MCP servers
   // config as settings sections (upstream's built-in AgentsConfig stays out).
-  assert.match(panelSource, /<SubagentsConfig embedded/);
-  assert.match(panelSource, /<McpServersConfig embedded/);
+  assert.match(panelSource, /<SubagentsConfig\s+embedded/);
+  assert.match(panelSource, /<McpServersConfig\s+embedded/);
   assert.doesNotMatch(panelSource, /<AgentsConfig embedded/);
 });
 

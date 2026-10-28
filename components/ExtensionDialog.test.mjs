@@ -9,7 +9,10 @@ test("select options carry number badges with digit shortcuts (ZCode-style)", ()
   // 数字快捷键：1-9 直接选择对应项（合成输入法期间不触发）。
   assert.match(source, /\/\^\[1-9\]\$\/\.test\(event\.key\) && !event\.nativeEvent\.isComposing/);
   // 徽章：前 9 项显示数字徽章（aria-hidden 装饰）。
-  assert.match(source, /index < 9 && <span className="ext-select-badge" aria-hidden="true">\{index \+ 1\}<\/span>/);
+  assert.match(
+    source,
+    /index\s+<\s+9\s+&&\s+\(\s*<span\s+className="ext-select-badge"\s+aria-hidden="true">\s*\{index\s+\+\s+1\}\s*<\/span>/,
+  );
   // 焦点态/徽章高亮由 CSS 类驱动（globals.css）。
   assert.match(cssSource, /\.ext-select-option:focus-visible \{/);
   assert.match(cssSource, /\.ext-select-option:focus-visible \.ext-select-badge \{/);

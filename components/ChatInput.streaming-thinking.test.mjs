@@ -10,7 +10,7 @@ test("keeps one thinking control and disables it while the session is busy", () 
   assert.doesNotMatch(source, /isStreaming && onThinkingLevelChange/);
   assert.doesNotMatch(thinkingControl, /<span\s+title=\{t\("chat\.currentReasoning"/);
   assert.match(thinkingControl, /disabled=\{isStreaming\}/);
-  assert.match(thinkingControl, /title=\{isStreaming/);
+  assert.match(thinkingControl, /title=\{\s*isStreaming/);
   assert.match(thinkingControl, /t\("chat\.currentReasoning", \{ level: thinkingDisplayLabel \}\)/);
   assert.match(thinkingControl, /t\("chat\.changeReasoning", \{ level: thinkingDisplayLabel \}\)/);
 });

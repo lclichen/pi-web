@@ -30,7 +30,7 @@ test("renders as a compact left-positioned dropdown without a centered inner wid
 test("shows persisted completion states while live running state takes precedence", () => {
   assert.match(
     source,
-    /const status: SubagentSessionStatus = running \? "running" : relation\?\.status \?\? "completed"/,
+    /const\s+status:\s+SubagentSessionStatus\s+=\s+running\s+\?\s+"running"\s+:\s*\(?\s*relation\?\.status\s+\?\?\s+"completed"/,
   );
   assert.match(source, /t\(`agentSwitcher\.status\.\$\{status\}`\)/);
   assert.match(source, /status === "failed"/);

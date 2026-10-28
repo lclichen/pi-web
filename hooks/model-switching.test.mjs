@@ -26,7 +26,7 @@ test("existing-session model changes are optimistic and serialized", () => {
 test("session reloads cannot clear an in-flight optimistic model", () => {
   assert.match(
     loadSessionSource,
-    /setCurrentModelOverride\(\(current\) => modelSwitchPendingRef\.current \? current : null\)/,
+    /setCurrentModelOverride\(\(current\)\s+=>\s*\(?\s*modelSwitchPendingRef\.current\s+\?\s+current\s+:\s+null\)/,
   );
 });
 

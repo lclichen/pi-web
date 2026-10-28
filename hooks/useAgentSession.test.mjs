@@ -76,7 +76,7 @@ test("opening System or Tools lazily starts a dormant session without sending a 
     source.indexOf("  useEffect(() => {\n    if (!onBranchDataChange) return;"),
   );
 
-  assert.match(loadSystemInfoSource, /sessionIdRef\.current \?\? await ensureNewSession\(\)/);
+  assert.match(loadSystemInfoSource, /sessionIdRef\.current\s+\?\?\s*\(?\s*await\s+ensureNewSession\(\)\)?/);
   assert.doesNotMatch(loadSystemInfoSource, /promoteNewSession\(\)/);
   assert.match(loadSystemInfoSource, /sendAgentCommand<AgentStateResponse>\(sid, \{ type: "get_state" \}\)/);
   assert.match(loadSystemInfoSource, /loadTools\(sid\)/);
@@ -105,9 +105,9 @@ test("new-session promotion rekeys drafts before publishing the real session", (
   assert.match(promoteSource, /draftKeyAliasesRef\.current\.set\(provisionalDraftKey, sid\)/);
   assert.match(promoteSource, /input\.rekeyDraft\(provisionalDraftKey, sid\)/);
   assert.ok(
-    promoteSource.indexOf("input.rekeyDraft(provisionalDraftKey, sid)") < promoteSource.indexOf("onSessionCreated?.({"),
+    promoteSource.indexOf("input.rekeyDraft(provisionalDraftKey, sid)") < promoteSource.indexOf("onSessionCreated?.("),
   );
-  assert.match(promoteSource, /}, provisionalDraftKey\)/);
+  assert.match(promoteSource, /}\s*,\s*provisionalDraftKey,?\s*\)/);
   assert.match(chatWindowSource, /draftKey=\{session\?\.id \?\? newSessionDraftKey \?\? undefined\}/);
 });
 
@@ -132,7 +132,7 @@ test("fresh sessions use the preference while persisted and live sessions restor
   assert.match(source, /if \(agentState\?\.running\) \{\s*loadTools\(session\.id\)/);
   assert.match(source, /d\.toolNames !== undefined \? getPresetFromToolNames\(d\.toolNames\) : "default"/);
   assert.match(changeSource, /setPreferredToolPreset\(preset\)/);
-  assert.match(changeSource, /\(sid, \{ type: "set_tools", toolNames \}\)/);
+  assert.match(changeSource, /\(sid,\s*\{\s*type:\s*"set_tools",\s*toolNames,?\s*\}\)/);
   assert.match(changeSource, /sessionIdRef\.current = activeSessionId/);
   assert.doesNotMatch(loadToolsSource, /setPreferredToolPreset/);
 });
@@ -155,7 +155,7 @@ test("an empty persisted session displays the model it will use on first send", 
     source,
     /currentModel \?\? \(data\?\.context\.messages\.length === 0 \? newSessionDefaultModel : null\)/,
   );
-  assert.match(source, /setNewSessionDefaultModel\(displayDefaultModel/);
+  assert.match(source, /setNewSessionDefaultModel\(\s*displayDefaultModel/);
 });
 
 test("the selector prefers the live wrapper model over persisted response metadata", () => {
@@ -330,7 +330,7 @@ test("connects a selected session when another browser reports it running", () =
   assert.match(source, /maintainEventsConnected\(session\.id\)/);
   assert.doesNotMatch(source, /void connectEvents\(/);
   assert.match(chatWindowSource, /sessionRunning\?: boolean/);
-  assert.match(chatWindowSource, /session, sessionRunning, newSessionCwd/);
+  assert.match(chatWindowSource, /session,\s+sessionRunning,\s+newSessionCwd/);
   assert.match(appShellSource, /runningSessionIds\.has\(selectedSession\.id\)/);
   assert.match(appShellSource, /onRunningSessionIdsChange=\{handleRunningSessionIdsChange\}/);
 });
@@ -395,7 +395,7 @@ test("reconnects active shell output to its streaming tool call", () => {
   assert.match(chatWindowSource, /const map = new Map\(activeToolResults\)/);
   assert.match(
     chatWindowSource,
-    /<MessageView message=\{streamState\.streamingMessage as AgentMessage\} toolResults=\{toolResultsMap\}/,
+    /<MessageView\s+message=\{streamState\.streamingMessage\s+as\s+AgentMessage\}\s+toolResults=\{toolResultsMap\}/,
   );
 });
 
@@ -441,7 +441,7 @@ test("routes blocking extension requests through deduplicated browser attention 
     extensionRequestSource,
     /isBlockingExtensionUiRequest\(request\)[\s\S]*?onAttentionNeeded\?\.\(request\)/,
   );
-  assert.match(chatWindowSource, /onAttentionNeeded, onSessionCreated/);
+  assert.match(chatWindowSource, /onAttentionNeeded,\s+onSessionCreated/);
   assert.match(completionSource, /if \(!shouldShowBrowserNotification\(\)\) return/);
   assert.doesNotMatch(completionSource, /pushActive/);
   assert.match(completionSource, /tag: targetSession \? `pi-session-complete:\$\{targetSession\.id\}`/);
@@ -500,7 +500,7 @@ test("keeps live following cancellable when the user scrolls away from the tail"
 test("restores an in-page session viewport without the default tail jump", () => {
   assert.match(source, /const initialScrollDoneRef = useRef\(Boolean\(opts\.deferInitialScroll\)\)/);
   assert.match(source, /const scrollToMessage = useCallback\(\(element: HTMLElement, viewportOffset = 16\)/);
-  assert.match(source, /container\.scrollTop\s+- viewportOffset/);
+  assert.match(source, /container\.scrollTop\s+-\s+viewportOffset/);
   assert.match(chatWindowSource, /deferInitialScroll: Boolean\(pendingScrollRestore\)/);
   assert.match(
     chatWindowSource,
@@ -590,7 +590,7 @@ test("keeps prompt anchor measurement outside the React update cycle", () => {
     anchorSyncEffectSource,
     /promptAnchorUpdateRef\.current\?\.\(\);\s*\}, \[streamState\.streamingMessage\]\)/,
   );
-  assert.match(chatWindowSource, /<div ref=\{messageContentRef\}[^>]*style=\{\{/);
+  assert.match(chatWindowSource, /<div\s+ref=\{messageContentRef\}[^>]*style=\{\{/);
 });
 
 test("uses the prompt anchor as the only trailing message spacer", () => {

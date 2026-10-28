@@ -162,7 +162,7 @@ test("session listing merges live registry snapshots and honors force refresh", 
   assert.match(listRoute, /listAllSessions\(space, \{ force \}\)/);
   // Runtime snapshots are owner-filtered before project info attaches.
   assert.match(listRoute, /getRpcSessionInfos\(\)/);
-  assert.match(listRoute, /attachSessionProjectInfo\(infos\.filter/);
+  assert.match(listRoute, /attachSessionProjectInfo\(\s*infos\.filter/);
   assert.match(listRoute, /mergeSessionLists\(persistedSessions, runtimeSessions\)/);
   assert.match(listRoute, /"Cache-Control": "no-store"/);
 });

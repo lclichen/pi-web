@@ -41,7 +41,7 @@ test("keeps the Agents panel open while switching sessions and positions it at t
 
 test("only renders branch toolbar controls for sessions with branches", () => {
   assert.match(source, /const sessionHasBranches = hasSessionBranches\(branchTree\)/);
-  assert.match(source, /\{sessionHasBranches && \(mobile \? \(/);
+  assert.match(source, /\{sessionHasBranches\s+&&\s+\(mobile\s+\?\s+\(/);
   assert.match(source, /\{isMobile && sessionHasBranches && \(/);
   assert.match(source, /panel === "branches" \? null : panel/);
 });
@@ -65,7 +65,7 @@ test("closes the mobile action layer on outside click, Escape, layout changes, a
 
 test("keeps the mobile action layer open after using an expanded action", () => {
   const toggleTopPanel = source.match(
-    /const toggleTopPanel = useCallback\([\s\S]*?\n  \}, \[isMobile, isNarrowMobile\]\);/,
+    /const toggleTopPanel = useCallback\([\s\S]*?\n\s*\[isMobile, isNarrowMobile\],\s*\n\s*\);/,
   )?.[0];
   const themeHandler = source.match(
     /const renderThemeButton =[\s\S]*?onClick=\{\(event\) => \{[\s\S]*?toggleTheme\([\s\S]*?\n      \}\}/,

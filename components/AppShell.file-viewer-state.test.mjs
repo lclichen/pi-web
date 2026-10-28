@@ -8,7 +8,7 @@ const source = (await readFile(new URL("./AppShell.tsx", import.meta.url), "utf8
 
 function fileContentBlock() {
   const start = source.indexOf("{/* Only the active viewer");
-  const end = source.indexOf("</div>\n      </div>\n    </div>", start);
+  const end = source.indexOf("\n          </div>\n        </div>\n      </div>", start);
   assert.notEqual(start, -1, "file content comment not found");
   assert.notEqual(end, -1, "end of file content block not found");
   return source.slice(start, end);
@@ -34,6 +34,6 @@ test("closing the file panel pauses the active viewer watcher", () => {
 
 test("markdown preview links forward a PDF page fragment to the viewer", () => {
   const block = fileContentBlock();
-  assert.match(block, /onOpenFile=\{\(filePath, page\) => handleOpenFile\(/);
-  assert.match(block, /\{ sourceSessionId: activeFileTab\.sourceSessionId, page \}/);
+  assert.match(block, /onOpenFile=\{\(filePath, page\) =>\s*handleOpenFile\(/);
+  assert.match(block, /\{\s*sourceSessionId:\s*activeFileTab\.sourceSessionId,\s*page,?\s*\}/);
 });

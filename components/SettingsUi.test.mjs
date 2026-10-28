@@ -165,7 +165,10 @@ test("subpanel footers share sizing while maintenance actions stay secondary", (
   assert.match(cssSource, /\.config-button-default \{[\s\S]*?height: 32px/);
   assert.match(sources.ModelsConfig, /<ConfigButton\s+variant="primary"[\s\S]*?onClick=\{handleSave\}/);
   assert.match(sources.AgentsConfig, /<ConfigButton\s+variant="primary"[\s\S]*?onClick=\{\(\) => void save\(\)\}/);
-  assert.match(sources.SkillsConfig, /<ConfigButton variant="secondary" onClick=\{\(\) => void checkForUpdates\(\)\}/);
+  assert.match(
+    sources.SkillsConfig,
+    /<ConfigButton\s+variant="secondary"\s+onClick=\{\(\)\s+=>\s+void\s+checkForUpdates\(\)\}/,
+  );
   assert.match(sources.PluginsConfig, /<ConfigButton variant="secondary" onClick=\{\(\) => void loadPlugins\(\)\}/);
 });
 

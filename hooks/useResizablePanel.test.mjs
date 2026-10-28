@@ -9,7 +9,10 @@ test("vertical panels use vertical pointer movement, cursor, keys, and separator
   assert.match(source, /axis === "vertical" \? "row-resize" : "col-resize"/);
   assert.match(source, /axis === "vertical" \? "ArrowDown" : "ArrowRight"/);
   assert.match(source, /axis === "vertical" \? "ArrowUp" : "ArrowLeft"/);
-  assert.match(source, /axis === "vertical" \? "horizontal" as const : "vertical" as const/);
+  assert.match(
+    source,
+    /axis\s+===\s+"vertical"\s+\?\s*\(?"horizontal"\s+as\s+const\)?\s*:\s*\(?"vertical"\s+as\s+const\)?/,
+  );
 });
 
 test("resized values continue to persist and reset through the shared panel contract", () => {

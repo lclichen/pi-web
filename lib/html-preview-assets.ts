@@ -1,0 +1,67 @@
+import { resolveLocalFileHref } from "./file-links";
+
+/**
+ * Rewrite local file references (img/source/link/script… src/href/poster/
+ * srcset) for the sandboxed <iframe srcDoc> HTML preview: srcDoc has no base
+ * URL, so relative references resolve against about:srcdoc and embedded
+ * assets silently break. Resolution semantics mirror the markdown preview's
+ * per-<img> override (lib/file-links resolveLocalFileHref): relative refs
+ * resolve under the html directory and must stay inside the cwd fence;
+ * absolute paths pass verbatim; external/data URIs and fragments are left
+ * untouched. The caller supplies toUrl to turn an absolute local path into a
+ * displayable file-API URL (local /api/files vs remote /api/remotefs).
+ */
+
+const ASSET_TAG_RE = /^(img|image|source|video|audio|link|script|embed|track|iframe)$/i;
+
+export interface HtmlAssetRewriteOptions {
+  /** Directory of the html file — base for relative references. */
+  dir: string;
+  /** Fence root for relative references (session cwd); defaults to dir. */
+  cwd?: string | null;
+  /** Absolute local path → displayable URL. */
+  toUrl: (absPath: string) => string;
+}
+
+function rewriteSrcsetUrls(value: string, resolve: (v: string) => string | null): string | null {
+  let changed = false;
+  const out = value.split(",").map((candidate) => {
+    const m = candidate.match(/^(\s*)(\S+)([\s\S]*?)$/);
+    if (!m || !m[2]) return candidate;
+    const rewritten = resolve(m[2]);
+    if (!rewritten) return candidate;
+    changed = true;
+    return `${m[1]}${rewritten}${m[3]}`;
+  }).join(",");
+  return changed ? out : null;
+}
+
+export function rewriteHtmlPreviewAssets(html: string, options: HtmlAssetRewriteOptions): string {
+  const resolve = (value: string): string | null => {
+    const abs = resolveLocalFileHref(value.trim(), options.dir, options.cwd ?? options.dir);
+    if (!abs) return null;
+    return options.toUrl(abs);
+  };
+  return html.replace(
+    /<([a-zA-Z][^\s/>]*)((?:"[^"]*"|'[^']*'|[^"<>])*)>/g,
+    (match, tag: string, attrs: string) => {
+      if (!ASSET_TAG_RE.test(tag)) return match;
+      const next = attrs.replace(
+        /(\s)(src|href|poster|srcset)\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi,
+        (attrMatch, lead: string, name: string, raw: string) => {
+          const quote = raw.startsWith('"') || raw.startsWith("'") ? raw[0] : "";
+          const value = quote ? raw.slice(1, -1) : raw;
+          const rewritten = name.toLowerCase() === "srcset" ? rewriteSrcsetUrls(value, resolve) : resolve(value);
+          if (!rewritten) return attrMatch;
+          // Escape & so query strings can't be eaten as HTML entities
+          // (e.g. ?src=s1&copy=2 would render as ©=2).
+          const escaped = rewritten.replace(/&/g, "&amp;");
+          return quote
+            ? `${lead}${name}=${quote}${escaped}${quote}`
+            : `${lead}${name}="${escaped}"`;
+        },
+      );
+      return next === attrs ? match : `<${tag}${next}>`;
+    },
+  );
+}

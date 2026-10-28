@@ -14,6 +14,7 @@ import {
 } from "@/lib/file-types";
 import { encodeFilePathForApi, getFileDirectory, getFileName, getRelativeFilePath } from "@/lib/file-paths";
 import { parsePdfPageFragment, resolveLocalFileHref, shouldOpenLocalFileInApp } from "@/lib/file-links";
+import { rewriteHtmlPreviewAssets } from "@/lib/html-preview-assets";
 import { parseFrontmatter } from "@/lib/frontmatter";
 import { markdownPreviewRehypePlugins, markdownPreviewRemarkPlugins, markdownUrlTransform, normalizeDisplayMath } from "@/lib/markdown";
 import { CodeBlock, MermaidBlock } from "./MermaidBlock";
@@ -1655,7 +1656,11 @@ function TextFileViewer({
           />
         ) : isHtml && effectiveDisplayMode === "preview" ? (
           <iframe
-            srcDoc={content}
+            srcDoc={rewriteHtmlPreviewAssets(content, {
+              dir: getFileDirectory(filePath),
+              cwd,
+              toUrl: (p) => getFileApiUrl(p, "read", sourceSessionId, undefined, remote),
+            })}
             sandbox="allow-scripts"
             style={{ width: "100%", height: "100%", border: "none", background: "var(--bg)" }}
              title={t("i18n.htmlPreview")}
@@ -1715,7 +1720,7 @@ function TextFileViewer({
                     ? resolveLocalFileHref(src, markdownDirectory, cwd ?? markdownDirectory)
                     : null;
                   const imageSrc = imagePath
-                    ? getFileApiUrl(imagePath, "read", sourceSessionId)
+                    ? getFileApiUrl(imagePath, "read", sourceSessionId, undefined, remote)
                     : src;
                   // Dynamic local paths are served directly by the file API.
                   // eslint-disable-next-line @next/next/no-img-element

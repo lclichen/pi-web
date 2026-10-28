@@ -67,7 +67,7 @@ interface Props {
  *
  * 同一 shell 的两态形变（ZCode ConversationStatusPanel 同款）：折叠 pill
  * 与展开 panel 是同一个容器，mini 宽度经隐藏测量元素 + ResizeObserver
- * 实测。形变只动画表面属性（radius/shadow 300ms ease-in-out）——尺寸
+ * 实测。形变只动画表面属性（radius/shadow 10ms 近乎瞬时）——尺寸
  * （width/max-height）瞬时切换，壳右上角锚定，视觉上即自右上角铺开；
  * 几何参与过渡会让文本中途回流、并与圆角逐阶段失步（实测两段式跳动）。
  * auto 变体按对话容器宽度（≥1180px 默认展开、否则 mini），用户点击可
@@ -669,8 +669,9 @@ const chipStyle: React.CSSProperties = {
 };
 
 /** Pill↔panel morph follows ZCode ConversationStatusPanel: geometry snaps
- *  (top-right anchored), only surface props settle — see component docblock. */
-const SURFACE_MS = 300;
+ *  (top-right anchored); surface props settle near-instantly (10ms — a
+ *  perceptible radius/shadow lag reads as a second stage). */
+const SURFACE_MS = 10;
 
 /** in_progress 优先、缺省回落首个 pending —— 与 model 层的链头一致。 */
 function currentTodoId(todos: TodoItem[]): number | null {

@@ -77,16 +77,26 @@ export function isProtectedBundleName(name: string): boolean {
   return name === BUILTIN_AGENT_BUILDER_NAME;
 }
 
-/** 首次访问时播种内置 Agent Builder 定义（存在即跳过；异步：zip 构建是异步的）。 */
+/**
+ * First-access seeding of the built-in Agent Builder definition. Existing
+ * bundles are kept — UNLESS the recorded version differs from the code's
+ * current version: a bump ships new bundled content (e.g. the developer
+ * skills in 1.1.0), and the builtin is protected from user writes anyway, so
+ * re-seeding is safe.
+ */
 export async function ensureBuiltinBundles(): Promise<void> {
   const dir = bundlesDir();
-  if (
+  const present =
     existsSync(join(dir, `${BUILTIN_AGENT_BUILDER_NAME}.zip`)) ||
-    existsSync(join(dir, `${BUILTIN_AGENT_BUILDER_NAME}.apkg`))
-  )
-    return;
+    existsSync(join(dir, `${BUILTIN_AGENT_BUILDER_NAME}.apkg`));
+  const seededVersion = readMeta()[BUILTIN_AGENT_BUILDER_NAME]?.version;
+  if (present && seededVersion === BUILTIN_AGENT_BUILDER_VERSION) return;
   const bytes = await builtinAgentBuilderBytes();
-  saveBundle(BUILTIN_AGENT_BUILDER_NAME, "内置：套用后在项目内对话式开发 Agent 定义（.pi/ 全流程 + 打包规范）", bytes);
+  saveBundle(
+    BUILTIN_AGENT_BUILDER_NAME,
+    "内置：套用后在项目内对话式开发 Agent 定义（.pi/ 全流程 + 打包规范 + 开发技能库）",
+    bytes,
+  );
   // 明文 zip 的版本不在 .apkg 头里——补写 meta 让列表/详情显示版本。
   const meta = readMeta();
   meta[BUILTIN_AGENT_BUILDER_NAME] = {

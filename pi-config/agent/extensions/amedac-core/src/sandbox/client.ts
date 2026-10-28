@@ -25,7 +25,11 @@ export class PlatformClient {
   /** Diagnoses the most recent refresh failure, for surfacing to the user. */
   lastRefreshDiagnosis: "ok" | "expired" | "unreachable" | "no_refresh_token" = "ok";
 
-  constructor(public readonly config: PlatformConfig) {}
+  readonly config: PlatformConfig;
+
+  constructor(config: PlatformConfig) {
+    this.config = config;
+  }
 
   get url(): string {
     return this.config.url;

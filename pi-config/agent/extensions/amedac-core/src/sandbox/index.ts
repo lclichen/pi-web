@@ -32,10 +32,9 @@ import {
   createWriteTool,
   type GrepToolInput,
   truncateHead,
-  type BeforeProviderRequestEvent,
 } from "@earendil-works/pi-coding-agent";
 import { makeClient, ensureAuthenticated, ensureContainer, getState, setState } from "./auth.ts";
-import { ensureLlmProvider, providerNameForSessionTracking } from "./llm.ts";
+import { ensureLlmProvider } from "./llm.ts";
 import { createContainerAutocompleteProvider } from "./autocomplete.ts";
 import { containerPathToLocal } from "./paths.ts";
 import { matchRuntimeConfigFile, sandboxConfigPresent } from "./config-bridge.ts";
@@ -83,27 +82,11 @@ export function makeSandboxToolsExtension(): InlineExtension {
     // read/ls stays host-side whatever prefix the model used.
     const bridgedConfigPath = (requested: string): string | null => matchRuntimeConfigFile(requested, [sessionCwd]);
 
-    // add session_id key for tracking. Applies to whichever LLM provider this
-    // extension registered (default "amedac.ai"), plus the bare "litellm" name
-    // for setups that register under that name.
-    pi.on("before_provider_request", (event: BeforeProviderRequestEvent, ctx: ExtensionContext) => {
-      const payload = event.payload as Record<string, unknown>;
-      if (!payload) return;
-
-      const provider = ctx.model?.provider;
-      if (!provider || !providerNameForSessionTracking().has(provider)) return payload;
-
-      const sessionId = ctx.sessionManager?.getSessionId();
-      if (!sessionId) {
-        console.warn("missing session id");
-        return payload;
-      }
-
-      return {
-        ...payload,
-        litellm_session_id: sessionId,
-      };
-    });
+    // Session-affinity metadata (litellm_session_id body field + the
+    // x-session-id / session_id / x-session-affinity headers) now lives in
+    // the core provider-session-id extension — registered for EVERY
+    // amedac-core session, so this module must not register a second copy
+    // (double handlers would also double-mutate the payload).
 
     // Resolve the client/container on session_start so the first user prompt
     // can use the routed tools. Sessions without sandbox config (module

@@ -8,6 +8,7 @@ public
 agent/dist
 agent/node_modules
 pi-config/**/node_modules
+pi-config/agent/skills
 *.md
 package-lock.json
 lib/teaching.ts

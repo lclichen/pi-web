@@ -28,6 +28,7 @@ import { makePlanModeExtension } from "./src/plan-mode.ts";
 import { makeSessionPlanExtension } from "./src/session-plan.ts";
 import { makeTodoExtension } from "./src/todo.ts";
 import { makeBgShellExtension } from "./src/bg-shell.ts";
+import { makeProviderSessionIdExtension } from "./src/provider-session-id.ts";
 import { makeSandboxToolsExtension } from "./src/sandbox/index.ts";
 import { sandboxConfigPresent } from "./src/sandbox/config-bridge.ts";
 
@@ -36,6 +37,7 @@ export {
   makeContextStatusExtension,
   makePathGuardExtension,
   makePlanModeExtension,
+  makeProviderSessionIdExtension,
   makeSessionPlanExtension,
   makeTodoExtension,
 };
@@ -50,6 +52,9 @@ export default function amedacCore(pi: ExtensionAPI): void {
   makePathGuardExtension()(pi);
   makeContextStatusExtension()(pi);
   makeBgShellExtension()(pi);
+  // 会话亲和元数据：三头全 provider + litellm_session_id 体字段（原为
+  // 用户独立插件，现随核心扩展对每个会话生效）。
+  makeProviderSessionIdExtension()(pi);
   // CLI 路径：进程启动目录带沙盒配置才注册（pi-web 的进程 cwd 是仓库
   // 根，永不命中；其沙盒会话经内联工厂注入同一份源码）。
   if (sandboxConfigPresent(process.cwd())) {

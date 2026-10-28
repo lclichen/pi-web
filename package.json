@@ -42,7 +42,9 @@
     "prebuild": "node scripts/copy-monaco.mjs",
     "start:lan": "next start -H 0.0.0.0 -p 30141",
     "bench": "node --experimental-strip-types bench/runner.mjs",
-    "release": "npm version patch --no-git-tag-version && npm run build && npm publish --access public"
+    "release": "npm version patch --no-git-tag-version && npm run build && npm publish --access public",
+    "i18n:normalize": "node scripts/i18n-normalize.mjs",
+    "i18n:check": "node scripts/i18n-normalize.mjs --check"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "0.85.1",

@@ -40,6 +40,13 @@ interface ProvisionDefaults {
   workspaceName: string | null;
 }
 
+/** Platform errors carry an HTTP status; keep 4xx semantics (404/409/422)
+ *  instead of flattening every failure into 502. */
+function platformStatusOf(err: unknown): number | undefined {
+  const status = (err as { status?: unknown }).status;
+  return typeof status === "number" && status >= 400 && status < 500 ? status : undefined;
+}
+
 /** BFF guard: sandbox management requires a logged-in platform user with a key. */
 async function requireSandboxUser(req: Request) {
   const identity = requireUserIdentity(req);
@@ -110,7 +117,10 @@ export async function GET(req: Request) {
       ...(detailRes?.mounts ? { mounts: detailRes.mounts } : {}),
     });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 502 });
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : String(err) },
+      { status: platformStatusOf(err) ?? 502 },
+    );
   }
 }
 
@@ -264,7 +274,10 @@ export async function POST(req: Request) {
     }
     return NextResponse.json({ error: `不支持的操作: ${String(action)}` }, { status: 400 });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 502 });
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : String(err) },
+      { status: platformStatusOf(err) ?? 502 },
+    );
   }
 }
 
@@ -283,6 +296,9 @@ export async function DELETE(req: Request) {
     await platformDelete(`/api/v1/containers/${containerId}`, guard.apiKey);
     return NextResponse.json({ success: true });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 502 });
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : String(err) },
+      { status: platformStatusOf(err) ?? 502 },
+    );
   }
 }

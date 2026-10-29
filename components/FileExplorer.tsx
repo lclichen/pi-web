@@ -321,6 +321,12 @@ function TreeNode({
   onCreateNameChange,
   onCreateSubmit,
   onCreateCancel,
+  onNodeDragStart,
+  onNodeDragEnd,
+  onNodeDropOnDir,
+  onNodeDragOverDir,
+  dragOverPath,
+  draggingPath,
   t,
 }: {
   node: FileNode;
@@ -345,6 +351,13 @@ function TreeNode({
   onCreateNameChange?: (v: string) => void;
   onCreateSubmit?: () => void;
   onCreateCancel?: () => void;
+  /** Drag-to-move wiring: source row, hovered folder highlight, drop target. */
+  onNodeDragStart?: (node: FileNode) => void;
+  onNodeDragEnd?: () => void;
+  onNodeDropOnDir?: (dirPath: string) => void;
+  onNodeDragOverDir?: (dirPath: string | null) => void;
+  dragOverPath?: string | null;
+  draggingPath?: string | null;
   t: Translate;
   remote?: { sessionId: string; label: string } | null;
 }) {
@@ -400,6 +413,46 @@ function TreeNode({
         onContextMenu={onContextMenu ? (e) => onContextMenu(e, node) : undefined}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
+        draggable
+        onDragStart={(e) => {
+          e.stopPropagation();
+          e.dataTransfer.effectAllowed = "move";
+          e.dataTransfer.setData("text/plain", node.fullPath);
+          onNodeDragStart?.(node);
+        }}
+        onDragEnd={(e) => {
+          e.stopPropagation();
+          onNodeDragEnd?.();
+        }}
+        onDragOver={
+          node.isDir
+            ? (e) => {
+                if (!draggingPath || draggingPath === node.fullPath) return;
+                e.preventDefault();
+                e.stopPropagation();
+                e.dataTransfer.dropEffect = "move";
+                onNodeDragOverDir?.(node.fullPath);
+              }
+            : undefined
+        }
+        onDragLeave={
+          node.isDir
+            ? (e) => {
+                const next = e.relatedTarget as Node | null;
+                if (next && e.currentTarget.contains(next)) return;
+                onNodeDragOverDir?.(null);
+              }
+            : undefined
+        }
+        onDrop={
+          node.isDir
+            ? (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onNodeDropOnDir?.(node.fullPath);
+              }
+            : undefined
+        }
         style={{
           position: "relative",
           display: "flex",
@@ -409,9 +462,15 @@ function TreeNode({
           paddingRight: 8,
           height: 24,
           cursor: "pointer",
-          background: hovered ? "var(--bg-hover)" : "transparent",
+          background:
+            dragOverPath === node.fullPath
+              ? "var(--bg-selected, rgba(79,124,255,0.16))"
+              : hovered
+                ? "var(--bg-hover)"
+                : "transparent",
           borderRadius: 4,
           userSelect: "none",
+          opacity: draggingPath === node.fullPath ? 0.5 : 1,
         }}
       >
         {node.isDir && (
@@ -664,6 +723,12 @@ function TreeNode({
               onCreateNameChange={onCreateNameChange}
               onCreateSubmit={onCreateSubmit}
               onCreateCancel={onCreateCancel}
+              onNodeDragStart={onNodeDragStart}
+              onNodeDragEnd={onNodeDragEnd}
+              onNodeDropOnDir={onNodeDropOnDir}
+              onNodeDragOverDir={onNodeDragOverDir}
+              dragOverPath={dragOverPath}
+              draggingPath={draggingPath}
               t={t}
             />
           ))}
@@ -832,6 +897,9 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
   const [error, setError] = useState<string | null>(null);
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
   const [treeRefreshKey, setTreeRefreshKey] = useState(0);
+  // Drag-to-move: the source row, the folder highlighted under the cursor.
+  const [draggingNode, setDraggingNode] = useState<FileNode | null>(null);
+  const [dragOverDir, setDragOverDir] = useState<string | null>(null);
   const [highlightedPaths, setHighlightedPaths] = useState<Set<string>>(new Set());
   const [gitFiles, setGitFiles] = useState<GitFileStatus[]>([]);
   const [gitLineStats, setGitLineStats] = useState({ additions: 0, deletions: 0 });
@@ -1284,8 +1352,60 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
       });
   }, [renaming, renamingName, onFileRenamed, remote]);
 
+  /** Drop a dragged row onto a folder (or the explorer background = cwd). */
+  const handleMoveToDir = useCallback(
+    (targetDir: string) => {
+      const node = draggingNode;
+      setDraggingNode(null);
+      setDragOverDir(null);
+      if (!node) return;
+      const source = node.fullPath;
+      const target = joinFilePath(targetDir, node.name);
+      const srcNorm = normalizeFilePathSlashes(source);
+      const dirNorm = normalizeFilePathSlashes(targetDir);
+      // Dropping into the folder it already lives in is a no-op.
+      if (normalizeFilePathSlashes(target) === srcNorm) return;
+      if (dirNorm === srcNorm || dirNorm.startsWith(`${srcNorm}/`)) {
+        setError(t("files.cannotMoveIntoSelf"));
+        return;
+      }
+      if (normalizeFilePathSlashes(getFileDirectory(source)) === dirNorm) return;
+      const url = remote
+        ? `/api/remotefs/${encodeFilePathForApi(source)}?src=${encodeURIComponent(remote.sessionId)}`
+        : `/api/files/${encodeFilePathForApi(source)}`;
+      fetch(url, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ newPath: target }),
+      })
+        .then(async (res) => {
+          if (!res.ok) {
+            const d = (await res.json().catch(() => ({}))) as { error?: string };
+            throw new Error(d.error ?? `HTTP ${res.status}`);
+          }
+          setError(null);
+          onFileRenamed?.(source, target);
+          setTreeRefreshKey((k) => k + 1);
+        })
+        .catch((e) => setError(e instanceof Error ? e.message : String(e)));
+    },
+    [draggingNode, onFileRenamed, remote, t],
+  );
+
   return (
-    <div style={{ minHeight: "100%" }}>
+    <div
+      style={{ minHeight: "100%" }}
+      onDragOver={(e) => {
+        if (!draggingNode) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+      }}
+      onDrop={(e) => {
+        if (!draggingNode) return;
+        e.preventDefault();
+        handleMoveToDir(cwd);
+      }}
+    >
       <input ref={uploadInputRef} type="file" multiple hidden onChange={handleUploadInput} />
       {showUploadFeedback && (
         <div style={{ padding: "6px 8px", borderBottom: "1px solid var(--border)" }}>
@@ -1991,6 +2111,15 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
                     e.stopPropagation();
                     setContextMenu({ x: e.clientX, y: e.clientY, node });
                   }}
+                  onNodeDragStart={setDraggingNode}
+                  onNodeDragEnd={() => {
+                    setDraggingNode(null);
+                    setDragOverDir(null);
+                  }}
+                  onNodeDropOnDir={handleMoveToDir}
+                  onNodeDragOverDir={setDragOverDir}
+                  dragOverPath={dragOverDir}
+                  draggingPath={draggingNode?.fullPath ?? null}
                   renamingPath={renaming?.oldPath ?? null}
                   renamingName={renamingName}
                   onRenamingNameChange={setRenamingName}

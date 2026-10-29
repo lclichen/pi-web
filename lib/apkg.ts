@@ -25,7 +25,8 @@
  * bundle can never carry or strip it).
  */
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { writePrivateFileAtomicSync } from "./atomic-file.ts";
 import { dataDir } from "./mode-homes.ts";
 import { projectIdentityKey } from "./project-identity.ts";
 
@@ -141,8 +142,136 @@ export function getApkgKeys(): Record<string, Buffer> {
 }
 
 // ---------------------------------------------------------------------------
-// Import counter
+// Key store administration (write-only secrets)
 // ---------------------------------------------------------------------------
+//
+// The admin UI may ADD and REVOKE KEKs but must never SEE them. Key material
+// stays in apkg-keys.json (0600) and is never serialized to a client; the
+// sidecar apkg-keys.meta.json carries only audit metadata (addedAt/addedBy).
+// PI_WEB_APKG_KEYS remains authoritative: a keyId present there cannot be
+// shadowed or removed from the file store.
+
+export interface ApkgKeyInfo {
+  keyId: string;
+  /** "env" = supplied by PI_WEB_APKG_KEYS (deployment-managed). */
+  source: "file" | "env";
+  addedAt: string | null;
+  addedBy: string | null;
+}
+
+interface ApkgKeyMeta {
+  [keyId: string]: { addedAt?: string; addedBy?: string };
+}
+
+const KEY_ID_PATTERN = /^[A-Za-z0-9._-]{1,64}$/;
+
+function keysMetaFilePath(): string {
+  return join(dataDir(), "apkg-keys.meta.json");
+}
+
+function readKeysObject(): Record<string, string> {
+  if (!existsSync(keysFilePath())) return {};
+  try {
+    const parsed = JSON.parse(readFileSync(keysFilePath(), "utf8")) as Record<string, unknown>;
+    const out: Record<string, string> = {};
+    for (const [keyId, value] of Object.entries(parsed)) {
+      if (typeof value === "string" && value.length > 0) out[keyId] = value;
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+function readKeysMetaObject(): ApkgKeyMeta {
+  if (!existsSync(keysMetaFilePath())) return {};
+  try {
+    return JSON.parse(readFileSync(keysMetaFilePath(), "utf8")) as ApkgKeyMeta;
+  } catch {
+    return {};
+  }
+}
+
+/** Persist the store atomically with 0600 (KEK material). */
+function writeKeysObject(keys: Record<string, string>): void {
+  mkdirSync(dirname(keysFilePath()), { recursive: true });
+  writePrivateFileAtomicSync(keysFilePath(), JSON.stringify(keys, null, 2));
+}
+
+function writeKeysMetaObject(meta: ApkgKeyMeta): void {
+  mkdirSync(dirname(keysMetaFilePath()), { recursive: true });
+  writePrivateFileAtomicSync(keysMetaFilePath(), JSON.stringify(meta, null, 2));
+}
+
+/** keyIds supplied by the env override (deployment-managed, authoritative). */
+function envKeyIds(): Set<string> {
+  const ids = new Set<string>();
+  const raw = process.env.PI_WEB_APKG_KEYS;
+  if (!raw) return ids;
+  try {
+    for (const [keyId, value] of Object.entries(JSON.parse(raw) as Record<string, unknown>)) {
+      if (typeof value === "string" && value.length > 0) ids.add(keyId);
+    }
+  } catch {
+    // malformed env — treated as empty (getApkgKeys behaves the same way)
+  }
+  return ids;
+}
+
+/** Metadata-only view of the key store — never includes KEK material. */
+export function listApkgKeys(): ApkgKeyInfo[] {
+  const fileKeys = readKeysObject();
+  const meta = readKeysMetaObject();
+  const envIds = envKeyIds();
+  const out: ApkgKeyInfo[] = [];
+  for (const keyId of Object.keys(fileKeys)) {
+    out.push({
+      keyId,
+      source: envIds.has(keyId) ? "env" : "file",
+      addedAt: meta[keyId]?.addedAt ?? null,
+      addedBy: meta[keyId]?.addedBy ?? null,
+    });
+  }
+  for (const keyId of envIds) {
+    if (fileKeys[keyId]) continue;
+    out.push({ keyId, source: "env", addedAt: null, addedBy: null });
+  }
+  return out.sort((a, b) => a.keyId.localeCompare(b.keyId));
+}
+
+export type ApkgKeyError = "invalid-key-id" | "invalid-kek" | "env-sourced" | "not-found" | "env-not-removable";
+
+/** Add/rotate one KEK. The caller must have decoded + length-checked nothing:
+ *  validation happens here so every entry point shares one rule set. */
+export function addApkgKey(keyId: string, kek: Buffer, addedBy: string): ApkgKeyInfo {
+  if (!KEY_ID_PATTERN.test(keyId)) throw new Error("invalid-key-id" satisfies ApkgKeyError);
+  if (kek.length !== 32) throw new Error("invalid-kek" satisfies ApkgKeyError);
+  if (envKeyIds().has(keyId)) throw new Error("env-sourced" satisfies ApkgKeyError);
+  const keys = readKeysObject();
+  keys[keyId] = kek.toString("base64");
+  writeKeysObject(keys);
+  const meta = readKeysMetaObject();
+  const info = { addedAt: new Date().toISOString(), addedBy };
+  meta[keyId] = info;
+  writeKeysMetaObject(meta);
+  return { keyId, source: "file", addedAt: info.addedAt, addedBy };
+}
+
+/** Revoke one keyId (removes the KEK + metadata). Env-managed keys cannot be
+ *  removed here — the deployment env must be edited instead. */
+export function removeApkgKey(keyId: string): void {
+  if (!KEY_ID_PATTERN.test(keyId)) throw new Error("invalid-key-id" satisfies ApkgKeyError);
+  if (envKeyIds().has(keyId)) throw new Error("env-not-removable" satisfies ApkgKeyError);
+  const keys = readKeysObject();
+  if (!(keyId in keys)) throw new Error("not-found" satisfies ApkgKeyError);
+  delete keys[keyId];
+  writeKeysObject(keys);
+  const meta = readKeysMetaObject();
+  if (keyId in meta) {
+    delete meta[keyId];
+    writeKeysMetaObject(meta);
+  }
+}
 
 interface ImportState {
   [fingerprint: string]: { count: number; firstAt: string; lastAt: string };

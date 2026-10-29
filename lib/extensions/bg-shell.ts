@@ -6,6 +6,7 @@
 export {
   makeBgShellExtension,
   registerBgChannel,
+  registerBgSessionMode,
   listBgTasks,
   stopBgTask,
   BG_TASKS_WIDGET_KEY,

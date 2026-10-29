@@ -213,6 +213,10 @@ export interface RpcSessionStartOptions {
   /** Project home: if it contains .pi/auth.json or .pi/models.json, they
    *  override the global credential/model files for this session. */
   projectCredentialDir?: string;
+  /** Background-task channel for remote modes (sandbox/local-machine/ssh).
+   *  Registered under the REAL session id after the SDK mints it — the caller
+   *  only knows a temporary key for new sessions. */
+  bgChannel?: import("./extensions/bg-shell").BgExecChannel;
 }
 
 const CODING_TOOL_NAMES = ["read", "bash", "powershell", "edit", "write", "grep", "find", "ls"];
@@ -2663,6 +2667,7 @@ export async function startRpcSession(
     additionalExtensionPaths,
     extensionFactories,
     projectCredentialDir,
+    bgChannel,
   } = options;
   const requestedToolNames = toolNames === undefined ? undefined : validateSessionToolSelection(toolNames);
   const registry = getRegistry();
@@ -2935,6 +2940,16 @@ export async function startRpcSession(
     // routing queries observe the right owner from the first tick.
     wrapper.ownerId = ownerId ?? 0;
     wrapper.mode = mode ?? "host";
+    // Background-task routing: the SDK mints its own id for NEW sessions, so
+    // the channel must be registered under the REAL id (callers only know the
+    // temporary start key). Remote modes without a channel are marked "remote"
+    // anyway — the extension then refuses instead of spawning on the Host.
+    {
+      const remoteMode = mode === "sandbox" || mode === "local-machine" || mode === "ssh";
+      const bg = await import("./extensions/bg-shell");
+      bg.registerBgSessionMode(realSessionId, remoteMode ? "remote" : "host");
+      if (bgChannel) bg.registerBgChannel(realSessionId, bgChannel);
+    }
     // Quick mode keeps its own tool policy — the template allowlist is
     // authoritative for MCP (user-level mcpEnabled prefs still apply below
     // only when they DISABLE things globally).

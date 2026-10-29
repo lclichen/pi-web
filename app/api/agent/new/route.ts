@@ -5,6 +5,8 @@ import { existsSync } from "fs";
 import { randomUUID } from "crypto";
 import { allowFileRoot } from "@/lib/file-access";
 import { makeSshToolsExtension } from "@/lib/extensions/ssh-tools";
+import { makeSandboxBgChannel, makeRelayBgChannel, makeSshBgChannel } from "@/lib/extensions/bg-channels";
+import type { BgExecChannel } from "@/lib/extensions/bg-shell";
 import { makeBgTasksExtension } from "@/lib/extensions/bg-tasks";
 import { resolveCoreExtensionPaths } from "@/lib/session-restore-options";
 import { getQuickTemplate, DEFAULT_TEMPLATE_ID } from "@/lib/quick-templates";
@@ -108,6 +110,10 @@ export async function POST(req: Request) {
     let templateIdForMeta: string | undefined;
     let quickSlugForMeta: string | undefined;
     let extensionFactories: InlineExtension[] | undefined;
+    // Background-task channel for remote modes (bg_run). Registered under the
+    // SDK's real session id inside startRpcSession; without it (and with the
+    // session marked remote) bg_run fails loudly instead of running on the Host.
+    let bgChannel: BgExecChannel | undefined;
     let sessionDir: string | undefined;
     // 工作区目录（lib/session-context.ts 契约）：提示词告知模型用；绝不
     // 作为会话 cwd。
@@ -139,6 +145,7 @@ export async function POST(req: Request) {
         // a .pi/extensions/pi-sandbox-extension symlink that would now double-
         // register the container tools.
         removeLegacySandboxExtensionLink(home);
+        let projectContainerId = Number(project.containerId ?? 0) || 0;
         if (project.containerId) {
           writeSandboxConfig(home, { containerId: project.containerId });
         } else {
@@ -152,7 +159,13 @@ export async function POST(req: Request) {
             }
             containerId = auto.containerId ?? 0;
           }
-          if (containerId) writeSandboxConfig(home, { containerId });
+          if (containerId) {
+            writeSandboxConfig(home, { containerId });
+            projectContainerId = containerId;
+          }
+        }
+        if (projectContainerId) {
+          bgChannel = makeSandboxBgChannel(identity.session.apiKey, projectContainerId);
         }
         extensionFactories = [
           // Container tool routing: amedac-core sandbox module, inline
@@ -191,6 +204,7 @@ export async function POST(req: Request) {
             workspaceDir: dirs.workspaceDir,
           }),
         ];
+        bgChannel = makeSshBgChannel(project.id, sshConfig, project.workdir ?? "/");
       } else {
         const gate = requireCompatibleAgent(user.id, project.machineId);
         if (!gate.ok) {
@@ -210,6 +224,7 @@ export async function POST(req: Request) {
             workspaceDir: dirs.workspaceDir,
           }),
         ];
+        bgChannel = makeRelayBgChannel(user.id, project.machineId ?? undefined, project.workdir);
       }
       // 目录契约（lib/session-context.ts）：SDK 会话 cwd 一律 = 服务器侧
       // 项目目录（projectDir）。project.workdir 是工作区路径（用户机器/
@@ -246,6 +261,10 @@ export async function POST(req: Request) {
         makeRemoteVerifyExtension("sandbox", user.id),
         makeEnvironmentInfoExtension({ mode: "sandbox", username: user.username }),
       ];
+      {
+        const containerId = Number(readSandboxHomeConfig(user.id).containerId) || 0;
+        if (containerId) bgChannel = makeSandboxBgChannel(identity.session.apiKey, containerId);
+      }
     } else if (mode === "local-machine") {
       if (user.id !== 0) {
         const gate = requireCompatibleAgent(user.id);
@@ -257,6 +276,7 @@ export async function POST(req: Request) {
         makeRemoteVerifyExtension("local-machine", user.id),
         makeEnvironmentInfoExtension({ mode: "local-machine", username: user.username }),
       ];
+      bgChannel = makeRelayBgChannel(user.id);
     } else {
       // Host mode keeps the caller-supplied server directory.
       if (mode !== "quick" && (!effectiveCwd || !existsSync(effectiveCwd))) {
@@ -342,6 +362,7 @@ export async function POST(req: Request) {
       ...(sessionDir ? { sessionDir } : {}),
       ownerId: user.id,
       mode,
+      ...(bgChannel ? { bgChannel } : {}),
       ...(quickOptions ? { quick: quickOptions } : {}),
       // Core extensions (todo/plan_save/plan-mode) load via the global agent
       // dir's amedac-core package (single source of truth with the CLI

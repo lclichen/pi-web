@@ -14,7 +14,7 @@ import { makeEnvironmentInfoExtension } from "./extensions/environment-info";
 import { makeSshToolsExtension } from "./extensions/ssh-tools";
 import { makeSandboxToolsExtension } from "./extensions/sandbox-tools";
 import { makeBgTasksExtension } from "./extensions/bg-tasks";
-import { registerBgChannel } from "./extensions/bg-shell";
+import { registerBgChannel, registerBgSessionMode } from "./extensions/bg-shell";
 import { makeRelayBgChannel, makeSandboxBgChannel, makeSshBgChannel } from "./extensions/bg-channels";
 import { readSshConfig } from "./ssh";
 import { requireUserIdentity } from "./web-session";
@@ -49,6 +49,13 @@ export async function restoreSessionOptions(req: Request, sessionId: string): Pr
     { systemPrompt?: string; model?: { provider: string; modelId: string }; mcpServers?: string[] } | undefined;
   let extensionFactories: InlineExtension[] | undefined;
   let effectiveCwd: string | undefined;
+
+  // Mode marker for the bg-shell extension: remote modes must never fall back
+  // to a local spawn on the Host when the channel is missing/unbuildable.
+  registerBgSessionMode(
+    sessionId,
+    mode === "sandbox" || mode === "local-machine" || mode === "ssh" ? "remote" : "host",
+  );
 
   if (mode === "sandbox") {
     const apiKey = identity.session.apiKey;

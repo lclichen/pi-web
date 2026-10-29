@@ -74,6 +74,12 @@ export interface BgExecChannel {
 interface BgRegistry {
   tasks: Map<string, Map<string, BgTask>>;
   channels: Map<string, BgExecChannel>;
+  /** pi-web mode marker per session: remote sessions must NEVER fall back to
+   *  a local spawn when their channel is missing (that would run the command
+   *  on the pi-web host instead of the sandbox/remote workspace — a real
+   *  leak, observed with bg_run in sandbox mode before channels were
+   *  registered for new sessions). */
+  modes: Map<string, "host" | "remote">;
   timers: Map<string, ReturnType<typeof setInterval>>;
   children: Map<string, ChildProcess>;
 }
@@ -86,6 +92,7 @@ function registry(): BgRegistry {
     globalThis.__amedacBgShell = {
       tasks: new Map(),
       channels: new Map(),
+      modes: new Map(),
       timers: new Map(),
       children: new Map(),
     };
@@ -96,6 +103,12 @@ function registry(): BgRegistry {
 /** pi-web wiring: register the mode channel for a session BEFORE it starts. */
 export function registerBgChannel(sessionId: string, channel: BgExecChannel): void {
   registry().channels.set(sessionId, channel);
+}
+
+/** pi-web wiring: mark the session's execution mode. Remote modes get an
+ *  explicit error instead of the local-spawn fallback when no channel exists. */
+export function registerBgSessionMode(sessionId: string, mode: "host" | "remote"): void {
+  registry().modes.set(sessionId, mode);
 }
 
 export function listBgTasks(sessionId: string): BgTask[] {
@@ -154,6 +167,20 @@ function shQuote(s: string): string {
   return `'${s.replace(/'/g, `'\\''`)}'`;
 }
 
+/** Remote mode with no registered channel: fail loudly instead of running the
+ *  command on the pi-web host. */
+function missingChannel(): BgExecChannel {
+  return {
+    label: "unavailable",
+    kind: "remote",
+    run: async () => {
+      throw new Error(
+        "后台任务通道未就绪：当前会话是远程执行模式（sandbox/local-machine/ssh），没有可用的远端通道。为避免命令在 pi-web 服务器上执行，已拒绝本次调用；请检查项目绑定/容器状态后重试。",
+      );
+    },
+  };
+}
+
 async function killPid(task: BgTask): Promise<void> {
   const reg = registry();
   const channel = reg.channels.get(task.sessionId ?? "") ?? null;
@@ -208,6 +235,20 @@ export function makeBgShellExtension(): InlineExtension {
     let sessionId = "";
     let channel: BgExecChannel | null = null;
     let cwd = "";
+
+    /**
+     * Resolve the channel at CALL time, not just at session_start: pi-web can
+     * only register the channel after the SDK has minted its real session id
+     * (new sessions get their id inside createAgentSession), which may happen
+     * after session_start fired. A remote session with no channel is an
+     * explicit error — never a local spawn on the pi-web host.
+     */
+    const resolveChannel = (): BgExecChannel => {
+      const reg = registry();
+      const registered = reg.channels.get(sessionId);
+      if (registered) return registered;
+      return reg.modes.get(sessionId) === "remote" ? missingChannel() : localChannel(cwd);
+    };
 
     const publish = (ctx: ExtensionContext) => {
       try {
@@ -316,7 +357,11 @@ export function makeBgShellExtension(): InlineExtension {
     pi.on("session_start", async (_event, ctx) => {
       sessionId = ctx.sessionManager.getSessionId();
       cwd = ctx.cwd;
-      channel = registry().channels.get(sessionId) ?? localChannel(cwd);
+      // Channel resolution: a registered channel wins; otherwise the session
+      // mode decides. `remote` without a channel is an error (never a local
+      // spawn on the pi-web host); unmarked sessions are pi-CLI/host mode and
+      // keep the local executor.
+      channel = resolveChannel();
       // Tasks from before a restart are lost to us — mark honestly, keep pids
       // for manual cleanup guidance.
       for (const t of listBgTasks(sessionId)) {
@@ -364,6 +409,9 @@ export function makeBgShellExtension(): InlineExtension {
         execute: async (_id, params, _signal, _onUpdate, ctx) => {
           const command = params.command?.trim();
           if (!command) return { content: [textBlock("Error: command is required")], details: {}, isError: true };
+          // Re-resolve per call: registration may land after session_start
+          // (new sessions get their real id inside createAgentSession).
+          const channel = resolveChannel();
           const reg = registry();
           const tasks = reg.tasks.get(sessionId) ?? new Map();
           reg.tasks.set(sessionId, tasks);

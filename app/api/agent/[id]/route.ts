@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { resolveSessionAccess } from "@/lib/session-access";
+import { checkLiveSessionAccess, resolveSessionAccess } from "@/lib/session-access";
 import { startRpcSession, getRpcSession, setRpcSessionTools } from "@/lib/rpc-manager";
 import { restoreSessionOptions } from "@/lib/session-restore-options";
 
@@ -23,6 +23,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
     // Fast path: already-running session
     const existing = getRpcSession(id);
+    if (existing?.isAlive()) {
+      // Live sessions are served from the registry (no file path to fence), so
+      // ownership must be checked explicitly: owner or admin only.
+      const fence = checkLiveSessionAccess(req, id);
+      if (!fence.ok) return NextResponse.json({ error: fence.error }, { status: fence.status });
+    }
     if (body.type === "set_tools") {
       let filePath = existing?.sessionFile || undefined;
       if (!filePath) {
@@ -86,7 +92,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 }
 
 // GET /api/agent/[id] - Get current agent state
-export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
   try {
@@ -94,6 +100,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     if (!session || !session.isAlive()) {
       return NextResponse.json({ running: false });
     }
+    // Registry hit: check ownership explicitly (owner or admin only).
+    const fence = checkLiveSessionAccess(req, id);
+    if (!fence.ok) return NextResponse.json({ error: fence.error }, { status: fence.status });
 
     const state = await session.send({ type: "get_state" });
     return NextResponse.json({ running: true, state });

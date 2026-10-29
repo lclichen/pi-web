@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createAgentEventStream } from "@/lib/agent-event-stream";
-import { resolveSessionAccess } from "@/lib/session-access";
+import { checkLiveSessionAccess, resolveSessionAccess } from "@/lib/session-access";
 import { getRpcSession, startRpcSession, type AgentSessionWrapper } from "@/lib/rpc-manager";
 import { restoreSessionOptions } from "@/lib/session-restore-options";
 import { sessionCookieRefreshHeader } from "@/lib/web-session";
@@ -21,6 +21,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const existing = getRpcSession(id);
   let sessionPromise: Promise<AgentSessionWrapper>;
   if (existing?.isAlive()) {
+    // Ownership fence for the registry fast path (see checkLiveSessionAccess).
+    const fence = checkLiveSessionAccess(req, id);
+    if (!fence.ok) return NextResponse.json({ error: fence.error }, { status: fence.status });
     sessionPromise = Promise.resolve(existing);
   } else {
     const access = await resolveSessionAccess(req, id);

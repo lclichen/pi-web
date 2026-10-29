@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { buildSessionContext } from "@/lib/session-reader";
 import { getRpcSession } from "@/lib/rpc-manager";
-import { resolveSessionAccess } from "@/lib/session-access";
+import { checkLiveSessionAccess, resolveSessionAccess } from "@/lib/session-access";
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -23,6 +23,11 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     // resolveSessionPath (MERGE-NOTE(upgrade/0.84): space-aware lookup).
     const rpc = getRpcSession(id);
     const liveRpc = rpc?.isAlive() ? rpc : undefined;
+    if (liveRpc) {
+      // Registry hit: no file path to fence — check ownership explicitly.
+      const fence = checkLiveSessionAccess(req, id);
+      if (!fence.ok) return NextResponse.json({ error: fence.error }, { status: fence.status });
+    }
     let filePath: string | null = null;
     if (!liveRpc) {
       const access = await resolveSessionAccess(req, id);

@@ -50,3 +50,34 @@ export async function resolveSessionAccess(
   }
   return { ok: true, session, space, path };
 }
+
+/**
+ * Ownership fence for the LIVE-session fast path.
+ *
+ * The routes serve running sessions straight from the in-memory registry
+ * (their files may not even be resolvable through the space fence yet), which
+ * used to skip the ownership check entirely: knowing a live session id was
+ * enough to read its transcript AND drive it — any logged-in user, not just
+ * admins. This helper restores the fence: owner or admin only, 404 otherwise
+ * (cross-user existence stays undisclosed). Ownerless wrappers (auth off,
+ * legacy host sessions) remain reachable so single-user deployments are
+ * unaffected.
+ *
+ * Admins keep access for support; the UI-side "owned by <user>, read-only"
+ * treatment is a separate product decision (see docs/dev/session-access-and-
+ * tool-bridge.md).
+ */
+export function checkLiveSessionAccess(
+  req: Request,
+  sessionId: string,
+): { ok: true } | { ok: false; status: number; error: string } {
+  const identity = requireUserIdentity(req);
+  if (!identity.ok) return { ok: false, status: 401, error: "登录已失效" };
+  const { user } = identity.session;
+  if (user.id === 0) return { ok: true };
+  const owner = getRpcSessionOwner(sessionId);
+  if (owner && owner.ownerId !== 0 && owner.ownerId !== user.id && user.role !== "admin") {
+    return { ok: false, status: 404, error: "会话不存在" };
+  }
+  return { ok: true };
+}

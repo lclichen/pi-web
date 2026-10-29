@@ -12,7 +12,7 @@
 
 | 项 | 要求 | 核对方式 |
 |---|---|---|
-| pi-web 版本 | 含 Agents 管理 + 内置 agent-builder **1.1.0**（带开发技能库） | 设置 → Agents 管理 列表里 agent-builder 版本为 1.1.0 |
+| pi-web 版本 | 含 Agents 管理 + 内置 agent-builder **1.1.1**（带开发技能库） | 设置 → Agents 管理 列表里 agent-builder 版本为 1.1.1 |
 | 模型 | 演示账号至少有一个可用模型 | 会话里随意发一句话能出结果 |
 | 示例仓库 | 任意含 git 历史与源码的目录（推荐就用 pi-web 仓库副本或一个中等规模项目） | `git log --oneline -1` 有输出 |
 | 加密工具 | `bin/apkg-publisher(.exe)` 或 `PI_WEB_APKG_TOOL` 可用 | `bin/apkg-publisher.exe --help` 出用法 |
@@ -28,14 +28,17 @@
 | 子代理 | `.pi/agents/coverage-analyst.md` | frontmatter（description/tools/max_turns/thinking）+ 方法论；Agent 工具自动发现 |
 | 扩展 | `.pi/extensions/audit-collect/`（package.json + index.js） | 注册自定义工具 `audit_collect`（git 统计 + TODO 扫描 + 大文件 Top，零依赖） |
 | MCP | `.pi/mcp.json` + `.pi/mcp/memo-server.mjs` | 零依赖 stdio MCP：`memo_save`/`memo_list`，记录写 `.pi/audit-memos.jsonl` |
-| 模型 | `.pi/models.json` | modelList[].id —— **演示前改成你部署里实际存在的模型 id** |
+
+> 模型不在参照树内。会话用哪个模型由部署管理员在 设置 → 模型 配置；项目里的
+> `.pi/models.json` 会覆盖该项目会话的模型运行时，带错格式（如历史上的
+> `modelList[]`）会让会话模型列表变空，因此 Agent 包一律不带 models.json。
 
 ## 三、演示脚本（分幕，含操作与预期）
 
 ### 第 0 幕 · 准备（1 min）
 
 1. 新开一个 **Host 模式**项目，工作区指向空目录（如 `~/demo/agent-lab`）。
-2. 进入 设置 → Agents 管理，指给观众看：内置 `agent-builder`（1.1.0，保护不可删）。
+2. 进入 设置 → Agents 管理，指给观众看：内置 `agent-builder`（1.1.1，保护不可删）。
 3. 说明：Agent Builder 是"造 Agent 的 Agent"，它的能力来自随包技能库
    （pi-extension-dev / skill-creator / subagent-creator / agent-packaging）。
 
@@ -91,7 +94,7 @@
 ### 第 4 幕 · 打包导出（2 min）
 
 1. 项目菜单 → **导出配置包**（生成 zip，凭证自动剥离）。
-2. 观众看点：包内含 `AGENTS.md` + `.pi/**`（bundle.json/技能/子代理/扩展/MCP/模型）；
+2. 观众看点：包内含 `AGENTS.md` + `.pi/**`（bundle.json/技能/子代理/扩展/MCP）；
    `manifest.package` 里 name=code-audit、version=1.0.0、dependencies 来自
    `.pi/bundle.json`（本轮新支持——导出器把这个声明并入 manifest）。
 3. （可选）指给观众看：`.pi/audit-memos.jsonl` 是演示运行产物，正式交付前
@@ -119,8 +122,8 @@ bin/apkg-publisher.exe pack \
 ### 第 6 幕 · 导入 Agents 管理（2 min）
 
 1. 设置 → Agents 管理 → **上传配置包** → 选择 `code-audit-1.0.0.apkg`。
-2. 看点：列表显示名称/版本/依赖/大小；详情页有内容清单（扩展/技能/子代理/模型/
-   MCP 分类计数）与文件预览（加密包预览经解密预言机，不落明文到磁盘）。
+2. 看点：列表显示名称/版本/依赖/大小；详情页有内容清单（扩展/技能/子代理/MCP
+   分类计数）与文件预览（加密包预览经解密预言机，不落明文到磁盘）。
 3. 说明保护策略：agent-builder 内置包不可删改；上传的同名包按版本对比。
 
 ### 第 7 幕 · 交付闭环（2 min）
@@ -166,13 +169,14 @@ bin/apkg-publisher.exe keys new  --keys <keys.json> --id <gen>
 - **Host 套用 409**：目标目录已有 `.pi/`。演示用空目录；既有项目请用"项目导入"。
 - **上传 .apkg 提示未配备解密组件**：`PI_WEB_APKG_TOOL` 未指向可用二进制，
   或 `bin/apkg-publisher` 不在 cwd/数据目录——按 commercial-protection.md 配置。
-- **模型不匹配**：把 `.pi/models.json` 的 id 改成部署里实际存在的模型；
-  models.json 是"可选文档化"，缺省不影响会话选模型。
+- **模型选不到**：确认部署的 设置 → 模型 里至少有一个可用模型；**不要**在项目
+  `.pi/` 下补 models.json——它会覆盖全局模型运行时，格式不一致时会直接清空
+  会话的模型列表。
 
 ## 六、验收清单
 
-- [ ] Agents 管理可见 agent-builder 1.1.0，能套用到空 Host 项目
-- [ ] 成品树七类模块齐全（bundle.json / AGENTS.md / 技能+references / 子代理 / 扩展 / MCP / 模型）
+- [ ] Agents 管理可见 agent-builder 1.1.1，能套用到空 Host 项目
+- [ ] 成品树六类模块齐全（bundle.json / AGENTS.md / 技能+references / 子代理 / 扩展 / MCP），且不含 models.json
 - [ ] 会话实测：技能被读、audit_collect 有真实输出、coverage-analyst 被派发、memo_save 落盘
 - [ ] 导出 zip 的 manifest.package 带 name/version/dependencies（来自 .pi/bundle.json）
 - [ ] apkg 加密成功（--harden 后扩展源码不可直接读）

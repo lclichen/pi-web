@@ -2,7 +2,10 @@
 
 这是「用内置 Agent Builder 从零创建一个可交付 Agent」演示的**成品参照树**：
 覆盖系统提示、技能（含 references 渐进披露）、子代理、自定义扩展工具、
-MCP 服务器、模型清单与依赖声明七类模块。
+MCP 服务器与依赖声明六类模块。
+
+模型不在包内：会话用哪个模型由部署管理员在 设置 → 模型 配置（项目里的
+`.pi/models.json` 会覆盖全局模型运行时，带错格式会让会话选不到模型）。
 
 演示脚本与逐步话术见 `docs/dev/agent-builder-demo.md`。
 
@@ -22,4 +25,3 @@ MCP 服务器、模型清单与依赖声明七类模块。
 | 子代理 | `.pi/agents/coverage-analyst.md` | frontmatter（description/tools/max_turns）+ 分析方法 |
 | 扩展 | `.pi/extensions/audit-collect/` | 注册 `audit_collect` 工具（git 统计 + TODO 扫描，零依赖） |
 | MCP | `.pi/mcp.json` + `.pi/mcp/memo-server.mjs` | 零依赖 stdio MCP：`memo_save` / `memo_list` |
-| 模型 | `.pi/models.json` | modelList[].id —— 换成你部署里实际可用的模型 id |

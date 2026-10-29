@@ -20,7 +20,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 export const BUILTIN_AGENT_BUILDER_NAME = "agent-builder";
-export const BUILTIN_AGENT_BUILDER_VERSION = "1.1.0";
+export const BUILTIN_AGENT_BUILDER_VERSION = "1.1.1";
 
 /** Developer skills shipped inside the builder bundle (source of truth:
  *  pi-config/agent/skills/, copied verbatim into .pi/skills/ of the zip). */
@@ -34,10 +34,12 @@ const AGENTS_MD = `# Agent Builder
 
 1. **整理配置方案**（写进对话，先让用户确认再动手）：
    - 目标 Agent 的定位与系统提示词（写入 .pi/agents/<name>.md 或项目 AGENTS.md）
-   - 模型（.pi/models.json）、MCP 服务器（.pi/mcp.json）
+   - MCP 服务器（.pi/mcp.json）
    - 技能（.pi/skills/<name>/SKILL.md）、子代理（.pi/subagents.json / .pi/agents/）
    - 需要内置 nodejs 代码的扩展（.pi/extensions/<name>/，package.json + index.js）
    - 环境依赖（如 node>=20、ripgrep、python>=3.11）
+   - 模型不在包内定义：会话用哪一个模型由部署管理员配置（设置 → 模型），
+     Agent 定义只负责"怎么干活"。
 2. **搭建 .pi/ 结构并编写内容**：只创建/修改 .pi/ 下的文件与项目根的 AGENTS.md。
 3. **自检**：结构与 manifest 规范逐项核对（见 agent-packaging 技能）；扩展代码做语法级检查。
 4. **交付**：告知用户"项目菜单 → 导出配置包"，由管理员上传到 设置 → Agents 管理。
@@ -60,6 +62,7 @@ const AGENTS_MD = `# Agent Builder
 - .pi/ 下的运行态文件（sessions/ tmp/ bin/ cache/ plans/ 与 .git/）一律不读写。
 - 不使用 labs/ 目录（已废弃；历史包兼容导入，新定义一律 .pi/）。
 - 凭据文件（auth.json、ssh.json、sandbox-platform.json）绝不创建或改动。
+- 不创建 .pi/models.json（模型配置属于部署侧，见打包技能「模型配置不入包」）。
 
 ## 包声明 .pi/bundle.json（导出时并入 manifest.package）
 
@@ -99,10 +102,23 @@ description: Agent 定义（配置包）的打包规范与自检清单——开�
   extensions/<name>/      # nodejs 扩展（package.json + index.js，依赖随包携带）
   skills/<name>/SKILL.md  # 技能（frontmatter: name/description）
   subagents.json          # 子代理注册表
-  models.json             # 模型列表（modelList[].id）
   mcp.json                # MCP 服务器（mcpServers.<name>）
 AGENTS.md                 # 项目指令（Agent 的系统提示载体之一）
 \`\`\`
+
+## 模型配置不入包（硬规则）
+
+不要在包内放 models.json。原因：
+
+1. **格式是部署级的**：模型定义（providers/models/baseUrl/apiKey）属于 pi 的
+   运行时配置，与环境强绑定；项目 home 里的 \`.pi/models.json\` 会**覆盖**该项
+   目的模型运行时——带错格式的副本会让会话模型列表变空或指向不可达服务。
+2. **凭据不可分发**：model 配置常含 apiKey/baseUrl，属于凭据与基础设施信息，
+   不应进入可分发的 Agent 包。
+3. **职责分离**：Agent 包描述"怎么干活"（提示/技能/工具/子代理），模型选择
+   由管理员在 设置 → 模型 统一管理，换模型不该触发 Agent 重新打包。
+
+历史包若携带 models.json 仍可导入与查看（兼容），新定义一律不写。
 
 ## 自检清单（导出前逐项核对）
 
@@ -110,7 +126,7 @@ AGENTS.md                 # 项目指令（Agent 的系统提示载体之一）
 2. 扩展目录含 package.json（name/version/main）与入口文件；代码可被
    node --check 语法校验通过。
 3. skills/*/SKILL.md 的 frontmatter 含 name 与 description。
-4. models.json / mcp.json 是合法 JSON 且键名与文档一致。
+4. mcp.json 是合法 JSON 且键名与文档一致；包内没有 models.json。
 5. .pi/bundle.json 已写、version 已递增、dependencies 已声明
    （导出后进 manifest.package.dependencies，展示在 Agents 管理）。
 6. 无凭据、无运行态文件（sessions/tmp/bin/cache/plans/.git）。

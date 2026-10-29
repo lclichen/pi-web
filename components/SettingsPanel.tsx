@@ -25,6 +25,7 @@ import { McpServersConfig } from "./McpServersConfig";
 import { QuickTemplatesConfig } from "./QuickTemplatesConfig";
 import { PolicyConfig } from "./PolicyConfig";
 import { BundlesConfig } from "./BundlesConfig";
+import { UploadLimitsConfig } from "./UploadLimitsConfig";
 import { SubagentsConfig } from "./SubagentsConfig";
 import { ConfigButton, ConfigSwitch } from "./SettingsUi";
 import { UpdateCard } from "./UpdateCard";
@@ -94,6 +95,14 @@ export function SettingsSectionIcon({
         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
         <polyline points="7 10 12 15 17 10" />
         <line x1="12" y1="15" x2="12" y2="3" />
+      </svg>
+    );
+  if (section === "upload-limits")
+    return (
+      <svg {...common}>
+        <path d="M12 16V4" />
+        <path d="m7 9 5-5 5 5" />
+        <path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" />
       </svg>
     );
   if (section === "quick-templates")
@@ -561,6 +570,12 @@ export function SettingsPanel({
             group: "admin" as const,
           },
           { id: "bundles" as const, label: t("bundles.agentsAdmin"), requiresProject: false, group: "admin" as const },
+          {
+            id: "upload-limits" as const,
+            label: t("settings.uploadLimits"),
+            requiresProject: false,
+            group: "admin" as const,
+          },
         ]
       : []),
   ];
@@ -737,6 +752,7 @@ export function SettingsPanel({
           {cwd && sectionHost("policy", <PolicyConfig embedded key={cwd} cwd={cwd} />)}
           {isAdmin && sectionHost("quick-templates", <QuickTemplatesConfig embedded />)}
           {isAdmin && sectionHost("bundles", <BundlesConfig embedded />)}
+          {isAdmin && sectionHost("upload-limits", <UploadLimitsConfig />)}
           {cwd &&
             sectionHost(
               "plugins",

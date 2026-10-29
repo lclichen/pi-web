@@ -10,6 +10,7 @@ export const SETTINGS_SECTION_VALUES = [
   "policy",
   "quick-templates",
   "bundles",
+  "upload-limits",
 ] as const;
 
 export type SettingsSection = (typeof SETTINGS_SECTION_VALUES)[number];

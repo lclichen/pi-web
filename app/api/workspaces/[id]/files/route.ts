@@ -90,13 +90,17 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     return NextResponse.json({ error: "workspaceId and name required" }, { status: 400 });
   }
   try {
-    const body = Buffer.from(await req.arrayBuffer());
+    if (!req.body) return NextResponse.json({ error: "Upload body required" }, { status: 400 });
     const base = `${process.env.PI_WEB_PLATFORM_URL?.replace(/\/+$/, "")}/api/v1/workspaces/${wsId}/files`;
+    // Stream straight through: buffering here would hold the whole file in
+    // memory twice (BFF + platform), which is the practical cap for large
+    // workspace uploads. The platform enforces the per-file limit.
     const upstream = await fetch(`${base}?path=${encodeURIComponent(path)}&name=${encodeURIComponent(name)}`, {
       method: "POST",
       headers: { "X-API-Key": guard.apiKey, "Content-Type": "application/octet-stream" },
-      body: new Uint8Array(body),
-    });
+      body: req.body,
+      duplex: "half",
+    } as RequestInit & { duplex: "half" });
     if (!upstream.ok) {
       const text = await upstream.text().catch(() => "");
       return NextResponse.json({ error: text.slice(0, 300) || `HTTP ${upstream.status}` }, { status: 502 });

@@ -25,7 +25,25 @@ export function MyWorkspaceDialog({ onClose }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  /** 平台的工作区单文件上限（字节），用于提前拒绝与展示。 */
+  const [limitBytes, setLimitBytes] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/upload-limits")
+      .then(async (res) => (res.ok ? ((await res.json()) as { workspace?: { maxBytes?: number } }) : null))
+      .then((d) => {
+        const max = d?.workspace?.maxBytes;
+        if (!cancelled && typeof max === "number") setLimitBytes(max);
+      })
+      .catch(() => {
+        // 上限拿不到时按服务端报错兜底
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const load = useCallback(async (id: number, p: string) => {
     setLoading(true);
@@ -66,6 +84,11 @@ export function MyWorkspaceDialog({ onClose }: Props) {
 
   const upload = async (file: File) => {
     if (!wsId || busy) return;
+    const limitMb = limitBytes ? Math.round(limitBytes / 1024 / 1024) : null;
+    if (limitBytes && file.size > limitBytes) {
+      setError(`文件超过单文件上限（${limitMb}MB）：${file.name} ${Math.ceil(file.size / 1024 / 1024)}MB`);
+      return;
+    }
     setBusy(true);
     setError(null);
     setNotice(null);
@@ -278,7 +301,8 @@ export function MyWorkspaceDialog({ onClose }: Props) {
         </div>
 
         <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 8 }}>
-          单文件上限 200MB；项目菜单「导出到工作区」可把容器 /workspace 打包保存到这里。
+          单文件上限 {limitBytes ? `${Math.round(limitBytes / 1024 / 1024)}MB` : "200MB"}（管理员可在 设置 → 上传限制
+          中调整）；项目菜单「导出到工作区」可把容器 /workspace 打包保存到这里。
         </div>
       </div>
     </div>

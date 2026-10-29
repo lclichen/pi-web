@@ -7,7 +7,18 @@
  * (upload/delete); listing is open to logged-in users so the wizard can
  * offer templates at creation time.
  */
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { dataDir } from "./mode-homes.ts";
 import { importProjectConfigBundle } from "./project-config-bundle.ts";
@@ -165,6 +176,43 @@ export function saveBundle(name: string, description: string, data: Buffer): voi
   if (kind === "apkg") {
     try {
       version = readApkgHeader(data).version ?? "";
+    } catch {
+      version = "";
+    }
+  }
+  const meta = readMeta();
+  meta[name] = {
+    description,
+    createdAt: meta[name]?.createdAt ?? Date.now(),
+    kind,
+    ...(version ? { version } : {}),
+  };
+  writeMeta(meta);
+}
+
+/** Temp path for a streaming upload — same directory as the store, so the
+ *  finalize step can rename() without crossing filesystems. */
+export function newBundleTempPath(): string {
+  mkdirSync(bundlesDir(), { recursive: true });
+  return join(bundlesDir(), `.incoming-${randomUUID()}`);
+}
+
+/**
+ * Finalize a streamed upload: the bytes already sit in `tempPath` (same dir),
+ * so the store step is a rename. Kind is derived from the magic bytes; the
+ * twin extension of the other kind is removed so one name = one package.
+ */
+export function saveBundleFromFile(name: string, description: string, tempPath: string): void {
+  const head = readFileSync(tempPath).subarray(0, 256 * 1024);
+  const kind: "zip" | "apkg" = isApkgBytes(head) ? "apkg" : "zip";
+  const target = join(bundlesDir(), `${name}.${kind}`);
+  const twin = join(bundlesDir(), `${name}.${kind === "apkg" ? "zip" : "apkg"}`);
+  if (existsSync(twin)) unlinkSync(twin);
+  renameSync(tempPath, target);
+  let version = "";
+  if (kind === "apkg") {
+    try {
+      version = readApkgHeader(head).version ?? "";
     } catch {
       version = "";
     }

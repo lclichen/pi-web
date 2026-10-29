@@ -12,13 +12,23 @@ import { dataDir } from "./mode-homes";
  *   PI_WEB_LAB_TRAINING=off   hide the Lab Training teaching panel for all users
  *   PI_WEB_SKILLHUB_URL=...   intranet SkillHub base URL (skill search/install
  *                             source; empty = the default skills.sh flow)
+ *   PI_WEB_BUNDLE_UPLOAD_MAX_MB=2048  config-bundle (.zip/.apkg) upload cap
  */
+
+/** Config-bundle upload default cap (MB). Also the env seed. */
+export const BUNDLE_UPLOAD_DEFAULT_MB = 2048;
+/** Above this size the browser asks for an explicit second confirmation. */
+export const BUNDLE_UPLOAD_CONFIRM_MB = 200;
+export const UPLOAD_MAX_MB_CEILING = 65536;
+export const UPLOAD_MAX_MB_FLOOR = 1;
 
 export interface ServerSettings {
   /** Whether the Lab Training teaching panel (and its toolbar toggle) is offered. */
   labTraining: boolean;
   /** Intranet SkillHub base URL (http(s)); empty/absent = skills.sh flow. */
   skillhubUrl?: string;
+  /** Config-bundle upload cap in MB (absent = BUNDLE_UPLOAD_DEFAULT_MB). */
+  bundleUploadMaxMb?: number;
 }
 
 declare global {
@@ -39,7 +49,34 @@ function envDefaults(): ServerSettings {
   } catch (e) {
     console.warn(`[pi-web] 忽略非法 PI_WEB_SKILLHUB_URL: ${e instanceof Error ? e.message : e}`);
   }
-  return { labTraining: !off, ...(hub ? { skillhubUrl: hub } : {}) };
+  const seedMb = normalizeUploadMaxMb(process.env.PI_WEB_BUNDLE_UPLOAD_MAX_MB, "PI_WEB_BUNDLE_UPLOAD_MAX_MB");
+  return {
+    labTraining: !off,
+    ...(hub ? { skillhubUrl: hub } : {}),
+    ...(seedMb !== undefined ? { bundleUploadMaxMb: seedMb } : {}),
+  };
+}
+
+/**
+ * Validate an upload cap in MB. Accepts numeric strings (env values) and
+ * numbers; `undefined`/`""` clears the override. Throws on nonsense so a
+ * misconfiguration surfaces instead of silently uploading with a wrong cap.
+ */
+export function normalizeUploadMaxMb(raw: unknown, field: string): number | undefined {
+  if (raw === undefined || raw === null || raw === "") return undefined;
+  const value = typeof raw === "string" ? Number(raw.trim()) : raw;
+  if (typeof value !== "number" || !Number.isFinite(value) || !Number.isInteger(value)) {
+    throw new Error(`${field} 必须是整数（MB）`);
+  }
+  if (value < UPLOAD_MAX_MB_FLOOR || value > UPLOAD_MAX_MB_CEILING) {
+    throw new Error(`${field} 必须在 ${UPLOAD_MAX_MB_FLOOR}–${UPLOAD_MAX_MB_CEILING} MB 之间`);
+  }
+  return value;
+}
+
+/** Effective config-bundle cap (MB) — admin override or the default. */
+export function getBundleUploadMaxMb(): number {
+  return getServerSettings().bundleUploadMaxMb ?? BUNDLE_UPLOAD_DEFAULT_MB;
 }
 
 /** 校验并归一化 skillhubUrl；空串=清除；非法值抛错（配置错误要显式暴露）。 */
@@ -62,11 +99,17 @@ export function normalizeSkillhubUrlSetting(raw: unknown): string | undefined {
 
 function parseStored(raw: unknown): Partial<ServerSettings> | undefined {
   if (raw === null || typeof raw !== "object") return undefined;
-  const parsed = raw as { labTraining?: unknown; skillhubUrl?: unknown };
+  const parsed = raw as { labTraining?: unknown; skillhubUrl?: unknown; bundleUploadMaxMb?: unknown };
   const out: Partial<ServerSettings> = {};
   if (typeof parsed.labTraining === "boolean") out.labTraining = parsed.labTraining;
   const hub = normalizeSkillhubUrlSetting(parsed.skillhubUrl);
   if (hub !== undefined) out.skillhubUrl = hub;
+  try {
+    const mb = normalizeUploadMaxMb(parsed.bundleUploadMaxMb, "bundleUploadMaxMb");
+    if (mb !== undefined) out.bundleUploadMaxMb = mb;
+  } catch {
+    // stored garbage — ignore the field, keep the rest
+  }
   return out;
 }
 
@@ -83,7 +126,11 @@ export function getServerSettings(): ServerSettings {
   return globalThis.__piServerSettingsStore.data;
 }
 
-export function updateServerSettings(patch: { labTraining?: boolean; skillhubUrl?: string }): ServerSettings {
+export function updateServerSettings(patch: {
+  labTraining?: boolean;
+  skillhubUrl?: string;
+  bundleUploadMaxMb?: number | null;
+}): ServerSettings {
   const next: ServerSettings = { ...getServerSettings() };
   if (typeof patch.labTraining === "boolean") next.labTraining = patch.labTraining;
   if (patch.skillhubUrl !== undefined) {
@@ -91,6 +138,11 @@ export function updateServerSettings(patch: { labTraining?: boolean; skillhubUrl
     const hub = normalizeSkillhubUrlSetting(patch.skillhubUrl);
     if (hub) next.skillhubUrl = hub;
     else delete next.skillhubUrl;
+  }
+  if (patch.bundleUploadMaxMb !== undefined) {
+    // null = 清除覆盖（回到默认）。非法值由 normalizeUploadMaxMb 抛错。
+    if (patch.bundleUploadMaxMb === null) delete next.bundleUploadMaxMb;
+    else next.bundleUploadMaxMb = normalizeUploadMaxMb(patch.bundleUploadMaxMb, "bundleUploadMaxMb");
   }
   mkdirSync(dataDir(), { recursive: true });
   writeFileSync(settingsPath(), JSON.stringify(next, null, 2), "utf8");

@@ -110,7 +110,26 @@ export function BundlesConfig({ embedded = false }: { embedded?: boolean }) {
   const [uploading, setUploading] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [formMsg, setFormMsg] = useState<string | null>(null);
+  /** 上传上限（服务端设置）：硬上限 + 二次确认阈值。 */
+  const [uploadLimits, setUploadLimits] = useState<{ bundleMaxMb: number; bundleConfirmMb: number } | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/upload-limits")
+      .then(async (res) => (res.ok ? ((await res.json()) as { bundleMaxMb?: number; bundleConfirmMb?: number }) : null))
+      .then((d) => {
+        if (!cancelled && d && typeof d.bundleMaxMb === "number") {
+          setUploadLimits({ bundleMaxMb: d.bundleMaxMb, bundleConfirmMb: d.bundleConfirmMb ?? 200 });
+        }
+      })
+      .catch(() => {
+        // limits are advisory here — the server still enforces the real cap
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // 详情：内容解析（选中即拉取）与文件预览。
   const [inspection, setInspection] = useState<BundleInspection | null>(null);
@@ -214,15 +233,36 @@ export function BundlesConfig({ embedded = false }: { embedded?: boolean }) {
       setFormError(t("bundles.chooseZipApkgFile2"));
       return;
     }
+    const maxMb = uploadLimits?.bundleMaxMb ?? 2048;
+    const confirmMb = uploadLimits?.bundleConfirmMb ?? 200;
+    if (file.size > maxMb * 1024 * 1024) {
+      setFormError(t("bundles.uploadTooLarge", { max: maxMb }));
+      return;
+    }
+    if (file.size > confirmMb * 1024 * 1024) {
+      const proceed = await confirm({
+        title: t("bundles.uploadLargeTitle"),
+        message: t("bundles.uploadLargeBody", { size: formatSize(file.size), threshold: confirmMb }),
+        confirmLabel: t("bundles.uploadLargeConfirm"),
+        abortLabel: t("common.cancel"),
+      });
+      if (!proceed) return;
+    }
     setUploading(true);
     setFormError(null);
     setFormMsg(null);
     try {
-      const form = new FormData();
-      form.set("file", file);
-      if (name.trim()) form.set("name", name.trim());
-      if (description.trim()) form.set("description", description.trim());
-      const res = await fetch("/api/bundles", { method: "POST", body: form });
+      const query = new URLSearchParams();
+      if (name.trim()) query.set("name", name.trim());
+      if (description.trim()) query.set("description", description.trim());
+      query.set("filename", file.name);
+      // Raw-body streaming upload: no FormData buffering, so multi-GB packages
+      // never sit in memory on the server.
+      const res = await fetch(`/api/bundles?${query.toString()}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/octet-stream" },
+        body: file,
+      });
       const data = (await res.json()) as { name?: string; error?: string };
       if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
       setName("");
@@ -415,6 +455,11 @@ export function BundlesConfig({ embedded = false }: { embedded?: boolean }) {
                   <span style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.6 }}>
                     {t("bundles.configBundlesStandardPiConfig")}
                   </span>
+                  {uploadLimits && (
+                    <span style={{ fontSize: 11, color: "var(--text-dim)" }}>
+                      {t("bundles.uploadLimitHint", { max: uploadLimits.bundleMaxMb })}
+                    </span>
+                  )}
                   <ConfigField label={t("bundles.chooseZipApkgFile")}>
                     <input
                       ref={fileRef}

@@ -27,15 +27,20 @@ export async function PATCH(req: Request) {
   if (identity.session.user.role !== "admin") {
     return NextResponse.json({ error: "服务器设置仅管理员可修改" }, { status: 403 });
   }
-  let body: { labTraining?: unknown; skillhubUrl?: unknown };
+  let body: { labTraining?: unknown; skillhubUrl?: unknown; bundleUploadMaxMb?: unknown };
   try {
     body = (await req.json()) as typeof body;
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
-  const patch: { labTraining?: boolean; skillhubUrl?: string } = {};
+  const patch: { labTraining?: boolean; skillhubUrl?: string; bundleUploadMaxMb?: number | null } = {};
   if (typeof body.labTraining === "boolean") patch.labTraining = body.labTraining;
   if (typeof body.skillhubUrl === "string") patch.skillhubUrl = body.skillhubUrl;
+  // null 清除覆盖（回到默认上限）；数字/数字字符串由 update 侧校验。
+  if (body.bundleUploadMaxMb === null) patch.bundleUploadMaxMb = null;
+  else if (typeof body.bundleUploadMaxMb === "number" || typeof body.bundleUploadMaxMb === "string") {
+    patch.bundleUploadMaxMb = Number(body.bundleUploadMaxMb);
+  }
   if (Object.keys(patch).length === 0) {
     return NextResponse.json({ error: "没有可更新的设置字段" }, { status: 400 });
   }

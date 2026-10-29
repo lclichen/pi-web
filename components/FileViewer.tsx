@@ -14,7 +14,7 @@ import {
 } from "@/lib/file-types";
 import { encodeFilePathForApi, getFileDirectory, getFileName, getRelativeFilePath } from "@/lib/file-paths";
 import { parsePdfPageFragment, resolveLocalFileHref, shouldOpenLocalFileInApp } from "@/lib/file-links";
-import { rewriteHtmlPreviewAssets } from "@/lib/html-preview-assets";
+import { inlineHtmlPreviewAssets, rewriteHtmlPreviewAssets } from "@/lib/html-preview-assets";
 import { parseFrontmatter } from "@/lib/frontmatter";
 import {
   markdownPreviewRehypePlugins,
@@ -257,7 +257,7 @@ function DownloadLink({
   );
 }
 
-function ImageViewer({ filePath, cwd, sourceSessionId, watchEnabled = true }: Props) {
+function ImageViewer({ filePath, cwd, sourceSessionId, watchEnabled = true, remote }: Props) {
   const { t } = useI18n();
   const [watching, setWatching] = useState(false);
   const [bust, setBust] = useState(0);
@@ -285,12 +285,12 @@ function ImageViewer({ filePath, cwd, sourceSessionId, watchEnabled = true }: Pr
       esRef.current = null;
     }
 
-    if (!watchEnabled) return;
+    if (!watchEnabled || remote) return;
 
     let active = true;
     const synchronize = () => {
       const requestId = ++syncRequestRef.current;
-      fetch(getFileApiUrl(filePath, "meta", sourceSessionId))
+      fetch(getFileApiUrl(filePath, "meta", sourceSessionId, undefined, remote))
         .then((response) => response.json())
         .then((next: { size?: number; error?: string }) => {
           if (!active || requestId !== syncRequestRef.current) return;
@@ -308,7 +308,7 @@ function ImageViewer({ filePath, cwd, sourceSessionId, watchEnabled = true }: Pr
         });
     };
 
-    const es = new EventSource(getFileApiUrl(filePath, "watch", sourceSessionId));
+    const es = new EventSource(getFileApiUrl(filePath, "watch", sourceSessionId, undefined, remote));
     esRef.current = es;
 
     es.addEventListener("connected", () => {
@@ -340,7 +340,7 @@ function ImageViewer({ filePath, cwd, sourceSessionId, watchEnabled = true }: Pr
     };
   }, [filePath, sourceSessionId, watchEnabled]);
 
-  const src = getFileApiUrl(filePath, "read", sourceSessionId, bust ? { v: bust } : undefined);
+  const src = getFileApiUrl(filePath, "read", sourceSessionId, bust ? { v: bust } : undefined, remote);
 
   const formatSizeStr = size != null ? formatSize(size) : null;
 
@@ -385,7 +385,7 @@ function ImageViewer({ filePath, cwd, sourceSessionId, watchEnabled = true }: Pr
           />
           {watching ? "live" : "static"}
         </span>
-        <DownloadLink filePath={filePath} sourceSessionId={sourceSessionId} />
+        <DownloadLink filePath={filePath} sourceSessionId={sourceSessionId} remote={remote} />
       </div>
       <div
         style={{
@@ -435,7 +435,7 @@ function formatDuration(seconds: number): string {
   return `${mins}:${String(secs).padStart(2, "0")}`;
 }
 
-function AudioViewer({ filePath, cwd, sourceSessionId, watchEnabled = true }: Props) {
+function AudioViewer({ filePath, cwd, sourceSessionId, watchEnabled = true, remote }: Props) {
   const { t } = useI18n();
   const [watching, setWatching] = useState(false);
   const [bust, setBust] = useState(0);
@@ -463,12 +463,12 @@ function AudioViewer({ filePath, cwd, sourceSessionId, watchEnabled = true }: Pr
       esRef.current = null;
     }
 
-    if (!watchEnabled) return;
+    if (!watchEnabled || remote) return;
 
     let active = true;
     const synchronize = () => {
       const requestId = ++syncRequestRef.current;
-      fetch(getFileApiUrl(filePath, "meta", sourceSessionId))
+      fetch(getFileApiUrl(filePath, "meta", sourceSessionId, undefined, remote))
         .then((response) => response.json())
         .then((next: { size?: number; error?: string }) => {
           if (!active || requestId !== syncRequestRef.current) return;
@@ -486,7 +486,7 @@ function AudioViewer({ filePath, cwd, sourceSessionId, watchEnabled = true }: Pr
         });
     };
 
-    const es = new EventSource(getFileApiUrl(filePath, "watch", sourceSessionId));
+    const es = new EventSource(getFileApiUrl(filePath, "watch", sourceSessionId, undefined, remote));
     esRef.current = es;
 
     es.addEventListener("connected", () => {
@@ -518,7 +518,7 @@ function AudioViewer({ filePath, cwd, sourceSessionId, watchEnabled = true }: Pr
     };
   }, [filePath, sourceSessionId, watchEnabled]);
 
-  const src = getFileApiUrl(filePath, "read", sourceSessionId, bust ? { v: bust } : undefined);
+  const src = getFileApiUrl(filePath, "read", sourceSessionId, bust ? { v: bust } : undefined, remote);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
@@ -557,7 +557,7 @@ function AudioViewer({ filePath, cwd, sourceSessionId, watchEnabled = true }: Pr
           />
           {watching ? "live" : "static"}
         </span>
-        <DownloadLink filePath={filePath} sourceSessionId={sourceSessionId} />
+        <DownloadLink filePath={filePath} sourceSessionId={sourceSessionId} remote={remote} />
       </div>
       <div
         style={{
@@ -588,7 +588,7 @@ function AudioViewer({ filePath, cwd, sourceSessionId, watchEnabled = true }: Pr
   );
 }
 
-function VideoViewer({ filePath, cwd, sourceSessionId, watchEnabled = true }: Props) {
+function VideoViewer({ filePath, cwd, sourceSessionId, watchEnabled = true, remote }: Props) {
   const { t } = useI18n();
   const [watching, setWatching] = useState(false);
   const [bust, setBust] = useState(0);
@@ -616,12 +616,12 @@ function VideoViewer({ filePath, cwd, sourceSessionId, watchEnabled = true }: Pr
       esRef.current = null;
     }
 
-    if (!watchEnabled) return;
+    if (!watchEnabled || remote) return;
 
     let active = true;
     const synchronize = () => {
       const requestId = ++syncRequestRef.current;
-      fetch(getFileApiUrl(filePath, "meta", sourceSessionId))
+      fetch(getFileApiUrl(filePath, "meta", sourceSessionId, undefined, remote))
         .then((response) => response.json())
         .then((next: { size?: number; error?: string }) => {
           if (!active || requestId !== syncRequestRef.current) return;
@@ -639,7 +639,7 @@ function VideoViewer({ filePath, cwd, sourceSessionId, watchEnabled = true }: Pr
         });
     };
 
-    const es = new EventSource(getFileApiUrl(filePath, "watch", sourceSessionId));
+    const es = new EventSource(getFileApiUrl(filePath, "watch", sourceSessionId, undefined, remote));
     esRef.current = es;
 
     es.addEventListener("connected", () => {
@@ -671,7 +671,7 @@ function VideoViewer({ filePath, cwd, sourceSessionId, watchEnabled = true }: Pr
     };
   }, [filePath, sourceSessionId, watchEnabled]);
 
-  const src = getFileApiUrl(filePath, "read", sourceSessionId, bust ? { v: bust } : undefined);
+  const src = getFileApiUrl(filePath, "read", sourceSessionId, bust ? { v: bust } : undefined, remote);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
@@ -710,7 +710,7 @@ function VideoViewer({ filePath, cwd, sourceSessionId, watchEnabled = true }: Pr
           />
           {watching ? "live" : "static"}
         </span>
-        <DownloadLink filePath={filePath} sourceSessionId={sourceSessionId} />
+        <DownloadLink filePath={filePath} sourceSessionId={sourceSessionId} remote={remote} />
       </div>
       <div
         style={{
@@ -777,7 +777,7 @@ function DocumentViewer({ filePath, cwd, sourceSessionId, initialPage, watchEnab
 
     let active = true;
     const requestId = ++syncRequestRef.current;
-    fetch(getFileApiUrl(filePath, "meta", sourceSessionId))
+    fetch(getFileApiUrl(filePath, "meta", sourceSessionId, undefined, remote))
       .then((r) => r.json())
       .then((d: { size?: number; error?: string }) => {
         if (!active || requestId !== syncRequestRef.current) return;
@@ -806,12 +806,12 @@ function DocumentViewer({ filePath, cwd, sourceSessionId, initialPage, watchEnab
       esRef.current = null;
     }
 
-    if (!watchEnabled) return;
+    if (!watchEnabled || remote) return;
 
     let active = true;
     const synchronize = () => {
       const requestId = ++syncRequestRef.current;
-      fetch(getFileApiUrl(filePath, "meta", sourceSessionId))
+      fetch(getFileApiUrl(filePath, "meta", sourceSessionId, undefined, remote))
         .then((r) => r.json())
         .then((d: { size?: number; error?: string }) => {
           if (!active || requestId !== syncRequestRef.current) return;
@@ -834,7 +834,7 @@ function DocumentViewer({ filePath, cwd, sourceSessionId, initialPage, watchEnab
         });
     };
 
-    const es = new EventSource(getFileApiUrl(filePath, "watch", sourceSessionId));
+    const es = new EventSource(getFileApiUrl(filePath, "watch", sourceSessionId, undefined, remote));
     esRef.current = es;
 
     es.addEventListener("connected", () => {
@@ -894,7 +894,7 @@ function DocumentViewer({ filePath, cwd, sourceSessionId, initialPage, watchEnab
         </span>
         <span style={{ marginLeft: "auto" }}>{ext === "docx" ? "docx preview" : "pdf"}</span>
         {size != null && <span>{formatSize(size)}</span>}
-        <DownloadLink filePath={filePath} sourceSessionId={sourceSessionId} />
+        <DownloadLink filePath={filePath} sourceSessionId={sourceSessionId} remote={remote} />
         <span
           title={watching ? t("i18n.liveSync") : t("i18n.notWatching")}
           style={{
@@ -965,13 +965,37 @@ export function FileViewer({
   remote,
 }: Props) {
   if (isImagePath(filePath)) {
-    return <ImageViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} watchEnabled={watchEnabled} />;
+    return (
+      <ImageViewer
+        filePath={filePath}
+        cwd={cwd}
+        sourceSessionId={sourceSessionId}
+        watchEnabled={watchEnabled}
+        remote={remote}
+      />
+    );
   }
   if (isAudioPath(filePath)) {
-    return <AudioViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} watchEnabled={watchEnabled} />;
+    return (
+      <AudioViewer
+        filePath={filePath}
+        cwd={cwd}
+        sourceSessionId={sourceSessionId}
+        watchEnabled={watchEnabled}
+        remote={remote}
+      />
+    );
   }
   if (isVideoPath(filePath)) {
-    return <VideoViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} watchEnabled={watchEnabled} />;
+    return (
+      <VideoViewer
+        filePath={filePath}
+        cwd={cwd}
+        sourceSessionId={sourceSessionId}
+        watchEnabled={watchEnabled}
+        remote={remote}
+      />
+    );
   }
   if (isDocumentPreviewPath(filePath)) {
     return (
@@ -1271,7 +1295,7 @@ function TextFileViewer({
       esRef.current = null;
     }
 
-    if (!watchEnabled) return;
+    if (!watchEnabled || remote) return;
 
     const synchronize = () => {
       void fetchContent(filePath);
@@ -1280,7 +1304,7 @@ function TextFileViewer({
 
     // Set up SSE watch — remote sessions have no watch endpoint; the viewer
     // then simply finishes its initial load.
-    const es = remote ? null : new EventSource(getFileApiUrl(filePath, "watch", sourceSessionId));
+    const es = remote ? null : new EventSource(getFileApiUrl(filePath, "watch", sourceSessionId, undefined, remote));
     esRef.current = es;
     if (!es) {
       // 远程会话无 watch：直接完成加载
@@ -1374,6 +1398,49 @@ function TextFileViewer({
   const isMarkdown = language === "markdown";
   const hasPreview = !data?.truncated && (isHtml || isMarkdown);
   const effectiveDisplayMode = isDeletedDiff ? "diff" : displayMode;
+
+  // HTML preview: the iframe is sandboxed WITHOUT allow-same-origin (opaque
+  // origin), so /api/files subresource requests are cross-site and the
+  // SameSite=Lax session cookie is withheld (403). Fetch the referenced local
+  // assets from this page (first-party) and embed them as data: URLs instead
+  // of weakening the sandbox.
+  const [htmlPreviewDoc, setHtmlPreviewDoc] = useState<string | null>(null);
+  const remoteSessionId = remote?.sessionId;
+  useEffect(() => {
+    setHtmlPreviewDoc(null);
+    if (!isHtml || effectiveDisplayMode !== "preview" || !viewerContent) return;
+    let cancelled = false;
+    const controller = new AbortController();
+    void inlineHtmlPreviewAssets(viewerContent, {
+      dir: getFileDirectory(filePath),
+      cwd,
+      toUrl: (p) => getFileApiUrl(p, "read", sourceSessionId, undefined, remote),
+      fetchAsset: async (abs) => {
+        const res = await fetch(getFileApiUrl(abs, "read", sourceSessionId, undefined, remote), {
+          credentials: "same-origin",
+          signal: controller.signal,
+        });
+        if (!res.ok) return null;
+        return {
+          contentType: res.headers.get("content-type") || "application/octet-stream",
+          bytes: await res.arrayBuffer(),
+        };
+      },
+    })
+      .then((doc) => {
+        if (!cancelled) setHtmlPreviewDoc(doc);
+      })
+      .catch(() => {
+        if (!cancelled) setHtmlPreviewDoc(null);
+      });
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+    // `remote` is an object from the parent; key on its session id to avoid
+    // re-running on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewerContent, isHtml, effectiveDisplayMode, filePath, cwd, sourceSessionId, remoteSessionId]);
   const useLightweightSource =
     sourceLines.length > SOURCE_HIGHLIGHT_MAX_LINES &&
     !(effectiveDisplayMode === "diff" && hasGitDiff) &&
@@ -1794,11 +1861,14 @@ function TextFileViewer({
           />
         ) : isHtml && effectiveDisplayMode === "preview" ? (
           <iframe
-            srcDoc={rewriteHtmlPreviewAssets(content, {
-              dir: getFileDirectory(filePath),
-              cwd,
-              toUrl: (p) => getFileApiUrl(p, "read", sourceSessionId, undefined, remote),
-            })}
+            srcDoc={
+              htmlPreviewDoc ??
+              rewriteHtmlPreviewAssets(content, {
+                dir: getFileDirectory(filePath),
+                cwd,
+                toUrl: (p) => getFileApiUrl(p, "read", sourceSessionId, undefined, remote),
+              })
+            }
             sandbox="allow-scripts"
             style={{ width: "100%", height: "100%", border: "none", background: "var(--bg)" }}
             title={t("i18n.htmlPreview")}

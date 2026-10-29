@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getFileName } from "@/lib/file-paths";
+import { detectFileLanguage } from "@/lib/file-language";
 import {
   remoteCreateEmpty,
   remoteDelete,
@@ -59,7 +60,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ path: string[] 
           },
         });
       }
-      return NextResponse.json({ content, language: "text", size });
+      return NextResponse.json({ content, language: detectFileLanguage(filePath), size });
     }
     return NextResponse.json({ error: `Unsupported type: ${type}` }, { status: 400 });
   } catch (err) {

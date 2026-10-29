@@ -45,6 +45,28 @@ export function rewriteHtmlPreviewAssets(html: string, options: HtmlAssetRewrite
     if (!abs) return null;
     return options.toUrl(abs);
   };
+  return rewriteWithResolver(html, resolve);
+}
+
+/**
+ * Collect every local asset path referenced by the html (same tag/attribute
+ * rules as the rewrite). Callers use this to fetch + inline the assets as
+ * data: URLs — the sandboxed preview iframe has an OPAQUE origin, so cookie-
+ * authenticated /api/files requests from it are cross-site and lose the
+ * SameSite=Lax cookie (403). Inlining happens in the app page instead, where
+ * the fetch is first-party.
+ */
+export function collectHtmlPreviewAssetPaths(html: string, options: { dir: string; cwd?: string | null }): string[] {
+  const seen = new Set<string>();
+  rewriteWithResolver(html, (value) => {
+    const abs = resolveLocalFileHref(value.trim(), options.dir, options.cwd ?? options.dir);
+    if (abs) seen.add(abs);
+    return null; // no rewrite — collection only
+  });
+  return [...seen];
+}
+
+function rewriteWithResolver(html: string, resolve: (value: string) => string | null): string {
   return html.replace(/<([a-zA-Z][^\s/>]*)((?:"[^"]*"|'[^']*'|[^"<>])*)>/g, (match, tag: string, attrs: string) => {
     if (!ASSET_TAG_RE.test(tag)) return match;
     const next = attrs.replace(
@@ -61,5 +83,58 @@ export function rewriteHtmlPreviewAssets(html: string, options: HtmlAssetRewrite
       },
     );
     return next === attrs ? match : `<${tag}${next}>`;
+  });
+}
+
+/**
+ * Inline local assets as data: URLs for the sandboxed HTML preview.
+ *
+ * Why: the preview runs in <iframe sandbox="allow-scripts"> with an opaque
+ * origin. Its /api/files requests are therefore cross-site, the session
+ * cookie is SameSite=Lax, and the browser refuses to send it — images and
+ * stylesheets 403 while the same URL loads fine from the markdown preview
+ * (first-party page). Fetching here (app origin) and embedding data: URLs
+ * keeps the sandbox strict instead of weakening it with allow-same-origin.
+ */
+export interface InlineHtmlAssetOptions extends HtmlAssetRewriteOptions {
+  fetchAsset: (absPath: string) => Promise<{ contentType: string; bytes: ArrayBuffer } | null>;
+  /** Per-asset cap; larger assets keep their URL (and may still 403). */
+  maxAssetBytes?: number;
+  /** Total budget across the document; further assets keep their URL. */
+  maxTotalBytes?: number;
+}
+
+function toBase64(bytes: ArrayBuffer): string {
+  const view = new Uint8Array(bytes);
+  let binary = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < view.length; i += chunk) {
+    binary += String.fromCharCode(...view.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+
+export async function inlineHtmlPreviewAssets(html: string, options: InlineHtmlAssetOptions): Promise<string> {
+  const maxAsset = options.maxAssetBytes ?? 8 * 1024 * 1024;
+  const maxTotal = options.maxTotalBytes ?? 24 * 1024 * 1024;
+  const paths = collectHtmlPreviewAssetPaths(html, options);
+  const inlined = new Map<string, string>();
+  let total = 0;
+  for (const abs of paths) {
+    try {
+      const asset = await options.fetchAsset(abs);
+      if (!asset || asset.bytes.byteLength === 0) continue;
+      if (asset.bytes.byteLength > maxAsset || total + asset.bytes.byteLength > maxTotal) continue;
+      total += asset.bytes.byteLength;
+      const type = asset.contentType || "application/octet-stream";
+      inlined.set(abs, `data:${type};base64,${toBase64(asset.bytes)}`);
+    } catch {
+      // Leave the URL fallback in place for this asset.
+    }
+  }
+  return rewriteHtmlPreviewAssets(html, {
+    dir: options.dir,
+    cwd: options.cwd,
+    toUrl: (abs) => inlined.get(abs) ?? options.toUrl(abs),
   });
 }

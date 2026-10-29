@@ -51,6 +51,12 @@
 #                         packaging/install-pi-config.sh 合并到 ~/.pi/agent。
 #                         打包时会排除 sessions/、auth.json、bin/、tmp/ 等
 #                         用户数据与敏感文件。默认: <仓库>/pi-config（不存在则跳过）。
+#   OBFUSCATE_PI_CONFIG=1 打包时把自有 pi 扩展（默认仅 amedac-core）用 esbuild
+#                         打包成单文件 minified index.js 并删除 .ts 源码（标识符
+#                         混淆、无 sourcemap）。注意：这不是加密——运行时必须能
+#                         执行，密钥只能随包分发；技能/提示词等 markdown 也无法
+#                         隐藏。第三方 vendored 扩展不在范围内（OBFUSCATE_EXTENSIONS
+#                         可覆盖列表）。
 #   PI_CONFIG_VERSION     配置模板版本号 (默认: 4)。发布新版包时递增，目标机
 #                         据此做配置的增量更新（见 packaging/install-pi-config.sh）。
 #                         v3: npm/ 与随包扩展默认改为软链直连包内（AMEDAC_PKG_MODE=copy
@@ -314,6 +320,12 @@ if [ -d "$PI_CONFIG_DIR" ]; then
   PI_CONFIG_VERSION="${PI_CONFIG_VERSION:-4}"
   echo "$PI_CONFIG_VERSION" > "$PKG/config/pi/.bundle-version"
   log "配置模板版本: $PI_CONFIG_VERSION"
+  if [ "${OBFUSCATE_PI_CONFIG:-0}" = "1" ] && [ -d "$PKG/config/pi/extensions" ]; then
+    log "混淆自有 pi 扩展（minify + 去源码，非加密）"
+    if ! (cd "$SRC" && node scripts/pi-config-obfuscate.mjs "$PKG/config/pi"); then
+      die "pi-config 混淆失败（可设 OBFUSCATE_PI_CONFIG=0 关闭）"
+    fi
+  fi
 elif [ -n "$PI_CONFIG_DIR_EXPLICIT" ] && [ -n "$PI_CONFIG_DIR" ] && [ ! -e "$PI_CONFIG_DIR" ]; then
   die "PI_CONFIG_DIR 不存在: $PI_CONFIG_DIR"
 fi

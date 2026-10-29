@@ -214,12 +214,14 @@ export async function POST(req: Request) {
       if (!mountsInput || typeof mountsInput.workspaceId !== "number" || typeof mountsInput.path !== "string") {
         return NextResponse.json({ error: "mounts.workspaceId/path required" }, { status: 400 });
       }
-      const mount = await platformPost<{ id: number; name: string }>(
+      // Platform answers 201 { mount } — unwrap so the dialog gets the row
+      // directly (it reads mount.id for add/remove round-trips).
+      const createdMount = await platformPost<{ mount?: { id: number; name: string } }>(
         `/api/v1/containers/${body.containerId}/inputs`,
         guard.apiKey,
         { workspaceId: mountsInput.workspaceId, path: mountsInput.path },
       );
-      return NextResponse.json({ success: true, mount });
+      return NextResponse.json({ success: true, mount: createdMount?.mount ?? createdMount });
     }
     if (action === "remove-input") {
       if (typeof body.containerId !== "number" || typeof body.mountId !== "number") {

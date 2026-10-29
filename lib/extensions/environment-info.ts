@@ -41,7 +41,11 @@ function modeDescription(info: EnvironmentInfo): string {
         "沙箱容器（sandbox 模式）：你的 bash/read/write 等工具在平台容器的 /workspace 内执行，",
         "这是一个干净的 Linux 环境；项目文件与实验数据由服务器项目目录同步而来。",
         info.containerId !== undefined ? `当前绑定的容器编号：#${info.containerId}。` : "",
-        "向用户说明文件位置时请说「容器内」；容器销毁后其中的文件会丢失，需要留存的产物应提醒用户同步回项目工作区。",
+        "目录分工（容器启用挂载时）：/input 是用户挂载的输入（只读，勿改写）；",
+        "/workspace 是你的草稿区（中间结果放这里，不持久）；",
+        "/output 是交付目录——最终产物写入 /output 会自动出现在用户的「我的工作区」。",
+        "未启用挂载的容器没有 /input 与 /output，此时按旧约定在 /workspace 工作并提醒用户留存产物。",
+        "向用户说明文件位置时请说「容器内」；容器销毁后 /workspace 与草稿会丢失，/input 可重挂、/output 产物已在工作区。",
       ].join("");
     case "local-machine":
       return [

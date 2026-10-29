@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 
 interface Props {
   /** When opened from a project menu: that project, so rows offer binding. */
@@ -41,6 +41,20 @@ interface ListResponse {
   defaults: { imageId: number; imageName: string } | null;
 }
 
+interface WorkspaceEntry {
+  name: string;
+  path: string;
+  isDir: boolean;
+}
+
+interface MountEntry {
+  id: number;
+  kind: string;
+  workspace_id: number;
+  rel_path: string;
+  name: string;
+}
+
 const STATUS_META: Record<string, { label: string; color: string }> = {
   running: { label: "运行中", color: "#22c55e" },
   stopped: { label: "已停止", color: "#9ca3af" },
@@ -63,6 +77,14 @@ export function SandboxManagerDialog({ bind, onClose, onChanged }: Props) {
   const [notice, setNotice] = useState<string | null>(null);
   const [createImageId, setCreateImageId] = useState<number | null>(null);
   const [createName, setCreateName] = useState("");
+  // 挂载（docs/沙盒输入输出挂载设计.md）：输入=工作区条目多选（物化进只读
+  // /input 暂存，运行中仍可增删）；输出=live 回收开关（outputs/<容器名>/）。
+  const [wsId, setWsId] = useState<number | null>(null);
+  const [selectedInputs, setSelectedInputs] = useState<Map<string, WorkspaceEntry>>(new Map());
+  const [manualInput, setManualInput] = useState("");
+  const [outputOn, setOutputOn] = useState(true);
+  const [mountsFor, setMountsFor] = useState<number | null>(null);
+  const [mounts, setMounts] = useState<MountEntry[] | null>(null);
   // 快照区：展开的容器 id -> 其快照列表（null = 加载中）。
   const [expandedSnapshots, setExpandedSnapshots] = useState<Map<number, SnapshotEntry[] | null>>(new Map());
 
@@ -83,6 +105,44 @@ export function SandboxManagerDialog({ bind, onClose, onChanged }: Props) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Mounts picker: resolve the caller's default workspace once; the tree
+  // itself loads directories lazily (WorkspaceTreePicker).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/workspaces");
+        const d = (await res.json()) as { workspaces?: Array<{ id: number }>; error?: string };
+        if (!res.ok || cancelled) return;
+        const first = d.workspaces?.[0];
+        if (first) setWsId(first.id);
+      } catch {
+        // mounts picker stays hidden — creation without mounts still works
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Per-container mounts panel (expand): list + add/remove inputs at runtime.
+  const loadMounts = useCallback(async (containerId: number) => {
+    try {
+      const res = await fetch(`/api/sandbox/containers?containerId=${containerId}`);
+      const d = (await res.json()) as { mounts?: MountEntry[]; error?: string };
+      if (!res.ok) throw new Error(d.error ?? `HTTP ${res.status}`);
+      setMounts(d.mounts ?? []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setMounts([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (mountsFor !== null) void loadMounts(mountsFor);
+    else setMounts(null);
+  }, [mountsFor, loadMounts]);
 
   // Default the create form to the platform's provisioning default image.
   useEffect(() => {
@@ -337,6 +397,15 @@ export function SandboxManagerDialog({ bind, onClose, onChanged }: Props) {
                   <button
                     type="button"
                     disabled={busyId !== null}
+                    onClick={() => setMountsFor((prev) => (prev === c.id ? null : c.id))}
+                    title="输入/输出挂载"
+                    style={{ ...smallBtnStyle, color: mountsFor === c.id ? "var(--accent)" : "var(--text)" }}
+                  >
+                    挂载 {mountsFor === c.id ? "▾" : "▸"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busyId !== null}
                     onClick={() => void remove(c)}
                     style={{ ...smallBtnStyle, color: "#f87171", borderColor: "#f8717155" }}
                   >
@@ -344,6 +413,109 @@ export function SandboxManagerDialog({ bind, onClose, onChanged }: Props) {
                   </button>
                 </div>
               </div>
+              {mountsFor === c.id && (
+                <div
+                  style={{
+                    borderTop: "1px dashed var(--border)",
+                    padding: "8px 10px",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 6,
+                  }}
+                >
+                  {mounts === null ? (
+                    <div style={{ fontSize: 11, color: "var(--text-dim)" }}>挂载加载中…</div>
+                  ) : (
+                    <>
+                      {mounts.length === 0 && (
+                        <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
+                          未配置挂载——容器内没有 /input 与 /output；在下方勾选工作区条目即可追加（运行中即刻可见）。
+                        </div>
+                      )}
+                      {mounts
+                        .filter((m) => m.kind === "input")
+                        .map((m) => (
+                          <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11 }}>
+                            <span
+                              style={{
+                                flex: 1,
+                                minWidth: 0,
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap",
+                                color: "var(--text)",
+                              }}
+                              title={m.rel_path}
+                            >
+                              🔒 /input/{m.name} <span style={{ color: "var(--text-dim)" }}>/ {m.rel_path}</span>
+                            </span>
+                            <button
+                              type="button"
+                              disabled={busyId !== null}
+                              onClick={() =>
+                                void act(async () => {
+                                  await post({ action: "remove-input", containerId: c.id, mountId: m.id });
+                                  await loadMounts(c.id);
+                                }, c.id)
+                              }
+                              style={{ ...smallBtnStyle, color: "#f87171", borderColor: "#f8717155" }}
+                            >
+                              移除
+                            </button>
+                          </div>
+                        ))}
+                      {mounts.some((m) => m.kind === "output") && (
+                        <div style={{ fontSize: 11, color: "var(--text)" }}>
+                          ⬆ /output → 工作区 {mounts.find((m) => m.kind === "output")?.rel_path ?? "outputs/"}
+                          （写入自动回收）
+                        </div>
+                      )}
+                      {wsId !== null && (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                          <span style={{ fontSize: 10, color: "var(--text-dim)" }}>
+                            追加输入（勾选=挂载，取消=移除；运行中也生效）
+                          </span>
+                          <WorkspaceTreePicker
+                            wsId={wsId}
+                            disabled={busyId !== null}
+                            selected={
+                              new Map(
+                                mounts
+                                  .filter((m) => m.kind === "input")
+                                  .map((m) => [
+                                    `/${normalizeRelPath(m.rel_path)}`,
+                                    { name: m.name, path: `/${normalizeRelPath(m.rel_path)}`, isDir: false },
+                                  ]),
+                              )
+                            }
+                            onToggle={(entry, checked) => {
+                              const rel = normalizeRelPath(entry.path);
+                              const existing = mounts.find(
+                                (m) => m.kind === "input" && normalizeRelPath(m.rel_path) === rel,
+                              );
+                              if (checked === Boolean(existing)) return;
+                              void act(async () => {
+                                if (checked) {
+                                  await post({
+                                    action: "add-input",
+                                    containerId: c.id,
+                                    mounts: { workspaceId: wsId, path: entry.path },
+                                  });
+                                  setNotice(`已挂载 ${entry.name} → /input（容器内立即可见）。`);
+                                } else if (existing) {
+                                  await post({ action: "remove-input", containerId: c.id, mountId: existing.id });
+                                  setNotice(`已移除 ${entry.name}（容器内 /input 即刻消失）。`);
+                                }
+                                await loadMounts(c.id);
+                              }, c.id);
+                            }}
+                          />
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
               {snapsOpen && (
                 <div
                   style={{
@@ -469,13 +641,33 @@ export function SandboxManagerDialog({ bind, onClose, onChanged }: Props) {
                 disabled={busyId !== null || createImageId === null}
                 onClick={() =>
                   void act(async () => {
+                    const inputPaths = [
+                      ...selectedInputs.keys(),
+                      ...(manualInput.trim() ? [`/${normalizeRelPath(manualInput)}`] : []),
+                    ];
+                    const mounts =
+                      wsId !== null && (inputPaths.length > 0 || outputOn)
+                        ? {
+                            ...(inputPaths.length > 0
+                              ? { inputs: inputPaths.map((path) => ({ workspaceId: wsId, path })) }
+                              : {}),
+                            ...(outputOn ? { output: { workspaceId: wsId } } : {}),
+                          }
+                        : undefined;
                     await post({
                       action: "create",
                       imageId: createImageId,
                       ...(createName.trim() ? { name: createName.trim() } : {}),
+                      ...(mounts ? { mounts } : {}),
                     });
                     setCreateName("");
-                    setNotice("容器已创建并启动。");
+                    setSelectedInputs(new Map());
+                    setManualInput("");
+                    setNotice(
+                      mounts
+                        ? "容器已创建并启动。/input（只读）与 /output（自动回收进工作区）已挂载。"
+                        : "容器已创建并启动。",
+                    );
                   }, "create")
                 }
                 style={{ ...smallBtnStyle, color: "white", background: "var(--accent)", borderColor: "var(--accent)" }}
@@ -483,6 +675,51 @@ export function SandboxManagerDialog({ bind, onClose, onChanged }: Props) {
                 {busyId === "create" ? "创建中…" : "创建"}
               </button>
             </div>
+            {wsId !== null && (
+              <div
+                style={{
+                  border: "1px solid var(--border)",
+                  borderRadius: 8,
+                  padding: "8px 10px",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 6,
+                }}
+              >
+                <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)" }}>
+                  挂载（来自「我的工作区」）
+                </span>
+                <div style={{ fontSize: 10, color: "var(--text-dim)" }}>
+                  勾选的文件/目录进入容器 <b>/input</b>（只读，创建后仍可增删）；交付产物写入 <b>/output</b>{" "}
+                  会自动回到工作区。目录可展开继续选择子项。
+                </div>
+                <WorkspaceTreePicker
+                  wsId={wsId}
+                  disabled={busyId !== null}
+                  selected={selectedInputs}
+                  onToggle={(entry, checked) => {
+                    setSelectedInputs((prev) => {
+                      const next = new Map(prev);
+                      if (checked) next.set(entry.path, entry);
+                      else next.delete(entry.path);
+                      return next;
+                    });
+                  }}
+                />
+                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  <input
+                    value={manualInput}
+                    onChange={(e) => setManualInput(e.target.value)}
+                    placeholder="子目录路径（可选，如 data/inputs）"
+                    style={{ ...inputStyle, flex: 1, fontSize: 11 }}
+                  />
+                </div>
+                <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--text)" }}>
+                  <input type="checkbox" checked={outputOn} onChange={(ev) => setOutputOn(ev.target.checked)} />
+                  启用 <b>/output</b> 输出回收（产物落工作区 outputs/&lt;容器名&gt;/）
+                </label>
+              </div>
+            )}
             <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
               资源用量按镜像默认/个人配额分配；创建后立即可在沙箱项目里绑定使用。
             </div>
@@ -495,6 +732,142 @@ export function SandboxManagerDialog({ bind, onClose, onChanged }: Props) {
     </div>
   );
 }
+
+/** Platform mount paths are stored without leading slashes; tree paths carry
+ *  one. Normalize before comparing a mounted row with a picked entry. */
+function normalizeRelPath(p: string): string {
+  return p.replace(/^\/+/, "").replace(/\/+$/, "");
+}
+
+/**
+ * 工作区目录树（沙箱挂载选择器）：目录懒加载、文件/目录均可勾选。
+ * 与「我的工作区」共用 BFF 的文件列表接口（条目的 path 由 BFF 拼好）。
+ */
+function WorkspaceTreePicker({
+  wsId,
+  selected,
+  onToggle,
+  disabled,
+}: {
+  wsId: number;
+  selected: Map<string, WorkspaceEntry>;
+  onToggle: (entry: WorkspaceEntry, checked: boolean) => void;
+  disabled?: boolean;
+}) {
+  // dirPath -> entries (null = loading)
+  const [dirs, setDirs] = useState<Map<string, WorkspaceEntry[] | null>>(new Map());
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [error, setError] = useState<string | null>(null);
+
+  const loadDir = useCallback(
+    async (dirPath: string) => {
+      setDirs((prev) => new Map(prev).set(dirPath, null));
+      try {
+        const res = await fetch(`/api/workspaces/${wsId}/files?path=${encodeURIComponent(dirPath)}`);
+        const d = (await res.json()) as { entries?: WorkspaceEntry[]; error?: string };
+        if (!res.ok) throw new Error(d.error ?? `HTTP ${res.status}`);
+        setDirs((prev) => new Map(prev).set(dirPath, d.entries ?? []));
+        setError(null);
+      } catch (err) {
+        setDirs((prev) => new Map(prev).set(dirPath, []));
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    },
+    [wsId],
+  );
+
+  useEffect(() => {
+    setDirs(new Map());
+    setExpanded(new Set());
+    void loadDir("/");
+  }, [loadDir]);
+
+  const toggleDir = (dirPath: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(dirPath)) {
+        next.delete(dirPath);
+      } else {
+        next.add(dirPath);
+        if (!dirs.has(dirPath)) void loadDir(dirPath);
+      }
+      return next;
+    });
+  };
+
+  const renderDir = (dirPath: string, depth: number): ReactNode => {
+    const entries = dirs.get(dirPath);
+    if (entries === null) {
+      return <div style={{ ...treeRowStyle, paddingLeft: 2 + depth * 14, color: "var(--text-dim)" }}>加载中…</div>;
+    }
+    if (!entries || entries.length === 0) {
+      return <div style={{ ...treeRowStyle, paddingLeft: 2 + depth * 14, color: "var(--text-dim)" }}>（空）</div>;
+    }
+    return entries.map((e) => (
+      <div key={e.path}>
+        <div style={{ ...treeRowStyle, paddingLeft: 2 + depth * 14 }}>
+          {e.isDir ? (
+            <button
+              type="button"
+              onClick={() => toggleDir(e.path)}
+              aria-label={expanded.has(e.path) ? "收起目录" : "展开目录"}
+              style={treeToggleStyle}
+            >
+              {expanded.has(e.path) ? "▾" : "▸"}
+            </button>
+          ) : (
+            <span style={{ ...treeToggleStyle, cursor: "default" }} />
+          )}
+          <input
+            type="checkbox"
+            checked={selected.has(e.path)}
+            disabled={disabled}
+            onChange={(ev) => onToggle(e, ev.target.checked)}
+          />
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={e.path}>
+            {e.isDir ? "📁" : "📄"} {e.name}
+          </span>
+        </div>
+        {e.isDir && expanded.has(e.path) && renderDir(e.path, depth + 1)}
+      </div>
+    ));
+  };
+
+  return (
+    <div
+      style={{
+        maxHeight: 190,
+        overflowY: "auto",
+        border: "1px solid var(--border)",
+        borderRadius: 6,
+        padding: "4px 6px",
+        background: "var(--bg)",
+      }}
+    >
+      {renderDir("/", 0)}
+      {error && <div style={{ fontSize: 10, color: "#f87171" }}>{error}</div>}
+    </div>
+  );
+}
+
+const treeRowStyle = {
+  display: "flex",
+  alignItems: "center",
+  gap: 5,
+  fontSize: 11,
+  color: "var(--text)",
+  lineHeight: "20px",
+} as const;
+
+const treeToggleStyle = {
+  width: 12,
+  padding: 0,
+  border: "none",
+  background: "transparent",
+  color: "var(--text-muted)",
+  fontSize: 10,
+  cursor: "pointer",
+} as const;
 
 const inputStyle = {
   height: 30,

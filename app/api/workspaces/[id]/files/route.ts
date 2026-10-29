@@ -59,8 +59,12 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
         modifiedAt?: string;
       }>;
     }>(`/api/v1/workspaces/${wsId}/files`, guard.apiKey, { path });
+    // `path` lets tree consumers (sandbox mount picker) address entries without
+    // re-deriving the parent, and is what the platform's mounts API expects.
+    const parent = path === "/" ? "" : path.replace(/\/+$/, "");
     const entries = (list.entries ?? []).map((e) => ({
       name: e.name,
+      path: `${parent}/${e.name}`,
       isDir: e.isDir ?? e.is_dir ?? false,
       size: e.size ?? 0,
       modified: e.mtime ?? e.modifiedAt ?? "",

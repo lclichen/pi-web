@@ -20,7 +20,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 export const BUILTIN_AGENT_BUILDER_NAME = "agent-builder";
-export const BUILTIN_AGENT_BUILDER_VERSION = "1.1.1";
+export const BUILTIN_AGENT_BUILDER_VERSION = "1.1.2";
 
 /** Developer skills shipped inside the builder bundle (source of truth:
  *  pi-config/agent/skills/, copied verbatim into .pi/skills/ of the zip). */
@@ -34,7 +34,8 @@ const AGENTS_MD = `# Agent Builder
 
 1. **整理配置方案**（写进对话，先让用户确认再动手）：
    - 目标 Agent 的定位与系统提示词（写入 .pi/agents/<name>.md 或项目 AGENTS.md）
-   - MCP 服务器（.pi/mcp.json）
+   - MCP 服务器（.pi/mcp.json，格式见下文 agent-packaging 技能：mcpServers.<name>
+     必须有 command 或 url；导出/导入会做 schema 校验）
    - 技能（.pi/skills/<name>/SKILL.md）、子代理（.pi/subagents.json / .pi/agents/）
    - 需要内置 nodejs 代码的扩展（.pi/extensions/<name>/，package.json + index.js）
    - 环境依赖（如 node>=20、ripgrep、python>=3.11）
@@ -106,6 +107,44 @@ description: Agent 定义（配置包）的打包规范与自检清单——开�
 AGENTS.md                 # 项目指令（Agent 的系统提示载体之一）
 \`\`\`
 
+## mcp.json 格式（pi-mcp-adapter，导出/导入会校验）
+
+\`.pi/mcp.json\` 必须是一个带 \`mcpServers\` 的对象，每个服务器**至少**有
+\`command\`（stdio）或 \`url\`（http）之一：
+
+\`\`\`json
+{
+  "mcpServers": {
+    "audit-memo": {
+      "command": "node",
+      "args": [".pi/mcp/memo-server.mjs"],
+      "env": { "MEMO_DIR": ".pi/memos" }
+    },
+    "internal-api": {
+      "url": "https://mcp.example.internal/mcp",
+      "headers": { "Authorization": "Bearer \${MCP_TOKEN}" },
+      "auth": "bearer",
+      "directTools": true,
+      "lifecycle": "lazy"
+    }
+  }
+}
+\`\`\`
+
+字段约束（校验器按此执行）：
+
+- \`command\` + \`args[]\`（字符串数组）+ \`env\`（KEY→字符串）
+- \`url\` + \`headers\`（KEY→字符串）；\`auth\` = none | bearer | oauth
+- \`disabled\`：布尔值；关掉的服务器仍保留在文件里，界面上可一键启用
+- \`directTools\`：布尔值或字符串数组（把工具直接暴露给模型，不必经 mcp 网关）
+- \`includeTools\` / \`excludeTools\`：字符串数组（工具白/黑名单）
+- \`lifecycle\`：连接时机（如 lazy / keep-alive / eager）
+- \`idleTimeout\` / \`toolTimeoutMs\` / \`requestTimeoutMs\`：数字
+
+常见错误：把 \`args\` 写成空格分隔的字符串、\`env\` 写成数组、服务器条目只有
+\`disabled\` 而没有 command/url——这些都会在**导出时直接报错**（导入同样拦），
+不会等到套用后才发现连不上。
+
 ## 模型配置不入包（硬规则）
 
 不要在包内放 models.json。原因：
@@ -126,7 +165,8 @@ AGENTS.md                 # 项目指令（Agent 的系统提示载体之一）
 2. 扩展目录含 package.json（name/version/main）与入口文件；代码可被
    node --check 语法校验通过。
 3. skills/*/SKILL.md 的 frontmatter 含 name 与 description。
-4. mcp.json 是合法 JSON 且键名与文档一致；包内没有 models.json。
+4. mcp.json 是合法 JSON、每个服务器都有 command 或 url（导出/导入会跑同一套
+   schema 校验，失败会给出具体字段）；包内没有 models.json。
 5. .pi/bundle.json 已写、version 已递增、dependencies 已声明
    （导出后进 manifest.package.dependencies，展示在 Agents 管理）。
 6. 无凭据、无运行态文件（sessions/tmp/bin/cache/plans/.git）。

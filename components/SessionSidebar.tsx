@@ -1333,6 +1333,9 @@ export function SessionSidebar({
             {showTopNewButton && (
               <button
                 onClick={() => setShowProjectWizard(true)}
+                // 始终可用：向导自己按模式/角色给出可选项。此前样式按
+                // selectedCwd 置灰 + not-allowed 光标（没选项目时看似禁用，
+                // 实际可点），非管理员登录后最容易被误导。
                 style={{
                   display: "flex",
                   alignItems: "center",
@@ -1340,8 +1343,8 @@ export function SessionSidebar({
                   gap: 5,
                   background: "var(--bg-hover)",
                   border: "1px solid var(--border)",
-                  color: selectedCwd ? "var(--text-muted)" : "var(--text-dim)",
-                  cursor: selectedCwd ? "pointer" : "not-allowed",
+                  color: "var(--text-muted)",
+                  cursor: "pointer",
                   height: 32,
                   paddingLeft: 10,
                   paddingRight: 12,
@@ -1354,14 +1357,13 @@ export function SessionSidebar({
                 }}
                 title={t("sessions.newProject")}
                 onMouseEnter={(e) => {
-                  if (!selectedCwd) return;
                   e.currentTarget.style.background = "var(--bg-selected)";
                   e.currentTarget.style.color = "var(--accent)";
                   e.currentTarget.style.borderColor = "rgba(37,99,235,0.35)";
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.background = "var(--bg-hover)";
-                  e.currentTarget.style.color = selectedCwd ? "var(--text-muted)" : "var(--text-dim)";
+                  e.currentTarget.style.color = "var(--text-muted)";
                   e.currentTarget.style.borderColor = "var(--border)";
                 }}
               >

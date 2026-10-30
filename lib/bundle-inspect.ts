@@ -216,7 +216,22 @@ export async function inspectBundleZip(zipData: Buffer): Promise<BundleInspectio
   }
 
   inspection.counts.extensions = inspection.extensions.length;
-  inspection.counts.skills = inspection.skills.length;
+  // 技能以“目录”计数，不是文件：.pi/skills/<name>/SKILL.md + references/* 属于
+  // 同一个技能（此前把每个文件都算成一个技能，内容清单里的数字虚高）。
+  // 扁平文件（.pi/skills/<name>.md，历史包）各算一个；缺 SKILL.md 的目录不计。
+  const skillDirs = new Set<string>();
+  let flatSkillFiles = 0;
+  for (const s of inspection.skills) {
+    const rel = s.path.replace(/^\.pi\/skills\//i, "");
+    const slash = rel.indexOf("/");
+    if (slash === -1) {
+      flatSkillFiles += 1;
+      continue;
+    }
+    // Only directories that actually carry SKILL.md count as skills.
+    if (/^[^/]+\/SKILL\.md$/i.test(rel)) skillDirs.add(rel.slice(0, slash));
+  }
+  inspection.counts.skills = skillDirs.size + flatSkillFiles;
   inspection.counts.agents = inspection.agents.length;
   inspection.counts.models = inspection.models.reduce((sum, m) => sum + m.models.length, 0);
   inspection.counts.mcp = inspection.mcp.reduce((sum, m) => sum + m.servers.length, 0);

@@ -12,7 +12,7 @@
 
 | 项 | 要求 | 核对方式 |
 |---|---|---|
-| pi-web 版本 | 含 Agents 管理 + 内置 agent-builder **1.1.1**（带开发技能库） | 设置 → Agents 管理 列表里 agent-builder 版本为 1.1.1 |
+| pi-web 版本 | 含 Agents 管理 + 内置 agent-builder **1.1.2**（带开发技能库） | 设置 → Agents 管理 列表里 agent-builder 版本为 1.1.2 |
 | 模型 | 演示账号至少有一个可用模型 | 会话里随意发一句话能出结果 |
 | 示例仓库 | 任意含 git 历史与源码的目录（推荐就用 pi-web 仓库副本或一个中等规模项目） | `git log --oneline -1` 有输出 |
 | 加密工具 | `bin/apkg-publisher(.exe)` 或 `PI_WEB_APKG_TOOL` 可用 | `bin/apkg-publisher.exe --help` 出用法 |
@@ -38,7 +38,7 @@
 ### 第 0 幕 · 准备（1 min）
 
 1. 新开一个 **Host 模式**项目，工作区指向空目录（如 `~/demo/agent-lab`）。
-2. 进入 设置 → Agents 管理，指给观众看：内置 `agent-builder`（1.1.1，保护不可删）。
+2. 进入 设置 → Agents 管理，指给观众看：内置 `agent-builder`（1.1.2，保护不可删）。
 3. 说明：Agent Builder 是"造 Agent 的 Agent"，它的能力来自随包技能库
    （pi-extension-dev / skill-creator / subagent-creator / agent-packaging）。
 
@@ -175,7 +175,7 @@ bin/apkg-publisher.exe keys new  --keys <keys.json> --id <gen>
 
 ## 六、验收清单
 
-- [ ] Agents 管理可见 agent-builder 1.1.1，能套用到空 Host 项目
+- [ ] Agents 管理可见 agent-builder 1.1.2，能套用到空 Host 项目
 - [ ] 成品树六类模块齐全（bundle.json / AGENTS.md / 技能+references / 子代理 / 扩展 / MCP），且不含 models.json
 - [ ] 会话实测：技能被读、audit_collect 有真实输出、coverage-analyst 被派发、memo_save 落盘
 - [ ] 导出 zip 的 manifest.package 带 name/version/dependencies（来自 .pi/bundle.json）

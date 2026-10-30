@@ -43,6 +43,7 @@ import {
   type ApkgHeader,
 } from "./apkg.ts";
 import { openApkgViaTool } from "./apkg-open.ts";
+import { formatConfigProblems, validateBundleConfigText, type ConfigFileProblem } from "./bundle-config-schema.ts";
 
 export const BUNDLE_FORMAT = "amedac-project-config";
 export const BUNDLE_VERSION = 2;
@@ -184,18 +185,28 @@ export async function exportProjectConfigBundle(
 ): Promise<{ bytes: Buffer; stats: ExportStats }> {
   const zip = new JSZip();
   const stats: ExportStats = { files: 0, bytes: 0, skipped: [] };
+  // 格式严格的配置文件（mcp.json / models.json）先校验再入包：宁可在导出时
+  // 明确失败，也不要发出一个导入后跑不起来的 Agent 包。
+  const configProblems: ConfigFileProblem[] = [];
 
   for (const section of [".pi", "labs"]) {
     let sectionFiles = 0;
     for await (const file of walkFiles(home, section)) {
       if (isDeniedPath(file.rel)) continue;
       const content = await readFile(file.abs);
+      const problems = validateBundleConfigText(file.rel, content.toString("utf8"));
+      if (problems.length > 0) configProblems.push({ path: file.rel, problem: problems.join("；") });
       zip.file(file.rel, content);
       sectionFiles += 1;
       stats.files += 1;
       stats.bytes += content.length;
     }
     if (sectionFiles === 0) stats.skipped.push(section);
+  }
+  if (configProblems.length > 0) {
+    throw new Error(
+      `导出中止：配置包内的 mcp.json / models.json 格式不符合要求 —— ${formatConfigProblems(configProblems)}`,
+    );
   }
 
   // 根级 AGENTS.md（项目指令，会话系统提示词的来源之一）随包共享；
@@ -375,6 +386,17 @@ export async function importProjectConfigBundle(
     writes.push({ rel, content, existed });
   }
   if (writes.length === 0) throw new Error("包内没有可导入的配置文件（仅支持 .pi/ 与 labs/）");
+
+  // Same schema gate on the way in: nothing is written unless mcp.json /
+  // models.json parse to the shapes pi + pi-mcp-adapter actually consume.
+  const importProblems: ConfigFileProblem[] = [];
+  for (const write of writes) {
+    const problems = validateBundleConfigText(write.rel, write.content.toString("utf8"));
+    if (problems.length > 0) importProblems.push({ path: write.rel, problem: problems.join("；") });
+  }
+  if (importProblems.length > 0) {
+    throw new Error(`导入中止：包内配置格式无效（未写入任何文件）—— ${formatConfigProblems(importProblems)}`);
+  }
 
   const stats: ImportStats = { added: 0, overwritten: 0, files: [], package: packageMeta, apkg: Boolean(apkgHeader) };
   for (const write of writes) {

@@ -67,7 +67,12 @@ export function makeBgTasksExtension(): InlineExtension {
     };
 
     pi.on("session_start", async (_event, ctx) => {
-      register(ctx.sessionManager.getSessionId());
+      // Defensive: some embedded hosts construct a trimmed ExtensionContext
+      // (e.g. the MCP adapter's load-time partial ctx). A missing session
+      // manager previously surfaced as "Cannot read properties of undefined
+      // (reading 'getSessionId')" from a foreign init path.
+      const sessionId = ctx.sessionManager?.getSessionId?.();
+      if (sessionId) register(sessionId);
     });
     pi.on("session_shutdown", async () => {
       // The map is best-effort; stale entries are overwritten on next start.

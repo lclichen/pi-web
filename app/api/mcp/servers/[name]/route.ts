@@ -1,10 +1,5 @@
 import { NextResponse } from "next/server";
-import {
-  removeMcpServer,
-  setMcpServerDisabled,
-  setMcpServerDisabledViaProject,
-  updateMcpServer,
-} from "@/lib/mcp-config";
+import { removeMcpServer, setMcpServerDisabled, updateMcpServer } from "@/lib/mcp-config";
 import { guardMcpRequest } from "@/lib/mcp-route-guard";
 import type { ConfigScope, ServerEntry } from "@/lib/api-types";
 
@@ -48,8 +43,12 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ name: 
     if (!guard.ok) return guard.response;
     const scope = readScope(body.scope);
     try {
-      // 工具栏/会话内操作走项目级覆盖——不碰原始配置（与插件行为一致）；
-      return NextResponse.json({ success: true });
+      // Toggle the entry's own `disabled` flag in its own config file. The
+      // adapter treats a disabled entry as absent (and a project-level
+      // {disabled:true} shadows an enabled global entry of the same name).
+      // This handler used to be a silent no-op — the panel's switch did nothing.
+      setMcpServerDisabled(guard.cwd, scope, name, body.disabled === true);
+      return NextResponse.json({ success: true, disabled: body.disabled === true });
     } catch (e) {
       return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 404 });
     }

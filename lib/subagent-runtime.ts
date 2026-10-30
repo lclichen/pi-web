@@ -130,7 +130,8 @@ export function createSubagentController(dependencies: SubagentRuntimeDependenci
   async function start(request: StartSubagentRequest): Promise<SubagentExecution> {
     const enabled = dependencies.isBuiltInSubagentsEnabled ?? isBuiltInSubagentsEnabled;
     if (!enabled()) throw new Error("Pi Web built-in sub-agents are disabled");
-    const parentSessionId = request.parentContext.sessionManager.getSessionId();
+    const parentSessionId = request.parentContext.sessionManager?.getSessionId?.();
+    if (!parentSessionId) throw new Error("Parent session context is unavailable");
     const parent = dependencies.getSession(parentSessionId);
     if (!parent?.isAlive()) throw new Error("Parent session is no longer available");
     if (!parent.sessionFile) throw new Error("Parent session must be persisted before starting a subagent");

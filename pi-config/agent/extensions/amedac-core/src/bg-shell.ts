@@ -355,7 +355,10 @@ export function makeBgShellExtension(): InlineExtension {
     };
 
     pi.on("session_start", async (_event, ctx) => {
-      sessionId = ctx.sessionManager.getSessionId();
+      // Trimmed contexts (embedded hosts) may not carry a session manager —
+      // skip channel setup instead of throwing into the host's init path.
+      sessionId = ctx.sessionManager?.getSessionId?.() ?? "";
+      if (!sessionId) return;
       cwd = ctx.cwd;
       // Channel resolution: a registered channel wins; otherwise the session
       // mode decides. `remote` without a channel is an error (never a local

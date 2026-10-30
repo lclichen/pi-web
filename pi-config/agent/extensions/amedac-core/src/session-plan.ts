@@ -65,7 +65,14 @@ export function makeSessionPlanExtension(): InlineExtension {
           content: Type.String({ description: "Full markdown plan. Use `- [ ]` / `- [x]` checkboxes for steps." }),
         }),
         execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
-          const sessionId = ctx.sessionManager.getSessionId();
+          const sessionId = ctx.sessionManager?.getSessionId?.();
+          if (!sessionId) {
+            return {
+              content: [{ type: "text", text: "Failed to save plan: session id unavailable" }],
+              details: { saved: false },
+              isError: true,
+            };
+          }
           const result = saveSessionPlan(ctx.cwd, sessionId, params.content);
           return result.ok
             ? {

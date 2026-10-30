@@ -103,6 +103,7 @@ interface ServerForm {
   includeTools: string;
   excludeTools: string;
   debug: boolean;
+  disabled: boolean;
 }
 
 function emptyServerForm(scope: ConfigScope = "project"): ServerForm {
@@ -127,6 +128,7 @@ function emptyServerForm(scope: ConfigScope = "project"): ServerForm {
     includeTools: "",
     excludeTools: "",
     debug: false,
+    disabled: false,
   };
 }
 
@@ -166,6 +168,7 @@ function entryToForm(name: string, scope: ConfigScope, entry: ServerEntry): Serv
     includeTools: entry.includeTools?.join(", ") ?? "",
     excludeTools: entry.excludeTools?.join(", ") ?? "",
     debug: entry.debug === true,
+    disabled: entry.disabled === true,
   };
 }
 
@@ -217,6 +220,7 @@ function formToEntry(form: ServerForm): ServerEntry {
     .filter(Boolean);
   if (exclude.length) entry.excludeTools = exclude;
   if (form.debug) entry.debug = true;
+  if (form.disabled) entry.disabled = true;
   return entry;
 }
 
@@ -244,6 +248,16 @@ export function McpServersConfig({
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [toolMap, setToolMap] = useState<Map<string, McpServerTools>>(new Map());
   const [probingAll, setProbingAll] = useState(false);
+  /** 单服务器「测试连接」结果（此前探测结果只写进左侧工具表，详情页无反馈）。 */
+  const [probeState, setProbeState] = useState<{
+    status: "idle" | "running" | "ok" | "error";
+    ms?: number;
+    tools?: McpTool[];
+    error?: string;
+    needsAuth?: boolean;
+  }>({ status: "idle" });
+  /** 正在切换启用的服务器 key（或 group:<scope>）——切换期间禁用开关。 */
+  const [toggleBusy, setToggleBusy] = useState<string | null>(null);
   const [expandedServers, setExpandedServers] = useState<Set<string>>(new Set());
   const [showSettings, setShowSettings] = useState(false);
   const [settingsDraft, setSettingsDraft] = useState<McpSettings>({});
@@ -412,9 +426,17 @@ export function McpServersConfig({
     }
   };
 
-  const probeOne = async (name: string, scope: ConfigScope) => {
+  /** 测试当前表单里的服务器：结果同时写进详情面板与左侧工具表。 */
+  const testConnection = async () => {
     const entry = formToEntry(form);
-    if (!entry.command && !entry.url) return;
+    if (!entry.command && !entry.url) {
+      setProbeState({ status: "error", error: t("mcp.testNoTarget") });
+      return;
+    }
+    const targetName = creating ? form.name.trim() : originalName;
+    const targetScope = creating ? form.scope : originalScope;
+    setProbeState({ status: "running" });
+    const started = Date.now();
     try {
       const res = await fetch("/api/mcp/probe", {
         method: "POST",
@@ -422,18 +444,78 @@ export function McpServersConfig({
         body: JSON.stringify({ entry, timeoutMs: 10000 }),
       });
       const result = (await res.json()) as { tools?: McpTool[]; error?: string; needsAuth?: boolean };
-      const map = new Map(toolMap);
-      map.set(`${scope}\0${name}`, {
-        server: name,
-        scope,
-        transport: entry.url ? "http" : "stdio",
-        tools: result.tools ?? [],
-        error: result.error,
-        needsAuth: result.needsAuth,
+      if (targetName) {
+        setToolMap((prev) => {
+          const map = new Map(prev);
+          map.set(`${targetScope} ${targetName}`, {
+            server: targetName,
+            scope: targetScope,
+            transport: entry.url ? "http" : "stdio",
+            tools: result.tools ?? [],
+            error: result.error,
+            needsAuth: result.needsAuth,
+          });
+          return map;
+        });
+      }
+      if (result.error) setProbeState({ status: "error", error: result.error, needsAuth: result.needsAuth });
+      else setProbeState({ status: "ok", ms: Date.now() - started, tools: result.tools ?? [] });
+    } catch (e) {
+      setProbeState({ status: "error", error: e instanceof Error ? e.message : String(e) });
+    }
+  };
+
+  /** 单个服务器启用/禁用：PATCH 条目 disabled 标记，并同步已打开的表单，
+   *  避免随后的「保存」把状态又抹掉。 */
+  const setServerEnabled = async (srv: McpServerInfo, enabled: boolean) => {
+    const key = `${srv.scope} ${srv.name}`;
+    if (toggleBusy) return;
+    setToggleBusy(key);
+    setFormError(null);
+    try {
+      const res = await fetch(`/api/mcp/servers/${encodeURIComponent(srv.name)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cwd, scope: srv.scope, disabled: !enabled }),
       });
-      setToolMap(map);
-    } catch {
-      /* ignore */
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok || body.error) throw new Error(body.error ?? `HTTP ${res.status}`);
+      if (selectedKey === key) setForm((f) => ({ ...f, disabled: !enabled }));
+      await loadDoc();
+      void probeAll();
+    } catch (e) {
+      setFormError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setToggleBusy(null);
+    }
+  };
+
+  /** 分组开关：把该 scope 下所有服务器切到同一状态（已一致的不发请求）。 */
+  const setGroupEnabled = async (scope: ConfigScope, list: McpServerInfo[], enabled: boolean) => {
+    if (toggleBusy) return;
+    setToggleBusy(`group:${scope}`);
+    setFormError(null);
+    try {
+      for (const srv of list) {
+        if (Boolean(srv.disabled) === !enabled) continue;
+        const res = await fetch(`/api/mcp/servers/${encodeURIComponent(srv.name)}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ cwd, scope: srv.scope, disabled: !enabled }),
+        });
+        if (!res.ok) {
+          const body = (await res.json().catch(() => ({}))) as { error?: string };
+          throw new Error(body.error ?? `HTTP ${res.status}`);
+        }
+      }
+      const selectedSrv = servers.find((x) => `${x.scope} ${x.name}` === selectedKey);
+      if (selectedSrv?.scope === scope) setForm((f) => ({ ...f, disabled: !enabled }));
+      await loadDoc();
+      void probeAll();
+    } catch (e) {
+      setFormError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setToggleBusy(null);
     }
   };
 
@@ -495,19 +577,11 @@ export function McpServersConfig({
         }}
       >
         {probingAll && <span style={{ fontSize: 10, color: "var(--text-muted)" }}>{t("mcp.probing")}</span>}
-        <span style={{ fontSize: 11, color: prefs.mcpEnabled ? "var(--text-muted)" : "var(--text-dim)" }}>
-          {t("common.enable")}
-        </span>
-        <ConfigSwitch
-          checked={prefs.mcpEnabled}
-          label={t("common.enable")}
-          onChange={(v) => void togglePref("mcpEnabled", v)}
-        />
         <ConfigButton size="small" onClick={() => void probeAll()} disabled={probingAll}>
-          {t("mcp.refreshTools")}
+          {t("mcp.testAll")}
         </ConfigButton>
         <ConfigButton size="small" onClick={() => setShowSettings((v) => !v)}>
-          {showSettings ? t("mcp.hideSettings") : t("mcp.settings")}
+          {showSettings ? t("mcp.hideSettings") : t("mcp.globalSettings")}
         </ConfigButton>
       </div>
 
@@ -523,6 +597,23 @@ export function McpServersConfig({
             alignItems: "flex-end",
           }}
         >
+          <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 4 }}>
+            <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)" }}>
+              {t("mcp.globalSettingsTitle")}
+            </span>
+            <span style={{ fontSize: 10, color: "var(--text-dim)", lineHeight: 1.6 }}>
+              {t("mcp.globalSettingsHint")}
+            </span>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, color: "var(--text)" }}>
+              <ConfigSwitch
+                checked={prefs.mcpEnabled}
+                label={t("mcp.webGlobalSwitch")}
+                onChange={(v) => void togglePref("mcpEnabled", v)}
+              />
+              {t("mcp.webGlobalSwitch")}
+              <span style={{ fontSize: 10, color: "var(--text-dim)" }}>{t("mcp.webGlobalSwitchHint")}</span>
+            </label>
+          </div>
           <div style={{ width: 140 }}>
             <ConfigField label="toolPrefix">
               <select
@@ -543,8 +634,8 @@ export function McpServersConfig({
               </select>
             </ConfigField>
           </div>
-          <div style={{ width: 110 }}>
-            <ConfigField label="idleTimeout (min)">
+          <div style={{ width: 150 }}>
+            <ConfigField label={t("mcp.idleTimeoutLabel")}>
               <input
                 style={inputStyle}
                 value={settingsDraft.idleTimeout ?? ""}
@@ -556,6 +647,23 @@ export function McpServersConfig({
                 }
               />
             </ConfigField>
+            <div style={{ fontSize: 9, color: "var(--text-dim)", marginTop: 2 }}>{t("mcp.help.idleTimeout")}</div>
+          </div>
+          <div style={{ width: 170 }}>
+            <ConfigField label={t("mcp.requestTimeoutLabel")}>
+              <input
+                style={inputStyle}
+                placeholder="30000"
+                value={settingsDraft.requestTimeoutMs ?? ""}
+                onChange={(e) =>
+                  setSettingsDraft((s) => ({
+                    ...s,
+                    requestTimeoutMs: e.target.value === "" ? undefined : Number(e.target.value),
+                  }))
+                }
+              />
+            </ConfigField>
+            <div style={{ fontSize: 9, color: "var(--text-dim)", marginTop: 2 }}>{t("mcp.help.requestTimeout")}</div>
           </div>
           <ConfigButton variant="primary" onClick={saveSettings} disabled={settingsSaving}>
             {settingsSaving ? t("common.saving") : t("mcp.saveSettings")}
@@ -588,9 +696,30 @@ export function McpServersConfig({
             ) : (
               grouped.map((group) => (
                 <div key={group.scope} className="config-sidebar-group">
-                  <ConfigSidebarGroupLabel>{scopeGroupLabel(group.scope)}</ConfigSidebarGroupLabel>
+                  <ConfigSidebarGroupLabel>
+                    <span style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
+                      <span>{scopeGroupLabel(group.scope)}</span>
+                      <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                        <span style={{ fontSize: 9, color: "var(--text-dim)" }}>
+                          {group.servers.filter((x) => !x.disabled).length}/{group.servers.length}
+                        </span>
+                        <ConfigSwitch
+                          checked={group.servers.every((x) => !x.disabled)}
+                          loading={toggleBusy === `group:${group.scope}`}
+                          disabled={toggleBusy !== null}
+                          label={t("mcp.groupSwitch")}
+                          onChange={(v) => void setGroupEnabled(group.scope, group.servers, v)}
+                        />
+                      </span>
+                    </span>
+                  </ConfigSidebarGroupLabel>
                   {group.servers.map((srv) => {
-                    const key = `${srv.scope}\0${srv.name}{srv.shadowed ? " (被项目覆盖)" : ""}`;
+                    // Key must be exactly `${scope}\0${name}` — toolMap and
+                    // selectServer() use that shape. (A stray "{" made it
+                    // `…\0name{srv.shadowed ? …}`, so every lookup missed and
+                    // the tree always said "No tools"; the shadow marker is
+                    // rendered in the label instead of the key.)
+                    const key = `${srv.scope}\0${srv.name}`;
                     const isSelected = !creating && selectedKey === key;
                     const isExpanded = expandedServers.has(key);
                     const toolInfo = toolMap.get(key);
@@ -641,10 +770,21 @@ export function McpServersConfig({
                               >
                                 {srv.transport}
                               </span>
-                              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              <span
+                                style={{
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                  whiteSpace: "nowrap",
+                                  opacity: srv.disabled ? 0.55 : 1,
+                                  textDecoration: srv.disabled ? "line-through" : "none",
+                                }}
+                              >
                                 {srv.name}
                                 {srv.shadowed ? " (被项目覆盖)" : ""}
                               </span>
+                              {srv.disabled && (
+                                <span style={{ fontSize: 8, color: "var(--text-dim)" }}>{t("mcp.disabledTag")}</span>
+                              )}
                               {srv.directToolsOn && <span style={{ fontSize: 8, color: "var(--accent)" }}>DT</span>}
                               {toolInfo?.error && <span style={{ fontSize: 8, color: "#f59e0b" }}>!</span>}
                               {!toolInfo?.error && toolCount > 0 && (
@@ -731,12 +871,77 @@ export function McpServersConfig({
                   </ConfigDetailHeaderInfo>
                   <ConfigDetailActions>
                     {!creating && (
-                      <ConfigButton variant="danger" size="small" onClick={remove} disabled={saving}>
-                        {t("common.delete")}
-                      </ConfigButton>
+                      <>
+                        <ConfigButton
+                          size="small"
+                          onClick={() => void testConnection()}
+                          disabled={saving || probeState.status === "running"}
+                        >
+                          {probeState.status === "running" ? t("mcp.testing") : t("mcp.testConnection")}
+                        </ConfigButton>
+                        <ConfigButton variant="danger" size="small" onClick={remove} disabled={saving}>
+                          {t("common.delete")}
+                        </ConfigButton>
+                        <span style={{ fontSize: 10, color: "var(--text-dim)" }}>
+                          {form.disabled ? t("mcp.disabledTag") : t("mcp.enabledTag")}
+                        </span>
+                        <ConfigSwitch
+                          checked={!form.disabled}
+                          loading={toggleBusy === selectedKey}
+                          disabled={toggleBusy !== null || saving}
+                          label={form.disabled ? t("mcp.enableServer") : t("mcp.disableServer")}
+                          onChange={(enabled) => {
+                            const srv = servers.find((x) => `${x.scope} ${x.name}` === selectedKey);
+                            if (srv) void setServerEnabled(srv, enabled);
+                          }}
+                        />
+                      </>
                     )}
                   </ConfigDetailActions>
                 </ConfigDetailHeader>
+
+                {!creating && probeState.status !== "idle" && (
+                  <div
+                    role="status"
+                    style={{
+                      border: "1px solid var(--border)",
+                      borderRadius: 8,
+                      padding: "8px 10px",
+                      fontSize: 11,
+                      lineHeight: 1.6,
+                      background: "var(--bg-panel)",
+                      color: "var(--text-muted)",
+                    }}
+                  >
+                    {probeState.status === "running" ? (
+                      <span>{t("mcp.testing")}</span>
+                    ) : probeState.status === "ok" ? (
+                      <>
+                        <span style={{ color: "var(--accent)" }}>
+                          {t("mcp.testOk", { count: probeState.tools?.length ?? 0, ms: probeState.ms ?? 0 })}
+                        </span>
+                        {(probeState.tools?.length ?? 0) > 0 && (
+                          <div style={{ marginTop: 4, display: "flex", flexWrap: "wrap", gap: 6 }}>
+                            {probeState.tools!.map((tool) => (
+                              <code
+                                key={tool.name}
+                                style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text)" }}
+                                title={tool.description}
+                              >
+                                {tool.name}
+                              </code>
+                            ))}
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <span style={{ color: "#ef4444" }}>
+                        {probeState.needsAuth ? t("mcp.testAuthRequired") : t("mcp.testFailed")}
+                        {probeState.error ? `: ${probeState.error}` : ""}
+                      </span>
+                    )}
+                  </div>
+                )}
 
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                   <div style={{ flex: "1 1 140px" }}>
@@ -945,12 +1150,12 @@ export function McpServersConfig({
 
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <ConfigButton size="small" onClick={() => setShowAdvanced((v) => !v)}>
-                    {showAdvanced ? t("mcp.hideDebug") : t("mcp.debug")}
+                    {showAdvanced ? t("mcp.hideAdvanced") : t("mcp.advanced")}
                   </ConfigButton>
                   {showAdvanced && (
                     <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, cursor: "pointer" }}>
                       <input type="checkbox" checked={form.debug} onChange={(e) => set("debug", e.target.checked)} />{" "}
-                      debug (show stderr)
+                      {t("mcp.debugFieldHint")}
                     </label>
                   )}
                 </div>
@@ -972,10 +1177,10 @@ export function McpServersConfig({
         {showForm && (
           <>
             <ConfigButton
-              onClick={() => void probeOne(creating ? form.name : originalName, creating ? form.scope : originalScope)}
-              disabled={probingAll}
+              onClick={() => void testConnection()}
+              disabled={probingAll || probeState.status === "running"}
             >
-              {t("mcp.probe")}
+              {probeState.status === "running" ? t("mcp.testing") : t("mcp.testConnection")}
             </ConfigButton>
             <ConfigButton variant="primary" onClick={save} disabled={saving}>
               {saving ? t("common.saving") : creating ? t("common.create") : t("common.save")}

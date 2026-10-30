@@ -438,14 +438,16 @@ export function SubagentsConfig({
           flexShrink: 0,
         }}
       >
+        {/* 明确作用域：这是 WebUI 全局开关，不是当前选中智能体的开关。 */}
         <span style={{ fontSize: 11, color: prefs.subagentsEnabled ? "var(--text-muted)" : "var(--text-dim)" }}>
-          {t("common.enable")}
+          {t("subagents.webGlobalSwitch")}
         </span>
         <ConfigSwitch
           checked={prefs.subagentsEnabled}
-          label={t("common.enable")}
+          label={t("subagents.webGlobalSwitch")}
           onChange={(v) => void togglePref("subagentsEnabled", v)}
         />
+        <span style={{ fontSize: 10, color: "var(--text-dim)" }}>{t("subagents.webGlobalSwitchHint")}</span>
       </div>
 
       {/* Body */}

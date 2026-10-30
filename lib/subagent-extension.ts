@@ -24,7 +24,8 @@ function capturePlanRun(run: SubagentRunInfo, ctx: ExtensionContext): void {
     if (run.status !== "completed" || !isPlanProfile(run.profile)) return;
     const text = subagentFinalText(run);
     if (!text.trim()) return;
-    const sessionId = ctx.sessionManager.getSessionId();
+    const sessionId = ctx.sessionManager?.getSessionId?.();
+    if (!sessionId) return;
     const result = saveSessionPlan(
       ctx.cwd,
       sessionId,

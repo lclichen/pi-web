@@ -43,6 +43,10 @@ export function SubagentDirectoryPanel({ sessionId, subagentCalls }: Props) {
   } | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const openAgentIdRef = useRef<string | null>(null);
+  // 轮询节奏要在 effect 里读“最新”的 records（effect 只按 sessionId 重跑，
+  // 闭包里的 records 是首渲染的旧值）。
+  const recordsRef = useRef<SubagentRecord[]>(records);
+  recordsRef.current = records;
 
   // Poll while mounted (the panel stays mounted-hidden, so records also stay
   // fresh for the widget's eventual "finished" transition).
@@ -53,9 +57,13 @@ export function SubagentDirectoryPanel({ sessionId, subagentCalls }: Props) {
       return;
     }
     let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
     const load = async () => {
+      if (document.visibilityState === "hidden") return; // next visible tick reloads
       try {
-        const res = await fetch(`/api/agent/${encodeURIComponent(sessionId)}/subagents`);
+        const res = await fetch(`/api/agent/${encodeURIComponent(sessionId)}/subagents`, {
+          cache: "no-store",
+        });
         if (!res.ok || cancelled) return;
         const d = (await res.json()) as {
           records?: SubagentRecord[];
@@ -68,11 +76,28 @@ export function SubagentDirectoryPanel({ sessionId, subagentCalls }: Props) {
         // next poll retries
       }
     };
+    // 自适应节奏：有运行中/后台子智能体时 5s 盯状态；否则降到 60s 空转
+    // （5s 固定轮询曾是"14000+ 请求"的主要来源之一——挂一天的页面会发
+    // 一万七千个请求，而绝大多数响应没有任何变化）。
+    const cadence = () =>
+      recordsRef.current.some((r) => r.status === "running" || r.status === "background") ? 5_000 : 60_000;
+    const schedule = () => {
+      if (cancelled) return;
+      timer = setTimeout(async () => {
+        await load();
+        if (!cancelled) schedule();
+      }, cadence());
+    };
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void load();
+    };
     void load();
-    const t = setInterval(load, 5000);
+    schedule();
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       cancelled = true;
-      clearInterval(t);
+      if (timer) clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [sessionId]);
 

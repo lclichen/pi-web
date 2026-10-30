@@ -178,14 +178,19 @@ export interface RemoteEntry {
 
 // ---- SSH (ssh 模式)：虚拟根 = 远程工作目录 ----
 
-function sshPath(ctx: RemoteSessionContext, path: string): string {
+/** Exported for tests only — path mapping is pure. */
+export function sshPath(ctx: RemoteSessionContext, path: string): string {
   const wd = (ctx.workdir ?? "/").replace(/\/+$/, "");
   let p = path.startsWith("/") ? path : "/" + path;
   // 项目 home 前缀（服务器侧绝对路径，如 plan 文件）映射到远程工作目录，
   // 与 Agent 工具的相对路径语义保持一致。
   const home = ctx.homePrefix?.replace(/\/+$/, "");
   if (home && (p === home || p.startsWith(home + "/"))) p = p.slice(home.length) || "/";
-  return wd + p;
+  // 会话收尾/聊天链接给出的是远程绝对路径（已含工作目录前缀）——先剥掉
+  // 再拼，否则会得到 /wd/wd/file 的双重路径（stat no such file）。
+  if (wd && wd !== "/" && (p === wd || p.startsWith(wd + "/"))) p = p.slice(wd.length) || "/";
+  if (p === "/") return wd || "/";
+  return `${wd}${p}`.replace(/\/+$/, "") || "/";
 }
 
 async function sshClientFor(ctx: RemoteSessionContext) {
@@ -261,9 +266,36 @@ function localRelay<T>(
 }
 
 /** Map a file-panel path (relative to the workspace root, "/" = root) onto
- *  the relay wire path used by the agent. */
-function localWirePath(ctx: RemoteSessionContext, path: string, scope: RelayWorkspaceScope): string {
-  return toRelayPath(stripSlash(path), scope, ctx.workdir) || ".";
+ *  the relay wire path used by the agent.
+ *
+ *  Absolute inputs that already carry the workspace prefix (chat file links /
+ *  turn-written paths echo the absolute workdir) are unwrapped first; without
+ *  this the leading slash was stripped and the remainder re-prefixed by the
+ *  agent, producing the doubled <base>/<base>/file stat error. Absolute paths
+ *  OUTSIDE the workspace keep the historical virtual-root semantics ("/x" =
+ *  workspace root + x). With no workdir bound, a true absolute passes through
+ *  verbatim (the agent resolves and fences it at its shared root). */
+/** Exported for tests only — path mapping is pure. */
+export function localWirePath(ctx: RemoteSessionContext, path: string, scope: RelayWorkspaceScope): string {
+  const raw = path.trim();
+  if (raw.startsWith("/")) {
+    const rel = ctx.workdir ? absoluteRelativeToRoot(raw, ctx.workdir) : null;
+    if (rel !== null) return toRelayPath(rel === "" ? "." : rel, scope, ctx.workdir) || ".";
+    if (!ctx.workdir) return toRelayPath(raw, scope, ctx.workdir) || ".";
+  }
+  return toRelayPath(stripSlash(raw), scope, ctx.workdir) || ".";
+}
+
+/** Lexical `path` relative to `root` when the absolute path sits under it
+ *  ("" = the root itself); null otherwise. POSIX-style only — Windows drive
+ *  absolutes are handled inside toRelayPath already. */
+function absoluteRelativeToRoot(path: string, root: string): string | null {
+  const p = path.replace(/\/+$/, "");
+  const b = root.replace(/[\\/]+$/, "").replace(/\\/g, "/");
+  if (!b.startsWith("/")) return null;
+  if (p === b) return "";
+  if (p.startsWith(b + "/")) return p.slice(b.length + 1);
+  return null;
 }
 
 export async function remoteList(ctx: RemoteSessionContext, path: string): Promise<RemoteEntry[]> {
@@ -427,8 +459,13 @@ function stripSlash(path: string): string {
  *  ("/" or "") is the container workspace (/workspace), everything else is
  *  relative to it. Keeps the file explorer's root == the container's working
  *  directory (extension tools use the same convention). */
-function containerPath(path: string): string {
-  const p = stripSlash(path);
+/** Exported for tests only — path mapping is pure. */
+export function containerPath(path: string): string {
+  let p = stripSlash(path);
+  // Container-absolute inputs (chat links echo /workspace/…) already carry the
+  // prefix — unwrap instead of doubling it to /workspace/workspace/…
+  if (p === "workspace") return "/workspace";
+  if (p.startsWith("workspace/")) p = p.slice("workspace/".length);
   return p ? `/workspace/${p}` : "/workspace";
 }
 

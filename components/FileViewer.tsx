@@ -14,7 +14,7 @@ import {
 } from "@/lib/file-types";
 import { encodeFilePathForApi, getFileDirectory, getFileName, getRelativeFilePath } from "@/lib/file-paths";
 import { parsePdfPageFragment, resolveLocalFileHref, shouldOpenLocalFileInApp } from "@/lib/file-links";
-import { inlineHtmlPreviewAssets, rewriteHtmlPreviewAssets } from "@/lib/html-preview-assets";
+import { inlineHtmlPreviewAssets, rewriteHtmlPreviewAssets, type UnloadedHtmlAsset } from "@/lib/html-preview-assets";
 import { parseFrontmatter } from "@/lib/frontmatter";
 import {
   markdownPreviewRehypePlugins,
@@ -1405,9 +1405,11 @@ function TextFileViewer({
   // assets from this page (first-party) and embed them as data: URLs instead
   // of weakening the sandbox.
   const [htmlPreviewDoc, setHtmlPreviewDoc] = useState<string | null>(null);
+  const [htmlPreviewUnloaded, setHtmlPreviewUnloaded] = useState<UnloadedHtmlAsset[]>([]);
   const remoteSessionId = remote?.sessionId;
   useEffect(() => {
     setHtmlPreviewDoc(null);
+    setHtmlPreviewUnloaded([]);
     if (!isHtml || effectiveDisplayMode !== "preview" || !viewerContent) return;
     let cancelled = false;
     const controller = new AbortController();
@@ -1420,15 +1422,17 @@ function TextFileViewer({
           credentials: "same-origin",
           signal: controller.signal,
         });
-        if (!res.ok) return null;
+        if (!res.ok) return { error: String(res.status) };
         return {
           contentType: res.headers.get("content-type") || "application/octet-stream",
           bytes: await res.arrayBuffer(),
         };
       },
     })
-      .then((doc) => {
-        if (!cancelled) setHtmlPreviewDoc(doc);
+      .then((result) => {
+        if (cancelled) return;
+        setHtmlPreviewDoc(result.html);
+        setHtmlPreviewUnloaded(result.unloaded);
       })
       .catch(() => {
         if (!cancelled) setHtmlPreviewDoc(null);
@@ -1860,19 +1864,74 @@ function TextFileViewer({
             isDark={isDark}
           />
         ) : isHtml && effectiveDisplayMode === "preview" ? (
-          <iframe
-            srcDoc={
-              htmlPreviewDoc ??
-              rewriteHtmlPreviewAssets(content, {
-                dir: getFileDirectory(filePath),
-                cwd,
-                toUrl: (p) => getFileApiUrl(p, "read", sourceSessionId, undefined, remote),
-              })
-            }
-            sandbox="allow-scripts"
-            style={{ width: "100%", height: "100%", border: "none", background: "var(--bg)" }}
-            title={t("i18n.htmlPreview")}
-          />
+          <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+            {htmlPreviewUnloaded.length > 0 && (
+              <div
+                role="alert"
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: 8,
+                  padding: "6px 14px",
+                  borderBottom: "1px solid var(--border)",
+                  background: "var(--bg-panel)",
+                  fontSize: 11,
+                  lineHeight: 1.6,
+                  color: "var(--text-muted)",
+                }}
+              >
+                <span>
+                  {t("files.htmlPreviewBlocked", { count: htmlPreviewUnloaded.length })}
+                  <span style={{ display: "block", color: "var(--text-dim)", fontSize: 10 }}>
+                    {htmlPreviewUnloaded
+                      .slice(0, 3)
+                      .map(
+                        (a) =>
+                          `${a.path}（${typeof a.reason === "number" ? `HTTP ${a.reason}` : t("files.htmlPreviewTooLarge")}）`,
+                      )
+                      .join("、")}
+                    {htmlPreviewUnloaded.length > 3 ? ` …+${htmlPreviewUnloaded.length - 3}` : ""}
+                  </span>
+                </span>
+                <a
+                  href={getFileApiUrl(htmlPreviewUnloaded[0].path, "read", sourceSessionId, undefined, remote)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ color: "var(--accent)", fontSize: 11, whiteSpace: "nowrap" }}
+                >
+                  {t("files.htmlPreviewOpen")}
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setHtmlPreviewUnloaded([])}
+                  style={{
+                    marginLeft: "auto",
+                    background: "transparent",
+                    border: "none",
+                    color: "var(--text-dim)",
+                    cursor: "pointer",
+                    fontSize: 12,
+                  }}
+                  aria-label={t("i18n.close")}
+                >
+                  ×
+                </button>
+              </div>
+            )}
+            <iframe
+              srcDoc={
+                htmlPreviewDoc ??
+                rewriteHtmlPreviewAssets(content, {
+                  dir: getFileDirectory(filePath),
+                  cwd,
+                  toUrl: (p) => getFileApiUrl(p, "read", sourceSessionId, undefined, remote),
+                })
+              }
+              sandbox="allow-scripts"
+              style={{ width: "100%", flex: 1, minHeight: 0, border: "none", background: "var(--bg)" }}
+              title={t("i18n.htmlPreview")}
+            />
+          </div>
         ) : isMarkdown && effectiveDisplayMode === "preview" ? (
           <div className="markdown-body markdown-file-preview" style={{ padding: "24px 32px" }}>
             {frontmatter?.data && <FrontmatterCard data={frontmatter.data} />}

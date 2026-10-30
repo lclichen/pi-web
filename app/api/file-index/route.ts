@@ -4,11 +4,12 @@ import { promisify } from "util";
 import fs from "fs";
 import path from "path";
 import {
-  getAllowedFileRoots,
+  getAllowedFileRootsForRequest,
   isExistingFilePathAllowed,
   isFilePathAllowed,
   isWindowsAbsolutePath,
 } from "@/lib/file-access";
+import { allowedRootsWithSessionCwds } from "@/lib/session-cwd-access";
 import { buildEntriesFromFiles, filterFileEntries, type FileIndexEntry } from "@/lib/file-fuzzy";
 
 const execFileAsync = promisify(execFile);
@@ -133,7 +134,11 @@ export async function GET(req: NextRequest) {
     }
     const query = req.nextUrl.searchParams.get("q")?.slice(0, MAX_QUERY_LENGTH) ?? "";
 
-    const allowedRoots = await getAllowedFileRoots();
+    // Same fence as /api/files: request roots PLUS the caller's session cwds.
+    // getAllowedFileRoots() alone dropped session directories after restarts
+    // (and always for non-admin users), making every @ file menu empty while
+    // the file explorer (which uses allowedRootsWithSessionCwds) kept working.
+    const allowedRoots = await allowedRootsWithSessionCwds(req, await getAllowedFileRootsForRequest(req));
     if (!isFilePathAllowed(cwd, allowedRoots)) {
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }

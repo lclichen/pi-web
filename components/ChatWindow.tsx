@@ -1198,6 +1198,7 @@ export function ChatWindow({
       onAudioUnlock={unlockAudio}
       draftKey={session?.id ?? newSessionDraftKey ?? undefined}
       cwd={session?.cwd ?? newSessionCwd}
+      remoteFileSessionId={remoteFileSessionId}
     />
   );
 

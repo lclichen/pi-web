@@ -29,6 +29,7 @@ import {
   type ChatDraftImage,
 } from "@/lib/draft-store";
 import { MAX_ATTACHED_IMAGE_BYTES, MAX_ATTACHED_IMAGES, isBase64ImageWithinLimits } from "@/lib/image-attachments";
+import { encodeFilePathForApi } from "@/lib/file-paths";
 import {
   buildEntriesFromFiles,
   buildAtInsertText,
@@ -101,6 +102,10 @@ interface Props {
   draftKey?: string;
   /** Session working directory — enables the @ file autocomplete menu */
   cwd?: string | null;
+  /** Remote-mode session id (sandbox / local-machine / ssh): the @ menu must
+   *  search through /api/remotefs — the server-side cwd is a stub home whose
+   *  /api/file-index listing is empty by construction. */
+  remoteFileSessionId?: string | null;
 }
 
 export interface ChatInputHandle {
@@ -827,6 +832,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
     onPromptWithStreamingBehavior,
     draftKey,
     cwd,
+    remoteFileSessionId = null,
     compact = false,
   }: Props,
   ref,
@@ -1299,24 +1305,42 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
   // server-side against the full listing. Local matches render immediately
   // and are replaced when the (debounced) server result for the current
   // query arrives; stale responses are ignored via the query/cwd tag.
-  const needsServerSearch = Boolean(atQueryText && fileIndex?.truncated && fileIndex.cwd === cwd);
+  const needsServerSearch = Boolean(
+    atQueryText && ((remoteFileSessionId && fileIndex?.cwd === cwd) || (fileIndex?.truncated && fileIndex.cwd === cwd)),
+  );
   useEffect(() => {
     if (!needsServerSearch || !cwd || !atQueryText) return;
     const fetchCwd = cwd;
     const query = atQueryText;
     const timer = setTimeout(() => {
-      fetch(`/api/file-index?cwd=${encodeURIComponent(fetchCwd)}&q=${encodeURIComponent(query)}`)
-        .then((res) => {
-          if (!res.ok) throw new Error(`file search failed: ${res.status}`);
-          return res.json() as Promise<{ matches?: FileIndexEntry[] }>;
-        })
-        .then((data) => setAtServerResult({ cwd: fetchCwd, query, matches: data.matches ?? [] }))
+      // Remote sessions: the server-side cwd is a stub home with no real
+      // files — every query goes through the remotefs search bridge instead.
+      // remotefs 的虚拟根是会话工作区（"/"），不是服务端 stub home——
+      // 与文件浏览器（cwd="/ "）一致，返回的匹配也是工作区相对路径。
+      const searchBase = remoteFileSessionId ? "/" : fetchCwd;
+      const request = remoteFileSessionId
+        ? fetch(
+            `/api/remotefs/${encodeFilePathForApi(searchBase)}?src=${encodeURIComponent(remoteFileSessionId)}&type=search&q=${encodeURIComponent(query)}`,
+          )
+            .then((res) => {
+              if (!res.ok) throw new Error(`file search failed: ${res.status}`);
+              return res.json() as Promise<{ matches?: string[] }>;
+            })
+            .then((data) => (data.matches ?? []).map((path): FileIndexEntry => ({ path, isDir: false })))
+        : fetch(`/api/file-index?cwd=${encodeURIComponent(fetchCwd)}&q=${encodeURIComponent(query)}`)
+            .then((res) => {
+              if (!res.ok) throw new Error(`file search failed: ${res.status}`);
+              return res.json() as Promise<{ matches?: FileIndexEntry[] }>;
+            })
+            .then((data) => data.matches ?? []);
+      request
+        .then((matches) => setAtServerResult({ cwd: fetchCwd, query, matches }))
         .catch(() => {
           // Keep showing local matches; the next keystroke retries.
         });
     }, 150);
     return () => clearTimeout(timer);
-  }, [needsServerSearch, atQueryText, cwd]);
+  }, [needsServerSearch, atQueryText, cwd, remoteFileSessionId]);
 
   const serverResultInUse =
     needsServerSearch && atServerResult !== null && atServerResult.cwd === cwd && atServerResult.query === atQueryText;
@@ -1340,6 +1364,13 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
   const atTokenActive = atQuery !== null;
   useEffect(() => {
     if (!atTokenActive || !cwd) return;
+    // Remote mode: no client-side index (the stub home is empty by design);
+    // mark truncated so every query takes the remotefs server-search path.
+    if (remoteFileSessionId) {
+      setFileIndex((prev) => (prev && prev.cwd === cwd ? prev : { cwd, entries: [], truncated: true }));
+      fileIndexMetaRef.current = { cwd, fetchedAt: Date.now() };
+      return;
+    }
     const meta = fileIndexMetaRef.current;
     if (meta && meta.cwd === cwd && Date.now() - meta.fetchedAt < 10_000) return;
     if (fileIndexFetchingRef.current === cwd) return;
@@ -1363,7 +1394,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
         fileIndexFetchingRef.current = null;
         setFileIndexLoading(false);
       });
-  }, [atTokenActive, cwd]);
+  }, [atTokenActive, cwd, remoteFileSessionId]);
 
   const applyAtCompletion = useCallback(
     (entry: FileIndexEntry) => {

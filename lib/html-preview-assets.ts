@@ -97,11 +97,23 @@ function rewriteWithResolver(html: string, resolve: (value: string) => string | 
  * keeps the sandbox strict instead of weakening it with allow-same-origin.
  */
 export interface InlineHtmlAssetOptions extends HtmlAssetRewriteOptions {
-  fetchAsset: (absPath: string) => Promise<{ contentType: string; bytes: ArrayBuffer } | null>;
+  fetchAsset: (absPath: string) => Promise<{ contentType: string; bytes: ArrayBuffer } | { error: string } | null>;
   /** Per-asset cap; larger assets keep their URL (and may still 403). */
   maxAssetBytes?: number;
   /** Total budget across the document; further assets keep their URL. */
   maxTotalBytes?: number;
+}
+
+/** A local asset the preview could not embed, and why (for the UI banner). */
+export interface UnloadedHtmlAsset {
+  path: string;
+  /** HTTP status when the file API answered, or a semantic reason. */
+  reason: number | "too-large" | "error";
+}
+
+export interface InlineHtmlPreviewResult {
+  html: string;
+  unloaded: UnloadedHtmlAsset[];
 }
 
 function toBase64(bytes: ArrayBuffer): string {
@@ -114,27 +126,47 @@ function toBase64(bytes: ArrayBuffer): string {
   return btoa(binary);
 }
 
-export async function inlineHtmlPreviewAssets(html: string, options: InlineHtmlAssetOptions): Promise<string> {
+export async function inlineHtmlPreviewAssets(
+  html: string,
+  options: InlineHtmlAssetOptions,
+): Promise<InlineHtmlPreviewResult> {
   const maxAsset = options.maxAssetBytes ?? 8 * 1024 * 1024;
   const maxTotal = options.maxTotalBytes ?? 24 * 1024 * 1024;
   const paths = collectHtmlPreviewAssetPaths(html, options);
   const inlined = new Map<string, string>();
+  const unloaded: UnloadedHtmlAsset[] = [];
   let total = 0;
   for (const abs of paths) {
     try {
       const asset = await options.fetchAsset(abs);
-      if (!asset || asset.bytes.byteLength === 0) continue;
-      if (asset.bytes.byteLength > maxAsset || total + asset.bytes.byteLength > maxTotal) continue;
+      if (!asset) {
+        unloaded.push({ path: abs, reason: "error" });
+        continue;
+      }
+      if ("error" in asset) {
+        const status = Number(asset.error);
+        unloaded.push({ path: abs, reason: Number.isInteger(status) ? status : "error" });
+        continue;
+      }
+      if (
+        asset.bytes.byteLength === 0 ||
+        asset.bytes.byteLength > maxAsset ||
+        total + asset.bytes.byteLength > maxTotal
+      ) {
+        unloaded.push({ path: abs, reason: "too-large" });
+        continue;
+      }
       total += asset.bytes.byteLength;
       const type = asset.contentType || "application/octet-stream";
       inlined.set(abs, `data:${type};base64,${toBase64(asset.bytes)}`);
     } catch {
-      // Leave the URL fallback in place for this asset.
+      unloaded.push({ path: abs, reason: "error" });
     }
   }
-  return rewriteHtmlPreviewAssets(html, {
+  const out = rewriteHtmlPreviewAssets(html, {
     dir: options.dir,
     cwd: options.cwd,
     toUrl: (abs) => inlined.get(abs) ?? options.toUrl(abs),
   });
+  return { html: out, unloaded };
 }

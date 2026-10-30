@@ -674,6 +674,38 @@ export function SessionSidebar({
   );
 
   const initialLoadDone = useRef(false);
+  // 会话列表是整份 JSON（含每会话的首条消息摘录）。运行轮询每 2.5s 就可能
+  // 看到 sessionListVersion 变化——不节流的话，活跃会话每写一条记录就整份
+  // 重新下载一次（一天轻松上 GB 流量）。10s 内最多重载一次，期间的变更合并
+  // 成一次补拉。
+  const lastListLoadAtRef = useRef(0);
+  const listReloadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingListReloadRef = useRef(false);
+  const throttledReloadList = useCallback(() => {
+    const since = Date.now() - lastListLoadAtRef.current;
+    if (since < 10_000) {
+      pendingListReloadRef.current = true;
+      if (listReloadTimerRef.current) return;
+      listReloadTimerRef.current = setTimeout(() => {
+        listReloadTimerRef.current = null;
+        if (!pendingListReloadRef.current) return;
+        pendingListReloadRef.current = false;
+        lastListLoadAtRef.current = Date.now();
+        void loadSessions();
+      }, 10_000 - since);
+      return;
+    }
+    pendingListReloadRef.current = false;
+    lastListLoadAtRef.current = Date.now();
+    void loadSessions();
+  }, [loadSessions]);
+  useEffect(
+    () => () => {
+      if (listReloadTimerRef.current) clearTimeout(listReloadTimerRef.current);
+    },
+    [],
+  );
+
   useEffect(() => {
     const isFirst = !initialLoadDone.current;
     initialLoadDone.current = true;
@@ -681,6 +713,7 @@ export function SessionSidebar({
     // 服务端 30s 缓存全量扫描——AppShell 的运行轮询每 2.5s 触发重渲染，
     // authInfo 内联对象身份变化会连锁触发本 effect，形成 force=1 风暴。
     // 需要强刷的场景（手动刷新按钮、后台任务完成）各自显式传 force。
+    lastListLoadAtRef.current = Date.now();
     loadSessions(isFirst, false);
   }, [loadSessions, refreshKey]);
 
@@ -736,7 +769,7 @@ export function SessionSidebar({
         setRunningSessionIds(new Set(data.runningSessionIds ?? []));
         if (data.sessionListVersion !== sessionListVersionRef.current) {
           // Reuse the invalidated cache; forcing a scan would change the version again.
-          await loadSessions();
+          throttledReloadList();
         }
       } catch {
         // Keep the last known state; the next visible-tab poll retries.

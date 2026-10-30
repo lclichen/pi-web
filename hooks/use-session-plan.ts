@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { encodeFilePathForApi } from "@/lib/file-paths";
 
 export interface SessionPlan {
   path: string;
@@ -23,17 +22,20 @@ interface RemoteCtx {
  * (计划 tab visibility), PlanPanel (content view) and ChatStatusWidget
  * (capsule pin / popover row).
  *
- * Candidates, first hit wins:
- *   1. <cwd>/.pi/plans/plan-sess_<sessionId>.md — per-session plan written by
- *      the session-plan extension (plan_save tool / @plan auto-capture).
- *      Always read through /api/files: the file lives in the server-side
- *      project home even for remote-mode sessions.
- *   2. <cwd>/.pi/plan.md, <cwd>/PLAN.md — legacy workspace plans (remote
- *      sessions read them through /api/remotefs).
+ * All reads go through ONE backend endpoint (GET /api/sessions/[id]/plan):
+ * the server checks the candidate files (per-session plan in the server home,
+ * legacy .pi/plan.md / PLAN.md in the workspace — via the remote bridge for
+ * sandbox/local-machine/ssh), which unifies remote and local modes and
+ * replaces the old 2–3 client-side file requests per probe.
  *
- * While no plan exists the probe re-runs every 8s (so a newly saved plan
- * shows up); once found it is refreshed via SSE watch locally or 10s polling
- * for remote legacy files.
+ * Cadence:
+ *   · plan present  — poll with ?hash= every 10s (30s for remote: each remote
+ *     probe is a round trip to the user's machine). Unchanged answers are a
+ *     few hundred bytes, so an idle tab costs ~nothing.
+ *   · plan absent   — exponential re-probe 8s → 60s (plans only appear from
+ *     agent tool calls).
+ *   · reprobeSignal — incremented by AppShell on plan-affecting tool events;
+ *     triggers an immediate refetch, so live updates do not wait for the timer.
  */
 export function useSessionPlan({
   sessionId,
@@ -45,83 +47,91 @@ export function useSessionPlan({
   cwd?: string;
   remote?: RemoteCtx | null;
   /** Incremented by the AppShell when a plan-affecting tool event lands
-   * (plan_save, or write/edit touching a plan path) — triggers an immediate
-   * probe so a freshly saved plan appears instantly instead of waiting for
-   * the backoff timer; idle sessions then poll at the 8→60s backoff only. */
+   *  (plan_save, or write/edit touching a plan path) — triggers an immediate
+   *  probe so a freshly saved plan appears instantly instead of waiting for
+   *  the backoff timer; idle sessions then poll at the backoff only. */
   reprobeSignal?: number;
 }): UseSessionPlanResult {
   const [plan, setPlan] = useState<SessionPlan | null>(null);
   const [loading, setLoading] = useState(true);
-  // Set by the main effect: re-probe NOW (detach watchers, probe, restart the
-  // backoff on a miss). Default no-op so the signal effect is inert pre-mount.
+  const hashRef = useRef<string>("");
   const probeNowRef = useRef<() => void>(() => {});
 
   useEffect(() => {
-    if (!cwd || cwd === "") {
+    if (!sessionId || !cwd || cwd === "") {
       setPlan(null);
       setLoading(false);
       return;
     }
     let cancelled = false;
-    let es: EventSource | null = null;
-    let refreshTimer: ReturnType<typeof setInterval> | null = null;
-    let reprobeTimer: ReturnType<typeof setTimeout> | null = null;
+    let timer: ReturnType<typeof setTimeout> | null = null;
 
-    const root = cwd.replace(/[\\/]+$/, "");
-    type Candidate = { path: string; via: "files" | "remotefs"; watch: "sse" | "poll" | "none" };
-    const candidates: Candidate[] = [];
-    if (sessionId) {
-      candidates.push({
-        path: `${root}/.pi/plans/plan-sess_${sessionId}.md`,
-        via: "files",
-        watch: "sse",
-      });
-    }
-    for (const p of [`${root}/.pi/plan.md`, `${root}/PLAN.md`]) {
-      candidates.push(remote ? { path: p, via: "remotefs", watch: "poll" } : { path: p, via: "files", watch: "sse" });
-    }
+    const baseUrl = `/api/sessions/${encodeURIComponent(sessionId)}/plan?cwd=${encodeURIComponent(cwd)}`;
 
-    const readUrl = (c: Candidate, type: "read" | "watch"): string => {
-      if (c.via === "remotefs") {
-        const rel = c.path.replace(/^\//, "");
-        return `/api/remotefs/${encodeFilePathForApi(rel)}?src=${encodeURIComponent(remote!.sessionId)}&type=read`;
-      }
-      return `/api/files/${encodeFilePathForApi(c.path)}?type=${type}`;
-    };
-
-    const read = async (c: Candidate): Promise<string | null> => {
+    const fetchPlan = async (): Promise<boolean> => {
+      const hashParam = hashRef.current ? `&hash=${encodeURIComponent(hashRef.current)}` : "";
       try {
-        const res = await fetch(readUrl(c, "read"));
-        if (!res.ok) return null;
-        const d = (await res.json()) as { content?: unknown };
-        return typeof d.content === "string" ? d.content : null;
+        const res = await fetch(`${baseUrl}${hashParam}`, { cache: "no-store" });
+        if (!res.ok) return false;
+        const d = (await res.json()) as {
+          plan?: null;
+          path?: string;
+          content?: string;
+          hash?: string;
+          unchanged?: boolean;
+        };
+        if (cancelled) return false;
+        if (d.plan === null || !d.path) {
+          hashRef.current = "";
+          setPlan(null);
+          return false;
+        }
+        if (d.hash) hashRef.current = d.hash;
+        if (d.unchanged) return true; // keep the content we already have
+        if (typeof d.content === "string") {
+          setPlan({ path: d.path, content: d.content });
+          return true;
+        }
+        return false;
       } catch {
-        return null;
+        return false;
       }
     };
 
-    const detachRefresh = () => {
-      es?.close();
-      es = null;
-      if (refreshTimer) clearInterval(refreshTimer);
-      refreshTimer = null;
+    const clearTimer = () => {
+      if (timer) clearTimeout(timer);
+      timer = null;
     };
 
-    const startReprobe = () => {
-      if (reprobeTimer || cancelled) return;
-      // Exponential backoff: 8s → 16s → 32s → 60s cap. A fixed 8s loop meant
-      // three 404s every 8 seconds forever in workspaces without plans —
-      // plans only appear from agent tool calls, so an idle session rarely
-      // needs re-checking. (Fully event-driven probing needs the plan_save
-      // tool event lifted from ChatWindow's stream to AppShell — follow-up.)
+    // Poll while a plan exists (cheap hash round trip); back off while absent.
+    const schedulePresent = () => {
+      clearTimer();
+      if (cancelled) return;
+      timer = setTimeout(
+        async () => {
+          if (cancelled) return;
+          const ok = await fetchPlan();
+          if (cancelled) return;
+          if (ok) schedulePresent();
+          else startAbsent();
+        },
+        remote ? 30_000 : 10_000,
+      );
+    };
+
+    const startAbsent = () => {
+      clearTimer();
+      if (cancelled) return;
       let delay = 8_000;
       const schedule = () => {
-        reprobeTimer = setTimeout(async () => {
+        clearTimer();
+        if (cancelled) return;
+        timer = setTimeout(async () => {
           if (cancelled) return;
-          const ok = await probe();
-          if (cancelled || ok) {
-            if (reprobeTimer) clearTimeout(reprobeTimer);
-            reprobeTimer = null;
+          const ok = await fetchPlan();
+          if (cancelled) return;
+          if (ok) {
+            schedulePresent();
             return;
           }
           delay = Math.min(delay * 2, 60_000);
@@ -131,70 +141,28 @@ export function useSessionPlan({
       schedule();
     };
 
-    // Probe all candidates in order; first non-empty hit wins.
-    const probe = async (): Promise<boolean> => {
-      for (const c of candidates) {
-        const content = await read(c);
-        if (cancelled) return false;
-        if (content === null || content.trim() === "") continue;
-        setPlan({ path: c.path, content });
-        attachRefresh(c);
-        return true;
-      }
-      setPlan(null);
-      return false;
-    };
-
-    const attachRefresh = (c: Candidate) => {
-      const refresh = async () => {
-        const content = await read(c);
-        if (cancelled) return;
-        // The watched plan was deleted or emptied: clear the state and fall
-        // back to re-probing (a different candidate may take over).
-        if (content === null || content.trim() === "") {
-          setPlan(null);
-          detachRefresh();
-          startReprobe();
-          return;
-        }
-        setPlan({ path: c.path, content });
-      };
-      if (c.watch === "sse" && c.via === "files") {
-        try {
-          es = new EventSource(`/api/files/${encodeFilePathForApi(c.path)}?type=watch`);
-          es.addEventListener("change", () => void refresh());
-          return;
-        } catch {
-          // SSE unavailable — fall through to polling.
-        }
-      }
-      refreshTimer = setInterval(() => void refresh(), 10_000);
-    };
-
     void (async () => {
       setLoading(true);
-      const found = await probe();
+      const found = await fetchPlan();
       if (cancelled) return;
       setLoading(false);
-      // Nothing yet: keep a slow re-probe so a newly created plan appears
-      // (plan_save / @plan capture happen while the tab may be hidden).
-      if (!found) startReprobe();
+      if (found) schedulePresent();
+      else startAbsent();
     })();
 
     probeNowRef.current = () => {
       if (cancelled) return;
-      detachRefresh();
-      if (reprobeTimer) clearTimeout(reprobeTimer);
-      reprobeTimer = null;
-      void probe().then((ok) => {
-        if (!cancelled && !ok) startReprobe();
+      clearTimer();
+      void fetchPlan().then((ok) => {
+        if (cancelled) return;
+        if (ok) schedulePresent();
+        else startAbsent();
       });
     };
 
     return () => {
       cancelled = true;
-      detachRefresh();
-      if (reprobeTimer) clearTimeout(reprobeTimer);
+      clearTimer();
     };
   }, [sessionId, cwd, remote?.sessionId, remote?.label]);
 

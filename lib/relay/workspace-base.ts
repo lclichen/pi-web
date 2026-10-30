@@ -23,6 +23,8 @@
 import type { AgentInfo } from "./protocol";
 
 export const RELAY_WORKSPACE_BASE_FEATURE = "workspace-base";
+/** fs.read accepts encoding:"base64" (binary-safe previews). Agent >= 0.2.x. */
+export const RELAY_BINARY_READ_FEATURE = "binary-read";
 
 export interface RelayWorkspaceScope {
   /** Absolute base directory for agents with per-request roots. */
@@ -72,6 +74,10 @@ export function relativeToRoot(root: string, dir: string): string | null {
 
 export function agentSupportsWorkspaceBase(info: AgentInfo | null | undefined): boolean {
   return Boolean(info?.features?.includes(RELAY_WORKSPACE_BASE_FEATURE));
+}
+
+export function agentSupportsBinaryRead(info: AgentInfo | null | undefined): boolean {
+  return Boolean(info?.features?.includes(RELAY_BINARY_READ_FEATURE));
 }
 
 /**

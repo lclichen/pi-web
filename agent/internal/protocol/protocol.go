@@ -21,6 +21,9 @@ type Response struct {
 const (
 	// FeatureWorkspaceBase: per-request absolute `base` root (agent >= 0.2.0).
 	FeatureWorkspaceBase = "workspace-base"
+	// FeatureBinaryRead: fs.read accepts encoding="base64" and returns
+	// contentBase64 (binary-safe reads for images/audio/video previews).
+	FeatureBinaryRead = "binary-read"
 )
 
 // Hello is the first frame the agent sends after the WebSocket opens, carrying

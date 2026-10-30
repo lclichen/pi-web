@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"encoding/base64"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -67,6 +68,17 @@ func (w *Workspace) Read(params map[string]interface{}) (interface{}, error) {
 	data, err := os.ReadFile(abs)
 	if err != nil {
 		return nil, err
+	}
+	// Binary-safe reads: JSON strings cannot carry arbitrary bytes (Go replaces
+	// invalid UTF-8), so image/audio/video previews ask for base64 instead.
+	if paramString(params, "encoding", "") == "base64" {
+		return map[string]interface{}{
+			"path":          w.relToRoot(abs),
+			"contentBase64": base64.StdEncoding.EncodeToString(data),
+			"encoding":      "base64",
+			"size":          info.Size(),
+			"mtime":         info.ModTime().UnixMilli(),
+		}, nil
 	}
 	return map[string]interface{}{
 		"path":    w.relToRoot(abs),

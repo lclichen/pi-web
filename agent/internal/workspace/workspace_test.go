@@ -102,3 +102,28 @@ func TestListWithBaseReturnsBaseRelativePaths(t *testing.T) {
 		t.Fatalf("entry path = %v, want src", got)
 	}
 }
+
+func TestReadBase64KeepsBinaryBytes(t *testing.T) {
+	root := t.TempDir()
+	// 0x89 P N G ... — invalid UTF-8, must survive the JSON hop.
+	binary := []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0xff, 0x00, 0x7f}
+	if err := os.WriteFile(filepath.Join(root, "pic.png"), binary, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ws := &Workspace{Root: root}
+	raw, err := ws.Read(map[string]interface{}{"path": "pic.png", "encoding": "base64"})
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	out := raw.(map[string]interface{})
+	if out["encoding"] != "base64" {
+		t.Fatalf("encoding = %v, want base64", out["encoding"])
+	}
+	encoded, _ := out["contentBase64"].(string)
+	if encoded != "iVBORw0KGgr/AH8=" {
+		t.Fatalf("contentBase64 = %q, want iVBORw0KGgr/AH8=", encoded)
+	}
+	if _, ok := out["content"]; ok {
+		t.Fatal("base64 mode must not emit a lossy utf8 content field")
+	}
+}

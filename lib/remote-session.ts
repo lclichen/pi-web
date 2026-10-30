@@ -8,7 +8,12 @@ import { ensureProjectHome, getOwnedProject, readProjectSandboxConfig } from "./
 import { getSshClient, readSshConfig, type SshConfig } from "./ssh";
 import { relayRpc } from "./relay/forward";
 import { requireCompatibleAgent } from "./relay/agent-gate";
-import { resolveRelayWorkspaceScope, toRelayPath, type RelayWorkspaceScope } from "./relay/workspace-base";
+import {
+  agentSupportsBinaryRead,
+  resolveRelayWorkspaceScope,
+  toRelayPath,
+  type RelayWorkspaceScope,
+} from "./relay/workspace-base";
 import type { SessionMode } from "./session-modes";
 
 /**
@@ -358,6 +363,75 @@ export async function remoteRead(ctx: RemoteSessionContext, path: string): Promi
     { path: containerPath(path) },
   );
   return { content: Buffer.from(r.contentBase64, "base64").toString("utf8"), size: r.size };
+}
+
+/**
+ * Binary-safe read for media/document previews (images, audio, video, PDF).
+ *
+ * /api/files streams raw bytes with the right content-type; the remote panel
+ * used to funnel everything through the JSON text read, which cannot carry
+ * arbitrary bytes (invalid UTF-8 becomes U+FFFD) — remote images rendered as
+ * broken boxes. Each backend has a binary-capable path:
+ *   · sandbox  — platform tools/read already returns base64
+ *   · ssh      — sftp.readFile returns a Buffer
+ *   · local-machine — relay fs.read with encoding:"base64" (agent >= 0.2.x,
+ *     advertised as the "binary-read" feature); older agents fall back to a
+ *     `base64 -w0` exec, and when that is unavailable the caller gets an
+ *     upgrade hint instead of silently corrupted bytes.
+ */
+export async function remoteReadBinary(
+  ctx: RemoteSessionContext,
+  path: string,
+): Promise<{ bytes: Buffer; size: number }> {
+  if (ctx.mode === "ssh") {
+    const client = await sshClientFor(ctx);
+    const s = await sftpOf(client);
+    const buf = await new Promise<Buffer>((resolve, reject) =>
+      s.readFile(sshPath(ctx, path), (e, d) => (e ? reject(e) : resolve(d))),
+    );
+    return { bytes: buf, size: buf.length };
+  }
+  if (ctx.mode === "local-machine") {
+    const scope = localScope(ctx);
+    const wire = localWirePath(ctx, path, scope);
+    const gate = requireCompatibleAgent(ctx.userId, ctx.machineId);
+    if (!gate.ok) throw new Error(gate.error);
+    if (agentSupportsBinaryRead(gate.info)) {
+      const r = await localRelay<{ contentBase64?: string; size: number }>(
+        ctx,
+        "fs.read",
+        { path: wire, encoding: "base64" },
+        scope,
+      );
+      if (typeof r.contentBase64 !== "string") throw new Error("本机 Agent 未返回二进制内容");
+      const bytes = Buffer.from(r.contentBase64, "base64");
+      return { bytes, size: bytes.length };
+    }
+    // Pre-binary-read agent: base64 has been part of coreutils forever; for
+    // Windows agents without it the error below is actionable.
+    try {
+      const r = await localRelay<{ stdout?: string; stderr?: string; exitCode?: number }>(
+        ctx,
+        "exec.run",
+        { argv: ["base64", "-w0", "--", wire === "." ? "." : wire], cwd: "." },
+        scope,
+      );
+      if (r.exitCode === 0 && typeof r.stdout === "string" && r.stdout.trim()) {
+        const bytes = Buffer.from(r.stdout.trim(), "base64");
+        return { bytes, size: bytes.length };
+      }
+      throw new Error((r.stderr ?? "").trim() || "base64 读取失败");
+    } catch {
+      throw new Error("本机 Agent 版本过旧，无法读取二进制文件（请升级 Agent 到 0.2.0+）");
+    }
+  }
+  const r = await platformPost<{ contentBase64: string; size: number }>(
+    `/api/v1/containers/${ctx.containerId}/tools/read`,
+    ctx.apiKey,
+    { path: containerPath(path) },
+  );
+  const bytes = Buffer.from(r.contentBase64, "base64");
+  return { bytes, size: bytes.length };
 }
 
 export async function remoteWrite(ctx: RemoteSessionContext, path: string, content: string): Promise<void> {

@@ -71,6 +71,12 @@ export function documentPreviewKind(filePath: string): DocumentPreviewKind | nul
   return null;
 }
 
+/** Mime for anything the viewers render as media/documents (images, audio,
+ *  video, PDF/DOCX). null = treat as text. */
+export function getPreviewMime(filePath: string): string | null {
+  return getImageMime(filePath) ?? getAudioMime(filePath) ?? getVideoMime(filePath) ?? getDocumentMime(filePath);
+}
+
 export function isImagePath(filePath: string): boolean {
   return getImageMime(filePath) !== null;
 }

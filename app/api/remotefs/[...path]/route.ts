@@ -7,10 +7,13 @@ import {
   remoteFind,
   remoteList,
   remoteRead,
+  remoteReadBinary,
   remoteRename,
   remoteWrite,
   resolveRemoteSession,
 } from "@/lib/remote-session";
+import { getPreviewMime } from "@/lib/file-types";
+import { sliceByteRange } from "@/lib/http-range";
 import { isApiRequestAllowed, hasJsonContentType } from "@/lib/request-security";
 
 export const dynamic = "force-dynamic";
@@ -51,12 +54,42 @@ export async function GET(req: Request, ctx: { params: Promise<{ path: string[] 
       return NextResponse.json({ matches });
     }
     if (type === "read" || type === "download") {
+      // Media/document previews must be served as RAW BYTES with a real
+      // content-type (the JSON text read cannot carry binary: invalid UTF-8
+      // becomes U+FFFD, so remote <img>/<video> rendered broken). Mirrors the
+      // /api/files behaviour, including single-range support.
+      const mime = getPreviewMime(filePath);
+      if (mime) {
+        try {
+          const { bytes } = await remoteReadBinary(remote.ctx, filePath);
+          const headers: Record<string, string> = {
+            "Content-Type": mime,
+            "Accept-Ranges": "bytes",
+            "Cache-Control": "no-store",
+          };
+          if (type === "download") {
+            headers["Content-Disposition"] =
+              `attachment; filename*=UTF-8''${encodeURIComponent(getFileName(filePath))}`;
+          }
+          const ranged = sliceByteRange(bytes, req.headers.get("range"));
+          if (ranged) {
+            headers["Content-Range"] = ranged.contentRange;
+            headers["Content-Length"] = String(ranged.body.length);
+            return new Response(new Uint8Array(ranged.body), { status: 206, headers });
+          }
+          headers["Content-Length"] = String(bytes.length);
+          return new Response(new Uint8Array(bytes), { status: 200, headers });
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          return NextResponse.json({ error: msg || "无法读取远程二进制文件" }, { status: 502 });
+        }
+      }
       const { content, size } = await remoteRead(remote.ctx, filePath);
       if (type === "download") {
         return new Response(content, {
           headers: {
-            "Content-Type": "application/octet-stream",
-            "Content-Disposition": `attachment; filename="${encodeURIComponent(getFileName(filePath))}"`,
+            "Content-Type": "text/plain; charset=utf-8",
+            "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(getFileName(filePath))}`,
           },
         });
       }

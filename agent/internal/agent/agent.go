@@ -132,7 +132,7 @@ func buildInfo(version, root string, cfg *config.Config) protocol.AgentInfo {
 		AgentVersion:  version,
 		MachineID:     cfg.MachineID,
 		Label:         cfg.Label,
-		Features:      []string{protocol.FeatureWorkspaceBase},
+		Features:      []string{protocol.FeatureWorkspaceBase, protocol.FeatureBinaryRead},
 	}
 }
 

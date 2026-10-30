@@ -98,10 +98,15 @@ export interface FsEntry {
   mtime: number; // epoch ms
 }
 
-/** Result of fs.read. */
+/** Result of fs.read. Base64 mode (agent >= binary-read feature) omits
+ *  `content` (JSON strings cannot carry arbitrary bytes). */
 export interface FsReadResult {
   path: string;
+  /** utf8 text read; empty/absent in base64 mode. */
   content: string;
+  /** Present when the call passed encoding:"base64". */
+  contentBase64?: string;
+  encoding?: "base64";
   size: number;
   mtime: number;
 }

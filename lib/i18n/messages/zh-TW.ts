@@ -372,6 +372,7 @@ export const zhTWLocale: LocalePlugin = {
     "chat.extensionWidgetLines": "{count} 行",
     "chat.extensionWidgets": "擴充功能小工具",
     "chat.extensions": "擴充功能",
+    "chat.fileIndexUnavailable": "無法讀取檔案索引（{error}）——請檢查會話目錄權限或遠端連線。",
     "chat.files": "檔案 · {label}{hint}",
     "chat.filesWritten": "已變更的檔案",
     "chat.filterModels": "篩選模型…",

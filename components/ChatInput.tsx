@@ -855,6 +855,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
   const [slashMenuMaxHeight, setSlashMenuMaxHeight] = useState<number | null>(null);
   const [atQuery, setAtQuery] = useState<AtQueryMatch | null>(null);
   const [atMenuOpen, setAtMenuOpen] = useState(false);
+  /** @ 菜单取数失败的原因（索引 403/404 或远程搜索失败）——此前失败即空菜单，
+   *  用户只看到"没有匹配"却不知道是权限/连接问题。 */
+  const [atIndexError, setAtIndexError] = useState<string | null>(null);
   const [atMenuMaxHeight, setAtMenuMaxHeight] = useState<number | null>(null);
   const [atActiveIndex, setAtActiveIndex] = useState(0);
   const [imageWarningDismissed, setImageWarningDismissed] = useState(false);
@@ -1334,9 +1337,13 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
             })
             .then((data) => data.matches ?? []);
       request
-        .then((matches) => setAtServerResult({ cwd: fetchCwd, query, matches }))
-        .catch(() => {
+        .then((matches) => {
+          setAtIndexError(null);
+          setAtServerResult({ cwd: fetchCwd, query, matches });
+        })
+        .catch((e) => {
           // Keep showing local matches; the next keystroke retries.
+          setAtIndexError(e instanceof Error ? e.message : String(e));
         });
     }, 150);
     return () => clearTimeout(timer);
@@ -1378,17 +1385,22 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
     const fetchCwd = cwd;
     setFileIndexLoading(true);
     fetch(`/api/file-index?cwd=${encodeURIComponent(fetchCwd)}`)
-      .then((res) => {
-        if (!res.ok) throw new Error(`file index failed: ${res.status}`);
+      .then(async (res) => {
+        if (!res.ok) {
+          const detail = (await res.json().catch(() => ({}))) as { error?: string };
+          throw new Error(`HTTP ${res.status}${detail.error ? ` ${detail.error}` : ""}`);
+        }
         return res.json() as Promise<{ files?: string[]; truncated?: boolean }>;
       })
       .then((data) => {
+        setAtIndexError(null);
         setFileIndex({ cwd: fetchCwd, entries: buildEntriesFromFiles(data.files ?? []), truncated: !!data.truncated });
         fileIndexMetaRef.current = { cwd: fetchCwd, fetchedAt: Date.now() };
       })
-      .catch(() => {
+      .catch((e) => {
         // Leave any previous index in place; next open retries.
         fileIndexMetaRef.current = null;
+        setAtIndexError(e instanceof Error ? e.message : String(e));
       })
       .finally(() => {
         fileIndexFetchingRef.current = null;
@@ -2537,8 +2549,18 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
                   </div>
                   <div style={{ flex: "1 1 auto", minHeight: 0, overflowY: "auto", padding: 4 }}>
                     {!indexLoading && atMatches.length === 0 ? (
-                      <div style={{ padding: "6px 8px", fontSize: 12, color: "var(--text-dim)" }}>
-                        {needsServerSearch && !serverResultInUse ? t("chat.searching") : t("chat.noMatchingFiles")}
+                      <div
+                        style={{
+                          padding: "6px 8px",
+                          fontSize: 12,
+                          color: atIndexError ? "var(--danger)" : "var(--text-dim)",
+                        }}
+                      >
+                        {atIndexError
+                          ? t("chat.fileIndexUnavailable", { error: atIndexError })
+                          : needsServerSearch && !serverResultInUse
+                            ? t("chat.searching")
+                            : t("chat.noMatchingFiles")}
                       </div>
                     ) : (
                       atMatches.map((entry, index) => {

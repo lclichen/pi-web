@@ -372,6 +372,7 @@ export const zhCNLocale: LocalePlugin = {
     "chat.extensionWidgetLines": "{count} 行",
     "chat.extensionWidgets": "扩展组件",
     "chat.extensions": "扩展",
+    "chat.fileIndexUnavailable": "无法读取文件索引（{error}）——请检查会话目录权限或远程连接。",
     "chat.files": "文件 · {label}{hint}",
     "chat.filesWritten": "改动的文件",
     "chat.filterModels": "筛选模型…",

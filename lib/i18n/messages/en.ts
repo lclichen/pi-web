@@ -372,6 +372,7 @@ export const enLocale: LocalePlugin = {
     "chat.extensionWidgetLines": "{count} lines",
     "chat.extensionWidgets": "Extension widgets",
     "chat.extensions": "Extensions",
+    "chat.fileIndexUnavailable": "Could not read the file index ({error}). Check the session directory permissions or the remote connection.",
     "chat.files": "Files · {label}{hint}",
     "chat.filesWritten": "Files changed",
     "chat.filterModels": "Filter models…",

@@ -1128,7 +1128,7 @@ export const zhCNLocale: LocalePlugin = {
     "settings.publicBaseUrl": "对外访问地址",
     "settings.publicBaseUrlAuto": "自动：按请求 Host 推断",
     "settings.publicBaseUrlEffective": "当前生效：{value}",
-    "settings.publicBaseUrlHint": "服务器生成绝对链接（供 MCP 服务抓取的文件分享）时使用的地址前缀。留空则按每个请求的 Host 推断；通过域名或反向代理访问本服务时应显式填写。",
+    "settings.publicBaseUrlHint": "服务器生成绝对链接（供 MCP 服务抓取的文件分享）时使用的地址前缀。留空时浏览器发起的分享按请求 Host 推断，Agent 的 share_file 回落 127.0.0.1:30141；需要其他设备访问或经反向代理时必须显式填写。",
     "settings.publicBaseUrlPlaceholder": "https://pi-web.example.com",
     "settings.quoteSelection": "选中文字时显示提问浮窗",
     "settings.resetChatContentFontSize": "重置聊天字体大小",

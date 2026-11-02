@@ -1128,7 +1128,7 @@ export const zhTWLocale: LocalePlugin = {
     "settings.publicBaseUrl": "對外存取位址",
     "settings.publicBaseUrlAuto": "自動：依請求 Host 推斷",
     "settings.publicBaseUrlEffective": "目前生效：{value}",
-    "settings.publicBaseUrlHint": "伺服器產生絕對連結（供 MCP 服務抓取的檔案分享）時使用的位址前綴。留空則依每個請求的 Host 推斷；透過網域或反向代理存取本服務時應明確填寫。",
+    "settings.publicBaseUrlHint": "伺服器產生絕對連結（供 MCP 服務抓取的檔案分享）時使用的位址前綴。留空時瀏覽器發起的分享依請求 Host 推斷，Agent 的 share_file 回落 127.0.0.1:30141；需要其他裝置存取或經反向代理時必須明確填寫。",
     "settings.publicBaseUrlPlaceholder": "https://pi-web.example.com",
     "settings.quoteSelection": "選取文字時顯示提問浮窗",
     "settings.resetChatContentFontSize": "重設聊天字體大小",

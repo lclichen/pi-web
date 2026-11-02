@@ -1128,7 +1128,7 @@ export const enLocale: LocalePlugin = {
     "settings.publicBaseUrl": "Public base URL",
     "settings.publicBaseUrlAuto": "Automatic: derived from the request host",
     "settings.publicBaseUrlEffective": "Effective now: {value}",
-    "settings.publicBaseUrlHint": "Prefix for absolute links the server mints (file shares for MCP services). Leave empty to derive it from each request's Host; set it when clients reach this server through a domain or reverse proxy.",
+    "settings.publicBaseUrlHint": "Prefix for absolute links the server mints (file shares for MCP services). When empty, browser-created shares use the request Host while the Agent's share_file falls back to 127.0.0.1:30141; set it explicitly for access from other devices or behind a reverse proxy.",
     "settings.publicBaseUrlPlaceholder": "https://pi-web.example.com",
     "settings.quoteSelection": "Show actions for selected text",
     "settings.resetChatContentFontSize": "Reset chat font size",

@@ -93,15 +93,44 @@ DELETE /api/share/<token>           （创建者或管理员；提前撤销）
 - 不在 /api/files、/api/remotefs 上加 `?token=` 参数（见上）。
 - 不做目录级分享（首期）；需要时再评估打包下载。
 
-### 3.4 落点与工作量预估
+### 3.4 Agent 会话内调用面：`share_file` 工具
+
+`POST /api/share` 是浏览器会话接口（Cookie + CSRF 守卫），**Agent 不能直接
+curl 它**——bash 工具跑在服务器/容器/用户机器上，没有 `pi_web_sid`。会话内
+的正确入口是内联扩展注册的工具（与 bg_run / plan_save 同模式，进程内直调
+share-store，不走 HTTP）：
+
+```
+模型调用: share_file({ path: "report.pdf" })
+   ↓ inline extension（lib/extensions/share.ts，进程内）
+返回: { url, expiresAt } → 模型把 url 作为 MCP 工具的 file_url 参数
+   ↓
+MCP 服务端 GET /api/share/<token>（无 Cookie）
+```
+
+四种模式统一（工具经 ctx.sessionManager.getSessionId() 拿到 srcSession，
+路径栅栏复用各模式的会话工作区语义）：
+
+| 模式 | share 绑定 | GET 取数路径 |
+|---|---|---|
+| host | 服务器路径（会话 cwd 栅栏） | 本地 fs 直读 |
+| sandbox | (srcSession, path) | 容器在线时经平台 tools/read 代理 |
+| local-machine | (srcSession, path) | agent 在线时经 relay 代理 |
+| ssh | (srcSession, path) | SSH 在线时经 sftp 代理 |
+
+审计记录 ownerId + sessionId；限流按会话计。`POST /api/share` 保留给 WebUI
+（文件面板"生成分享链接"），与工具共用同一个 store。
+
+### 3.5 落点与工作量预估
 
 | 项 | 位置 | 量级 |
 |---|---|---|
 | 存储（内存 + dataDir 持久化） | `lib/share-store.ts` | ~100 行 |
 | 三条路由 | `app/api/share/…` | ~150 行 |
 | 字节读取复用 | 抽 /api/files 的 streamFile 与 remotefs 分支为共享 helper | ~80 行重构 |
+| `share_file` 内联扩展（Agent 调用面） | `lib/extensions/share.ts` | ~80 行 |
 | Agent 侧引导 | agent-packaging 技能/mcp.json 说明：传文件优先 `file_url` 参数，勿塞 base64 | 文档 |
-| 测试 | token 生命周期/限额/审计/远程离线 | ~150 行 |
+| 测试 | token 生命周期/限额/审计/远程离线/工具四模式 | ~150 行 |
 
 ## 四、过渡方案（今天就能用，但不推荐长期）
 

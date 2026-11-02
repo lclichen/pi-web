@@ -2646,6 +2646,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
             <textarea
               ref={textareaRef}
               className="chat-input-textarea"
+              data-guide="chat"
               aria-label={compact ? t("chat.quoteQuestion") : undefined}
               value={value}
               onChange={(e) => {

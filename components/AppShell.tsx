@@ -226,14 +226,20 @@ export function AppShell() {
     try {
       // 首次访问（既没完成过、也没中途进度）才自动弹出；有进度的回访者
       // 不再打扰，顶栏按钮或胶囊负责续读。
-      if (!window.localStorage.getItem("webui-guide-done") && !window.localStorage.getItem("webui-guide-step"))
+      if (
+        !window.localStorage.getItem("webui-guide-done") &&
+        !window.localStorage.getItem("webui-guide-progress") &&
+        !window.localStorage.getItem("webui-guide-step")
+      )
         setWebGuideOpen(true);
     } catch {
       /* localStorage 不可用则不自动弹出 */
     }
   }, []);
-  const closeWebGuide = useCallback(() => {
+  // 主动跳过才记“已完成”；✕/点击遮罩只是收起（保留进度，顶栏按钮可续）。
+  const closeWebGuide = useCallback((options?: { skip?: boolean }) => {
     setWebGuideOpen(false);
+    if (!options?.skip) return;
     try {
       window.localStorage.setItem("webui-guide-done", "1");
     } catch {
@@ -1833,6 +1839,7 @@ export function AppShell() {
             <button
               key={section}
               type="button"
+              data-guide={section}
               onClick={() => setSettingsSection(section)}
               disabled={disabled}
               title={disabled ? translate("settings.projectRequired") : label}
@@ -1872,6 +1879,7 @@ export function AppShell() {
         })}
         <button
           type="button"
+          data-guide="settings"
           onClick={() => setSettingsSection(getLastSettingsSection(projectTrustCwd))}
           title={translate("common.settings")}
           aria-label={translate("common.settings")}
@@ -1907,6 +1915,7 @@ export function AppShell() {
             features not covered by the upstream settings sections. */}
         <button
           type="button"
+          data-guide="agents"
           onClick={() => setSettingsSection("agents")}
           disabled={!activeCwd && !selectedSession?.cwd && !newSessionCwd}
           title="Agents"
@@ -1954,6 +1963,7 @@ export function AppShell() {
         </button>
         <button
           type="button"
+          data-guide="mcp"
           onClick={() => setSettingsSection("mcp")}
           disabled={!activeCwd && !selectedSession?.cwd && !newSessionCwd}
           title="MCP"
@@ -2869,6 +2879,7 @@ export function AppShell() {
     return (
       <button
         type="button"
+        data-guide="files"
         onClick={handleRightPanelToggle}
         disabled={covered}
         tabIndex={covered ? -1 : undefined}
@@ -3300,6 +3311,7 @@ export function AppShell() {
                   （PI_WEB_LAB_TRAINING，server-settings env 播种），不再由顶栏按钮运行时切换。 */}
                   <button
                     type="button"
+                    data-guide="guide"
                     onClick={() => setWebGuideOpen(true)}
                     title={translate("guide.buttonTitle")}
                     style={{
@@ -4440,6 +4452,7 @@ export function AppShell() {
         onStartQuickSession={() => handleNewSession(`guide-${Date.now()}`, "", "quick")}
         onJumpOut={() => setGuideResumeVisible(true)}
         onFinished={() => setGuideResumeVisible(false)}
+        isAdmin={!authEnabled || (webUser !== "loading" && webUser !== null && webUser.role === "admin")}
       />
       {guideResumeVisible && !webGuideOpen && (
         <WebUIGuideResumePill onResume={() => setWebGuideOpen(true)} onDismiss={() => setGuideResumeVisible(false)} />

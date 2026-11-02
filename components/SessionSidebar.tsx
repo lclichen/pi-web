@@ -1332,6 +1332,7 @@ export function SessionSidebar({
           <div style={{ display: "flex", gap: 6, position: "relative" }}>
             {showTopNewButton && (
               <button
+                data-guide="new-project"
                 onClick={() => setShowProjectWizard(true)}
                 // 始终可用：向导自己按模式/角色给出可选项。此前样式按
                 // selectedCwd 置灰 + not-allowed 光标（没选项目时看似禁用，
@@ -1389,6 +1390,7 @@ export function SessionSidebar({
                 setWtDropdownOpen(false);
               }}
               data-quick-menu
+              data-guide="quick"
               title={t("sessions.quickIntro")}
               aria-haspopup="menu"
               aria-expanded={quickMenuOpen}

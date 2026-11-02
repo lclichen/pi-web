@@ -57,7 +57,8 @@
 #       tmp/，以及用户的任何其他文件。
 #
 # 增量更新: config/pi/.bundle-version 记录模板版本。发布新包时递增
-# PI_CONFIG_VERSION（当前 3），目标机下次启动时自动应用增量。当前已应用
+# PI_CONFIG_VERSION（当前 5；v5 起 Agent Builder 的开发技能移出全局模板，
+# 升级时会从 skills/ 中清理旧副本），目标机下次启动时自动应用增量。当前已应用
 # 版本记录在 <agent>/.bundle-version。
 #   * 软链模式: npm/ 与扩展内容经链接直接取自包，包更新内容即更新；
 #     版本门控只管 skills/ 等新文件补缺与配置文件合并。
@@ -453,6 +454,26 @@ for d in agents skills prompts themes tools; do
   fi
   applied=1
 done
+
+# ---- 已退休的随包技能：只属于内置 Agent Builder，从全局 agent 目录清理 ----
+# 这三份开发技能（pi-extension-dev / skill-creator / subagent-creator）曾随
+# config/pi 装到 ~/.pi/agent/skills，导致每个会话都挂着；现在只随内置
+# Agent Builder 包分发（仓库 builder-skills/）。存量机器升级时移除旧副本。
+if [ -d "$AGENT_DIR/skills" ]; then
+  for retired_skill in pi-extension-dev skill-creator subagent-creator; do
+    # 模板若重新包含同名技能，说明用户有意恢复全局分发——不动。
+    [ -e "$BUNDLED/skills/$retired_skill" ] && continue
+    if [ -e "$AGENT_DIR/skills/$retired_skill" ] || [ -L "$AGENT_DIR/skills/$retired_skill" ]; then
+      if [ "$DRY" = "1" ]; then
+        note "移除已退休技能 skills/$retired_skill（改由内置 Agent Builder 分发）"
+      else
+        rm -rf "$AGENT_DIR/skills/$retired_skill"
+        note "移除已退休技能 skills/$retired_skill（改由内置 Agent Builder 分发）"
+      fi
+      applied=1
+    fi
+  done
+fi
 
 # ---- npm/（pi 已安装包与依赖整树，离线分发；仅拷贝模式，软链模式在第 0 节已链接）----
 if [ "$LINK_MODE" = "0" ]; then

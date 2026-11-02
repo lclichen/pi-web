@@ -57,7 +57,7 @@
 #                         执行，密钥只能随包分发；技能/提示词等 markdown 也无法
 #                         隐藏。第三方 vendored 扩展不在范围内（OBFUSCATE_EXTENSIONS
 #                         可覆盖列表）。
-#   PI_CONFIG_VERSION     配置模板版本号 (默认: 4)。发布新版包时递增，目标机
+#   PI_CONFIG_VERSION     配置模板版本号 (默认: 5)。发布新版包时递增，目标机
 #                         据此做配置的增量更新（见 packaging/install-pi-config.sh）。
 #                         v3: npm/ 与随包扩展默认改为软链直连包内（AMEDAC_PKG_MODE=copy
 #                         可回退真实拷贝）；递增版本号用于触发存量机器重新合并，
@@ -224,7 +224,10 @@ PKG="$WORK/$PKG_NAME"
 rm -rf "$PKG"
 mkdir -p "$PKG/app"
 log "组装 $PKG"
-cp -a "$SRC/bin" "$SRC/.next" "$SRC/public" "$SRC/next.config.ts" "$SRC/package.json" "$PKG/app/"
+# builder-skills/：内置 Agent Builder 的三份开发技能源码（运行时由
+# lib/builtin-agent-builder.ts 读取 process.cwd()/builder-skills 嵌入包内），
+# 必须随 app/ 分发；它们不在 config/pi 里，因此不会装进 ~/.pi/agent/skills。
+cp -a "$SRC/bin" "$SRC/.next" "$SRC/public" "$SRC/next.config.ts" "$SRC/package.json" "$SRC/builder-skills" "$PKG/app/"
 # 构建机 checkout 的 bin/ 可能带着本地调试用的解密组件（含 Windows exe）——
 # 先剔掉，下面按 APKG_PUBLISHER_BIN 统一注入正确的一份。
 rm -f "$PKG/app/bin/"apkg-publisher*
@@ -317,7 +320,9 @@ if [ -d "$PI_CONFIG_DIR" ]; then
   # v3：npm/ 与随包扩展改为“默认软链直连包内 + AMEDAC_PKG_MODE=copy 真实拷贝
   # 回退”的双模式分发。递增版本号用于触发存量机器重新合并：旧版留下的
   # 失效/残留软链会被自动清理（见 packaging/install-pi-config.sh 头部说明）。
-  PI_CONFIG_VERSION="${PI_CONFIG_VERSION:-4}"
+  # v5：Agent Builder 的三份开发技能移出全局模板（只随内置包分发），
+  # 递增版本号以触发存量机器重新合并并清理 ~/.pi/agent/skills 下的旧副本。
+  PI_CONFIG_VERSION="${PI_CONFIG_VERSION:-5}"
   echo "$PI_CONFIG_VERSION" > "$PKG/config/pi/.bundle-version"
   log "配置模板版本: $PI_CONFIG_VERSION"
   if [ "${OBFUSCATE_PI_CONFIG:-0}" = "1" ] && [ -d "$PKG/config/pi/extensions" ]; then

@@ -12,18 +12,25 @@
  * Agent 自行操作运行文件。
  *
  * 1.1.0：随包附带三份开发技能（pi-extension-dev / skill-creator /
- * subagent-creator，源码在 pi-config/agent/skills/），构建时嵌入
- * .pi/skills/<name>/，让 Builder 会话在写扩展/技能/子代理前能先读规范。
+ * subagent-creator），构建时嵌入 .pi/skills/<name>/，让 Builder 会话在写
+ * 扩展/技能/子代理前能先读规范。
+ *
+ * 1.1.3：这三份技能的源码移出 pi-config/agent/skills/，改由仓库根的
+ * builder-skills/ 提供——它们只属于 Agent Builder，不再随配置模板装进
+ * ~/.pi/agent/skills 影响所有会话。打包时 builder-skills/ 会被拷进
+ * app/（package-linux），因此 source checkout 与打包部署都能读到。
  */
 import JSZip from "jszip";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 export const BUILTIN_AGENT_BUILDER_NAME = "agent-builder";
-export const BUILTIN_AGENT_BUILDER_VERSION = "1.1.2";
+export const BUILTIN_AGENT_BUILDER_VERSION = "1.1.3";
 
 /** Developer skills shipped inside the builder bundle (source of truth:
- *  pi-config/agent/skills/, copied verbatim into .pi/skills/ of the zip). */
+ *  <repo>/builder-skills/, copied verbatim into .pi/skills/ of the zip).
+ *  Deliberately OUTSIDE pi-config/agent/: those skills belong to Agent
+ *  Builder only, not to every session's global skill list. */
 export const BUILTIN_AGENT_BUILDER_SKILLS = ["pi-extension-dev", "skill-creator", "subagent-creator"] as const;
 
 const AGENTS_MD = `# Agent Builder
@@ -235,8 +242,9 @@ export async function builtinAgentBuilderBytes(): Promise<Buffer> {
   zip.file("agents.md", AGENTS_MD);
   zip.file(".pi/skills/agent-packaging/SKILL.md", PACKAGING_SKILL_MD);
   // Developer skills ride along: .pi/skills/<name>/ with their references/ &
-  // scripts/ trees (source: pi-config/agent/skills, shipped with pi-web).
-  const skillsRoot = join(process.cwd(), "pi-config", "agent", "skills");
+  // scripts/ trees. Source: <repo>/builder-skills (copied into app/ by the
+  // linux packager so packaged deployments resolve it too).
+  const skillsRoot = join(process.cwd(), "builder-skills");
   for (const name of BUILTIN_AGENT_BUILDER_SKILLS) {
     addSkillTree(zip, join(skillsRoot, name), `.pi/skills/${name}`);
   }

@@ -1,16 +1,23 @@
 /**
  * 路径护栏扩展（amedac-core，CLI / WebUI 双端）。
  *
- * 威胁模型 A：拦截 write / edit / bash 的误操作写入——工作区外或敏感
- * 路径按策略拒绝/询问。评估模型与文件布局见 ./path-guard-policy.ts。
+ * 威胁模型 A：拦截 write / edit / read / grep / find / ls / bash 的误操作
+ * 访问——工作区外或敏感路径按策略拒绝/询问。评估模型与文件布局见
+ * ./path-guard-policy.ts。
+ *
+ * 模式：Host / quick 的工具路径就是服务器路径；sandbox / ssh /
+ * local-machine 的工具路径是远端工作区路径，经 `.pi/path-policy.scope.json`
+ * （pi-web 在会话启动时写入，运行态、不随包分发）映射回项目 home 后再套策略。
+ * 这样"锁定工作区内某个文件"的 deny 规则在四种模式下语义一致。
  *
  * 交互：ctx.ui.select 四选（允许一次 / 本项目始终允许 / 拒绝 / 拒绝且
  * 不再询问）。无人值守宿主（ctx.hasUI === false：批量 API、bench）一律
  * 按拒绝处理并说明原因——不会静默放行。持久决策写入
  * .pi/path-policy.decisions.json，随配置包导出分发（分发后同样不再询问）。
  *
- * 局限（有意为之）：bash 解析 best-effort（不追踪 cd / 不解 $()），
- * 这是行为护栏不是安全边界；强隔离由容器/relay 工作区围栏提供。
+ * 局限（有意为之）：bash 解析 best-effort（不执行变量展开、不解析解释器
+ * 代码），MCP/第三方扩展工具不在拦截范围；这是行为护栏不是安全边界。
+ * 强隔离由容器 / relay 工作区围栏提供。
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -18,12 +25,15 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
   PATH_DECISIONS_FILE,
   PATH_POLICY_FILE,
+  PATH_SCOPE_FILE,
+  evaluateBashCommand,
   evaluatePathAgainstPolicy,
-  extractBashWriteTargets,
   normalizePolicyPath,
   parsePathPolicy,
+  parsePathScope,
   parsePolicyDecisions,
   type PathPolicy,
+  type PathScope,
   type PolicyDecisions,
 } from "./path-guard-policy.ts";
 
@@ -32,15 +42,22 @@ const ASK_ALLOW_ALWAYS = "本项目始终允许（写入决策文件）";
 const ASK_DENY = "拒绝";
 const ASK_DENY_ALWAYS = "拒绝且不再询问（写入决策文件）";
 
+/** 直接给路径的工具；bash 单独处理。 */
+const PATH_TOOLS = new Set(["write", "edit", "read", "grep", "find", "ls"]);
+const WRITE_PATH_TOOLS = new Set(["write", "edit"]);
+
 interface LoadedPolicy {
   policy: PathPolicy;
   decisions: PolicyDecisions;
+  scope: PathScope | null;
 }
 
 function loadPolicy(cwd: string): LoadedPolicy {
-  const policyRaw = safeRead(join(cwd, PATH_POLICY_FILE));
-  const decisionsRaw = safeRead(join(cwd, PATH_DECISIONS_FILE));
-  return { policy: parsePathPolicy(policyRaw), decisions: parsePolicyDecisions(decisionsRaw) };
+  return {
+    policy: parsePathPolicy(safeRead(join(cwd, PATH_POLICY_FILE))),
+    decisions: parsePolicyDecisions(safeRead(join(cwd, PATH_DECISIONS_FILE))),
+    scope: parsePathScope(safeRead(join(cwd, PATH_SCOPE_FILE))),
+  };
 }
 
 function safeRead(path: string): string | null {
@@ -93,33 +110,17 @@ export function makePathGuardExtension(events: PathGuardEvents = {}) {
     let sessionAsked = 0;
 
     pi.on("tool_call", async (event, ctx) => {
-      if (event.toolName !== "write" && event.toolName !== "edit" && event.toolName !== "bash") return;
+      if (event.toolName !== "bash" && event.toolName !== "powershell" && !PATH_TOOLS.has(event.toolName)) return;
       const cwd = ctx.cwd;
       const input = event.input as { path?: unknown; command?: unknown };
-
-      let writeTargets: string[] = [];
-      let readTarget: string | null = null;
-      if (event.toolName === "bash") {
-        if (typeof input.command !== "string") return;
-        writeTargets = extractBashWriteTargets(input.command, cwd);
-      } else {
-        if (typeof input.path !== "string") return;
-        readTarget = resolveToolPath(input.path, cwd);
-        writeTargets = [readTarget]; // write/edit 同时是读取+写入，两者都评估
-      }
-
       const loaded = loadPolicy(cwd);
-      for (const target of writeTargets) {
-        if (sessionOnceAllows.has(target)) continue;
-        const verdict = evaluatePathAgainstPolicy(target, "write", cwd, loaded.policy, loaded.decisions);
-        if (readTarget && event.toolName !== "bash") {
-          const readVerdict = evaluatePathAgainstPolicy(readTarget, "read", cwd, loaded.policy, loaded.decisions);
-          if (readVerdict.action === "deny") {
-            events.onVerdict?.({ tool: event.toolName, path: target, action: "deny", via: "rule" });
-            return { block: true, reason: readVerdict.reason };
-          }
-        }
-        if (verdict.action === "allow") continue;
+
+      // ---- bash / powershell：写入目标提取 + 内联执行兜底 ----
+      if (event.toolName === "bash" || event.toolName === "powershell") {
+        if (typeof input.command !== "string") return;
+        const { verdict, target } = evaluateBashCommand(input.command, cwd, loaded.policy, loaded.decisions, loaded.scope);
+        if (verdict.action === "allow" || !target) return;
+        if (sessionOnceAllows.has(target)) return;
         if (verdict.action === "deny") {
           events.onVerdict?.({ tool: event.toolName, path: target, action: "deny", via: "rule" });
           return { block: true, reason: verdict.reason };
@@ -146,23 +147,74 @@ export function makePathGuardExtension(events: PathGuardEvents = {}) {
         if (choice === ASK_ALLOW_ONCE) {
           sessionOnceAllows.add(target);
           events.onVerdict?.({ tool: event.toolName, path: target, action: "allow", via: "ask" });
-          continue; // 放行本次调用
+          return undefined;
         }
         if (choice === ASK_ALLOW_ALWAYS) {
           recordDecision(cwd, loaded, target, "allow");
           events.onVerdict?.({ tool: event.toolName, path: target, action: "allow", via: "ask" });
-          continue;
+          return undefined;
         }
-        if (choice === ASK_DENY_ALWAYS) {
-          recordDecision(cwd, loaded, target, "deny");
-        }
+        if (choice === ASK_DENY_ALWAYS) recordDecision(cwd, loaded, target, "deny");
         events.onVerdict?.({ tool: event.toolName, path: target, action: "deny", via: "ask" });
         return {
           block: true,
-          reason: `用户${choice === ASK_DENY_ALWAYS ? "已选择“拒绝且不再询问”（已记录，之后不再询问）" : "拒绝了本次操作"}：${verdict.reason} 请改在工作区允许的路径内完成，或请用户调整 .pi/path-policy.json。`,
+          reason: `用户${choice === ASK_DENY_ALWAYS ? "已选择“拒绝且不再询问”（已记录，之后不再询问）" : "拒绝了本次操作"}：${verdict.reason} 请改在工作区允许的路径内完成，或请用户调整 .pi/path-policy.json。不要重复尝试同一路径。`,
         };
       }
-      return undefined;
+
+      // ---- 带路径的工具：读规则先判（write/edit 也读取内容）----
+      if (typeof input.path !== "string" || input.path.trim().length === 0) return;
+      const target = resolveToolPath(input.path, cwd);
+      if (sessionOnceAllows.has(target)) return;
+
+      const readVerdict = evaluatePathAgainstPolicy(target, "read", cwd, loaded.policy, loaded.decisions, loaded.scope);
+      if (readVerdict.action === "deny") {
+        events.onVerdict?.({ tool: event.toolName, path: target, action: "deny", via: "rule" });
+        return { block: true, reason: readVerdict.reason };
+      }
+      // grep/find/ls/read 只做读取判定。
+      if (!WRITE_PATH_TOOLS.has(event.toolName)) return;
+
+      const writeVerdict = evaluatePathAgainstPolicy(target, "write", cwd, loaded.policy, loaded.decisions, loaded.scope);
+      if (writeVerdict.action === "allow") return;
+      if (writeVerdict.action === "deny") {
+        events.onVerdict?.({ tool: event.toolName, path: target, action: "deny", via: "rule" });
+        return { block: true, reason: writeVerdict.reason };
+      }
+      if (ctx.hasUI === false || typeof ctx.ui?.select !== "function") {
+        events.onVerdict?.({ tool: event.toolName, path: target, action: "deny", via: "headless-deny" });
+        return {
+          block: true,
+          reason: `${writeVerdict.reason} 当前为无人值守会话，默认拒绝。如需放行，请用户在交互会话中确认一次（会写入 ${PATH_DECISIONS_FILE}），或调整 ${PATH_POLICY_FILE}。`,
+        };
+      }
+      sessionAsked += 1;
+      let choice: string | undefined;
+      try {
+        choice = await ctx.ui.select(
+          `路径护栏：${writeVerdict.reason}`,
+          [ASK_ALLOW_ONCE, ASK_ALLOW_ALWAYS, ASK_DENY, ASK_DENY_ALWAYS],
+          undefined,
+        );
+      } catch {
+        choice = undefined;
+      }
+      if (choice === ASK_ALLOW_ONCE) {
+        sessionOnceAllows.add(target);
+        events.onVerdict?.({ tool: event.toolName, path: target, action: "allow", via: "ask" });
+        return undefined;
+      }
+      if (choice === ASK_ALLOW_ALWAYS) {
+        recordDecision(cwd, loaded, target, "allow");
+        events.onVerdict?.({ tool: event.toolName, path: target, action: "allow", via: "ask" });
+        return undefined;
+      }
+      if (choice === ASK_DENY_ALWAYS) recordDecision(cwd, loaded, target, "deny");
+      events.onVerdict?.({ tool: event.toolName, path: target, action: "deny", via: "ask" });
+      return {
+        block: true,
+        reason: `用户${choice === ASK_DENY_ALWAYS ? "已选择“拒绝且不再询问”（已记录，之后不再询问）" : "拒绝了本次操作"}：${writeVerdict.reason} 请改在工作区允许的路径内完成，或请用户调整 .pi/path-policy.json。不要重复尝试同一路径。`,
+      };
     });
   };
 }

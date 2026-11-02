@@ -58,7 +58,14 @@ const MAX_UNCOMPRESSED_BYTES = 600 * 1024 * 1024;
  *  travel in shared bundles (the target reconnects with its own credentials).
  *  .bundle-lock.json is written only by the .apkg import flow — bundles must
  *  never carry or strip it. */
-const DENIED_BASENAMES = new Set(["auth.json", "ssh.json", "sandbox-platform.json", LOCK_BASENAME]);
+const DENIED_BASENAMES = new Set([
+  "auth.json",
+  "ssh.json",
+  "sandbox-platform.json",
+  // 远程会话的路径空间标记：服务器/用户机器绝对路径，运行态、与分发无关。
+  "path-policy.scope.json",
+  LOCK_BASENAME,
+]);
 /**
  * Path segments (at any depth) excluded from bundles both ways. Note
  * node_modules is deliberately NOT here: bundles target offline deployment,

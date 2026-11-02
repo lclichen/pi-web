@@ -19,6 +19,7 @@ import type { RemoteSessionContext } from "./remote-session";
 import { registerBgChannel, registerBgSessionMode } from "./extensions/bg-shell";
 import { makeRelayBgChannel, makeSandboxBgChannel, makeSshBgChannel } from "./extensions/bg-channels";
 import { readSshConfig } from "./ssh";
+import { pathScopeForSession, writePathScope } from "./path-scope";
 import { requireUserIdentity } from "./web-session";
 
 /**
@@ -216,6 +217,12 @@ export async function restoreSessionOptions(req: Request, sessionId: string): Pr
   }
 
   const ownerId = meta?.ownerId ?? user.id;
+  // 远程会话的路径空间标记（与新建会话同一套逻辑）：护栏据此把远端工具
+  // 路径映射回项目 home，deny/allow 规则在恢复后的会话里同样生效。
+  if (effectiveCwd) {
+    const scope = pathScopeForSession(mode, project);
+    if (scope) writePathScope(effectiveCwd, scope);
+  }
   const coreExtensionPaths = resolveCoreExtensionPaths(additionalExtensionPaths);
   return {
     ...(coreExtensionPaths ? { additionalExtensionPaths: coreExtensionPaths } : {}),

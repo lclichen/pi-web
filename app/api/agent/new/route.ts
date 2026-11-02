@@ -20,6 +20,7 @@ import { isSessionMode, modeAllowedForUser, type SessionMode } from "@/lib/sessi
 import { spaceDir } from "@/lib/session-spaces";
 import { ensureSandboxHome, ensureLocalHome, ensureQuickHome } from "@/lib/mode-homes";
 import { ensureQuickSessionWorkspace } from "@/lib/quick-session";
+import { pathScopeForSession, writePathScope } from "@/lib/path-scope";
 import { recordSessionMeta } from "@/lib/session-metas";
 import { makeRelayToolsExtension } from "@/lib/extensions/relay-tools";
 import { sessionDirsForProject } from "@/lib/session-context";
@@ -345,6 +346,13 @@ export async function POST(req: Request) {
         },
         { status: 400 },
       );
+    }
+
+    // 远程会话的路径空间标记：工具路径（/workspace/…、用户机器绝对路径）
+    // 由路径护栏映射回项目 home 后再套 deny/allow 规则（lib/path-scope.ts）。
+    if (effectiveCwd) {
+      const scope = pathScopeForSession(projectRef?.mode ?? mode, projectRef);
+      if (scope) writePathScope(effectiveCwd, scope);
     }
 
     // Quick mode: no workspace — a per-user scratch home is only used for the

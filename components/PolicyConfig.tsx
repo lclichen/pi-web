@@ -22,6 +22,7 @@ interface PolicyState {
   policy: PathPolicy;
   defaults: PathPolicy;
   decisions: PolicyDecisions;
+  scope: { mode: string; workspaceRoot: string } | null;
   editable: boolean;
   lockReason?: string;
 }
@@ -35,6 +36,13 @@ export function PolicyConfig({ embedded = false, cwd }: { embedded?: boolean; cw
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const [formMsg, setFormMsg] = useState<string | null>(null);
+  // 试运行：路径/命令直接走与护栏相同的判定（POST /api/policy），
+  // 让用户不用等 Agent 撞一次就知道规则生不生效。
+  const [checkMode, setCheckMode] = useState<"path" | "command">("path");
+  const [checkKind, setCheckKind] = useState<"read" | "write">("write");
+  const [checkInput, setCheckInput] = useState("");
+  const [checkBusy, setCheckBusy] = useState(false);
+  const [checkResult, setCheckResult] = useState<{ action: string; reason?: string; target?: string } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -104,6 +112,30 @@ export function PolicyConfig({ embedded = false, cwd }: { embedded?: boolean; cw
     }
   };
 
+  const runCheck = async () => {
+    const value = checkInput.trim();
+    if (!value) return;
+    setCheckBusy(true);
+    setCheckResult(null);
+    try {
+      const res = await fetch("/api/policy", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          cwd,
+          ...(checkMode === "command" ? { command: value } : { path: value, kind: checkKind }),
+        }),
+      });
+      const d = (await res.json()) as { action?: string; reason?: string; target?: string; error?: string };
+      if (!res.ok || d.error) throw new Error(d.error ?? `HTTP ${res.status}`);
+      setCheckResult({ action: d.action ?? "allow", ...(d.reason ? { reason: d.reason } : {}), ...(d.target ? { target: d.target } : {}) });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setCheckBusy(false);
+    }
+  };
+
   const patternChips = (items: string[]) => (
     <div className="bundle-chip-list" style={{ paddingTop: 0 }}>
       {items.length === 0 ? (
@@ -160,6 +192,115 @@ export function PolicyConfig({ embedded = false, cwd }: { embedded?: boolean; cw
                 <ConfigButton variant="primary" onClick={startEdit}>
                   {t("policy.edit")}
                 </ConfigButton>
+              </div>
+            )}
+
+            {/* 试运行：与护栏同一套判定，先验证再交给 Agent。 */}
+            <div className="policy-section-title" style={{ marginTop: 20 }}>
+              {t("policy.checkTitle")}
+            </div>
+            <p style={{ margin: "0 0 8px", fontSize: 11, color: "var(--text-dim)", lineHeight: 1.6 }}>
+              {t("policy.checkHint")}
+              {state.scope
+                ? `（${t("policy.checkScope")} ${state.scope.mode} → ${state.scope.workspaceRoot}）`
+                : ""}
+            </p>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+              <select
+                value={checkMode}
+                onChange={(e) => {
+                  setCheckMode(e.target.value === "command" ? "command" : "path");
+                  setCheckResult(null);
+                }}
+                style={{
+                  padding: "5px 8px",
+                  borderRadius: 6,
+                  border: "1px solid var(--border)",
+                  background: "var(--bg)",
+                  color: "var(--text)",
+                  fontSize: 12,
+                }}
+              >
+                <option value="path">{t("policy.checkModePath")}</option>
+                <option value="command">{t("policy.checkModeCommand")}</option>
+              </select>
+              {checkMode === "path" && (
+                <select
+                  value={checkKind}
+                  onChange={(e) => {
+                    setCheckKind(e.target.value === "read" ? "read" : "write");
+                    setCheckResult(null);
+                  }}
+                  style={{
+                    padding: "5px 8px",
+                    borderRadius: 6,
+                    border: "1px solid var(--border)",
+                    background: "var(--bg)",
+                    color: "var(--text)",
+                    fontSize: 12,
+                  }}
+                >
+                  <option value="write">{t("policy.checkKindWrite")}</option>
+                  <option value="read">{t("policy.checkKindRead")}</option>
+                </select>
+              )}
+              <input
+                value={checkInput}
+                onChange={(e) => setCheckInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void runCheck();
+                }}
+                placeholder={checkMode === "command" ? t("policy.checkCommandPlaceholder") : t("policy.checkPathPlaceholder")}
+                spellCheck={false}
+                style={{
+                  flex: 1,
+                  minWidth: 220,
+                  padding: "5px 8px",
+                  borderRadius: 6,
+                  border: "1px solid var(--border)",
+                  background: "var(--bg)",
+                  color: "var(--text)",
+                  fontSize: 12,
+                  fontFamily: "var(--font-mono)",
+                  outline: "none",
+                }}
+              />
+              <ConfigButton size="small" disabled={checkBusy || checkInput.trim().length === 0} onClick={() => void runCheck()}>
+                {checkBusy ? t("policy.checkRunning") : t("policy.checkRun")}
+              </ConfigButton>
+            </div>
+            {checkResult && (
+              <div
+                style={{
+                  marginTop: 8,
+                  padding: "8px 10px",
+                  borderRadius: 6,
+                  border: "1px solid var(--border)",
+                  background: "var(--bg)",
+                  fontSize: 11.5,
+                  lineHeight: 1.6,
+                }}
+              >
+                <b
+                  style={{
+                    color:
+                      checkResult.action === "deny"
+                        ? "var(--danger)"
+                        : checkResult.action === "ask"
+                          ? "var(--warning)"
+                          : "var(--success)",
+                  }}
+                >
+                  {checkResult.action === "deny"
+                    ? t("policy.checkDeny")
+                    : checkResult.action === "ask"
+                      ? t("policy.checkAsk")
+                      : t("policy.checkAllow")}
+                </b>
+                {checkResult.reason ? <div style={{ color: "var(--text-muted)" }}>{checkResult.reason}</div> : null}
+                {checkResult.target ? (
+                  <div style={{ color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>{checkResult.target}</div>
+                ) : null}
               </div>
             )}
 

@@ -82,6 +82,11 @@ exists.
   several projects share one agent connection. The agent advertises the
   capability as `features: ["workspace-base"]` in its hello frame; older
   agents ignore `base` and stay confined to the root.
+- **Binary reads (0.4.0+)**: `fs.read` accepts `encoding: "base64"` and returns
+  `contentBase64`, so images/audio/video previews survive the JSON hop (plain
+  JSON strings mangle invalid UTF-8). Advertised as
+  `features: ["workspace-base", "binary-read"]`; pi-web falls back to a
+  `base64 -w0` exec for older agents and shows an upgrade hint if neither works.
 - **No shell**: `exec.run` takes an `argv` array and spawns directly — there is
   no shell-injection surface.
 - **Token**: the pairing code is single-use + 5-min TTL; it is exchanged for a

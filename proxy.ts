@@ -25,6 +25,13 @@ export function proxy(request: NextRequest) {
   // allowlist of prebuilt binaries, so they stay public in both auth modes.
   const isRelayDownload = pathname.startsWith("/api/agent-relay/download/");
 
+  // Share downloads are bearer-token URLs: the 128-bit token in the path is
+  // the credential, so an MCP service (or any other device/browser) fetches
+  // them WITHOUT a session cookie. Only the token GET is public — the audit
+  // list, creation and revocation stay session-gated. Malformed tokens still
+  // reach the route, which answers 404 instead of a misleading 401.
+  const isPublicShareDownload = request.method === "GET" && /^\/api\/share\/[^/]+\/?$/.test(pathname);
+
   // Batch test API authenticates with X-Platform-API-Key (sk_...), validated
   // against the platform inside the routes (requireBatchIdentity: key →
   // /auth/me → admin role). Without this bypass the session gate rejects
@@ -44,7 +51,7 @@ export function proxy(request: NextRequest) {
     // inherently pre-session; me/logout/change-password check the cookie
     // themselves and tolerate change-ticket sessions).
     const isWebAuthRoute = pathname.startsWith("/api/webauth/");
-    if (!isRelayDownload && !isWebAuthRoute && !hasBatchPlatformKey) {
+    if (!isRelayDownload && !isWebAuthRoute && !hasBatchPlatformKey && !isPublicShareDownload) {
       const session = getWebSession(request);
       const usable = session && !session.changeTicket;
       if (!usable) {
@@ -60,6 +67,7 @@ export function proxy(request: NextRequest) {
   const password = process.env.PI_WEB_PASSWORD;
   if (
     !isRelayDownload &&
+    !isPublicShareDownload &&
     !hasBatchPlatformKey &&
     isWebPasswordEnabled(password) &&
     !isValidBasicAuthorization(request.headers.get("authorization"), password)

@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import type { SessionInfo } from "@/lib/types";
 import type { ProjectRecord } from "@/lib/projects";
+import type { HostDirRecord } from "@/lib/host-dirs";
+import { buildHostGroups, hostDirLabel } from "@/lib/host-groups";
 import { formatRelativeTime } from "@/lib/subagent-shared";
 import { ProjectSettingsDialog } from "./ProjectSettingsDialog";
 import { ProjectImportDialog } from "./ProjectImportDialog";
@@ -64,6 +66,9 @@ export function ProjectSessionTree({
 }: Props) {
   const t = useT();
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
+  // Host 目录注册表：让"新建 Host 项目"在没有会话时也能显示一个空组。
+  // 只影响侧栏占位；会话仍按 cwd 动态聚合，不绑定 projectId。
+  const [hostDirs, setHostDirs] = useState<HostDirRecord[]>([]);
   const [collapsed, setCollapsed] = useState<Set<string>>(() => {
     try {
       return new Set(JSON.parse(localStorage.getItem(COLLAPSE_KEY) ?? "[]") as string[]);
@@ -97,6 +102,21 @@ export function ProjectSessionTree({
   useEffect(() => {
     loadProjects();
   }, [loadProjects, projectsRefreshKey]);
+
+  // Host 目录注册表（admin-only；非管理员接口 403 → 空列表）。
+  const loadHostDirs = useCallback(() => {
+    if (!isAdmin) {
+      setHostDirs([]);
+      return;
+    }
+    fetch("/api/host/dirs")
+      .then((r) => (r.ok ? r.json() : { dirs: [] }))
+      .then((d: { dirs?: HostDirRecord[] }) => setHostDirs(d.dirs ?? []))
+      .catch(() => setHostDirs([]));
+  }, [isAdmin]);
+  useEffect(() => {
+    loadHostDirs();
+  }, [loadHostDirs, projectsRefreshKey]);
 
   // Container list: status dots on project nodes + the container picker.
   const loadContainers = useCallback(() => {
@@ -378,21 +398,13 @@ export function ProjectSessionTree({
   // 在 sessionSpace==="host" 上导致这些会话永远不显示）。
   // 非宿主模式的未绑定会话（API 直建的 pre-project sandbox 会话等）单独成组、
   // 带各自模式徽标——混进 Host 目录组会让"项目=Host / 会话=沙箱"两个徽标打架。
-  const hostGroups = useMemo(() => {
-    if (!isAdmin) return [];
-    const groups = new Map<string, SessionInfo[]>();
-    for (const s of byProject.ungrouped) {
-      if (s.mode && s.mode !== "host") continue;
-      const key = s.projectRoot ?? s.cwd;
-      const list = groups.get(key) ?? [];
-      list.push(s);
-      groups.set(key, list);
-    }
-    return [...groups.entries()].sort((a, b) => {
-      const latest = (entry: [string, SessionInfo[]]) => entry[1][0]?.modified ?? "";
-      return latest(b).localeCompare(latest(a));
-    });
-  }, [byProject.ungrouped, isAdmin]);
+  const hostGroups = useMemo(
+    () => (isAdmin ? buildHostGroups(byProject.ungrouped, hostDirs) : []),
+    [byProject.ungrouped, isAdmin, hostDirs],
+  );
+
+  // 目录根 → 注册记录（显示名/菜单用）。
+  const hostDirByRoot = useMemo(() => new Map(hostDirs.map((d) => [d.root, d])), [hostDirs]);
 
   // 未绑定项目的非宿主模式会话，按 mode 聚成一组（沙箱/本机/SSH 各一组）。
   const unboundModeGroups = useMemo(() => {
@@ -917,6 +929,8 @@ export function ProjectSessionTree({
               // that nothing read and the click appeared dead.
               const expandedAll = showAll.has(key);
               const visible = isCollapsed ? [] : expandedAll ? list : list.slice(0, RECENT_COUNT);
+              const record = hostDirByRoot.get(root);
+              const displayName = record?.name?.trim() ? record.name.trim() : hostDirLabel(root);
               return (
                 <div key={key} style={{ marginBottom: 2 }}>
                   <div
@@ -959,7 +973,7 @@ export function ProjectSessionTree({
                       }}
                       title={root}
                     >
-                      {root.split("/").filter(Boolean).pop() ?? root}
+                      {displayName}
                     </span>
                     <span style={{ fontSize: 10, color: "var(--text-dim)" }}>{list.length}</span>
                     {onNewSessionInDirectory && (
@@ -1006,6 +1020,11 @@ export function ProjectSessionTree({
                     </button>
                   </div>
                   {visible.map((s) => renderItem(s, null))}
+                  {!isCollapsed && list.length === 0 && (
+                    <div style={{ padding: "4px 6px 6px 26px", fontSize: 11, color: "var(--text-dim)" }}>
+                      {t("sessions.hostDirEmptyHint")}
+                    </div>
+                  )}
                   {!isCollapsed && !expandedAll && list.length > RECENT_COUNT && (
                     <button
                       type="button"
@@ -1154,6 +1173,45 @@ export function ProjectSessionTree({
               setMenu(null);
             }}
           />
+          {/* 注册表占位管理：重命名 / 从列表移除。移除仅删占位记录，
+              不碰真实目录；有会话时隐藏移除项（避免"点了没变化"）。 */}
+          {(() => {
+            const record = hostDirByRoot.get(menu.directory!);
+            if (!record) return null;
+            const count = hostGroups.find(([root]) => root === menu.directory)?.[1].length ?? 0;
+            return (
+              <>
+                <div style={{ borderTop: "1px solid var(--border)" }} />
+                <MenuItem
+                  label={t("sessions.renameHostDir")}
+                  onClick={() => {
+                    const name = window.prompt(t("sessions.newProjectName"), record.name ?? "");
+                    setMenu(null);
+                    if (name === null) return;
+                    void fetch("/api/host/dirs", {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ id: record.id, name }),
+                    })
+                      .then(() => loadHostDirs())
+                      .catch(() => {});
+                  }}
+                />
+                {count === 0 && (
+                  <MenuItem
+                    label={t("sessions.removeHostDir")}
+                    danger
+                    onClick={() => {
+                      setMenu(null);
+                      void fetch(`/api/host/dirs?id=${encodeURIComponent(record.id)}`, { method: "DELETE" })
+                        .then(() => loadHostDirs())
+                        .catch(() => {});
+                    }}
+                  />
+                )}
+              </>
+            );
+          })()}
         </div>
       )}
 

@@ -19,6 +19,7 @@ import { dispatchSessionRowContextMenu } from "@/lib/session-row-context-menu";
 import { skillExpansionToCommand } from "@/lib/slash-display";
 import { getProjectActivity, getRecentProjects, sessionsForProject } from "@/lib/project-groups";
 import { workspaceKeyOf } from "@/lib/workspace-memory";
+import { hostDirLabel } from "@/lib/host-groups";
 import { formatRelativeTime } from "@/lib/i18n/format";
 import { useI18n } from "@/hooks/useI18n";
 import { useResizablePanel } from "@/hooks/useResizablePanel";
@@ -497,6 +498,9 @@ export function SessionSidebar({
   const [wtFilter, setWtFilter] = useState("");
   const [showProjectWizard, setShowProjectWizard] = useState(false);
   const [customPathOpen, setCustomPathOpen] = useState(false);
+  // 只有"新建项目 → 打开服务器目录"这条路径才把目录登记为 Host 空项目；
+  // 下拉里的"自定义路径"只是切换当前工作目录，不应往侧栏塞空组。
+  const [registerHostDirOnPick, setRegisterHostDirOnPick] = useState(false);
   const [customPathValue, setCustomPathValue] = useState(loadLastCustomCwd);
   const [customPathError, setCustomPathError] = useState<string | null>(null);
   const [customPathValidating, setCustomPathValidating] = useState(false);
@@ -1074,16 +1078,33 @@ export function SessionSidebar({
         onCwdChange?.(data.cwd, validated.root, validated.key);
         setCustomPathOpen(false);
         setDropdownOpen(false);
+        // 新建项目入口：把目录登记为 Host 空项目（侧栏立即出现空组）。
+        // 失败不阻断目录切换——注册表只是占位，会话照常在真实目录里跑。
+        if (registerHostDirOnPick) {
+          setRegisterHostDirOnPick(false);
+          void fetch("/api/host/dirs", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ cwd: data.cwd }),
+          })
+            .then((r) => {
+              if (r.ok) onProjectsChanged?.();
+            })
+            .catch(() => {
+              /* 占位失败不影响目录选择 */
+            });
+        }
       } catch (e) {
         setCustomPathError(e instanceof Error ? e.message : String(e));
       } finally {
         setCustomPathValidating(false);
       }
     },
-    [customPathValue, customPathValidating],
+    [customPathValue, customPathValidating, registerHostDirOnPick, onProjectsChanged],
   );
 
   const handleCustomPathClick = useCallback(() => {
+    setRegisterHostDirOnPick(false);
     setCustomPathOpen(true);
     setCustomPathError(null);
     setDropdownOpen(false);
@@ -1300,8 +1321,11 @@ export function SessionSidebar({
         <RemoteConnectWizard
           onClose={() => setShowProjectWizard(false)}
           onCreated={() => onProjectsChanged?.()}
-          isAdmin={authInfo?.user?.role === "admin"}
-          onOpenServerDirectory={() => setCustomPathOpen(true)}
+          isAdmin={isAdminUser}
+          onOpenServerDirectory={() => {
+            setRegisterHostDirOnPick(true);
+            setCustomPathOpen(true);
+          }}
         />
       )}
 
@@ -1311,6 +1335,7 @@ export function SessionSidebar({
           busy={customPathValidating}
           error={customPathError}
           onCancel={() => {
+            setRegisterHostDirOnPick(false);
             setCustomPathOpen(false);
             setCustomPathError(null);
           }}
@@ -2442,7 +2467,7 @@ export function SessionSidebar({
                   // （等价于"自定义路径"流程，但跳过选择器直接落目录）。
                   const tempId = typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now()}`;
                   switchHostDir(dir);
-                  onNewSession?.(tempId, dir, "host", undefined, dir.split("/").filter(Boolean).pop() ?? dir);
+                  onNewSession?.(tempId, dir, "host", undefined, hostDirLabel(dir));
                 }}
                 onNewSessionFromTemplate={(templateId: string, templateName: string) => {
                   // 快速空间模板组的 ＋：与 ⚡ 菜单同一条新建链路（模板 id 走
@@ -2465,10 +2490,13 @@ export function SessionSidebar({
                   loadSessions();
                 }}
                 refreshSessions={loadSessions}
-                isAdmin={authInfo.user?.role === "admin"}
+                isAdmin={isAdminUser}
                 sessionSpace={sessionSpace}
                 onSessionSpaceChange={onSessionSpaceChange}
-                onOpenServerDirectory={() => setCustomPathOpen(true)}
+                onOpenServerDirectory={() => {
+                  setRegisterHostDirOnPick(true);
+                  setCustomPathOpen(true);
+                }}
                 onManageSandbox={onManageSandbox}
                 projectsRefreshKey={projectsRefreshKey}
               />

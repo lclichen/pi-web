@@ -325,6 +325,15 @@ export function McpServersConfig({
     void loadDoc().then(() => void probeAll());
   }, [loadDoc, probeAll]);
 
+  // 保存/启停后 reload 会把服务端有效状态带回来：同步当前表单的开关状态
+  // （不覆盖其它正在编辑的字段）。尤其是管理员改“全局禁用”保存后。
+  useEffect(() => {
+    if (creating || !selectedKey) return;
+    const srv = servers.find((x) => serverKey(x.scope, x.name) === selectedKey);
+    if (!srv) return;
+    setForm((f) => ({ ...f, disabled: srv.disabled, scopeDisabled: Boolean(srv.scopeDisabled) }));
+  }, [servers, creating, selectedKey]);
+
   useEffect(() => {
     fetch(`/api/preferences?cwd=${encodeURIComponent(cwd)}`)
       .then((r) => r.json())

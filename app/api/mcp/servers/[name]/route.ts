@@ -1,5 +1,11 @@
 import { NextResponse } from "next/server";
-import { removeMcpServer, setMcpServerDisabled, updateMcpServer } from "@/lib/mcp-config";
+import {
+  readMcpConfig,
+  removeMcpServer,
+  setMcpServerDisabled,
+  setMcpServerDisabledViaProject,
+  updateMcpServer,
+} from "@/lib/mcp-config";
 import { guardMcpRequest } from "@/lib/mcp-route-guard";
 import type { ConfigScope, ServerEntry } from "@/lib/api-types";
 
@@ -10,7 +16,14 @@ function readScope(v: string | null | undefined): ConfigScope {
 }
 
 type Body = { cwd?: string; projectId?: string; scope?: string; entry?: ServerEntry };
-type PatchBody = { cwd?: string; projectId?: string; scope?: string; disabled?: boolean };
+type PatchBody = {
+  cwd?: string;
+  projectId?: string;
+  scope?: string;
+  disabled?: boolean;
+  /** "project" (default) = workspace override; "scope" = edit the entry's own config. */
+  target?: "project" | "scope";
+};
 
 // PUT /api/mcp/servers/[name]  body: { cwd|projectId, scope?, entry }
 export async function PUT(req: Request, { params }: { params: Promise<{ name: string }> }) {
@@ -34,21 +47,39 @@ export async function PUT(req: Request, { params }: { params: Promise<{ name: st
   }
 }
 
-// PATCH /api/mcp/servers/[name]  body: { cwd|projectId, scope?, disabled }
+// PATCH /api/mcp/servers/[name]  body: { cwd|projectId, scope?, disabled, target? }
 export async function PATCH(req: Request, { params }: { params: Promise<{ name: string }> }) {
   const { name } = await params;
   try {
     const body = (await req.json()) as PatchBody;
-    const guard = guardMcpRequest(req, body, { mutating: true });
-    if (!guard.ok) return guard.response;
     const scope = readScope(body.scope);
+    // Default = workspace override: a project-level {disabled:true} tombstone
+    // hides a global/quick server for THIS project without touching the
+    // original config. The adapter treats it as absent; enabling removes it.
+    // target:"scope" keeps the old direct edit (admin-only for global), used
+    // by the settings form when an admin edits the entry's own config.
+    const target = body.target === "scope" ? "scope" : "project";
+    const guard = guardMcpRequest(req, { ...body, scope: target === "scope" ? scope : "project" }, { mutating: true });
+    if (!guard.ok) return guard.response;
+    const disabled = body.disabled === true;
     try {
-      // Toggle the entry's own `disabled` flag in its own config file. The
-      // adapter treats a disabled entry as absent (and a project-level
-      // {disabled:true} shadows an enabled global entry of the same name).
-      // This handler used to be a silent no-op — the panel's switch did nothing.
-      setMcpServerDisabled(guard.cwd, scope, name, body.disabled === true);
-      return NextResponse.json({ success: true, disabled: body.disabled === true });
+      if (target === "scope") {
+        setMcpServerDisabled(guard.cwd, scope, name, disabled);
+        return NextResponse.json({ success: true, disabled, target });
+      }
+      setMcpServerDisabledViaProject(guard.cwd, name, disabled);
+      if (!disabled) {
+        // Removing the override can expose a server that is disabled in its
+        // own config (global/quick). Say so instead of silently no-oping.
+        const effective = readMcpConfig(guard.cwd).servers.find((s) => s.name === name);
+        if (effective?.disabled) {
+          return NextResponse.json(
+            { error: "项目覆盖已移除，但该服务器在全局/快速配置中仍为禁用；需管理员在对应配置中启用" },
+            { status: 409 },
+          );
+        }
+      }
+      return NextResponse.json({ success: true, disabled, target });
     } catch (e) {
       return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 404 });
     }

@@ -279,6 +279,10 @@ export interface McpServerInfo {
   summary: string;
   directToolsOn: boolean;
   disabled: boolean;
+  /** The entry's own disabled flag (ignores a project-level override). */
+  scopeDisabled?: boolean;
+  /** Effective disable comes from a project-level {disabled:true} tombstone. */
+  projectOverride?: boolean;
   sourcePath: string;
 }
 

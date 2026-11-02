@@ -26,8 +26,8 @@ export function guardMcpRequest(
   }
   const dir = resolveConfigCwdSync(req, { projectId: params.projectId, cwd: params.cwd });
   if (!dir.ok) return { ok: false, response: NextResponse.json({ error: dir.error }, { status: dir.status }) };
-  if (params.scope === "global" && !dir.isAdmin) {
-    return { ok: false, response: NextResponse.json({ error: "全局 MCP 配置仅管理员可修改" }, { status: 403 }) };
+  if ((params.scope === "global" || params.scope === "quick") && !dir.isAdmin) {
+    return { ok: false, response: NextResponse.json({ error: "全局/快速 MCP 配置仅管理员可修改" }, { status: 403 }) };
   }
   return { ok: true, cwd: dir.cwd, isAdmin: dir.isAdmin };
 }

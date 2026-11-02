@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { atomicWriteFile } from "./atomic-write";
+import { deploymentQuickMcpPath } from "./quick-mcp";
 import type {
   ConfigScope,
   McpConfigDiagnostic,
@@ -18,7 +19,6 @@ export function mcpConfigPath(cwd: string, scope: ConfigScope): string {
   if (scope === "quick") {
     // 部署级快速会话专用：复用 dataDir/mcp-quick.json 作为唯一存储
     //（lib/quick-mcp.ts 的 syncQuickMcpConfig 在会话创建时物化到工作区）。
-    const { deploymentQuickMcpPath } = require("./quick-mcp") as typeof import("./quick-mcp");
     return deploymentQuickMcpPath();
   }
   return join(getAgentDir(), "mcp.json");
@@ -83,8 +83,17 @@ function toServerInfo(name: string, entry: ServerEntry, scope: ConfigScope, sour
     summary: serverSummary(entry),
     directToolsOn: isDirectToolsOn(entry),
     disabled: Boolean((entry as ServerEntry).disabled),
+    scopeDisabled: Boolean((entry as ServerEntry).disabled),
     sourcePath,
   };
+}
+
+/** A project-level tombstone: `{ "name": { "disabled": true } }` with no
+ *  server config of its own. It hides a lower-scope server without copying
+ *  (or shadowing the display of) its config. */
+function isDisabledOnlyEntry(entry: ServerEntry): boolean {
+  if (entry.disabled !== true) return false;
+  return Object.keys(entry).every((key) => key === "disabled");
 }
 
 export interface ReadMcpOptions {
@@ -146,17 +155,34 @@ export function readMcpConfig(cwd: string, options?: ReadMcpOptions): McpConfigD
 
   // Deduplicate by server name with scope priority (pi-mcp-adapter chain:
   // .pi/mcp.json [project] > mcp-quick.json [quick] > agent mcp.json [global]).
-  // Higher-priority scope wins; its disabled flag is respected (a project-level
-  // { disabled: true } shadows an enabled global entry of the same name).
+  // A {disabled:true}-only project entry is a tombstone (project-level
+  // override): it hides the real server but must not replace its config in
+  // the settings UI. Merge the tombstone into the underlying entry and mark
+  // projectOverride so the panel can toggle the override without touching the
+  // original config.
   const scopeRank: Record<ConfigScope, number> = { project: 0, quick: 1, global: 2 };
-  const byName = new Map<string, McpServerInfo>();
+  const groups = new Map<string, McpServerInfo[]>();
   for (const s of servers) {
-    const existing = byName.get(s.name);
-    if (!existing || scopeRank[s.scope] < scopeRank[existing.scope]) {
-      byName.set(s.name, s);
-    }
+    const list = groups.get(s.name);
+    if (list) list.push(s);
+    else groups.set(s.name, [s]);
   }
-  const deduped = [...byName.values()];
+  const deduped: McpServerInfo[] = [];
+  for (const list of groups.values()) {
+    list.sort((a, b) => scopeRank[a.scope] - scopeRank[b.scope]);
+    const real = list.find((s) => !isDisabledOnlyEntry(s.entry));
+    // A tombstone with no underlying server (e.g. a stale quick-template
+    // deny-list entry) has nothing to show; skip it.
+    if (!real) continue;
+    const tombstone = list.find((s) => scopeRank[s.scope] < scopeRank[real.scope] && isDisabledOnlyEntry(s.entry));
+    deduped.push({
+      ...real,
+      scopeDisabled: Boolean(real.entry.disabled),
+      ...(tombstone
+        ? { disabled: true, ...(tombstone.scope === "project" ? { projectOverride: true } : {}) }
+        : { disabled: Boolean(real.entry.disabled) }),
+    });
+  }
 
   return { servers: deduped, settings, settingsScope, diagnostics };
 }
@@ -203,9 +229,10 @@ export function removeMcpServer(cwd: string, scope: ConfigScope, name: string): 
 }
 
 /**
- * 工具栏/会话内的禁用切换：写项目级覆盖（.pi/mcp.json 中 { disabled: true }），
- * 不碰原始配置（全局 mcp.json 等）。与 pi-mcp-adapter 的行为一致——
- * 原始配置的禁用只允许在设置页操作。
+ * 工作区级禁用切换（工具栏 / 设置页开关）：写项目级覆盖
+ * （.pi/mcp.json 中 { disabled: true }），不碰原始配置（全局/快速 mcp.json）。
+ * 与 pi-mcp-adapter 的行为一致——全局/快速条目的自身 disabled 只在管理员
+ * 编辑原始配置时修改。
  * 如果服务器已在项目层有定义，直接改其中的 disabled；否则新建同名覆盖条目。
  */
 export function setMcpServerDisabledViaProject(cwd: string, name: string, disabled: boolean): void {

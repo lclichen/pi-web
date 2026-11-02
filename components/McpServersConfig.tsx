@@ -103,7 +103,15 @@ interface ServerForm {
   includeTools: string;
   excludeTools: string;
   debug: boolean;
+  /** Effective UI state (may come from a project-level override). */
   disabled: boolean;
+  /** The entry's own disabled flag — what "Save" writes to its own scope. */
+  scopeDisabled: boolean;
+}
+
+/** Stable key for toolMap/selection. NUL cannot appear in a server name. */
+function serverKey(scope: ConfigScope, name: string): string {
+  return `${scope}\0${name}`;
 }
 
 function emptyServerForm(scope: ConfigScope = "project"): ServerForm {
@@ -129,6 +137,7 @@ function emptyServerForm(scope: ConfigScope = "project"): ServerForm {
     excludeTools: "",
     debug: false,
     disabled: false,
+    scopeDisabled: false,
   };
 }
 
@@ -169,6 +178,7 @@ function entryToForm(name: string, scope: ConfigScope, entry: ServerEntry): Serv
     excludeTools: entry.excludeTools?.join(", ") ?? "",
     debug: entry.debug === true,
     disabled: entry.disabled === true,
+    scopeDisabled: entry.disabled === true,
   };
 }
 
@@ -220,7 +230,9 @@ function formToEntry(form: ServerForm): ServerEntry {
     .filter(Boolean);
   if (exclude.length) entry.excludeTools = exclude;
   if (form.debug) entry.debug = true;
-  if (form.disabled) entry.disabled = true;
+  // Project entries store their own disabled flag; global/quick entries must
+  // not absorb the workspace-override switch state (form.disabled).
+  if (form.scope === "project" ? form.disabled : form.scopeDisabled) entry.disabled = true;
   return entry;
 }
 
@@ -228,10 +240,12 @@ export function McpServersConfig({
   cwd,
   onClose,
   embedded = false,
+  isAdmin = false,
 }: {
   cwd: string;
   onClose: () => void;
   embedded?: boolean;
+  isAdmin?: boolean;
 }) {
   const { t } = useI18n();
   const [doc, setDoc] = useState<McpConfigDocument | null>(null);
@@ -298,7 +312,7 @@ export function McpServersConfig({
       const data = (await res.json()) as { mcp?: McpServerTools[]; error?: string };
       if (!res.ok || data.error) throw new Error(data.error ?? `HTTP ${res.status}`);
       const map = new Map<string, McpServerTools>();
-      for (const srv of data.mcp ?? []) map.set(`${srv.scope}\0${srv.server}`, srv);
+      for (const srv of data.mcp ?? []) map.set(serverKey(srv.scope, srv.server), srv);
       setToolMap(map);
     } catch {
       /* ignore */
@@ -333,15 +347,19 @@ export function McpServersConfig({
   };
 
   const selectServer = (info: McpServerInfo) => {
-    setForm(entryToForm(info.name, info.scope, info.entry));
+    const nextForm = entryToForm(info.name, info.scope, info.entry);
+    // form.disabled is the EFFECTIVE state (a project override may disable a
+    // global entry without changing its own scopeDisabled flag).
+    nextForm.disabled = info.disabled;
+    setForm(nextForm);
     setOriginalName(info.name);
     setOriginalScope(info.scope);
-    setSelectedKey(`${info.scope}\0${info.name}`);
+    setSelectedKey(serverKey(info.scope, info.name));
     setCreating(false);
     setFormError(null);
     setFormMsg(null);
     setShowAdvanced(false);
-    setExpandedServers((prev) => new Set(prev).add(`${info.scope}\0${info.name}`));
+    setExpandedServers((prev) => new Set(prev).add(serverKey(info.scope, info.name)));
   };
 
   const startCreate = () => {
@@ -383,7 +401,7 @@ export function McpServersConfig({
         setOriginalScope(form.scope);
         setFormMsg("Server created.");
         setCreating(false);
-        setSelectedKey(`${form.scope}\0${form.name.trim()}`);
+        setSelectedKey(serverKey(form.scope, form.name.trim()));
       } else {
         const res = await fetch(`/api/mcp/servers/${encodeURIComponent(originalName)}`, {
           method: "PUT",
@@ -447,7 +465,7 @@ export function McpServersConfig({
       if (targetName) {
         setToolMap((prev) => {
           const map = new Map(prev);
-          map.set(`${targetScope} ${targetName}`, {
+          map.set(serverKey(targetScope, targetName), {
             server: targetName,
             scope: targetScope,
             transport: entry.url ? "http" : "stdio",
@@ -465,10 +483,10 @@ export function McpServersConfig({
     }
   };
 
-  /** 单个服务器启用/禁用：PATCH 条目 disabled 标记，并同步已打开的表单，
-   *  避免随后的「保存」把状态又抹掉。 */
+  /** 单个服务器启用/禁用：默认写项目级覆盖（不碰全局/快速原始配置），
+   *  这样全局 MCP 可以在当前项目单独关闭；表单的 disabled 跟着有效状态走。 */
   const setServerEnabled = async (srv: McpServerInfo, enabled: boolean) => {
-    const key = `${srv.scope} ${srv.name}`;
+    const key = serverKey(srv.scope, srv.name);
     if (toggleBusy) return;
     setToggleBusy(key);
     setFormError(null);
@@ -476,7 +494,7 @@ export function McpServersConfig({
       const res = await fetch(`/api/mcp/servers/${encodeURIComponent(srv.name)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cwd, scope: srv.scope, disabled: !enabled }),
+        body: JSON.stringify({ cwd, scope: srv.scope, disabled: !enabled, target: "project" }),
       });
       const body = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok || body.error) throw new Error(body.error ?? `HTTP ${res.status}`);
@@ -490,7 +508,8 @@ export function McpServersConfig({
     }
   };
 
-  /** 分组开关：把该 scope 下所有服务器切到同一状态（已一致的不发请求）。 */
+  /** 分组开关：把该 scope 下所有服务器切到同一状态（已一致的不发请求）。
+   *  启用时跳过“自身配置已禁用”的全局/快速条目——项目覆盖无法启用它们。 */
   const setGroupEnabled = async (scope: ConfigScope, list: McpServerInfo[], enabled: boolean) => {
     if (toggleBusy) return;
     setToggleBusy(`group:${scope}`);
@@ -498,17 +517,18 @@ export function McpServersConfig({
     try {
       for (const srv of list) {
         if (Boolean(srv.disabled) === !enabled) continue;
+        if (enabled && srv.scope !== "project" && srv.scopeDisabled) continue;
         const res = await fetch(`/api/mcp/servers/${encodeURIComponent(srv.name)}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ cwd, scope: srv.scope, disabled: !enabled }),
+          body: JSON.stringify({ cwd, scope: srv.scope, disabled: !enabled, target: "project" }),
         });
         if (!res.ok) {
           const body = (await res.json().catch(() => ({}))) as { error?: string };
           throw new Error(body.error ?? `HTTP ${res.status}`);
         }
       }
-      const selectedSrv = servers.find((x) => `${x.scope} ${x.name}` === selectedKey);
+      const selectedSrv = servers.find((x) => serverKey(x.scope, x.name) === selectedKey);
       if (selectedSrv?.scope === scope) setForm((f) => ({ ...f, disabled: !enabled }));
       await loadDoc();
       void probeAll();
@@ -548,6 +568,17 @@ export function McpServersConfig({
     });
 
   const showForm = creating || selectedKey !== null;
+  const selectedSrv =
+    creating || !selectedKey ? undefined : servers.find((x) => serverKey(x.scope, x.name) === selectedKey);
+  // 全局/快速条目的原始配置仅管理员可写；普通用户仍可在当前工作区覆盖启停。
+  const scopeReadOnly = !creating && !isAdmin && (originalScope === "global" || originalScope === "quick");
+  // 全局/快速条目自身已禁用（或快速模板禁用）时，项目覆盖无法启用它。
+  const scopeEnableBlocked = Boolean(
+    selectedSrv &&
+    selectedSrv.scope !== "project" &&
+    selectedSrv.disabled &&
+    (selectedSrv.scopeDisabled || !selectedSrv.projectOverride),
+  );
   const diagnostics = doc?.diagnostics ?? [];
   const scopeGroupLabel = (scope: string) =>
     scope === "project"
@@ -719,7 +750,7 @@ export function McpServersConfig({
                     // `…\0name{srv.shadowed ? …}`, so every lookup missed and
                     // the tree always said "No tools"; the shadow marker is
                     // rendered in the label instead of the key.)
-                    const key = `${srv.scope}\0${srv.name}`;
+                    const key = serverKey(srv.scope, srv.name);
                     const isSelected = !creating && selectedKey === key;
                     const isExpanded = expandedServers.has(key);
                     const toolInfo = toolMap.get(key);
@@ -784,6 +815,11 @@ export function McpServersConfig({
                               </span>
                               {srv.disabled && (
                                 <span style={{ fontSize: 8, color: "var(--text-dim)" }}>{t("mcp.disabledTag")}</span>
+                              )}
+                              {srv.projectOverride && (
+                                <span style={{ fontSize: 8, color: "var(--warning, #f59e0b)" }}>
+                                  {t("mcp.projectOverrideTag")}
+                                </span>
                               )}
                               {srv.directToolsOn && <span style={{ fontSize: 8, color: "var(--accent)" }}>DT</span>}
                               {toolInfo?.error && <span style={{ fontSize: 8, color: "#f59e0b" }}>!</span>}
@@ -879,20 +915,30 @@ export function McpServersConfig({
                         >
                           {probeState.status === "running" ? t("mcp.testing") : t("mcp.testConnection")}
                         </ConfigButton>
-                        <ConfigButton variant="danger" size="small" onClick={remove} disabled={saving}>
+                        <ConfigButton variant="danger" size="small" onClick={remove} disabled={saving || scopeReadOnly}>
                           {t("common.delete")}
                         </ConfigButton>
                         <span style={{ fontSize: 10, color: "var(--text-dim)" }}>
                           {form.disabled ? t("mcp.disabledTag") : t("mcp.enabledTag")}
                         </span>
+                        {selectedSrv?.projectOverride && (
+                          <span style={{ fontSize: 9, color: "var(--warning, #f59e0b)" }}>
+                            {t("mcp.projectOverrideTag")}
+                          </span>
+                        )}
                         <ConfigSwitch
                           checked={!form.disabled}
                           loading={toggleBusy === selectedKey}
-                          disabled={toggleBusy !== null || saving}
-                          label={form.disabled ? t("mcp.enableServer") : t("mcp.disableServer")}
+                          disabled={toggleBusy !== null || saving || scopeEnableBlocked}
+                          label={
+                            scopeEnableBlocked
+                              ? t("mcp.scopeDisabledLocked")
+                              : form.disabled
+                                ? t("mcp.enableServer")
+                                : t("mcp.disableServer")
+                          }
                           onChange={(enabled) => {
-                            const srv = servers.find((x) => `${x.scope} ${x.name}` === selectedKey);
-                            if (srv) void setServerEnabled(srv, enabled);
+                            if (selectedSrv) void setServerEnabled(selectedSrv, enabled);
                           }}
                         />
                       </>
@@ -943,6 +989,30 @@ export function McpServersConfig({
                   </div>
                 )}
 
+                {/* 管理员：编辑全局/快速条目自身的 disabled（保存时写入原始配置）。
+                    普通用户上面的开关只写项目级覆盖，不影响其他项目。 */}
+                {isAdmin && !creating && (originalScope === "global" || originalScope === "quick") && (
+                  <label
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      fontSize: 11,
+                      color: "var(--text-dim)",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={form.scopeDisabled}
+                      onChange={(e) => set("scopeDisabled", e.target.checked)}
+                      style={{ accentColor: "var(--accent)" }}
+                    />
+                    <span>
+                      {originalScope === "global" ? t("mcp.scopeDisabledGlobal") : t("mcp.scopeDisabledQuick")}
+                    </span>
+                  </label>
+                )}
+
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                   <div style={{ flex: "1 1 140px" }}>
                     <ConfigField label="Name">
@@ -964,8 +1034,12 @@ export function McpServersConfig({
                         onChange={(e) => set("scope", e.target.value as ConfigScope)}
                       >
                         <option value="project">project</option>
-                        <option value="quick">quick（仅快速会话）</option>
-                        <option value="global">global</option>
+                        <option value="quick" disabled={!isAdmin}>
+                          quick（仅快速会话）
+                        </option>
+                        <option value="global" disabled={!isAdmin}>
+                          global
+                        </option>
                       </select>
                     </ConfigField>
                   </div>
@@ -1171,6 +1245,9 @@ export function McpServersConfig({
           <>
             {formError && <span style={{ color: "#ef4444" }}>{formError}</span>}
             {formMsg && !formError && <span style={{ color: "var(--accent)" }}>{formMsg}</span>}
+            {scopeReadOnly && !formError && !formMsg && (
+              <span style={{ color: "var(--text-dim)" }}>{t("mcp.adminOnlyScopeHint")}</span>
+            )}
           </>
         }
       >
@@ -1182,7 +1259,7 @@ export function McpServersConfig({
             >
               {probeState.status === "running" ? t("mcp.testing") : t("mcp.testConnection")}
             </ConfigButton>
-            <ConfigButton variant="primary" onClick={save} disabled={saving}>
+            <ConfigButton variant="primary" onClick={save} disabled={saving || scopeReadOnly}>
               {saving ? t("common.saving") : creating ? t("common.create") : t("common.save")}
             </ConfigButton>
           </>

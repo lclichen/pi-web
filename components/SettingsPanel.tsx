@@ -750,7 +750,8 @@ export function SettingsPanel({
           {sectionHost("models", <ModelsConfig embedded onClose={onClose} />)}
           {cwd && sectionHost("skills", <SkillsConfig embedded key={cwd} cwd={cwd} onClose={onClose} />)}
           {cwd && sectionHost("agents", <SubagentsConfig embedded key={cwd} cwd={cwd} onClose={onClose} />)}
-          {cwd && sectionHost("mcp", <McpServersConfig embedded key={cwd} cwd={cwd} onClose={onClose} />)}
+          {cwd &&
+            sectionHost("mcp", <McpServersConfig embedded key={cwd} cwd={cwd} onClose={onClose} isAdmin={isAdmin} />)}
           {cwd && sectionHost("policy", <PolicyConfig embedded key={cwd} cwd={cwd} />)}
           {isAdmin && sectionHost("quick-templates", <QuickTemplatesConfig embedded />)}
           {isAdmin && sectionHost("bundles", <BundlesConfig embedded />)}

@@ -56,19 +56,21 @@ host 身份，链接无需 Cookie 即可访问——但多用户教学模式不�
 POST /api/share                     （登录态 + isApiRequestAllowed）
   { path: "/abs/path" , srcSession?: "<sid>", ttlMinutes?: 30,
     maxDownloads?: 10, oneTime?: false }
-→ { url: "http://<host>/api/share/<token>", expiresAt, downloads: 0 }
+→ { url: "https://<public-base>/api/share/<token>", expiresAt,
+    downloads: 0, maxDownloads, path, kind }
 
 GET  /api/share/<token>             （无 Cookie —— token 即凭证）
-→ 原始字节 + Content-Type/Length（复用 /api/files 的 streamFile 与
-  remotefs 的 remoteReadBinary；文本走 download 语义）
-  失败：410 过期 / 404 不存在 / 429 超次数 / 502 远端离线
+→ 原始字节 + Content-Type/Length（复用 /api/files 的 streamLocalFile，
+  Range 返回 206；快照分享复用 sliceByteRange）
+  失败：404 不存在 / 410 过期或次数用尽 / 416 Range
 
 DELETE /api/share/<token>           （创建者或管理员；提前撤销）
+GET /api/share                      （审计列表：本人；管理员看全部）
 ```
 
-`srcSession` 缺省 = Host 文件（/api/files 语义）；带上 = 远程会话文件
-（/api/remotefs 语义）。**一个 token 只绑定一个文件**，不继承用户身份、
-不能列目录。
+`srcSession` 缺省 = Host 文件（活引用，GET 时重新读取并复核授权根目录）；
+带上 = 远程会话文件（**创建时快照**，见 3.2-8）。**一个 token 只绑定一个
+文件**，不继承用户身份、不能列目录。
 
 ### 3.2 安全要求（硬性）
 
@@ -80,12 +82,16 @@ DELETE /api/share/<token>           （创建者或管理员；提前撤销）
    （沿用 operation_logs 思路）。
 5. **响应头**：`Cache-Control: no-store`、`Referrer-Policy: no-referrer`
    （防止 token 经 Referer 泄给第三方）；GET 无副作用 ⇒ 无 CSRF 面。
-6. **限额**：单文件大小上限（建议 100MB，媒体预览的 10MB 上限不适用于此）、
-   创建频率限流（复用 rate-limit 基建）。
+6. **限额**：单文件 100MB（`PI_WEB_SHARE_MAX_BYTES` 可调）、每用户 30 次/
+   小时、50 个活跃分享；TTL 默认 30 分钟（上限 1440），下载默认 10 次
+   （上限 100）。
 7. **URL 进日志的自觉**：MCP 服务端/代理日志会留下完整 URL；靠短 TTL 与
    可撤销兜底，文档明示。
-8. **远程文件的生命周期**：token 存活期 ≠ 容器存活期；容器销毁后读取 502，
-   响应里提示"远端已离线"。
+8. **远程文件的生命周期（实现偏差）**：远程模式在**创建时快照**字节（走
+   `remoteReadBinary` 同一通道），GET 不再持有容器/agent 凭据。好处是容器
+   或 agent 离线后链接仍可用，也避免把远程读取权限摊到 token 上；代价是
+   分享内容不随源文件后续修改而更新。Host 模式仍是活引用：GET 时重新
+   stat/读取，并按创建时记录的授权根目录复核（文件移出/删除 → 410）。
 
 ### 3.3 明确不做
 
@@ -113,15 +119,24 @@ MCP 服务端 GET /api/share/<token>（无 Cookie）
 
 | 模式 | share 绑定 | GET 取数路径 |
 |---|---|---|
-| host | 服务器路径（会话 cwd 栅栏） | 本地 fs 直读 |
-| sandbox | (srcSession, path) | 容器在线时经平台 tools/read 代理 |
-| local-machine | (srcSession, path) | agent 在线时经 relay 代理 |
-| ssh | (srcSession, path) | SSH 在线时经 sftp 代理 |
+| host | 服务器路径（会话 cwd 栅栏，活引用） | 本地 fs 直读 + 授权根复核 |
+| sandbox | 创建时快照（容器需在线） | store 里的快照文件 |
+| local-machine | 创建时快照（agent 需在线） | store 里的快照文件 |
+| ssh | 创建时快照（SSH 需在线） | store 里的快照文件 |
 
-审计记录 ownerId + sessionId；限流按会话计。`POST /api/share` 保留给 WebUI
-（文件面板"生成分享链接"），与工具共用同一个 store。
+审计记录 ownerId + sessionId；限流按用户计。`POST /api/share` 保留给 WebUI
+（文件面板"生成分享链接"），与工具共用同一个 store。快照落盘为
+`<dataDir>/share-files/<tokenHash>.bin`（0600），撤销/过期即删。
 
-### 3.5 落点与工作量预估
+### 3.5 对外地址（跨设备访问）
+
+链接前缀的优先级：管理员「设置 → 全局配置 → 对外访问地址」> 部署环境变量
+`PI_WEB_PUBLIC_URL` > 按请求 `Host`/`X-Forwarded-*` 推断。WebUI 与
+`share_file` 共用同一个值；改完立即生效，Agent 下一次调用 `share_file` 就
+拿到新前缀。经反向代理或需要其他设备访问时务必显式配置，否则会自动生成
+`127.0.0.1:30141` 或容器内主机名，MCP 服务端无法访问。
+
+### 3.6 落点与工作量预估
 
 | 项 | 位置 | 量级 |
 |---|---|---|
@@ -131,6 +146,10 @@ MCP 服务端 GET /api/share/<token>（无 Cookie）
 | `share_file` 内联扩展（Agent 调用面） | `lib/extensions/share.ts` | ~80 行 |
 | Agent 侧引导 | agent-packaging 技能/mcp.json 说明：传文件优先 `file_url` 参数，勿塞 base64 | 文档 |
 | 测试 | token 生命周期/限额/审计/远程离线/工具四模式 | ~150 行 |
+
+> 状态（2026-11-02）：以上全部落地——`lib/share-store.ts`、`lib/file-serve.ts`、
+> `app/api/share/{route,[token]/route}.ts`、`lib/extensions/share.ts` 及三组
+> 测试（16 例）通过；对外地址由管理员「全局配置」页设置。
 
 ## 四、过渡方案（今天就能用，但不推荐长期）
 

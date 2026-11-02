@@ -10,7 +10,7 @@ export const SETTINGS_SECTION_VALUES = [
   "policy",
   "quick-templates",
   "bundles",
-  "upload-limits",
+  "global-config",
 ] as const;
 
 export type SettingsSection = (typeof SETTINGS_SECTION_VALUES)[number];
@@ -18,6 +18,11 @@ export type SettingsDetailSection = Exclude<SettingsSection, "general">;
 
 const STORAGE_KEY = "pi-web:settings-navigation";
 const PROJECT_SECTIONS = new Set<SettingsSection>(["skills", "agents", "mcp", "plugins", "policy"]);
+
+/** 旧分区 id → 新 id（localStorage 恢复跨版本兼容）。 */
+const LEGACY_SECTIONS: Record<string, SettingsSection> = {
+  "upload-limits": "global-config",
+};
 
 interface StorageLike {
   getItem(key: string): string | null;
@@ -72,7 +77,8 @@ export function getLastSettingsSection(
 ): SettingsSection {
   if (!storage) return "general";
   try {
-    const section = readState(storage).section;
+    const rawSection = readState(storage).section;
+    const section = rawSection ? (LEGACY_SECTIONS[rawSection] ?? rawSection) : undefined;
     if (!isSettingsSection(section)) return "general";
     return PROJECT_SECTIONS.has(section) && !cwd ? "general" : section;
   } catch {

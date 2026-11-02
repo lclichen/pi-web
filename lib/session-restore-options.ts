@@ -14,6 +14,8 @@ import { makeEnvironmentInfoExtension } from "./extensions/environment-info";
 import { makeSshToolsExtension } from "./extensions/ssh-tools";
 import { makeSandboxToolsExtension } from "./extensions/sandbox-tools";
 import { makeBgTasksExtension } from "./extensions/bg-tasks";
+import { makeShareFileExtension } from "./extensions/share";
+import type { RemoteSessionContext } from "./remote-session";
 import { registerBgChannel, registerBgSessionMode } from "./extensions/bg-shell";
 import { makeRelayBgChannel, makeSandboxBgChannel, makeSshBgChannel } from "./extensions/bg-channels";
 import { readSshConfig } from "./ssh";
@@ -49,6 +51,8 @@ export async function restoreSessionOptions(req: Request, sessionId: string): Pr
     { systemPrompt?: string; model?: { provider: string; modelId: string }; mcpServers?: string[] } | undefined;
   let extensionFactories: InlineExtension[] | undefined;
   let effectiveCwd: string | undefined;
+  // share_file 工具的远程读取上下文（三种远程模式各分支赋值；host 留空）。
+  let shareRemote: RemoteSessionContext | undefined;
 
   // Mode marker for the bg-shell extension: remote modes must never fall back
   // to a local spawn on the Host when the channel is missing/unbuildable.
@@ -102,6 +106,13 @@ export async function restoreSessionOptions(req: Request, sessionId: string): Pr
               },
             },
       );
+      shareRemote = {
+        mode: "sandbox",
+        userId: meta?.ownerId ?? user.id,
+        apiKey,
+        containerId: project?.containerId ?? 0,
+        isAdmin: user.role === "admin",
+      };
     }
   } else if (mode === "local-machine") {
     // Always inject the relay tool layer — even when the client is offline or
@@ -132,6 +143,15 @@ export async function restoreSessionOptions(req: Request, sessionId: string): Pr
       sessionId,
       makeRelayBgChannel(meta?.ownerId ?? user.id, project?.machineId ?? undefined, project?.workdir),
     );
+    shareRemote = {
+      mode: "local-machine",
+      userId: meta?.ownerId ?? user.id,
+      apiKey: "",
+      containerId: 0,
+      ...(project?.machineId ? { machineId: project.machineId } : {}),
+      ...(project?.workdir ? { workdir: project.workdir } : {}),
+      isAdmin: user.role === "admin",
+    };
   } else if (mode === "ssh") {
     // SSH mode: the SDK session runs server-side in the project home; the
     // ssh-tools extension routes the seven coding tools to the remote host.
@@ -156,6 +176,16 @@ export async function restoreSessionOptions(req: Request, sessionId: string): Pr
         // bg-shell channel: tasks run on the remote host via the pooled
         // client (nohup pattern), same connection the ssh-tools use.
         registerBgChannel(sessionId, makeSshBgChannel(project.id, sshConfig, project.workdir ?? "/"));
+        shareRemote = {
+          mode: "ssh",
+          userId: meta?.ownerId ?? user.id,
+          apiKey: "",
+          containerId: 0,
+          projectId: project.id,
+          sshConfig,
+          workdir: project.workdir ?? "/",
+          isAdmin: user.role === "admin",
+        };
       }
     }
   } else if (mode === "quick") {
@@ -196,7 +226,22 @@ export async function restoreSessionOptions(req: Request, sessionId: string): Pr
     // They must NOT also be injected as inline factories: tools dedupe by
     // "last registration wins" while both copies' event handlers would run.
     // Only server-coupled extensions stay inline here.
-    extensionFactories: [makeBgTasksExtension(), ...(extensionFactories ?? [])],
+    extensionFactories: [
+      makeBgTasksExtension(),
+      // share_file：所有模式可用（quick 除外——无工作区可分享）。
+      ...(mode !== "quick"
+        ? [
+            makeShareFileExtension({
+              ownerId: meta?.ownerId ?? user.id,
+              ownerName: identity.session.user.username,
+              mode: mode === "host" ? "host" : mode,
+              cwd: effectiveCwd ?? "/",
+              ...(shareRemote ? { remote: shareRemote } : {}),
+            }),
+          ]
+        : []),
+      ...(extensionFactories ?? []),
+    ],
     ...(ownerId !== 0 ? { ownerId } : {}),
     mode,
     ...(mode === "quick" ? { quick: quickForRestore ?? {} } : {}),

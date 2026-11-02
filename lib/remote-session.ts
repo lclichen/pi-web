@@ -25,8 +25,9 @@ import type { SessionMode } from "./session-modes";
 export interface RemoteSessionContext {
   mode: SessionMode;
   userId: number;
+  /** Sandbox mode: the platform API key (other modes pass ""). */
   apiKey: string;
-  /** Sandbox mode: the container tools should target. */
+  /** Sandbox mode: the container tools should target (0 = none yet). */
   containerId: number;
   isAdmin: boolean;
   /** SSH mode: owning project id. */

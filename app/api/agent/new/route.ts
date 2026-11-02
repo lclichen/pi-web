@@ -8,6 +8,8 @@ import { makeSshToolsExtension } from "@/lib/extensions/ssh-tools";
 import { makeSandboxBgChannel, makeRelayBgChannel, makeSshBgChannel } from "@/lib/extensions/bg-channels";
 import type { BgExecChannel } from "@/lib/extensions/bg-shell";
 import { makeBgTasksExtension } from "@/lib/extensions/bg-tasks";
+import { makeShareFileExtension } from "@/lib/extensions/share";
+import type { RemoteSessionContext } from "@/lib/remote-session";
 import { resolveCoreExtensionPaths } from "@/lib/session-restore-options";
 import { getQuickTemplate, DEFAULT_TEMPLATE_ID } from "@/lib/quick-templates";
 import { readSshConfig } from "@/lib/ssh";
@@ -114,6 +116,8 @@ export async function POST(req: Request) {
     // SDK's real session id inside startRpcSession; without it (and with the
     // session marked remote) bg_run fails loudly instead of running on the Host.
     let bgChannel: BgExecChannel | undefined;
+    // share_file 工具的远程读取上下文（与 bgChannel 同源的模式参数）。
+    let shareRemote: RemoteSessionContext | undefined;
     let sessionDir: string | undefined;
     // 工作区目录（lib/session-context.ts 契约）：提示词告知模型用；绝不
     // 作为会话 cwd。
@@ -166,6 +170,13 @@ export async function POST(req: Request) {
         }
         if (projectContainerId) {
           bgChannel = makeSandboxBgChannel(identity.session.apiKey, projectContainerId);
+          shareRemote = {
+            mode: "sandbox",
+            userId: user.id,
+            apiKey: identity.session.apiKey,
+            containerId: projectContainerId,
+            isAdmin: user.role === "admin",
+          };
         }
         extensionFactories = [
           // Container tool routing: amedac-core sandbox module, inline
@@ -205,6 +216,16 @@ export async function POST(req: Request) {
           }),
         ];
         bgChannel = makeSshBgChannel(project.id, sshConfig, project.workdir ?? "/");
+        shareRemote = {
+          mode: "ssh",
+          userId: user.id,
+          apiKey: "",
+          containerId: 0,
+          projectId: project.id,
+          sshConfig,
+          workdir: project.workdir ?? "/",
+          isAdmin: user.role === "admin",
+        };
       } else {
         const gate = requireCompatibleAgent(user.id, project.machineId);
         if (!gate.ok) {
@@ -225,6 +246,15 @@ export async function POST(req: Request) {
           }),
         ];
         bgChannel = makeRelayBgChannel(user.id, project.machineId ?? undefined, project.workdir);
+        shareRemote = {
+          mode: "local-machine",
+          userId: user.id,
+          apiKey: "",
+          containerId: 0,
+          ...(project.machineId ? { machineId: project.machineId } : {}),
+          ...(project.workdir ? { workdir: project.workdir } : {}),
+          isAdmin: user.role === "admin",
+        };
       }
       // 目录契约（lib/session-context.ts）：SDK 会话 cwd 一律 = 服务器侧
       // 项目目录（projectDir）。project.workdir 是工作区路径（用户机器/
@@ -264,6 +294,13 @@ export async function POST(req: Request) {
       {
         const containerId = Number(readSandboxHomeConfig(user.id).containerId) || 0;
         if (containerId) bgChannel = makeSandboxBgChannel(identity.session.apiKey, containerId);
+        shareRemote = {
+          mode: "sandbox",
+          userId: user.id,
+          apiKey: identity.session.apiKey ?? "",
+          containerId,
+          isAdmin: user.role === "admin",
+        };
       }
     } else if (mode === "local-machine") {
       if (user.id !== 0) {
@@ -277,6 +314,13 @@ export async function POST(req: Request) {
         makeEnvironmentInfoExtension({ mode: "local-machine", username: user.username }),
       ];
       bgChannel = makeRelayBgChannel(user.id);
+      shareRemote = {
+        mode: "local-machine",
+        userId: user.id,
+        apiKey: "",
+        containerId: 0,
+        isAdmin: user.role === "admin",
+      };
     } else {
       // Host mode keeps the caller-supplied server directory.
       if (mode !== "quick" && (!effectiveCwd || !existsSync(effectiveCwd))) {
@@ -368,7 +412,22 @@ export async function POST(req: Request) {
       // dir's amedac-core package (single source of truth with the CLI
       // distribution); restoreSessionOptions adds a source-layout fallback.
       // Only server-coupled extensions inject inline here.
-      extensionFactories: [makeBgTasksExtension(), ...(extensionFactories ?? [])],
+      extensionFactories: [
+        makeBgTasksExtension(),
+        // share_file：所有模式可用（quick 除外——无工作区可分享）。
+        ...(mode !== "quick"
+          ? [
+              makeShareFileExtension({
+                ownerId: user.id,
+                ownerName: user.username,
+                mode: mode === "host" ? "host" : mode,
+                cwd: effectiveCwd ?? "/",
+                ...(shareRemote ? { remote: shareRemote } : {}),
+              }),
+            ]
+          : []),
+        ...(extensionFactories ?? []),
+      ],
       ...(coreExtensionPaths ? { additionalExtensionPaths: coreExtensionPaths } : {}),
       ...(projectRef ? { projectCredentialDir: effectiveCwd } : {}),
     });

@@ -27,15 +27,23 @@ export async function PATCH(req: Request) {
   if (identity.session.user.role !== "admin") {
     return NextResponse.json({ error: "服务器设置仅管理员可修改" }, { status: 403 });
   }
-  let body: { labTraining?: unknown; skillhubUrl?: unknown; bundleUploadMaxMb?: unknown };
+  let body: { labTraining?: unknown; skillhubUrl?: unknown; bundleUploadMaxMb?: unknown; publicBaseUrl?: unknown };
   try {
     body = (await req.json()) as typeof body;
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
-  const patch: { labTraining?: boolean; skillhubUrl?: string; bundleUploadMaxMb?: number | null } = {};
+  const patch: {
+    labTraining?: boolean;
+    skillhubUrl?: string;
+    bundleUploadMaxMb?: number | null;
+    publicBaseUrl?: string;
+  } = {};
   if (typeof body.labTraining === "boolean") patch.labTraining = body.labTraining;
   if (typeof body.skillhubUrl === "string") patch.skillhubUrl = body.skillhubUrl;
+  // null 清除覆盖（回到请求 Host 自动推断）；字符串由 update 侧校验。
+  if (typeof body.publicBaseUrl === "string") patch.publicBaseUrl = body.publicBaseUrl;
+  else if (body.publicBaseUrl === null) patch.publicBaseUrl = "";
   // null 清除覆盖（回到默认上限）；数字/数字字符串由 update 侧校验。
   if (body.bundleUploadMaxMb === null) patch.bundleUploadMaxMb = null;
   else if (typeof body.bundleUploadMaxMb === "number" || typeof body.bundleUploadMaxMb === "string") {

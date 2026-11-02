@@ -152,6 +152,16 @@ test("uses top navigation on desktop and one compact section picker on mobile", 
   assert.doesNotMatch(panelSource, /style=\{\{/);
 });
 
+test("keeps tabs labeled on desktop and only folds to icons on severe overflow", () => {
+  // 管理员 12 个分区在 1200px 面板内一行放得下；轻微溢出（英文长标签）
+  // 保留文字 + 横向滚动，只有严重放不下才切图标。
+  assert.match(cssSource, /\.settings-dialog-surface \{[\s\S]*?width: 1200px/);
+  assert.match(panelSource, /COMPACT_OVERFLOW_PX = 160/);
+  assert.match(panelSource, /overflow > COMPACT_OVERFLOW_PX/);
+  assert.match(panelSource, /id: "global-config"/);
+  assert.match(panelSource, /<AdminGlobalConfig/);
+});
+
 test("guards closing against unsaved section drafts", () => {
   assert.match(panelSource, /isAnySettingsDirty\(\)/);
   assert.match(panelSource, /isConfirmDialogOpen\(\)/);

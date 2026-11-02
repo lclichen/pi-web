@@ -773,7 +773,9 @@
 .settings-dialog-surface {
   display: flex;
   flex-direction: column;
-  width: 1080px;
+  /* 12 个分区（管理员含全局配置）在 1200px 下一行放得下，不再一开面板
+     就折叠成纯图标；再窄的窗口由标签条横向滚动兜底。 */
+  width: 1200px;
   max-width: calc(100vw - 16px);
   height: 84vh;
   max-height: calc(100dvh - 16px);

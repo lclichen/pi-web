@@ -25,7 +25,7 @@ import { McpServersConfig } from "./McpServersConfig";
 import { QuickTemplatesConfig } from "./QuickTemplatesConfig";
 import { PolicyConfig } from "./PolicyConfig";
 import { BundlesConfig } from "./BundlesConfig";
-import { UploadLimitsConfig } from "./UploadLimitsConfig";
+import { AdminGlobalConfig } from "./AdminGlobalConfig";
 import { SubagentsConfig } from "./SubagentsConfig";
 import { ConfigButton, ConfigSwitch } from "./SettingsUi";
 import { UpdateCard } from "./UpdateCard";
@@ -97,12 +97,11 @@ export function SettingsSectionIcon({
         <line x1="12" y1="15" x2="12" y2="3" />
       </svg>
     );
-  if (section === "upload-limits")
+  if (section === "global-config")
     return (
       <svg {...common}>
-        <path d="M12 16V4" />
-        <path d="m7 9 5-5 5 5" />
-        <path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" />
+        <circle cx="12" cy="12" r="9" />
+        <path d="M3 12h18M12 3c2.5 2.5 4 5.6 4 9s-1.5 6.5-4 9c-2.5-2.5-4-5.6-4-9s1.5-6.5 4-9Z" />
       </svg>
     );
   if (section === "quick-templates")
@@ -571,8 +570,8 @@ export function SettingsPanel({
           },
           { id: "bundles" as const, label: t("bundles.agentsAdmin"), requiresProject: false, group: "admin" as const },
           {
-            id: "upload-limits" as const,
-            label: t("settings.uploadLimits"),
+            id: "global-config" as const,
+            label: t("settings.globalConfig"),
             requiresProject: false,
             group: "admin" as const,
           },
@@ -620,7 +619,7 @@ export function SettingsPanel({
   // 恢复的上次分区是管理员专属而当前用户不是管理员（同源 localStorage 在
   // 多用户间共享）→ 面板会渲染成空白，重置到通用分区。
   useEffect(() => {
-    if (isAdmin || (section !== "quick-templates" && section !== "bundles")) return;
+    if (isAdmin || (section !== "quick-templates" && section !== "bundles" && section !== "global-config")) return;
     setSection("general");
     setMountedSections((current) => new Set(current).add("general"));
     setLastSettingsSection("general");
@@ -638,18 +637,21 @@ export function SettingsPanel({
     });
   };
 
-  // tab 条可滚动时在两侧显示渐隐提示（can-scroll-left/right 类）；整体
-  // 放不下时收起文字仅留图标（is-compact），避免末尾分区被静默裁掉。
+  // tab 条可滚动时在两侧显示渐隐提示（can-scroll-left/right 类）；严重溢出
+  // 时收起文字仅留图标（is-compact），避免末尾分区被静默裁掉。轻微溢出
+  // （例如英文长标签）保留文字 + 横向滚动：一开面板就全变图标反而更难认。
   // 紧凑判定按"带文字的自然宽度"测量：临时摘类→量→再决定，同帧完成
   // 不会产生可见抖动。
   useEffect(() => {
     const wrapper = tabsScrollboxRef.current;
     const scroller = wrapper?.querySelector<HTMLElement>(".settings-section-tabs");
     if (!wrapper || !scroller) return;
+    // 标签条自然宽度超出可视宽 160px 以内：保留文字，允许横向滚动。
+    const COMPACT_OVERFLOW_PX = 160;
     const update = () => {
       if (scroller.classList.contains("is-compact")) scroller.classList.remove("is-compact");
       const overflow = scroller.scrollWidth - scroller.clientWidth;
-      scroller.classList.toggle("is-compact", overflow > 1);
+      scroller.classList.toggle("is-compact", overflow > COMPACT_OVERFLOW_PX);
       wrapper.classList.toggle("can-scroll-left", scroller.scrollLeft > 4);
       wrapper.classList.toggle(
         "can-scroll-right",
@@ -752,7 +754,7 @@ export function SettingsPanel({
           {cwd && sectionHost("policy", <PolicyConfig embedded key={cwd} cwd={cwd} />)}
           {isAdmin && sectionHost("quick-templates", <QuickTemplatesConfig embedded />)}
           {isAdmin && sectionHost("bundles", <BundlesConfig embedded />)}
-          {isAdmin && sectionHost("upload-limits", <UploadLimitsConfig />)}
+          {isAdmin && sectionHost("global-config", <AdminGlobalConfig />)}
           {cwd &&
             sectionHost(
               "plugins",

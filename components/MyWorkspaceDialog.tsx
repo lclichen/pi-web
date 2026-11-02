@@ -301,7 +301,7 @@ export function MyWorkspaceDialog({ onClose }: Props) {
         </div>
 
         <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 8 }}>
-          单文件上限 {limitBytes ? `${Math.round(limitBytes / 1024 / 1024)}MB` : "200MB"}（管理员可在 设置 → 上传限制
+          单文件上限 {limitBytes ? `${Math.round(limitBytes / 1024 / 1024)}MB` : "200MB"}（管理员可在 设置 → 全局配置
           中调整）；项目菜单「导出到工作区」可把容器 /workspace 打包保存到这里。
         </div>
       </div>

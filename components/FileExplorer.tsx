@@ -902,6 +902,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
   const [dragOverDir, setDragOverDir] = useState<string | null>(null);
   const [highlightedPaths, setHighlightedPaths] = useState<Set<string>>(new Set());
   const [gitFiles, setGitFiles] = useState<GitFileStatus[]>([]);
+  const [gitView, setGitView] = useState<"list" | "tree">("list");
   const [gitLineStats, setGitLineStats] = useState({ additions: 0, deletions: 0 });
   const [uploadPhase, setUploadPhase] = useState<UploadPhase>("idle");
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -1046,6 +1047,15 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
     () => new Map(gitFiles.map((status) => [normalizeFilePathSlashes(status.filePath), status])),
     [gitFiles],
   );
+
+  const gitChangeGroups = useMemo(() => {
+    const groups = new Map<string, GitFileStatus[]>();
+    for (const status of gitFiles) {
+      const directory = getFileDirectory(normalizeFilePathSlashes(status.filePath)) || ".";
+      groups.set(directory, [...(groups.get(directory) ?? []), status]);
+    }
+    return [...groups.entries()].sort(([left], [right]) => left.localeCompare(right));
+  }, [gitFiles]);
 
   const changedDirectoryPaths = useMemo(() => {
     const directories = new Set<string>();
@@ -1943,17 +1953,69 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
             <span style={{ color: GIT_STATUS_COLORS.deleted, fontFamily: "var(--font-mono)" }}>
               -{gitLineStats.deletions}
             </span>
+            <span style={{ marginLeft: "auto", display: "flex", gap: 2 }}>
+              {(["list", "tree"] as const).map((view) => (
+                <button
+                  key={view}
+                  type="button"
+                  onClick={() => setGitView(view)}
+                  title={t(view === "list" ? "files.gitViewList" : "files.gitViewTree")}
+                  aria-pressed={gitView === view}
+                  style={{
+                    border: "1px solid var(--border)",
+                    borderRadius: 4,
+                    background: gitView === view ? "var(--bg-selected)" : "transparent",
+                    color: gitView === view ? "var(--text)" : "var(--text-dim)",
+                    cursor: "pointer",
+                    fontSize: 10,
+                    padding: "0 5px",
+                    lineHeight: "16px",
+                  }}
+                >
+                  {view === "list" ? "☰" : "▤"}
+                </button>
+              ))}
+            </span>
           </div>
-          {gitFiles.map((status) => (
-            <ChangeRow
-              key={status.filePath}
-              status={status}
-              cwd={cwd}
-              onOpenFile={onOpenFile}
-              onAtMention={onAtMention}
-              t={t}
-            />
-          ))}
+          {gitView === "list"
+            ? gitFiles.map((status) => (
+                <ChangeRow
+                  key={status.filePath}
+                  status={status}
+                  cwd={cwd}
+                  onOpenFile={onOpenFile}
+                  onAtMention={onAtMention}
+                  t={t}
+                />
+              ))
+            : gitChangeGroups.map(([directory, statuses]) => (
+                <div key={directory}>
+                  <div
+                    style={{
+                      padding: "3px 10px",
+                      fontSize: 10,
+                      color: "var(--text-dim)",
+                      fontFamily: "var(--font-mono)",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                    title={directory}
+                  >
+                    {directory}
+                  </div>
+                  {statuses.map((status) => (
+                    <ChangeRow
+                      key={status.filePath}
+                      status={status}
+                      cwd={cwd}
+                      onOpenFile={onOpenFile}
+                      onAtMention={onAtMention}
+                      t={t}
+                    />
+                  ))}
+                </div>
+              ))}
         </div>
       )}
 

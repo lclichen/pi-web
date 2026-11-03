@@ -12,6 +12,8 @@ import {
 } from "@/lib/markdown";
 import { ImagePreview } from "./ImagePreview";
 import { MermaidBlock, CodeBlock } from "./MermaidBlock";
+import { SvgBlock } from "./SvgBlock";
+import { MathBlock } from "./MathBlock";
 
 const MarkdownLinkContext = createContext(false);
 
@@ -66,6 +68,9 @@ export function MarkdownBody({ children, className, isStreaming, cwd, onOpenFile
           if (lang === "mermaid") {
             return <MermaidBlock code={raw.replace(/\n$/, "")} isStreaming={isStreaming} defaultPreview />;
           }
+          if (lang === "svg") {
+            return <SvgBlock code={raw.replace(/\n$/, "")} isStreaming={isStreaming} />;
+          }
           return <CodeBlock code={raw.replace(/\n$/, "")} lang={lang} isStreaming={isStreaming} />;
         }
         return (
@@ -76,6 +81,17 @@ export function MarkdownBody({ children, className, isStreaming, cwd, onOpenFile
       },
       pre({ children }) {
         return <>{children}</>;
+      },
+      span({ className, children, ...props }) {
+        delete props.node;
+        if (className?.includes("katex-display")) {
+          return <MathBlock className={className}>{children}</MathBlock>;
+        }
+        return (
+          <span className={className} {...props}>
+            {children}
+          </span>
+        );
       },
       a({ href, children, ...props }) {
         // `node` is react-markdown metadata, not a DOM attribute.

@@ -20,6 +20,7 @@ import { skillExpansionToCommand } from "@/lib/slash-display";
 import { getProjectActivity, getRecentProjects, sessionsForProject } from "@/lib/project-groups";
 import { workspaceKeyOf } from "@/lib/workspace-memory";
 import { hostDirLabel } from "@/lib/host-groups";
+import { applyFaviconBadge } from "@/lib/favicon-badge";
 import { formatRelativeTime } from "@/lib/i18n/format";
 import { useI18n } from "@/hooks/useI18n";
 import { useResizablePanel } from "@/hooks/useResizablePanel";
@@ -744,6 +745,11 @@ export function SessionSidebar({
   useEffect(() => {
     saveUnreadSessionIds(unreadSessionIds);
   }, [unreadSessionIds]);
+
+  // Background tabs otherwise show nothing once the completion chime fades.
+  useEffect(() => {
+    applyFaviconBadge({ unread: unreadSessionIds.size, running: runningSessionIds.size });
+  }, [unreadSessionIds, runningSessionIds]);
 
   useEffect(() => {
     let stopped = false;

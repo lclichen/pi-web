@@ -54,6 +54,7 @@ test("lightweight source rows are skipped for highlighted, diff, and preview vie
             "language",
             "isHtml",
             "isMarkdown",
+            "isCsv",
             "hasPreview",
             "effectiveDisplayMode",
             "useLightweightSource",
@@ -80,7 +81,7 @@ test("lightweight source rows are skipped for highlighted, diff, and preview vie
   assert.equal(render({ ...large, content: "line\n".repeat(999) }, "source"), null);
   assert.equal(render(large, "diff", true), null);
   assert.equal(render(large, "source", true, true), null);
-  for (const language of ["html", "markdown"]) {
+  for (const language of ["html", "markdown", "csv", "tsv"]) {
     assert.equal(render({ ...large, language }, "preview"), null);
   }
   for (const mode of ["source", "diff", "preview"]) {

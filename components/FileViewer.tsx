@@ -84,6 +84,53 @@ interface FileData {
   truncated: boolean;
 }
 
+/** RFC-4180-ish CSV/TSV parser (quoted fields, escaped quotes, CRLF). */
+function parseDelimitedTable(text: string, delimiter: string, maxRows = 2_000, maxCols = 100): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let field = "";
+  let quoted = false;
+
+  const pushField = () => {
+    if (row.length < maxCols) row.push(field);
+    field = "";
+  };
+  const pushRow = () => {
+    pushField();
+    if (row.length > 0) rows.push(row);
+    row = [];
+  };
+
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    if (quoted) {
+      if (char === '"') {
+        if (text[index + 1] === '"') {
+          field += '"';
+          index += 1;
+        } else {
+          quoted = false;
+        }
+      } else {
+        field += char;
+      }
+      continue;
+    }
+    if (char === '"') {
+      quoted = true;
+    } else if (char === delimiter) {
+      pushField();
+    } else if (char === "\n") {
+      pushRow();
+      if (rows.length >= maxRows) return rows;
+    } else if (char !== "\r") {
+      field += char;
+    }
+  }
+  if (field.length > 0 || row.length > 0) pushRow();
+  return rows;
+}
+
 const SOURCE_HIGHLIGHT_MAX_LINES = 1_000;
 const DISPLAY_MODE_LABELS: Record<DisplayMode, string> = {
   source: "Source",
@@ -1089,6 +1136,19 @@ function TextFileViewer({
 
   onStateChangeRef.current = onStateChange;
 
+  // Prose files wrap by default (code keeps horizontal scrolling). Only when
+  // this tab has no stored preference; a user's explicit toggle still wins.
+  const wrapDefaultAppliedRef = useRef(false);
+  useEffect(() => {
+    if (!data || wrapDefaultAppliedRef.current) return;
+    wrapDefaultAppliedRef.current = true;
+    if (initialState?.wrapLines !== undefined) return;
+    if (data.language === "markdown" || data.language === "text") {
+      setWrapLines(true);
+      viewerStateRef.current.wrapLines = true;
+    }
+  }, [data, initialState]);
+
   const updateDisplayMode = useCallback((nextDisplayMode: DisplayMode) => {
     viewerStateRef.current.displayMode = nextDisplayMode;
     setDisplayMode(nextDisplayMode);
@@ -1356,7 +1416,10 @@ function TextFileViewer({
     if (
       defaultPreviewEligibleRef.current &&
       !data?.truncated &&
-      (data?.language === "markdown" || data?.language === "html")
+      (data?.language === "markdown" ||
+        data?.language === "html" ||
+        data?.language === "csv" ||
+        data?.language === "tsv")
     ) {
       defaultPreviewEligibleRef.current = false;
       updateDisplayMode("preview");
@@ -1383,6 +1446,13 @@ function TextFileViewer({
     () => (data?.language === "markdown" ? normalizeDisplayMath(data.content) : ""),
     [data],
   );
+  const csvRows = useMemo(
+    () =>
+      data && (data.language === "csv" || data.language === "tsv")
+        ? parseDelimitedTable(data.content, data.language === "tsv" ? "\t" : ",")
+        : [],
+    [data],
+  );
 
   // Line references in Monaco come from the editor itself: gutter clicks fire
   // onLineClick (immediate single-line mention) and multi-line selections
@@ -1396,7 +1466,8 @@ function TextFileViewer({
   const language = data?.language ?? "text";
   const isHtml = language === "html";
   const isMarkdown = language === "markdown";
-  const hasPreview = !data?.truncated && (isHtml || isMarkdown);
+  const isCsv = language === "csv" || language === "tsv";
+  const hasPreview = !data?.truncated && (isHtml || isMarkdown || isCsv);
   const effectiveDisplayMode = isDeletedDiff ? "diff" : displayMode;
 
   // HTML preview: the iframe is sandboxed WITHOUT allow-same-origin (opaque
@@ -1931,6 +2002,46 @@ function TextFileViewer({
               style={{ width: "100%", flex: 1, minHeight: 0, border: "none", background: "var(--bg)" }}
               title={t("i18n.htmlPreview")}
             />
+          </div>
+        ) : isCsv && effectiveDisplayMode === "preview" ? (
+          <div style={{ height: "100%", overflow: "auto", padding: 16 }}>
+            {csvRows.length === 0 ? (
+              <div style={{ color: "var(--text-dim)", fontSize: 12 }}>{t("files.emptyFile")}</div>
+            ) : (
+              <table
+                style={{
+                  borderCollapse: "collapse",
+                  fontSize: 12,
+                  fontFamily: "var(--font-mono)",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                <tbody>
+                  {csvRows.map((row, rowIndex) => (
+                    <tr key={rowIndex}>
+                      {row.map((cell, cellIndex) => (
+                        <td
+                          key={cellIndex}
+                          style={{
+                            border: "1px solid var(--border)",
+                            padding: "3px 8px",
+                            background: rowIndex === 0 ? "var(--bg-panel)" : undefined,
+                            fontWeight: rowIndex === 0 ? 600 : undefined,
+                          }}
+                        >
+                          {cell}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            {csvRows.length >= 2_000 && (
+              <div style={{ marginTop: 8, fontSize: 11, color: "var(--text-dim)" }}>
+                {t("files.tableTruncated")}
+              </div>
+            )}
           </div>
         ) : isMarkdown && effectiveDisplayMode === "preview" ? (
           <div className="markdown-body markdown-file-preview" style={{ padding: "24px 32px" }}>

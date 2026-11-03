@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { useTheme } from "@/hooks/useTheme";
 
 interface ShellOption {
   id: string;
@@ -32,9 +33,11 @@ interface Props {
  * /api/terminal/* and adds a shell picker, clear and reconnect.
  */
 export function WorkspaceTerminal({ cwd, visible, remote = null, onClose }: Props) {
+  const { isDark } = useTheme();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [shells, setShells] = useState<ShellOption[]>([]);
   const [shellId, setShellId] = useState<string>("");
+  const [fontSize, setFontSize] = useState(13);
   const [reconnectNonce, setReconnectNonce] = useState(0);
   const [exited, setExited] = useState<number | null>(null);
   // The lifecycle effect keys on remote identity primitives (session id), not
@@ -74,9 +77,12 @@ export function WorkspaceTerminal({ cwd, visible, remote = null, onClose }: Prop
 
     const term = new XTerm({
       cursorBlink: true,
-      fontSize: 13,
+      fontSize,
       fontFamily: 'Menlo, Consolas, "Courier New", monospace',
       scrollback: 5000,
+      theme: isDark
+        ? { background: "#1a1a1a", foreground: "#e5e5e5" }
+        : { background: "#ffffff", foreground: "#1f1f1f" },
     });
     const fitAddon = new FitAddon();
     fitRef.current = fitAddon;
@@ -188,10 +194,39 @@ export function WorkspaceTerminal({ cwd, visible, remote = null, onClose }: Prop
     if (visible) requestAnimationFrame(() => fitRef.current?.fit());
   }, [visible]);
 
+  // Font size and theme update the live terminal (the PTY lifecycle stays).
+  useEffect(() => {
+    const term = termRef.current;
+    if (!term) return;
+    term.options.fontSize = fontSize;
+    requestAnimationFrame(() => {
+      try {
+        fitRef.current?.fit();
+      } catch {
+        // hidden/zero-size container
+      }
+    });
+  }, [fontSize]);
+
+  useEffect(() => {
+    const term = termRef.current;
+    if (!term) return;
+    term.options.theme = isDark
+      ? { background: "#1a1a1a", foreground: "#e5e5e5" }
+      : { background: "#ffffff", foreground: "#1f1f1f" };
+  }, [isDark]);
+
   const shellLabel = shells.find((s) => s.id === shellId)?.label ?? shellId;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", background: "#000" }}>
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        height: "100%",
+        background: isDark ? "#1a1a1a" : "#ffffff",
+      }}
+    >
       <div
         style={{
           display: "flex",
@@ -268,6 +303,38 @@ export function WorkspaceTerminal({ cwd, visible, remote = null, onClose }: Prop
           {remote ? remote.label : cwd}
         </span>
         <button
+          onClick={() => setFontSize((size) => Math.max(10, size - 1))}
+          title="缩小终端字号"
+          aria-label="缩小终端字号"
+          style={{
+            background: "transparent",
+            border: "1px solid var(--border)",
+            borderRadius: 4,
+            color: "var(--text-muted)",
+            cursor: "pointer",
+            fontSize: 11,
+            padding: "1px 7px",
+          }}
+        >
+          A−
+        </button>
+        <button
+          onClick={() => setFontSize((size) => Math.min(20, size + 1))}
+          title="放大终端字号"
+          aria-label="放大终端字号"
+          style={{
+            background: "transparent",
+            border: "1px solid var(--border)",
+            borderRadius: 4,
+            color: "var(--text-muted)",
+            cursor: "pointer",
+            fontSize: 11,
+            padding: "1px 7px",
+          }}
+        >
+          A+
+        </button>
+        <button
           onClick={() => termRef.current?.clear()}
           title="清屏"
           style={{
@@ -320,7 +387,7 @@ export function WorkspaceTerminal({ cwd, visible, remote = null, onClose }: Prop
       </div>
       <div
         ref={containerRef}
-        style={{ flex: 1, minHeight: 0, padding: 4, background: "#000" }}
+        style={{ flex: 1, minHeight: 0, padding: 4, background: isDark ? "#1a1a1a" : "#ffffff" }}
         data-shell={shellLabel}
       />
     </div>

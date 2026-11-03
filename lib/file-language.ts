@@ -34,6 +34,8 @@ const EXT_TO_LANGUAGE: Record<string, string> = {
   less: "css",
   json: "json",
   jsonl: "json",
+  csv: "csv",
+  tsv: "tsv",
   yaml: "yaml",
   yml: "yaml",
   toml: "toml",

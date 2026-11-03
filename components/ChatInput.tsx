@@ -56,6 +56,8 @@ export interface AttachedImage {
 
 interface Props {
   onSend: (message: string, images?: AttachedImage[]) => void;
+  /** Files picked with the attach button; without it the button takes images only. */
+  onAttachFiles?: (files: File[]) => void;
   onAbort: () => void;
   onSteer?: (message: string, images?: AttachedImage[]) => void;
   onFollowUp?: (message: string, images?: AttachedImage[]) => void;
@@ -795,6 +797,7 @@ export function ModelScopeWarningBanner({ warnings }: { warnings?: string[] }) {
 export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
   {
     onSend,
+    onAttachFiles,
     onAbort,
     onSteer,
     onFollowUp,
@@ -1958,12 +1961,13 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
         <input
           ref={fileInputRef}
           type="file"
-          accept="image/*"
+          accept={onAttachFiles ? undefined : "image/*"}
           multiple
           style={{ display: "none" }}
           onChange={(e) => {
             const files = Array.from(e.target.files ?? []);
-            processImageFiles(files);
+            if (onAttachFiles) onAttachFiles(files);
+            else processImageFiles(files);
             e.target.value = "";
           }}
         />

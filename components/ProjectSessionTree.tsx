@@ -11,6 +11,18 @@ import { ProjectSettingsDialog } from "./ProjectSettingsDialog";
 import { ProjectImportDialog } from "./ProjectImportDialog";
 import { ApplyBundleDialog } from "./ApplyBundleDialog";
 
+const PROJECT_ORDER_STORAGE_KEY = "pi-web:project-order";
+
+function loadProjectOrder(): string[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(PROJECT_ORDER_STORAGE_KEY) ?? "[]") as unknown;
+    return Array.isArray(parsed) ? parsed.filter((value): value is string => typeof value === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
 interface Props {
   sessions: SessionInfo[];
   runningSessionIds: Set<string>;
@@ -80,6 +92,8 @@ export function ProjectSessionTree({
   const [query, setQuery] = useState("");
   // Host 目录组不是持久化的 ProjectRecord，菜单按 directory 分发。
   const [menu, setMenu] = useState<{ project?: ProjectRecord; directory?: string; x: number; y: number } | null>(null);
+  // Manual project order (browser-local): move up/down from the group menu.
+  const [projectOrder, setProjectOrder] = useState<string[]>(loadProjectOrder);
   const [settingsId, setSettingsId] = useState<string | null>(null);
   const [importId, setImportId] = useState<string | null>(null);
   const [applyBundleId, setApplyBundleId] = useState<string | null>(null);
@@ -92,6 +106,33 @@ export function ProjectSessionTree({
   const [newDialog, setNewDialog] = useState<"sandbox" | "local-machine" | null>(null);
   const [myWorkspaceId, setMyWorkspaceId] = useState<number | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
+
+  const orderedProjects = useMemo(() => {
+    if (projectOrder.length === 0) return projects;
+    const rank = new Map(projectOrder.map((id, index) => [id, index]));
+    return [...projects].sort((a, b) => {
+      const left = rank.get(a.id) ?? Number.MAX_SAFE_INTEGER;
+      const right = rank.get(b.id) ?? Number.MAX_SAFE_INTEGER;
+      return left === right ? a.name.localeCompare(b.name) : left - right;
+    });
+  }, [projectOrder, projects]);
+
+  const moveProject = useCallback(
+    (projectId: string, delta: -1 | 1) => {
+      const ids = orderedProjects.map((project) => project.id);
+      const index = ids.indexOf(projectId);
+      const target = index + delta;
+      if (index < 0 || target < 0 || target >= ids.length) return;
+      [ids[index], ids[target]] = [ids[target], ids[index]];
+      setProjectOrder(ids);
+      try {
+        window.localStorage.setItem(PROJECT_ORDER_STORAGE_KEY, JSON.stringify(ids));
+      } catch {
+        // Private mode / storage disabled: sort applies to this mount only.
+      }
+    },
+    [orderedProjects],
+  );
 
   const loadProjects = useCallback(() => {
     fetch("/api/projects")
@@ -597,7 +638,7 @@ export function ProjectSessionTree({
           专用视图，混入平台项目组（多为空态）只会稀释真正的 CLI 分组；
           项目的浏览/管理入口在“我的会话”一侧。 */}
           {sessionSpace === "mine" &&
-            projects.map((project) => {
+            orderedProjects.map((project) => {
               const { visible, total } = projectSessions(project);
               const isCollapsed = collapsed.has(project.id);
               // 焦点会话所属项目高亮 + 左侧模式色条，一眼定位当前所在项目。
@@ -1219,6 +1260,7 @@ export function ProjectSessionTree({
       {(() => {
         const menuProject = menu?.project;
         if (!menuProject) return null;
+        const orderIndex = orderedProjects.findIndex((project) => project.id === menuProject.id);
         return (
           <div
             ref={menuRef}
@@ -1238,6 +1280,24 @@ export function ProjectSessionTree({
               fontSize: 12,
             }}
           >
+            {orderIndex > 0 && (
+              <MenuItem
+                label={t("sessions.moveProjectUp")}
+                onClick={() => {
+                  moveProject(menuProject.id, -1);
+                  setMenu(null);
+                }}
+              />
+            )}
+            {orderIndex >= 0 && orderIndex < orderedProjects.length - 1 && (
+              <MenuItem
+                label={t("sessions.moveProjectDown")}
+                onClick={() => {
+                  moveProject(menuProject.id, 1);
+                  setMenu(null);
+                }}
+              />
+            )}
             <MenuItem
               label={t("sessions.newSession")}
               onClick={() => {
@@ -1776,6 +1836,53 @@ function ProjectSessionRow({
                   strokeLinejoin="round"
                 >
                   <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                title={t("sessions.openInNewTab")}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  window.open(
+                    `/?session=${encodeURIComponent(session.id)}`,
+                    "_blank",
+                    "noopener,noreferrer",
+                  );
+                }}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  width: 22,
+                  height: 22,
+                  padding: 0,
+                  background: "transparent",
+                  border: "none",
+                  borderRadius: 5,
+                  color: "var(--text-dim)",
+                  cursor: "pointer",
+                  flexShrink: 0,
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.color = "var(--accent)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.color = "var(--text-dim)";
+                }}
+              >
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                  <polyline points="15 3 21 3 21 9" />
+                  <line x1="10" y1="14" x2="21" y2="3" />
                 </svg>
               </button>
               <button

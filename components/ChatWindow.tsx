@@ -16,6 +16,7 @@ import type {
   UserMessage,
 } from "@/lib/types";
 import { normalizeCustomPanelLines } from "@/lib/ansi";
+import { encodeFilePathForApi } from "@/lib/file-paths";
 import { asBracketedPaste, toTerminalKeyData } from "@/lib/terminal-input";
 import {
   countToolCallBlocks,
@@ -1071,6 +1072,43 @@ export function ChatWindow({
     session?.id && (session.mode === "sandbox" || session.mode === "local-machine" || session.mode === "ssh")
       ? session.id
       : null;
+
+  // Attach button: images keep the existing inline path; other files are
+  // uploaded into the session's working directory and mentioned, so the model
+  // can read them with its ordinary tools (phones have no drag-and-drop).
+  const handleAttachFiles = useCallback(
+    async (files: File[]) => {
+      const images = files.filter((file) => file.type.startsWith("image/"));
+      const others = files.filter((file) => !file.type.startsWith("image/"));
+      if (images.length > 0) chatInputRef?.current?.addImages(images);
+      if (others.length === 0) return;
+
+      const targetDirectory = linkCwd ?? messageCwd;
+      if (!targetDirectory) return;
+      const form = new FormData();
+      for (const file of others) form.append("files", file, file.name);
+      const url = remoteFileSessionId
+        ? `/api/remotefs/${encodeFilePathForApi(targetDirectory)}?src=${encodeURIComponent(remoteFileSessionId)}&type=upload&conflict=skip`
+        : `/api/files/${encodeFilePathForApi(targetDirectory)}?type=upload&conflict=skip`;
+      try {
+        const response = await fetch(url, { method: "POST", body: form });
+        const data = (await response.json().catch(() => ({}))) as { uploaded?: string[]; error?: string };
+        if (!response.ok) {
+          console.warn("Attach upload failed:", data.error ?? `HTTP ${response.status}`);
+          return;
+        }
+        const names = data.uploaded ?? [];
+        if (names.length > 0) {
+          const mentions = names.map((name) => (/\s/.test(name) ? `@"${name}"` : `@${name}`)).join(" ");
+          chatInputRef?.current?.insertText(`${mentions} `);
+        }
+      } catch (error) {
+        console.warn("Attach upload failed:", error instanceof Error ? error.message : error);
+      }
+    },
+    [chatInputRef, linkCwd, messageCwd, remoteFileSessionId],
+  );
+
   const promptAnchorSpacerRef = useRef<HTMLDivElement | null>(null);
   const promptAnchorSpacerHeightRef = useRef(0);
   const promptAnchorMeasureFrameRef = useRef<number | null>(null);
@@ -1163,6 +1201,7 @@ export function ChatWindow({
       ref={chatInputRef}
       readOnly={readOnly}
       onSend={handleSend}
+      onAttachFiles={handleAttachFiles}
       onAbort={handleAbort}
       onSteer={agentRunning ? handleSteer : undefined}
       onFollowUp={agentRunning ? handleFollowUp : undefined}

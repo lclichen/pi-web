@@ -913,6 +913,15 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
   const [renaming, setRenaming] = useState<{ oldPath: string; oldName: string } | null>(null);
   const [renamingName, setRenamingName] = useState("");
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; node: FileNode } | null>(null);
+  // 生成分享链接：host = 活引用；远程会话 = 生成时快照（POST /api/share）。
+  const [shareState, setShareState] = useState<{
+    busy: boolean;
+    path: string;
+    url?: string;
+    expiresAt?: string;
+    error?: string;
+  } | null>(null);
+  const [shareCopied, setShareCopied] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchPaths, setSearchPaths] = useState<string[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -1321,6 +1330,58 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
     },
     [onFileDeleted, remote],
   );
+
+  const shareFile = useCallback(
+    async (node: FileNode) => {
+      setShareState({ busy: true, path: node.fullPath });
+      setShareCopied(false);
+      try {
+        const res = await fetch("/api/share", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            path: node.fullPath,
+            ...(remote ? { srcSession: remote.sessionId } : {}),
+          }),
+        });
+        const data = (await res.json().catch(() => ({}))) as {
+          url?: string;
+          expiresAt?: string;
+          error?: string;
+        };
+        if (!res.ok || data.error || !data.url) throw new Error(data.error ?? `HTTP ${res.status}`);
+        setShareState({
+          busy: false,
+          path: node.fullPath,
+          url: data.url,
+          ...(data.expiresAt ? { expiresAt: data.expiresAt } : {}),
+        });
+        try {
+          await navigator.clipboard?.writeText(data.url);
+          setShareCopied(true);
+        } catch {
+          // 剪贴板不可用（非安全上下文）：链接已展示，用户可手动复制。
+        }
+      } catch (e) {
+        setShareState({
+          busy: false,
+          path: node.fullPath,
+          error: e instanceof Error ? e.message : String(e),
+        });
+      }
+    },
+    [remote],
+  );
+
+  const copyShareUrl = useCallback(async () => {
+    if (!shareState?.url) return;
+    try {
+      await navigator.clipboard.writeText(shareState.url);
+      setShareCopied(true);
+    } catch {
+      // ignore — the URL stays selectable in the dialog
+    }
+  }, [shareState]);
 
   const handleRename = useCallback(() => {
     if (!renaming || !renamingName.trim()) {
@@ -2023,6 +2084,20 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
                   <div style={{ height: 1, background: "var(--border)", margin: "2px 0" }} />
                 </>
               )}
+              {!contextMenu.node.isDir && (
+                <>
+                  <ContextMenuButton
+                    label={t("files.shareFile")}
+                    color="var(--text)"
+                    onClick={() => {
+                      const n = contextMenu.node;
+                      setContextMenu(null);
+                      void shareFile(n);
+                    }}
+                  />
+                  <div style={{ height: 1, background: "var(--border)", margin: "2px 0" }} />
+                </>
+              )}
               <ContextMenuButton
                 label={t("common.rename")}
                 color="var(--text)"
@@ -2042,6 +2117,142 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
                   if (window.confirm(`删除 ${n.name}？`)) handleDelete(n.fullPath);
                 }}
               />
+            </div>
+          )}
+
+          {shareState && (
+            <div
+              role="presentation"
+              onClick={() => setShareState(null)}
+              style={{
+                position: "fixed",
+                inset: 0,
+                zIndex: 1200,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                background: "rgba(0,0,0,0.4)",
+                padding: 16,
+              }}
+            >
+              <div
+                role="dialog"
+                aria-modal="true"
+                aria-label={t("files.shareFileTitle")}
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  width: "min(520px, 94vw)",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 12,
+                  padding: "18px 20px",
+                  borderRadius: 12,
+                  background: "var(--bg-panel)",
+                  border: "1px solid var(--border)",
+                  boxShadow: "0 12px 40px rgba(0,0,0,0.35)",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>
+                    {t("files.shareFileTitle")}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShareState(null)}
+                    aria-label={t("i18n.close")}
+                    style={{
+                      background: "transparent",
+                      border: "none",
+                      color: "var(--text-muted)",
+                      cursor: "pointer",
+                      fontSize: 16,
+                    }}
+                  >
+                    ×
+                  </button>
+                </div>
+                <div
+                  style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 11,
+                    color: "var(--text-dim)",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                  title={shareState.path}
+                >
+                  {shareState.path}
+                </div>
+                {shareState.busy ? (
+                  <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{t("files.shareFileBusy")}</div>
+                ) : shareState.error ? (
+                  <div role="alert" style={{ fontSize: 12, color: "var(--danger)", lineHeight: 1.6 }}>
+                    {shareState.error}
+                  </div>
+                ) : (
+                  <>
+                    <div
+                      style={{
+                        padding: "8px 10px",
+                        borderRadius: 6,
+                        border: "1px solid var(--border)",
+                        background: "var(--bg)",
+                        fontFamily: "var(--font-mono)",
+                        fontSize: 11.5,
+                        color: "var(--text)",
+                        wordBreak: "break-all",
+                        userSelect: "all",
+                      }}
+                    >
+                      {shareState.url}
+                    </div>
+                    {shareState.expiresAt && (
+                      <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
+                        {t("files.shareFileExpires", {
+                          time: new Date(shareState.expiresAt).toLocaleString(),
+                        })}
+                      </div>
+                    )}
+                    <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.6 }}>
+                      {t("files.shareFileHint")}
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                      <button
+                        type="button"
+                        onClick={() => void copyShareUrl()}
+                        style={{
+                          padding: "5px 12px",
+                          borderRadius: 6,
+                          border: "1px solid var(--accent)",
+                          background: "var(--accent)",
+                          color: "#fff",
+                          cursor: "pointer",
+                          fontSize: 11.5,
+                          fontWeight: 600,
+                        }}
+                      >
+                        {shareCopied ? t("files.shareFileCopied") : t("files.shareFileCopy")}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShareState(null)}
+                        style={{
+                          padding: "5px 12px",
+                          borderRadius: 6,
+                          border: "1px solid var(--border)",
+                          background: "var(--bg)",
+                          color: "var(--text)",
+                          cursor: "pointer",
+                          fontSize: 11.5,
+                        }}
+                      >
+                        {t("i18n.close")}
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
           )}
 

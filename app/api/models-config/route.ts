@@ -2,16 +2,29 @@ import { NextResponse } from "next/server";
 import { readModelsConfig, writeModelsConfig } from "@/lib/models-config-store";
 import { requireUserIdentity } from "@/lib/web-session";
 import { isApiRequestAllowed, hasJsonContentType } from "@/lib/request-security";
+import { invalidateModelsCache } from "@/lib/models-cache";
+import {
+  clearUserModelConfig,
+  effectiveModelsConfig,
+  hasUserModelOverride,
+  writeUserModels,
+} from "@/lib/user-models";
 
 export const dynamic = "force-dynamic";
 
-/** 非管理员视角：剥除所有 provider 的 apiKey（凭据不出服务端），
- *  并标记 canEdit=false 供前端只读渲染。 */
-function redactForUser(config: Record<string, unknown>): Record<string, unknown> {
+/**
+ * 模型配置的读写 scope：
+ *   · admin  → 全局层 `~/.pi/agent/models.json`（所有用户默认使用）
+ *   · user   → 自己的层 `<dataDir>/user-models/u<id>/models.json`（只影响自己）
+ *
+ * 普通用户 GET 看到的是「全局 + 用户」合并后的**有效配置**（便于在全局模型
+ * 基础上增改），但所有 apiKey 都会剥除（全局密钥绝不下发；用户自己的密钥
+ * 是 write-only，通过 /api/auth/* 管理）。PUT 只保存与全局不同的 provider，
+ * 避免把全局配置快照进用户层。
+ */
+function redactApiKeys(config: Record<string, unknown>): Record<string, unknown> {
   const providers = config.providers;
-  if (!providers || typeof providers !== "object" || Array.isArray(providers)) {
-    return { ...config, canEdit: false };
-  }
+  if (!providers || typeof providers !== "object" || Array.isArray(providers)) return config;
   const redacted = Object.fromEntries(
     Object.entries(providers as Record<string, unknown>).map(([name, provider]) => {
       if (!provider || typeof provider !== "object" || Array.isArray(provider)) return [name, provider];
@@ -19,29 +32,33 @@ function redactForUser(config: Record<string, unknown>): Record<string, unknown>
       return [name, rest];
     }),
   );
-  return { ...config, providers: redacted, canEdit: false };
+  return { ...config, providers: redacted };
 }
 
 export async function GET(req: Request) {
   const identity = requireUserIdentity(req);
   if (!identity.ok) return NextResponse.json({ error: "登录已失效" }, { status: identity.status });
-  const config = readModelsConfig();
-  // 管理员拿完整配置（含密钥，编辑需要）；普通用户脱敏——模型页只读展示，
-  // 网关凭据不得下发到非管理员客户端（2026-10-26 审计修复）。
-  if (identity.session.user.role === "admin") {
-    return NextResponse.json({ ...config, canEdit: true });
+  const { user } = identity.session;
+
+  if (user.role === "admin") {
+    return NextResponse.json({
+      ...readModelsConfig(),
+      canEdit: true,
+      scope: "global",
+    });
   }
-  return NextResponse.json(redactForUser(config));
+
+  return NextResponse.json({
+    ...redactApiKeys(effectiveModelsConfig(user.id)),
+    canEdit: true,
+    scope: "user",
+    hasUserOverride: hasUserModelOverride(user.id),
+  });
 }
 
 export async function PUT(req: Request) {
-  // Rewrites the GLOBAL models.json (every session's default provider list) —
-  // admin only, same rule as global plugins/agents/mcp.
   const identity = requireUserIdentity(req);
   if (!identity.ok) return NextResponse.json({ error: "登录已失效" }, { status: identity.status });
-  if (identity.session.user.role !== "admin") {
-    return NextResponse.json({ error: "全局模型配置仅管理员可修改" }, { status: 403 });
-  }
   if (!isApiRequestAllowed(req)) {
     return NextResponse.json({ error: "Untrusted API request" }, { status: 403 });
   }
@@ -50,9 +67,33 @@ export async function PUT(req: Request) {
   }
   try {
     const body = (await req.json()) as Record<string, unknown>;
-    writeModelsConfig(body);
-    return NextResponse.json({ success: true });
+    // Defensive: drop UI-only fields if an older client still sends them.
+    const { canEdit: _canEdit, scope: _scope, hasUserOverride: _hasUserOverride, ...clean } = body;
+    if (identity.session.user.role === "admin") {
+      // 全局层：所有用户默认使用。
+      writeModelsConfig(clean);
+      return NextResponse.json({ success: true, scope: "global" });
+    }
+    // 用户层：只影响自己；与全局相同的 provider 会被省略。
+    writeUserModels(identity.session.user.id, clean);
+    invalidateModelsCache();
+    return NextResponse.json({ success: true, scope: "user" });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
   }
+}
+
+/** DELETE：普通用户清空自己的模型覆盖（回到全局）；管理员不允许删全局。 */
+export async function DELETE(req: Request) {
+  const identity = requireUserIdentity(req);
+  if (!identity.ok) return NextResponse.json({ error: "登录已失效" }, { status: identity.status });
+  if (identity.session.user.role === "admin") {
+    return NextResponse.json({ error: "全局模型配置不支持整体删除" }, { status: 400 });
+  }
+  if (!isApiRequestAllowed(req)) {
+    return NextResponse.json({ error: "Untrusted API request" }, { status: 403 });
+  }
+  clearUserModelConfig(identity.session.user.id);
+  invalidateModelsCache();
+  return NextResponse.json({ success: true, scope: "global" });
 }

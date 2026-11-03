@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
 import { resolveModelDiscoveryAuth } from "@/lib/model-discovery-auth";
+import { requireUserIdentity } from "@/lib/web-session";
+import { isApiRequestAllowed } from "@/lib/request-security";
+import { ensureUserModelRuntime } from "@/lib/user-models";
 import { buildModelsListUrl, parseDiscoveredModels } from "@/lib/model-discovery";
 
 export const dynamic = "force-dynamic";
@@ -31,6 +34,15 @@ function buildHeaders(api: string, apiKey: string | undefined, configured: Recor
 }
 
 export async function POST(req: Request) {
+  if (!isApiRequestAllowed(req)) {
+    return NextResponse.json({ error: "Untrusted API request" }, { status: 403 });
+  }
+  const identity = requireUserIdentity(req);
+  if (!identity.ok) {
+    return NextResponse.json({ error: "登录已失效" }, { status: identity.status });
+  }
+  const scopedAuth =
+    identity.session.user.role === "admin" ? undefined : ensureUserModelRuntime(identity.session.user.id)?.authPath;
   try {
     const body = (await req.json()) as { providerName?: unknown; provider?: unknown };
     const providerName = typeof body.providerName === "string" ? body.providerName.trim() : "";
@@ -48,7 +60,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Base URL is invalid" }, { status: 400 });
     }
 
-    const auth = await resolveModelDiscoveryAuth(providerName, body.provider);
+    const auth = await resolveModelDiscoveryAuth(providerName, body.provider, scopedAuth);
     if (typeof body.provider.apiKey === "string" && body.provider.apiKey.trim() && !auth.apiKey) {
       return NextResponse.json({ error: `No API key found for "${providerName}"` }, { status: 400 });
     }

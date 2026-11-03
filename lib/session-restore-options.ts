@@ -254,6 +254,8 @@ export async function restoreSessionOptions(req: Request, sessionId: string): Pr
     ...(mode === "quick" ? { quick: quickForRestore ?? {} } : {}),
     // Project-scoped model credentials live in the project home's .pi/.
     ...(effectiveCwd && project ? { projectCredentialDir: effectiveCwd } : {}),
+    // 会话所属用户的模型配置（管理员打开他人会话时用 owner 的层）。
+    ...(ownerId > 0 ? { userModelConfigUserId: ownerId } : {}),
   };
 }
 

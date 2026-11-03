@@ -19,6 +19,7 @@ import { installSubagentBridge } from "./subagent-bridge";
 import { hasActiveSessionLivenessProvider } from "./session-liveness";
 import { invalidateModelsCache } from "./models-cache";
 import { resolveVisibleModels, selectInitialModelScope } from "./model-scope";
+import { userRuntimeForSession } from "./user-models";
 import {
   cacheSessionPath,
   getLatestModelChange,
@@ -213,6 +214,9 @@ export interface RpcSessionStartOptions {
   /** Project home: if it contains .pi/auth.json or .pi/models.json, they
    *  override the global credential/model files for this session. */
   projectCredentialDir?: string;
+  /** 多用户：该会话所属用户的模型配置（<dataDir>/user-models/u<id>）。存在
+   *  覆盖时用「全局+用户」合并的运行时；管理员默认没有用户层，走全局。 */
+  userModelConfigUserId?: number;
   /** Background-task channel for remote modes (sandbox/local-machine/ssh).
    *  Registered under the REAL session id after the SDK mints it — the caller
    *  only knows a temporary key for new sessions. */
@@ -2667,6 +2671,7 @@ export async function startRpcSession(
     additionalExtensionPaths,
     extensionFactories,
     projectCredentialDir,
+    userModelConfigUserId,
     bgChannel,
   } = options;
   const requestedToolNames = toolNames === undefined ? undefined : validateSessionToolSelection(toolNames);
@@ -2756,19 +2761,24 @@ export async function startRpcSession(
     if (extensionFactories?.length) {
       platformResourceLoaderOptions.extensionFactories = extensionFactories;
     }
-    // Project-level model credentials: .pi/auth.json / .pi/models.json in the
-    // project home override the global files (SDK resolves them from agentDir
-    // only, so we build the runtime ourselves when either file exists).
+    // Model credential layering: global agentDir < per-user config < project
+    // .pi/ (project wins). Users with their own models/auth get a merged
+    // runtime; admins normally have no user layer and keep the global runtime.
+    const userRuntime = userRuntimeForSession(userModelConfigUserId);
+    const baseAuth = userRuntime?.authPath ?? join(agentDir, "auth.json");
+    const baseModels = userRuntime?.modelsPath ?? join(agentDir, "models.json");
     let projectModelRuntime: ModelRuntime | undefined;
     if (projectCredentialDir) {
       const projectAuth = join(projectCredentialDir, ".pi", "auth.json");
       const projectModels = join(projectCredentialDir, ".pi", "models.json");
-      if (existsSync(projectAuth) || existsSync(projectModels)) {
+      if (existsSync(projectAuth) || existsSync(projectModels) || userRuntime) {
         projectModelRuntime = await ModelRuntime.create({
-          authPath: existsSync(projectAuth) ? projectAuth : join(agentDir, "auth.json"),
-          modelsPath: existsSync(projectModels) ? projectModels : join(agentDir, "models.json"),
+          authPath: existsSync(projectAuth) ? projectAuth : baseAuth,
+          modelsPath: existsSync(projectModels) ? projectModels : baseModels,
         });
       }
+    } else if (userRuntime) {
+      projectModelRuntime = await ModelRuntime.create({ authPath: baseAuth, modelsPath: baseModels });
     }
     const services = await createAgentSessionServices({
       ...(projectModelRuntime ? { modelRuntime: projectModelRuntime } : {}),

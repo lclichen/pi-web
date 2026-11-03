@@ -2617,6 +2617,10 @@ export function ModelsConfig({ onClose, embedded = false }: { onClose: () => voi
   const [config, setConfig] = useState<ModelsJson>({ providers: {} });
   const [loading, setLoading] = useState(true);
   const [canEdit, setCanEdit] = useState(true);
+  // 模型配置 scope：global=管理员全局（所有用户默认使用）；user=当前用户的
+  // 个人覆盖（只影响自己）。普通用户同样可编辑，只是写到自己的文件。
+  const [scope, setScope] = useState<"global" | "user">("global");
+  const [hasUserOverride, setHasUserOverride] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedOk, setSavedOk] = useState(false);
@@ -2635,27 +2639,51 @@ export function ModelsConfig({ onClose, embedded = false }: { onClose: () => voi
       .catch(() => {});
   }, []);
 
+  const loadConfig = useCallback(async () => {
+    setLoading(true);
+    try {
+      const r = await fetch("/api/models-config");
+      const d = (await r.json()) as ModelsJson & {
+        canEdit?: boolean;
+        scope?: "global" | "user";
+        hasUserOverride?: boolean;
+      };
+      const normalized = d.providers ? d : { ...d, providers: {} };
+      setCanEdit(d.canEdit !== false);
+      setScope(d.scope === "user" ? "user" : "global");
+      setHasUserOverride(Boolean(d.hasUserOverride));
+      setConfig(normalized);
+      const keys = Object.keys(normalized.providers ?? {});
+      setSelection((current) =>
+        current && customSelectionExists(normalized, current)
+          ? current
+          : keys[0]
+            ? { type: "provider", name: keys[0] }
+            : null,
+      );
+    } catch {
+      setConfig({ providers: {} });
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
-    fetch("/api/models-config")
-      .then((r) => r.json())
-      .then((d: ModelsJson & { canEdit?: boolean }) => {
-        const normalized = d.providers ? d : { ...d, providers: {} };
-        // 非管理员视角：服务端已剥除 apiKey 且 canEdit=false——只读渲染。
-        setCanEdit(d.canEdit !== false);
-        setConfig(normalized);
-        const keys = Object.keys(normalized.providers ?? {});
-        setSelection((current) =>
-          current && customSelectionExists(normalized, current)
-            ? current
-            : keys[0]
-              ? { type: "provider", name: keys[0] }
-              : null,
-        );
-      })
-      .catch(() => setConfig({ providers: {} }))
-      .finally(() => setLoading(false));
+    void loadConfig();
     refreshAuthProviders();
-  }, [refreshAuthProviders]);
+  }, [loadConfig, refreshAuthProviders]);
+
+  const resetToGlobal = useCallback(async () => {
+    if (!window.confirm(t("models.resetToGlobalConfirm"))) return;
+    try {
+      await fetch("/api/models-config", { method: "DELETE" });
+      await loadConfig();
+      refreshAuthProviders();
+      setHasUserOverride(false);
+    } catch {
+      /* 忽略：下次打开仍会显示当前状态 */
+    }
+  }, [loadConfig, refreshAuthProviders, t]);
 
   useEffect(() => {
     if (selection) setLastSettingsSelection("models", JSON.stringify(selection));
@@ -2772,23 +2800,35 @@ export function ModelsConfig({ onClose, embedded = false }: { onClose: () => voi
     setSaveError(null);
     setSavedOk(false);
     try {
+      // GET 响应里混有 UI 状态（canEdit/scope/hasUserOverride），不要写进
+      // models.json。
+      const payload = { ...config } as ModelsJson & Record<string, unknown>;
+      delete payload.canEdit;
+      delete payload.scope;
+      delete payload.hasUserOverride;
       const res = await fetch("/api/models-config", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(config),
+        body: JSON.stringify(payload),
       });
-      const d = (await res.json()) as { success?: boolean; error?: string };
+      const d = (await res.json()) as { success?: boolean; error?: string; scope?: "global" | "user" };
       if (!res.ok || d.error) setSaveError(d.error ?? `HTTP ${res.status}`);
       else {
         setSavedOk(true);
         setTimeout(() => setSavedOk(false), 2000);
+        if (d.scope === "user") {
+          setScope("user");
+          setHasUserOverride(true);
+          // 凭据状态可能随用户层变化，刷新左侧 provider 列表。
+          refreshAuthProviders();
+        }
       }
     } catch (e) {
       setSaveError(String(e));
     } finally {
       setSaving(false);
     }
-  }, [config]);
+  }, [config, refreshAuthProviders]);
 
   const providers = Object.entries(config.providers ?? {});
   const activeOAuth = oauthProviders.filter((p) => p.loggedIn);
@@ -2842,7 +2882,7 @@ export function ModelsConfig({ onClose, embedded = false }: { onClose: () => voi
       <ConfigPanelShell
         embedded={embedded}
         title={t("common.models")}
-        subtitle="~/.pi/agent/models.json"
+        subtitle={scope === "user" ? t("models.userScopeSubtitle") : "~/.pi/agent/models.json"}
         closeLabel={t("i18n.close")}
         onClose={onClose}
       >
@@ -2850,6 +2890,40 @@ export function ModelsConfig({ onClose, embedded = false }: { onClose: () => voi
         <ConfigSplitView>
           {/* Left: tree */}
           <ConfigSidebar>
+            {/* Scope banner：普通用户编辑的是个人层，不影响其他用户。 */}
+            <div
+              role="status"
+              style={{
+                margin: "8px 8px 4px",
+                padding: "8px 10px",
+                borderRadius: 7,
+                fontSize: 11,
+                lineHeight: 1.55,
+                color: "var(--text-muted)",
+                background: scope === "user" ? "var(--bg-subtle, var(--bg))" : "transparent",
+                border: scope === "user" ? "1px solid var(--border)" : "none",
+              }}
+            >
+              <div>{scope === "user" ? t("models.userScopeNotice") : t("models.globalScopeNotice")}</div>
+              {scope === "user" && hasUserOverride && (
+                <button
+                  type="button"
+                  onClick={() => void resetToGlobal()}
+                  style={{
+                    marginTop: 6,
+                    background: "none",
+                    border: "none",
+                    padding: 0,
+                    color: "var(--accent)",
+                    cursor: "pointer",
+                    fontSize: 11,
+                    fontWeight: 600,
+                  }}
+                >
+                  {t("models.resetToGlobal")}
+                </button>
+              )}
+            </div>
             <ConfigSidebarList>
               {/* Active OAuth subscriptions */}
               {activeOAuth.map((p) => {

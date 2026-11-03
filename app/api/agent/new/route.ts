@@ -438,6 +438,7 @@ export async function POST(req: Request) {
       ],
       ...(coreExtensionPaths ? { additionalExtensionPaths: coreExtensionPaths } : {}),
       ...(projectRef ? { projectCredentialDir: effectiveCwd } : {}),
+      ...(user.id > 0 ? { userModelConfigUserId: user.id } : {}),
     });
 
     recordSessionMeta(realSessionId, {

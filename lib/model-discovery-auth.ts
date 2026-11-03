@@ -22,6 +22,7 @@ function stringRecord(value: unknown): Record<string, string> {
 export async function resolveModelDiscoveryAuth(
   providerName: string,
   provider: Record<string, unknown>,
+  authPath?: string,
 ): Promise<ModelDiscoveryAuth> {
   let tempDir: string | undefined;
   try {
@@ -45,7 +46,7 @@ export async function resolveModelDiscoveryAuth(
       "utf8",
     );
 
-    const modelRuntime = await ModelRuntime.create({ modelsPath });
+    const modelRuntime = await ModelRuntime.create({ modelsPath, ...(authPath ? { authPath } : {}) });
     const loadError = modelRuntime.getError();
     if (loadError) throw new Error(loadError);
     const model = modelRuntime.getModel(providerName, discoveryModelId);

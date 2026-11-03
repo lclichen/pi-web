@@ -1,6 +1,6 @@
 import { stat } from "fs/promises";
 import { resolve } from "path";
-import { createAgentSessionServices, getAgentDir, type SettingsManager } from "@earendil-works/pi-coding-agent";
+import { createAgentSessionServices, getAgentDir, ModelRuntime, type SettingsManager } from "@earendil-works/pi-coding-agent";
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import {
   loadModelsWithCache,
@@ -14,6 +14,7 @@ import { projectTrustReloadOptions } from "@/lib/project-trust";
 import { requireUserIdentity } from "@/lib/web-session";
 import { getOwnedProject, isCallerOwnedProjectHome, projectHome } from "@/lib/projects";
 import { isCallerSessionCwdAllowed } from "@/lib/session-cwd-access";
+import { ensureUserModelRuntime } from "@/lib/user-models";
 
 export const dynamic = "force-dynamic";
 
@@ -30,7 +31,7 @@ function compareModelEntries(
   );
 }
 
-async function loadModels(cwd: string): Promise<ModelsData> {
+async function loadModels(cwd: string, userId: number, isAdmin: boolean): Promise<ModelsData> {
   const nameMap = new Map<string, string>();
   let modelList: { id: string; name: string; provider: string }[] = [];
   let defaultModel: { provider: string; modelId: string } | null = null;
@@ -42,7 +43,12 @@ async function loadModels(cwd: string): Promise<ModelsData> {
   // runs a repository's .pi/extensions factories, so honor project trust here
   // too (see lib/project-trust.ts, #236).
   const trustReloadOptions = projectTrustReloadOptions(cwd, agentDir);
+  // 多用户：普通用户优先用自己的「全局+用户」合并运行时（模型列表应与
+  // 会话实际可用模型一致）；管理员用全局层。
+  const scoped = isAdmin ? null : ensureUserModelRuntime(userId);
+  const scopedRuntime = scoped ? await ModelRuntime.create({ ...scoped }) : undefined;
   const services = await createAgentSessionServices({
+    ...(scopedRuntime ? { modelRuntime: scopedRuntime } : {}),
     cwd,
     agentDir,
     ...(trustReloadOptions ? { resourceLoaderReloadOptions: trustReloadOptions } : {}),
@@ -156,7 +162,8 @@ export async function GET(req: Request) {
   }
 
   try {
-    return Response.json(await loadModelsWithCache(cwd, () => loadModels(cwd)));
+    const cacheKey = `${cwd}::${isAdmin ? "global" : `u${user.id}`}`;
+    return Response.json(await loadModelsWithCache(cacheKey, () => loadModels(cwd, user.id, isAdmin)));
   } catch {
     return Response.json(withSafeModelLoadFailure(EMPTY_MODELS));
   }

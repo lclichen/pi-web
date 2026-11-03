@@ -5,6 +5,8 @@ import { join } from "path";
 import { completeSimple, type AssistantMessage } from "@earendil-works/pi-ai/compat";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { hasJsonContentType, isApiRequestAllowed } from "@/lib/request-security";
+import { requireUserIdentity } from "@/lib/web-session";
+import { ensureUserModelRuntime } from "@/lib/user-models";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +31,13 @@ export async function POST(req: Request) {
   if (!isApiRequestAllowed(req)) {
     return NextResponse.json({ ok: false, error: "Untrusted API request" }, { status: 403 });
   }
+  const identity = requireUserIdentity(req);
+  if (!identity.ok) {
+    return NextResponse.json({ ok: false, error: "登录已失效" }, { status: identity.status });
+  }
+  // 普通用户用自己的「全局+用户」合并凭据测试；管理员用全局。
+  const scopedAuth =
+    identity.session.user.role === "admin" ? undefined : ensureUserModelRuntime(identity.session.user.id)?.authPath;
   if (!hasJsonContentType(req)) {
     return NextResponse.json({ ok: false, error: "Content-Type must be application/json" }, { status: 415 });
   }
@@ -65,7 +74,7 @@ export async function POST(req: Request) {
       "utf8",
     );
 
-    const modelRuntime = await ModelRuntime.create({ modelsPath });
+    const modelRuntime = await ModelRuntime.create({ modelsPath, ...(scopedAuth ? { authPath: scopedAuth } : {}) });
     const loadError = modelRuntime.getError();
     if (loadError) return NextResponse.json({ ok: false, error: loadError });
 

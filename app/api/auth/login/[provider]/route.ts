@@ -1,7 +1,11 @@
 import type { AuthEvent, AuthPrompt } from "@earendil-works/pi-ai";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { randomUUID } from "node:crypto";
+import { NextResponse } from "next/server";
 import { invalidateModelsCache } from "@/lib/models-cache";
+import { requireUserIdentity } from "@/lib/web-session";
+import { credentialAuthPath } from "@/lib/user-models";
+import { isApiRequestAllowed } from "@/lib/request-security";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +21,13 @@ function getCallbackRegistry() {
 
 // POST /api/auth/login/[provider] — frontend sends redirect URL or auth code
 export async function POST(req: Request, { params }: { params: Promise<{ provider: string }> }) {
+  if (!isApiRequestAllowed(req)) {
+    return NextResponse.json({ error: "Untrusted API request" }, { status: 403 });
+  }
+  const identity = requireUserIdentity(req);
+  if (!identity.ok) {
+    return NextResponse.json({ error: "登录已失效" }, { status: identity.status });
+  }
   const { provider } = await params;
   const { token, code } = (await req.json()) as { token?: string; code?: string };
 
@@ -41,7 +52,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ provide
 
 // GET /api/auth/login/[provider] — SSE stream for OAuth flow
 export async function GET(req: Request, { params }: { params: Promise<{ provider: string }> }) {
+  const identity = requireUserIdentity(req);
+  if (!identity.ok) {
+    return NextResponse.json({ error: "登录已失效" }, { status: identity.status });
+  }
   const { provider } = await params;
+  const authPath = credentialAuthPath(identity.session.user.id, identity.session.user.role === "admin");
 
   const encoder = new TextEncoder();
   const send = (controller: ReadableStreamDefaultController, data: unknown) => {
@@ -54,7 +70,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ provider
 
   const stream = new ReadableStream({
     async start(controller) {
-      const modelRuntime = await ModelRuntime.create();
+      const modelRuntime = await ModelRuntime.create({ authPath });
       if (!modelRuntime.getProvider(provider)?.auth.oauth) {
         send(controller, { type: "error", message: `Unknown provider: ${provider}` });
         controller.close();

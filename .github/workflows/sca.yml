@@ -1,0 +1,46 @@
+name: SCA
+
+# Software composition analysis for committed lockfiles:
+#   - package-lock.json (npm)
+#   - agent/go.sum (Go relay agent)
+#
+# OSV-Scanner maps both against the OSV vulnerability database and uploads SARIF
+# to Security > Code scanning. Pull requests and branch pushes report without
+# blocking; the weekly scheduled run fails on any known vulnerability so drift
+# is visible even when no one opens a PR.
+#
+# Triage notes and local commands: docs/dev/sca.md.
+
+on:
+  pull_request:
+  push:
+    branches: [dev, dev-0.85.1, main]
+  schedule:
+    # Monday 03:17 UTC, off the hour to avoid the scheduler's busiest minute.
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  security-events: write
+
+concurrency:
+  group: sca-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  osv:
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    uses: "google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@ef6dfdf01765802d5a8dbc3c39852a6128b00af0" # v2.7.0
+    with:
+      scan-args: |-
+        --include-git-root
+        -r
+        ./
+      results-file-name: osv-results.sarif
+      # PRs and pushes publish alerts; the scheduled run is the gate.
+      fail-on-vuln: ${{ github.event_name == 'schedule' }}

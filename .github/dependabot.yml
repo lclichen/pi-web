@@ -1,0 +1,46 @@
+version: 2
+
+# Dependency updates complement the OSV-Scanner workflow (.github/workflows/sca.yml):
+# the scan detects known vulnerabilities, Dependabot opens the fix PRs.
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "03:00"
+    open-pull-requests-limit: 5
+    groups:
+      npm-production:
+        dependency-type: "production"
+      npm-development:
+        dependency-type: "development"
+    ignore:
+      # pi packages are pinned to one SDK version on purpose; upgrade them in a
+      # deliberate compatibility pass, not one PR per package.
+      - dependency-name: "@earendil-works/*"
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
+
+  - package-ecosystem: "gomod"
+    directory: "/agent"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "03:00"
+    open-pull-requests-limit: 3
+    groups:
+      go-agent:
+        patterns: ["*"]
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "03:00"
+    open-pull-requests-limit: 3
+    groups:
+      github-actions:
+        patterns: ["*"]

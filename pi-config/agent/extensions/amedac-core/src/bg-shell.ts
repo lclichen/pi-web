@@ -39,6 +39,44 @@ const MAX_TASKS_PER_SESSION = 5;
 const TAIL_BYTES = 4096;
 const REMOTE_POLL_MS = 5_000;
 
+/**
+ * pi-web's session-liveness registry (public extension contract). Registering
+ * a provider keeps the session's AgentSessionWrapper from being reaped by the
+ * idle timer while this extension owns detached work. The pi CLI does not have
+ * the registry; absence is a no-op there.
+ */
+type SessionLivenessRegistry = {
+  register(provider: {
+    name: string;
+    sessionId: string;
+    sessionFile?: string;
+    isActive(): boolean;
+  }): () => void;
+};
+
+function registerSessionLiveness(
+  sessionId: string,
+  sessionFile: string | undefined,
+  isActive: () => boolean,
+): () => void {
+  const store = globalThis as Record<PropertyKey, unknown>;
+  const registry = store[Symbol.for("@agegr/pi-web/session-liveness/v1")] as
+    | SessionLivenessRegistry
+    | undefined;
+  if (!registry || typeof registry.register !== "function") return () => {};
+  try {
+    return registry.register({
+      name: "bg-shell",
+      sessionId,
+      ...(sessionFile ? { sessionFile } : {}),
+      isActive,
+    });
+  } catch {
+    // A broken/foreign registry must not break the extension.
+    return () => {};
+  }
+}
+
 export type BgTaskStatus = "running" | "completed" | "failed" | "cancelled" | "lost";
 
 export interface BgTask {
@@ -235,6 +273,7 @@ export function makeBgShellExtension(): InlineExtension {
     let sessionId = "";
     let channel: BgExecChannel | null = null;
     let cwd = "";
+    let releaseLiveness: (() => void) | null = null;
 
     /**
      * Resolve the channel at CALL time, not just at session_start: pi-web can
@@ -370,10 +409,22 @@ export function makeBgShellExtension(): InlineExtension {
       for (const t of listBgTasks(sessionId)) {
         if (t.status === "running" && !registry().children.has(t.taskId)) t.status = "lost";
       }
+      // Keep the wrapper alive while a task this extension started is running;
+      // otherwise the idle timer shuts the session down, session_shutdown kills
+      // the task, and its <task-notification> wake-up can never fire.
+      releaseLiveness?.();
+      const sessionFile = (
+        ctx.sessionManager as { getSessionFile?: () => string | undefined } | undefined
+      )?.getSessionFile?.();
+      releaseLiveness = registerSessionLiveness(sessionId, sessionFile, () =>
+        listBgTasks(sessionId).some((t) => t.status === "running"),
+      );
       publish(ctx);
     });
 
     pi.on("session_shutdown", async (_event, ctx) => {
+      releaseLiveness?.();
+      releaseLiveness = null;
       // Local children die with the session; remote processes get a
       // best-effort kill so dev servers don't outlive their session.
       for (const t of listBgTasks(sessionId)) {

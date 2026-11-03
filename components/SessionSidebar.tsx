@@ -497,6 +497,18 @@ export function SessionSidebar({
   const [projectFilter, setProjectFilter] = useState("");
   const [wtFilter, setWtFilter] = useState("");
   const [showProjectWizard, setShowProjectWizard] = useState(false);
+  // 环境菜单的「SSH 连接」直接打开项目向导的 SSH 步骤。
+  const [wizardInitialMethod, setWizardInitialMethod] = useState<"ssh" | null>(null);
+  useEffect(() => {
+    const onOpenWizard = (event: Event) => {
+      const mode = (event as CustomEvent<{ mode?: string }>).detail?.mode;
+      if (mode !== "ssh") return;
+      setWizardInitialMethod("ssh");
+      setShowProjectWizard(true);
+    };
+    window.addEventListener("pi-web:open-project-wizard", onOpenWizard);
+    return () => window.removeEventListener("pi-web:open-project-wizard", onOpenWizard);
+  }, []);
   const [customPathOpen, setCustomPathOpen] = useState(false);
   // 只有"新建项目 → 打开服务器目录"这条路径才把目录登记为 Host 空项目；
   // 下拉里的"自定义路径"只是切换当前工作目录，不应往侧栏塞空组。
@@ -1319,7 +1331,11 @@ export function SessionSidebar({
     >
       {showProjectWizard && (
         <RemoteConnectWizard
-          onClose={() => setShowProjectWizard(false)}
+          initialMethod={wizardInitialMethod}
+          onClose={() => {
+            setShowProjectWizard(false);
+            setWizardInitialMethod(null);
+          }}
           onCreated={() => onProjectsChanged?.()}
           isAdmin={isAdminUser}
           onOpenServerDirectory={() => {

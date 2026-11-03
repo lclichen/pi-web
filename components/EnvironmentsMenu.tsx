@@ -150,6 +150,35 @@ export function EnvironmentsMenu({
               onOpenSandbox();
             },
           } as const,
+          {
+            key: "ssh",
+            title: t("app.sshConnection"),
+            desc: t("app.environmentsSshDesc"),
+            icon: (
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M4 17l6-6-6-6" />
+                <path d="M12 19h8" />
+              </svg>
+            ),
+            onSelect: () => {
+              setMenuOpen(false);
+              // SSH 凭据按项目保存（.pi/ssh.json），没有全局主机注册表；
+              // 这里直接把用户送到新建项目向导的 SSH 步骤。
+              window.dispatchEvent(
+                new CustomEvent("pi-web:open-project-wizard", { detail: { mode: "ssh" } }),
+              );
+            },
+          } as const,
         ]
       : []),
   ];

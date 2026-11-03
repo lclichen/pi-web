@@ -112,10 +112,19 @@ export function LocalMachinesDialog({ open, onClose }: { open: boolean; onClose:
     }
   };
 
-  if (!open) return null;
+  // 面板是独立的全屏视图：点"面板"会先关对话框再显示面板，所以对话框
+  // 关闭时不能直接 return null（否则 setPanel 被吞掉，重开对话框才把面
+  // 板渲染在遮罩后面，既看不见也关不掉）。打开对话框时清掉面板，避免
+  // 两者叠在一起。
+  useEffect(() => {
+    if (open) setPanel(null);
+  }, [open]);
+
+  if (!open && !panel) return null;
 
   return (
     <>
+      {open && (
       <div
         onClick={(e) => {
           if (e.target === e.currentTarget) onClose();
@@ -265,6 +274,7 @@ export function LocalMachinesDialog({ open, onClose }: { open: boolean; onClose:
           </div>
         </div>
       </div>
+      )}
 
       {panel && (
         <LocalMachinePanel

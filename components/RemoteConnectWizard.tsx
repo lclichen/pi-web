@@ -34,6 +34,8 @@ interface Props {
   onOpenServerDirectory?: () => void;
   /** 项目创建成功（沙盒在③完成创建；本地在④完成创建）后回调，参数为项目名。 */
   onCreated: (mode: Mode, name: string) => void;
+  /** 从环境菜单直接进入某一步（目前用于 SSH：跳过方式选择）。 */
+  initialMethod?: Method | null;
 }
 
 const STEPS: Array<{ n: Step; label: string }> = [
@@ -57,12 +59,18 @@ function parentOfRemotePath(path: string): string | null {
   return idx <= 0 ? "/" : trimmed.slice(0, idx);
 }
 
-export function RemoteConnectWizard({ onClose, onCreated, isAdmin, onOpenServerDirectory }: Props) {
+export function RemoteConnectWizard({
+  onClose,
+  onCreated,
+  isAdmin,
+  onOpenServerDirectory,
+  initialMethod = null,
+}: Props) {
   const { t } = useI18n();
   // 多机：④ 的机器选择列表（单一机器时不显示选择器）。
   const { machines: relayMachines } = useRelayAgent();
-  const [step, setStep] = useState<Step>(1);
-  const [method, setMethod] = useState<Method | null>(null);
+  const [step, setStep] = useState<Step>(initialMethod ? 2 : 1);
+  const [method, setMethod] = useState<Method | null>(initialMethod ?? null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   // 本地模式：② 的项目名 + ④ 的目录

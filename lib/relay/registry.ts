@@ -358,9 +358,13 @@ export function getMachinesForUser(userId: number): MachineStatus[] {
 
 export function getStatus(): RelayStatus {
   const agent = getRegistry().agent;
+  // auth-off 的单用户槽位也要带机器列表：否则配对管理页看不到已配对的机器，
+  // “面板”按钮永远不会出现（机器列表为空）。
+  const machines = getMachinesForUser(agent?.ownerUserId ?? 0);
   return {
     online: Boolean(agent?.info),
     ...(agent?.info ? { info: agent.info } : {}),
+    ...(machines.length > 0 ? { machines } : {}),
     requiredVersion: REQUIRED_CLIENT_VERSION,
   };
 }

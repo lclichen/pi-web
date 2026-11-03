@@ -36,7 +36,7 @@
 | --- | --- | --- | --- |
 | **P0** | preview-mode secret 绕过修复 | 安全，与 pi 版本无关 | ✅ 已落地：`bin/rotate-preview-secrets.js` + 所有启动路径；VM 已轮换验证 |
 | **P1** | 补全 lease 续约（0851 缺失） | 正确性，小改动 | ✅ 已落地：`/api/agent/[id]/lease` + 客户端 30s 续约（无 stream 时创建 page lease） |
-| **P1** | bg-shell 注册 session liveness | 正确性，小改动 | ⬜ 待做：任务运行期间注册 provider，会话不被回收 |
+| **P1** | bg-shell 注册 session liveness | 正确性，小改动 | ✅ 已落地：任务运行期间注册 provider，shutdown 释放（`394b0e6f`） |
 
 ### 0.3 值得引入的构件（按性价比）
 
@@ -343,6 +343,10 @@
 
 ### 4.1 Debug panel（P1，观测）
 
+**已落地 MVP（2026-11-03，`d479fe53`）**：`GET /api/agent/debug`（管理员只读）、
+`components/DebugPanel.tsx`（顶栏浮动入口）、wrapper/stream/idle 快照 + 选中会话的
+MCP 配置与 trust 状态；未做子代理/终端/文件 watch 明细和每页 SSE 计数。
+
 **上游实现**：
 
 - `GET /api/agent/debug?session=` → `buildDebugSnapshot()`（`lib/debug-snapshot.ts`）；
@@ -519,18 +523,18 @@
 
 1. ✅ **preview-mode secret**：启动路径轮换 + 所有 launcher 接入 + 测试（§3.1）。
 2. ✅ **补齐 lease 续约**：`lease/route.ts`（含 page lease）+ 30s effect + 测试（§3.2）。
-3. ⬜ **bg-shell liveness provider**：任务运行期间阻止 idle 回收（§3.3）。
+3. ✅ **bg-shell liveness provider**：任务运行期间阻止 idle 回收（§3.3）。
 
 > 2 和 3 一起做，才能让“后台任务完成 → 自动唤醒”在默认 10 分钟 idle 配置下成立。
 
 ### P1（2–4 周）
 
-4. **Debug panel MVP**：会话/流/idle 三块，先解决“谁占着会话”的运维盲区（§4.1）。
+4. ✅ **Debug panel MVP**：会话/流/idle 三块 + MCP/trust（`d479fe53`，§4.1）。
 5. **隐藏页释放 SSE**：在 lease 修好后做（§4.2）。
 6. **会话列表尾部扫描**：bench 对比后替换（§4.3）。
-7. **A 类 UI 批次**：favicon 角标、任意文件附件、Git Tree/List、CSV/SVG/公式/换行、
-   PWA 应用名、终端主题/字号（§5.1）。
-8. **会话树操作**：新标签页打开、项目重命名/排序、删除全部会话/批量归档（§5.1）。
+7. ✅ **A 类 UI 批次**：favicon 角标、任意文件附件、Git Tree/List、CSV/SVG/公式/换行、
+   PWA 应用名、终端主题/字号（`860b205d`，§5.1）。
+8. ✅ **会话树操作**：新标签页打开、项目上移/下移（`860b205d`）；批量删除暂缓（用户暂不需要）。
 
 ### P2 / 暂缓
 

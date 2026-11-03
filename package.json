@@ -30,6 +30,7 @@
   "scripts": {
     "dev": "next dev -H 127.0.0.1 -p 30141",
     "build": "next build --webpack",
+    "prestart": "node bin/rotate-preview-secrets.js .next",
     "start": "next start -H 127.0.0.1 -p 30141",
     "lint": "eslint .",
     "format": "prettier --write .",

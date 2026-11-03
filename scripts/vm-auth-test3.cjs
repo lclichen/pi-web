@@ -36,6 +36,7 @@ restart() {
   sleep 1
   set -a && . ~/amedac/piweb.env && set +a
   cd ~/amedac/pi-web
+  node ./bin/rotate-preview-secrets.js .next --strict || true
   setsid nohup node ./node_modules/next/dist/bin/next start -H 0.0.0.0 -p 30141 > ~/amedac/piweb.log 2>&1 < /dev/null &
   disown
   sleep 9

@@ -14,6 +14,7 @@ if npm run build > /tmp/b0909b.log 2>&1; then echo BUILD-OK
   PID=$(ss -tlnp 2>/dev/null | grep ':30141' | grep -oP 'pid=\\K[0-9]+' | head -1)
   [ -n "$PID" ] && kill -9 $PID; sleep 1
   set -a && . ~/amedac/piweb.env && set +a
+  node ./bin/rotate-preview-secrets.js .next --strict || true
   setsid nohup node ./node_modules/next/dist/bin/next start -H 0.0.0.0 -p 30141 > ~/amedac/piweb.log 2>&1 < /dev/null &
   sleep 8
   ss -tlnp 2>/dev/null | grep ':30141' | head -1

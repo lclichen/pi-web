@@ -19,6 +19,8 @@ const fs = require("fs");
 const { getHelpText, parseLaunchOptions } = require("./pi-web-options");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { wireChildProcessLifecycle } = require("./process-lifecycle");
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { rotatePreviewSecrets, getRotationWarning } = require("./rotate-preview-secrets");
 
 let launchOptions;
 try {
@@ -60,6 +62,12 @@ if (!fs.existsSync(nextDir)) {
   console.error("Build artifacts not found. Please report this issue.");
   process.exit(1);
 }
+
+// Next skips proxy.ts for requests whose x-prerender-revalidate header equals
+// the preview id baked into .next/prerender-manifest.json. A published package
+// leaks that id, so replace it (and the two signing keys) before `next start`.
+const rotation = rotatePreviewSecrets(nextDir);
+if (!rotation.ok) console.warn(getRotationWarning(rotation.reason));
 
 if (!loopbackHostnames.has(hostname)) {
   if (passwordEnabled) {

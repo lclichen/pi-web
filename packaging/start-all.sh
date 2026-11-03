@@ -369,6 +369,11 @@ EOF
     # 首启引导：初始密码文件路径交给 WebUI（登录页在本机浏览器直接显示，
     # 首次用它登录成功后由服务端删除）。源码部署无此 env → 功能静默关闭。
     export PI_WEB_INITIAL_PASSWORD_FILE="$ADMIN_PW_FILE"
+    # 每次启动轮换 Next preview-mode secrets：构建产物里的 previewModeId
+    # 一旦被读到，可用 x-prerender-revalidate 头跳过 proxy.ts 的认证门。
+    # 只读安装（AppImage/squashfs）轮换会失败，脚本会打印明确警告。
+    "$NODE_BIN" ./bin/rotate-preview-secrets.js .next --strict \
+      || warn "preview-mode secret 轮换失败（只读安装？），本实例仍可能被 x-prerender-revalidate 绕过"
     setsid nohup "$NODE_BIN" ./node_modules/next/dist/bin/next start -H 0.0.0.0 -p "$WEB_PORT" \
       > "$LOG_DIR/web.log" 2>&1 < /dev/null &
     echo $! > "$RUN_DIR/web.pid"

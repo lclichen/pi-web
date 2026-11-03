@@ -94,6 +94,7 @@ if [ -n "$PID" ]; then
   kill $PID; sleep 2
 fi
 cd ${REMOTE_APP}
+node ./bin/rotate-preview-secrets.js .next --strict || true
 setsid nohup node ./node_modules/next/dist/bin/next start -H 0.0.0.0 -p ${PORT} > ${REMOTE_LOG} 2>&1 < /dev/null &
 sleep 5
 ss -tlnp | grep :${PORT} | head -1

@@ -612,3 +612,26 @@ test("keeps a detached viewport in place when streaming completes", () => {
   assert.doesNotMatch(scrollEffectSource, /\|\|/);
   assert.match(source, /addEventListener\("scroll", handleScrollPositionChange/);
 });
+
+test("renews the selected session lease every 30s", () => {
+  const leaseEffectSource = source.slice(
+    source.indexOf("// Renew the selected session's lease every 30s"),
+    source.indexOf("const respondToExtensionUi"),
+  );
+
+  assert.match(source, /const SESSION_LEASE_RENEW_INTERVAL_MS = 30_000/);
+  assert.match(leaseEffectSource, /fetch\(`\/api\/agent\/\$\{encodeURIComponent\(sid\)\}\/lease`/);
+  assert.match(leaseEffectSource, /setInterval\(\(\) => void renewLease\(\), SESSION_LEASE_RENEW_INTERVAL_MS\)/);
+  assert.match(leaseEffectSource, /document\.addEventListener\("visibilitychange", onVisible\)/);
+  // The lease is independent of the SSE stream: an idle session's stream may
+  // be closed, so the route creates a page lease instead.
+  assert.doesNotMatch(leaseEffectSource, /closeEvents|maintainEventsConnected/);
+});
+
+test("the lease route renews only the caller's live session", async () => {
+  const route = await readSource("../app/api/agent/[id]/lease/route.ts");
+  assert.match(route, /checkLiveSessionAccess\(req, id\)/);
+  assert.match(route, /renewSessionLivenessLeases\(id\)/);
+  assert.match(route, /getRpcSession\(id\)\?\.isAlive\(\)/);
+  assert.match(route, /acquireSessionLivenessLease\(id\)/);
+});

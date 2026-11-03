@@ -258,6 +258,7 @@ const AGENT_STATE_RECONCILE_MS = 15_000;
 const BASH_STATE_RECONCILE_MS = 1_000;
 const EVENT_STREAM_READY_TIMEOUT_MS = 60_000;
 const EVENT_STREAM_RECONNECT_DELAY_MS = 1_000;
+const SESSION_LEASE_RENEW_INTERVAL_MS = 30_000;
 // Retry temporary model-list failures without requiring a page refresh.
 const MODELS_RETRY_DELAYS_MS = [2_000, 5_000, 10_000];
 const MAX_NOTICES = 5;
@@ -932,6 +933,45 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       }
     };
   }, [maintainEventsConnected, session?.id, sessionRunning]);
+
+  // Renew the selected session's lease every 30s. Each renewal resets the
+  // session's idle countdown, so a tab left open does not have its wrapper (and
+  // any background task) reaped. The route also creates a lease when the SSE
+  // stream is closed (idle session), so this does not depend on the stream.
+  useEffect(() => {
+    const sid = session?.id;
+    if (!sid) return;
+    let disposed = false;
+    let renewing = false;
+
+    const renewLease = async () => {
+      if (disposed || renewing) return;
+      renewing = true;
+      try {
+        const response = await fetch(`/api/agent/${encodeURIComponent(sid)}/lease`, {
+          method: "POST",
+          cache: "no-store",
+        });
+        if (!response.ok || disposed) return;
+        await response.json() as { renewed?: number };
+      } catch {
+        // Retry on the next interval; the SSE connection remains the primary path.
+      } finally {
+        renewing = false;
+      }
+    };
+
+    const interval = setInterval(() => void renewLease(), SESSION_LEASE_RENEW_INTERVAL_MS);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void renewLease();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      disposed = true;
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [session?.id]);
 
   const respondToExtensionUi = useCallback(
     async (

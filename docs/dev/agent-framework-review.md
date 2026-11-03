@@ -502,6 +502,12 @@ Quick   <quickHome>/q-<template>-<hash>/.pi/  （模板快照 + quick MCP 物化
 参考能力模型（12 层）与现状对照。**优先级**：P0=安全/正确性，P1=框架能力，
 P2=体验/规模化；**工作量**为粗估（人日）。
 
+> 上游 pi-web 0.14.x（292 个提交）对这些差距的覆盖情况、可复用构件与 UI 可引入项，
+> 见 [upstream-0.14-gap-and-ui-review.md](./upstream-0.14-gap-and-ui-review.md)。
+> 结论：上游只解决了少数运行时/观测构件；记忆、编排、治理、环境、分发、运维
+> 大多明确 out of scope。该文还记录了两个 0851 特有的高优先级问题
+> （preview-mode 认证绕过、lease 续约只 cherry-pick 了一半）。
+
 ### 9.1 执行与调度
 
 | 现状 | 差距 | 建议 | 优先级/工作量 |

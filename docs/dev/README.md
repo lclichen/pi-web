@@ -28,6 +28,8 @@
 | `config-sharing.md` | 配置分享三件套：项目配置包导出/导入、预置配置模板（管理员分发）、Host 目录包；权限矩阵与已知不足 | 开发、用户 |
 | `平台功能检查手册.md` | 14 节端到端功能/权限走查手册（admin vs 普通用户） | 测试、验收 |
 | `全流程测试方案.md` | 三层测试方案（L0 静态 / L1 本地 dev+mock / L2 VM 实机）、回归集选择、QA 子智能体接入 | 测试、开发 |
+| `upstream-0.14-gap-and-ui-review.md` | 上游 pi-web v0.14.2（292 提交）对 12 层框架差距的覆盖、可引入构件与 UI 清单；含 preview-mode 认证绕过与 lease 缺失的实测 | 开发、产品 |
+| `sca.md` | SCA（软件成分分析）：OSV-Scanner CI、SARIF 告警、Dependabot 分组与处置流程 | 开发、运维 |
 
 ## 维护约定
 

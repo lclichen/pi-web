@@ -29,6 +29,24 @@ export type StreamCloser = (closeController: boolean | "error") => void;
 const activeStreamClosers: Set<StreamCloser> = ((globalThis as Record<symbol, Set<StreamCloser>>)[CLOSER_REGISTRY] ??=
   new Set<StreamCloser>());
 
+/** Read-only stream metadata for the Debug panel. */
+export interface AgentEventStreamInfo {
+  sessionId: string;
+  openedAt: number;
+  connectedAt: number | null;
+  lastWriteAt: number | null;
+  bytesWritten: number;
+}
+
+const STREAM_INFO_REGISTRY: symbol = Symbol.for("pi-web.agentEventStreamInfos");
+const activeStreamInfos: Map<symbol, AgentEventStreamInfo> = ((
+  globalThis as Record<symbol, Map<symbol, AgentEventStreamInfo>>
+)[STREAM_INFO_REGISTRY] ??= new Map<symbol, AgentEventStreamInfo>());
+
+export function listAgentEventStreams(): AgentEventStreamInfo[] {
+  return Array.from(activeStreamInfos.values(), (info) => ({ ...info }));
+}
+
 /**
  * Register an SSE stream closer in the shared shutdown registry (invoked by
  * closeAllAgentEventStreams on process shutdown signals). Shared by the agent
@@ -75,6 +93,15 @@ export function createAgentEventStream(
       let heartbeat: ReturnType<typeof setInterval> | null = null;
       let unsubscribe: (() => void) | null = null;
       let abortHandler: (() => void) | null = null;
+      const infoKey = Symbol(sessionId);
+      const streamInfo: AgentEventStreamInfo = {
+        sessionId,
+        openedAt: Date.now(),
+        connectedAt: null,
+        lastWriteAt: null,
+        bytesWritten: 0,
+      };
+      activeStreamInfos.set(infoKey, streamInfo);
 
       // "error": hard-terminate the response (SSE client sees a broken
       // stream and reconnects). Used on process shutdown: a plain close() is
@@ -88,6 +115,7 @@ export function createAgentEventStream(
         releaseLease();
         releaseLease = () => {};
         activeStreamClosers.delete(cleanup);
+        activeStreamInfos.delete(infoKey);
         if (heartbeat !== null) clearInterval(heartbeat);
         unsubscribe?.();
         unsubscribe = null;
@@ -113,7 +141,10 @@ export function createAgentEventStream(
       const enqueueText = (text: string) => {
         if (closed) return;
         try {
-          controller.enqueue(encoder.encode(text));
+          const bytes = encoder.encode(text);
+          controller.enqueue(bytes);
+          streamInfo.bytesWritten += bytes.byteLength;
+          streamInfo.lastWriteAt = Date.now();
         } catch {
           cleanup(false);
         }
@@ -163,6 +194,7 @@ export function createAgentEventStream(
           unsubscribe = stopListening;
 
           const snapshot = session.streamingMessage;
+          streamInfo.connectedAt = Date.now();
           encode({
             type: "connected",
             sessionId,

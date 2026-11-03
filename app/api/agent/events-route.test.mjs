@@ -21,5 +21,8 @@ test("agent SSE starts sessions asynchronously and disables response buffering",
 
 test("agent SSE reuses one TextEncoder per stream", () => {
   assert.equal((agentEventStreamSource.match(/new TextEncoder\(\)/g) ?? []).length, 1);
-  assert.match(agentEventStreamSource, /controller\.enqueue\(encoder\.encode\(/);
+  // The encoded chunk is held in `bytes` so the debug stream registry can
+  // count it; either the inline or the named form is one encode per write.
+  assert.match(agentEventStreamSource, /controller\.enqueue\((?:encoder\.encode\(|bytes\))/);
+  assert.match(agentEventStreamSource, /const bytes = encoder\.encode\(text\)/);
 });

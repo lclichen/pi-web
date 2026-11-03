@@ -160,6 +160,24 @@ type ExtensionBindingOptions = {
   forceEmptySystemPrompt?: boolean;
 };
 
+/** Read-only per-wrapper state exposed by the Debug panel. */
+export interface RpcSessionDebugSnapshot {
+  sessionId: string | null;
+  ownerId: number;
+  mode: "host" | "sandbox" | "local-machine" | "ssh" | "quick";
+  cwd: string;
+  sessionFile: string | null;
+  alive: boolean;
+  running: boolean;
+  chatOnly: boolean;
+  pendingPromptCount: number;
+  forceShutdownOnIdle: boolean;
+  startedAt: number;
+  idleDeadlineAt: number | null;
+  lastCommandType: string | null;
+  lastCommandAt: number | null;
+}
+
 const IDLE_RESET_EVENT_TYPES = new Set(["agent_end", "agent_settled", "auto_compaction_end", "compaction_end"]);
 
 const DEFAULT_SESSION_IDLE_TIMEOUT_MS = 10 * 60 * 1000;
@@ -400,6 +418,11 @@ export class AgentSessionWrapper {
   private sessionShutdownEmitted = false;
   private forceShutdownOnIdle = false;
   private _alive = true;
+  /** Debug panel: creation time, last command and the next idle check. */
+  readonly startedAt = Date.now();
+  private idleDeadlineAt = 0;
+  private lastCommandType: string | null = null;
+  private lastCommandAt = 0;
 
   constructor(
     public readonly inner: AgentSessionLike,
@@ -452,6 +475,26 @@ export class AgentSessionWrapper {
       this._alive &&
       (this.pendingPromptCount > 0 || this.inner.isStreaming || this.inner.isCompacting || this.inner.isBashRunning)
     );
+  }
+
+  /** Read-only snapshot for GET /api/agent/debug (never sends a command). */
+  getDebugSnapshot(): RpcSessionDebugSnapshot {
+    return {
+      sessionId: this.sessionId || null,
+      ownerId: this.ownerId ?? 0,
+      mode: this.mode ?? "host",
+      cwd: this.cwd,
+      sessionFile: this.sessionFile || null,
+      alive: this.isAlive(),
+      running: this.isRunning(),
+      chatOnly: this.isChatOnly(),
+      pendingPromptCount: this.pendingPromptCount,
+      forceShutdownOnIdle: this.forceShutdownOnIdle,
+      startedAt: this.startedAt,
+      idleDeadlineAt: this.idleDeadlineAt || null,
+      lastCommandType: this.lastCommandType,
+      lastCommandAt: this.lastCommandAt || null,
+    };
   }
 
   isChatOnly(): boolean {
@@ -864,11 +907,14 @@ export class AgentSessionWrapper {
 
   private resetIdleTimer(): void {
     if (this.idleTimer) clearTimeout(this.idleTimer);
+    this.idleDeadlineAt = 0;
     if (!this._alive) return;
     // A resolved timeout of 0 disables idle shutdown entirely.
     if (SESSION_IDLE_TIMEOUT_MS === 0) return;
     if (!this.isRunning()) this.forceShutdownOnIdle = false;
+    this.idleDeadlineAt = Date.now() + SESSION_IDLE_TIMEOUT_MS;
     this.idleTimer = setTimeout(() => {
+      this.idleDeadlineAt = 0;
       if (
         !this.forceShutdownOnIdle &&
         (this.isRunning() ||
@@ -965,6 +1011,8 @@ export class AgentSessionWrapper {
 
   async send(command: Record<string, unknown>): Promise<unknown> {
     const type = command.type as string;
+    this.lastCommandType = type;
+    this.lastCommandAt = Date.now();
     const allowedDuringReplacement = COMMANDS_ALLOWED_DURING_SESSION_REPLACEMENT.has(type);
     if (this.sessionReplacement && !allowedDuringReplacement) {
       throw new Error("Session is being copied to a new session");
@@ -1653,6 +1701,7 @@ export class AgentSessionWrapper {
   destroy(): void {
     if (!this._alive) return;
     this._alive = false;
+    this.idleDeadlineAt = 0;
     if (this.idleTimer) clearTimeout(this.idleTimer);
     if (this.inner.isBashRunning) this.inner.abortBash();
     this.unsubscribe?.();
@@ -2438,6 +2487,24 @@ export function getRpcSessionOwner(
   const session = getRegistry().get(sessionId);
   if (!session) return undefined;
   return { ownerId: session.ownerId, mode: session.mode };
+}
+
+/** Read-only wrapper snapshots for the Debug panel (never starts a session). */
+export function getRpcSessionDebugSnapshots(): RpcSessionDebugSnapshot[] {
+  const snapshots: RpcSessionDebugSnapshot[] = [];
+  for (const session of getRegistry().values()) {
+    try {
+      snapshots.push(session.getDebugSnapshot());
+    } catch {
+      // A wrapper from an older hot-reload graph may lack fields; skip it.
+    }
+  }
+  return snapshots;
+}
+
+/** Session starts currently in flight, grouped by normalized cwd. */
+export function getRpcStartingSessionCwds(): Array<{ cwd: string; count: number }> {
+  return Array.from(getStartingSessionCwds(), ([cwd, count]) => ({ cwd, count }));
 }
 
 // 子智能体内联扩展桥（lib/subagent-bridge.ts）：tintinweb 建子会话时经

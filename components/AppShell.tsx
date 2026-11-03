@@ -14,6 +14,7 @@ import { TabBar, type Tab } from "./TabBar";
 import { SubagentsConfig } from "./SubagentsConfig";
 import { McpServersConfig } from "./McpServersConfig";
 import { EnvironmentsMenu } from "./EnvironmentsMenu";
+import { DebugPanel } from "./DebugPanel";
 import { SandboxManagerDialog } from "./SandboxManagerDialog";
 import { PlatformAdminDialog } from "./PlatformAdminDialog";
 import { MyWorkspaceDialog } from "./MyWorkspaceDialog";
@@ -539,6 +540,7 @@ export function AppShell() {
   const [activeTopPanel, setActiveTopPanel] = useState<
     "agents" | "branches" | "system" | "tools" | "session" | "language" | null
   >(null);
+  const [debugOpen, setDebugOpen] = useState(false);
   const [topPanelPos, setTopPanelPos] = useState<{ top: number; left: number; width: number } | null>(null);
 
   useEffect(() => {
@@ -4603,6 +4605,48 @@ export function AppShell() {
           onConfirm={() => void handleTrustProject()}
         />
       )}
+      {(!authEnabled || (webUser !== "loading" && webUser !== null && webUser.role === "admin")) && (
+        <button
+          type="button"
+          onClick={() => setDebugOpen(true)}
+          title={translate("debug.title")}
+          aria-label={translate("debug.title")}
+          style={{
+            position: "fixed",
+            right: 14,
+            bottom: 14,
+            zIndex: 1250,
+            width: 30,
+            height: 30,
+            borderRadius: 15,
+            border: "1px solid var(--border)",
+            background: "var(--bg)",
+            color: "var(--text-muted)",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.18)",
+            fontSize: 14,
+          }}
+        >
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <rect x="8" y="6" width="8" height="14" rx="4" />
+            <path d="M19 7l-3 2M5 7l3 2M19 13h-3M5 13h3M19 19l-3-2M5 19l3-2" />
+          </svg>
+        </button>
+      )}
+      {debugOpen && <DebugPanel sessionId={selectedSession?.id ?? null} onClose={() => setDebugOpen(false)} />}
       {/* Skills/plugins/agents/mcp config all live in the upstream
         SettingsPanel sections now; the top-bar Agents/MCP buttons open it. */}
     </>

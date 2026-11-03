@@ -12,6 +12,8 @@ export interface RelayStatusResponse {
   requiredVersion?: string;
   relayPort: number;
   advertiseUrl: string | null;
+  /** Admin-configured global public base URL (share links / pairing host). */
+  publicBaseUrl: string | null;
 }
 
 export interface UseRelayAgent extends RelayStatusResponse {
@@ -31,6 +33,7 @@ export function useRelayAgent(): UseRelayAgent {
     online: false,
     relayPort: 30142,
     advertiseUrl: null,
+    publicBaseUrl: null,
   });
   const [ready, setReady] = useState(false);
   const stoppedRef = useRef(false);

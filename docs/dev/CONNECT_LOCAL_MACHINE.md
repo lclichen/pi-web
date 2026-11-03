@@ -56,6 +56,20 @@
   服务端会自动改用共享根相对路径，根外目录会给出可操作的升级/改根提示。
   服务器不留文件副本。
 
+## 配对命令里的主机名（优先级）
+
+`agent-client pair --server …` 与安装命令里的下载地址，按以下顺序取主机：
+
+1. `PI_RELAY_ADVERTISE_URL`——显式的 relay 对外地址（反向代理/路径前缀场景）；
+2. 管理员「全局配置 → 对外访问地址」（`publicBaseUrl`，`PI_WEB_PUBLIC_URL` 播种）
+   的**主机名 + relay 端口**（分享链接也用同一个地址）；
+3. 浏览器当前地址（`window.location`）+ relay 端口。
+
+这样管理员用 `localhost` 打开 WebUI 时，复制给用户的配对命令仍指向内网/公网
+可达地址。注意：relay 是独立端口（默认 30142）；若反向代理只暴露 443 并用路径
+转发 relay，请显式设置 `PI_RELAY_ADVERTISE_URL`（否则命令会是
+`https://host:30142`）。
+
 ## 配置（环境变量）
 
 | 变量 | 默认 | 说明 |

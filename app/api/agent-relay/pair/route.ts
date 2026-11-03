@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createPairingCode } from "@/lib/relay/registry";
 import { getRelayInfo } from "@/lib/relay/ws-server";
+import { getPublicBaseUrl } from "@/lib/server-settings";
 import { requireUserIdentity } from "@/lib/web-session";
 
 export const dynamic = "force-dynamic";
@@ -29,6 +30,8 @@ export async function POST(req: Request) {
       // When pi-web sits behind a reverse proxy, set PI_RELAY_ADVERTISE_URL so
       // the command shown to users points at the externally-reachable address.
       advertiseUrl: process.env.PI_RELAY_ADVERTISE_URL ?? null,
+      // 全局"对外访问地址"：配对命令的主机优先用它（见 lib/relay/advertise-url.ts）。
+      publicBaseUrl: getPublicBaseUrl() ?? null,
     },
     { headers: { "Cache-Control": "no-store" } },
   );

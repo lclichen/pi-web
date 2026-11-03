@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getStatusForUser } from "@/lib/relay/registry";
 import { requireUserIdentity } from "@/lib/web-session";
 import { getRelayInfo } from "@/lib/relay/ws-server";
+import { getPublicBaseUrl } from "@/lib/server-settings";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +20,7 @@ export async function GET(req: Request) {
       ...status,
       relayPort: relay.port,
       advertiseUrl: process.env.PI_RELAY_ADVERTISE_URL ?? null,
+      publicBaseUrl: getPublicBaseUrl() ?? null,
     },
     { headers: { "Cache-Control": "no-store" } },
   );

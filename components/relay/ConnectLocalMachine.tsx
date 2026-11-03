@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { useRelayAgent } from "@/hooks/useRelayAgent";
 import { clientAssetName, clientCompatibility, REQUIRED_CLIENT_VERSION } from "@/lib/client-compat";
+import { publicBaseOrigin, relayServerUrlFromPublicBase } from "@/lib/relay/advertise-url";
 import type { MachineStatus } from "@/lib/relay/protocol";
 import { LocalMachinePanel } from "./LocalMachinePanel";
 
@@ -23,13 +24,20 @@ interface Pairing {
 
 /** Install/pair info shared by the dialog and the embedded pairing steps. */
 function useAgentInstallInfo() {
-  const { relayPort, advertiseUrl } = useRelayAgent();
+  const { relayPort, advertiseUrl, publicBaseUrl } = useRelayAgent();
   const port = relayPort;
   const hasWindow = typeof window !== "undefined";
+  // 主机名优先级与分享链接一致：显式 relay 地址 > 全局"对外访问地址" >
+  // 浏览器当前地址。管理员用 localhost 打开时，命令也不会指向 localhost。
   const serverUrl =
-    advertiseUrl ?? (hasWindow ? `${window.location.protocol}//${window.location.hostname}:${port}` : "");
+    advertiseUrl ??
+    relayServerUrlFromPublicBase(publicBaseUrl, port) ??
+    (hasWindow ? `${window.location.protocol}//${window.location.hostname}:${port}` : "");
   const asset = detectAgentAsset();
-  const downloadUrl = hasWindow ? `${window.location.origin}/api/agent-relay/download/${asset.file}` : "";
+  const publicOrigin = publicBaseOrigin(publicBaseUrl);
+  const downloadUrl = hasWindow
+    ? `${publicOrigin ?? window.location.origin}/api/agent-relay/download/${asset.file}`
+    : "";
   return { serverUrl, asset, downloadUrl };
 }
 

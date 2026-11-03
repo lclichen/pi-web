@@ -418,8 +418,9 @@ ProjectRecord {
   （解析结果必须在空间目录内，否则 404 不泄露存在性）。
 - 活会话快路径：`checkLiveSessionAccess` 只允许 owner 或 admin；普通用户拿别人
   运行中 id 读/写一律 404。
-- 管理员跨用户：**运行中**会话可读可写（支持场景）；已落盘的历史会话仍走空间栅栏
-  （404）。只读"支持视图"尚未拍板/实现（`docs/dev/session-access-and-tool-bridge.md` §1.3）。
+- 管理员跨用户：**运行中**会话默认为**只读支持视图**（可看事件/状态，不能
+  prompt/steer/abort/set_*）；点"接管"后 1 小时内可写（按 (session, admin)
+  记内存，页面刷新/进程重启失效）。已落盘的历史会话仍走空间栅栏（404）。
 - 平台资源：容器/workspace 按 owner 隔离（平台 404 原则）；relay 按
   `(userId, machineId)` 多槽；项目按 ownerId 校验。
 
@@ -509,6 +510,34 @@ P2=体验/规模化；**工作量**为粗估（人日）。
 | 长任务：bg_run 不自动唤醒、重启 lost；工具调用不可恢复 | 无 checkpoint/续跑；无 at-least-once 任务语义 | bg 终态注入 `<task-notification>`（V2）；会话级 checkpoint（消息树已有，补工具状态）；重启后 bg_list 标 lost + 可重跑 | P1 / 3-5 |
 | 会话恢复靠文件 + sidecar；运行中流断线靠 snapshot | 事件流无 seq/重放；跨重启丢失 in-flight 事件 | doc 08 P2：主事件流 seq 信封 + 环形缓冲；或客户端缓冲 + state 重取（零分叉降级） | P1 / 2-3 |
 
+### 9.1b 会话生命周期与 500 并发推演
+
+**一个回合结束后**：`AgentSessionWrapper` 不会立刻销毁；它回到 idle，重置
+`SESSION_IDLE_TIMEOUT_MS`（代码默认 10 分钟；VM 部署常见 `PI_WEB_IDLE_TIMEOUT_MS=7 天`）。
+idle 期间**不占 CPU**，但会占内存（消息/工具结果对象）与一个定时器；超时后
+`shutdown()` 发出 `session_shutdown`、`dispose()` 并从注册表移除，下次访问从
+JSONL 恢复。因此"对话结束后一直占用事件循环"不成立——但**内存驻留**是真实成本。
+
+**50 用户 × 每人 10 个打开会话 = 500 个驻留会话**：
+
+| 资源 | 估算 |
+| --- | --- |
+| 会话内存 | 10–50MB/活跃 RPC 会话（容量文档实测 1MB 磁盘≈3MB 堆）；500 × 15MB ≈ 7.5GB 起，按 30MB 则 15GB |
+| 模型并发 | 硬顶是模型侧（例：Qwen3.8-27B @ 2×H100 ≈15 并发回合）；500 个**同时**生成会排队/超时 |
+| 事件循环 | 500 个 idle 会话本身不压 CPU；500 条 SSE + 同时流式输出才是瓶颈；JSONL 恢复（20MB≈75-150ms）会造成登录潮卡顿 |
+| 磁盘 | 会话写盘与快照/容器盘叠加，需单独配额 |
+
+结论：**单机单进程不支持 500 个同时活跃会话**。可行的分层：
+
+1. **每用户交互会话上限**（例如 5）＋ "超过后最旧 idle 会话被卸载（LRU）"；
+2. **worker/进程池**：每 worker 承载 N 个会话（`pi --mode rpc` 子进程），
+   把 JSONL 解析与模型流移出主事件循环，按用户/会话哈希路由；
+3. **模型调用排队**（按部署模型并发设上限）+ 每用户 token/成本配额；
+4. 缩短 idle TTL（默认 10 分钟）或按"打开标签页"续命，而不是 7 天常驻；
+5. 500 **用户** ≠ 500 **活跃会话**：按 20-30% 活跃比，50 用户×10 会话的
+   实际同时生成通常在 10-20 个回合，单机尚可；但 500 个"打开着"的会话仍
+   需要上面的内存治理。
+
 ### 9.2 环境与依赖
 
 | 现状 | 差距 | 建议 | 优先级/工作量 |
@@ -521,14 +550,14 @@ P2=体验/规模化；**工作量**为粗估（人日）。
 | 现状 | 差距 | 建议 | 优先级/工作量 |
 | --- | --- | --- | --- |
 | 全局 models/auth + 项目覆盖 + 沙盒 LLM 网关自动注册；模型 scope/enabledModels | 无每用户模型配额/成本账本；无模型路由/降级策略；无 prompt cache 纪律 | 每用户/项目 token/成本统计（session stats 已有基础）；模型 fallback 链；缓存友好提示词模板 | P1 / 3-5 |
-| **全局凭据写接口权限不一致**：`/api/models-config` PUT 仅 admin，但 `/api/auth/api-key/[provider]` POST/DELETE、`/api/auth/login/[provider]`、`/api/models-config/test|discover` 无角色校验 | 任一登录用户可改全局 provider 凭据/用服务器发任意请求（SSRF/凭据注入） | 统一 `requireAdminIdentity`；discover/test 加 admin 或严格白名单；补测试 | **P0 / 0.5-1** |
+| ~~**全局凭据写接口权限不一致**~~（**已修 2026-11-03**）：`auth/api-key|login|logout`、`models-config/test|discover` 现在都要求登录并按角色分 scope；普通用户写入 `<dataDir>/user-models/u<id>/`，管理员写全局 | 已修：普通用户不再能改全局凭据；用户模型配置与会话运行时合并（全局→用户→项目） | 后续：每用户模型成本配额、模型 fallback 链 | 已落地 |
 
 ### 9.4 工具与 MCP 治理
 
 | 现状 | 差距 | 建议 | 优先级/工作量 |
 | --- | --- | --- | --- |
 | 七件套同名覆盖 + 预设 + path-guard + plan 门禁 | 无 per-tool 审批策略（allow/ask/deny 只到路径层）；无工具级审计；无动态工具发现（tool_search） | 工具策略表（按工具/模式/角色）；tool_call 审计事件（谁/会话/工具/参数摘要/结论）；工具多时再加 tool_search | P1 / 3-5 |
-| MCP 在 Host 进程启动；project scope 由项目属主管 | **控制面未隔离**：项目 `.pi/mcp.json` 的 stdio command 可在服务器执行；project trust 不覆盖 MCP | 项目 MCP 只允许 http/远程桥；stdio 仅 admin/global；或把 MCP 放进执行面（sandbox/relay/ssh 桥） | **P0 / 2-4** |
+| MCP 在 Host 进程启动；project scope 由项目属主管 | 控制面未完全隔离：项目 `.pi/mcp.json` 的 stdio command 在服务器执行 | **已修一部分（2026-11-03）**：普通用户的项目 stdio 创建/更新/配置包导入被拒；project trust 纳入 `mcp.json` 并给出可操作的信任提示。**剩余**：已存在的 stdio 条目与管理员模板仍在 Host 执行，彻底方案是把 MCP 放进执行面 | P0 部分已落地 / 剩余 P1 2-4 |
 | `.pi/extensions` 由 SDK 信任门控，但用户可自行信任 | 用户项目扩展在 Host 进程执行；信任是同意不是沙箱 | 扩展权限声明（capabilities）+ 进程隔离/受限 API；或仅 admin 可加载项目扩展 | P1 / 5-8 |
 
 ### 9.5 记忆与知识
@@ -547,7 +576,7 @@ P2=体验/规模化；**工作量**为粗估（人日）。
 
 | 现状 | 差距 | 建议 | 优先级/工作量 |
 | --- | --- | --- | --- |
-| 会话归属/路径栅栏/项目 owner/平台配额；path-guard 有 onVerdict 钩子但无持久审计 | 无工具级/管理操作审计；管理员对运行中会话可写；无数据保留/删除策略 | 统一 audit log（tool_call、审批、管理员访问、配置包导入）；管理员支持视图只读 + 显式接管；保留策略 | P0（只读视图）/ P1（审计）/ 2-4 |
+| 会话归属/路径栅栏/项目 owner/平台配额；path-guard 有 onVerdict 钩子但无持久审计 | 无工具级/管理操作审计；管理员支持视图已默认只读（接管留痕待补）；无数据保留/删除策略 | 统一 audit log（tool_call、审批、管理员访问、配置包导入）；管理员支持视图只读 + 显式接管；保留策略 | P0（只读视图）/ P1（审计）/ 2-4 |
 | 平台有 sessions/audit 表 | pi-web 侧事件未汇入 | 结构化事件 → 平台或本地 JSONL + 查询页 | P1 / 3 |
 
 ### 9.8 可观测性与评测
@@ -590,13 +619,17 @@ P2=体验/规模化；**工作量**为粗估（人日）。
 
 **P0（1-2 周，安全/正确性）**
 
-1. 统一全局凭据/网络代理类路由的 admin 门禁（`auth/api-key`、`auth/login`、
-   `models-config/test|discover`），补越权测试。
-2. 项目级 MCP stdio 的隔离决策：非 admin 禁止 stdio / 仅 http，或把 MCP 放进
-   执行面；至少加显式风险提示与配置校验。
-3. 管理员跨用户支持视图：默认只读（prompt/steer/set_* 拒绝），显式"接管"开关；
-   会话头部显示归属。
-4. 每用户交互会话上限 + 全局上限（防单进程被拖垮）。
+1. ✅ **已完成（2026-11-03）** 全局凭据/网络代理类路由的角色 scope：
+   `auth/api-key|login|logout`、`models-config/test|discover` 都要求身份并按
+   角色写入全局/用户层；普通用户的模型配置进 `<dataDir>/user-models/u<id>/`，
+   会话运行时按「全局 → 用户 → 项目」合并。
+2. ✅ **部分完成（2026-11-03）** 项目级 MCP：普通用户的 stdio 创建/更新/
+   配置包导入被拒；trust 纳入 `mcp.json` 并在 AppShell/技能/插件/MCP 页给出
+   "受限模式 + 信任项目"入口。剩余：已存在的 stdio/管理员模板需执行面隔离。
+3. ✅ **已完成（2026-11-03）** 管理员支持视图默认只读 + 归属提示 + 1 小时
+   接管开关（`/api/sessions/:id/takeover`）；写命令在 `POST /api/agent/:id`
+   统一拦截。
+4. ⬜ 每用户交互会话上限 + 全局上限（防单进程被拖垮）。
 
 **P1（1-2 个月，框架能力）**
 

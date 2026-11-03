@@ -115,6 +115,7 @@ export function ApplyBundleDialog({
                 type="button"
                 style={{ ...btnStyle, borderColor: "rgba(37,99,235,0.35)", color: "var(--accent)" }}
                 onClick={() => {
+                  window.dispatchEvent(new Event("pi-web:config-changed"));
                   onApplied();
                   onClose();
                 }}

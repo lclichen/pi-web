@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
-import { checkLiveSessionAccess, resolveSessionAccess } from "@/lib/session-access";
+import { checkLiveSessionAccess, resolveSessionAccess, sessionOwnerInfo } from "@/lib/session-access";
 import { startRpcSession, getRpcSession, setRpcSessionTools } from "@/lib/rpc-manager";
 import { restoreSessionOptions } from "@/lib/session-restore-options";
+import { requireUserIdentity } from "@/lib/web-session";
+import { hasAdminTakeover, isReadOnlyAgentCommand } from "@/lib/admin-takeover";
 
 // POST /api/agent/[id] - Send a command to an existing session
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -20,6 +22,27 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       throw new Error("toolNames must be an array of strings");
     }
     const toolNames = requestedToolNames as string[] | undefined;
+
+    // 管理员支持视图：默认只读。运行中会话的归属可见；写入类命令需要显式
+    // 接管（POST /api/sessions/:id/takeover），避免"点进去就改了别人的会话"。
+    const identity = requireUserIdentity(req);
+    if (identity.ok) {
+      const caller = identity.session.user;
+      if (caller.role === "admin" && caller.id !== 0 && !isReadOnlyAgentCommand(commandType ?? "")) {
+        const live = getRpcSession(id)?.isAlive() ?? false;
+        const owner = sessionOwnerInfo(id);
+        if (live && owner.ownerId > 0 && owner.ownerId !== caller.id && !hasAdminTakeover(id, caller.id)) {
+          return NextResponse.json(
+            {
+              error: `该会话归属 ${owner.ownerName ?? `用户 #${owner.ownerId}`}，管理员支持视图为只读；如需写入，请先点击“接管”。`,
+              code: "read_only",
+              ...(owner.ownerName ? { ownerName: owner.ownerName } : {}),
+            },
+            { status: 403 },
+          );
+        }
+      }
+    }
 
     // Fast path: already-running session
     const existing = getRpcSession(id);

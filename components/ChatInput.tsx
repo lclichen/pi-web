@@ -106,6 +106,8 @@ interface Props {
    *  search through /api/remotefs — the server-side cwd is a stub home whose
    *  /api/file-index listing is empty by construction. */
   remoteFileSessionId?: string | null;
+  /** 管理员支持视图只读：输入框可选中/复制，但不能发送（接管后解除）。 */
+  readOnly?: boolean;
 }
 
 export interface ChatInputHandle {
@@ -834,6 +836,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
     cwd,
     remoteFileSessionId = null,
     compact = false,
+    readOnly = false,
   }: Props,
   ref,
 ) {
@@ -1228,6 +1231,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
   );
 
   const handleSend = useCallback(async () => {
+    if (readOnly) return;
     const msg = value.trim();
     if (!msg && !attachedImages.length) return;
     onAudioUnlock?.();
@@ -1236,7 +1240,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
     if (isStreaming) return;
     clearInput();
     onSend(msg, attachedImages.length ? attachedImages : undefined);
-  }, [value, attachedImages, isStreaming, runBuiltinCommand, onSend, clearInput, onAudioUnlock]);
+  }, [value, attachedImages, isStreaming, runBuiltinCommand, onSend, clearInput, onAudioUnlock, readOnly]);
 
   const slashQuery =
     !compact && value.startsWith("/") && !/\s/.test(value.slice(1)) ? value.slice(1).toLowerCase() : null;
@@ -2647,6 +2651,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
               ref={textareaRef}
               className="chat-input-textarea"
               data-guide="chat"
+              readOnly={readOnly}
+              aria-readonly={readOnly || undefined}
               aria-label={compact ? t("chat.quoteQuestion") : undefined}
               value={value}
               onChange={(e) => {

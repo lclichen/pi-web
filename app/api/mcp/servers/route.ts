@@ -25,6 +25,17 @@ export async function POST(req: Request) {
     const guard = guardMcpRequest(req, body, { mutating: true });
     if (!guard.ok) return guard.response;
     const scope = body.scope === "global" || body.scope === "quick" ? body.scope : "project";
+    // 控制面隔离（2026-11-03 P0）：项目级 stdio MCP 在 pi-web 服务器进程内
+    // 启动，普通用户不可用；http MCP 不受限。
+    if (scope === "project" && !guard.isAdmin && body.entry.command) {
+      return NextResponse.json(
+        {
+          error:
+            "项目级 stdio MCP 会在 pi-web 服务器进程内启动，普通用户不可用。请改用 http MCP，或联系管理员在全局配置中添加。",
+        },
+        { status: 403 },
+      );
+    }
     try {
       createMcpServer(guard.cwd, scope, body.name.trim(), body.entry);
       return NextResponse.json({ success: true });

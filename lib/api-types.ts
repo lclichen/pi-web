@@ -74,6 +74,8 @@ export interface SkillsResponse {
 export interface ProjectTrustStatus {
   requiresTrust: boolean;
   trusted: boolean;
+  /** 触发信任提示的资源（扩展/技能/MCP 等），用于 UI 说明。 */
+  reasons: string[];
 }
 
 export interface AppUpdateResponse {

@@ -98,6 +98,8 @@ interface Props {
   planPanelActive?: boolean;
   /** The active/new session runs in quick mode (template switcher shows). */
   quickMode?: boolean;
+  /** Admin support view: read-only until an explicit takeover. */
+  readOnly?: boolean;
   onNewSessionTemplateChange?: (templateId: string) => void;
   onToggleTerminalPanel?: () => void;
   terminalPanelActive?: boolean;
@@ -374,6 +376,7 @@ export function ChatWindow({
   onOpenPlanPanel,
   planPanelActive,
   quickMode = false,
+  readOnly = false,
   onNewSessionTemplateChange,
   onToggleTerminalPanel,
   terminalPanelActive,
@@ -1158,6 +1161,7 @@ export function ChatWindow({
   const chatInputElement = (
     <ChatInput
       ref={chatInputRef}
+      readOnly={readOnly}
       onSend={handleSend}
       onAbort={handleAbort}
       onSteer={agentRunning ? handleSteer : undefined}

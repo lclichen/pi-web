@@ -1,7 +1,21 @@
 import { resolveSessionPath } from "./session-reader";
 import { getRpcSessionOwner } from "./rpc-manager";
+import { resolveSessionMode } from "./session-metas";
 import { requireUserIdentity, type WebSession } from "./web-session";
 import { spaceForRequest, type SessionSpace } from "./session-spaces";
+
+/**
+ * 会话归属（管理员支持视图的"归属提示/只读"判定）。
+ * 运行时注册表优先；未运行的会话从 sidecar meta 读取。
+ */
+export function sessionOwnerInfo(sessionId: string): { ownerId: number; ownerName?: string } {
+  const live = getRpcSessionOwner(sessionId);
+  const meta = resolveSessionMode(sessionId);
+  return {
+    ownerId: live?.ownerId ?? meta?.ownerId ?? 0,
+    ...(meta?.ownerName ? { ownerName: meta.ownerName } : {}),
+  };
+}
 
 /**
  * Per-request session access resolution (design doc §4): a session id is

@@ -64,10 +64,14 @@ export async function GET(req: Request) {
       if (!workspaceDir && mode === "local-machine") {
         workspaceDir = getAgentForUser(meta?.ownerId ?? user.id)?.info?.workspaceRoot;
       }
+      const ownerId = getRpcSessionOwner(s.id)?.ownerId ?? meta?.ownerId;
       return {
         ...s,
         ...(mode ? { mode, ...(meta?.projectId ? { projectId: meta.projectId } : {}) } : {}),
         ...(workspaceDir ? { workspaceDir } : {}),
+        // 管理员支持视图：归属提示（普通用户只会看到自己的会话，无影响）。
+        ...(ownerId !== undefined ? { ownerId } : {}),
+        ...(meta?.ownerName ? { ownerName: meta.ownerName } : {}),
       };
     });
     // Capture AFTER the scan: mutations during the scan bump the generation,

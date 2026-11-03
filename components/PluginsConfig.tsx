@@ -1041,8 +1041,25 @@ export function PluginsConfig({
       onClose={onClose}
     >
       {!projectResourcesLoaded && (
-        <div role="status" className="config-trust-notice">
-          {t("trust.pluginsNotLoaded")}
+        <div role="status" className="config-trust-notice" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <span style={{ flex: 1, minWidth: 200 }}>{t("trust.pluginsNotLoaded")}</span>
+          <button
+            type="button"
+            onClick={() => window.dispatchEvent(new CustomEvent("pi-web:trust-project", { detail: { cwd } }))}
+            style={{
+              padding: "4px 10px",
+              borderRadius: 6,
+              border: "1px solid var(--accent)",
+              background: "transparent",
+              color: "var(--accent)",
+              cursor: "pointer",
+              fontSize: 11,
+              fontWeight: 600,
+              whiteSpace: "nowrap",
+            }}
+          >
+            {t("trust.trustProject")}
+          </button>
         </div>
       )}
 

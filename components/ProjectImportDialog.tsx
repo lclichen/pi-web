@@ -68,6 +68,9 @@ export function ProjectImportDialog({ projectId, hostDir, projectName, onClose, 
       const data = (await res.json()) as Partial<ImportResult> & { error?: string };
       if (!res.ok || data.error) throw new Error(data.error ?? `HTTP ${res.status}`);
       setResult({ added: data.added ?? 0, overwritten: data.overwritten ?? 0, files: data.files ?? [] });
+      // 导入可能带来扩展/技能/MCP → 项目进入"受限模式"；通知宿主立即重查
+      // 信任状态，而不是等用户刷新页面。
+      window.dispatchEvent(new Event("pi-web:config-changed"));
       onImported?.();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));

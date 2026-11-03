@@ -44,6 +44,7 @@ import {
 } from "./apkg.ts";
 import { openApkgViaTool } from "./apkg-open.ts";
 import { formatConfigProblems, validateBundleConfigText, type ConfigFileProblem } from "./bundle-config-schema.ts";
+import { stripJsonc } from "./jsonc.ts";
 
 export const BUNDLE_FORMAT = "amedac-project-config";
 export const BUNDLE_VERSION = 2;
@@ -290,6 +291,9 @@ function assertAllowed(relPath: string): void {
 export interface ImportOptions {
   /** KEK override for tests; defaults to the server key store (lib/apkg.ts). */
   apkgKeys?: Record<string, Buffer>;
+  /** 普通用户导入时禁止项目级 stdio MCP（它会在 pi-web 服务器进程执行）。
+   *  管理员/服务器端模板保持 true。 */
+  allowStdioMcp?: boolean;
 }
 
 /**
@@ -398,8 +402,33 @@ export async function importProjectConfigBundle(
   // models.json parse to the shapes pi + pi-mcp-adapter actually consume.
   const importProblems: ConfigFileProblem[] = [];
   for (const write of writes) {
-    const problems = validateBundleConfigText(write.rel, write.content.toString("utf8"));
+    const text = write.content.toString("utf8");
+    const problems = validateBundleConfigText(write.rel, text);
     if (problems.length > 0) importProblems.push({ path: write.rel, problem: problems.join("；") });
+    // 控制面隔离：普通用户导入的 stdio MCP 会在 pi-web 服务器进程执行。
+    if (options.allowStdioMcp === false && /(^|\/)mcp\.json$/i.test(write.rel)) {
+      try {
+        const parsed = JSON.parse(stripJsonc(text)) as { mcpServers?: unknown };
+        const servers = parsed?.mcpServers;
+        if (servers && typeof servers === "object" && !Array.isArray(servers)) {
+          const stdio = Object.entries(servers as Record<string, unknown>)
+            .filter(([, entry]) => {
+              if (!entry || typeof entry !== "object" || Array.isArray(entry)) return false;
+              const command = (entry as { command?: unknown }).command;
+              return typeof command === "string" && command.trim().length > 0;
+            })
+            .map(([name]) => name);
+          if (stdio.length > 0) {
+            importProblems.push({
+              path: write.rel,
+              problem: `项目级 stdio MCP（${stdio.join(", ")}）会在 pi-web 服务器进程执行，普通用户不可导入；请改用 http MCP，或让管理员在全局配置中添加`,
+            });
+          }
+        }
+      } catch {
+        // 语法错误已由上一条 schema 校验报告
+      }
+    }
   }
   if (importProblems.length > 0) {
     throw new Error(`导入中止：包内配置格式无效（未写入任何文件）—— ${formatConfigProblems(importProblems)}`);

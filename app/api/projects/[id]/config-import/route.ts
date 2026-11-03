@@ -39,7 +39,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   try {
     const data = Buffer.from(await file.arrayBuffer());
     const home = ensureProjectHome(project);
-    const stats = await importProjectConfigBundle(home, data);
+    const stats = await importProjectConfigBundle(home, data, {
+      allowStdioMcp: identity.session.user.role === "admin",
+    });
     return NextResponse.json({ ok: true, ...stats });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 400 });

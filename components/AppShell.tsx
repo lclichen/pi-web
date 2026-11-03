@@ -220,6 +220,8 @@ export function AppShell() {
   const [labTrainingEnabled, setLabTrainingEnabled] = useState(true);
   // WebUI 操作教学（新手向导）：常驻按钮随时打开；首次访问自动弹出一次。
   const [webGuideOpen, setWebGuideOpen] = useState(false);
+  // 管理员支持视图的接管状态：按会话 id 记忆，切换会话自动失效。
+  const [takeoverSessionId, setTakeoverSessionId] = useState<string | null>(null);
   // "继续操作教学"胶囊：仅向导经配置卡片送用户去设置页时出现（见 WebUIGuide）。
   const [guideResumeVisible, setGuideResumeVisible] = useState(false);
   useEffect(() => {
@@ -1710,7 +1712,28 @@ export function AppShell() {
         console.error("Failed to load project trust:", error);
       });
     return () => controller.abort();
-  }, [projectTrustCwd, activeSessionMode]);
+  }, [projectTrustCwd, activeSessionMode, projectsRefreshKey]);
+
+  // 设置页里（技能/插件/MCP）的"信任项目"按钮通过 window 事件回到这里打开
+  // 统一的信任对话框，避免每个面板各自实现一份。
+  useEffect(() => {
+    const onTrustRequest = (event: Event) => {
+      const detail = (event as CustomEvent<{ cwd?: string }>).detail;
+      if (!detail?.cwd || detail.cwd !== projectTrustCwd) return;
+      setProjectTrustError(null);
+      setProjectTrustDialogOpen(true);
+    };
+    window.addEventListener("pi-web:trust-project", onTrustRequest);
+    return () => window.removeEventListener("pi-web:trust-project", onTrustRequest);
+  }, [projectTrustCwd]);
+
+  // 配置包导入/模板套用后：重查项目列表与信任状态（新扩展/技能/MCP 可能让
+  // 项目进入受限模式）。各对话框成功时派发该事件，避免每个调用点各自刷新。
+  useEffect(() => {
+    const onConfigChanged = () => setProjectsRefreshKey((key) => key + 1);
+    window.addEventListener("pi-web:config-changed", onConfigChanged);
+    return () => window.removeEventListener("pi-web:config-changed", onConfigChanged);
+  }, []);
 
   const handleTrustProject = useCallback(async () => {
     if (!projectTrustCwd || projectTrustBusy) return;
@@ -2159,8 +2182,40 @@ export function AppShell() {
     </button>
   );
 
+  // 管理员打开普通用户的运行中会话 = 支持视图：默认只读，显式接管后才可写。
+  const takeoverActive = Boolean(selectedSession && takeoverSessionId === selectedSession.id);
+  const supportOwnerId = selectedSession?.ownerId;
+  const isSupportReadOnly = Boolean(
+    selectedSession &&
+      webUser &&
+      webUser !== "loading" &&
+      webUser.role === "admin" &&
+      supportOwnerId !== undefined &&
+      supportOwnerId !== 0 &&
+      webUser.id !== undefined &&
+      supportOwnerId !== webUser.id,
+  );
+  const toggleTakeover = async () => {
+    if (!selectedSession) return;
+    const next = !takeoverActive;
+    if (next && !window.confirm(translate("session.takeoverConfirm"))) return;
+    try {
+      const res = await fetch(`/api/sessions/${encodeURIComponent(selectedSession.id)}/takeover`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ active: next }),
+      });
+      if (res.ok) setTakeoverSessionId(next ? selectedSession.id : null);
+    } catch {
+      /* 网络失败：保持原状态，服务端仍是唯一权威 */
+    }
+  };
+
   const renderProjectTrustWarning = (mobileBanner: boolean) => {
     if (!showChat || !projectTrust?.requiresTrust || projectTrust.trusted) return null;
+    const detail = projectTrust.reasons?.length
+      ? translate("trust.reasons", { reasons: projectTrust.reasons.join(", ") })
+      : translate("trust.resourcesNotLoaded");
     return (
       <button
         type="button"
@@ -2168,8 +2223,8 @@ export function AppShell() {
           setProjectTrustError(null);
           setProjectTrustDialogOpen(true);
         }}
-        title={translate("trust.resourcesNotLoaded")}
-        aria-label={translate("trust.resourcesNotLoaded")}
+        title={detail}
+        aria-label={detail}
         style={{
           display: "flex",
           alignItems: "center",
@@ -3835,11 +3890,71 @@ export function AppShell() {
 
           {/* Chat content + terminal bottom drawer */}
           <div style={{ flex: 1, overflow: "hidden", position: "relative", display: "flex", flexDirection: "column" }}>
-            <div style={{ flex: 1, overflow: "hidden", position: "relative", minHeight: 0 }}>
+            <div
+              style={{
+                flex: 1,
+                overflow: "hidden",
+                position: "relative",
+                minHeight: 0,
+                display: "flex",
+                flexDirection: "column",
+              }}
+            >
+              {isSupportReadOnly && (
+                <div
+                  role="status"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    padding: "7px 12px",
+                    flexShrink: 0,
+                    borderBottom: "1px solid var(--border)",
+                    background: "color-mix(in srgb, var(--warning) 10%, var(--bg-panel))",
+                    color: "var(--warning)",
+                    fontSize: 11.5,
+                    lineHeight: 1.5,
+                  }}
+                >
+                  <span
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {translate("session.ownerBanner", {
+                      owner: selectedSession?.ownerName ?? `#${selectedSession?.ownerId ?? "?"}`,
+                      state: takeoverActive ? translate("session.takeoverOn") : translate("session.readOnly"),
+                    })}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => void toggleTakeover()}
+                    style={{
+                      padding: "3px 10px",
+                      borderRadius: 6,
+                      border: "1px solid var(--warning)",
+                      background: "transparent",
+                      color: "var(--warning)",
+                      cursor: "pointer",
+                      fontSize: 11,
+                      fontWeight: 600,
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {takeoverActive ? translate("session.releaseTakeover") : translate("session.takeover")}
+                  </button>
+                </div>
+              )}
+              <div style={{ flex: 1, minHeight: 0, position: "relative" }}>
               {showChat ? (
                 <ChatWindow
                   key={sessionKey}
                   session={selectedSession}
+                  readOnly={isSupportReadOnly && !takeoverActive}
                   searchTarget={searchTarget?.sessionId === selectedSession?.id ? searchTarget : null}
                   onSearchTargetHandled={handleSearchTargetHandled}
                   initialScrollPosition={
@@ -4026,6 +4141,7 @@ export function AppShell() {
                   </div>
                 )
               ) : null}
+              </div>
             </div>
 
             {/* Terminal bottom drawer — mounts on first open for the current
@@ -4440,6 +4556,9 @@ export function AppShell() {
           onClose={() => {
             setSettingsSection(null);
             setModelsRefreshKey((key) => key + 1);
+            // 设置页里可能刚装/删了技能、插件、MCP——信任状态要立刻重查，
+            // 否则顶部"受限模式"提示要等下一次刷新才出现。
+            setProjectsRefreshKey((key) => key + 1);
           }}
           onSessionReloaded={() => setSessionKey((key) => key + 1)}
         />

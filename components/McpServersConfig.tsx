@@ -248,6 +248,23 @@ export function McpServersConfig({
   isAdmin?: boolean;
 }) {
   const { t } = useI18n();
+  // 项目信任状态：MCP 属于控制面资源（stdio 在 pi-web 进程内启动），
+  // 未信任时给出明确提示与信任入口，而不是让用户猜"为什么加载不了"。
+  const [trust, setTrust] = useState<{ requiresTrust: boolean; trusted: boolean } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/project-trust?cwd=${encodeURIComponent(cwd)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { requiresTrust?: boolean; trusted?: boolean } | null) => {
+        if (!cancelled && d && typeof d.requiresTrust === "boolean") {
+          setTrust({ requiresTrust: d.requiresTrust, trusted: Boolean(d.trusted) });
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [cwd]);
   const [doc, setDoc] = useState<McpConfigDocument | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -604,6 +621,49 @@ export function McpServersConfig({
       closeLabel={t("i18n.close")}
       onClose={onClose}
     >
+      {(!isAdmin || (trust?.requiresTrust && !trust.trusted)) && (
+        <div
+          role="status"
+          style={{
+            margin: "10px 14px 0",
+            padding: "9px 11px",
+            borderRadius: 7,
+            border: "1px solid var(--border)",
+            background: "var(--bg)",
+            fontSize: 11,
+            lineHeight: 1.6,
+            color: "var(--text-muted)",
+            display: "flex",
+            flexDirection: "column",
+            gap: 6,
+          }}
+        >
+          {!isAdmin && <div>{t("mcp.hostProcessNotice")}</div>}
+          {trust?.requiresTrust && !trust.trusted && (
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              <span style={{ flex: 1, minWidth: 200 }}>{t("trust.projectNotTrusted")}</span>
+              <button
+                type="button"
+                onClick={() => window.dispatchEvent(new CustomEvent("pi-web:trust-project", { detail: { cwd } }))}
+                style={{
+                  padding: "4px 10px",
+                  borderRadius: 6,
+                  border: "1px solid var(--accent)",
+                  background: "transparent",
+                  color: "var(--accent)",
+                  cursor: "pointer",
+                  fontSize: 11,
+                  fontWeight: 600,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {t("trust.trustProject")}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* 顶部工具栏：启用开关 + 探测/设置（共享组件，与子代理页同款）。 */}
       <div
         style={{

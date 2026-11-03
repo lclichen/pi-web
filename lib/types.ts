@@ -349,6 +349,10 @@ export interface SessionInfo {
   mode?: "host" | "sandbox" | "local-machine" | "ssh" | "quick";
   /** Owning project id (project-scoped sessions). */
   projectId?: string;
+  /** Owning user id/name (multi-user; used by the admin support view to show
+   *  "归属：<user> · 只读" and to decide whether a takeover is needed). */
+  ownerId?: number;
+  ownerName?: string;
   /** local-machine/ssh: the session's REAL workspace — an absolute path on the
    *  user's machine / remote host (project.workdir). cwd is the server-side
    *  home; resolving model-output file links against cwd points at the host

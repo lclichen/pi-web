@@ -1,14 +1,43 @@
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { hasTrustRequiringProjectResources, ProjectTrustStore } from "@earendil-works/pi-coding-agent";
 import type { ProjectTrustStatus } from "./api-types";
 
+/**
+ * 项目里可能执行代码/影响会话行为的资源清单（用于 UI 说明"为什么受限"）。
+ * 前 7 项与 SDK 的信任清单一致；`mcp.json` 是 pi-web 额外纳入的：MCP
+ * stdio server 在 pi-web 进程内启动，属于控制面资源，应当让用户显式确认。
+ */
+const TRUST_REASON_FILES = [
+  "settings.json",
+  "extensions",
+  "skills",
+  "prompts",
+  "themes",
+  "SYSTEM.md",
+  "APPEND_SYSTEM.md",
+  "mcp.json",
+] as const;
+
+function trustReasons(cwd: string): string[] {
+  const configDir = join(cwd, ".pi");
+  const reasons: string[] = TRUST_REASON_FILES.filter((name) => existsSync(join(configDir, name)));
+  // 仓库根/上级目录的 .agents/skills（SDK 的信任清单包含它）。
+  if (existsSync(join(cwd, ".agents", "skills"))) reasons.push(".agents/skills");
+  return reasons;
+}
+
 export function getProjectTrustStatus(cwd: string, agentDir: string): ProjectTrustStatus {
-  const requiresTrust = Boolean(cwd) && hasTrustRequiringProjectResources(cwd);
-  if (!requiresTrust) return { requiresTrust: false, trusted: true };
+  if (!cwd) return { requiresTrust: false, trusted: true, reasons: [] };
+  const reasons = trustReasons(cwd);
+  const requiresTrust = reasons.length > 0 || hasTrustRequiringProjectResources(cwd);
+  if (!requiresTrust) return { requiresTrust: false, trusted: true, reasons: [] };
 
   const trustStore = new ProjectTrustStore(agentDir);
   return {
     requiresTrust: true,
     trusted: trustStore.get(cwd) === true,
+    reasons,
   };
 }
 
@@ -17,7 +46,7 @@ export function trustProject(cwd: string, agentDir: string): ProjectTrustStatus 
   if (!status.requiresTrust) return status;
 
   new ProjectTrustStore(agentDir).set(cwd, true);
-  return { requiresTrust: true, trusted: true };
+  return { requiresTrust: true, trusted: true, reasons: status.reasons ?? [] };
 }
 
 /**

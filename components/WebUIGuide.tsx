@@ -36,6 +36,8 @@ export interface WebUIGuideProps {
   onStartQuickSession?: () => void;
   /** 「和 Agent 对话」步在没有会话时引导新建项目（打开新建项目向导）。 */
   onNewProject?: () => void;
+  /** 按模式打开项目创建向导（沙盒/本地/SSH 直接进入对应配置步）。 */
+  onCreateProject?: (method: "sandbox" | "local" | "ssh") => void;
   /** 当前是否已有打开的会话/新会话草稿；false 时第 4 步先引导创建会话。 */
   hasSession?: boolean;
   /** 经配置卡片跳出（向导主动送用户去设置页）——宿主据此显示"继续"胶囊。 */
@@ -132,6 +134,7 @@ export function WebUIGuide({
   onOpenSettings,
   onStartQuickSession,
   onNewProject,
+  onCreateProject,
   hasSession = true,
   onJumpOut,
   onFinished,
@@ -648,21 +651,58 @@ export function WebUIGuide({
             <>
               {stepTitle("guide.workspaceTitle")}
               {paragraph("guide.workspaceBody")}
-              <ol style={{ ...listStyle, paddingLeft: 20 }}>
-                <li>
-                  <b>💻 {t("guide.modeLocal")}</b> — {t("guide.modeLocalDesc")}
-                </li>
-                <li>
-                  <b>🔧 {t("guide.modeSandbox")}</b> — {t("guide.modeSandboxDesc")}
-                </li>
-                <li>
-                  <b>🔒 {t("guide.modeSsh")}</b> — {t("guide.modeSshDesc")}
-                </li>
-                <li>
-                  <b>⚡ {t("guide.modeQuick")}</b> — {t("guide.modeQuickDesc")}
-                </li>
-              </ol>
-              <p style={{ margin: "6px 0 0", fontSize: 11, color: "var(--text-dim)" }}>{t("guide.modeHostNote")}</p>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {(
+                  [
+                    { id: "local", icon: "💻", name: "guide.modeLocal", desc: "guide.modeLocalDesc", steps: "guide.modeStepsLocal" },
+                    { id: "sandbox", icon: "🔧", name: "guide.modeSandbox", desc: "guide.modeSandboxDesc", steps: "guide.modeStepsSandbox" },
+                    { id: "ssh", icon: "🔒", name: "guide.modeSsh", desc: "guide.modeSshDesc", steps: "guide.modeStepsSsh" },
+                    { id: "quick", icon: "⚡", name: "guide.modeQuick", desc: "guide.modeQuickDesc", steps: "guide.modeStepsQuick" },
+                  ] as const
+                ).map((mode) => {
+                  const available = mode.id === "quick" ? Boolean(onStartQuickSession) : Boolean(onCreateProject);
+                  return (
+                    <div
+                      key={mode.id}
+                      style={{
+                        padding: "9px 11px",
+                        borderRadius: 9,
+                        border: "1px solid var(--border)",
+                        background: "var(--bg)",
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ fontSize: 16 }}>{mode.icon}</span>
+                        <b style={{ flex: 1, fontSize: 12.5 }}>{t(mode.name)}</b>
+                        <button
+                          type="button"
+                          disabled={!available}
+                          onClick={() => {
+                            if (mode.id === "quick") onStartQuickSession?.();
+                            else onCreateProject?.(mode.id);
+                            onClose();
+                          }}
+                          style={{
+                            ...secondaryButtonStyle,
+                            padding: "4px 10px",
+                            fontSize: 11.5,
+                            opacity: available ? 1 : 0.5,
+                            cursor: available ? "pointer" : "not-allowed",
+                          }}
+                        >
+                          {mode.id === "quick" ? `⚡ ${t("guide.startQuickSession")}` : t("guide.modeCreate")}
+                        </button>
+                      </div>
+                      <div style={{ marginTop: 4, fontSize: 11.5, color: "var(--text-dim)" }}>{t(mode.desc)}</div>
+                      <div style={{ marginTop: 4, fontSize: 11, color: "var(--text-muted)" }}>
+                        → {t(mode.steps)}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <p style={{ margin: "8px 0 0", fontSize: 11, color: "var(--text-dim)" }}>{t("guide.modeCreateHint")}</p>
+              <p style={{ margin: "4px 0 0", fontSize: 11, color: "var(--text-dim)" }}>{t("guide.modeHostNote")}</p>
             </>
           )}
 

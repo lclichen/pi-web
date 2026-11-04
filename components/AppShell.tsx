@@ -4609,6 +4609,9 @@ export function AppShell() {
         onOpenSettings={(section) => setSettingsSection(section)}
         onStartQuickSession={() => handleNewSession(`guide-${Date.now()}`, "", "quick")}
         onNewProject={() => window.dispatchEvent(new CustomEvent("pi-web:open-project-wizard"))}
+        onCreateProject={(mode) =>
+          window.dispatchEvent(new CustomEvent("pi-web:open-project-wizard", { detail: { mode } }))
+        }
         hasSession={showChat}
         onJumpOut={() => setGuideResumeVisible(true)}
         onFinished={() => setGuideResumeVisible(false)}

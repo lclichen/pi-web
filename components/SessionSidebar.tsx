@@ -498,14 +498,14 @@ export function SessionSidebar({
   const [projectFilter, setProjectFilter] = useState("");
   const [wtFilter, setWtFilter] = useState("");
   const [showProjectWizard, setShowProjectWizard] = useState(false);
-  // 环境菜单的「SSH 连接」直接打开项目向导的 SSH 步骤。
-  const [wizardInitialMethod, setWizardInitialMethod] = useState<"ssh" | null>(null);
+  // 环境菜单/教学向导按模式直接打开项目向导对应步骤。
+  const [wizardInitialMethod, setWizardInitialMethod] = useState<"sandbox" | "local" | "ssh" | null>(null);
   useEffect(() => {
     const onOpenWizard = (event: Event) => {
       const mode = (event as CustomEvent<{ mode?: string }>).detail?.mode;
-      // "ssh" jumps straight to the SSH step; any other/no mode opens the
-      // method picker (used by the onboarding guide's «新建项目» button).
-      setWizardInitialMethod(mode === "ssh" ? "ssh" : null);
+      // A known method jumps straight to its configuration step; anything
+      // else (including no mode) opens the method picker.
+      setWizardInitialMethod(mode === "sandbox" || mode === "local" || mode === "ssh" ? mode : null);
       setShowProjectWizard(true);
     };
     window.addEventListener("pi-web:open-project-wizard", onOpenWizard);

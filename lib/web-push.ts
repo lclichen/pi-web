@@ -6,6 +6,7 @@ import { writePrivateFileAtomicSync } from "./atomic-file";
 import { enLocale } from "./i18n/messages/en";
 import { zhCNLocale } from "./i18n/messages/zh-CN";
 import { getAgentDir } from "./session-reader";
+import { userPushPath } from "./user-config";
 
 export interface PushSubscriptionRecord {
   endpoint: string;
@@ -15,6 +16,12 @@ export interface PushSubscriptionRecord {
 
 interface PushStateFile {
   vapidKeys: { publicKey: string; privateKey: string };
+  /** Legacy/auth-off subscriptions; user ids use per-user files. */
+  subscriptions: PushSubscriptionRecord[];
+}
+
+interface UserPushFile {
+  version: 1;
   subscriptions: PushSubscriptionRecord[];
 }
 
@@ -22,14 +29,16 @@ interface WebPushEnvironment {
   send: (subscription: PushSubscriptionRecord, payload: string, vapidKeys: PushStateFile["vapidKeys"]) => Promise<void>;
   loadState: () => PushStateFile | null;
   saveState: (state: PushStateFile) => void;
+  loadUserSubscriptions: (userId: number) => PushSubscriptionRecord[];
+  saveUserSubscriptions: (userId: number, subscriptions: PushSubscriptionRecord[]) => void;
   generateVapidKeys: () => PushStateFile["vapidKeys"];
   listSessionNames: () => Promise<Map<string, string>>;
 }
 
 export interface WebPushNotifier {
   getVapidPublicKey: () => string;
-  addSubscription: (subscription: PushSubscriptionRecord) => void;
-  notifySessionComplete: (sessionId: string) => Promise<void>;
+  addSubscription: (subscription: PushSubscriptionRecord, userId?: number) => void;
+  notifySessionComplete: (sessionId: string, ownerId?: number) => Promise<void>;
 }
 
 function stateFilePath(): string {
@@ -60,6 +69,24 @@ function getDefaultEnvironment(): WebPushEnvironment {
       const path = stateFilePath();
       mkdirSync(dirname(path), { recursive: true });
       writePrivateFileAtomicSync(path, JSON.stringify(state));
+    },
+    loadUserSubscriptions(userId) {
+      const path = userPushPath(userId);
+      if (!existsSync(path)) return [];
+      try {
+        const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
+        if (typeof parsed !== "object" || parsed === null) return [];
+        const subscriptions = (parsed as Partial<UserPushFile>).subscriptions;
+        return Array.isArray(subscriptions) ? subscriptions : [];
+      } catch {
+        return [];
+      }
+    },
+    saveUserSubscriptions(userId, subscriptions) {
+      const path = userPushPath(userId);
+      mkdirSync(dirname(path), { recursive: true });
+      const data: UserPushFile = { version: 1, subscriptions };
+      writePrivateFileAtomicSync(path, JSON.stringify(data));
     },
     generateVapidKeys: () => webpush.generateVAPIDKeys(),
     async listSessionNames() {
@@ -104,18 +131,31 @@ export function createWebPushNotifier(environment: WebPushEnvironment): WebPushN
   const saveState = () => {
     environment.saveState(state);
   };
+  const subscriptionsFor = (userId: number) =>
+    userId > 0 ? environment.loadUserSubscriptions(userId) : state.subscriptions;
+  const saveSubscriptionsFor = (userId: number, subscriptions: PushSubscriptionRecord[]) => {
+    if (userId > 0) environment.saveUserSubscriptions(userId, subscriptions);
+    else {
+      state.subscriptions = subscriptions;
+      saveState();
+    }
+  };
 
   return {
     getVapidPublicKey() {
       saveState();
       return state.vapidKeys.publicKey;
     },
-    addSubscription(subscription) {
-      state.subscriptions = [...state.subscriptions.filter((s) => s.endpoint !== subscription.endpoint), subscription];
-      saveState();
+    addSubscription(subscription, userId = 0) {
+      const subscriptions = subscriptionsFor(userId);
+      saveSubscriptionsFor(userId, [
+        ...subscriptions.filter((s) => s.endpoint !== subscription.endpoint),
+        subscription,
+      ]);
     },
-    async notifySessionComplete(sessionId) {
-      if (state.subscriptions.length === 0) return;
+    async notifySessionComplete(sessionId, ownerId = 0) {
+      const initial = subscriptionsFor(ownerId);
+      if (initial.length === 0) return;
       const sessionName = (await environment.listSessionNames()).get(sessionId);
       const payloadFor = (locale: string) => ({
         title: sessionName ?? localeText(locale, "sessionComplete"),
@@ -124,19 +164,20 @@ export function createWebPushNotifier(environment: WebPushEnvironment): WebPushN
         tag: `pi-session-complete:${sessionId}`,
       });
 
+      let subscriptions = initial;
       let pruned = false;
-      for (const subscription of [...state.subscriptions]) {
+      for (const subscription of [...subscriptions]) {
         try {
           await environment.send(subscription, JSON.stringify(payloadFor(subscription.locale)), state.vapidKeys);
         } catch (error) {
           const statusCode = pushStatusCode(error);
           if (statusCode === 404 || statusCode === 410) {
-            state.subscriptions = state.subscriptions.filter((s) => s.endpoint !== subscription.endpoint);
+            subscriptions = subscriptions.filter((s) => s.endpoint !== subscription.endpoint);
             pruned = true;
           }
         }
       }
-      if (pruned) saveState();
+      if (pruned) saveSubscriptionsFor(ownerId, subscriptions);
     },
   };
 }
@@ -156,11 +197,11 @@ export function getVapidPublicKey(): Promise<string> {
   return getNotifier().then((notifier) => notifier.getVapidPublicKey());
 }
 
-export function addSubscription(subscription: PushSubscriptionRecord): Promise<void> {
-  return getNotifier().then((notifier) => notifier.addSubscription(subscription));
+export function addSubscription(subscription: PushSubscriptionRecord, userId = 0): Promise<void> {
+  return getNotifier().then((notifier) => notifier.addSubscription(subscription, userId));
 }
 
-export async function notifySessionComplete(sessionId: string): Promise<void> {
+export async function notifySessionComplete(sessionId: string, ownerId = 0): Promise<void> {
   const notifier = await getNotifier();
-  await notifier.notifySessionComplete(sessionId);
+  await notifier.notifySessionComplete(sessionId, ownerId);
 }

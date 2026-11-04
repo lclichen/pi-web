@@ -6,7 +6,6 @@ import {
   getAgentDir,
   initTheme,
   SessionManager,
-  SettingsManager,
   Theme,
 } from "@earendil-works/pi-coding-agent";
 import { KeybindingsManager as TuiKeybindingsManager, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
@@ -33,6 +32,9 @@ import { composeQuickSystemPrompt, createQuickPromptExtension, type QuickTemplat
 import { createPromptConsistencyExtension, describePromptDrift, type PromptPin } from "./prompt-consistency";
 import { getSessionMeta, recordSessionMeta, type SessionMeta } from "./session-metas";
 import { getProjectTrustStatus, projectTrustReloadOptions } from "./project-trust";
+import { createUserSettingsManager } from "./user-settings-storage";
+import { isUserScopedConfig, userConfigDir, userSkillsDir } from "./user-config";
+import { ensureUserMcpRuntime } from "./user-mcp";
 import { persistExplicitStartupPreferences } from "./startup-preferences";
 import {
   createProjectCommandBashExtension,
@@ -245,9 +247,9 @@ const CODING_TOOL_NAMES = ["read", "bash", "powershell", "edit", "write", "grep"
 const THINKING_LEVEL_NAMES = new Set<ThinkingLevel>(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
 const SUBAGENT_TOOL_NAMES = new Set(["Agent", "get_subagent_result", "steer_subagent"]);
 
-function getMcpServerPrefixes(cwd: string): Set<string> {
+function getMcpServerPrefixes(cwd: string, userId = 0): Set<string> {
   try {
-    return new Set(readMcpConfig(cwd).servers.map((s) => s.name));
+    return new Set(readMcpConfig(cwd, { userId }).servers.map((s) => s.name));
   } catch {
     return new Set();
   }
@@ -258,9 +260,9 @@ interface McpPrefixInfo {
   disabledPrefixes: Set<string>;
 }
 
-function getMcpServerPrefixesWithDisabled(cwd: string): McpPrefixInfo {
+function getMcpServerPrefixesWithDisabled(cwd: string, userId = 0): McpPrefixInfo {
   try {
-    const servers = readMcpConfig(cwd).servers;
+    const servers = readMcpConfig(cwd, { userId }).servers;
     const all = new Set<string>();
     const disabled = new Set<string>();
     for (const s of servers) {
@@ -632,7 +634,7 @@ export class AgentSessionWrapper {
         let filtered = allNames;
 
         // Filter MCP tools: global toggle or per-server disabled
-        const mcpDoc = getMcpServerPrefixesWithDisabled(cwd);
+        const mcpDoc = getMcpServerPrefixesWithDisabled(cwd, this.ownerId);
         const shouldFilterAllMcp = !prefs.mcpEnabled;
         const hasDisabledServers = mcpDoc.disabledPrefixes.size > 0;
         if (shouldFilterAllMcp || hasDisabledServers) {
@@ -2805,7 +2807,10 @@ export async function startRpcSession(
       : chatOnly
         ? undefined
         : projectTrustReloadOptions(sessionCwd, agentDir);
-    const settingsManager = SettingsManager.create(sessionCwd, agentDir);
+    const trustStatus = getProjectTrustStatus(sessionCwd, agentDir);
+    const settingsManager = createUserSettingsManager(sessionCwd, ownerId ?? 0, {
+      projectTrusted: !trustStatus.requiresTrust || trustStatus.trusted,
+    });
     // Per-session extension injection (sandbox/local-machine modes): the SDK
     // spreads these into its DefaultResourceLoader on top of the normal
     // user/project extension discovery.
@@ -2820,10 +2825,17 @@ export async function startRpcSession(
     const promptPinRef: { current?: (hash: string, len: number, tools: number) => void } = {};
     const platformResourceLoaderOptions: {
       additionalExtensionPaths?: string[];
+      additionalSkillPaths?: string[];
       extensionFactories?: InlineExtension[];
     } = {};
     if (additionalExtensionPaths?.length) {
       platformResourceLoaderOptions.additionalExtensionPaths = additionalExtensionPaths;
+    }
+    if (isUserScopedConfig(ownerId)) {
+      platformResourceLoaderOptions.additionalSkillPaths = [
+        userSkillsDir(ownerId as number),
+        join(userConfigDir(ownerId as number), ".agents", "skills"),
+      ];
     }
     if (extensionFactories?.length) {
       platformResourceLoaderOptions.extensionFactories = extensionFactories;
@@ -2847,8 +2859,13 @@ export async function startRpcSession(
     } else if (userRuntime) {
       projectModelRuntime = await ModelRuntime.create({ authPath: baseAuth, modelsPath: baseModels });
     }
+    const userMcpConfig =
+      !quick && !subagentResources && isUserScopedConfig(ownerId)
+        ? ensureUserMcpRuntime(ownerId as number)
+        : null;
     const services = await createAgentSessionServices({
       ...(projectModelRuntime ? { modelRuntime: projectModelRuntime } : {}),
+      ...(userMcpConfig ? { extensionFlagValues: new Map([["mcp-config", userMcpConfig]]) } : {}),
       cwd: sessionCwd,
       agentDir,
       settingsManager,
@@ -2859,6 +2876,14 @@ export async function startRpcSession(
             noPromptTemplates: true,
             noThemes: true,
             noContextFiles: true,
+            ...(isUserScopedConfig(ownerId)
+              ? {
+                  additionalSkillPaths: [
+                    userSkillsDir(ownerId as number),
+                    join(userConfigDir(ownerId as number), ".agents", "skills"),
+                  ],
+                }
+              : {}),
             ...(chatOnly
               ? {
                   systemPrompt: " ",
@@ -2908,7 +2933,7 @@ export async function startRpcSession(
                   }),
                   createSubagentExtension(
                     SUBAGENT_CONTROLLER.extensionRuntime,
-                    () => listSubagentProfiles(sessionCwd),
+                    () => listSubagentProfiles(sessionCwd, ownerId ?? 0),
                     isBuiltInSubagentsEnabled,
                   ),
                   // 末位：一致性钉住（钩子链式，末位看到最终合成提示词）。
@@ -3006,7 +3031,7 @@ export async function startRpcSession(
       webUiPrompt: !subagentResources,
       ...(quick && !subagentResources ? { quickPrompt: quickTemplateHolder } : {}),
       onAgentRunComplete: (completedSessionId) => {
-        void notifySessionComplete(completedSessionId).catch((error) => {
+        void notifySessionComplete(completedSessionId, ownerId ?? 0).catch((error) => {
           console.error("[pi-web] failed to send completion push:", error instanceof Error ? error.message : error);
         });
       },

@@ -1,4 +1,5 @@
 import { addSubscription, type PushSubscriptionRecord } from "@/lib/web-push";
+import { requireUserIdentity } from "@/lib/web-session";
 
 export const dynamic = "force-dynamic";
 
@@ -33,11 +34,16 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json({ error: "Invalid push subscription" }, { status: 400 });
   }
 
+  const identity = requireUserIdentity(req);
+  if (!identity.ok) return Response.json({ error: "登录已失效" }, { status: identity.status });
   const locale = body.locale === "zh-CN" ? "zh-CN" : "en";
-  await addSubscription({
-    endpoint: body.subscription.endpoint,
-    keys: body.subscription.keys,
-    locale,
-  });
+  await addSubscription(
+    {
+      endpoint: body.subscription.endpoint,
+      keys: body.subscription.keys,
+      locale,
+    },
+    identity.session.user.id,
+  );
   return Response.json({ ok: true });
 }

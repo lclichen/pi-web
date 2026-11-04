@@ -5,7 +5,7 @@
 // Usage:
 //
 //	agent-client pair --code CODE --server URL [--root PATH]
-//	agent-client run   [--config FILE] [--root PATH]
+//	agent-client run   [--config FILE] [--server URL] [--root PATH]
 //	agent-client version
 package main
 
@@ -16,7 +16,7 @@ import (
 	"piagent/internal/agent"
 )
 
-const version = "0.4.0"
+const version = "0.4.1"
 
 func main() {
 	args := os.Args[1:]
@@ -42,11 +42,17 @@ func printUsage() {
 	fmt.Println(`agent-client — connect this machine to pi-web
 
 Usage:
-  agent-client pair --code CODE --server URL [--root PATH]   pair with a pi-web relay
-  agent-client run [--config FILE] [--root PATH]             connect & serve (default)
+  agent-client pair --code CODE --server URL [--root PATH] [--label NAME]   pair with a pi-web relay
+  agent-client run [--config FILE] [--server URL] [--root PATH]            connect & serve (default)
   agent-client version | --version | -V
   agent-client help
 
-Config is stored at ~/.agent-client/config.json (mode 0600);
-an existing ~/.pi-agent/config.json is used as a fallback.`)
+Workspace root: --root / the directory run is started in / the saved root
+(service cwd "/" or home) / home. Starting the client in a project directory
+switches it there; pass --root in systemd units.
+
+Config: ~/.agent-client/config.json (mode 0600). Pairing a DIFFERENT server
+stores that pairing in ~/.agent-client/profiles/<server>.json instead of
+overwriting the first one; run it with --server <URL>.
+An existing ~/.pi-agent/config.json is used as a fallback.`)
 }

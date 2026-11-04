@@ -21,8 +21,8 @@ import (
 	"github.com/gorilla/websocket"
 
 	"piagent/internal/config"
-	"piagent/internal/pty"
 	"piagent/internal/protocol"
+	"piagent/internal/pty"
 	"piagent/internal/workspace"
 )
 
@@ -77,10 +77,11 @@ func cancelPtyReap() {
 func Run(args []string, version string) int {
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
 	configPath := fs.String("config", "", "path to config.json (default ~/.agent-client/config.json)")
-	rootOverride := fs.String("root", "", "override workspace root")
+	server := fs.String("server", "", "use the per-server config profile for this relay URL (`pair --server URL` creates it)")
+	rootOverride := fs.String("root", "", "override workspace root (also for service units: WorkingDirectory may be /)")
 	_ = fs.Parse(args)
 
-	cfg, err := config.Load(*configPath)
+	cfg, err := loadRunConfig(*configPath, *server)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "agent-client: load config failed: %v\n", err)
 		fmt.Fprintln(os.Stderr, "Run `agent-client pair --code CODE --server URL` first.")
@@ -96,21 +97,22 @@ func Run(args []string, version string) int {
 		log.Printf("warning: %v", err)
 	}
 
-	root := *rootOverride
-	if root == "" {
-		root = cfg.WorkspaceRoot
-	}
-	if root == "" {
-		if cwd, err := os.Getwd(); err == nil {
-			root = cwd
-		} else if home, err := os.UserHomeDir(); err == nil {
-			root = home
-		}
-	}
-	absRoot, err := filepath.Abs(root)
+	absRoot, note, err := resolveWorkspaceRoot(*rootOverride, cfg)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "agent-client: bad root %q: %v\n", root, err)
+		fmt.Fprintf(os.Stderr, "agent-client: %v\n", err)
 		return 2
+	}
+	if note != "" {
+		log.Printf("%s", note)
+	}
+	// Persist the resolved root so restarts (and the WebUI, via hello) always
+	// see the directory this run actually serves — a deleted saved root
+	// self-heals instead of being re-announced forever.
+	if cfg.WorkspaceRoot == "" || !sameCleanPath(absRoot, cfg.WorkspaceRoot) {
+		cfg.WorkspaceRoot = absRoot
+		if err := cfg.Save(); err != nil {
+			log.Printf("warning: could not persist workspace root %s: %v", absRoot, err)
+		}
 	}
 
 	ws := &workspace.Workspace{Root: absRoot}
@@ -120,6 +122,117 @@ func Run(args []string, version string) int {
 
 	connectLoop(toWSURL(cfg.Server, cfg.Token), info, ws, cfg, version)
 	return 0
+}
+
+// loadRunConfig picks the config file for this run:
+// explicit --config > --server profile (multi-relay installs) > default file.
+func loadRunConfig(configPath, server string) (*config.Config, error) {
+	if configPath != "" {
+		return config.Load(configPath)
+	}
+	if server != "" {
+		p, err := config.ProfilePath(server)
+		if err != nil {
+			return nil, err
+		}
+		cfg, err := config.Load(p)
+		if err != nil {
+			return nil, fmt.Errorf("no saved profile for %s (%s): pair with that server first: %w", server, p, err)
+		}
+		return cfg, nil
+	}
+	return config.Load("")
+}
+
+// sameCleanPath compares two paths after making them absolute; case-insensitive
+// on Windows.
+func sameCleanPath(a, b string) bool {
+	ca, errA := filepath.Abs(a)
+	cb, errB := filepath.Abs(b)
+	if errA != nil || errB != nil {
+		return false
+	}
+	if runtime.GOOS == "windows" {
+		return strings.EqualFold(ca, cb)
+	}
+	return ca == cb
+}
+
+// meaningfulCwd reports whether the process cwd is a user-chosen working
+// directory rather than a service default (filesystem root or the home dir).
+func meaningfulCwd() (string, bool) {
+	cwd, err := os.Getwd()
+	if err != nil || cwd == "" {
+		return "", false
+	}
+	abs, err := filepath.Abs(cwd)
+	if err != nil {
+		return "", false
+	}
+	st, err := os.Stat(abs)
+	if err != nil || !st.IsDir() {
+		return "", false
+	}
+	if filepath.Dir(abs) == abs { // "/" or "C:\\" — service cwd, not a workspace
+		return "", false
+	}
+	// Same-file comparison avoids Windows short-name/case mismatches between
+	// os.Getwd() and os.UserHomeDir().
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		if hst, herr := os.Stat(home); herr == nil {
+			if cst, cerr := os.Stat(abs); cerr == nil && os.SameFile(hst, cst) {
+				return "", false
+			}
+		}
+	}
+	return abs, true
+}
+
+// resolveWorkspaceRoot decides which directory to share:
+//  1. --root (must exist) — explicit, and the right choice for service units;
+//  2. the process cwd when it is a user-chosen directory — starting the client
+//     from another path switches the workspace there instead of resurrecting a
+//     stale saved root;
+//  3. the saved workspaceRoot (service mode: cwd is / or home) when it exists;
+//  4. the home directory.
+//
+// Returns a human-readable note when a saved root was ignored or missing.
+func resolveWorkspaceRoot(flagRoot string, cfg *config.Config) (string, string, error) {
+	if flagRoot != "" {
+		abs, err := filepath.Abs(flagRoot)
+		if err != nil {
+			return "", "", fmt.Errorf("bad --root %q: %w", flagRoot, err)
+		}
+		if st, err := os.Stat(abs); err != nil || !st.IsDir() {
+			return "", "", fmt.Errorf("--root %s is not an existing directory", abs)
+		}
+		return abs, "", nil
+	}
+	if cwd, ok := meaningfulCwd(); ok {
+		note := ""
+		if cfg.WorkspaceRoot != "" && !sameCleanPath(cfg.WorkspaceRoot, cwd) {
+			note = fmt.Sprintf(
+				"workspace root is %s (ignoring saved root %s because the client was started here)",
+				cwd, cfg.WorkspaceRoot,
+			)
+		}
+		return cwd, note, nil
+	}
+	note := ""
+	if cfg.WorkspaceRoot != "" {
+		if abs, err := filepath.Abs(cfg.WorkspaceRoot); err == nil {
+			if st, statErr := os.Stat(abs); statErr == nil && st.IsDir() {
+				return abs, "", nil
+			}
+		}
+		note = fmt.Sprintf("saved workspace root %s no longer exists; falling back", cfg.WorkspaceRoot)
+	}
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		if st, statErr := os.Stat(home); statErr == nil && st.IsDir() {
+			return home, note, nil
+		}
+	}
+	return "", note, fmt.Errorf("cannot determine a workspace root; pass --root PATH")
 }
 
 func buildInfo(version, root string, cfg *config.Config) protocol.AgentInfo {

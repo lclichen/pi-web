@@ -35,14 +35,40 @@ curl -fsSL http://<PIWEB_BASE>/api/agent-relay/download/install.sh | sh -s -- ht
 # 1) pair (the code + relay URL come from pi-web's "连接本地机器" dialog)
 agent-client pair --code 3JFSG6 --server http://<RELAY_HOST>:30142 [--root /path/to/share]
 #    -> writes ~/.agent-client/config.json (mode 0600)
+#    -> pairing a DIFFERENT server later goes to profiles/<server>.json instead
 
 # 2) run (persistent loop; auto-reconnects)
 agent-client run [--root /path/to/share]
+#    started in a project directory? that directory becomes the workspace root
 ```
 
 `<RELAY_HOST>:30142` is the pi-web relay endpoint (port `PI_RELAY_PORT`,
 default 30142). `<PIWEB_BASE>` is the web port (30141). They share a host; the
 two ports differ.
+
+**Workspace root** is re-evaluated on every `run` (0.4.1+): `--root` wins;
+otherwise a cwd that is a real project directory (not `/`, not the home dir)
+becomes the root, so starting the client from another path switches it there
+instead of resurrecting a stale saved path. Service units (`cwd=/` or home) keep
+using the saved root; a saved root that no longer exists is dropped with a log
+warning and falls back to the home dir. The resolved root is persisted, so the
+WebUI always sees the directory the running client actually serves.
+
+### Multiple pi-web servers on one machine (0.4.1+)
+
+The first pairing keeps using `~/.agent-client/config.json`. Pairing another
+server does **not** overwrite it: it is stored in its own profile
+`~/.agent-client/profiles/<scheme>_<host>_<port>.json` (mode 0600), and `pair`
+prints the exact run command:
+
+```bash
+agent-client pair --code <CODE> --server http://10.0.0.5:30142
+#   -> token saved to ~/.agent-client/profiles/http_10.0.0.5_30142.json
+agent-client run --server http://10.0.0.5:30142
+```
+
+Each server has its own token, machine id and workspace root, so several
+clients can run side by side. `--config FILE` still selects an arbitrary file.
 
 ### Run as a service (CentOS 7 / systemd)
 
@@ -61,16 +87,18 @@ exists.
 
 | Command | Description |
 |---|---|
-| `agent-client pair --code CODE --server URL [--root PATH]` | exchange code for token, save config |
-| `agent-client run [--config FILE] [--root PATH]` | connect & serve (default subcommand) |
+| `agent-client pair --code CODE --server URL [--root PATH]` | exchange code for token, save config (per-server profile when another server is already configured) |
+| `agent-client run [--config FILE] [--server URL] [--root PATH]` | connect & serve (default subcommand) |
 | `agent-client version` / `--version` / `-V` | print version |
 | `agent-client help` | usage |
 
 ## Security model
 
 - **Workspace root**: all `fs.*` calls are confined to the root (resolved
-  against symlinks, `..` and absolute escapes rejected). `--root` / config
-  `workspaceRoot` / cwd (in that priority). Default is the run cwd.
+  against symlinks, `..` and absolute escapes rejected). Priority: `--root` /
+  the cwd the client was started in (when it is a project directory) / the
+  saved root (service cwd) / home. The resolved value is persisted on every
+  run.
 - **Version handshake**: the WebUI requires `agent-client >= 0.3.0`. Pairing
   sends `clientVersion` and is rejected with HTTP 426 when too old; the hello
   frame reports `agentVersion` and `features`, and the WebUI flags an outdated

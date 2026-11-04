@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"piagent/internal/config"
@@ -32,9 +33,12 @@ func RunPair(args []string, version string) int {
 	// Pre-existing config (re-pair keeps the same machine identity); otherwise
 	// a fresh config with a freshly generated id. A legacy ~/.pi-agent/config.json
 	// is picked up automatically by config.Load and keeps being written there.
+	// A DIFFERENT server gets its own profile file so pairing a second relay
+	// never overwrites the first one's token/identity.
+	targetPath, profileUsed := pairTargetConfigPath(*configPath, *server)
 	cfg := &config.Config{}
-	cfg.SetPath(*configPath)
-	if loaded, err := config.Load(*configPath); err == nil {
+	cfg.SetPath(targetPath)
+	if loaded, err := config.Load(targetPath); err == nil {
 		cfg = loaded
 	}
 	machineID, err := cfg.EnsureMachineID()
@@ -93,6 +97,39 @@ func RunPair(args []string, version string) int {
 		fmt.Printf("client v%s; server requires >= %s\n", version, out.RequiredVersion)
 	}
 	fmt.Println("token saved to", cfg.Path())
-	fmt.Println("next: agent-client run   (or: systemctl start agent-client)")
+	if profileUsed {
+		fmt.Println("note: the default config already belongs to another pi-web server; this pairing lives in its own profile.")
+		fmt.Printf("next: agent-client run --server %s\n", *server)
+	} else {
+		fmt.Println("next: agent-client run   (or: systemctl start agent-client)")
+	}
 	return 0
+}
+
+// pairTargetConfigPath decides where `pair` writes credentials:
+//   - an explicit --config always wins;
+//   - the default config when it is absent or already paired with the SAME
+//     server (re-pairing updates the token in place);
+//   - otherwise a per-server profile, so multiple relays coexist on one machine.
+func pairTargetConfigPath(explicit, server string) (path string, profile bool) {
+	if explicit != "" {
+		return explicit, false
+	}
+	existing, err := config.Load("")
+	if err != nil || existing.Server == "" {
+		return "", false
+	}
+	if sameServerURL(existing.Server, server) {
+		return "", false
+	}
+	p, err := config.ProfilePath(server)
+	if err != nil {
+		return "", false
+	}
+	return p, true
+}
+
+func sameServerURL(a, b string) bool {
+	norm := func(s string) string { return strings.TrimRight(strings.TrimSpace(s), "/") }
+	return strings.EqualFold(norm(a), norm(b))
 }

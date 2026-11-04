@@ -2,6 +2,12 @@
 // ~/.agent-client/config.json with mode 0600. Configs written by older
 // pi-agent builds (~/.pi-agent/config.json) are read as a fallback and keep
 // being written in place, so upgrading does not require re-pairing.
+//
+// A machine can talk to several pi-web relays. The first pairing keeps using
+// the default config.json (backward compatible); pairing a DIFFERENT server
+// goes to ~/.agent-client/profiles/<server-key>.json instead of overwriting
+// the existing credentials. `agent-client run --server URL` selects such a
+// profile, so multiple clients can run side by side.
 package config
 
 import (
@@ -9,8 +15,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // Config holds the relay endpoint + token + optional workspace root.
@@ -81,6 +89,45 @@ func LegacyPath() (string, error) {
 		return "", err
 	}
 	return filepath.Join(d, "config.json"), nil
+}
+
+// ProfilePath returns the per-server config file used when this install is
+// paired with more than one pi-web relay:
+//
+//	~/.agent-client/profiles/<key>.json
+//
+// Keeping one file per server means a second pairing never overwrites the
+// first server's token/machine id/workspace root, and several
+// `agent-client run` processes can coexist on the same machine.
+func ProfilePath(server string) (string, error) {
+	d, err := DefaultDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(d, "profiles", profileKey(server)+".json"), nil
+}
+
+// profileKey turns a relay URL into a stable, filesystem-safe file name.
+// http://10.99.9.7:30141 -> http_10.99.9.7_30141; bare hosts are accepted too.
+func profileKey(server string) string {
+	s := strings.TrimSpace(server)
+	if u, err := url.Parse(s); err == nil && u.Scheme != "" && u.Host != "" {
+		s = u.Scheme + "_" + u.Host
+	}
+	var b strings.Builder
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '.', r == '-', r == '_':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('_')
+		}
+	}
+	key := strings.Trim(b.String(), "._-")
+	if key == "" {
+		key = "server"
+	}
+	return key
 }
 
 // Path returns the on-disk path this config is bound to.

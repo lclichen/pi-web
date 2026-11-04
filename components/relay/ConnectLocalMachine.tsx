@@ -23,7 +23,7 @@ interface Pairing {
 //    remote-connect wizard's pairing step (no button, no fixed overlay).
 
 /** Install/pair info shared by the dialog and the embedded pairing steps. */
-function useAgentInstallInfo() {
+export function useAgentInstallInfo() {
   const { relayPort, advertiseUrl, publicBaseUrl } = useRelayAgent();
   const port = relayPort;
   const hasWindow = typeof window !== "undefined";
@@ -369,7 +369,7 @@ interface AgentAsset {
 }
 
 /** Shared pairing instructions (label input + code + download/command). */
-function PairingSteps({
+export function PairingSteps({
   asset,
   downloadUrl,
   serverUrl,

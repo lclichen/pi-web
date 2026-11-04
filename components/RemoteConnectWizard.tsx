@@ -18,9 +18,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { useRelayAgent } from "@/hooks/useRelayAgent";
-import { clientCompatibility } from "@/lib/client-compat";
 import { NewProjectDialog } from "./NewProjectDialog";
-import { ConnectLocalMachine } from "./relay/ConnectLocalMachine";
+import { PairingSteps, useAgentInstallInfo } from "./relay/ConnectLocalMachine";
 import { DirectoryPicker, type DirectorySource } from "./DirectoryPicker";
 
 type Mode = "sandbox" | "local-machine" | "ssh";
@@ -67,8 +66,10 @@ export function RemoteConnectWizard({
   initialMethod = null,
 }: Props) {
   const { t } = useI18n();
-  // 多机：④ 的机器选择列表（单一机器时不显示选择器）。
-  const { machines: relayMachines } = useRelayAgent();
+  // 多机：③ 的机器选择列表 + ④ 的机器选择（单一机器时不显示选择器）。
+  // SSE 实时推送——配对完成的瞬间列表就会更新，无需本组件再单独轮询。
+  const { machines: relayMachines, requiredVersion } = useRelayAgent();
+  const { serverUrl, asset, downloadUrl } = useAgentInstallInfo();
   const [step, setStep] = useState<Step>(initialMethod ? 2 : 1);
   const [method, setMethod] = useState<Method | null>(initialMethod ?? null);
   const [error, setError] = useState<string | null>(null);
@@ -76,8 +77,13 @@ export function RemoteConnectWizard({
   // 本地模式：② 的项目名 + ④ 的目录
   const [localName, setLocalName] = useState("");
   const [localDir, setLocalDir] = useState("");
-  /** 本地项目绑定的机器（多机；空 = 默认机器）。 */
+  /** 本地项目绑定的机器（③ 选择；空 = 默认机器）。 */
   const [localMachineId, setLocalMachineId] = useState("");
+  // ③ 的「配对新机器」折叠区与配对码（无任何已配对机器时始终展开）。
+  const [localPairOpen, setLocalPairOpen] = useState(false);
+  const [pairing, setPairing] = useState<{ code: string; expiresAt: number; relayPort: number } | null>(null);
+  const [pairingLoading, setPairingLoading] = useState(false);
+  const [pairingLabel, setPairingLabel] = useState("");
   // 沙盒模式：③ 创建出的项目信息
   const [sandboxDone, setSandboxDone] = useState<{ name: string } | null>(null);
   // SSH 模式：② 的连接配置 + 远程工作目录（④）
@@ -91,8 +97,6 @@ export function RemoteConnectWizard({
     passphrase: "",
   });
   const [sshName, setSshName] = useState("");
-  // 本地 agent 配对状态
-  const [relayInfo, setRelayInfo] = useState<{ online: boolean; hostname?: string; compatible?: boolean } | null>(null);
   // 本机目录可视化选择器（④ 打开）
   const [localPickerOpen, setLocalPickerOpen] = useState(false);
   // SSH 远程目录可视化选择器（④ 打开；一次性连接，不落盘）
@@ -130,43 +134,53 @@ export function RemoteConnectWizard({
       .catch(() => {});
   }, []);
 
-  // ③ 连接中（本地）：轮询 agent 配对状态；未配对时内嵌「连接本地机器」
-  // 面板让用户就地完成配对，配对成功自动进入下一步。
+  // ③ 连接中（本地）= 机器选择页：不再自动跳到 ④（此前机器一连上就
+  // setStep(4)，④ 点「上一步」会被立刻弹回去，单机时等于无法回退；机器
+  // 在本页连上时，靠 useRelayAgent 的 SSE 推送刷新列表，而不是本地轮询
+  // + 常驻横幅——那会留下过期的「尚未配对」提示）。
+  // 选中机器失效（解绑/消失）时自动改选第一台可用机器；仅预选，不推进。
   useEffect(() => {
     if (step !== 3 || method !== "local") return;
-    let cancelled = false;
-    const check = async () => {
+    const list = relayMachines ?? [];
+    if (list.length === 0) return;
+    if (localMachineId && list.some((m) => m.machineId === localMachineId)) return;
+    const preferred = list.find((m) => m.online && m.compatible !== false) ?? list[0];
+    setLocalMachineId(preferred.machineId);
+  }, [step, method, relayMachines, localMachineId]);
+
+  // ③ 的配对码：无机器时始终铸造（配对面板常驻）；已有机器时仅在展开
+  // 「配对新机器」期间铸造，避免白白占用 5 分钟有效的配对码。
+  useEffect(() => {
+    if (step !== 3 || method !== "local") return;
+    const list = relayMachines ?? [];
+    if (list.length > 0 && !localPairOpen) {
+      setPairing(null);
+      return;
+    }
+    let stopped = false;
+    const fetchCode = async () => {
+      setPairingLoading(true);
       try {
-        // /api/agent-relay/status reports `online` (agent WS connected) —
-        // there is no separate `paired` state.
-        const res = await fetch("/api/agent-relay/status");
-        const d = (await res.json()) as {
-          online?: boolean;
-          info?: { hostname?: string; agentVersion?: string } | null;
-          requiredVersion?: string;
-        };
-        if (cancelled) return;
-        const compat = clientCompatibility(d.info?.agentVersion);
-        setRelayInfo({ online: Boolean(d.online), hostname: d.info?.hostname, compatible: compat.compatible });
-        if (d.online && compat.compatible) {
-          setError(null);
-          setStep(4);
-        } else if (d.online) {
-          setError(compat.message ?? `客户端版本过低，需要 ≥ ${d.requiredVersion ?? "0.3.0"}`);
-        } else {
-          setError(t("remote.localMachinePairedCompletePairing"));
+        const res = await fetch("/api/agent-relay/pair", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        });
+        if (!res.ok) return;
+        const data = (await res.json()) as { code?: string; expiresAt?: number; relayPort?: number };
+        if (!stopped && data.code) {
+          setPairing({ code: data.code, expiresAt: data.expiresAt ?? 0, relayPort: data.relayPort ?? 0 });
         }
       } catch {
-        if (!cancelled) setError(t("remote.unableFetchLocalMachineConnection"));
+        // 配对码生成失败由 PairingSteps 的空态提示兜底。
+      } finally {
+        if (!stopped) setPairingLoading(false);
       }
     };
-    void check();
-    const timer = setInterval(check, 2000);
+    void fetchCode();
     return () => {
-      cancelled = true;
-      clearInterval(timer);
+      stopped = true;
     };
-  }, [step, method, t]);
+  }, [step, method, relayMachines, localPairOpen]);
 
   // 沙盒：NewProjectDialog 的 onCreate → 在③执行创建/供给，完成后进④
   const [sandboxInput, setSandboxInput] = useState<{
@@ -412,6 +426,12 @@ export function RemoteConnectWizard({
     }
   }, [localName, localDir, localMachineId, presetBundle, onCreated, onClose]);
 
+  // ③（本地）当前选中的机器与可推进判定：必须选中一台在线且版本兼容
+  // 的机器才能进入 ④（④ 的目录浏览走该机器的 relay 通道）。
+  const localMachineList = relayMachines ?? [];
+  const selectedLocalMachine = localMachineList.find((m) => m.machineId === localMachineId);
+  const localMachineReady = Boolean(selectedLocalMachine?.online && selectedLocalMachine.compatible !== false);
+
   const methodCards: Array<{
     id: string;
     title: string;
@@ -577,7 +597,8 @@ export function RemoteConnectWizard({
                 >
                   {s.n}
                 </span>
-                {t(s.label)}
+                {/* 本地的第③步是机器选择页（不再自动跳过），stepper 文案随之切换。 */}
+                {s.n === 3 && method === "local" ? t("remote.stepChooseMachine") : t(s.label)}
               </div>
             );
           })}
@@ -921,49 +942,144 @@ export function RemoteConnectWizard({
 
           {step === 3 && method === "local" && (
             <>
-              <h2 style={{ margin: "0 0 4px", fontSize: 17, color: "var(--text)" }}>{t("remote.connecting")}</h2>
-              {/* 未配对：提示横幅 + 下方内嵌配对面板；配对成功由轮询自动进入下一步。 */}
+              <h2 style={{ margin: "0 0 4px", fontSize: 17, color: "var(--text)" }}>{t("remote.stepChooseMachine")}</h2>
+              <p style={{ margin: "0 0 14px", fontSize: 12.5, color: "var(--text-dim)" }}>
+                {t("remote.machineSelectHint")}
+              </p>
               {error && (
                 <div className="error-banner" style={{ marginBottom: 10 }}>
                   {error}
                 </div>
               )}
-              {relayInfo?.online && relayInfo.compatible !== false ? (
-                <>
-                  <div className="info-banner">
-                    {t("remote.localAgentConnected")}
-                    {relayInfo.hostname ? `：${relayInfo.hostname}` : ""}
-                  </div>
-                  <div style={{ flex: 1 }} />
-                  <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-                    <button onClick={() => setStep(2)}>{t("remote.back")}</button>
-                    <button className="primary" onClick={() => setStep(4)}>
-                      {t("remote.next")}
-                    </button>
-                  </div>
-                </>
-              ) : relayInfo?.online ? (
-                <>
-                  <div className="info-banner">升级客户端并重新运行后会自动继续。</div>
-                  <div style={{ flex: 1 }} />
-                  <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                    <button onClick={() => setStep(2)}>{t("remote.back")}</button>
-                  </div>
-                </>
+              {/* 机器选择列表：SSE 实时刷新——在本页新配对的机器会立即出现。
+                  单台机器也停留在此页，由用户点「下一步」推进。 */}
+              {localMachineList.length === 0 ? (
+                <div className="info-banner" style={{ marginBottom: 10 }}>
+                  {t("remote.noPairedMachines")}
+                </div>
               ) : (
-                <div
-                  style={{
-                    flex: 1,
-                    minHeight: 0,
-                    overflow: "auto",
-                    border: "1px solid var(--border)",
-                    borderRadius: 10,
-                    padding: 6,
-                  }}
-                >
-                  <ConnectLocalMachine />
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, maxWidth: 460 }}>
+                  {localMachineList.map((m) => {
+                    const selected = m.machineId === localMachineId;
+                    return (
+                      <button
+                        key={m.machineId}
+                        type="button"
+                        onClick={() => {
+                          setLocalMachineId(m.machineId);
+                          setLocalDir("");
+                        }}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 10,
+                          padding: "9px 12px",
+                          borderRadius: 8,
+                          border: `1px solid ${selected ? "var(--accent)" : "var(--border)"}`,
+                          background: "var(--bg)",
+                          color: "var(--text)",
+                          cursor: "pointer",
+                          textAlign: "left",
+                          opacity: m.online ? 1 : 0.62,
+                        }}
+                      >
+                        <span
+                          aria-hidden="true"
+                          style={{
+                            width: 12,
+                            height: 12,
+                            borderRadius: 999,
+                            flexShrink: 0,
+                            border: `1.5px solid ${selected ? "var(--accent)" : "var(--text-muted)"}`,
+                            background: selected ? "var(--accent)" : "transparent",
+                          }}
+                        />
+                        <span style={{ flex: 1, minWidth: 0 }}>
+                          <span style={{ fontSize: 13, fontWeight: 600 }}>{m.label}</span>
+                          {m.hostname ? (
+                            <span
+                              style={{
+                                marginLeft: 8,
+                                fontSize: 11,
+                                color: "var(--text-dim)",
+                                fontFamily: "var(--font-mono)",
+                              }}
+                            >
+                              {m.hostname}
+                            </span>
+                          ) : null}
+                        </span>
+                        {m.compatible === false && (
+                          <span style={{ fontSize: 11, color: "var(--warning, #f59e0b)" }}>
+                            {t("remote.machineIncompatible")}
+                            {m.requiredVersion ? ` ≥ ${m.requiredVersion}` : ""}
+                          </span>
+                        )}
+                        {m.online ? (
+                          <span
+                            aria-hidden="true"
+                            style={{ width: 8, height: 8, borderRadius: 999, background: "var(--success)" }}
+                          />
+                        ) : (
+                          <span style={{ fontSize: 11, color: "var(--text-dim)" }}>（{t("remote.offline")}）</span>
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
               )}
+              {/* 配对新机器：无机器时常驻（首次配对），有机器时折叠展开。 */}
+              <div
+                style={{
+                  marginTop: 12,
+                  flex: localMachineList.length === 0 ? 1 : undefined,
+                  minHeight: 0,
+                  overflow: "auto",
+                  border: "1px solid var(--border)",
+                  borderRadius: 10,
+                  padding: 10,
+                }}
+              >
+                {localMachineList.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLocalPairOpen((v) => !v);
+                      setPairing(null);
+                    }}
+                    style={{ ...secondaryBtn, marginBottom: localPairOpen ? 10 : 0 }}
+                  >
+                    {localPairOpen ? t("relay.collapsePairing") : t("relay.pairNewMachine")}
+                  </button>
+                )}
+                {(localMachineList.length === 0 || localPairOpen) && (
+                  <PairingSteps
+                    asset={asset}
+                    downloadUrl={downloadUrl}
+                    serverUrl={serverUrl}
+                    pairing={pairing}
+                    pairingLoading={pairingLoading}
+                    label={pairingLabel}
+                    onLabelChange={setPairingLabel}
+                    requiredVersion={requiredVersion}
+                  />
+                )}
+              </div>
+              <div style={{ flex: 1 }} />
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4 }}>
+                <button onClick={() => setStep(2)} style={secondaryBtn}>
+                  {t("remote.back")}
+                </button>
+                <button
+                  className="primary"
+                  disabled={!localMachineReady}
+                  onClick={() => setStep(4)}
+                  title={!localMachineReady ? t("remote.machineNotReadyHint") : undefined}
+                  style={{ ...primaryBtn, opacity: !localMachineReady ? 0.5 : 1 }}
+                >
+                  {t("remote.next")}
+                </button>
+              </div>
             </>
           )}
 

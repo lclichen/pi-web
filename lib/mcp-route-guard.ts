@@ -12,7 +12,7 @@ export function guardMcpRequest(
   req: Request,
   params: { projectId?: string | null; cwd?: string | null; scope?: unknown },
   opts: { mutating: boolean },
-): { ok: true; cwd: string; isAdmin: boolean } | { ok: false; response: NextResponse } {
+): { ok: true; cwd: string; userId: number; isAdmin: boolean } | { ok: false; response: NextResponse } {
   if (opts.mutating) {
     if (!isApiRequestAllowed(req)) {
       return { ok: false, response: NextResponse.json({ error: "Untrusted API request" }, { status: 403 }) };
@@ -29,5 +29,8 @@ export function guardMcpRequest(
   if ((params.scope === "global" || params.scope === "quick") && !dir.isAdmin) {
     return { ok: false, response: NextResponse.json({ error: "全局/快速 MCP 配置仅管理员可修改" }, { status: 403 }) };
   }
-  return { ok: true, cwd: dir.cwd, isAdmin: dir.isAdmin };
+  if (params.scope === "user" && dir.userId <= 0) {
+    return { ok: false, response: NextResponse.json({ error: "用户 MCP 配置需要登录用户" }, { status: 403 }) };
+  }
+  return { ok: true, cwd: dir.cwd, userId: dir.userId, isAdmin: dir.isAdmin };
 }

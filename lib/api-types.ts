@@ -27,7 +27,7 @@ export interface SkillSearchResult {
   summary?: string;
 }
 
-export type SkillInstallScope = "global" | "project";
+export type SkillInstallScope = "global" | "user" | "project";
 
 export interface SkillInstallInfo {
   package: string;
@@ -119,7 +119,7 @@ export interface PushConfigResponse {
   publicKey: string;
 }
 
-export type PluginScope = "global" | "project";
+export type PluginScope = "global" | "user" | "project";
 export type PluginResourceKind = "extension" | "skill" | "prompt" | "theme";
 
 export interface PluginResourceCounts {
@@ -186,7 +186,7 @@ export interface PluginsResponse {
 
 /** MCP 配置作用域：project = 项目 .pi/mcp.json；global = ~/.pi/agent/mcp.json；
  * quick = 部署级快速会话专用（dataDir/mcp-quick.json，仅快速会话可见）。 */
-export type ConfigScope = "project" | "global" | "quick";
+export type ConfigScope = "project" | "user" | "quick" | "global";
 
 export interface AgentInfo {
   name: string;

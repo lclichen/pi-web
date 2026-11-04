@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { resolveConfigCwdSync } from "@/lib/config-cwd";
+import { createUserSettingsManager } from "@/lib/user-settings-storage";
+import { isUserScopedConfig } from "@/lib/user-config";
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "fs";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "path";
 import {
@@ -41,7 +43,7 @@ function emptyCounts(): PluginResourceCounts {
 }
 
 function toPluginScope(scope: string): PluginScope {
-  return scope === "project" ? "project" : "global";
+  return scope === "project" ? "project" : scope === "user" ? "user" : "global";
 }
 
 function keyFor(source: string, scope: PluginScope): string {
@@ -350,10 +352,10 @@ function makeClassifier(
   };
 }
 
-async function readPlugins(cwd: string): Promise<PluginsResponse> {
+async function readPlugins(cwd: string, userId: number): Promise<PluginsResponse> {
   const agentDir = getAgentDir();
   const projectTrust = getProjectTrustStatus(cwd, agentDir);
-  const settingsManager = SettingsManager.create(cwd, agentDir, {
+  const settingsManager = createUserSettingsManager(cwd, userId, {
     projectTrusted: projectTrust.trusted,
   });
   const packageManager = new DefaultPackageManager({
@@ -438,7 +440,7 @@ async function readPlugins(cwd: string): Promise<PluginsResponse> {
 }
 
 function readScope(scope: unknown): PluginScope {
-  return scope === "project" ? "project" : "global";
+  return scope === "project" ? "project" : scope === "user" ? "user" : "global";
 }
 
 export async function GET(req: Request) {
@@ -449,7 +451,7 @@ export async function GET(req: Request) {
 
   try {
     // Access is enforced by resolveConfigCwdSync (project ownership or admin).
-    return NextResponse.json(await readPlugins(cwd));
+    return NextResponse.json(await readPlugins(cwd, dir.userId));
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
   }
@@ -482,20 +484,24 @@ export async function POST(req: Request) {
     });
     if (!configDir.ok) return NextResponse.json({ error: configDir.error }, { status: configDir.status });
     body.cwd = configDir.cwd;
+    const scope = readScope(body.scope);
     // 全局层（admin 管理）：scope=global 的任何写操作（含 origin=package 的
     // install/remove/update/disable/enable）仅 admin/隐式 host 可执行。
-    if (body.scope === "global" && !configDir.isAdmin) {
+    if (scope === "global" && !configDir.isAdmin) {
       return NextResponse.json({ error: "全局插件配置仅管理员可修改" }, { status: 403 });
+    }
+    if (scope === "user" && !isUserScopedConfig(configDir.userId)) {
+      return NextResponse.json({ error: "用户插件配置需要登录用户" }, { status: 403 });
     }
     if (!body.cwd) return NextResponse.json({ error: "cwd required" }, { status: 400 });
     if (!body.action) return NextResponse.json({ error: "action required" }, { status: 400 });
 
     const agentDir = getAgentDir();
     const projectTrust = getProjectTrustStatus(body.cwd, agentDir);
-    const settingsManager = SettingsManager.create(body.cwd, agentDir, {
-      projectTrusted: projectTrust.trusted,
-    });
-    const scope = readScope(body.scope);
+    const settingsManager =
+      scope === "user"
+        ? createUserSettingsManager(body.cwd, configDir.userId, { projectTrusted: projectTrust.trusted })
+        : SettingsManager.create(body.cwd, agentDir, { projectTrusted: projectTrust.trusted });
     if (scope === "project" && !projectTrust.trusted) {
       return NextResponse.json(
         { error: "Project resources must be trusted before modifying project plugins" },
@@ -529,7 +535,7 @@ export async function POST(req: Request) {
           else settingsManager.setExtensionPaths([...current, source]);
           await settingsManager.flush();
         }
-        return NextResponse.json(await readPlugins(body.cwd));
+        return NextResponse.json(await readPlugins(body.cwd, configDir.userId));
       }
       if (body.action === "remove" && bodyOrigin === "settings") {
         if (!source) return NextResponse.json({ error: "source required" }, { status: 400 });
@@ -540,7 +546,7 @@ export async function POST(req: Request) {
           settingsManager.setExtensionPaths(strip(settingsManager.getGlobalSettings().extensions ?? []));
         }
         await settingsManager.flush();
-        return NextResponse.json(await readPlugins(body.cwd));
+        return NextResponse.json(await readPlugins(body.cwd, configDir.userId));
       }
       return NextResponse.json({ error: `Unsupported action for origin=settings: ${body.action}` }, { status: 400 });
     }
@@ -566,7 +572,7 @@ export async function POST(req: Request) {
           );
         }
         rmSync(resolve(source), { recursive: true, force: true });
-        return NextResponse.json(await readPlugins(body.cwd));
+        return NextResponse.json(await readPlugins(body.cwd, configDir.userId));
       }
       if (body.action === "install") {
         const name = (body.name ?? "").trim();
@@ -579,7 +585,7 @@ export async function POST(req: Request) {
         }
         mkdirSync(dir, { recursive: true });
         writeFileSync(join(dir, "index.ts"), EXTENSION_TEMPLATE, "utf8");
-        return NextResponse.json(await readPlugins(body.cwd));
+        return NextResponse.json(await readPlugins(body.cwd, configDir.userId));
       }
       return NextResponse.json({ error: `Unsupported action for origin=directory: ${body.action}` }, { status: 400 });
     }
@@ -614,7 +620,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: `Unsupported action: ${body.action}` }, { status: 400 });
     }
 
-    return NextResponse.json(await readPlugins(body.cwd));
+    return NextResponse.json(await readPlugins(body.cwd, configDir.userId));
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
   }

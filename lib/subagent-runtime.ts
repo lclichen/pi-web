@@ -5,7 +5,6 @@ import {
   getAgentDir,
   initTheme,
   SessionManager,
-  SettingsManager,
   type ModelRuntime,
 } from "@earendil-works/pi-coding-agent";
 import type { AgentSessionLike } from "./pi-types";
@@ -30,7 +29,8 @@ import {
 import type { SessionEntry } from "./types";
 import { buildSubagentPromptPlan } from "./subagent-prompt";
 import { appendSubagentInputFiles, loadSubagentInputFiles } from "./subagent-input";
-import { projectTrustReloadOptions } from "./project-trust";
+import { getProjectTrustStatus, projectTrustReloadOptions } from "./project-trust";
+import { createUserSettingsManager } from "./user-settings-storage";
 import { resolveShellTools } from "./powershell-settings";
 import { isBuiltInSubagentsEnabled } from "./subagent-settings";
 
@@ -38,6 +38,7 @@ interface HostSession {
   readonly inner: AgentSessionLike;
   readonly sessionFile: string;
   readonly cwd: string;
+  readonly ownerId?: number;
   isAlive(): boolean;
   isRunning(): boolean;
   waitUntilReady(): Promise<void>;
@@ -138,7 +139,7 @@ export function createSubagentController(dependencies: SubagentRuntimeDependenci
 
     const releaseSlot = reserveSubagentSlot(parentSessionId);
     try {
-      const profile = resolveSubagentProfile(parent.cwd, request.profile);
+      const profile = resolveSubagentProfile(parent.cwd, request.profile, parent.ownerId);
       if (!profile) throw new Error(`Unknown or disabled subagent profile: ${request.profile}`);
 
       const runInBackground = request.runInBackground ?? profile.runInBackground;
@@ -155,7 +156,10 @@ export function createSubagentController(dependencies: SubagentRuntimeDependenci
 
       const agentDir = getAgentDir();
       const parentModelRuntime = (parent.inner as unknown as { modelRuntime: ModelRuntime }).modelRuntime;
-      const settingsManager = SettingsManager.create(parent.cwd, agentDir);
+      const trustStatus = getProjectTrustStatus(parent.cwd, agentDir);
+      const settingsManager = createUserSettingsManager(parent.cwd, parent.ownerId ?? 0, {
+        projectTrusted: !trustStatus.requiresTrust || trustStatus.trusted,
+      });
       const inheritedParentContext = inheritContext
         ? `The following is the active conversation context from the parent session. Use it only as background for the delegated task:\n${parentContextText(parent)}`
         : undefined;

@@ -35,7 +35,9 @@ export async function GET(req: Request) {
     if (!(await pathAllowedForCaller(req, cwd))) {
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
-    return NextResponse.json(await loadSkillsWithInstallInfo(cwd));
+    const identity = requireUserIdentity(req);
+    if (!identity.ok) return NextResponse.json({ error: "登录已失效" }, { status: identity.status });
+    return NextResponse.json(await loadSkillsWithInstallInfo(cwd, identity.session.user.id));
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 });
   }

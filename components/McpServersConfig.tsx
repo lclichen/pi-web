@@ -520,7 +520,12 @@ export function McpServersConfig({
       const res = await fetch(`/api/mcp/servers/${encodeURIComponent(srv.name)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cwd, scope: srv.scope, disabled: !enabled, target: "project" }),
+        body: JSON.stringify({
+          cwd,
+          scope: srv.scope,
+          disabled: !enabled,
+          target: srv.scope === "user" ? "scope" : "project",
+        }),
       });
       const body = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok || body.error) throw new Error(body.error ?? `HTTP ${res.status}`);
@@ -547,7 +552,12 @@ export function McpServersConfig({
         const res = await fetch(`/api/mcp/servers/${encodeURIComponent(srv.name)}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ cwd, scope: srv.scope, disabled: !enabled, target: "project" }),
+          body: JSON.stringify({
+          cwd,
+          scope: srv.scope,
+          disabled: !enabled,
+          target: srv.scope === "user" ? "scope" : "project",
+        }),
         });
         if (!res.ok) {
           const body = (await res.json().catch(() => ({}))) as { error?: string };
@@ -602,6 +612,7 @@ export function McpServersConfig({
   const scopeEnableBlocked = Boolean(
     selectedSrv &&
     selectedSrv.scope !== "project" &&
+    selectedSrv.scope !== "user" &&
     selectedSrv.disabled &&
     (selectedSrv.scopeDisabled || !selectedSrv.projectOverride),
   );
@@ -609,9 +620,11 @@ export function McpServersConfig({
   const scopeGroupLabel = (scope: string) =>
     scope === "project"
       ? t("agents.scope.project")
-      : scope === "quick"
-        ? t("mcp.scopeQuick")
-        : t("agents.scope.global");
+      : scope === "user"
+        ? t("agents.scope.user")
+        : scope === "quick"
+          ? t("mcp.scopeQuick")
+          : t("agents.scope.global");
 
   return (
     <ConfigPanelShell
@@ -1103,6 +1116,7 @@ export function McpServersConfig({
                         onChange={(e) => set("scope", e.target.value as ConfigScope)}
                       >
                         <option value="project">project</option>
+                        <option value="user">user</option>
                         <option value="quick" disabled={!isAdmin}>
                           quick（仅快速会话）
                         </option>

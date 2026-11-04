@@ -197,11 +197,13 @@ function AddSkillPanel({
   installedPackages,
   projectResourcesLoaded,
   onInstalled,
+  isAdmin,
 }: {
   cwd: string;
   installedPackages: Record<SkillInstallScope, ReadonlySet<string>>;
   projectResourcesLoaded: boolean;
   onInstalled: () => void;
+  isAdmin: boolean;
 }) {
   const { t } = useI18n();
   const [query, setQuery] = useState("");
@@ -211,7 +213,7 @@ function AddSkillPanel({
   const [installing, setInstalling] = useState<string | null>(null);
   const [installError, setInstallError] = useState<string | null>(null);
   const [newlyInstalledPkgs, setNewlyInstalledPkgs] = useState<Set<string>>(new Set());
-  const [scope, setScope] = useState<"global" | "project">("global");
+  const [scope, setScope] = useState<"global" | "user" | "project">(() => (isAdmin ? "global" : "user"));
   // 内网 SkillHub 地址（空 = skills.sh 外网流程）。默认取部署级配置
   // （server-settings.skillhubUrl，经 /api/webauth/me 下发），可临时改写。
   const [hubUrl, setHubUrl] = useState("");
@@ -326,7 +328,12 @@ function AddSkillPanel({
       if (uploadRef.current) uploadRef.current.value = "";
     }
   };
-  const installPath = scope === "global" ? "~/.pi/agent/skills/" : `${shortenPath(cwd)}/.pi/skills/`;
+  const installPath =
+    scope === "global"
+      ? "~/.pi/agent/skills/"
+      : scope === "user"
+        ? t("skills.userSkillsPath")
+        : `${shortenPath(cwd)}/.pi/skills/`;
 
   return (
     <ConfigDetailStack className="is-full-height">
@@ -422,26 +429,26 @@ function AddSkillPanel({
               flexShrink: 0,
             }}
           >
-            {(["global", "project"] as const).map((s) => (
+            {(["global", "user", "project"] as const).map((s) => (
               <button
                 key={s}
                 onClick={() => {
-                  if (s === "global" || projectResourcesLoaded) setScope(s);
+                  if ((s !== "project" || projectResourcesLoaded) && (s !== "global" || isAdmin)) setScope(s);
                 }}
-                disabled={s === "project" && !projectResourcesLoaded}
+                disabled={(s === "project" && !projectResourcesLoaded) || (s === "global" && !isAdmin)}
                 title={s === "project" && !projectResourcesLoaded ? t("trust.projectScopeUnavailable") : undefined}
                 style={{
                   padding: "3px 10px",
                   border: "none",
-                  cursor: s === "project" && !projectResourcesLoaded ? "not-allowed" : "pointer",
+                  cursor: (s === "project" && !projectResourcesLoaded) || (s === "global" && !isAdmin) ? "not-allowed" : "pointer",
                   background: scope === s ? "var(--bg-selected)" : "none",
                   color: scope === s ? "var(--text)" : "var(--text-dim)",
                   fontWeight: scope === s ? 600 : 400,
-                  opacity: s === "project" && !projectResourcesLoaded ? 0.45 : 1,
-                  borderRight: s === "global" ? "1px solid var(--border)" : "none",
+                  opacity: (s === "project" && !projectResourcesLoaded) || (s === "global" && !isAdmin) ? 0.45 : 1,
+                  borderRight: s !== "project" ? "1px solid var(--border)" : "none",
                 }}
               >
-                {s}
+                {s === "user" ? t("skills.scope.user") : s}
               </button>
             ))}
           </div>
@@ -601,10 +608,12 @@ export function SkillsConfig({
   cwd,
   onClose,
   embedded = false,
+  isAdmin = true,
 }: {
   cwd: string;
   onClose: () => void;
   embedded?: boolean;
+  isAdmin?: boolean;
 }) {
   const { t } = useI18n();
   const [skills, setSkills] = useState<Skill[]>([]);
@@ -907,6 +916,7 @@ export function SkillsConfig({
             {addMode ? (
               <AddSkillPanel
                 cwd={cwd}
+                isAdmin={isAdmin}
                 projectResourcesLoaded={projectResourcesLoaded}
                 installedPackages={{
                   global: new Set(
@@ -914,6 +924,9 @@ export function SkillsConfig({
                   ),
                   project: new Set(
                     skills.filter((skill) => skill.install?.scope === "project").map((skill) => skill.install!.package),
+                  ),
+                  user: new Set(
+                    skills.filter((skill) => skill.install?.scope === "user").map((skill) => skill.install!.package),
                   ),
                 }}
                 onInstalled={() => {

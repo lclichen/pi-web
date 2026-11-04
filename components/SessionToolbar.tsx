@@ -277,7 +277,7 @@ export function SessionToolbar({
   const loadMcp = useCallback(() => {
     // 按模式分 scope：quick 只看工作区 project 层（只读展示）；
     // 非 quick 排除 quick 专用层（模板白名单与普通会话无关）
-    const toolbarScopes = quickMode ? "project" : "project,global";
+    const toolbarScopes = quickMode ? "project" : "project,user,global";
     fetch(`/api/mcp?cwd=${encodeURIComponent(cwd)}&scopes=${toolbarScopes}`)
       .then((r) => r.json())
       .then((d: { servers: McpServerInfo[] }) => setMcpServers(d.servers ?? []))

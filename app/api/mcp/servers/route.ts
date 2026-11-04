@@ -24,10 +24,11 @@ export async function POST(req: Request) {
     }
     const guard = guardMcpRequest(req, body, { mutating: true });
     if (!guard.ok) return guard.response;
-    const scope = body.scope === "global" || body.scope === "quick" ? body.scope : "project";
+    const scope =
+      body.scope === "global" || body.scope === "quick" || body.scope === "user" ? body.scope : "project";
     // 控制面隔离（2026-11-03 P0）：项目级 stdio MCP 在 pi-web 服务器进程内
     // 启动，普通用户不可用；http MCP 不受限。
-    if (scope === "project" && !guard.isAdmin && body.entry.command) {
+    if ((scope === "project" || scope === "user") && !guard.isAdmin && body.entry.command) {
       return NextResponse.json(
         {
           error:
@@ -37,7 +38,7 @@ export async function POST(req: Request) {
       );
     }
     try {
-      createMcpServer(guard.cwd, scope, body.name.trim(), body.entry);
+      createMcpServer(guard.cwd, scope, body.name.trim(), body.entry, guard.userId);
       return NextResponse.json({ success: true });
     } catch (e) {
       return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 409 });

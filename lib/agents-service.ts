@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { parseFrontmatter, getAgentDir } from "@earendil-works/pi-coding-agent";
 import { atomicWriteFile } from "./atomic-write";
 import { BUILTIN_PROFILES } from "./subagents";
+import { isUserScopedConfig, userAgentsDir } from "./user-config";
 import type { AgentInfo, AgentDetail, ConfigScope } from "./api-types";
 
 const NAME_RE = /^[A-Za-z0-9_.-]+$/;
@@ -23,8 +24,13 @@ export function validateAgentName(name: string): string | null {
   return null;
 }
 
-export function agentsDirFor(cwd: string, scope: ConfigScope): string {
-  return scope === "project" ? join(cwd, ".pi", "agents") : join(getAgentDir(), "agents");
+export function agentsDirFor(cwd: string, scope: ConfigScope, userId?: number): string {
+  if (scope === "project") return join(cwd, ".pi", "agents");
+  if (scope === "user") {
+    if (!isUserScopedConfig(userId)) throw new Error("User agents require a logged-in user");
+    return userAgentsDir(userId as number);
+  }
+  return join(getAgentDir(), "agents");
 }
 
 function csvToList(v: unknown): string[] | undefined {
@@ -66,8 +72,8 @@ function parseAgentFile(name: string, raw: string, scope: ConfigScope, filePath:
   }
 }
 
-export function listAgents(cwd: string, scope: ConfigScope): AgentInfo[] {
-  const dir = agentsDirFor(cwd, scope);
+export function listAgents(cwd: string, scope: ConfigScope, userId?: number): AgentInfo[] {
+  const dir = agentsDirFor(cwd, scope, userId);
   const out: AgentInfo[] = [];
   const seenNames = new Set<string>();
 
@@ -120,12 +126,12 @@ const DEFAULT_AGENT_DESCRIPTIONS: Record<string, string> = {
   Plan: "Built-in planning agent",
 };
 
-export function listAllAgents(cwd: string): AgentInfo[] {
-  return [...listAgents(cwd, "project"), ...listAgents(cwd, "global")];
+export function listAllAgents(cwd: string, userId?: number): AgentInfo[] {
+  return [...listAgents(cwd, "project", userId), ...listAgents(cwd, "user", userId), ...listAgents(cwd, "global", userId)];
 }
 
-export function getAgentDetail(cwd: string, scope: ConfigScope, name: string): AgentDetail | null {
-  const filePath = join(agentsDirFor(cwd, scope), `${name}.md`);
+export function getAgentDetail(cwd: string, scope: ConfigScope, name: string, userId?: number): AgentDetail | null {
+  const filePath = join(agentsDirFor(cwd, scope, userId), `${name}.md`);
   if (!existsSync(filePath)) return null;
   const raw = readFileSync(filePath, "utf8");
   const info = parseAgentFile(name, raw, scope, filePath);
@@ -223,8 +229,9 @@ export function createAgent(
   name: string,
   fields: AgentFields,
   systemPrompt: string,
+  userId?: number,
 ): string {
-  const filePath = join(agentsDirFor(cwd, scope), `${name}.md`);
+  const filePath = join(agentsDirFor(cwd, scope, userId), `${name}.md`);
   if (existsSync(filePath)) {
     throw new Error(`Agent "${name}" already exists in ${scope} scope`);
   }
@@ -238,8 +245,9 @@ export function updateAgent(
   name: string,
   fields: AgentFields,
   systemPrompt: string,
+  userId?: number,
 ): string {
-  const filePath = join(agentsDirFor(cwd, scope), `${name}.md`);
+  const filePath = join(agentsDirFor(cwd, scope, userId), `${name}.md`);
   if (!existsSync(filePath)) {
     throw new Error(`Agent "${name}" not found in ${scope} scope`);
   }
@@ -248,8 +256,8 @@ export function updateAgent(
   return filePath;
 }
 
-export function deleteAgent(cwd: string, scope: ConfigScope, name: string): boolean {
-  const filePath = join(agentsDirFor(cwd, scope), `${name}.md`);
+export function deleteAgent(cwd: string, scope: ConfigScope, name: string, userId?: number): boolean {
+  const filePath = join(agentsDirFor(cwd, scope, userId), `${name}.md`);
   if (!existsSync(filePath)) return false;
   unlinkSync(filePath);
   return true;
@@ -266,8 +274,8 @@ export function deleteAgent(cwd: string, scope: ConfigScope, name: string): bool
  *   - Disabling creates a stub .md with `enabled: false`.
  *   - Enabling is a no-op (already enabled by default).
  */
-export function setAgentEnabled(cwd: string, scope: ConfigScope, name: string, enabled: boolean): boolean {
-  const dir = agentsDirFor(cwd, scope);
+export function setAgentEnabled(cwd: string, scope: ConfigScope, name: string, enabled: boolean, userId?: number): boolean {
+  const dir = agentsDirFor(cwd, scope, userId);
   const filePath = join(dir, `${name}.md`);
 
   if (existsSync(filePath)) {

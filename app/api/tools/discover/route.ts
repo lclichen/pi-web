@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { readMcpConfig } from "@/lib/mcp-config";
+import { requireUserIdentity } from "@/lib/web-session";
 import { probeServer } from "@/lib/mcp-probe";
 import type { McpTool } from "@/lib/api-types";
 
@@ -9,7 +10,7 @@ const BUILTIN_TOOLS = ["bash", "edit", "find", "grep", "ls", "read", "write"];
 
 export interface McpServerTools {
   server: string;
-  scope: "project" | "global" | "quick";
+  scope: "project" | "user" | "global" | "quick";
   transport: "stdio" | "http";
   tools: McpTool[];
   error?: string;
@@ -25,8 +26,11 @@ export async function GET(req: Request) {
   if (!cwd) return NextResponse.json({ error: "cwd required" }, { status: 400 });
   const shouldProbe = searchParams.get("probe") === "true";
 
+  const identity = requireUserIdentity(req);
+  if (!identity.ok) return NextResponse.json({ error: "登录已失效" }, { status: identity.status });
+
   try {
-    const doc = readMcpConfig(cwd);
+    const doc = readMcpConfig(cwd, { userId: identity.session.user.id });
 
     if (!shouldProbe) {
       return NextResponse.json({

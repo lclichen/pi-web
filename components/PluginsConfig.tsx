@@ -66,7 +66,11 @@ function versionSummary(pkg: PluginPackageInfo, t: ReturnType<typeof useI18n>["t
 }
 
 function installLocation(scope: PluginScope, cwd: string): string {
-  return scope === "project" ? `${shortenPath(cwd)}/.pi/{npm,git}` : "~/.pi/agent/{npm,git}";
+  return scope === "project"
+    ? `${shortenPath(cwd)}/.pi/{npm,git}`
+    : scope === "user"
+      ? "user config / {npm,git}"
+      : "~/.pi/agent/{npm,git}";
 }
 
 function findInstalledPackage(
@@ -202,8 +206,18 @@ function ScopeTag({ scope }: { scope: PluginScope }) {
         padding: "1px 5px",
         borderRadius: 3,
         flexShrink: 0,
-        background: scope === "project" ? "rgba(99,102,241,0.12)" : "rgba(120,120,120,0.12)",
-        color: scope === "project" ? "rgba(99,102,241,0.85)" : "var(--text-dim)",
+        background:
+          scope === "project"
+            ? "rgba(99,102,241,0.12)"
+            : scope === "user"
+              ? "rgba(16,185,129,0.12)"
+              : "rgba(120,120,120,0.12)",
+        color:
+          scope === "project"
+            ? "rgba(99,102,241,0.85)"
+            : scope === "user"
+              ? "rgba(16,185,129,0.85)"
+              : "var(--text-dim)",
       }}
     >
       {scope}
@@ -214,10 +228,12 @@ function ScopeTag({ scope }: { scope: PluginScope }) {
 function SegmentedScope({
   value,
   projectResourcesLoaded,
+  isAdmin,
   onChange,
 }: {
   value: PluginScope;
   projectResourcesLoaded: boolean;
+  isAdmin: boolean;
   onChange: (scope: PluginScope) => void;
 }) {
   const { t } = useI18n();
@@ -231,9 +247,10 @@ function SegmentedScope({
         height: 30,
       }}
     >
-      {(["global", "project"] as PluginScope[]).map((scope) => {
+      {(["global", "user", "project"] as PluginScope[]).map((scope) => {
         const active = value === scope;
-        const disabled = scope === "project" && !projectResourcesLoaded;
+        const disabled =
+          (scope === "project" && !projectResourcesLoaded) || (scope === "global" && !isAdmin);
         return (
           <button
             key={scope}
@@ -241,11 +258,17 @@ function SegmentedScope({
               if (!disabled) onChange(scope);
             }}
             disabled={disabled}
-            title={disabled ? t("trust.projectScopeUnavailable") : undefined}
+            title={
+              disabled
+                ? scope === "global"
+                  ? t("account.role.admin")
+                  : t("trust.projectScopeUnavailable")
+                : undefined
+            }
             style={{
               width: 76,
               border: "none",
-              borderRight: scope === "global" ? "1px solid var(--border)" : "none",
+              borderRight: scope !== "project" ? "1px solid var(--border)" : "none",
               background: active ? "var(--bg-selected)" : "none",
               color: active ? "var(--text)" : "var(--text-muted)",
               cursor: disabled ? "not-allowed" : "pointer",
@@ -266,6 +289,7 @@ function AddPluginPanel({
   source,
   scope,
   projectResourcesLoaded,
+  isAdmin,
   busy,
   actionError,
   extensionPath,
@@ -282,6 +306,7 @@ function AddPluginPanel({
   source: string;
   scope: PluginScope;
   projectResourcesLoaded: boolean;
+  isAdmin: boolean;
   busy: boolean;
   actionError: string | null;
   extensionPath: string;
@@ -380,7 +405,12 @@ function AddPluginPanel({
       </ConfigField>
 
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-        <SegmentedScope value={scope} projectResourcesLoaded={projectResourcesLoaded} onChange={onScopeChange} />
+        <SegmentedScope
+            value={scope}
+            projectResourcesLoaded={projectResourcesLoaded}
+            isAdmin={isAdmin}
+            onChange={onScopeChange}
+          />
         <ConfigButton
           variant="primary"
           onClick={onInstall}
@@ -737,12 +767,14 @@ export function PluginsConfig({
   onClose,
   onReloaded,
   embedded = false,
+  isAdmin = true,
 }: {
   cwd: string;
   sessionId: string | null;
   onClose: () => void;
   onReloaded?: () => void;
   embedded?: boolean;
+  isAdmin?: boolean;
 }) {
   const { t } = useI18n();
   const [data, setData] = useState<PluginsResponse | null>(null);
@@ -751,7 +783,7 @@ export function PluginsConfig({
   const [selected, setSelected] = useState<string | null>(() => getLastSettingsSelection("plugins", cwd));
   const [addMode, setAddMode] = useState(false);
   const [installSource, setInstallSource] = useState("");
-  const [installScope, setInstallScope] = useState<PluginScope>("global");
+  const [installScope, setInstallScope] = useState<PluginScope>(() => (isAdmin ? "global" : "user"));
   const [extensionPath, setExtensionPath] = useState("");
   const [directoryName, setDirectoryName] = useState("");
   const [busyKey, setBusyKey] = useState<string | null>(null);
@@ -1127,6 +1159,7 @@ export function PluginsConfig({
                 source={installSource}
                 scope={installScope}
                 projectResourcesLoaded={projectResourcesLoaded}
+                isAdmin={isAdmin}
                 busy={addBusy}
                 actionError={actionError}
                 extensionPath={extensionPath}

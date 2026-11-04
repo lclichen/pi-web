@@ -5,6 +5,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync } from "fs
 import { basename, dirname, join, resolve } from "path";
 import { parseFrontmatter } from "./frontmatter";
 import { writePrivateFileAtomicSync } from "./atomic-file";
+import { isUserScopedConfig, userAgentsDir } from "./user-config";
 import { isExistingPathWithinRoots } from "./path-security";
 import { PRESET_READ_ONLY } from "./tool-presets";
 import type { SessionEntry, SubagentSessionStatus } from "./types";
@@ -14,8 +15,8 @@ export const SUBAGENT_RESULT_TYPE = "pi-web:subagent-result";
 export const SUBAGENT_CONTROL_TOOL_NAMES = ["Agent", "get_subagent_result", "steer_subagent"] as const;
 
 export type SubagentStatus = SubagentSessionStatus;
-export type SubagentScope = "builtin" | "global" | "workspace" | "project";
-export type SubagentWritableScope = Extract<SubagentScope, "global" | "project">;
+export type SubagentScope = "builtin" | "global" | "user" | "workspace" | "project";
+export type SubagentWritableScope = Extract<SubagentScope, "global" | "user" | "project">;
 
 export interface SubagentProfile {
   name: string;
@@ -198,35 +199,39 @@ function readProfileDirectory(dir: string, scope: SubagentScope, cwd: string): S
     .filter((profile): profile is SubagentProfile => profile !== null);
 }
 
-function profileDirectories(cwd: string): Array<[string, Exclude<SubagentScope, "builtin">]> {
+function profileDirectories(
+  cwd: string,
+  userId?: number,
+): Array<[string, Exclude<SubagentScope, "builtin">]> {
   return [
     [join(getAgentDir(), "agents"), "global"],
+    ...(isUserScopedConfig(userId) ? ([[userAgentsDir(userId!), "user"]] as Array<[string, "user"]>) : []),
     [join(resolve(cwd), ".agents", "agents"), "workspace"],
     [join(resolve(cwd), ".pi", "agents"), "project"],
   ];
 }
 
 /** Every configured source, including profiles shadowed by a higher-precedence scope. */
-export function listSubagentProfileSources(cwd: string): SubagentProfile[] {
+export function listSubagentProfileSources(cwd: string, userId?: number): SubagentProfile[] {
   const profiles = BUILTIN_PROFILES.map((profile) => ({ ...profile, tools: [...profile.tools] }));
-  for (const [dir, scope] of profileDirectories(cwd)) {
+  for (const [dir, scope] of profileDirectories(cwd, userId)) {
     profiles.push(...readProfileDirectory(dir, scope, cwd));
   }
   return profiles.sort((a, b) => a.displayName.localeCompare(b.displayName));
 }
 
-export function listSubagentProfiles(cwd: string): SubagentProfile[] {
+export function listSubagentProfiles(cwd: string, userId?: number): SubagentProfile[] {
   const byName = new Map(
     BUILTIN_PROFILES.map((profile) => [profile.name.toLowerCase(), { ...profile, tools: [...profile.tools] }]),
   );
-  for (const [dir, scope] of profileDirectories(cwd)) {
+  for (const [dir, scope] of profileDirectories(cwd, userId)) {
     for (const profile of readProfileDirectory(dir, scope, cwd)) byName.set(profile.name.toLowerCase(), profile);
   }
   return [...byName.values()].sort((a, b) => a.displayName.localeCompare(b.displayName));
 }
 
-export function resolveSubagentProfile(cwd: string, name: string): SubagentProfile | undefined {
-  return listSubagentProfiles(cwd).find(
+export function resolveSubagentProfile(cwd: string, name: string, userId?: number): SubagentProfile | undefined {
+  return listSubagentProfiles(cwd, userId).find(
     (profile) => profile.name.toLowerCase() === name.trim().toLowerCase() && profile.enabled,
   );
 }
@@ -239,15 +244,23 @@ function assertProfileName(name: string): string {
   return normalized;
 }
 
-function writableProfileDirectory(cwd: string, scope: SubagentWritableScope): string {
+function writableProfileDirectory(cwd: string, scope: SubagentWritableScope, userId?: number): string {
   if (scope === "global") return join(getAgentDir(), "agents");
+  if (scope === "user") {
+    if (!isUserScopedConfig(userId)) throw new Error("User agent profiles require a logged-in user");
+    return userAgentsDir(userId as number);
+  }
   if (scope === "project") return join(resolve(cwd), ".pi", "agents");
-  throw new Error("Agent scope must be global or project");
+  throw new Error("Agent scope must be global, user or project");
 }
 
-function assertWritableProfileDirectory(cwd: string, scope: SubagentWritableScope): string {
-  const dir = writableProfileDirectory(cwd, scope);
-  if (scope === "global") return dir;
+function assertWritableProfileDirectory(
+  cwd: string,
+  scope: SubagentWritableScope,
+  userId?: number,
+): string {
+  const dir = writableProfileDirectory(cwd, scope, userId);
+  if (scope === "global" || scope === "user") return dir;
 
   let existingAncestor = dir;
   while (!existsSync(existingAncestor)) {
@@ -265,6 +278,7 @@ export function saveSubagentProfile(
   cwd: string,
   scope: SubagentWritableScope,
   profile: Omit<SubagentProfile, "scope" | "filePath">,
+  userId?: number,
 ): SubagentProfile {
   const name = assertProfileName(profile.name);
   const tools = [...new Set(profile.tools.filter((tool) => BUILTIN_TOOLS.has(tool)))];
@@ -281,7 +295,7 @@ export function saveSubagentProfile(
   const model = profile.model?.trim() || undefined;
   const loadSkills = profile.loadSkills === true;
   const loadExtensions = profile.loadExtensions === true;
-  const dir = assertWritableProfileDirectory(cwd, scope);
+  const dir = assertWritableProfileDirectory(cwd, scope, userId);
   mkdirSync(dir, { recursive: true });
   if (scope === "project" && !isProjectProfilePathAllowed(cwd, dir)) {
     throw new Error("Agent profile directory is outside the project root");
@@ -318,9 +332,14 @@ export function saveSubagentProfile(
   };
 }
 
-export function deleteSubagentProfile(cwd: string, scope: SubagentWritableScope, name: string): void {
+export function deleteSubagentProfile(
+  cwd: string,
+  scope: SubagentWritableScope,
+  name: string,
+  userId?: number,
+): void {
   const safeName = assertProfileName(name);
-  const filePath = join(assertWritableProfileDirectory(cwd, scope), `${safeName}.md`);
+  const filePath = join(assertWritableProfileDirectory(cwd, scope, userId), `${safeName}.md`);
   if (existsSync(filePath)) unlinkSync(filePath);
 }
 

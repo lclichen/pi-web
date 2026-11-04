@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { atomicWriteFile } from "./atomic-write";
 import { deploymentQuickMcpPath } from "./quick-mcp";
+import { isUserScopedConfig, userMcpConfigPath } from "./user-config";
 import type {
   ConfigScope,
   McpConfigDiagnostic,
@@ -14,8 +15,14 @@ import type {
   ServerEntry,
 } from "./api-types";
 
-export function mcpConfigPath(cwd: string, scope: ConfigScope): string {
+export function mcpConfigPath(cwd: string, scope: ConfigScope, userId?: number): string {
   if (scope === "project") return join(cwd, ".pi", "mcp.json");
+  if (scope === "user") {
+    if (!isUserScopedConfig(userId)) {
+      throw new Error("User MCP config requires a logged-in user");
+    }
+    return userMcpConfigPath(userId as number);
+  }
   if (scope === "quick") {
     // 部署级快速会话专用：复用 dataDir/mcp-quick.json 作为唯一存储
     //（lib/quick-mcp.ts 的 syncQuickMcpConfig 在会话创建时物化到工作区）。
@@ -102,6 +109,8 @@ export interface ReadMcpOptions {
   scopes?: ConfigScope[];
   /** 保留被高优先级遮蔽的低层条目（设置页用——附带 overridden 标记）。 */
   includeShadowed?: boolean;
+  /** 请求者：启用 per-user mcp.json（普通用户设置页/会话）。 */
+  userId?: number;
 }
 
 export function readMcpConfig(cwd: string, options?: ReadMcpOptions): McpConfigDocument {
@@ -119,12 +128,23 @@ export function readMcpConfig(cwd: string, options?: ReadMcpOptions): McpConfigD
     join(agentsDir, "mcp", "mcp.json"),
   ];
   const quickCandidates = [mcpConfigPath(cwd, "quick"), join(agentsDir, "mcp-quick.json")];
+  const userCandidates = isUserScopedConfig(options?.userId)
+    ? [userMcpConfigPath(options!.userId as number)]
+    : [];
 
-  const activeScopes = options?.scopes ?? (["project", "quick", "global"] as ConfigScope[]);
+  const activeScopes =
+    options?.scopes ??
+    ([...(userCandidates.length > 0 ? (["project", "quick", "user", "global"] as ConfigScope[]) : (["project", "quick", "global"] as ConfigScope[]))]);
 
   for (const scope of activeScopes) {
     const candidates =
-      scope === "project" ? [mcpConfigPath(cwd, scope)] : scope === "quick" ? quickCandidates : globalCandidates;
+      scope === "project"
+        ? [mcpConfigPath(cwd, scope)]
+        : scope === "quick"
+          ? quickCandidates
+          : scope === "user"
+            ? userCandidates
+            : globalCandidates;
 
     for (const path of candidates) {
       const { config, error } = readRaw(path);
@@ -160,7 +180,7 @@ export function readMcpConfig(cwd: string, options?: ReadMcpOptions): McpConfigD
   // the settings UI. Merge the tombstone into the underlying entry and mark
   // projectOverride so the panel can toggle the override without touching the
   // original config.
-  const scopeRank: Record<ConfigScope, number> = { project: 0, quick: 1, global: 2 };
+  const scopeRank: Record<ConfigScope, number> = { project: 0, quick: 1, user: 2, global: 3 };
   const groups = new Map<string, McpServerInfo[]>();
   for (const s of servers) {
     const list = groups.get(s.name);
@@ -197,8 +217,14 @@ function persist(path: string, cfg: RawMcpConfig): void {
   atomicWriteFile(path, `${JSON.stringify(cfg, null, 2)}\n`);
 }
 
-export function createMcpServer(cwd: string, scope: ConfigScope, name: string, entry: ServerEntry): void {
-  const path = mcpConfigPath(cwd, scope);
+export function createMcpServer(
+  cwd: string,
+  scope: ConfigScope,
+  name: string,
+  entry: ServerEntry,
+  userId?: number,
+): void {
+  const path = mcpConfigPath(cwd, scope, userId);
   const cfg = loadWritable(path);
   if (cfg.mcpServers?.[name]) {
     throw new Error(`Server "${name}" already exists in ${scope} scope`);
@@ -208,8 +234,14 @@ export function createMcpServer(cwd: string, scope: ConfigScope, name: string, e
   persist(path, cfg);
 }
 
-export function updateMcpServer(cwd: string, scope: ConfigScope, name: string, entry: ServerEntry): void {
-  const path = mcpConfigPath(cwd, scope);
+export function updateMcpServer(
+  cwd: string,
+  scope: ConfigScope,
+  name: string,
+  entry: ServerEntry,
+  userId?: number,
+): void {
+  const path = mcpConfigPath(cwd, scope, userId);
   const cfg = loadWritable(path);
   if (!cfg.mcpServers?.[name]) {
     throw new Error(`Server "${name}" not found in ${scope} scope`);
@@ -218,8 +250,8 @@ export function updateMcpServer(cwd: string, scope: ConfigScope, name: string, e
   persist(path, cfg);
 }
 
-export function removeMcpServer(cwd: string, scope: ConfigScope, name: string): void {
-  const path = mcpConfigPath(cwd, scope);
+export function removeMcpServer(cwd: string, scope: ConfigScope, name: string, userId?: number): void {
+  const path = mcpConfigPath(cwd, scope, userId);
   const cfg = loadWritable(path);
   if (!cfg.mcpServers?.[name]) {
     throw new Error(`Server "${name}" not found in ${scope} scope`);
@@ -256,8 +288,14 @@ export function setMcpServerDisabledViaProject(cwd: string, name: string, disabl
   persist(projectPath, cfg);
 }
 
-export function setMcpServerDisabled(cwd: string, scope: ConfigScope, name: string, disabled: boolean): void {
-  const path = mcpConfigPath(cwd, scope);
+export function setMcpServerDisabled(
+  cwd: string,
+  scope: ConfigScope,
+  name: string,
+  disabled: boolean,
+  userId?: number,
+): void {
+  const path = mcpConfigPath(cwd, scope, userId);
   const cfg = loadWritable(path);
   if (!cfg.mcpServers?.[name]) {
     throw new Error(`Server "${name}" not found in ${scope} scope`);

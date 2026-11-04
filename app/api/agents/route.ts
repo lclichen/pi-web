@@ -6,7 +6,7 @@ import type { ConfigScope } from "@/lib/api-types";
 export const dynamic = "force-dynamic";
 
 function readScope(v: string | null): ConfigScope | undefined {
-  return v === "project" || v === "global" ? v : undefined;
+  return v === "project" || v === "user" || v === "global" ? v : undefined;
 }
 
 // GET /api/agents?cwd=&scope=  (scope omitted => project+global merged)
@@ -17,7 +17,7 @@ export async function GET(req: Request) {
   const cwd = dir.cwd;
   const scope = readScope(searchParams.get("scope"));
   try {
-    const agents = scope ? listAgents(cwd, scope) : listAllAgents(cwd);
+    const agents = scope ? listAgents(cwd, scope, dir.userId) : listAllAgents(cwd, dir.userId);
     return NextResponse.json({ agents });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 });
@@ -52,6 +52,12 @@ export async function POST(req: Request) {
     if (nameErr) return NextResponse.json({ error: nameErr }, { status: 400 });
 
     const scope = readScope(body.scope ?? null) ?? "project";
+    if (scope === "global" && !dir.isAdmin) {
+      return NextResponse.json({ error: "全局 Agent 仅管理员可修改" }, { status: 403 });
+    }
+    if (scope === "user" && dir.userId <= 0) {
+      return NextResponse.json({ error: "用户 Agent 需要登录用户" }, { status: 403 });
+    }
     try {
       const filePath = createAgent(
         body.cwd,
@@ -66,6 +72,7 @@ export async function POST(req: Request) {
           maxTurns: body.maxTurns,
         },
         body.systemPrompt ?? "",
+        dir.userId,
       );
       return NextResponse.json({ success: true, filePath });
     } catch (e) {

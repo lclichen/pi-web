@@ -8,7 +8,7 @@ import type { ConfigScope } from "@/lib/api-types";
 export const dynamic = "force-dynamic";
 
 function readScope(v: string | null): ConfigScope {
-  return v === "global" ? "global" : "project";
+  return v === "global" ? "global" : v === "user" ? "user" : "project";
 }
 
 type AgentBody = AgentFields & { cwd?: string; projectId?: string; scope?: string; systemPrompt?: string };
@@ -53,7 +53,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ name: st
   }
   const scope = readScope(scopeParam);
   try {
-    const detail = getAgentDetail(cwd, scope, name);
+    const detail = getAgentDetail(cwd, scope, name, dir.userId);
     if (!detail) {
       // The built-in listing entries carry scope "project" but no file; a
       // missing file for one of those names is the built-in definition.
@@ -83,6 +83,12 @@ export async function PUT(req: Request, { params }: { params: Promise<{ name: st
     body.cwd = dir.cwd;
     if (!body.cwd) return NextResponse.json({ error: "cwd required" }, { status: 400 });
     const scope = readScope(body.scope ?? null);
+    if (scope === "global" && !dir.isAdmin) {
+      return NextResponse.json({ error: "全局 Agent 仅管理员可修改" }, { status: 403 });
+    }
+    if (scope === "user" && dir.userId <= 0) {
+      return NextResponse.json({ error: "用户 Agent 需要登录用户" }, { status: 403 });
+    }
     try {
       updateAgent(
         body.cwd,
@@ -97,6 +103,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ name: st
           maxTurns: body.maxTurns,
         },
         body.systemPrompt ?? "",
+        dir.userId,
       );
       return NextResponse.json({ success: true });
     } catch (e) {
@@ -114,10 +121,17 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ name: 
   const { name } = await params;
   try {
     const body = (await req.json()) as PatchBody;
-    if (!body.cwd) return NextResponse.json({ error: "cwd required" }, { status: 400 });
+    const dir = resolveConfigCwdSync(req, { cwd: body.cwd ?? null });
+    if (!dir.ok) return NextResponse.json({ error: dir.error }, { status: dir.status });
     const scope = readScope(body.scope ?? null);
+    if (scope === "global" && !dir.isAdmin) {
+      return NextResponse.json({ error: "全局 Agent 仅管理员可修改" }, { status: 403 });
+    }
+    if (scope === "user" && dir.userId <= 0) {
+      return NextResponse.json({ error: "用户 Agent 需要登录用户" }, { status: 403 });
+    }
     try {
-      setAgentEnabled(body.cwd, scope, name, body.enabled !== false);
+      setAgentEnabled(dir.cwd, scope, name, body.enabled !== false, dir.userId);
       return NextResponse.json({ success: true });
     } catch (e) {
       return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 404 });
@@ -131,11 +145,17 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ name: 
 export async function DELETE(req: Request, { params }: { params: Promise<{ name: string }> }) {
   const { name } = await params;
   const { searchParams } = new URL(req.url);
-  const cwd = searchParams.get("cwd");
-  if (!cwd) return NextResponse.json({ error: "cwd required" }, { status: 400 });
+  const dir = resolveConfigCwdSync(req, { cwd: searchParams.get("cwd") });
+  if (!dir.ok) return NextResponse.json({ error: dir.error }, { status: dir.status });
   const scope = readScope(searchParams.get("scope"));
+  if (scope === "global" && !dir.isAdmin) {
+    return NextResponse.json({ error: "全局 Agent 仅管理员可修改" }, { status: 403 });
+  }
+  if (scope === "user" && dir.userId <= 0) {
+    return NextResponse.json({ error: "用户 Agent 需要登录用户" }, { status: 403 });
+  }
   try {
-    deleteAgent(cwd, scope, name);
+    deleteAgent(dir.cwd, scope, name, dir.userId);
     return NextResponse.json({ success: true });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 });

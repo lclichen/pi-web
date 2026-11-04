@@ -12,7 +12,7 @@ import type { ConfigScope, ServerEntry } from "@/lib/api-types";
 export const dynamic = "force-dynamic";
 
 function readScope(v: string | null | undefined): ConfigScope {
-  return v === "global" ? "global" : v === "quick" ? "quick" : "project";
+  return v === "global" ? "global" : v === "quick" ? "quick" : v === "user" ? "user" : "project";
 }
 
 type Body = { cwd?: string; projectId?: string; scope?: string; entry?: ServerEntry };
@@ -36,7 +36,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ name: st
     const guard = guardMcpRequest(req, body, { mutating: true });
     if (!guard.ok) return guard.response;
     const scope = readScope(body.scope);
-    if (scope === "project" && !guard.isAdmin && body.entry.command) {
+    if ((scope === "project" || scope === "user") && !guard.isAdmin && body.entry.command) {
       return NextResponse.json(
         {
           error:
@@ -46,7 +46,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ name: st
       );
     }
     try {
-      updateMcpServer(guard.cwd, scope, name, body.entry);
+      updateMcpServer(guard.cwd, scope, name, body.entry, guard.userId);
       return NextResponse.json({ success: true });
     } catch (e) {
       return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 404 });
@@ -73,14 +73,14 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ name: 
     const disabled = body.disabled === true;
     try {
       if (target === "scope") {
-        setMcpServerDisabled(guard.cwd, scope, name, disabled);
+        setMcpServerDisabled(guard.cwd, scope, name, disabled, guard.userId);
         return NextResponse.json({ success: true, disabled, target });
       }
       setMcpServerDisabledViaProject(guard.cwd, name, disabled);
       if (!disabled) {
         // Removing the override can expose a server that is disabled in its
         // own config (global/quick). Say so instead of silently no-oping.
-        const effective = readMcpConfig(guard.cwd).servers.find((s) => s.name === name);
+        const effective = readMcpConfig(guard.cwd, { userId: guard.userId }).servers.find((s) => s.name === name);
         if (effective?.disabled) {
           return NextResponse.json(
             { error: "项目覆盖已移除，但该服务器在全局/快速配置中仍为禁用；需管理员在对应配置中启用" },
@@ -109,7 +109,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ name:
   if (!guard.ok) return guard.response;
   const scope = readScope(searchParams.get("scope"));
   try {
-    removeMcpServer(guard.cwd, scope, name);
+    removeMcpServer(guard.cwd, scope, name, guard.userId);
     return NextResponse.json({ success: true });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 404 });

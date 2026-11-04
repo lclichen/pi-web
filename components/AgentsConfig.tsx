@@ -102,7 +102,7 @@ function duplicateProfileName(name: string, profiles: readonly SubagentProfile[]
 }
 
 function isWritableScope(scope: SubagentScope): scope is SubagentWritableScope {
-  return scope === "global" || scope === "project";
+  return scope === "global" || scope === "user" || scope === "project";
 }
 
 function shortenPath(path: string): string {
@@ -573,7 +573,7 @@ export function AgentsConfig({
                     <div
                       style={{
                         display: "grid",
-                        gridTemplateColumns: "1fr 1fr",
+                        gridTemplateColumns: "1fr 1fr 1fr",
                         gap: 3,
                         padding: 3,
                         border: "1px solid var(--border)",
@@ -581,7 +581,7 @@ export function AgentsConfig({
                         background: "var(--bg-panel)",
                       }}
                     >
-                      {(["global", "project"] as const).map((scope) => (
+                      {(["global", "user", "project"] as const).map((scope) => (
                         <button
                           key={scope}
                           type="button"

@@ -24,7 +24,7 @@ test("server keys use one escaped helper and contain no raw NUL bytes", () => {
 test("detail switch PATCHes the workspace override by default", () => {
   const toggle = source.slice(source.indexOf("const setServerEnabled"), source.indexOf("const setGroupEnabled"));
   assert.match(toggle, /method: "PATCH"/);
-  assert.match(toggle, /target: "project"/);
+  assert.match(toggle, /target: srv\.scope === "user" \? "scope" : "project"/);
   assert.match(toggle, /scope: srv\.scope/);
   assert.match(source, /scopeEnableBlocked/);
   assert.match(source, /selectedSrv\?\.projectOverride/);

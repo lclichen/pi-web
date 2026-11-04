@@ -185,10 +185,12 @@ export function SubagentsConfig({
   cwd,
   onClose,
   embedded = false,
+  isAdmin = true,
 }: {
   cwd: string;
   onClose: () => void;
   embedded?: boolean;
+  isAdmin?: boolean;
 }) {
   const { t } = useI18n();
   const [agents, setAgents] = useState<AgentInfo[]>([]);
@@ -214,7 +216,7 @@ export function SubagentsConfig({
   });
 
   const grouped = useMemo(() => {
-    return (["builtin", "project", "global"] as const)
+    return (["builtin", "project", "user", "global"] as const)
       .map((scope) => ({ scope, agents: agents.filter((a) => a.scope === scope) }))
       .filter((g) => g.agents.length > 0);
   }, [agents]);
@@ -416,7 +418,9 @@ export function SubagentsConfig({
       ? t("agents.scope.builtin")
       : scope === "project"
         ? t("agents.scope.project")
-        : t("agents.scope.global");
+        : scope === "user"
+          ? t("agents.scope.user")
+          : t("agents.scope.global");
 
   return (
     <ConfigPanelShell
@@ -528,7 +532,10 @@ export function SubagentsConfig({
                         onChange={(e) => set("scope", e.target.value as ConfigScope)}
                       >
                         <option value="project">project</option>
-                        <option value="global">global</option>
+                        <option value="user">user</option>
+                        <option value="global" disabled={!isAdmin}>
+                          global
+                        </option>
                       </select>
                     </ConfigField>
                   </div>

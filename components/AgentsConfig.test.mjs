@@ -35,14 +35,14 @@ test("marks profiles shadowed by a higher-precedence source", () => {
 });
 
 test("treats global and project profiles as directly editable", () => {
-  assert.match(source, /scope === "global" \|\| scope === "project"/);
+  assert.match(source, /scope === "global" \|\| scope === "user" \|\| scope === "project"/);
   assert.match(source, /setMode\(isWritableScope\(profile\.scope\) \? "edit" : "view"\)/);
   assert.match(source, /selected && isWritableScope\(selected\.scope\) && mode === "edit"/);
 });
 
 test("offers both writable scopes when creating a profile", () => {
   assert.match(source, /\{creating && \(/);
-  assert.match(source, /\["global", "project"\] as const/);
+  assert.match(source, /\["global", "user", "project"\] as const/);
   assert.doesNotMatch(source, /beginOverride|mode === "override"|agents\.readOnly|agents\.override/);
 });
 

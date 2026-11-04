@@ -4,6 +4,7 @@ import test from "node:test";
 
 const source = await readFile(new URL("./WebUIGuide.tsx", import.meta.url), "utf8");
 const shell = await readFile(new URL("./AppShell.tsx", import.meta.url), "utf8");
+const sidebar = await readFile(new URL("./SessionSidebar.tsx", import.meta.url), "utf8");
 
 /**
  * 教学第 4 步「和 Agent 对话」：新用户此时还没有会话，聊天区不存在。
@@ -29,4 +30,9 @@ test("AppShell tells the guide whether a session exists and wires New project", 
     shell,
     /onNewProject=\{\(\) => window\.dispatchEvent\(new CustomEvent\("pi-web:open-project-wizard"\)\)\}/,
   );
+  // The sidebar listener must open the wizard for a mode-less event too (it
+  // used to ignore everything except mode:"ssh", so the guide button did
+  // nothing).
+  assert.match(sidebar, /setWizardInitialMethod\(mode === "ssh" \? "ssh" : null\)/);
+  assert.match(sidebar, /setShowProjectWizard\(true\)/);
 });

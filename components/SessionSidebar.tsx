@@ -503,8 +503,9 @@ export function SessionSidebar({
   useEffect(() => {
     const onOpenWizard = (event: Event) => {
       const mode = (event as CustomEvent<{ mode?: string }>).detail?.mode;
-      if (mode !== "ssh") return;
-      setWizardInitialMethod("ssh");
+      // "ssh" jumps straight to the SSH step; any other/no mode opens the
+      // method picker (used by the onboarding guide's «新建项目» button).
+      setWizardInitialMethod(mode === "ssh" ? "ssh" : null);
       setShowProjectWizard(true);
     };
     window.addEventListener("pi-web:open-project-wizard", onOpenWizard);

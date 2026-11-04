@@ -5,6 +5,7 @@ import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { getAllowedFileRoots, isExistingFilePathAllowed } from "@/lib/file-access";
 import { requireUserIdentity } from "@/lib/web-session";
 import { isCallerOwnedProjectHome } from "@/lib/projects";
+import { isCallerQuickWorkspace } from "@/lib/mode-homes";
 import { invalidateModelsCache } from "@/lib/models-cache";
 import { getProjectTrustStatus, trustProject } from "@/lib/project-trust";
 import { destroyRpcSessionsForCwd, hasBusyRpcSessionForCwd } from "@/lib/rpc-manager";
@@ -29,9 +30,13 @@ async function validateCwd(req: Request, value: unknown): Promise<{ cwd: string 
   if (!isExistingFilePathAllowed(cwd, allowedRoots)) {
     // 项目空间（沙盒/SSH/本机）的会话 cwd 是项目 home，位于常规文件根之外；
     // 归属校验通过即放行——项目技能的信任提示同样需要能查/能解除。
+    // 快速会话工作区（quick-homes/u<id>）同理：新建会话未发消息时还没有
+    // 会话记录，按用户归属放行。
     const identity = requireUserIdentity(req);
     const owned =
-      identity.ok && isCallerOwnedProjectHome(cwd, identity.session.user.id, identity.session.user.role === "admin");
+      identity.ok &&
+      (isCallerOwnedProjectHome(cwd, identity.session.user.id, identity.session.user.role === "admin") ||
+        isCallerQuickWorkspace(cwd, identity.session.user.id));
     if (!owned) {
       return { response: NextResponse.json({ error: "Access denied" }, { status: 403 }) };
     }

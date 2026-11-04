@@ -1,4 +1,5 @@
 import { ensureProjectHome, getOwnedProject, isCallerOwnedProjectHome } from "./projects";
+import { isCallerQuickWorkspace } from "./mode-homes";
 import { requireUserIdentity } from "./web-session";
 import { isWindowsAbsolutePath } from "./file-access";
 import { resolve } from "path";
@@ -36,9 +37,13 @@ export function resolveConfigCwdSync(
     return { ok: false, status: 400, error: "cwd must be an absolute path" };
   }
   // Raw cwd path: host semantics — implicit host (auth off) or admin, plus
-  // the caller's own project homes (config UIs pass the session cwd).
+  // the caller's own project homes (config UIs pass the session cwd) and the
+  // caller's own quick workspaces (quick-homes/u<id> — materialized by
+  // /api/quick-workspace BEFORE the first message, so no session cwd exists
+  // to authorize them yet; without this a non-admin quick session 403s every
+  // config API: mcp / agents / plugins / preferences / skills).
   const isAdmin = user.id === 0 || user.role === "admin";
-  if (!isAdmin && !isCallerOwnedProjectHome(resolve(cwd), user.id, false)) {
+  if (!isAdmin && !isCallerOwnedProjectHome(resolve(cwd), user.id, false) && !isCallerQuickWorkspace(cwd, user.id)) {
     return { ok: false, status: 403, error: "服务器目录仅管理员可用" };
   }
   return { ok: true, cwd, userId: user.id, isAdmin };

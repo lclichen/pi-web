@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
-import { join } from "path";
+import { isAbsolute, join, relative, resolve } from "path";
 import { platformUrl } from "./platform/client.ts";
 import type { SessionMode } from "./session-modes.ts";
 
@@ -41,6 +41,16 @@ export function localHomeDir(userId: number): string {
 
 export function quickHomeDir(userId: number): string {
   return join(dataDir(), "quick-homes", `u${userId}`);
+}
+
+/** cwd 是否位于该用户自己的快速会话工作区 home（quick-homes/u<id>）内。
+ *  快速工作区由 /api/quick-workspace 派生：不是项目 home，发首条消息前也
+ *  没有会话记录——配置/模型/信任/Git 接口对这类目录按"用户归属"放行，
+ *  否则普通用户新建快速会话即 403（模型错误 Access denied 等）。 */
+export function isCallerQuickWorkspace(cwd: string, userId: number): boolean {
+  if (userId <= 0) return false;
+  const rel = relative(resolve(quickHomeDir(userId)), resolve(cwd));
+  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
 }
 
 /** Quick sessions have no workspace; the home only anchors the session file

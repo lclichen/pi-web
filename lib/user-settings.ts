@@ -13,16 +13,28 @@ import { writePrivateFileAtomicSync } from "./atomic-file";
  * other in a single JSON store.
  */
 
+export interface UserSettingsUi {
+  theme?: "light" | "dark" | "auto";
+  locale?: string;
+  chatWidth?: number;
+  chatFontSize?: number;
+  thinkingExpanded?: boolean;
+  quoteSelection?: boolean;
+}
+
 export interface UserSettings {
   /** Ask auto-continue: unanswered extension questions (ask_user_question,
    *  plan approval, any ui.select/confirm/input dialog without an explicit
    *  timeout) settle with their default value after askAutoContinueTimeoutMs.
    *  Off (default) = interactive dialogs wait for the user indefinitely. */
   askAutoContinue: boolean;
+  /** Browser-experience defaults that should follow the login across devices. */
+  ui: UserSettingsUi;
 }
 
 export const DEFAULT_USER_SETTINGS: UserSettings = {
   askAutoContinue: false,
+  ui: {},
 };
 
 /** Grace period so a stale countdown never outlives the dialog pipeline. */
@@ -58,12 +70,27 @@ export function getUserSettings(userId: number): UserSettings {
   const cache = storeCache();
   const cached = cache.get(path);
   if (cached) return cached;
-  let data: UserSettings = { ...DEFAULT_USER_SETTINGS };
+  let data: UserSettings = { ...DEFAULT_USER_SETTINGS, ui: {} };
   try {
     const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
     if (parsed !== null && typeof parsed === "object") {
-      const askAutoContinue = (parsed as { askAutoContinue?: unknown }).askAutoContinue;
-      if (typeof askAutoContinue === "boolean") data = { askAutoContinue };
+      const raw = parsed as { askAutoContinue?: unknown; ui?: unknown };
+      const ui: UserSettingsUi = {};
+      if (raw.ui !== null && typeof raw.ui === "object" && !Array.isArray(raw.ui)) {
+        const value = raw.ui as Record<string, unknown>;
+        if (value.theme === "light" || value.theme === "dark" || value.theme === "auto") ui.theme = value.theme;
+        if (typeof value.locale === "string") ui.locale = value.locale;
+        if (typeof value.chatWidth === "number" && Number.isFinite(value.chatWidth)) ui.chatWidth = value.chatWidth;
+        if (typeof value.chatFontSize === "number" && Number.isFinite(value.chatFontSize)) {
+          ui.chatFontSize = value.chatFontSize;
+        }
+        if (typeof value.thinkingExpanded === "boolean") ui.thinkingExpanded = value.thinkingExpanded;
+        if (typeof value.quoteSelection === "boolean") ui.quoteSelection = value.quoteSelection;
+      }
+      data = {
+        askAutoContinue: typeof raw.askAutoContinue === "boolean" ? raw.askAutoContinue : false,
+        ui,
+      };
     }
   } catch {
     // missing or malformed store — defaults apply
@@ -79,8 +106,16 @@ export function askAutoContinueMsFor(userId: number): number | undefined {
   return askAutoContinueTimeoutMs();
 }
 
-export function updateUserSettings(userId: number, patch: { askAutoContinue?: boolean }): UserSettings {
-  const next: UserSettings = { ...getUserSettings(userId), ...patch };
+export function updateUserSettings(
+  userId: number,
+  patch: { askAutoContinue?: boolean; ui?: Partial<UserSettingsUi> },
+): UserSettings {
+  const current = getUserSettings(userId);
+  const next: UserSettings = {
+    ...current,
+    ...(patch.askAutoContinue !== undefined ? { askAutoContinue: patch.askAutoContinue } : {}),
+    ui: patch.ui ? { ...current.ui, ...patch.ui } : current.ui,
+  };
   mkdirSync(join(dataDir(), "user-settings"), { recursive: true });
   writePrivateFileAtomicSync(storePath(userId), JSON.stringify(next, null, 2));
   storeCache().set(storePath(userId), next);

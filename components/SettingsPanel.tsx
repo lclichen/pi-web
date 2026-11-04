@@ -229,6 +229,7 @@ function GeneralSettings({
   const [askSettings, setAskSettings] = useState<{ askAutoContinue: boolean; askTimeoutMinutes: number } | null>(null);
   const [askSaving, setAskSaving] = useState(false);
   const [askError, setAskError] = useState<string | null>(null);
+  const uiHydratingRef = useRef(true);
 
   useEffect(() => {
     setThinkingExpanded(isThinkingExpandedByDefault());
@@ -262,6 +263,14 @@ function GeneralSettings({
         const data = (await response.json()) as {
           askAutoContinue?: boolean;
           askTimeoutMinutes?: number;
+          ui?: {
+            theme?: ThemePreference;
+            locale?: string;
+            chatWidth?: number;
+            chatFontSize?: number;
+            thinkingExpanded?: boolean;
+            quoteSelection?: boolean;
+          };
           error?: string;
         };
         if (!response.ok || data.error) throw new Error(data.error ?? `HTTP ${response.status}`);
@@ -270,6 +279,21 @@ function GeneralSettings({
             askAutoContinue: Boolean(data.askAutoContinue),
             askTimeoutMinutes: data.askTimeoutMinutes ?? 5,
           });
+          const ui = data.ui;
+          if (ui) {
+            if (ui.theme) setThemePreference(ui.theme);
+            if (ui.locale) setLocale(ui.locale as typeof locale);
+            if (typeof ui.chatWidth === "number") setChatContentWidth(ui.chatWidth);
+            if (typeof ui.chatFontSize === "number") setFontSize(ui.chatFontSize);
+            if (typeof ui.thinkingExpanded === "boolean") {
+              setThinkingExpandedByDefault(ui.thinkingExpanded);
+              setThinkingExpanded(ui.thinkingExpanded);
+            }
+            if (typeof ui.quoteSelection === "boolean") onQuoteSelectionChange(ui.quoteSelection);
+          }
+          window.setTimeout(() => {
+            uiHydratingRef.current = false;
+          }, 300);
         }
       })
       .catch(() => {
@@ -279,6 +303,29 @@ function GeneralSettings({
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (uiHydratingRef.current) return;
+    const timer = window.setTimeout(() => {
+      void fetch("/api/user-settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ui: {
+            theme: preference,
+            locale,
+            chatWidth: chatContentWidth,
+            chatFontSize: fontSize,
+            thinkingExpanded,
+            quoteSelection: quoteSelectionEnabled,
+          },
+        }),
+      }).catch(() => {
+        // Best-effort sync; localStorage already has the value.
+      });
+    }, 500);
+    return () => window.clearTimeout(timer);
+  }, [preference, locale, chatContentWidth, fontSize, thinkingExpanded, quoteSelectionEnabled]);
 
   const toggleAskAutoContinue = async (enabled: boolean) => {
     setAskSaving(true);
@@ -748,8 +795,8 @@ export function SettingsPanel({
           {sectionHost("account", <AccountSettings />)}
           {sectionHost("api-keys", <ApiKeysConfig />)}
           {sectionHost("models", <ModelsConfig embedded onClose={onClose} />)}
-          {cwd && sectionHost("skills", <SkillsConfig embedded key={cwd} cwd={cwd} onClose={onClose} />)}
-          {cwd && sectionHost("agents", <SubagentsConfig embedded key={cwd} cwd={cwd} onClose={onClose} />)}
+          {cwd && sectionHost("skills", <SkillsConfig embedded key={cwd} cwd={cwd} onClose={onClose} isAdmin={isAdmin} />)}
+          {cwd && sectionHost("agents", <SubagentsConfig embedded key={cwd} cwd={cwd} onClose={onClose} isAdmin={isAdmin} />)}
           {cwd &&
             sectionHost("mcp", <McpServersConfig embedded key={cwd} cwd={cwd} onClose={onClose} isAdmin={isAdmin} />)}
           {cwd && sectionHost("policy", <PolicyConfig embedded key={cwd} cwd={cwd} />)}
@@ -761,6 +808,7 @@ export function SettingsPanel({
               "plugins",
               <PluginsConfig
                 embedded
+                isAdmin={isAdmin}
                 key={cwd}
                 cwd={cwd}
                 sessionId={sessionId}

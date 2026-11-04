@@ -10,11 +10,13 @@ import {
 } from "@/lib/models-cache";
 import { resolveVisibleModels, selectInitialModelScope } from "@/lib/model-scope";
 import { getAllowedFileRootsForRequest, isExistingFilePathAllowed } from "@/lib/file-access";
-import { projectTrustReloadOptions } from "@/lib/project-trust";
+import { getProjectTrustStatus, projectTrustReloadOptions } from "@/lib/project-trust";
 import { requireUserIdentity } from "@/lib/web-session";
 import { getOwnedProject, isCallerOwnedProjectHome, projectHome } from "@/lib/projects";
 import { isCallerSessionCwdAllowed } from "@/lib/session-cwd-access";
 import { ensureUserModelRuntime } from "@/lib/user-models";
+import { createUserSettingsManager } from "@/lib/user-settings-storage";
+import { isCallerQuickWorkspace } from "@/lib/mode-homes";
 
 export const dynamic = "force-dynamic";
 
@@ -43,6 +45,10 @@ async function loadModels(cwd: string, userId: number, isAdmin: boolean): Promis
   // runs a repository's .pi/extensions factories, so honor project trust here
   // too (see lib/project-trust.ts, #236).
   const trustReloadOptions = projectTrustReloadOptions(cwd, agentDir);
+  const trustStatus = getProjectTrustStatus(cwd, agentDir);
+  const settingsManager = createUserSettingsManager(cwd, userId, {
+    projectTrusted: !trustStatus.requiresTrust || trustStatus.trusted,
+  });
   // 多用户：普通用户优先用自己的「全局+用户」合并运行时（模型列表应与
   // 会话实际可用模型一致）；管理员用全局层。
   const scoped = isAdmin ? null : ensureUserModelRuntime(userId);
@@ -51,6 +57,7 @@ async function loadModels(cwd: string, userId: number, isAdmin: boolean): Promis
     ...(scopedRuntime ? { modelRuntime: scopedRuntime } : {}),
     cwd,
     agentDir,
+    settingsManager,
     ...(trustReloadOptions ? { resourceLoaderReloadOptions: trustReloadOptions } : {}),
   });
   const modelError = services.modelRuntime.getError();
@@ -155,7 +162,13 @@ export async function GET(req: Request) {
       // Existing sessions' cwds pass too: the transient allowed-roots set is
       // repopulated only at session creation, so after a restart this check
       // would otherwise 403 every materialized session ("No available models").
-      if (!isCallerOwnedProjectHome(cwd, user.id, isAdmin) && !(await isCallerSessionCwdAllowed(req, cwd))) {
+      // Quick workspaces exist BEFORE the first message (no session yet) and
+      // are not project homes — allow the caller's own quick-homes subtree.
+      if (
+        !isCallerOwnedProjectHome(cwd, user.id, isAdmin) &&
+        !(await isCallerSessionCwdAllowed(req, cwd)) &&
+        !isCallerQuickWorkspace(cwd, user.id)
+      ) {
         return Response.json({ error: "Access denied" }, { status: 403 });
       }
     }

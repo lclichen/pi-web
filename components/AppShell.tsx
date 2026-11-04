@@ -32,6 +32,8 @@ import { ToolDefinitionsPanel } from "./ToolDefinitionsPanel";
 import { AgentSessionPanel } from "./AgentSessionPanel";
 import { useTheme } from "@/hooks/useTheme";
 import { useI18n } from "@/hooks/useI18n";
+import { useChatAppearance } from "@/hooks/useChatAppearance";
+import { setThinkingExpandedByDefault } from "@/lib/thinking-expansion-preference";
 import { useIsMobile, useIsNarrowMobile } from "@/hooks/useIsMobile";
 import { useViewportHeight } from "@/hooks/useViewportHeight";
 import { useResizablePanel } from "@/hooks/useResizablePanel";
@@ -84,9 +86,10 @@ export function AppShell() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [initialNavigation] = useState(() => getInitialNavigation(searchParams));
-  const { preference, toggleTheme } = useTheme();
+  const { preference, toggleTheme, setThemePreference } = useTheme();
   const themeLabelKey = preference === "light" ? "theme.light" : preference === "dark" ? "theme.dark" : "theme.auto";
   const { locale, setLocale, t: translate, supportedLocales } = useI18n();
+  const { setWidth: setChatContentWidth, setFontSize: setChatContentFontSize } = useChatAppearance();
   const isMobile = useIsMobile();
   const isNarrowMobile = useIsNarrowMobile();
   useViewportHeight();
@@ -175,6 +178,40 @@ export function AppShell() {
       // Keep the current page usable when storage is unavailable.
     }
   }, []);
+
+  // Per-login UI defaults should follow the user to a new browser/device.
+  // localStorage is the instant paint; this fetch upgrades it when available.
+  useEffect(() => {
+    let cancelled = false;
+    void fetch("/api/user-settings", { cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) return;
+        const data = (await response.json()) as {
+          ui?: {
+            theme?: "light" | "dark" | "auto";
+            locale?: string;
+            chatWidth?: number;
+            chatFontSize?: number;
+            thinkingExpanded?: boolean;
+            quoteSelection?: boolean;
+          };
+        };
+        if (cancelled || !data.ui) return;
+        const ui = data.ui;
+        if (ui.theme) setThemePreference(ui.theme);
+        if (ui.locale) setLocale(ui.locale as typeof locale);
+        if (typeof ui.chatWidth === "number") setChatContentWidth(ui.chatWidth);
+        if (typeof ui.chatFontSize === "number") setChatContentFontSize(ui.chatFontSize);
+        if (typeof ui.thinkingExpanded === "boolean") setThinkingExpandedByDefault(ui.thinkingExpanded);
+        if (typeof ui.quoteSelection === "boolean") handleQuoteSelectionChange(ui.quoteSelection);
+      })
+      .catch(() => {
+        // Settings unavailable (auth off / transient) — localStorage values stand.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [handleQuoteSelectionChange, locale, setChatContentFontSize, setChatContentWidth, setLocale, setThemePreference]);
   const notifiedAttentionRequestIdsRef = useRef(new Set<string>());
   const handleBackgroundTaskDone = useCallback(() => {
     if (soundEnabledRef.current) playDoneSound();

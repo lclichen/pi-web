@@ -30,6 +30,7 @@
 | `全流程测试方案.md` | 三层测试方案（L0 静态 / L1 本地 dev+mock / L2 VM 实机）、回归集选择、QA 子智能体接入 | 测试、开发 |
 | `upstream-0.14-gap-and-ui-review.md` | 上游 pi-web v0.14.2（292 提交）对 12 层框架差距的覆盖、可引入构件与 UI 清单；含 preview-mode 认证绕过与 lease 缺失的实测 | 开发、产品 |
 | `sca.md` | SCA（软件成分分析）：OSV-Scanner CI、SARIF 告警、Dependabot 分组与处置流程 | 开发、运维 |
+| `config-layers-user-scope-review.md` | 全局/用户/项目配置层级检视：哪些个人偏好被写到全局/项目/localStorage，用户层设计与迁移顺序 | 开发、产品 |
 
 ## 维护约定
 

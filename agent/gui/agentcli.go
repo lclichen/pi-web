@@ -44,42 +44,91 @@ func agentClientDir() (string, error) {
 	return filepath.Join(home, ".agent-client"), nil
 }
 
-// scanServerConfigs reads the CLI's default config and every per-server
-// profile. Entries without server+token (half-paired files) are skipped.
-func scanServerConfigs() []serverEntry {
-	dir, err := agentClientDir()
+// legacyAgentClientDir is where agent-client <= 0.2 wrote its single config
+// (~/.pi-agent/config.json); newer CLIs still read and update it in place.
+func legacyAgentClientDir() (string, error) {
+	home, err := os.UserHomeDir()
 	if err != nil {
-		return nil
+		return "", err
 	}
-	paths := []string{filepath.Join(dir, "config.json")}
-	profiles, _ := filepath.Glob(filepath.Join(dir, "profiles", "*.json"))
-	sort.Strings(profiles)
-	paths = append(paths, profiles...)
+	return filepath.Join(home, ".pi-agent"), nil
+}
+
+// scanServerConfigs reads the CLI's default config, every per-server profile
+// and the legacy pre-0.3 config. Entries without server+token (half-paired
+// files) are skipped.
+func scanServerConfigs() []serverEntry {
+	paths := make([]string, 0, 4)
+	if dir, err := agentClientDir(); err == nil {
+		paths = append(paths, filepath.Join(dir, "config.json"))
+		profiles, _ := filepath.Glob(filepath.Join(dir, "profiles", "*.json"))
+		sort.Strings(profiles)
+		paths = append(paths, profiles...)
+	}
+	if dir, err := legacyAgentClientDir(); err == nil {
+		paths = append(paths, filepath.Join(dir, "config.json"))
+	}
 
 	out := make([]serverEntry, 0, len(paths))
-	for i, path := range paths {
-		data, err := os.ReadFile(path)
-		if err != nil {
+	seen := make(map[string]bool, len(paths))
+	for _, path := range paths {
+		key := configPathKey(path)
+		if seen[key] {
 			continue
 		}
-		var cfg cliConfig
-		if json.Unmarshal(data, &cfg) != nil || cfg.Server == "" || cfg.Token == "" {
-			continue
+		seen[key] = true
+		if entry, ok := readServerEntry(path, len(out) == 0); ok {
+			out = append(out, entry)
 		}
-		label := strings.TrimSpace(cfg.Label)
-		if label == "" {
-			label = fallbackMachineLabel(cfg.Server)
-		}
-		out = append(out, serverEntry{
-			Path:          path,
-			Server:        cfg.Server,
-			Label:         label,
-			MachineID:     cfg.MachineID,
-			WorkspaceRoot: cfg.WorkspaceRoot,
-			Default:       i == 0,
-		})
 	}
 	return out
+}
+
+func configPathKey(path string) string {
+	clean := filepath.Clean(path)
+	if runtime.GOOS == "windows" {
+		return strings.ToLower(clean)
+	}
+	return clean
+}
+
+// readServerEntry loads one config file into a list row.
+func readServerEntry(path string, isDefault bool) (serverEntry, bool) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return serverEntry{}, false
+	}
+	var cfg cliConfig
+	if json.Unmarshal(data, &cfg) != nil || cfg.Server == "" || cfg.Token == "" {
+		return serverEntry{}, false
+	}
+	label := strings.TrimSpace(cfg.Label)
+	if label == "" {
+		label = fallbackMachineLabel(cfg.Server)
+	}
+	return serverEntry{
+		Path:          path,
+		Server:        cfg.Server,
+		Label:         label,
+		MachineID:     cfg.MachineID,
+		WorkspaceRoot: cfg.WorkspaceRoot,
+		Default:       isDefault,
+	}, true
+}
+
+// configDirLabel shows where the GUI looks for pairings. The legacy directory
+// is only mentioned when it holds a config (older agent-client versions).
+func configDirLabel() string {
+	dir, err := agentClientDir()
+	if err != nil {
+		return "用户目录不可用"
+	}
+	if legacy, lerr := legacyAgentClientDir(); lerr == nil {
+		if _, serr := os.Stat(filepath.Join(legacy, "config.json")); serr == nil {
+			return dir + "  /  " + legacy
+		}
+	}
+	return dir
 }
 
 // fallbackMachineLabel names a machine whose config has no label yet.

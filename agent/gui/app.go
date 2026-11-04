@@ -239,12 +239,82 @@ func (a *app) startPair(address, code, label string) {
 		}
 		a.saveSettings(address, label)
 		a.refreshServers()
+		saved := savedConfigPath(text)
+		// The CLI may have written outside the directories we scan (an older
+		// agent-client uses ~/.pi-agent, a custom build its own path): trust
+		// the path the CLI printed and put it in the list.
+		a.ensureServerVisible(saved)
 		msg := "配对成功"
-		if saved := savedConfigPath(text); saved != "" {
+		if saved != "" {
 			msg += "，凭据已保存"
+		}
+		// Pairing only stores credentials; connecting is a separate step. Go
+		// straight to it for the server we just paired — users read
+		// "paired" as "connected", and the row's Connect button stays for
+		// servers paired earlier or disconnected on purpose.
+		if server, ok := a.serverForPair(address, saved); ok {
+			msg += "，正在连接…"
+			a.startConnection(server)
 		}
 		a.finishPair(true, msg)
 	}()
+}
+
+// ensureServerVisible adds a config the CLI just wrote when the directory scan
+// did not see it (legacy/custom config location).
+func (a *app) ensureServerVisible(path string) {
+	if path == "" {
+		return
+	}
+	a.mu.Lock()
+	for _, server := range a.servers {
+		if sameConfigPath(server.Path, path) {
+			a.mu.Unlock()
+			return
+		}
+	}
+	a.mu.Unlock()
+
+	entry, ok := readServerEntry(path, false)
+	if !ok {
+		return
+	}
+	a.mu.Lock()
+	a.servers = append(a.servers, entry)
+	a.mu.Unlock()
+	a.invalidate()
+}
+
+// serverForPair finds the saved entry a successful `pair` just wrote: by the
+// config path printed by the CLI, else by the normalized server URL.
+func (a *app) serverForPair(address, savedPath string) (serverEntry, bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if savedPath != "" {
+		for _, server := range a.servers {
+			if sameConfigPath(server.Path, savedPath) {
+				return server, true
+			}
+		}
+	}
+	for _, server := range a.servers {
+		if sameServerAddress(server.Server, address) {
+			return server, true
+		}
+	}
+	return serverEntry{}, false
+}
+
+func sameConfigPath(a, b string) bool {
+	ca, cb := filepath.Clean(a), filepath.Clean(b)
+	if runtime.GOOS == "windows" {
+		return strings.EqualFold(ca, cb)
+	}
+	return ca == cb
+}
+
+func sameServerAddress(a, b string) bool {
+	return strings.EqualFold(strings.TrimRight(strings.TrimSpace(a), "/"), strings.TrimRight(strings.TrimSpace(b), "/"))
 }
 
 func (a *app) finishPair(ok bool, msg string) {
@@ -554,7 +624,8 @@ func (a *app) view(c *ui.Context) {
 		if agentErr != "" {
 			ui.Text(c, agentErr).FontSize(11).TextColor(t.Danger)
 		}
-		ui.Text(c, "连接后可在 pi-web 的「连接本地机器」面板看到该机器；一个客户端可同时连接多个服务端。").
+		ui.Text(c, "配置目录："+configDirLabel()).FontSize(10).TextColor(t.TextMuted)
+		ui.Text(c, "配对成功后会自动连接该服务器；也可在任意一行手动连接/断开。连接后可在 pi-web 的「连接本地机器」面板看到该机器。").
 			FontSize(11).
 			TextColor(t.TextMuted)
 	})

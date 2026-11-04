@@ -78,3 +78,56 @@ func TestSaveSettingsKeepsLabelWhenEmpty(t *testing.T) {
 		t.Fatalf("settings = %s, want the new address and the kept label", got)
 	}
 }
+
+func TestServerForPairMatchesSavedPathOrAddress(t *testing.T) {
+	a := newApp()
+	configPath := filepath.Join("home", ".agent-client", "config.json")
+	a.servers = []serverEntry{
+		{Path: configPath, Server: "http://a:30142", Label: "A"},
+		{Path: filepath.Join("home", ".agent-client", "profiles", "b.json"), Server: "http://b:30142", Label: "B"},
+	}
+	if s, ok := a.serverForPair("http://unrelated:1", configPath); !ok || s.Label != "A" {
+		t.Fatalf("path match = %+v, %v", s, ok)
+	}
+	if s, ok := a.serverForPair("http://b:30142/", ""); !ok || s.Label != "B" {
+		t.Fatalf("address match = %+v, %v (trailing slash tolerated)", s, ok)
+	}
+	if _, ok := a.serverForPair("http://c:30142", ""); ok {
+		t.Fatal("unknown server must not match")
+	}
+}
+
+func TestScanServerConfigsReadsLegacyDir(t *testing.T) {
+	home := withTempHome(t)
+	legacy := filepath.Join(home, ".pi-agent")
+	if err := os.MkdirAll(legacy, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(legacy, "config.json"),
+		[]byte(`{"server":"http://legacy:30142","token":"tl","label":"Old"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	servers := scanServerConfigs()
+	if len(servers) != 1 || servers[0].Server != "http://legacy:30142" {
+		t.Fatalf("legacy config not listed: %+v", servers)
+	}
+}
+
+func TestEnsureServerVisibleAddsCustomPath(t *testing.T) {
+	withTempHome(t)
+	path := filepath.Join(t.TempDir(), "custom-config.json")
+	if err := os.WriteFile(path,
+		[]byte(`{"server":"http://custom:30142","token":"tc","label":"Custom"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	a := newApp()
+	a.ensureServerVisible(path)
+	if len(a.servers) != 1 || a.servers[0].Server != "http://custom:30142" {
+		t.Fatalf("custom config not added: %+v", a.servers)
+	}
+	// Idempotent.
+	a.ensureServerVisible(path)
+	if len(a.servers) != 1 {
+		t.Fatalf("duplicate added: %+v", a.servers)
+	}
+}

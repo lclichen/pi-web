@@ -1,0 +1,15 @@
+{
+  "name": "Agent Client GUI",
+  "slug": "agent-client-gui",
+  "identifier": "ai.amedac.agentclient.gui",
+  "version": "0.1.0",
+  "publisher": "amedac.ai",
+  "copyright": "Copyright © 2026 amedac.ai",
+  "out": "build",
+  "linux": {
+    "maintainer": "amedac.ai <dev@amedac.ai>",
+    "comment": "Pair this machine with pi-web relays and keep agent-client connections running",
+    "categories": ["Network", "Utility"],
+    "webview": false
+  }
+}

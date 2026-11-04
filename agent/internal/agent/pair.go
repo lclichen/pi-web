@@ -99,9 +99,9 @@ func RunPair(args []string, version string) int {
 	fmt.Println("token saved to", cfg.Path())
 	if profileUsed {
 		fmt.Println("note: the default config already belongs to another pi-web server; this pairing lives in its own profile.")
-		fmt.Printf("next: agent-client run --server %s\n", *server)
+		fmt.Printf("next: ./agent-client run --server %s\n", *server)
 	} else {
-		fmt.Println("next: agent-client run   (or: systemctl start agent-client)")
+		fmt.Println("next: ./agent-client run   (or: systemctl start agent-client)")
 	}
 	return 0
 }

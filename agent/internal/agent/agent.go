@@ -84,7 +84,7 @@ func Run(args []string, version string) int {
 	cfg, err := loadRunConfig(*configPath, *server)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "agent-client: load config failed: %v\n", err)
-		fmt.Fprintln(os.Stderr, "Run `agent-client pair --code CODE --server URL` first.")
+		fmt.Fprintln(os.Stderr, "Run `./agent-client pair --code CODE --server URL` first.")
 		return 2
 	}
 	if cfg.Server == "" || cfg.Token == "" {

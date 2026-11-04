@@ -33,12 +33,13 @@ curl -fsSL http://<PIWEB_BASE>/api/agent-relay/download/install.sh | sh -s -- ht
 
 ```bash
 # 1) pair (the code + relay URL come from pi-web's "连接本地机器" dialog)
-agent-client pair --code 3JFSG6 --server http://<RELAY_HOST>:30142 [--root /path/to/share]
+./agent-client pair --code 3JFSG6 --server http://<RELAY_HOST>:30142 [--root /path/to/share]
+#    (installed in PATH? run `agent-client` without ./)
 #    -> writes ~/.agent-client/config.json (mode 0600)
 #    -> pairing a DIFFERENT server later goes to profiles/<server>.json instead
 
 # 2) run (persistent loop; auto-reconnects)
-agent-client run [--root /path/to/share]
+./agent-client run [--root /path/to/share]
 #    started in a project directory? that directory becomes the workspace root
 ```
 
@@ -62,9 +63,9 @@ server does **not** overwrite it: it is stored in its own profile
 prints the exact run command:
 
 ```bash
-agent-client pair --code <CODE> --server http://10.0.0.5:30142
+./agent-client pair --code <CODE> --server http://10.0.0.5:30142
 #   -> token saved to ~/.agent-client/profiles/http_10.0.0.5_30142.json
-agent-client run --server http://10.0.0.5:30142
+./agent-client run --server http://10.0.0.5:30142
 ```
 
 Each server has its own token, machine id and workspace root, so several

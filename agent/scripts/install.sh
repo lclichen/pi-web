@@ -63,11 +63,14 @@ DST_DIR="/usr/local/bin"
 if [ -w "$DST_DIR" ] || sudo -n true 2>/dev/null; then
   install_into "$DST_DIR"
   echo "Installed: $(command -v agent-client 2>/dev/null || echo "$DST_DIR/agent-client")"
+  INVOKE="agent-client"
 else
   mv "$TMP" ./agent-client
   chmod +x ./agent-client
   trap - EXIT
   echo "Installed: ./agent-client (not on PATH; /usr/local/bin not writable)"
+  INVOKE="./agent-client"
 fi
 
-echo "Next: agent-client pair --code CODE --server <RELAY_URL>"
+echo "Next: $INVOKE pair --code CODE --server <RELAY_URL>"
+echo "Then: $INVOKE run"

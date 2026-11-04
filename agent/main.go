@@ -16,7 +16,7 @@ import (
 	"piagent/internal/agent"
 )
 
-const version = "0.4.1"
+const version = "0.4.2"
 
 func main() {
 	args := os.Args[1:]

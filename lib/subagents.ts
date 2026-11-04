@@ -192,7 +192,7 @@ function isProjectProfilePathAllowed(cwd: string, target: string): boolean {
 
 function readProfileDirectory(dir: string, scope: SubagentScope, cwd: string): SubagentProfile[] {
   if (!existsSync(dir)) return [];
-  if (scope !== "global" && !isProjectProfilePathAllowed(cwd, dir)) return [];
+  if (scope !== "global" && scope !== "user" && !isProjectProfilePathAllowed(cwd, dir)) return [];
   return readdirSync(dir, { withFileTypes: true })
     .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
     .map((entry) => parseProfileFile(join(dir, entry.name), scope))

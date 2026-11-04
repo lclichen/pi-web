@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { hasTrustRequiringProjectResources, ProjectTrustStore } from "@earendil-works/pi-coding-agent";
 import type { ProjectTrustStatus } from "./api-types";
+import { isQuickWorkspaceDir } from "./quick-workspace.ts";
 
 /**
  * 项目里可能执行代码/影响会话行为的资源清单（用于 UI 说明"为什么受限"）。
@@ -29,6 +30,11 @@ function trustReasons(cwd: string): string[] {
 
 export function getProjectTrustStatus(cwd: string, agentDir: string): ProjectTrustStatus {
   if (!cwd) return { requiresTrust: false, trusted: true, reasons: [] };
+  // Quick workspaces are generated from admin-managed templates: their
+  // .pi/mcp.json / template snapshot are framework configuration, not
+  // user-supplied code. Gating them would show "受限模式" on every quick
+  // session for resources the user cannot (and need not) trust.
+  if (isQuickWorkspaceDir(cwd)) return { requiresTrust: false, trusted: true, reasons: [] };
   const reasons = trustReasons(cwd);
   const requiresTrust = reasons.length > 0 || hasTrustRequiringProjectResources(cwd);
   if (!requiresTrust) return { requiresTrust: false, trusted: true, reasons: [] };

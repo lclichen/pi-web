@@ -34,6 +34,10 @@ export interface WebUIGuideProps {
   onOpenSettings: (section: SettingsSection) => void;
   /** 结业动作：直接新建一个快速会话（也可能被用户跳过）。 */
   onStartQuickSession?: () => void;
+  /** 「和 Agent 对话」步在没有会话时引导新建项目（打开新建项目向导）。 */
+  onNewProject?: () => void;
+  /** 当前是否已有打开的会话/新会话草稿；false 时第 4 步先引导创建会话。 */
+  hasSession?: boolean;
   /** 经配置卡片跳出（向导主动送用户去设置页）——宿主据此显示"继续"胶囊。 */
   onJumpOut?: () => void;
   /** 走完"完成"步正常结束——宿主据此收起胶囊。 */
@@ -127,6 +131,8 @@ export function WebUIGuide({
   onClose,
   onOpenSettings,
   onStartQuickSession,
+  onNewProject,
+  hasSession = true,
   onJumpOut,
   onFinished,
   isAdmin = false,
@@ -144,7 +150,13 @@ export function WebUIGuide({
   const safeIndex = Math.min(index, total - 1);
   const step = steps[safeIndex] as StepId;
   const isLast = safeIndex === total - 1;
-  const anchor = ANCHORS[step];
+  // 第 4 步「和 Agent 对话」：新用户此时还没有会话，聊天区不存在——改为
+  // 引导先新建项目/快速会话，并把聚光灯指向侧栏的「新建项目」。
+  const chatNeedsSession = step === "chat" && !hasSession;
+  const anchor = useMemo<AnchorSpec | undefined>(
+    () => (chatNeedsSession ? { selector: '[data-guide="new-project"]', placement: "right" } : ANCHORS[step]),
+    [chatNeedsSession, step],
+  );
 
   // 打开时续到上次进度（"完成"步会清除存储；首次访问无存储 → 第 0 步）。
   useEffect(() => {
@@ -533,8 +545,43 @@ export function WebUIGuide({
 
           {step === "chat" && (
             <>
-              {stepTitle("guide.chatTitle")}
-              {paragraph("guide.chatBody")}
+              {chatNeedsSession ? (
+                <>
+                  {stepTitle("guide.chatNoSessionTitle")}
+                  {paragraph("guide.chatNoSessionBody")}
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    {onNewProject && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onNewProject();
+                          onClose();
+                        }}
+                        style={primaryButtonStyle}
+                      >
+                        ＋ {t("guide.newProject")}
+                      </button>
+                    )}
+                    {onStartQuickSession && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onStartQuickSession();
+                          onClose();
+                        }}
+                        style={secondaryButtonStyle}
+                      >
+                        ⚡ {t("guide.startQuickSession")}
+                      </button>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <>
+                  {stepTitle("guide.chatTitle")}
+                  {paragraph("guide.chatBody")}
+                </>
+              )}
             </>
           )}
 

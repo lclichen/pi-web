@@ -4608,6 +4608,8 @@ export function AppShell() {
         onClose={closeWebGuide}
         onOpenSettings={(section) => setSettingsSection(section)}
         onStartQuickSession={() => handleNewSession(`guide-${Date.now()}`, "", "quick")}
+        onNewProject={() => window.dispatchEvent(new CustomEvent("pi-web:open-project-wizard"))}
+        hasSession={showChat}
         onJumpOut={() => setGuideResumeVisible(true)}
         onFinished={() => setGuideResumeVisible(false)}
         isAdmin={!authEnabled || (webUser !== "loading" && webUser !== null && webUser.role === "admin")}

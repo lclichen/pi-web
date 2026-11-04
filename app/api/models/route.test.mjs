@@ -14,5 +14,8 @@ test("no-cwd model requests are deployment defaults — no per-user root fence",
   const fenced = source.slice(source.indexOf("if (explicitCwd || projectId)"));
   assert.match(fenced, /isCallerOwnedProjectHome/);
   assert.match(fenced, /isCallerSessionCwdAllowed/);
+  // 快速会话工作区在首条消息前没有会话记录——按用户归属放行自己的
+  // quick-homes 子树（新建快速会话即查模型的场景）。
+  assert.match(fenced, /isCallerQuickWorkspace\(cwd, user\.id\)/);
   assert.match(fenced, /status: 403/);
 });

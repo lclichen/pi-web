@@ -1,4 +1,5 @@
 import type { ExtensionAPI, InlineExtension } from "@earendil-works/pi-coding-agent";
+import { stripPiDocumentationBlock, stripWorkingDirectoryLine } from "../prompt-sections.ts";
 
 /**
  * Environment self-description appended to the system prompt (per session,
@@ -88,13 +89,15 @@ function replaceSentinelSpan(text: string, block: string): string {
   return `${text.slice(0, start)}${block}${text.slice(end + END.length)}`;
 }
 
-/** 模型视角的 cwd 改写：SDK 系统提示词固定带 "Current working directory:
- *  <session cwd>"。local-machine/ssh 的 session cwd 是服务器 home（配置
- *  载体），模型看到它会往那个服务器路径写文件（用户机器上不存在 → 写
- *  失败 → 模型重写的循环）。有真实 workspaceDir 时改写为工作区路径；
- *  host/sandbox 无 workspaceDir，不动。 */
-export function rewriteWorkingDirectoryLine(systemPrompt: string, workspaceDir: string): string {
-  return systemPrompt.replace(/(Current working directory:\s*\n)[^\n]*/i, `$1${workspaceDir}`);
+/** 远程工作区模式（sandbox / local-machine / ssh）的提示词裁剪：
+ *  - 移除 pi SDK 的文档索引块（面向 pi 二开用户，死重）；
+ *  - 删除 SDK 末尾的 "Current working directory: <session cwd>" 行——这个
+ *    cwd 是中心服务器上的配置载体目录（sandbox stub home / 项目 home），
+ *    既不是模型能操作的位置，又会泄露服务器路径。真实工作区/执行环境已由
+ *    PI_WEB_ENV 块明确说明。
+ *  Host 模式保留（cwd 就是管理员真实的服务器目录）。 */
+export function trimRemoteSystemPrompt(systemPrompt: string): string {
+  return stripWorkingDirectoryLine(stripPiDocumentationBlock(systemPrompt));
 }
 
 export function makeEnvironmentInfoExtension(info: EnvironmentInfo): InlineExtension {
@@ -102,8 +105,8 @@ export function makeEnvironmentInfoExtension(info: EnvironmentInfo): InlineExten
   return (pi: ExtensionAPI): void => {
     pi.on("before_agent_start", async (event) => {
       let systemPrompt = replaceSentinelSpan(event.systemPrompt, block);
-      if (info.workspaceDir) {
-        systemPrompt = rewriteWorkingDirectoryLine(systemPrompt, info.workspaceDir);
+      if (info.mode !== "host") {
+        systemPrompt = trimRemoteSystemPrompt(systemPrompt);
       }
       // Defensive: the per-turn base prompt never contains our block, but keep
       // the sentinel replace in case another extension chains onto ours.

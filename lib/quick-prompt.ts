@@ -17,9 +17,6 @@ export const QUICK_IDENTITY_ORIGINAL =
 export const QUICK_IDENTITY_REPLACEMENT =
   "You are a helpful assistant in pi-web's quick session mode — a lightweight conversation with no workspace: there are no file, command, or coding tools here. Answer the user directly; if a tools list is present, those tools (typically external MCP tools) are the ones you may call.";
 
-const DOCS_BLOCK_START = "Pi documentation (read only when the user asks";
-const DOCS_BLOCK_END = "(e.g., tui.md for TUI API details)";
-
 /** 替换是否完整生效（测试与诊断用；部分命中=上游改词，需要更新锚点）。 */
 export function quickPromptAdaptationReport(base: string): {
   identityReplaced: boolean;
@@ -37,18 +34,7 @@ export function adaptQuickBasePrompt(base: string): string {
   if (out.includes(QUICK_IDENTITY_ORIGINAL)) {
     out = out.replace(QUICK_IDENTITY_ORIGINAL, QUICK_IDENTITY_REPLACEMENT);
   }
-  const start = out.indexOf(DOCS_BLOCK_START);
-  if (start >= 0) {
-    const end = out.indexOf(DOCS_BLOCK_END, start);
-    if (end >= 0) {
-      // 移除 [start, end] 整块（含首尾锚点），收拾残留的空行。
-      const after = out.slice(end + DOCS_BLOCK_END.length);
-      out = out.slice(0, start) + after.replace(/^[ \t]*\r?\n/, "");
-      // 块前通常留有一个空行分隔——去掉后若出现三个以上连续换行再压一层。
-      out = out.replace(/\n{3,}/g, "\n\n");
-    }
-  }
-  return out;
+  return stripPiDocumentationBlock(out);
 }
 
 // ---------------------------------------------------------------------------
@@ -64,6 +50,11 @@ export function adaptQuickBasePrompt(base: string): string {
 
 import type { ExtensionAPI, InlineExtension } from "@earendil-works/pi-coding-agent";
 import { createHash } from "crypto";
+import {
+  PI_DOCS_BLOCK_END as DOCS_BLOCK_END,
+  PI_DOCS_BLOCK_START as DOCS_BLOCK_START,
+  stripPiDocumentationBlock,
+} from "./prompt-sections";
 
 /**
  * 提示词一致性探针（PI_WEB_LOG_PROMPT_HASH=1 开启）：每回合记录 SDK base

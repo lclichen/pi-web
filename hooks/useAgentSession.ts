@@ -78,6 +78,8 @@ type AgentStateResponse = {
   extensionStatuses?: ExtensionStatusItem[];
   extensionWidgets?: ExtensionWidgetItem[];
   queuedMessages?: { steering?: string[]; followUp?: string[] } | null;
+  /** 工具护栏：当前模式被移除的工具（null = 无剔除）。 */
+  toolPolicy?: { mode: string; excluded: { name: string; reason: string }[] } | null;
 };
 
 export interface QueuedMessages {
@@ -463,6 +465,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [extensionCustomUi, setExtensionCustomUi] = useState<ExtensionUiCustomRequest | null>(null);
   const [extensionStatuses, setExtensionStatuses] = useState<ExtensionStatusItem[]>([]);
   const [extensionWidgets, setExtensionWidgets] = useState<ExtensionWidgetItem[]>([]);
+  const [toolPolicyExclusions, setToolPolicyExclusions] = useState<
+    AgentStateResponse["toolPolicy"] | null
+  >(null);
   const [queuedMessages, setQueuedMessages] = useState<QueuedMessages>({ steering: [], followUp: [] });
 
   const eventConnectionRef = useRef<AgentEventConnection | null>(null);
@@ -677,8 +682,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
             if (liveState.extensionWidgets !== undefined) setExtensionWidgets(liveState.extensionWidgets ?? []);
             if (liveState.queuedMessages !== undefined)
               setQueuedMessages(normalizeQueuedMessages(liveState.queuedMessages));
+            setToolPolicyExclusions(liveState.toolPolicy ?? null);
           } else if (!agentState.running) {
             setQueuedMessages({ steering: [], followUp: [] });
+            setToolPolicyExclusions(null);
           }
           return agentState;
         } catch (e) {
@@ -873,6 +880,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     if (!sessionHookMountedRef.current || sessionIdRef.current !== sid) return;
     syncLiveModel(state);
     setSystemPrompt(state.systemPrompt ?? "");
+    setToolPolicyExclusions(state.toolPolicy ?? null);
   }, [ensureNewSession, loadTools, syncLiveModel]);
 
   const loadSlashCommands = useCallback(async () => {
@@ -2594,6 +2602,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     extensionCustomUi,
     extensionStatuses,
     extensionWidgets,
+    toolPolicyExclusions,
     respondToExtensionUi,
     sendExtensionCustomInput,
     isAutoModelSelection: isNew && newSessionModel === null,

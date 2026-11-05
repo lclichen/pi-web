@@ -1419,6 +1419,7 @@ export const zhCNLocale: LocalePlugin = {
     "title.noMessages": "请先发送消息，再为会话命名",
     "title.unsaved": "会话保存后才能生成标题",
     "title.updated": "标题已更新",
+    "toolPolicy.excludedNotice": "工具护栏：{mode} 模式下已移除 {count} 个工具（未声明的 MCP 服务器或会在宿主机执行的 stdio MCP）。详见 设置 → 策略 的声明矩阵。",
     "tools.allowedValues": "可选值",
     "tools.defaultValue": "默认值",
     "tools.description": "描述",

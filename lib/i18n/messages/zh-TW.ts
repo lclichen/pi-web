@@ -1419,6 +1419,7 @@ export const zhTWLocale: LocalePlugin = {
     "title.noMessages": "請先傳送訊息，再為工作階段命名",
     "title.unsaved": "工作階段儲存後才能產生標題",
     "title.updated": "標題已更新",
+    "toolPolicy.excludedNotice": "工具護欄：{mode} 模式下已移除 {count} 個工具（未宣告的 MCP 伺服器或會在宿主機執行的 stdio MCP）。詳見 設定 → 策略 的宣告矩陣。",
     "tools.allowedValues": "允許值",
     "tools.defaultValue": "預設值",
     "tools.description": "描述",

@@ -29,7 +29,7 @@ import { appendWebUiAddendum } from "./web-system-prompt";
 import { readPreferences } from "./preferences-service";
 import { readMcpConfig } from "./mcp-config";
 import { createModeToolClampExtension } from "./extensions/mode-tool-clamp";
-import { filterActiveToolsForMode, filterToolsForMode, isRemoteMode, mcpExcludedServers } from "./tool-policy";
+import { filterActiveToolsForMode, filterToolsForMode, isRemoteMode, mcpExcludedServers, type ToolExclusion } from "./tool-policy";
 import { composeQuickSystemPrompt, createQuickPromptExtension, type QuickTemplateHolder } from "./quick-prompt";
 import { createPromptConsistencyExtension, describePromptDrift, type PromptPin } from "./prompt-consistency";
 import { getSessionMeta, recordSessionMeta, type SessionMeta } from "./session-metas";
@@ -409,6 +409,8 @@ export class AgentSessionWrapper {
   private quickToolAllowlist?: string[];
   /** 远程模式 MCP 剔除集合缓存（key = cwd|ownerId|mode；apply_preferences 失效）。 */
   private mcpExclusionCache: { key: string; map: Map<string, string> } | null = null;
+  /** 模式钳制剔除报告（get_state 暴露给 UI 提示；逐回合由 enforceModeTools 刷新）。 */
+  private modeToolExcluded: ToolExclusion[] = [];
   private readonly chatOnly: boolean;
   private readonly onAgentRunComplete?: AgentRunCompleteListener;
   private readonly suppressCompletionNotifications: boolean;
@@ -674,14 +676,21 @@ export class AgentSessionWrapper {
    * 未发生剔除返回 undefined。
    */
   enforceModeTools(): string | undefined {
-    if (!isRemoteMode(this.mode)) return undefined;
+    if (!isRemoteMode(this.mode)) {
+      this.modeToolExcluded = [];
+      return undefined;
+    }
     const getActive = (this.inner as AgentSessionLike & { getActiveToolNames?: () => string[] }).getActiveToolNames;
     if (typeof getActive !== "function") return undefined;
     const current = getActive.call(this.inner);
-    const { allowed } = filterActiveToolsForMode(current, {
+    const exclusions = this.getMcpExclusions();
+    // 剔除报告基于全量注册工具（含已 inactive 的）：逐回合稳定，供 UI 提示。
+    const registered = this.inner.getAllTools().map((tool) => tool.name);
+    this.modeToolExcluded = filterActiveToolsForMode(registered, {
       mode: this.mode,
-      excludedMcpServers: this.getMcpExclusions(),
-    });
+      excludedMcpServers: exclusions,
+    }).excluded;
+    const { allowed } = filterActiveToolsForMode(current, { mode: this.mode, excludedMcpServers: exclusions });
     if (allowed.length === current.length) return undefined;
     this.inner.setActiveToolsByName([...allowed].sort());
     return this.inner.agent?.state?.systemPrompt;
@@ -1254,6 +1263,9 @@ export class AgentSessionWrapper {
             thinkingLevel: this.inner.agent.state?.thinkingLevel ?? "off",
             extensionStatuses: this.getExtensionStatuses(),
             extensionWidgets: this.getExtensionWidgets(),
+            // 工具护栏（P2b）：当前模式移除的工具（UI 提示）。
+            toolPolicy:
+              this.modeToolExcluded.length > 0 ? { mode: this.mode, excluded: this.modeToolExcluded } : null,
           };
         }
 

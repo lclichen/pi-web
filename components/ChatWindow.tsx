@@ -468,6 +468,7 @@ export function ChatWindow({
     extensionCustomUi,
     extensionStatuses,
     extensionWidgets,
+    toolPolicyExclusions,
     respondToExtensionUi,
     sendExtensionCustomInput,
     setNoticePaused,
@@ -1244,9 +1245,36 @@ export function ChatWindow({
     ? (modelThinkingLevelMaps[`${displayModelValue.provider}:${displayModelValue.modelId}`] ?? null)
     : null;
 
+  // 工具护栏（P2b）：模式钳制移除了工具时，在输入区上方给一条常驻提示。
+  const toolPolicyBanner =
+    toolPolicyExclusions && toolPolicyExclusions.excluded.length > 0 ? (
+      <div
+        role="status"
+        title={toolPolicyExclusions.excluded.map((e) => `${e.name}：${e.reason}`).join(" · ")}
+        style={{
+          margin: "0 auto 6px",
+          maxWidth: "var(--chat-content-max-width, 820px)",
+          padding: "6px 10px",
+          borderRadius: 6,
+          border: "1px solid color-mix(in srgb, var(--warning) 35%, transparent)",
+          background: "color-mix(in srgb, var(--warning) 8%, transparent)",
+          color: "var(--text)",
+          fontSize: 11.5,
+          lineHeight: 1.5,
+        }}
+      >
+        {t("toolPolicy.excludedNotice", {
+          count: toolPolicyExclusions.excluded.length,
+          mode: toolPolicyExclusions.mode,
+        })}
+      </div>
+    ) : null;
+
   const chatInputElement = (
-    <ChatInput
-      ref={chatInputRef}
+    <>
+      {toolPolicyBanner}
+      <ChatInput
+        ref={chatInputRef}
       readOnly={readOnly}
       onSend={handleSend}
       onAttachFiles={handleAttachFiles}
@@ -1290,7 +1318,8 @@ export function ChatWindow({
       draftKey={session?.id ?? newSessionDraftKey ?? undefined}
       cwd={session?.cwd ?? newSessionCwd}
       remoteFileSessionId={remoteFileSessionId}
-    />
+      />
+    </>
   );
 
   // Extension widgets split by placement — aboveEditor renders at the top of

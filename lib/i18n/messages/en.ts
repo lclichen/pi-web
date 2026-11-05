@@ -1419,6 +1419,7 @@ export const enLocale: LocalePlugin = {
     "title.noMessages": "Send a message before naming this session",
     "title.unsaved": "Title generation is available after the session is saved",
     "title.updated": "Title updated",
+    "toolPolicy.excludedNotice": "Tool guardrail: {count} tool(s) removed in {mode} mode (undeclared MCP server or stdio MCP that would run on the host). See Settings → Policy for the declaration matrix.",
     "tools.allowedValues": "Allowed",
     "tools.defaultValue": "Default",
     "tools.description": "Description",

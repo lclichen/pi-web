@@ -312,7 +312,11 @@ notes 里写明为什么不能走 workspace 通道。bg_run 在 host 模式下�
 >     与网关全部 **inactive**，活动集仅核心 20 个（装配层钳制生效）；
 >   - sandbox 会话 + `"piWeb":{"plane":"host"}`：工具与网关恢复 **ACTIVE**（豁免生效）；
 >   - `/api/tools/policy` 同步反映 `excludedInMode` true/false。
-> - **待做**：会话创建时的剔除提示（P2b）；审计日志（P2c）。
+> - **P2b/P2c 已落地（2026-11-05）**：`get_state.toolPolicy` 暴露模式剔除
+>   名单与原因，ChatWindow 输入区上方显示常驻琥珀提示（tooltip 列原因）；
+>   护栏判定审计 `guardrail-audit.ts` 追加 JSONL 到
+>   `<cwd>/.pi/guardrail-audit.jsonl`（2MB 轮转、自保护、失败静默）。
+>   **待做**：P3（MCP 远端执行）。
 
 > **P2 状态（2026-11-05 已落地，UI 已视觉验收）**：只读视图
 > `GET /api/tools/policy`（工具声明矩阵 + MCP 服务器本模式可见性；判定与装配层
@@ -322,7 +326,7 @@ notes 里写明为什么不能走 workspace 通道。bg_run 在 host 模式下�
 > `lib/tool-policy-clamp.test.mjs`(4) + 路由契约
 > `app/api/tools/policy/tool-policy-route.test.mjs`(4)，回归 116 条全绿；
 > 本机与 VM 均完成 API 冒烟；本机 UI 截图验收通过（表格化渲染、unsupported
-> 红标、MCP 徽标）。**待做**：会话创建时的剔除提示（P2b）；审计日志（P2c）。
+> 红标、MCP 徽标）。
 
 ## 8. 测试策略
 

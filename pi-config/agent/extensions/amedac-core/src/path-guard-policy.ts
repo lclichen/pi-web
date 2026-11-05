@@ -61,6 +61,8 @@ export const SELF_PROTECTED_PATTERNS = [
   ".pi/path-policy.json",
   ".pi/path-policy.decisions.json",
   ".pi/path-policy.scope.json",
+  ".pi/guardrail-audit.jsonl",
+  ".pi/guardrail-audit.jsonl.1",
   ".pi/sessions/**",
   ".pi/tmp/**",
   ".pi/bin/**",

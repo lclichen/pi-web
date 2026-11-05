@@ -26,7 +26,8 @@
    2026-11-05 落地）。
 1. **自保护清单**（任何策略不可放行）：`.pi/path-policy.json`、
    `.pi/path-policy.decisions.json`、`.pi/path-policy.scope.json`、
-   `.pi/{sessions,tmp,bin,cache,plans}/**`、`.pi/{auth,ssh,sandbox-platform}.json`、`.ssh/**`。
+   `.pi/guardrail-audit.jsonl`（+`.1` 轮转件）、`.pi/{sessions,tmp,bin,cache,plans}/**`、
+   `.pi/{auth,ssh,sandbox-platform}.json`、`.ssh/**`。
 2. **deny 规则**：写看 `denyWrite`，读看 `denyRead`（相对 glob / 绝对 glob / `~`）。
 3. **持久决策**：`.pi/path-policy.decisions.json` 里"始终允许/拒绝且不再询问"
    的记录，按路径前缀覆盖其子树；多条命中取最新。
@@ -71,6 +72,8 @@
 
 拦截结果：`{ block: true, reason }` 在 agent 循环里变成 **isError 工具结果**，
 模型能看到原因（`lib/path-guard-e2e.test.mjs` 用真实 AgentSession 验证）。
+每次判定（allow/ask/deny）追加一行审计到 `<cwd>/.pi/guardrail-audit.jsonl`
+（JSONL：ts/tool/cwd/path/action/via；2MB 轮转；写失败静默）。
 文案明确要求"不要重复尝试同一路径"，并给出改道建议。
 
 ## 5. bash 覆盖范围（v2）

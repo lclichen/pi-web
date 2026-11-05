@@ -104,8 +104,14 @@ function resolveToolPath(raw: string, cwd: string): string {
 }
 
 export interface PathGuardEvents {
-  /** 测试/观测钩子：每次护栏判定（含最终动作）都会上报。 */
-  onVerdict?: (info: { tool: string; path: string; action: string; via: "rule" | "ask" | "headless-deny" }) => void;
+  /** 测试/观测/审计钩子：每次护栏判定（含最终动作）都会上报（cwd = 会话工作区）。 */
+  onVerdict?: (info: {
+    tool: string;
+    cwd: string;
+    path: string;
+    action: string;
+    via: "rule" | "ask" | "headless-deny";
+  }) => void;
 }
 
 export function makePathGuardExtension(events: PathGuardEvents = {}) {
@@ -131,12 +137,12 @@ export function makePathGuardExtension(events: PathGuardEvents = {}) {
         if (verdict.action === "allow" || !target) return undefined;
         if (sessionOnceAllows.has(target)) return undefined;
         if (verdict.action === "deny") {
-          events.onVerdict?.({ tool: event.toolName, path: target, action: "deny", via: "rule" });
+          events.onVerdict?.({ tool: event.toolName, cwd, path: target, action: "deny", via: "rule" });
           return { block: true, reason: verdict.reason };
         }
         // ask：无人值守 → 拒绝（不静默放行）
         if (ctx.hasUI === false || typeof ctx.ui?.select !== "function") {
-          events.onVerdict?.({ tool: event.toolName, path: target, action: "deny", via: "headless-deny" });
+          events.onVerdict?.({ tool: event.toolName, cwd, path: target, action: "deny", via: "headless-deny" });
           return {
             block: true,
             reason: `${verdict.reason} 当前为无人值守会话，默认拒绝。如需放行，请用户在交互会话中确认一次（会写入 ${PATH_DECISIONS_FILE}），或调整 ${PATH_POLICY_FILE}。`,
@@ -155,16 +161,16 @@ export function makePathGuardExtension(events: PathGuardEvents = {}) {
         }
         if (choice === ASK_ALLOW_ONCE) {
           sessionOnceAllows.add(target);
-          events.onVerdict?.({ tool: event.toolName, path: target, action: "allow", via: "ask" });
+          events.onVerdict?.({ tool: event.toolName, cwd, path: target, action: "allow", via: "ask" });
           return undefined;
         }
         if (choice === ASK_ALLOW_ALWAYS) {
           recordDecision(cwd, loaded, target, "allow");
-          events.onVerdict?.({ tool: event.toolName, path: target, action: "allow", via: "ask" });
+          events.onVerdict?.({ tool: event.toolName, cwd, path: target, action: "allow", via: "ask" });
           return undefined;
         }
         if (choice === ASK_DENY_ALWAYS) recordDecision(cwd, loaded, target, "deny");
-        events.onVerdict?.({ tool: event.toolName, path: target, action: "deny", via: "ask" });
+        events.onVerdict?.({ tool: event.toolName, cwd, path: target, action: "deny", via: "ask" });
         return {
           block: true,
           reason: `用户${choice === ASK_DENY_ALWAYS ? "已选择“拒绝且不再询问”（已记录，之后不再询问）" : "拒绝了本次操作"}：${verdict.reason} 请改在工作区允许的路径内完成，或请用户调整 .pi/path-policy.json。不要重复尝试同一路径。`,

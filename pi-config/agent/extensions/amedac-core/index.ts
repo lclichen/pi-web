@@ -24,6 +24,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { makeContextStatusExtension } from "./src/context-status.ts";
 import { makePathGuardExtension } from "./src/path-guard.ts";
+import { appendGuardrailAudit } from "./src/guardrail-audit.ts";
 import { makePlanModeExtension } from "./src/plan-mode.ts";
 import { makeSessionPlanExtension } from "./src/session-plan.ts";
 import { makeTodoExtension } from "./src/todo.ts";
@@ -63,7 +64,10 @@ export default function amedacCore(pi: ExtensionAPI): void {
   makePlanModeExtension()(pi);
   // e9aa936e 落地时漏了这一行——path-guard 只有 import/export 从未注册，
   // CLI/WebUI 的写护栏（策略页背后）实际一直没生效。
-  makePathGuardExtension()(pi);
+  // 判定审计（P2c）：追加到 <cwd>/.pi/guardrail-audit.jsonl（失败静默）。
+  makePathGuardExtension({
+    onVerdict: (info) => appendGuardrailAudit(info.cwd, { ts: Date.now(), ...info }),
+  })(pi);
   makeContextStatusExtension()(pi);
   makeBgShellExtension()(pi);
   // 会话亲和元数据：三头全 provider + litellm_session_id 体字段（原为

@@ -397,3 +397,30 @@ test("shows tool-result images while the tool details stay collapsed", () => {
   assert.doesNotMatch(html, /captured-1280x720/);
   assert.doesNotMatch(html, /"tabId"/);
 });
+
+test("failed provider turn shows the error and a manual retry action", () => {
+  const html = renderMessage(
+    {
+      role: "assistant",
+      content: [],
+      model: "test-model",
+      provider: "test-provider",
+      stopReason: "error",
+      errorMessage: "provider overloaded",
+    },
+    { onRetry: () => {} },
+  );
+  assert.match(html, /provider overloaded/);
+  assert.match(html, /Retry|重试|重試/);
+  // Without a retry callback (historical error / busy session) no button.
+  const plain = renderMessage({
+    role: "assistant",
+    content: [],
+    model: "test-model",
+    provider: "test-provider",
+    stopReason: "error",
+    errorMessage: "provider overloaded",
+  });
+  assert.match(plain, /provider overloaded/);
+  assert.doesNotMatch(plain, /Retry<|>Retry</);
+});

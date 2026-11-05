@@ -426,6 +426,8 @@ export const zhTWLocale: LocalePlugin = {
     "chat.readOnlyTools": "{count} 個只讀內建工具",
     "chat.recall": "移回輸入框",
     "chat.recallTitle": "將所有佇列中的訊息移回輸入框以便編輯",
+    "chat.retryRequest": "重試",
+    "chat.retryRequestHint": "重新傳送上則訊息（在目前工作階段內建立新分支，保留失敗紀錄）",
     "chat.retrying": "正在重試（{attempt}/{max}）…",
     "chat.runningCommand": "正在執行命令...",
     "chat.runningNamedTool": "正在執行 {name}...",

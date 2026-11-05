@@ -426,6 +426,8 @@ export const enLocale: LocalePlugin = {
     "chat.readOnlyTools": "{count} read-only built-in tools",
     "chat.recall": "Recall to input",
     "chat.recallTitle": "Remove all queued messages and put them back into the input box for editing",
+    "chat.retryRequest": "Retry",
+    "chat.retryRequestHint": "Resend the last message (creates a new branch; the failed attempt stays in history)",
     "chat.retrying": "Retrying ({attempt}/{max})…",
     "chat.runningCommand": "Running command...",
     "chat.runningNamedTool": "Running {name}...",

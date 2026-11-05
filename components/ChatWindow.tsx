@@ -525,6 +525,54 @@ export function ChatWindow({
     deferInitialScroll: Boolean(pendingScrollRestore),
   });
   const sessionBusy = agentRunning || bashRunning;
+
+  // Manual retry for a turn that ended with stopReason "error": branch back to
+  // the user message that produced it (so the failed attempt stays in the tree)
+  // and resend the same text/images.
+  const retryableErrorIndex = useMemo(() => {
+    const last = messages[messages.length - 1];
+    if (!last || last.role !== "assistant" || last.stopReason !== "error") return -1;
+    return messages.length - 1;
+  }, [messages]);
+
+  const handleRetryLastTurn = useCallback(async () => {
+    if (sessionBusy || retryInfo || retryableErrorIndex < 0) return;
+    let userIndex = -1;
+    for (let i = retryableErrorIndex - 1; i >= 0; i -= 1) {
+      if (messages[i]?.role === "user") {
+        userIndex = i;
+        break;
+      }
+    }
+    if (userIndex < 0) return;
+    const user = messages[userIndex] as UserMessage;
+    let text = "";
+    const images: Array<{ data: string; mimeType: string; previewUrl: string }> = [];
+    if (typeof user.content === "string") {
+      text = user.content;
+    } else {
+      for (const block of user.content) {
+        if (block.type === "text") {
+          text = text ? `${text}\n${block.text}` : block.text;
+        } else if (block.type === "image" && block.source.type === "base64" && block.source.data) {
+          const mimeType = block.source.media_type ?? "image/png";
+          images.push({
+            data: block.source.data,
+            mimeType,
+            previewUrl: `data:${mimeType};base64,${block.source.data}`,
+          });
+        }
+      }
+    }
+    if (!text.trim() && images.length === 0) return;
+    const entryId = entryIds[userIndex];
+    if (entryId) {
+      const navigated = await handleNavigate(entryId);
+      if (!navigated) return;
+    }
+    await handleSend(text, images.length > 0 ? images : undefined);
+  }, [entryIds, handleNavigate, handleSend, messages, retryInfo, retryableErrorIndex, sessionBusy]);
+
   const [quotedSelection, setQuotedSelection] = useState<{
     text: string;
     top: number;
@@ -1559,6 +1607,12 @@ export function ChatWindow({
                           forking={forkingEntryId === entryIds[idx]}
                           onNavigate={sessionBusy ? undefined : handleNavigate}
                           onEditContent={handleEditContent}
+                          onRetry={
+                            idx === retryableErrorIndex && !sessionBusy && !retryInfo
+                              ? handleRetryLastTurn
+                              : undefined
+                          }
+                          retrying={Boolean(retryInfo)}
                           showTimestamp={showTimestamp}
                           prevTimestamp={
                             idx > 0 ? (messages[idx - 1] as AgentMessage & { timestamp?: number }).timestamp : undefined

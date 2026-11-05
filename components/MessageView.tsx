@@ -221,6 +221,9 @@ interface Props {
   forking?: boolean;
   onNavigate?: (entryId: string) => Promise<boolean>;
   onEditContent?: (message: UserMessage) => void;
+  /** Manual retry for the LAST failed turn: branch back to its user message and resend. */
+  onRetry?: () => void;
+  retrying?: boolean;
   showTimestamp?: boolean;
   prevTimestamp?: number;
   sessionId?: string;
@@ -318,6 +321,8 @@ export const MessageView = memo(
     forking,
     onNavigate,
     onEditContent,
+    onRetry,
+    retrying,
     showTimestamp,
     prevTimestamp,
     sessionId,
@@ -353,6 +358,8 @@ export const MessageView = memo(
           entryId={entryId}
           searchBlock={searchBlock}
           writtenFiles={writtenFiles}
+          onRetry={onRetry}
+          retrying={retrying}
         />
       );
     }
@@ -386,6 +393,8 @@ export const MessageView = memo(
       prev.forking === next.forking &&
       prev.onNavigate === next.onNavigate &&
       prev.onEditContent === next.onEditContent &&
+      prev.onRetry === next.onRetry &&
+      prev.retrying === next.retrying &&
       prev.showTimestamp === next.showTimestamp &&
       prev.prevTimestamp === next.prevTimestamp &&
       prev.writtenFiles === next.writtenFiles &&
@@ -861,6 +870,8 @@ function AssistantMessageView({
   entryId,
   searchBlock,
   writtenFiles,
+  onRetry,
+  retrying,
 }: {
   message: AssistantMessage;
   isStreaming?: boolean;
@@ -875,6 +886,8 @@ function AssistantMessageView({
   entryId?: string;
   searchBlock?: AssistantContentBlock;
   writtenFiles?: WrittenFile[];
+  onRetry?: () => void;
+  retrying?: boolean;
 }) {
   const { t } = useI18n();
   const time = showTimestamp ? formatTime(message.timestamp) : null;
@@ -1112,14 +1125,50 @@ function AssistantMessageView({
             borderRadius: 6,
             background: "rgba(239,68,68,0.07)",
             color: "#ef4444",
-            fontFamily: "var(--font-mono)",
             fontSize: 12,
             lineHeight: 1.5,
-            whiteSpace: "pre-wrap",
-            overflowWrap: "anywhere",
+            display: "flex",
+            alignItems: "flex-start",
+            gap: 10,
           }}
         >
-          Error: {providerError}
+          <div
+            style={{
+              flex: 1,
+              minWidth: 0,
+              fontFamily: "var(--font-mono)",
+              whiteSpace: "pre-wrap",
+              overflowWrap: "anywhere",
+            }}
+          >
+            Error: {providerError}
+          </div>
+          {onRetry && (
+            <button
+              type="button"
+              onClick={onRetry}
+              disabled={retrying}
+              title={t("chat.retryRequestHint")}
+              style={{
+                flexShrink: 0,
+                display: "flex",
+                alignItems: "center",
+                gap: 4,
+                height: 24,
+                padding: "0 9px",
+                border: "1px solid rgba(239,68,68,0.45)",
+                borderRadius: 5,
+                background: "rgba(239,68,68,0.08)",
+                color: "#ef4444",
+                cursor: retrying ? "default" : "pointer",
+                opacity: retrying ? 0.6 : 1,
+                fontSize: 11.5,
+                fontWeight: 600,
+              }}
+            >
+              ↻ {t("chat.retryRequest")}
+            </button>
+          )}
         </div>
       )}
 

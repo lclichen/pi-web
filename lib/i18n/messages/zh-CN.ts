@@ -426,6 +426,8 @@ export const zhCNLocale: LocalePlugin = {
     "chat.readOnlyTools": "{count} 个只读内置工具",
     "chat.recall": "移回输入框",
     "chat.recallTitle": "移除所有排队消息并将其放回输入框编辑",
+    "chat.retryRequest": "重试",
+    "chat.retryRequestHint": "重新发送上一条消息（在当前会话内创建新分支，保留失败记录）",
     "chat.retrying": "正在重试（{attempt}/{max}）…",
     "chat.runningCommand": "正在运行命令...",
     "chat.runningNamedTool": "正在运行 {name}...",

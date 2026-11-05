@@ -26,11 +26,13 @@ for (const [name, nextName] of [
 ]) {
   test(`${name} pauses its watcher and synchronizes after connecting`, () => {
     const block = functionBlock(name, nextName);
-    const guard = block.indexOf("if (!watchEnabled) return;");
+    // 远程文件不走本地 EventSource 监听：守卫必须同时覆盖 remote。
+    const guardMatch = /if \(!watchEnabled(?: \|\| remote)?\) return;/.exec(block);
+    assert.ok(guardMatch, "watchEnabled guard missing");
+    const guard = guardMatch.index;
     const eventSource = block.indexOf("new EventSource", guard);
     const synchronize = block.indexOf("synchronize();", eventSource);
 
-    assert.ok(guard >= 0, "watchEnabled guard missing");
     assert.ok(eventSource > guard, "EventSource created before watchEnabled guard");
     assert.ok(synchronize > eventSource, "connected synchronization missing");
     assert.match(block, /\}, \[[^\]]*watchEnabled[^\]]*\]\);/);

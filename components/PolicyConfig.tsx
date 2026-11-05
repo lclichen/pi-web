@@ -14,6 +14,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import type { PathPolicy, PolicyDecisions } from "@/lib/extensions/path-guard";
+import type { ToolManifestEntry } from "@/lib/extensions/tool-manifest";
+import type { McpWebDeclaration } from "@/lib/api-types";
 import { ConfigButton, ConfigPanelShell } from "./SettingsUi";
 
 interface PolicyState {
@@ -25,6 +27,22 @@ interface PolicyState {
   scope: { mode: string; workspaceRoot: string } | null;
   editable: boolean;
   lockReason?: string;
+}
+
+/** GET /api/tools/policy：工具操作层声明 + MCP 服务器在本模式的可见性。 */
+interface ToolPolicyState {
+  cwd: string;
+  mode: string;
+  remote: boolean;
+  tools: ToolManifestEntry[];
+  mcp: {
+    name: string;
+    transport: string;
+    disabled: boolean;
+    declaration: McpWebDeclaration | null;
+    excludedInMode: boolean;
+    reason?: string;
+  }[];
 }
 
 export function PolicyConfig({ embedded = false, cwd }: { embedded?: boolean; cwd: string }) {
@@ -43,6 +61,9 @@ export function PolicyConfig({ embedded = false, cwd }: { embedded?: boolean; cw
   const [checkInput, setCheckInput] = useState("");
   const [checkBusy, setCheckBusy] = useState(false);
   const [checkResult, setCheckResult] = useState<{ action: string; reason?: string; target?: string } | null>(null);
+  // 工具护栏视图（P2）：声明矩阵 + MCP 服务器模式可见性（只读；失败不阻断
+  // 路径策略主体）。
+  const [toolPolicy, setToolPolicy] = useState<ToolPolicyState | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -56,6 +77,13 @@ export function PolicyConfig({ embedded = false, cwd }: { embedded?: boolean; cw
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
+    }
+    try {
+      const res = await fetch(`/api/tools/policy?cwd=${encodeURIComponent(cwd)}`, { cache: "no-store" });
+      const d = (await res.json()) as ToolPolicyState & { error?: string };
+      setToolPolicy(res.ok && !d.error ? d : null);
+    } catch {
+      setToolPolicy(null);
     }
   }, [cwd]);
 
@@ -368,6 +396,109 @@ export function PolicyConfig({ embedded = false, cwd }: { embedded?: boolean; cw
                   {t("policy.decisionsExportNote")}
                 </p>
               </div>
+            )}
+
+            {/* 工具护栏（P2 只读视图）：操作层声明 + 模式矩阵 + MCP 可见性。 */}
+            <div className="policy-section-title" style={{ marginTop: 20 }}>
+              {t("policy.toolsTitle")}
+            </div>
+            <p style={{ margin: "0 0 8px", fontSize: 11, color: "var(--text-dim)", lineHeight: 1.6 }}>
+              {t("policy.toolsIntro")}
+              {toolPolicy ? (
+                <>
+                  {" "}
+                  {t("policy.toolsMode")} <code style={{ fontFamily: "var(--font-mono)" }}>{toolPolicy.mode}</code>
+                </>
+              ) : null}
+            </p>
+            {toolPolicy && (
+              <>
+                <div className="policy-table-wrap">
+                  <table className="policy-table">
+                    <thead>
+                      <tr>
+                        <th>{t("policy.toolsColTool")}</th>
+                        <th>{t("policy.toolsColLayer")}</th>
+                        <th>{t("policy.toolsColRisk")}</th>
+                        <th>sandbox</th>
+                        <th>local-machine</th>
+                        <th>ssh</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {toolPolicy.tools.map((tool) => {
+                        const channels: Array<{ key: string; value: string }> = tool.remote
+                          ? [
+                              { key: "sandbox", value: tool.remote.sandbox },
+                              { key: "local-machine", value: tool.remote["local-machine"] },
+                              { key: "ssh", value: tool.remote.ssh },
+                            ]
+                          : [
+                              { key: "sandbox", value: "—" },
+                              { key: "local-machine", value: "—" },
+                              { key: "ssh", value: "—" },
+                            ];
+                        return (
+                          <tr key={tool.name}>
+                            <td className="is-mono">{tool.name}</td>
+                            <td>{tool.plane}</td>
+                            <td>{tool.risk}</td>
+                            {channels.map((channel) => (
+                              <td
+                                key={channel.key}
+                                className={
+                                  channel.value === "unsupported" ? "policy-cell-unsupported" : undefined
+                                }
+                              >
+                                {channel.value}
+                              </td>
+                            ))}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="policy-section-title" style={{ marginTop: 14 }}>
+                  {t("policy.toolsMcp")}
+                </div>
+                {toolPolicy.mcp.length === 0 ? (
+                  <p style={{ margin: 0, fontSize: 12, color: "var(--text-dim)" }}>{t("policy.toolsMcpNone")}</p>
+                ) : (
+                  <div className="policy-table-wrap" style={{ maxHeight: 200 }}>
+                    <table className="policy-table">
+                      <thead>
+                        <tr>
+                          <th>{t("policy.toolsMcpColServer")}</th>
+                          <th>{t("policy.toolsMcpColTransport")}</th>
+                          <th>{t("policy.toolsMcpColDeclaration")}</th>
+                          <th>{t("policy.toolsMcpColStatus")}</th>
+                          <th>{t("policy.toolsMcpColNote")}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {toolPolicy.mcp.map((server) => (
+                          <tr key={server.name}>
+                            <td className="is-mono">{server.name}</td>
+                            <td>{server.transport}</td>
+                            <td>{server.declaration?.plane ? `plane:${server.declaration.plane}` : "—"}</td>
+                            <td className={server.excludedInMode ? "policy-cell-unsupported" : "policy-cell-ok"}>
+                              {server.excludedInMode ? t("policy.toolsMcpExcluded") : t("policy.toolsMcpAvailable")}
+                            </td>
+                            <td className="policy-cell-wrap">
+                              {server.excludedInMode ? (server.reason ?? "—") : "—"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                <p style={{ margin: "8px 0 0", fontSize: 11, color: "var(--text-dim)", lineHeight: 1.6 }}>
+                  {t("policy.toolsMcpHint")}
+                </p>
+              </>
             )}
           </>
         )}

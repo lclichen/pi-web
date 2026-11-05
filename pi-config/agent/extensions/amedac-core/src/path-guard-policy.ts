@@ -357,6 +357,12 @@ function splitShellSegments(command: string): string[] {
         i += 1;
         continue;
       }
+      // `>|` / `2>|` 是 noclobber 强制覆盖重定向，不是管道——先于裸 | 分段，
+      // 否则写入目标会留在下一段里丢失（redirectTargets 的 >| 分支才可达）。
+      if (ch === "|" && command[i - 1] === ">") {
+        buf += ch;
+        continue;
+      }
       if (ch === "|" || ch === "&") {
         out.push(buf);
         buf = "";
@@ -650,6 +656,216 @@ export interface BashScanResult {
   target?: string;
 }
 
+// ---------------------------------------------------------------------------
+// 灾难命令分类（策略不可放行的硬拒绝层，地位等同自保护清单）。
+//
+// 双通道（借鉴 QwenPaw safety_checks.py，见 docs/dev/qwenpaw-guardrails-
+// reference.md §2.2）：
+//   ① 结构模式：下载即执行、fork bomb、格式化、块设备写入（正则）；
+//   ② 目标分类：从 rm 类命令提取操作数 → 展开 ~/$HOME 字面量 →
+//      normalize → 按路径段分类（根/home 根/系统树/盘符根）。
+// 与路径策略解耦：命中即 deny，不可 ask、不可被项目策略放行。
+// 这是行为护栏不是安全边界（解释器间接执行仍依赖沙箱/围栏）。
+
+const CATASTROPHIC_COMMAND_PATTERNS: ReadonlyArray<{ re: RegExp; reason: string }> = [
+  {
+    re: /\b(?:curl|wget)\b[^|;&\n]*\|\s*(?:sudo\s+)?(?:ba|z|da|k)?sh\b/i,
+    reason: "下载即执行（curl/wget | sh）",
+  },
+  {
+    // 经典 fork bomb（:(){ :|:& };: 及其函数名变体）。
+    re: /(?:^|[\s;])(?:\w+|:)\s*\(\s*\)\s*\{[^}]*\|[^}]*&[^}]*\}\s*;\s*[:.\w]+/,
+    reason: "fork bomb",
+  },
+  { re: /\bmkfs(?:\.\w+)?\b/i, reason: "格式化文件系统（mkfs）" },
+  {
+    re: /\bdd\b[^|;&\n]*\bof=\/dev\/(?!(?:null|zero|stdout|stderr|tty|fd\/))/i,
+    reason: "向块设备写入（dd of=/dev/…）",
+  },
+  {
+    re: /(?:^|[\s;|&])>{1,2}\s*\/dev\/(?:sd|hd|nvme|vd|xvd|disk|mmcblk)\w*/i,
+    reason: "重定向写入块设备",
+  },
+  { re: /\bformat\s+[a-z]:/i, reason: "格式化磁盘（format X:）" },
+];
+
+/** rm 类命令（destructive 目标分类只对它们提取操作数）。 */
+const DESTRUCTIVE_COMMANDS = new Set(["rm", "rmdir", "unlink", "remove-item", "del", "rd", "deltree", "find"]);
+
+/** POSIX 顶层系统树：递归删除其根本身即灾难。 */
+const POSIX_SYSTEM_TREES = new Set([
+  "boot",
+  "dev",
+  "etc",
+  "usr",
+  "bin",
+  "sbin",
+  "lib",
+  "lib64",
+  "opt",
+  "proc",
+  "sys",
+  "var",
+  "private",
+  "system",
+  "library",
+  "applications",
+  "mnt",
+  "media",
+  "run",
+  "srv",
+]);
+
+const WINDOWS_SYSTEM_DIRS = new Set(["windows", "program files", "program files (x86)", "programdata"]);
+
+/** 递归/强制语义的 flag（rm -rf / -r / --recursive / PowerShell -Recurse / cmd /s）。 */
+const RECURSIVE_FLAG_RE = /^(?:-[a-z]*r[a-z]*|--recursive|\/s)$/i;
+
+/** 展开不了的 home 等价物（字面量按"home 根"处理，不做真实环境展开）。 */
+function homeRootRemainder(lower: string): string | null {
+  const prefixes = ["~/", "$home/", "${home}/", "$env:userprofile\\", "$env:userprofile/", "%userprofile%/"];
+  if (lower === "~" || lower === "$home" || lower === "${home}" || lower === "$env:userprofile" || lower === "%userprofile%") {
+    return "";
+  }
+  for (const prefix of prefixes) {
+    if (lower.startsWith(prefix)) return lower.slice(prefix.length);
+  }
+  return null;
+}
+
+function isGlobOnly(segment: string): boolean {
+  return /^[^A-Za-z0-9._-]*$/.test(segment);
+}
+
+/** 单个目标 token 的灾难分类（null = 不构成灾难）。 */
+export function catastrophicTargetReason(token: string): string | null {
+  const raw = token.trim().replace(/^["']+|["']+$/g, "");
+  if (!raw) return null;
+  const lower = raw.toLowerCase();
+
+  // home 等价物（~/$HOME/%USERPROFILE% 等字面量）。
+  const homeRest = homeRootRemainder(lower);
+  if (homeRest !== null) {
+    const segs = homeRest.split(/[\\/]+/).filter((s) => s && s !== ".");
+    if (segs.length === 0) return "home 根";
+    if (segs.length === 1 && isGlobOnly(segs[0])) return "home 根通配";
+    if (segs.includes("..")) return "home 根上级（.. 攀升）";
+    return null;
+  }
+  if (/^(?:%system(?:root|drive)%|\$env:system(?:root|drive))$/i.test(lower)) return "系统盘根";
+
+  const norm = raw.replace(/\\/g, "/");
+
+  // Windows 盘符：C:\ / C:\Windows / C:\Users\<用户> / C:\Users\alice\proj（后者正常）。
+  const drive = norm.match(/^([a-z]:)(?:\/|$)(.*)$/i);
+  if (drive) {
+    const rest = drive[2].replace(/\/+$/, "");
+    const segs = rest.split("/").filter((s) => s && s !== ".");
+    if (segs.length === 0) return `盘符根（${drive[1]}\\）`;
+    if (segs.length === 1 && isGlobOnly(segs[0])) return `盘符根通配（${drive[1]}\\*）`;
+    const first = segs[0].toLowerCase();
+    if (first === "users") {
+      if (segs.length === 1) return "用户目录根（C:\\Users）";
+      if (segs.length === 2 && isGlobOnly(segs[1])) return "用户目录根通配（C:\\Users\\*）";
+      if (segs.length === 2) return "用户 home 根（C:\\Users\\<用户>）";
+      return null;
+    }
+    if (WINDOWS_SYSTEM_DIRS.has(first)) return `Windows 系统目录（${drive[1]}\\${segs[0]}）`;
+    return null;
+  }
+  if (!norm.startsWith("/")) return null;
+
+  // WSL 挂载盘：/mnt/c[/...]。
+  const wsl = norm.match(/^\/mnt\/([a-z])(?:\/|$)(.*)$/i);
+  if (wsl) {
+    const segs = wsl[2].split("/").filter((s) => s && s !== ".");
+    if (segs.length === 0 || (segs.length === 1 && isGlobOnly(segs[0]))) return `Windows 盘符根（/mnt/${wsl[1]}）`;
+    const first = segs[0].toLowerCase();
+    if (first === "users") {
+      if (segs.length === 1) return "用户目录根（/mnt/x/Users）";
+      if (segs.length === 2 && isGlobOnly(segs[1])) return "用户目录根通配";
+      if (segs.length === 2) return "用户 home 根（/mnt/x/Users/<用户>）";
+      return null;
+    }
+    if (WINDOWS_SYSTEM_DIRS.has(first)) return `Windows 系统目录（/mnt/${wsl[1]}/${segs[0]}）`;
+    return null;
+  }
+
+  const segs = norm.split("/").filter((s) => s && s !== "." && s !== "..");
+  if (segs.length === 0) return "根目录（/）";
+  if (isGlobOnly(segs[0])) return "根目录通配（/…）";
+  const first = segs[0].replace(/[^A-Za-z0-9._-]/g, "").toLowerCase();
+  if (first === "") return "根目录通配（/…）";
+  if (first === "home" || first === "users") {
+    if (segs.length === 1) return "home 根";
+    if (segs.length === 2) {
+      if (isGlobOnly(segs[1])) return "home 根通配（所有用户）";
+      return "用户 home 根";
+    }
+    return null;
+  }
+  if (first === "root" && segs.length === 1) return "root 用户 home 根";
+  if (first === "volumes" && segs.length <= 2) return "卷根（/Volumes）";
+  if (POSIX_SYSTEM_TREES.has(first) && segs.length === 1) return `系统目录（/${first}）`;
+  return null;
+}
+
+/** 从命令里提取破坏性命令（rm 类/find -delete）的操作数（保持顺序，去 flag）。
+ *  注：分词前把反斜杠归一为正斜杠——分词器按 POSIX 把 `\` 当转义，而
+ *  远端 Windows 目标机的路径（C:\Users\…）必须保留段结构才能分类。 */
+function destructiveOperands(command: string): string[] {
+  const out: string[] = [];
+  for (const segment of splitShellSegments(command.replace(/\\/g, "/"))) {
+    const tokens = tokenizeShell(segment);
+    if (tokens.length === 0) continue;
+    const cmdIdx = commandIndex(tokens);
+    const cmd = tokens[cmdIdx]?.toLowerCase();
+    if (!cmd || !DESTRUCTIVE_COMMANDS.has(cmd)) continue;
+    const args = tokens.slice(cmdIdx + 1);
+    if (cmd === "find") {
+      if (!args.includes("-delete")) continue;
+      for (const arg of args) {
+        if (arg.startsWith("-")) break;
+        out.push(arg);
+      }
+      continue;
+    }
+    // 递归/强制 flag 才可能是灾难性删除（rm / 不会成功；rm -rf / 才是）。
+    if (!args.some((a) => RECURSIVE_FLAG_RE.test(a))) continue;
+    for (const arg of args) {
+      if (arg === "--") continue;
+      if (arg.startsWith("-") && arg.length > 1) continue;
+      out.push(arg);
+    }
+  }
+  return out;
+}
+
+const INLINE_WRAP_RE =
+  /(?:^|[\s;|&])(?:(?:ba|z|da|k)?sh|powershell|pwsh)\s+(?:-c|-command)\s+([\s\S]+)$/i;
+const EVAL_WRAP_RE = /(?:^|[\s;|&])eval\s+([\s\S]+)$/i;
+
+/**
+ * 命令是否触发灾难性操作；返回原因（null = 不触发）。
+ * 只对破坏性命令的操作数做目标分类；`sh -c`/`eval` 包裹递归一层。
+ */
+export function classifyCatastrophicCommand(command: string, depth = 0): string | null {
+  if (depth > 2) return null;
+  for (const { re, reason } of CATASTROPHIC_COMMAND_PATTERNS) {
+    if (re.test(command)) return reason;
+  }
+  for (const operand of destructiveOperands(command)) {
+    const reason = catastrophicTargetReason(operand);
+    if (reason) return reason;
+  }
+  const wrapped = command.match(INLINE_WRAP_RE) ?? command.match(EVAL_WRAP_RE);
+  if (wrapped?.[1]) {
+    const inner = wrapped[1].trim().replace(/^(["'])([\s\S]*)\1$/, "$2");
+    return classifyCatastrophicCommand(inner, depth + 1);
+  }
+  return null;
+}
+
 /**
  * 评估一条 bash 命令：提取写入目标 → 逐个按 write 评估；仍有漏网时对
  * 内联执行做字面量兜底。返回第一个非 allow 结论（无目标 = allow）。
@@ -661,6 +877,18 @@ export function evaluateBashCommand(
   decisions: PolicyDecisions,
   scope?: PathScope | null,
 ): BashScanResult {
+  // 灾难性命令：硬拒绝，不可被 ask/项目策略豁免（自保护清单同地位）。
+  const catastrophic = classifyCatastrophicCommand(command);
+  if (catastrophic) {
+    return {
+      // 合成 target：不指向真实路径，避免被"允许一次/持久决策"误匹配。
+      target: "!catastrophic",
+      verdict: {
+        action: "deny",
+        reason: `命令触发灾难性操作拦截（${catastrophic}）：无论项目策略如何都不可放行。请改用精确路径，或让用户手动执行。不要重复尝试。`,
+      },
+    };
+  }
   for (const target of extractBashWriteTargets(command, cwd)) {
     const verdict = evaluatePathAgainstPolicy(target, "write", cwd, policy, decisions, scope);
     if (verdict.action !== "allow") return { verdict, target };

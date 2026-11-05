@@ -239,6 +239,25 @@ export interface ServerEntry {
   trace?: boolean;
   /** Keep configuration visible without allowing connections or execution (2.12.0). */
   disabled?: boolean;
+  /**
+   * pi-web 私有：工具护栏声明块（pi-mcp-adapter 忽略未知字段）。
+   * 远端模式（sandbox/ssh/local-machine）默认剔除 stdio 服务器（宿主
+   * 子进程 = 沙盒逃逸面）；plane:"host" 显式豁免，plane:"workspace"
+   * 在远端执行通道（P3）落地前不可用。见 lib/tool-policy.ts。
+   */
+  piWeb?: McpWebDeclaration;
+}
+
+/** pi-web 私有 MCP 声明（docs/dev/tool-guardrails-design.md §5.1）。 */
+export interface McpWebDeclaration {
+  /** 操作层：host=服务器本机执行（显式豁免），workspace=带工作区语义。 */
+  plane?: "host" | "workspace";
+  /** 主风险类（P2 起驱动审批/拦截；当前仅记录）。 */
+  risk?: "none" | "read" | "write" | "exec" | "network" | "unknown";
+  /** 路径参数名（P2：声明后按路径策略检查，MCP 工具接入护栏）。 */
+  pathParams?: string[];
+  /** 命令参数名（P2）。 */
+  commandParams?: string[];
 }
 
 export type McpToolPrefix = "server" | "none" | "short" | "mcp";

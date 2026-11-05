@@ -42,6 +42,20 @@ export {
   makeTodoExtension,
 };
 export { makeSandboxToolsExtension, sandboxConfigPresent };
+// 工具操作层清单（设计见 docs/dev/tool-guardrails-design.md）；pi-web 装配层
+// （P1 模式钳制）与引入门禁测试共用同一份事实源。
+export {
+  TOOL_MANIFEST,
+  REGISTERED_TOOL_NAMES,
+  BUILTIN_CODING_TOOL_NAMES,
+  AMEDAC_CORE_TOOL_NAMES,
+  PI_WEB_TOOL_NAMES,
+  EXTENSION_TOOL_NAMES,
+  manifestFor,
+  pathParamsFor,
+  commandParamsFor,
+  isToolAllowedInMode,
+} from "./src/tool-manifest.ts";
 
 export default function amedacCore(pi: ExtensionAPI): void {
   makeTodoExtension()(pi);

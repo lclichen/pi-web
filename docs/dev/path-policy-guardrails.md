@@ -3,7 +3,12 @@
 > 代码：`pi-config/agent/extensions/amedac-core/src/path-guard{,-policy}.ts`
 > 设置页：设置 → 策略（`app/api/policy/route.ts`、`components/PolicyConfig.tsx`）
 > 测试：`lib/path-guard-policy.test.mjs`、`lib/path-guard.test.mjs`、
-> `lib/path-guard-bypass.test.mjs`、`lib/path-guard-e2e.test.mjs`
+> `lib/path-guard-bypass.test.mjs`、`lib/path-guard-e2e.test.mjs`、
+> `lib/path-guard-coverage.test.mjs`（2026-11-05 解析分支/模式/决策补全）、
+> `lib/path-guard-catastrophic.test.mjs`（灾难命令分类）、
+> `lib/tool-manifest.test.mjs`（工具操作层声明完备性门禁）、
+> `lib/tool-policy.test.mjs`（模式钳制/MCP 声明）、
+> `app/api/policy/policy-route.test.mjs`（试运行 API 契约）
 
 ## 1. 它是什么 / 不是什么
 
@@ -15,6 +20,10 @@
 
 ## 2. 决策顺序（可解释）
 
+0. **灾难命令分类**（仅 bash/powershell/bg_run 的命令参数；任何策略不可放行，
+   不可 ask）：递归删根/home 根/系统树/盘符根、`mkfs`/`dd of=/dev/`、fork bomb、
+   `curl|sh`、`$HOME` 变量形式；命中直接 deny（`classifyCatastrophicCommand`，
+   2026-11-05 落地）。
 1. **自保护清单**（任何策略不可放行）：`.pi/path-policy.json`、
    `.pi/path-policy.decisions.json`、`.pi/path-policy.scope.json`、
    `.pi/{sessions,tmp,bin,cache,plans}/**`、`.pi/{auth,ssh,sandbox-platform}.json`、`.ssh/**`。
@@ -51,8 +60,14 @@
 | `grep` / `find` / `ls` | 读 | 目录/文件参数命中 denyRead 即拦 |
 | `bash` | 写 + 内联兜底 | 见下节 |
 | `powershell` | 写 + 内联兜底 | 复用同一套扫描（含 PowerShell 写入 cmdlet） |
+| `bg_run` | 写 + 内联兜底 | 经 manifest `commandParams` 与 bash 同管线（2026-11-05 收编；此前完全绕过） |
+| `share_file` | 读 | manifest `pathParams`：denyRead 命中即拒绝生成下载链接 |
 | MCP / 第三方扩展工具 | **不拦** | 这是已知缺口：它们不走内置工具名。需要强约束时用容器/relay 围栏 |
 | 子智能体 | 拦 | 子会话同样从全局 agent dir 加载 amedac-core，工具名一致 |
+
+> 2026-11-05 起拦截名单由 `amedac-core/src/tool-manifest.ts` 驱动（`pathParams` /
+> `commandParams`），不再硬编码；新增工具须在 manifest 声明才进入护栏，注册表
+> 完备性由 `lib/tool-manifest.test.mjs` 门禁（见 `tool-guardrails-design.md`）。
 
 拦截结果：`{ block: true, reason }` 在 agent 循环里变成 **isError 工具结果**，
 模型能看到原因（`lib/path-guard-e2e.test.mjs` 用真实 AgentSession 验证）。
@@ -62,7 +77,8 @@
 
 已覆盖：
 
-- 重定向 `> >> >| &>`（含无空格 `>out`）；`2>&1`、`>&2` 与
+- 重定向 `> >> >| &>`（含无空格 `>out`；`>|` 曾因裸 `|` 先行切段而漏检，
+  2026-11-05 修复并有用例锁定）；`2>&1`、`>&2` 与
   `/dev/null`、`/dev/stdout|stderr|tty`、`/proc/self/fd/*` 忽略；
 - 写命令的**全部非 flag 操作数**（v1 只认 `/ ./ ../ ~/` 前缀，
   `rm .env`、`rm -rf secrets` 直接漏检——这是"工作区内锁不住文件"的根因）：

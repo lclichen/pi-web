@@ -28,6 +28,8 @@ import {
 import { appendWebUiAddendum } from "./web-system-prompt";
 import { readPreferences } from "./preferences-service";
 import { readMcpConfig } from "./mcp-config";
+import { createModeToolClampExtension } from "./extensions/mode-tool-clamp";
+import { filterActiveToolsForMode, filterToolsForMode, isRemoteMode, mcpExcludedServers } from "./tool-policy";
 import { composeQuickSystemPrompt, createQuickPromptExtension, type QuickTemplateHolder } from "./quick-prompt";
 import { createPromptConsistencyExtension, describePromptDrift, type PromptPin } from "./prompt-consistency";
 import { getSessionMeta, recordSessionMeta, type SessionMeta } from "./session-metas";
@@ -405,6 +407,8 @@ export class AgentSessionWrapper {
   private readonly quickPrompt?: QuickTemplateHolder;
   /** Quick sessions: MCP server allowlist — applied after MCP tools register. */
   private quickToolAllowlist?: string[];
+  /** 远程模式 MCP 剔除集合缓存（key = cwd|ownerId|mode；apply_preferences 失效）。 */
+  private mcpExclusionCache: { key: string; map: Map<string, string> } | null = null;
   private readonly chatOnly: boolean;
   private readonly onAgentRunComplete?: AgentRunCompleteListener;
   private readonly suppressCompletionNotifications: boolean;
@@ -629,6 +633,8 @@ export class AgentSessionWrapper {
   applyToolPreferences(cwd: string): void {
     void this.waitForExtensionsBound()
       .then(() => {
+        // MCP 配置可能变化（设置页/apply_preferences）：失效模式剔除缓存。
+        this.mcpExclusionCache = null;
         const prefs = readPreferences(cwd);
         const allNames = this.inner.getAllTools().map((t) => t.name);
         let filtered = allNames;
@@ -651,8 +657,52 @@ export class AgentSessionWrapper {
         if (filtered.length !== allNames.length) {
           this.inner.setActiveToolsByName(filtered);
         }
+        // 偏好过滤之后叠加模式钳制（P1 工具护栏：声明工具 + MCP 剔除）。
+        this.enforceModeTools();
       })
       .catch(() => {});
+  }
+
+  /**
+   * 模式钳制（P1 工具护栏）：剔除当前模式无执行通道的声明工具（manifest
+   * remote=unsupported）与被剔除 MCP 服务器（tool-policy：stdio 落宿主 /
+   * workspace 声明）的直接工具 + 网关元工具。
+   *
+   * 每回合重放：pi-mcp-adapter 的 syncProxyTool 会在输入收敛时把网关加回
+   * 活动集（quick 同源问题，5c5460b2）。发生剔除时返回钳制后重建的实时
+   * base（事件的 systemPrompt 是发射前快照，必须用返回值覆盖脏快照）；
+   * 未发生剔除返回 undefined。
+   */
+  enforceModeTools(): string | undefined {
+    if (!isRemoteMode(this.mode)) return undefined;
+    const getActive = (this.inner as AgentSessionLike & { getActiveToolNames?: () => string[] }).getActiveToolNames;
+    if (typeof getActive !== "function") return undefined;
+    const current = getActive.call(this.inner);
+    const { allowed } = filterActiveToolsForMode(current, {
+      mode: this.mode,
+      excludedMcpServers: this.getMcpExclusions(),
+    });
+    if (allowed.length === current.length) return undefined;
+    this.inner.setActiveToolsByName([...allowed].sort());
+    return this.inner.agent?.state?.systemPrompt;
+  }
+
+  /** 绑定后应用一次模式钳制（MCP 工具在 session_start 异步注册，必须等绑定）。 */
+  enforceModeToolsAfterBind(): void {
+    void this.waitForExtensionsBound()
+      .then(() => {
+        this.enforceModeTools();
+      })
+      .catch(() => {});
+  }
+
+  /** 当前会话 cwd/用户/模式下被剔除的 MCP 服务器（按 cwd|owner|mode 缓存）。 */
+  private getMcpExclusions(): Map<string, string> {
+    const key = `${this.cwd}|${this.ownerId ?? 0}|${this.mode}`;
+    if (this.mcpExclusionCache?.key === key) return this.mcpExclusionCache.map;
+    const map = mcpExcludedServers(this.cwd, this.ownerId ?? 0, this.mode);
+    this.mcpExclusionCache = { key, map };
+    return map;
   }
 
   private shouldWaitForExtensions(type: string): boolean {
@@ -2821,6 +2871,8 @@ export async function startRpcSession(
     // 每回合工具钳制的间接引用：扩展工厂先于 wrapper 构造，经 ref 回连
     //（adapter 的 syncProxyTool 每回合可能把网关工具加回活动集）。
     const quickTurnClampRef: { current: (() => string | undefined) | undefined } = { current: undefined };
+    // 远程模式的每回合钳制 ref（P1 工具护栏，同上理由）。
+    const modeToolClampRef: { current: (() => string | undefined) | undefined } = { current: undefined };
     // 提示词一致性钉住扩展的上报回调（同样经 ref 回连 wrapper.observePrompt）。
     const promptPinRef: { current?: (hash: string, len: number, tools: number) => void } = {};
     const platformResourceLoaderOptions: {
@@ -2936,6 +2988,10 @@ export async function startRpcSession(
                     () => listSubagentProfiles(sessionCwd, ownerId ?? 0),
                     isBuiltInSubagentsEnabled,
                   ),
+                  // 远程模式：每回合重放 MCP 剔除（adapter 会加回网关）。
+                  ...(isRemoteMode(mode ?? "host")
+                    ? [createModeToolClampExtension(() => modeToolClampRef.current?.())]
+                    : []),
                   // 末位：一致性钉住（钩子链式，末位看到最终合成提示词）。
                   createPromptConsistencyExtension((h, l, t) => promptPinRef.current?.(h, l, t)),
                 ],
@@ -3004,7 +3060,13 @@ export async function startRpcSession(
     // 活动集由 setQuickToolAllowlist（绑定后钳制）唯一决定。
     // 排序：恢复时的初始 base 也要求字节确定（缓存前缀从首回合起稳定）。
     if (!subagentResources && !chatOnly && !quick) {
-      inner.setActiveToolsByName(withExtensionTools(inner, selectedToolNames ?? inner.getActiveToolNames()).sort());
+      const assembled = withExtensionTools(inner, selectedToolNames ?? inner.getActiveToolNames());
+      // P1 工具护栏：声明工具按模式兼容性过滤（如远端模式的 powershell）。
+      const { allowed, excluded } = filterToolsForMode(assembled, mode ?? "host");
+      if (excluded.length > 0) {
+        console.warn(`[pi-web] tool-policy: ${excluded.map((e) => e.reason).join("; ")}`);
+      }
+      inner.setActiveToolsByName(allowed.sort());
     }
 
     // Quick mode: no workspace — coding tools are hard-off. The active set is
@@ -3042,6 +3104,12 @@ export async function startRpcSession(
     // routing queries observe the right owner from the first tick.
     wrapper.ownerId = ownerId ?? 0;
     wrapper.mode = mode ?? "host";
+    // P1 工具护栏：远程模式绑定后应用一次模式钳制（MCP 工具异步注册），
+    // 每回合经 before_agent_start 重放（见 createModeToolClampExtension）。
+    if (!subagentResources && !quick && isRemoteMode(wrapper.mode)) {
+      modeToolClampRef.current = () => wrapper.enforceModeTools();
+      wrapper.enforceModeToolsAfterBind();
+    }
     // Background-task routing: the SDK mints its own id for NEW sessions, so
     // the channel must be registered under the REAL id (callers only know the
     // temporary start key). Remote modes without a channel are marked "remote"

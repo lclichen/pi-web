@@ -1376,6 +1376,8 @@ export const enLocale: LocalePlugin = {
     "sidebar.useDefaultDirectory": "Use default directory",
     "sidebar.worktreePath": "Worktree: {path}",
     "sidebar.worktrees": "Worktrees...",
+    "skills.deleteConfirmMessage": "Delete \"{name}\"? This removes its files from disk.",
+    "skills.deleteConfirmTitle": "Delete skill",
     "skills.hubUrlLabel": "SkillHub URL",
     "skills.importedSkillFiles": "Imported skill {skill} ({n} files)",
     "skills.offlineSharingUnpacksIntoProject": "Offline sharing: unpacks into the project .pi/skills/ (each skill folder has a SKILL.md)",

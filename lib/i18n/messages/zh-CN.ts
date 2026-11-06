@@ -1376,6 +1376,8 @@ export const zhCNLocale: LocalePlugin = {
     "sidebar.useDefaultDirectory": "使用默认目录",
     "sidebar.worktreePath": "Worktree：{path}",
     "sidebar.worktrees": "Worktrees...",
+    "skills.deleteConfirmMessage": "删除“{name}”？此操作会从磁盘移除该技能文件。",
+    "skills.deleteConfirmTitle": "删除技能",
     "skills.hubUrlLabel": "SkillHub 地址",
     "skills.importedSkillFiles": "已导入技能 {skill}（{n} 个文件）",
     "skills.offlineSharingUnpacksIntoProject": "离线分发：解压到项目 .pi/skills/（每个技能目录含 SKILL.md）",

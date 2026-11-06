@@ -10,6 +10,7 @@ import type {
   SkillUpdateResult,
 } from "@/lib/api-types";
 import { getLastSettingsSelection, setLastSettingsSelection } from "@/lib/settings-navigation";
+import { useConfirm } from "./use-confirm";
 import {
   ConfigButton,
   ConfigDetail,
@@ -38,11 +39,15 @@ function shortenPath(p: string): string {
   return p.replace(/^\/(?:Users|home)\/[^/]+/, "~");
 }
 
-function sourceLabel(skill: Skill): string {
+export function sourceLabel(skill: Skill): "project" | "user" | "global" | "path" {
   const src = skill.sourceInfo?.source;
   const scope = skill.sourceInfo?.scope;
-  if (scope === "user" || src === "user") return "global";
+  // User-scope skills live in the per-user config store
+  // (data/user-config/u<id>/skills); the loader reports those extra paths as
+  // generic "path" unless the server annotated them.
+  if (scope === "user" || src === "user" || skill.install?.scope === "user") return "user";
   if (scope === "project" || src === "project") return "project";
+  if (scope === "global" || src === "global") return "global";
   return "path";
 }
 
@@ -73,6 +78,9 @@ function SkillDetail({
   updateError,
   onCheckUpdate,
   onUpdate,
+  onDelete,
+  deleting,
+  canDelete,
 }: {
   skill: Skill;
   cwd: string;
@@ -85,9 +93,20 @@ function SkillDetail({
   updateError: string | null;
   onCheckUpdate: () => void;
   onUpdate: () => void;
+  onDelete: () => void;
+  deleting: boolean;
+  canDelete: boolean;
 }) {
   const { t } = useI18n();
   const label = sourceLabel(skill);
+  const labelText =
+    label === "project"
+      ? t("skills.scope.project")
+      : label === "user"
+        ? t("skills.scope.user")
+        : label === "global"
+          ? t("skills.scope.global")
+          : t("skills.scope.path");
   const enabled = !skill.disableModelInvocation;
 
   function displayPath(p: string): string {
@@ -104,7 +123,11 @@ function SkillDetail({
       <div className="skill-detail-heading">
         <ConfigDetailHeader>
           <ConfigDetailHeaderInfo>
-            <span className={`config-scope-tag${label === "project" ? " is-project" : ""}`}>{label}</span>
+            <span
+              className={`config-scope-tag${label === "project" ? " is-project" : label === "user" ? " is-user" : ""}`}
+            >
+              {labelText}
+            </span>
             <span className="config-detail-path">{displayPath(skill.filePath)}</span>
           </ConfigDetailHeaderInfo>
           <ConfigDetailActions>
@@ -114,6 +137,11 @@ function SkillDetail({
               label={enabled ? t("i18n.visibleInPrompt") : t("i18n.hiddenFromPrompt")}
               onChange={() => onToggle(skill)}
             />
+            {canDelete && (
+              <ConfigButton variant="danger" size="small" onClick={onDelete} disabled={deleting}>
+                {t("common.delete")}
+              </ConfigButton>
+            )}
           </ConfigDetailActions>
         </ConfigDetailHeader>
         <div className="skill-detail-status-row">
@@ -616,11 +644,13 @@ export function SkillsConfig({
   isAdmin?: boolean;
 }) {
   const { t } = useI18n();
+  const { confirm, confirmDialog } = useConfirm();
   const [skills, setSkills] = useState<Skill[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(() => getLastSettingsSelection("skills", cwd));
   const [toggling, setToggling] = useState<Set<string>>(new Set());
+  const [deleting, setDeleting] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [addMode, setAddMode] = useState(false);
   const [updateStatuses, setUpdateStatuses] = useState<Record<string, SkillUpdateResult>>({});
@@ -786,7 +816,49 @@ export function SkillsConfig({
     }
   }, []);
 
+  const removeSkill = useCallback(
+    async (skill: Skill) => {
+      const label = sourceLabel(skill);
+      const ok = await confirm({
+        title: t("skills.deleteConfirmTitle"),
+        message: t("skills.deleteConfirmMessage", { name: skill.name }),
+        confirmLabel: t("common.delete"),
+        abortLabel: t("common.cancel"),
+        danger: true,
+      });
+      if (!ok) return;
+      setDeleting(skill.filePath);
+      setSaveError(null);
+      try {
+        const params = new URLSearchParams({ filePath: skill.filePath });
+        // Project skills are addressed relative to the project cwd; the server
+        // only needs it to authorise the project's .pi/skills root.
+        if (label === "project") params.set("cwd", cwd);
+        const res = await fetch(`/api/skills?${params.toString()}`, { method: "DELETE" });
+        const d = (await res.json().catch(() => ({}))) as { success?: boolean; error?: string };
+        if (!res.ok || d.error || !d.success) throw new Error(d.error ?? `HTTP ${res.status}`);
+        setSkills((prev) => prev.filter((s) => s.filePath !== skill.filePath));
+        setSelected((current) => (current === skill.filePath ? null : current));
+        setUpdateStatuses((current) => {
+          const key = updateKey(skill);
+          if (!key || !(key in current)) return current;
+          const next = { ...current };
+          delete next[key];
+          return next;
+        });
+      } catch (e) {
+        setSaveError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setDeleting(null);
+      }
+    },
+    [confirm, cwd, t],
+  );
+
   const selectedSkill = skills.find((s) => s.filePath === selected) ?? null;
+  const selectedLabel = selectedSkill ? sourceLabel(selectedSkill) : null;
+  const selectedDeletable =
+    selectedLabel === "user" || selectedLabel === "project" || (selectedLabel === "global" && isAdmin);
 
   return (
     <ConfigPanelShell
@@ -835,6 +907,7 @@ export function SkillsConfig({
                 const groups: { label: string; skills: typeof skills }[] = [];
                 const scopeLabels = {
                   project: t("skills.scope.project"),
+                  user: t("skills.scope.user"),
                   global: t("skills.scope.global"),
                   path: t("skills.scope.path"),
                 };
@@ -846,6 +919,14 @@ export function SkillsConfig({
                   {
                     label: scopeLabels.project,
                     matches: (skill: Skill) => sourceLabel(skill) === "project" && !skill.install?.skillsShUrl,
+                  },
+                  {
+                    label: `${scopeLabels.user} / skills.sh`,
+                    matches: (skill: Skill) => sourceLabel(skill) === "user" && Boolean(skill.install?.skillsShUrl),
+                  },
+                  {
+                    label: scopeLabels.user,
+                    matches: (skill: Skill) => sourceLabel(skill) === "user" && !skill.install?.skillsShUrl,
                   },
                   {
                     label: `${scopeLabels.global} / skills.sh`,
@@ -874,6 +955,9 @@ export function SkillsConfig({
                       onClick={() => {
                         setSelected(skill.filePath);
                         setAddMode(false);
+                        // A failed save belongs to the skill it was triggered
+                        // for; don't leak it onto the next selection.
+                        setSaveError(null);
                       }}
                     >
                       <ConfigStatusDot active={!disabled} />
@@ -905,7 +989,13 @@ export function SkillsConfig({
             )}
           </ConfigSidebarList>
           {/* Add skill button */}
-          <ConfigListAction onClick={() => setAddMode(true)} active={addMode}>
+          <ConfigListAction
+            onClick={() => {
+              setAddMode(true);
+              setSaveError(null);
+            }}
+            active={addMode}
+          >
             {t("i18n.addSkill")}
           </ConfigListAction>
         </ConfigSidebar>
@@ -947,6 +1037,9 @@ export function SkillsConfig({
                 updateError={updateError}
                 onCheckUpdate={() => void checkForUpdates(selectedSkill)}
                 onUpdate={() => void updateInstalledSkill(selectedSkill)}
+                onDelete={() => void removeSkill(selectedSkill)}
+                deleting={deleting === selectedSkill.filePath}
+                canDelete={selectedDeletable}
               />
             ) : (
               <ConfigEmptyState>{t("i18n.selectSkill")}</ConfigEmptyState>
@@ -979,6 +1072,7 @@ export function SkillsConfig({
           </ConfigButton>
         )}
       </ConfigFooter>
+      {confirmDialog}
     </ConfigPanelShell>
   );
 }

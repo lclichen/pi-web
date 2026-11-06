@@ -32,14 +32,21 @@ bundled `agent-client` binary.
 Outputs in `build/linux-<arch>/`: the executable, a `.tar.gz` with `install.sh`
 (installs per-user under `~/.local`), and a `.deb`.
 
-## Known Linux text issue (fixed in this build)
+## Known Linux rendering issues (fixed in this build)
 
-MyGo ≤ 0.7.4 rendered Linux subpixel glyphs with FreeType's legacy LCD filter on
-cairo < 1.17 (CentOS 7, Ubuntu 18.04 and similar): dark text looked pale, with a
-white core and colored (green) fringes. MyGo fixed this in PR #1027
-(2026-11-02); this module pins the fix commit because no newer release exists
-yet. If fringes persist on a newer cairo stack, the desktop is using subpixel
-antialiasing where the display/GPU mishandles it — switch GTK to grayscale:
+- **Subpixel text (MyGo #1025 / PR #1027):** MyGo ≤ 0.7.4 rendered Linux subpixel
+  glyphs with FreeType's legacy LCD filter on cairo < 1.17 (CentOS 7, Ubuntu
+  18.04 and similar): dark text looked pale, with a white core and colored
+  (green) fringes.
+- **Light/dark mismatch (MyGo #1120 / PR #1123):** GTK 3 does not read the
+  settings portal's color scheme, so a light desktop could keep GTK's dark
+  default and paint white text in a white native-UI window. MyGo now applies
+  `gtk-application-prefer-dark-theme` at startup and when the portal changes;
+  this app also calls `Theme.SetSource(ThemeSystem)` before `App.Run`.
+
+Both fixes landed after v0.7.4 and before any newer release, so this module
+pins the commit that contains them. If fringes or mismatched colors persist,
+switch GTK to grayscale and report your cairo/desktop versions:
 
 ```bash
 gsettings set org.gnome.desktop.interface font-antialiasing 'grayscale'

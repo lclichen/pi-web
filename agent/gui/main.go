@@ -14,6 +14,12 @@ import (
 func main() {
 	a := newApp()
 
+	// Follow the desktop's light/dark appearance. On Linux this also keeps
+	// GTK's gtk-application-prefer-dark-theme in sync with the settings portal
+	// (MyGo #1120 / PR #1123): a light desktop otherwise leaves GTK on its
+	// dark default, which paints white text in a white native-UI window.
+	mygo.Theme.SetSource(mygo.ThemeSystem)
+
 	mygo.App.WhenReady(func() {
 		// Settings load before the first frame, so the form shows the
 		// last-used server and client name immediately.

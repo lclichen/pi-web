@@ -800,7 +800,7 @@ export function PluginsConfig({
   const projectResourcesLoaded = data?.projectResourcesLoaded ?? true;
 
   const groupedPackages = useMemo(() => {
-    return (["project", "global"] as PluginScope[])
+    return (["project", "user", "global"] as PluginScope[])
       .map((scope) => ({ scope, packages: packages.filter((pkg) => pkg.scope === scope) }))
       .filter((group) => group.packages.length > 0);
   }, [packages]);

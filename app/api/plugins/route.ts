@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { resolveConfigCwdSync } from "@/lib/config-cwd";
 import { createUserSettingsManager } from "@/lib/user-settings-storage";
-import { isUserScopedConfig } from "@/lib/user-config";
+import { isUserScopedConfig, userSettingsDiffPath } from "@/lib/user-config";
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "fs";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "path";
 import {
@@ -54,6 +54,60 @@ function getPackageSource(entry: PackageSource): string {
   return typeof entry === "string" ? entry : entry.source;
 }
 
+/** Sources configured in the RAW global settings file vs. in one user's
+ *  settings diff. The SDK reports every `globalSettings` entry as scope
+ *  "user" (upstream has no per-user layer), so the web API re-attributes
+ *  them: inherited global entries stay global, entries only present in the
+ *  user diff are user scope. */
+type RawScopeSets = { global: Set<string>; user: Set<string> };
+
+function readSettingsObject(path: string): unknown {
+  try {
+    return JSON.parse(readFileSync(path, "utf8"));
+  } catch {
+    return undefined;
+  }
+}
+
+function collectConfiguredSources(settings: unknown, target: Set<string>): void {
+  if (!settings || typeof settings !== "object" || Array.isArray(settings)) return;
+  const record = settings as Record<string, unknown>;
+  for (const key of ["extensions", "skills", "prompts", "themes"] as const) {
+    const entries = record[key];
+    if (!Array.isArray(entries)) continue;
+    for (const entry of entries) {
+      if (typeof entry === "string" && entry.trim()) target.add(normalizeForMatch(entry));
+    }
+  }
+  const packages = record.packages;
+  if (!Array.isArray(packages)) return;
+  for (const entry of packages) {
+    if (typeof entry === "string" && entry.trim()) {
+      target.add(normalizeForMatch(entry));
+    } else if (entry && typeof entry === "object") {
+      const source = (entry as { source?: unknown }).source;
+      if (typeof source === "string" && source.trim()) target.add(normalizeForMatch(source));
+    }
+  }
+}
+
+function readScopeSets(userId: number, agentDir: string): RawScopeSets {
+  const sets: RawScopeSets = { global: new Set(), user: new Set() };
+  collectConfiguredSources(readSettingsObject(join(agentDir, "settings.json")), sets.global);
+  if (isUserScopedConfig(userId)) {
+    collectConfiguredSources(readSettingsObject(userSettingsDiffPath(userId)), sets.user);
+  }
+  return sets;
+}
+
+/** A source that only appears in the user diff is user scope; anything
+ *  inherited from the raw global settings file (also when the user diff
+ *  re-serialises it) stays global. */
+function scopeForSource(source: string, sets: RawScopeSets): PluginScope {
+  const key = normalizeForMatch(source);
+  return sets.user.has(key) && !sets.global.has(key) ? "user" : "global";
+}
+
 function isDisabledPackage(entry: PackageSource): boolean {
   if (typeof entry === "string") return false;
   return (
@@ -68,10 +122,11 @@ function isDisabledPackage(entry: PackageSource): boolean {
   );
 }
 
-function getDisabledPackages(settingsManager: SettingsManager): Map<string, boolean> {
+function getDisabledPackages(settingsManager: SettingsManager, scopeSets: RawScopeSets): Map<string, boolean> {
   const disabled = new Map<string, boolean>();
   for (const entry of settingsManager.getGlobalSettings().packages ?? []) {
-    disabled.set(keyFor(getPackageSource(entry), "global"), isDisabledPackage(entry));
+    const source = getPackageSource(entry);
+    disabled.set(keyFor(source, scopeForSource(source, scopeSets)), isDisabledPackage(entry));
   }
   for (const entry of settingsManager.getProjectSettings().packages ?? []) {
     disabled.set(keyFor(getPackageSource(entry), "project"), isDisabledPackage(entry));
@@ -175,6 +230,14 @@ function readPackageMetadata(installedPath?: string): { packageName?: string; ve
   }
 }
 
+type ClassifiedTopLevel = {
+  origin: "settings" | "directory";
+  source: string;
+  sourceLabel: string;
+  installedPath?: string;
+  scope: PluginScope;
+};
+
 function collectResource(
   resource: ResolvedResource,
   kind: keyof PluginResourceCounts,
@@ -182,9 +245,8 @@ function collectResource(
   resourcesByPackage: Map<string, PluginResourceInfo[]>,
   totals: PluginResourceCounts,
   topLevel: Map<string, PluginPackageInfo>,
-  classify: (
-    resource: ResolvedResource,
-  ) => { origin: "settings" | "directory"; source: string; sourceLabel: string; installedPath?: string } | null,
+  packageScopes: Map<string, PluginScope>,
+  classify: (resource: ResolvedResource) => ClassifiedTopLevel | null,
 ): void {
   if (!resource.enabled) return;
   const resourceKind =
@@ -201,7 +263,7 @@ function collectResource(
     // synthetic top-level entries instead of dropping them.
     const classified = classify(resource);
     if (!classified) return;
-    const scope = toPluginScope(resource.metadata.scope);
+    const scope = classified.scope;
     const key = `top\0${classified.origin}\0${scope}\0${normalizeForMatch(classified.source)}`;
     let entry = topLevel.get(key);
     if (!entry) {
@@ -228,7 +290,9 @@ function collectResource(
   }
 
   const source = resource.metadata.source;
-  const scope = toPluginScope(resource.metadata.scope);
+  // The SDK labels merged global-settings resources as "user"; the package
+  // scope map built from the raw settings files is authoritative here.
+  const scope = packageScopes.get(normalizeForMatch(source)) ?? toPluginScope(resource.metadata.scope);
   const key = keyFor(source, scope);
   const counts = countsByPackage.get(key) ?? emptyCounts();
   addCount(counts, kind);
@@ -241,9 +305,8 @@ function collectResource(
 
 function collectResources(
   paths: ResolvedPaths,
-  classify: (
-    resource: ResolvedResource,
-  ) => { origin: "settings" | "directory"; source: string; sourceLabel: string; installedPath?: string } | null,
+  packageScopes: Map<string, PluginScope>,
+  classify: (resource: ResolvedResource) => ClassifiedTopLevel | null,
 ): {
   countsByPackage: Map<string, PluginResourceCounts>;
   resourcesByPackage: Map<string, PluginResourceInfo[]>;
@@ -255,13 +318,49 @@ function collectResources(
   const totals = emptyCounts();
   const topLevel = new Map<string, PluginPackageInfo>();
   for (const resource of paths.extensions)
-    collectResource(resource, "extensions", countsByPackage, resourcesByPackage, totals, topLevel, classify);
+    collectResource(
+      resource,
+      "extensions",
+      countsByPackage,
+      resourcesByPackage,
+      totals,
+      topLevel,
+      packageScopes,
+      classify,
+    );
   for (const resource of paths.skills)
-    collectResource(resource, "skills", countsByPackage, resourcesByPackage, totals, topLevel, classify);
+    collectResource(
+      resource,
+      "skills",
+      countsByPackage,
+      resourcesByPackage,
+      totals,
+      topLevel,
+      packageScopes,
+      classify,
+    );
   for (const resource of paths.prompts)
-    collectResource(resource, "prompts", countsByPackage, resourcesByPackage, totals, topLevel, classify);
+    collectResource(
+      resource,
+      "prompts",
+      countsByPackage,
+      resourcesByPackage,
+      totals,
+      topLevel,
+      packageScopes,
+      classify,
+    );
   for (const resource of paths.themes)
-    collectResource(resource, "themes", countsByPackage, resourcesByPackage, totals, topLevel, classify);
+    collectResource(
+      resource,
+      "themes",
+      countsByPackage,
+      resourcesByPackage,
+      totals,
+      topLevel,
+      packageScopes,
+      classify,
+    );
   return { countsByPackage, resourcesByPackage, totals, topLevel };
 }
 
@@ -279,29 +378,36 @@ function makeClassifier(
   settingsManager: SettingsManager,
   cwd: string,
   agentDir: string,
-): (
-  resource: ResolvedResource,
-) => { origin: "settings" | "directory"; source: string; sourceLabel: string; installedPath?: string } | null {
-  const configured: Array<{ source: string }> = [];
+  scopeSets: RawScopeSets,
+): (resource: ResolvedResource) => ClassifiedTopLevel | null {
+  const configured: Array<{ source: string; scope: PluginScope }> = [];
   const globalSettings = settingsManager.getGlobalSettings();
   const projectSettings = settingsManager.getProjectSettings();
-  for (const settings of [globalSettings, projectSettings]) {
+  // Project entries first: when the same path is configured at both layers,
+  // the project copy is the one the resource loader resolves.
+  for (const settings of [projectSettings, globalSettings]) {
+    const scope: PluginScope = settings === projectSettings ? "project" : "global";
     for (const key of ["extensions", "skills", "prompts", "themes"] as const) {
       for (const entry of settings[key] ?? []) {
-        if (typeof entry === "string" && entry) configured.push({ source: entry });
+        if (typeof entry !== "string" || !entry) continue;
+        configured.push({
+          source: entry,
+          scope: scope === "project" ? "project" : scopeForSource(entry, scopeSets),
+        });
       }
     }
   }
-  const autoRoots = [
-    join(cwd, ".pi", "extensions"),
-    join(cwd, ".pi", "skills"),
-    join(cwd, ".pi", "prompts"),
-    join(cwd, ".pi", "themes"),
-    join(agentDir, "extensions"),
-    join(agentDir, "skills"),
-    join(agentDir, "prompts"),
-    join(agentDir, "themes"),
-  ].map((root) => ({ root, norm: normalizeForMatch(root) }));
+  const autoRootEntries: Array<{ root: string; scope: PluginScope }> = [
+    { root: join(cwd, ".pi", "extensions"), scope: "project" },
+    { root: join(cwd, ".pi", "skills"), scope: "project" },
+    { root: join(cwd, ".pi", "prompts"), scope: "project" },
+    { root: join(cwd, ".pi", "themes"), scope: "project" },
+    { root: join(agentDir, "extensions"), scope: "global" },
+    { root: join(agentDir, "skills"), scope: "global" },
+    { root: join(agentDir, "prompts"), scope: "global" },
+    { root: join(agentDir, "themes"), scope: "global" },
+  ];
+  const autoRoots = autoRootEntries.map((entry) => ({ ...entry, norm: normalizeForMatch(entry.root) }));
 
   const statPath = (p: string): string | undefined => {
     try {
@@ -321,10 +427,11 @@ function makeClassifier(
           source: c.source,
           sourceLabel: "settings.json",
           installedPath: statPath(c.source),
+          scope: c.scope,
         };
       }
     }
-    for (const { root, norm: rootNorm } of autoRoots) {
+    for (const { root, norm: rootNorm, scope } of autoRoots) {
       if (norm === rootNorm || !norm.startsWith(rootNorm + "/")) continue;
       const rel = norm.slice(rootNorm.length + 1);
       const firstSeg = rel.split("/")[0];
@@ -339,6 +446,7 @@ function makeClassifier(
         source: entryDir,
         sourceLabel: label,
         installedPath: entryDir,
+        scope,
       };
     }
     // Unmatched top-level resource (e.g. a file placed directly in an auto
@@ -348,6 +456,7 @@ function makeClassifier(
       source: resource.path,
       sourceLabel: normalizeForMatch(resource.path),
       installedPath: statPath(resource.path),
+      scope: resource.metadata.scope === "project" ? "project" : "global",
     };
   };
 }
@@ -355,6 +464,7 @@ function makeClassifier(
 async function readPlugins(cwd: string, userId: number): Promise<PluginsResponse> {
   const agentDir = getAgentDir();
   const projectTrust = getProjectTrustStatus(cwd, agentDir);
+  const scopeSets = readScopeSets(userId, agentDir);
   const settingsManager = createUserSettingsManager(cwd, userId, {
     projectTrusted: projectTrust.trusted,
   });
@@ -369,7 +479,20 @@ async function readPlugins(cwd: string, userId: number): Promise<PluginsResponse
   let resourcesByPackage = new Map<string, PluginResourceInfo[]>();
   let totals = emptyCounts();
   let topLevel = new Map<string, PluginPackageInfo>();
-  const disabledByPackage = getDisabledPackages(settingsManager);
+  const disabledByPackage = getDisabledPackages(settingsManager, scopeSets);
+  const configuredPackages = packageManager.listConfiguredPackages();
+  // Project packages win over a same-source global package. Build the source
+  // -> scope map before resource collection so counts land under the same key
+  // the package list will use.
+  const projectSources = new Set(
+    configuredPackages.filter((pkg) => pkg.scope === "project").map((pkg) => normalizeForMatch(pkg.source)),
+  );
+  const packageScopes = new Map<string, PluginScope>();
+  for (const pkg of configuredPackages) {
+    const norm = normalizeForMatch(pkg.source);
+    const scope = pkg.scope === "project" ? "project" : scopeForSource(pkg.source, scopeSets);
+    if (scope === "project" || !packageScopes.has(norm)) packageScopes.set(norm, scope);
+  }
 
   try {
     const resolved = await packageManager.resolve(async (source) => {
@@ -382,7 +505,8 @@ async function readPlugins(cwd: string, userId: number): Promise<PluginsResponse
     });
     ({ countsByPackage, resourcesByPackage, totals, topLevel } = collectResources(
       resolved,
-      makeClassifier(settingsManager, cwd, agentDir),
+      packageScopes,
+      makeClassifier(settingsManager, cwd, agentDir, scopeSets),
     ));
   } catch (error) {
     diagnostics.push({
@@ -391,42 +515,44 @@ async function readPlugins(cwd: string, userId: number): Promise<PluginsResponse
     });
   }
 
-  const packages: PluginPackageInfo[] = packageManager.listConfiguredPackages().map((pkg) => {
-    const scope = toPluginScope(pkg.scope);
-    const key = keyFor(pkg.source, scope);
-    const disabled = disabledByPackage.get(key) ?? false;
-    const counts = countsByPackage.get(key) ?? emptyCounts();
-    const resources = resourcesByPackage.get(key) ?? [];
-    const resourceCount = counts.extensions + counts.skills + counts.prompts + counts.themes;
-    const packageMetadata = readPackageMetadata(pkg.installedPath);
-    if (!pkg.installedPath) {
-      diagnostics.push({
-        type: "warning",
+  const packages: PluginPackageInfo[] = configuredPackages
+    .filter((pkg) => pkg.scope === "project" || !projectSources.has(normalizeForMatch(pkg.source)))
+    .map((pkg) => {
+      const scope = packageScopes.get(normalizeForMatch(pkg.source)) ?? toPluginScope(pkg.scope);
+      const key = keyFor(pkg.source, scope);
+      const disabled = disabledByPackage.get(key) ?? false;
+      const counts = countsByPackage.get(key) ?? emptyCounts();
+      const resources = resourcesByPackage.get(key) ?? [];
+      const resourceCount = counts.extensions + counts.skills + counts.prompts + counts.themes;
+      const packageMetadata = readPackageMetadata(pkg.installedPath);
+      if (!pkg.installedPath) {
+        diagnostics.push({
+          type: "warning",
+          source: pkg.source,
+          message: "Configured package path was not found.",
+        });
+      }
+      return {
         source: pkg.source,
-        message: "Configured package path was not found.",
-      });
-    }
-    return {
-      source: pkg.source,
-      scope,
-      canCheckForUpdates: isPluginSourceCheckable(pkg.source),
-      filtered: pkg.filtered,
-      disabled,
-      installedPath: pkg.installedPath,
-      packageName: packageMetadata.packageName,
-      version: packageMetadata.version,
-      configuredVersion: getConfiguredVersion(pkg.source),
-      description: packageMetadata.description,
-      counts,
-      resources,
-      status: disabled ? "disabled" : resourceCount > 0 ? "loaded" : pkg.installedPath ? "installed" : "missing",
-      origin: "package",
-      sourceLabel: "packages",
-    } satisfies PluginPackageInfo;
-  });
+        scope,
+        canCheckForUpdates: isPluginSourceCheckable(pkg.source),
+        filtered: pkg.filtered,
+        disabled,
+        installedPath: pkg.installedPath,
+        packageName: packageMetadata.packageName,
+        version: packageMetadata.version,
+        configuredVersion: getConfiguredVersion(pkg.source),
+        description: packageMetadata.description,
+        counts,
+        resources,
+        status: disabled ? "disabled" : resourceCount > 0 ? "loaded" : pkg.installedPath ? "installed" : "missing",
+        origin: "package",
+        sourceLabel: "packages",
+      } satisfies PluginPackageInfo;
+    });
 
   // Settings-array and discovered-directory entries ride along after the
-  // managed packages; the UI groups them into the same project/global lists.
+  // managed packages; the UI groups them into the same project/user/global lists.
   for (const entry of topLevel.values()) {
     packages.push(entry);
   }

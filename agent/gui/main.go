@@ -21,6 +21,14 @@ func main() {
 	mygo.Theme.SetSource(mygo.ThemeSystem)
 
 	mygo.App.WhenReady(func() {
+		// Cache the resolved appearance for the view (Theme.IsDark blocks
+		// before App.Run, which view tests rely on) and keep it fresh when the
+		// desktop switches light/dark while the app is open.
+		a.dark.Store(mygo.Theme.IsDark())
+		mygo.Theme.OnUpdated(func() {
+			a.dark.Store(mygo.Theme.IsDark())
+			a.invalidate()
+		})
 		// Settings load before the first frame, so the form shows the
 		// last-used server and client name immediately.
 		a.loadSettings()

@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -52,6 +53,10 @@ type guiSettings struct {
 // guarded by mu and read as a snapshot when a frame is built.
 type app struct {
 	win *mygo.Window
+
+	// dark caches mygo.Theme.IsDark() once the app runs (the call blocks
+	// before App.Run, e.g. in view tests) and is refreshed by OnUpdated.
+	dark atomic.Bool
 
 	mu            sync.Mutex
 	agentBin      string
@@ -525,7 +530,20 @@ func (a *app) view(c *ui.Context) {
 	a.pendingToasts = nil
 	a.mu.Unlock()
 
-	t := c.Theme()
+	// Pin the scene to one complete palette. On older Linux desktops MyGo's
+	// system-theme detection can disagree with GTK's actual colors (upstream
+	// #1120: a light desktop left GTK on a dark default), which used to pair a
+	// white window background with white default text. An explicit theme plus
+	// painting the background below keeps text and background from the same
+	// palette whatever the desktop reports.
+	var theme *ui.Theme
+	if a.dark.Load() {
+		theme = ui.DarkTheme()
+	} else {
+		theme = ui.LightTheme()
+	}
+	c.SetTheme(theme)
+	t := theme
 	connected := 0
 	for _, conn := range conns {
 		if conn.status == connConnected {
@@ -540,7 +558,7 @@ func (a *app) view(c *ui.Context) {
 		versionLine += " · agent-client 未找到"
 	}
 
-	ui.Column(c).Fill().Padding(18).Gap(12).Children(func() {
+	ui.Column(c).Fill().Padding(18).Gap(12).Background(t.Background).Children(func() {
 		// Header.
 		ui.Row(c).AlignItems(ui.Center).Gap(10).Children(func() {
 			ui.Column(c).Gap(2).Grow(1).Children(func() {

@@ -32,7 +32,7 @@ for target in "${TARGETS[@]}"; do
   [[ "$os" == "windows" ]] && out="${out}.exe"
   echo "==> building ${target} -> ${out}"
   CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" \
-    go build -trimpath -ldflags "$LDFLAGS" -o "$out" .
+    go build -trimpath -buildvcs=false -ldflags "$LDFLAGS" -o "$out" .
 done
 
 echo "==> done. artifacts:"

@@ -23,7 +23,7 @@ for arch in amd64 arm64; do
   (
     cd "$AGENT_DIR"
     CGO_ENABLED=0 GOOS=linux GOARCH="$arch" \
-      go build -trimpath -ldflags "-s -w" -o "$GUI_DIR/resources/linux-$arch/bin/agent-client" .
+      go build -trimpath -buildvcs=false -ldflags "-s -w" -o "$GUI_DIR/resources/linux-$arch/bin/agent-client" .
   )
   chmod +x "resources/linux-$arch/bin/agent-client"
 done

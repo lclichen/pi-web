@@ -126,11 +126,13 @@ test("DELETE removes a flat .md skill and keeps its siblings", async () => {
   assert.equal(existsSync(sibling), true);
 });
 
-test("DELETE refuses to remove the skill root itself", async () => {
+test("DELETE removes a root-level SKILL.md without deleting the skills root", async () => {
   const skillsDir = join(dataDir, "user-config", "u7", "skills");
   const rootSkillFile = join(skillsDir, "SKILL.md");
+  const sibling = join(skillsDir, "keep-sibling.md");
   await mkdir(skillsDir, { recursive: true });
   await writeFile(rootSkillFile, "---\nname: root\ndescription: root\n---\n");
+  await writeFile(sibling, "---\nname: keep-sibling\ndescription: keep\n---\n");
   const response = await DELETE(
     new Request(`http://localhost/api/skills?filePath=${encodeURIComponent(rootSkillFile)}`, {
       method: "DELETE",
@@ -138,6 +140,8 @@ test("DELETE refuses to remove the skill root itself", async () => {
     }),
   );
 
-  assert.equal(response.status, 403);
+  assert.equal(response.status, 200);
+  assert.equal(existsSync(rootSkillFile), false);
+  assert.equal(existsSync(sibling), true);
   assert.equal(existsSync(skillsDir), true);
 });

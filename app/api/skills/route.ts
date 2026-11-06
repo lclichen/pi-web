@@ -136,13 +136,32 @@ export async function DELETE(req: Request) {
   if (!isSkillFile && !isFlatMarkdown) {
     return NextResponse.json({ error: "只能删除技能文件（SKILL.md 或 .md）" }, { status: 400 });
   }
-  // Directory-based skills: the SKILL.md's parent is the skill directory.
-  const target = isSkillFile ? path.dirname(filePath) : filePath;
+  // Directory-based skills: the SKILL.md's parent is the skill directory. A
+  // SKILL.md that sits directly in the skills root is a flat skill — delete
+  // just that file, never the whole skills root.
+  const realFile = (() => {
+    try {
+      return realpathSync(filePath);
+    } catch {
+      return null;
+    }
+  })();
+  if (!realFile) return NextResponse.json({ error: "file not found" }, { status: 404 });
+  const parent = realpathSync(path.dirname(realFile));
+  const parentIsRoot = roots.some((root) => {
+    try {
+      return existsSync(root) && realpathSync(root) === parent;
+    } catch {
+      return false;
+    }
+  });
+  const deleteDirectory = isSkillFile && !parentIsRoot;
+  const target = deleteDirectory ? parent : realFile;
   if (!roots.some((root) => existsSync(root) && realWithin(target, root))) {
     return NextResponse.json({ error: "Access denied" }, { status: 403 });
   }
   try {
-    rmSync(realpathSync(target), { recursive: isSkillFile, force: false });
+    rmSync(target, { recursive: deleteDirectory, force: false });
     return NextResponse.json({ success: true, removed: target });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 });

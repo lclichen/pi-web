@@ -32,6 +32,26 @@ bundled `agent-client` binary.
 Outputs in `build/linux-<arch>/`: the executable, a `.tar.gz` with `install.sh`
 (installs per-user under `~/.local`), and a `.deb`.
 
+## Known Linux text issue (fixed in this build)
+
+MyGo ≤ 0.7.4 rendered Linux subpixel glyphs with FreeType's legacy LCD filter on
+cairo < 1.17 (CentOS 7, Ubuntu 18.04 and similar): dark text looked pale, with a
+white core and colored (green) fringes. MyGo fixed this in PR #1027
+(2026-11-02); this module pins the fix commit because no newer release exists
+yet. If fringes persist on a newer cairo stack, the desktop is using subpixel
+antialiasing where the display/GPU mishandles it — switch GTK to grayscale:
+
+```bash
+gsettings set org.gnome.desktop.interface font-antialiasing 'grayscale'
+# or ~/.config/gtk-3.0/settings.ini:
+# [Settings]
+# gtk-xft-antialias=1
+# gtk-xft-rgba=none
+```
+
+`MYGO_GPU=0 ./agent-client-gui` forces MyGo's CPU renderer (useful to tell a GPU
+driver problem from a font-rendering one).
+
 ## Development
 
 ```bash

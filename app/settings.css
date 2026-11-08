@@ -377,6 +377,28 @@
   line-height: 1.35;
 }
 
+.config-info-tip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  margin-left: 4px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-dim);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  vertical-align: -2px;
+  cursor: help;
+}
+
+.config-info-tip:hover {
+  border-color: var(--text-dim);
+  color: var(--text-muted);
+}
+
 .config-empty-state {
   display: grid;
   flex: 1;

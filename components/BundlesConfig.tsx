@@ -13,6 +13,7 @@ import {
   ConfigEmptyState,
   ConfigField,
   ConfigFooter,
+  ConfigInfoTip,
   ConfigListAction,
   ConfigPanelShell,
   ConfigSectionTitle,
@@ -452,15 +453,16 @@ export function BundlesConfig({ embedded = false }: { embedded?: boolean }) {
                       <ConfigDetailTitle>{t("bundles.uploadNew")}</ConfigDetailTitle>
                     </ConfigDetailHeaderInfo>
                   </ConfigDetailHeader>
-                  <span style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.6 }}>
-                    {t("bundles.configBundlesStandardPiConfig")}
-                  </span>
-                  {uploadLimits && (
-                    <span style={{ fontSize: 11, color: "var(--text-dim)" }}>
-                      {t("bundles.uploadLimitHint", { max: uploadLimits.bundleMaxMb })}
-                    </span>
-                  )}
-                  <ConfigField label={t("bundles.chooseZipApkgFile")}>
+                  <ConfigField
+                    label={
+                      <>
+                        {t("bundles.chooseZipApkgFile")}
+                        {uploadLimits && (
+                          <ConfigInfoTip text={t("bundles.uploadLimitHint", { max: uploadLimits.bundleMaxMb })} />
+                        )}
+                      </>
+                    }
+                  >
                     <input
                       ref={fileRef}
                       type="file"
@@ -646,19 +648,17 @@ export function BundlesConfig({ embedded = false }: { embedded?: boolean }) {
                           inspection.otherFiles.map((e) => entryRow(detailName, e)),
                         )}
 
-                      <ConfigSectionTitle>{t("bundles.detailDependencies")}</ConfigSectionTitle>
-                      {inspection.dependencies.length > 0 ? (
-                        <div className="bundle-chip-list">
-                          {inspection.dependencies.map((dep) => (
-                            <span key={dep} className="bundle-chip">
-                              {dep}
-                            </span>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="settings-general-description" style={{ margin: 0 }}>
-                          {t("bundles.detailNoDeps")}
-                        </p>
+                      {inspection.dependencies.length > 0 && (
+                        <>
+                          <ConfigSectionTitle>{t("bundles.detailDependencies")}</ConfigSectionTitle>
+                          <div className="bundle-chip-list">
+                            {inspection.dependencies.map((dep) => (
+                              <span key={dep} className="bundle-chip">
+                                {dep}
+                              </span>
+                            ))}
+                          </div>
+                        </>
                       )}
                       {inspection.hasReadme && (
                         <button
@@ -923,9 +923,6 @@ function ApkgKeysPanel() {
                     <ConfigDetailTitle>{t("bundles.apkgKeysAdd")}</ConfigDetailTitle>
                   </ConfigDetailHeaderInfo>
                 </ConfigDetailHeader>
-                <span style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.6 }}>
-                  {t("bundles.apkgKeysDesc")}
-                </span>
                 <ConfigField label={t("bundles.apkgKeysKeyId")}>
                   <input
                     className="config-input is-mono"

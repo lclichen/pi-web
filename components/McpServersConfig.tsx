@@ -23,6 +23,7 @@ import {
   ConfigEmptyState,
   ConfigField,
   ConfigFooter,
+  ConfigInfoTip,
   ConfigListAction,
   ConfigPanelShell,
   ConfigSidebar,
@@ -714,18 +715,17 @@ export function McpServersConfig({
             <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)" }}>
               {t("mcp.globalSettingsTitle")}
             </span>
-            <span style={{ fontSize: 10, color: "var(--text-dim)", lineHeight: 1.6 }}>
-              {t("mcp.globalSettingsHint")}
-            </span>
-            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, color: "var(--text)" }}>
-              <ConfigSwitch
-                checked={prefs.mcpEnabled}
-                label={t("mcp.webGlobalSwitch")}
-                onChange={(v) => void togglePref("mcpEnabled", v)}
-              />
-              {t("mcp.webGlobalSwitch")}
-              <span style={{ fontSize: 10, color: "var(--text-dim)" }}>{t("mcp.webGlobalSwitchHint")}</span>
-            </label>
+            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, color: "var(--text)" }}>
+                <ConfigSwitch
+                  checked={prefs.mcpEnabled}
+                  label={t("mcp.webGlobalSwitch")}
+                  onChange={(v) => void togglePref("mcpEnabled", v)}
+                />
+                {t("mcp.webGlobalSwitch")}
+              </label>
+              <ConfigInfoTip text={t("mcp.webGlobalSwitchHint")} />
+            </div>
           </div>
           <div style={{ width: 140 }}>
             <ConfigField label="toolPrefix">
@@ -748,7 +748,14 @@ export function McpServersConfig({
             </ConfigField>
           </div>
           <div style={{ width: 150 }}>
-            <ConfigField label={t("mcp.idleTimeoutLabel")}>
+            <ConfigField
+              label={
+                <>
+                  {t("mcp.idleTimeoutLabel")}
+                  <ConfigInfoTip text={t("mcp.help.idleTimeout")} />
+                </>
+              }
+            >
               <input
                 style={inputStyle}
                 value={settingsDraft.idleTimeout ?? ""}
@@ -760,10 +767,16 @@ export function McpServersConfig({
                 }
               />
             </ConfigField>
-            <div style={{ fontSize: 9, color: "var(--text-dim)", marginTop: 2 }}>{t("mcp.help.idleTimeout")}</div>
           </div>
           <div style={{ width: 170 }}>
-            <ConfigField label={t("mcp.requestTimeoutLabel")}>
+            <ConfigField
+              label={
+                <>
+                  {t("mcp.requestTimeoutLabel")}
+                  <ConfigInfoTip text={t("mcp.help.requestTimeout")} />
+                </>
+              }
+            >
               <input
                 style={inputStyle}
                 placeholder="30000"
@@ -776,7 +789,6 @@ export function McpServersConfig({
                 }
               />
             </ConfigField>
-            <div style={{ fontSize: 9, color: "var(--text-dim)", marginTop: 2 }}>{t("mcp.help.requestTimeout")}</div>
           </div>
           <ConfigButton variant="primary" onClick={saveSettings} disabled={settingsSaving}>
             {settingsSaving ? t("common.saving") : t("mcp.saveSettings")}

@@ -148,6 +148,15 @@ export function ConfigField({
   );
 }
 
+/** 次要说明的按需入口：info 图标 + tooltip，替代常显辅助段落。 */
+export function ConfigInfoTip({ text }: { text: string }) {
+  return (
+    <span className="config-info-tip" role="img" aria-label={text} title={text}>
+      i
+    </span>
+  );
+}
+
 export function ConfigEmptyState({ children }: { children: ReactNode }) {
   return <div className="config-empty-state">{children}</div>;
 }

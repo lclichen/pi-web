@@ -1443,6 +1443,39 @@
   font-family: var(--font-mono);
 }
 
+/* Tailwind preflight strips the UA styles from file inputs (border 0, transparent
+   background), leaving only plain text. Restore a visible picker button. */
+.config-file-input {
+  max-width: 100%;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.config-file-input::file-selector-button {
+  margin-right: 8px;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-panel);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease;
+}
+
+.config-file-input::file-selector-button:hover {
+  border-color: var(--text-dim);
+  background: var(--bg-hover);
+}
+
+.config-file-input:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
 .config-input:focus-visible {
   border-color: var(--accent);
 }

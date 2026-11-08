@@ -107,7 +107,6 @@ export function BundlesConfig({ embedded = false }: { embedded?: boolean }) {
   const [uploadMode, setUploadMode] = useState(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [fileChosen, setFileChosen] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [formMsg, setFormMsg] = useState<string | null>(null);
@@ -212,7 +211,6 @@ export function BundlesConfig({ embedded = false }: { embedded?: boolean }) {
     setPreview(null);
     setName("");
     setDescription("");
-    setFileChosen(null);
     setFormError(null);
     setFormMsg(null);
     if (fileRef.current) fileRef.current.value = "";
@@ -222,7 +220,6 @@ export function BundlesConfig({ embedded = false }: { embedded?: boolean }) {
     setUploadMode(false);
     setName("");
     setDescription("");
-    setFileChosen(null);
     setFormError(null);
     setFormMsg(null);
     if (fileRef.current) fileRef.current.value = "";
@@ -268,7 +265,6 @@ export function BundlesConfig({ embedded = false }: { embedded?: boolean }) {
       if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
       setName("");
       setDescription("");
-      setFileChosen(null);
       if (fileRef.current) fileRef.current.value = "";
       await load();
       setUploadMode(false);
@@ -463,14 +459,7 @@ export function BundlesConfig({ embedded = false }: { embedded?: boolean }) {
                       </>
                     }
                   >
-                    <input
-                      ref={fileRef}
-                      type="file"
-                      accept=".zip,.apkg"
-                      onChange={(e) => setFileChosen(e.target.files?.[0]?.name ?? null)}
-                      style={{ fontSize: 11, color: "var(--text-muted)" }}
-                    />
-                    {fileChosen && <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{fileChosen}</span>}
+                    <input ref={fileRef} className="config-file-input" type="file" accept=".zip,.apkg" />
                   </ConfigField>
                   <ConfigField label={t("bundles.bundleNameOptionalDefaultsFile")}>
                     <input

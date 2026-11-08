@@ -19,14 +19,25 @@ test("select options carry number badges with digit shortcuts (ZCode-style)", ()
 });
 
 test("multi-line options split into label + description rows", () => {
-  assert.match(source, /const lines = option\.split\("\\n"\)/);
+  assert.match(source, /const lines = optionText\.split\("\\n"\)/);
   assert.match(source, /ext-select-label/);
   assert.match(source, /ext-select-desc/);
   // 单行选项保持整块 markdown 渲染（plan-mode 等既有用法不变）。
-  assert.match(source, /<MarkdownBody>\{option\}<\/MarkdownBody>/);
+  assert.match(source, /<MarkdownBody>\{stripOptionOrdinal\(optionText, index\)\}<\/MarkdownBody>/);
 });
 
-test("footer shows keyboard hints for select and keeps the cancel button", () => {
-  assert.match(source, /chat\.extensionSelectHint/);
+test("footer keeps cancel without the always-visible shortcut paragraph", () => {
+  assert.doesNotMatch(source, /chat\.extensionSelectHint/);
+  assert.match(source, /aria-keyshortcuts=\{index < 9 \? String\(index \+ 1\) : undefined\}/);
   assert.match(source, /onRespond\(request, \{ cancelled: true \}\)/);
+});
+
+test("custom answer row expands into an inline editor (ZCode-style)", () => {
+  assert.match(source, /const CUSTOM_OPTION_MARKER = "\\u2063"/);
+  assert.match(source, /function splitCustomOption\(option: string\)/);
+  assert.match(source, /className="ext-select-custom-input"/);
+  assert.match(source, /placeholder=\{t\("chat\.extensionCustomPlaceholder"\)\}/);
+  assert.match(source, /onRespond\(request, \{ value: `\$\{CUSTOM_OPTION_MARKER\}\$\{text\}` \}\)/);
+  // Esc closes only the inline editor and returns focus to the row.
+  assert.match(source, /setCustomEditIndex\(null\);[\s\S]{0,160}customRowRef\.current\?\.focus\(\)/);
 });

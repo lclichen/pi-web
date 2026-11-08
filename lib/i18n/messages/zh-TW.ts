@@ -361,6 +361,7 @@ export const zhTWLocale: LocalePlugin = {
     "chat.enableSound": "開啟完成提示音",
     "chat.expandProcess": "展開處理詳細資料",
     "chat.extensionCollapse": "收起",
+    "chat.extensionCustomPlaceholder": "輸入自訂回答…",
     "chat.extensionExpand": "展開",
     "chat.extensionExpiresIn": "{seconds} 秒後過期",
     "chat.extensionInput": "擴充功能終端輸入",

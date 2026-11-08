@@ -34,13 +34,16 @@ test("renders extension confirmation and options as markdown", () => {
   // 单行选项按行内 markdown 渲染，去掉与徽章重复的序号前缀。
   assert.match(
     dialogSource,
-    /role="button"[\s\S]*?data-extension-option[\s\S]*?<span className="ext-select-inline" inert[\s\S]*?<MarkdownBody>\{stripOptionOrdinal\(option, index\)\}<\/MarkdownBody>/,
+    /role=\{editingCustom \? "group" : "button"\}[\s\S]*?data-extension-option[\s\S]*?<span className="ext-select-inline" inert[\s\S]*?<MarkdownBody>\{stripOptionOrdinal\(optionText, index\)\}<\/MarkdownBody>/,
   );
   assert.match(source, /function stripOptionOrdinal\(text: string, index: number\)/);
   assert.match(dialogSource, /aria-keyshortcuts=\{index < 9 \? String\(index \+ 1\) : undefined\}/);
   assert.doesNotMatch(dialogSource, /chat\.extensionSelectHint/);
   assert.doesNotMatch(dialogSource, /chat\.extensionRequest/);
-  assert.match(dialogSource, /ref=\{index === 0 \? focusFirstOption : undefined\}/);
+  assert.match(
+    dialogSource,
+    /if \(index === 0 && element && !firstOptionFocused\.current && customEditIndex === null\)/,
+  );
 });
 
 test("preserves title newlines like pi's TUI and keeps long titles from hiding the body", () => {

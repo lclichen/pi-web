@@ -38,6 +38,15 @@ const MULTI_SELECT_PLACEHOLDER = "1,3";
 const MAX_PREVIEW_CHARS = 600;
 
 /**
+ * Local pi-web patch: invisible suffix on the appended custom-answer row.
+ * Hosts that collect the custom answer inline strip it, show the row as an
+ * editor, and answer this select with `${CUSTOM_ROW_MARKER}<text>`. Other
+ * hosts ignore the suffix — `parseInt` still reads the leading index, so the
+ * original select → input flow is unchanged.
+ */
+export const CUSTOM_ROW_MARKER = "\u2063";
+
+/**
  * The dialog-primitive slice of `ExtensionUIContext` this walker needs.
  * Structural on purpose: the pinned pi 0.74 peer types predate `ctx.mode`,
  * and jiti transpiles without type-checking — `hasDialogUI` is the runtime
@@ -107,9 +116,15 @@ async function askSingleSelect(
   header: string,
 ): Promise<QuestionAnswer | undefined> {
   const options = q.options.map(formatOptionLine);
-  options.push(`${q.options.length + 1}. ${displayLabel("other")}`);
+  options.push(`${q.options.length + 1}. ${displayLabel("other")}${CUSTOM_ROW_MARKER}`);
   const chosen = await ui.select(`${header}${q.question}${buildPreviewBlock(q)}`, options);
   if (chosen == null) return undefined;
+  // Inline custom answer from a host that renders the marked row as an editor.
+  if (chosen.startsWith(CUSTOM_ROW_MARKER)) {
+    const typed = chosen.slice(CUSTOM_ROW_MARKER.length).trim();
+    if (!typed) return undefined;
+    return { questionIndex, question: q.question, kind: "custom", answer: typed };
+  }
   const idx = parseIndex(chosen, options.length);
   // A host returning something outside the offered list is indistinguishable
   // from a dismissal — treat it as one rather than fabricate an answer.

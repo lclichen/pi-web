@@ -361,6 +361,7 @@ export const enLocale: LocalePlugin = {
     "chat.enableSound": "Enable completion sound",
     "chat.expandProcess": "Expand process details",
     "chat.extensionCollapse": "Collapse",
+    "chat.extensionCustomPlaceholder": "Type your answer…",
     "chat.extensionExpand": "Expand",
     "chat.extensionExpiresIn": "expires in {seconds}s",
     "chat.extensionInput": "Extension terminal input",

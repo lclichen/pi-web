@@ -361,6 +361,7 @@ export const zhCNLocale: LocalePlugin = {
     "chat.enableSound": "开启完成提示音",
     "chat.expandProcess": "展开处理详情",
     "chat.extensionCollapse": "收起",
+    "chat.extensionCustomPlaceholder": "输入自定义回答…",
     "chat.extensionExpand": "展开",
     "chat.extensionExpiresIn": "{seconds} 秒后过期",
     "chat.extensionInput": "扩展终端输入",

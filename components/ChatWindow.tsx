@@ -2308,6 +2308,15 @@ function stripOptionOrdinal(text: string, index: number): string {
   return rest.trim() ? rest : text;
 }
 
+/** rpiv-ask-user-question marks its appended custom-answer row with this suffix. */
+const CUSTOM_OPTION_MARKER = "\u2063";
+
+function splitCustomOption(option: string): { text: string; isCustom: boolean } {
+  return option.endsWith(CUSTOM_OPTION_MARKER)
+    ? { text: option.slice(0, -CUSTOM_OPTION_MARKER.length), isCustom: true }
+    : { text: option, isCustom: false };
+}
+
 function ExtensionDialog({
   request,
   onRespond,
@@ -2322,7 +2331,11 @@ function ExtensionDialog({
   const [value, setValue] = useState(request.method === "editor" ? (request.prefill ?? "") : "");
   const [collapsed, setCollapsed] = useState(false);
   const [now, setNow] = useState(() => Date.now());
-  const focusFirstOption = useCallback((element: HTMLDivElement | null) => element?.focus(), []);
+  const [customEditIndex, setCustomEditIndex] = useState<number | null>(null);
+  const [customValue, setCustomValue] = useState("");
+  const customRowRef = useRef<HTMLDivElement | null>(null);
+  const customInputRef = useRef<HTMLInputElement | null>(null);
+  const firstOptionFocused = useRef(false);
   const summary = getExtensionDialogSummary(request);
   const remainingSeconds =
     request.expiresAt === undefined ? null : Math.max(0, Math.ceil((request.expiresAt - now) / 1000));
@@ -2333,6 +2346,11 @@ function ExtensionDialog({
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, [request.expiresAt]);
+
+  // Clicking the row keeps focus on the row; move it into the editor once it exists.
+  useEffect(() => {
+    if (customEditIndex !== null) customInputRef.current?.focus();
+  }, [customEditIndex]);
 
   const countdown = remainingSeconds !== null && (
     <span style={{ fontSize: 11, color: "var(--text-dim)", whiteSpace: "nowrap", flexShrink: 0 }}>
@@ -2346,6 +2364,11 @@ function ExtensionDialog({
     } else {
       onRespond(request, { value });
     }
+  };
+
+  const startCustomEdit = (index: number) => {
+    setCustomEditIndex(index);
+    setCustomValue("");
   };
 
   return (
@@ -2474,7 +2497,11 @@ function ExtensionDialog({
             </div>
             <button
               type="button"
-              onClick={() => setCollapsed(true)}
+              onClick={() => {
+                // Re-focus the first option when this dialog expands again.
+                firstOptionFocused.current = false;
+                setCollapsed(true);
+              }}
               aria-expanded={true}
               title={t("chat.extensionCollapse")}
               aria-label={t("chat.extensionCollapse")}
@@ -2519,13 +2546,15 @@ function ExtensionDialog({
             {request.method === "select" && (
               <div
                 onKeyDown={(event) => {
-                  // 数字快捷键（对标 ZCode 问答面板）：1-9 直接选择对应项。
+                  // 数字快捷键（对标 ZCode 问答面板）：1-9 直接选择对应项；
+                  // 自定义答案行改为原地进入输入态，避免再弹第二个输入框。
                   if (/^[1-9]$/.test(event.key) && !event.nativeEvent.isComposing) {
                     const idx = Number(event.key) - 1;
                     const target = request.options[idx];
                     if (target !== undefined) {
                       event.preventDefault();
-                      onRespond(request, { value: target });
+                      if (splitCustomOption(target).isCustom) startCustomEdit(idx);
+                      else onRespond(request, { value: target });
                     }
                     return;
                   }
@@ -2553,23 +2582,40 @@ function ExtensionDialog({
                 {request.options.map((option, index) => {
                   // 选项含换行时拆主行/描述行（ZCode label+description 形态）；
                   // 单行选项整体按行内 markdown 渲染（保留行内语法，不产生块级列表）。
-                  const lines = option.split("\n");
+                  // 带标记的自定义答案行选中后原地展开输入框。
+                  const { text: optionText, isCustom } = splitCustomOption(option);
+                  const lines = optionText.split("\n");
                   const isMultiLine = lines.length > 1 && lines.slice(1).join("").trim().length > 0;
                   const label = stripOptionOrdinal(lines[0], index);
+                  const editingCustom = isCustom && customEditIndex === index;
                   return (
                     <div
                       key={option}
-                      role="button"
-                      tabIndex={0}
+                      role={editingCustom ? "group" : "button"}
+                      tabIndex={editingCustom ? -1 : 0}
                       data-extension-option
-                      aria-label={option}
+                      aria-label={optionText}
                       aria-keyshortcuts={index < 9 ? String(index + 1) : undefined}
-                      ref={index === 0 ? focusFirstOption : undefined}
-                      onClick={() => onRespond(request, { value: option })}
+                      ref={(element) => {
+                        if (isCustom) customRowRef.current = element;
+                        // Focus the first option once. The inline callback re-runs
+                        // on every render, so an unguarded focus would steal focus
+                        // back from the custom-answer editor.
+                        if (index === 0 && element && !firstOptionFocused.current && customEditIndex === null) {
+                          firstOptionFocused.current = true;
+                          element.focus();
+                        }
+                      }}
+                      onClick={() => {
+                        if (!isCustom) onRespond(request, { value: option });
+                        else if (!editingCustom) startCustomEdit(index);
+                        else customInputRef.current?.focus();
+                      }}
                       onKeyDown={(event) => {
                         if (event.key !== "Enter" && event.key !== " ") return;
                         event.preventDefault();
-                        onRespond(request, { value: option });
+                        if (!isCustom) onRespond(request, { value: option });
+                        else if (!editingCustom) startCustomEdit(index);
                       }}
                       className="ext-select-option"
                     >
@@ -2578,7 +2624,33 @@ function ExtensionDialog({
                           {index + 1}
                         </span>
                       )}
-                      {isMultiLine ? (
+                      {editingCustom ? (
+                        <input
+                          autoFocus
+                          ref={customInputRef}
+                          className="ext-select-custom-input"
+                          value={customValue}
+                          placeholder={t("chat.extensionCustomPlaceholder")}
+                          aria-label={t("chat.extensionCustomPlaceholder")}
+                          onChange={(event) => setCustomValue(event.target.value)}
+                          onKeyDown={(event) => {
+                            // Keep arrows/numbers inside the input: the list's
+                            // shortcut handler must not fire while typing.
+                            event.stopPropagation();
+                            if (event.nativeEvent.isComposing) return;
+                            if (event.key === "Enter") {
+                              event.preventDefault();
+                              const text = customValue.trim();
+                              if (text) onRespond(request, { value: `${CUSTOM_OPTION_MARKER}${text}` });
+                            } else if (event.key === "Escape") {
+                              event.preventDefault();
+                              setCustomEditIndex(null);
+                              setCustomValue("");
+                              requestAnimationFrame(() => customRowRef.current?.focus());
+                            }
+                          }}
+                        />
+                      ) : isMultiLine ? (
                         <span style={{ minWidth: 0, flex: 1 }}>
                           <span className="ext-select-label">{label}</span>
                           <span className="ext-select-desc">
@@ -2587,7 +2659,7 @@ function ExtensionDialog({
                         </span>
                       ) : (
                         <span className="ext-select-inline" inert style={{ minWidth: 0, flex: 1 }}>
-                          <MarkdownBody>{stripOptionOrdinal(option, index)}</MarkdownBody>
+                          <MarkdownBody>{stripOptionOrdinal(optionText, index)}</MarkdownBody>
                         </span>
                       )}
                     </div>

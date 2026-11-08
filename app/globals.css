@@ -2044,6 +2044,26 @@ span.token.table {
   line-height: 1.5;
 }
 
+/* “Type something” row: expands into an inline editor instead of opening a
+   second dialog. */
+.ext-select-custom-input {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 8px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.45;
+  outline: none;
+}
+
+.ext-select-custom-input::placeholder {
+  color: var(--text-dim);
+}
+
 /* 选项内 markdown 跟随选项排版，不继承聊天正文的 14px/1.7 与段落间距。 */
 .ext-select-option .markdown-body {
   font-size: inherit;

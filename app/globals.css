@@ -2043,3 +2043,30 @@ span.token.table {
   font-size: 11.5px;
   line-height: 1.5;
 }
+
+/* 选项内 markdown 跟随选项排版，不继承聊天正文的 14px/1.7 与段落间距。 */
+.ext-select-option .markdown-body {
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.ext-select-option .markdown-body p {
+  margin: 0;
+}
+
+/* 单行选项按行内渲染：序号已由徽章提供，不再生成嵌套有序列表和缩进。 */
+.ext-select-inline .markdown-body ul,
+.ext-select-inline .markdown-body ol {
+  margin: 0;
+  padding-left: 0;
+  list-style: none;
+}
+
+.ext-select-inline .markdown-body li {
+  margin: 0;
+  padding-left: 0;
+}
+
+.ext-select-inline .markdown-body li::marker {
+  content: none;
+}

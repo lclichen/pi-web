@@ -31,11 +31,15 @@ test("adds collapse without replacing cancel", () => {
 test("renders extension confirmation and options as markdown", () => {
   assert.match(source, /import \{ MarkdownBody, RemoteFileSessionContext \} from "\.\/MarkdownBody"/);
   assert.match(dialogSource, /<MarkdownBody>\{request\.message\}<\/MarkdownBody>/);
-  // 单行选项仍是整块 markdown（2026-10-26 起 span + 数字徽章 + CSS 类形态）。
+  // 单行选项按行内 markdown 渲染，去掉与徽章重复的序号前缀。
   assert.match(
     dialogSource,
-    /role="button"[\s\S]*?data-extension-option[\s\S]*?<span inert[\s\S]*?<MarkdownBody>\{option\}<\/MarkdownBody>/,
+    /role="button"[\s\S]*?data-extension-option[\s\S]*?<span className="ext-select-inline" inert[\s\S]*?<MarkdownBody>\{stripOptionOrdinal\(option, index\)\}<\/MarkdownBody>/,
   );
+  assert.match(source, /function stripOptionOrdinal\(text: string, index: number\)/);
+  assert.match(dialogSource, /aria-keyshortcuts=\{index < 9 \? String\(index \+ 1\) : undefined\}/);
+  assert.doesNotMatch(dialogSource, /chat\.extensionSelectHint/);
+  assert.doesNotMatch(dialogSource, /chat\.extensionRequest/);
   assert.match(dialogSource, /ref=\{index === 0 \? focusFirstOption : undefined\}/);
 });
 
@@ -45,7 +49,10 @@ test("preserves title newlines like pi's TUI and keeps long titles from hiding t
     dialogSource.indexOf('{request.method === "confirm"'),
   );
   assert.match(header, /whiteSpace:\s+"pre-wrap",\s+overflowWrap:\s+"anywhere",?\s*\}\}\s*>\s*\{request\.title\}/);
-  assert.match(header, /maxHeight:\s+"50%",\s+overflowY:\s+"auto",?\s*\}\}\s*>[\s\S]*?\{request\.title\}/);
+  assert.match(
+    header,
+    /maxHeight:\s+"min\(40vh, 300px\)",\s+overflowY:\s+"auto",?\s*\}\}\s*>[\s\S]*?\{request\.title\}/,
+  );
 });
 
 test("resets collapse state when a new extension request arrives", () => {

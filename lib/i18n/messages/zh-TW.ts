@@ -367,8 +367,6 @@ export const zhTWLocale: LocalePlugin = {
     "chat.extensionInput": "擴充功能終端輸入",
     "chat.extensionPanel": "擴充功能面板",
     "chat.extensionPending": "待回答",
-    "chat.extensionRequest": "擴充功能請求",
-    "chat.extensionSelectHint": "↑↓ 移動 · 數字鍵快選 · Enter 確認 · Esc 取消",
     "chat.extensionWidgetAbove": "編輯器上方小工具",
     "chat.extensionWidgetBelow": "編輯器下方小工具",
     "chat.extensionWidgetLine": "{count} 行",

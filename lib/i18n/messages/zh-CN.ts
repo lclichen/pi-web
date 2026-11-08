@@ -367,8 +367,6 @@ export const zhCNLocale: LocalePlugin = {
     "chat.extensionInput": "扩展终端输入",
     "chat.extensionPanel": "扩展面板",
     "chat.extensionPending": "待回答",
-    "chat.extensionRequest": "扩展请求",
-    "chat.extensionSelectHint": "↑↓ 移动 · 数字键快选 · Enter 确认 · Esc 取消",
     "chat.extensionWidgetAbove": "输入框上方组件",
     "chat.extensionWidgetBelow": "输入框下方组件",
     "chat.extensionWidgetLine": "{count} 行",

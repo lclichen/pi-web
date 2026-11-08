@@ -367,8 +367,6 @@ export const enLocale: LocalePlugin = {
     "chat.extensionInput": "Extension terminal input",
     "chat.extensionPanel": "Extension panel",
     "chat.extensionPending": "Awaiting response",
-    "chat.extensionRequest": "extension request",
-    "chat.extensionSelectHint": "↑↓ move · number key quick-select · Enter confirm · Esc cancel",
     "chat.extensionWidgetAbove": "Above editor widget",
     "chat.extensionWidgetBelow": "Below editor widget",
     "chat.extensionWidgetLine": "{count} line",

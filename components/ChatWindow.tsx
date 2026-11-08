@@ -2300,6 +2300,14 @@ function getExtensionDialogSummary(request: ExtensionDialogRequest): string | un
   return undefined;
 }
 
+/** 选项自带与数字徽章相同的序号（"1. …"）时只去掉显示前缀，响应值保持原样。 */
+function stripOptionOrdinal(text: string, index: number): string {
+  const match = /^\s*(\d{1,2})[.)、](?!\d)\s*/.exec(text);
+  if (!match || Number(match[1]) !== index + 1) return text;
+  const rest = text.slice(match[0].length);
+  return rest.trim() ? rest : text;
+}
+
 function ExtensionDialog({
   request,
   onRespond,
@@ -2434,13 +2442,16 @@ function ExtensionDialog({
         >
           <div
             style={{
-              flexShrink: 0,
+              // 对话框高度随内容自适应，百分比 maxHeight 无法解析；用视口单位封顶，
+              // 并允许在矮窗口里收缩，把剩余空间留给选项列表。
+              flexShrink: 2,
+              minHeight: 0,
               display: "flex",
               alignItems: "flex-start",
               gap: 8,
               padding: "12px 14px",
               borderBottom: "1px solid var(--border)",
-              maxHeight: "50%",
+              maxHeight: "min(40vh, 300px)",
               overflowY: "auto",
             }}
           >
@@ -2459,20 +2470,7 @@ function ExtensionDialog({
               >
                 {request.title}
               </div>
-              <div
-                style={{
-                  display: "flex",
-                  flexWrap: "wrap",
-                  gap: 8,
-                  marginTop: 3,
-                  color: "var(--text-dim)",
-                  fontSize: 11,
-                  fontFamily: "var(--font-mono)",
-                }}
-              >
-                <span>{t("chat.extensionRequest")}</span>
-                {countdown}
-              </div>
+              {countdown && <div style={{ marginTop: 3 }}>{countdown}</div>}
             </div>
             <button
               type="button"
@@ -2554,9 +2552,10 @@ function ExtensionDialog({
               >
                 {request.options.map((option, index) => {
                   // 选项含换行时拆主行/描述行（ZCode label+description 形态）；
-                  // 单行选项保持整块 markdown 渲染（plan-mode 等既有用法）。
+                  // 单行选项整体按行内 markdown 渲染（保留行内语法，不产生块级列表）。
                   const lines = option.split("\n");
                   const isMultiLine = lines.length > 1 && lines.slice(1).join("").trim().length > 0;
+                  const label = stripOptionOrdinal(lines[0], index);
                   return (
                     <div
                       key={option}
@@ -2564,6 +2563,7 @@ function ExtensionDialog({
                       tabIndex={0}
                       data-extension-option
                       aria-label={option}
+                      aria-keyshortcuts={index < 9 ? String(index + 1) : undefined}
                       ref={index === 0 ? focusFirstOption : undefined}
                       onClick={() => onRespond(request, { value: option })}
                       onKeyDown={(event) => {
@@ -2580,14 +2580,14 @@ function ExtensionDialog({
                       )}
                       {isMultiLine ? (
                         <span style={{ minWidth: 0, flex: 1 }}>
-                          <span className="ext-select-label">{lines[0]}</span>
+                          <span className="ext-select-label">{label}</span>
                           <span className="ext-select-desc">
                             <MarkdownBody>{lines.slice(1).join("\n")}</MarkdownBody>
                           </span>
                         </span>
                       ) : (
-                        <span inert style={{ minWidth: 0, flex: 1 }}>
-                          <MarkdownBody>{option}</MarkdownBody>
+                        <span className="ext-select-inline" inert style={{ minWidth: 0, flex: 1 }}>
+                          <MarkdownBody>{stripOptionOrdinal(option, index)}</MarkdownBody>
                         </span>
                       )}
                     </div>
@@ -2647,29 +2647,14 @@ function ExtensionDialog({
               flexShrink: 0,
               display: "flex",
               alignItems: "center",
-              justifyContent: "space-between",
+              justifyContent: "flex-end",
               gap: 8,
               padding: "10px 14px",
               borderTop: "1px solid var(--border)",
               background: "var(--bg-panel)",
             }}
           >
-            {request.method === "select" && request.options.length > 0 && (
-              <span
-                style={{
-                  fontSize: 11,
-                  color: "var(--text-dim)",
-                  lineHeight: 1.4,
-                  minWidth: 0,
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {t("chat.extensionSelectHint")}
-              </span>
-            )}
-            <div style={{ display: "flex", gap: 8, flexShrink: 0, marginLeft: "auto" }}>
+            <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
               <button
                 autoFocus={
                   request.method === "confirm" || (request.method === "select" && request.options.length === 0)

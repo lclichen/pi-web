@@ -2311,6 +2311,9 @@ function stripOptionOrdinal(text: string, index: number): string {
 /** rpiv-ask-user-question marks its appended custom-answer row with this suffix. */
 const CUSTOM_OPTION_MARKER = "\u2063";
 
+/** Response prefix for the checkbox multi-select dialog (extension parses it). */
+const MULTI_SELECT_RESPONSE_MARKER = "\u2062";
+
 function splitCustomOption(option: string): { text: string; isCustom: boolean } {
   return option.endsWith(CUSTOM_OPTION_MARKER)
     ? { text: option.slice(0, -CUSTOM_OPTION_MARKER.length), isCustom: true }
@@ -2332,7 +2335,10 @@ function ExtensionDialog({
   const [collapsed, setCollapsed] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const [customEditIndex, setCustomEditIndex] = useState<number | null>(null);
+  const [customDraft, setCustomDraft] = useState("");
   const [customValue, setCustomValue] = useState("");
+  const [multiSelected, setMultiSelected] = useState<Set<number>>(() => new Set());
+  const isMultiSelect = request.method === "select" && request.multiSelect === true;
   const customRowRef = useRef<HTMLDivElement | null>(null);
   const customInputRef = useRef<HTMLInputElement | null>(null);
   const firstOptionFocused = useRef(false);
@@ -2368,7 +2374,24 @@ function ExtensionDialog({
 
   const startCustomEdit = (index: number) => {
     setCustomEditIndex(index);
-    setCustomValue("");
+    setCustomDraft(isMultiSelect ? customValue : "");
+  };
+
+  const toggleMultiOption = (index: number) => {
+    setMultiSelected((previous) => {
+      const next = new Set(previous);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
+  };
+
+  const submitMulti = () => {
+    const selected = [...multiSelected].sort((a, b) => a - b);
+    const custom = (customEditIndex !== null ? customDraft : customValue).trim();
+    onRespond(request, {
+      value: `${MULTI_SELECT_RESPONSE_MARKER}${JSON.stringify({ selected, ...(custom ? { custom } : {}) })}`,
+    });
   };
 
   return (
@@ -2554,6 +2577,7 @@ function ExtensionDialog({
                     if (target !== undefined) {
                       event.preventDefault();
                       if (splitCustomOption(target).isCustom) startCustomEdit(idx);
+                      else if (isMultiSelect) toggleMultiOption(idx);
                       else onRespond(request, { value: target });
                     }
                     return;
@@ -2586,15 +2610,22 @@ function ExtensionDialog({
                   const { text: optionText, isCustom } = splitCustomOption(option);
                   const lines = optionText.split("\n");
                   const isMultiLine = lines.length > 1 && lines.slice(1).join("").trim().length > 0;
-                  const label = stripOptionOrdinal(lines[0], index);
                   const editingCustom = isCustom && customEditIndex === index;
+                  const customChecked =
+                    isCustom && isMultiSelect && (editingCustom ? customDraft : customValue).trim().length > 0;
+                  const checked = isCustom ? customChecked : isMultiSelect && multiSelected.has(index);
+                  const customDisplay =
+                    isCustom && isMultiSelect && !editingCustom && customValue.trim() ? customValue.trim() : null;
+                  const label = customDisplay ?? stripOptionOrdinal(lines[0], index);
                   return (
                     <div
                       key={option}
-                      role={editingCustom ? "group" : "button"}
+                      role={editingCustom ? "group" : isMultiSelect && !isCustom ? "checkbox" : "button"}
                       tabIndex={editingCustom ? -1 : 0}
                       data-extension-option
-                      aria-label={optionText}
+                      aria-label={customDisplay ?? optionText}
+                      aria-checked={isMultiSelect && !isCustom ? checked : undefined}
+                      aria-pressed={isCustom && isMultiSelect ? customChecked : undefined}
                       aria-keyshortcuts={index < 9 ? String(index + 1) : undefined}
                       ref={(element) => {
                         if (isCustom) customRowRef.current = element;
@@ -2607,15 +2638,19 @@ function ExtensionDialog({
                         }
                       }}
                       onClick={() => {
-                        if (!isCustom) onRespond(request, { value: option });
-                        else if (!editingCustom) startCustomEdit(index);
-                        else customInputRef.current?.focus();
+                        if (isCustom) {
+                          if (!editingCustom) startCustomEdit(index);
+                          else customInputRef.current?.focus();
+                        } else if (isMultiSelect) toggleMultiOption(index);
+                        else onRespond(request, { value: option });
                       }}
                       onKeyDown={(event) => {
                         if (event.key !== "Enter" && event.key !== " ") return;
                         event.preventDefault();
-                        if (!isCustom) onRespond(request, { value: option });
-                        else if (!editingCustom) startCustomEdit(index);
+                        if (isCustom) {
+                          if (!editingCustom) startCustomEdit(index);
+                        } else if (isMultiSelect) toggleMultiOption(index);
+                        else onRespond(request, { value: option });
                       }}
                       className="ext-select-option"
                     >
@@ -2629,10 +2664,10 @@ function ExtensionDialog({
                           autoFocus
                           ref={customInputRef}
                           className="ext-select-custom-input"
-                          value={customValue}
+                          value={customDraft}
                           placeholder={t("chat.extensionCustomPlaceholder")}
                           aria-label={t("chat.extensionCustomPlaceholder")}
-                          onChange={(event) => setCustomValue(event.target.value)}
+                          onChange={(event) => setCustomDraft(event.target.value)}
                           onKeyDown={(event) => {
                             // Keep arrows/numbers inside the input: the list's
                             // shortcut handler must not fire while typing.
@@ -2640,12 +2675,18 @@ function ExtensionDialog({
                             if (event.nativeEvent.isComposing) return;
                             if (event.key === "Enter") {
                               event.preventDefault();
-                              const text = customValue.trim();
-                              if (text) onRespond(request, { value: `${CUSTOM_OPTION_MARKER}${text}` });
+                              if (isMultiSelect) {
+                                setCustomValue(customDraft.trim());
+                                setCustomEditIndex(null);
+                                requestAnimationFrame(() => customRowRef.current?.focus());
+                              } else {
+                                const text = customDraft.trim();
+                                if (text) onRespond(request, { value: `${CUSTOM_OPTION_MARKER}${text}` });
+                              }
                             } else if (event.key === "Escape") {
                               event.preventDefault();
                               setCustomEditIndex(null);
-                              setCustomValue("");
+                              setCustomDraft("");
                               requestAnimationFrame(() => customRowRef.current?.focus());
                             }
                           }}
@@ -2659,7 +2700,12 @@ function ExtensionDialog({
                         </span>
                       ) : (
                         <span className="ext-select-inline" inert style={{ minWidth: 0, flex: 1 }}>
-                          <MarkdownBody>{stripOptionOrdinal(optionText, index)}</MarkdownBody>
+                          <MarkdownBody>{customDisplay ?? stripOptionOrdinal(optionText, index)}</MarkdownBody>
+                        </span>
+                      )}
+                      {isMultiSelect && (
+                        <span className={`ext-select-check${checked ? " is-checked" : ""}`} aria-hidden="true">
+                          {checked ? "✓" : ""}
                         </span>
                       )}
                     </div>
@@ -2743,7 +2789,21 @@ function ExtensionDialog({
               >
                 {t("chat.cancel")}
               </button>
-              {request.method === "confirm" ? (
+              {isMultiSelect ? (
+                <button
+                  onClick={submitMulti}
+                  style={{
+                    padding: "6px 10px",
+                    borderRadius: 6,
+                    border: "1px solid var(--accent)",
+                    background: "var(--accent)",
+                    color: "#fff",
+                    cursor: "pointer",
+                  }}
+                >
+                  {t("chat.confirm")}
+                </button>
+              ) : request.method === "confirm" ? (
                 <button
                   onClick={submitValue}
                   style={{

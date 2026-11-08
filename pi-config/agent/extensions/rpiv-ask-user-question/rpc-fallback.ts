@@ -14,9 +14,10 @@
  * Parity trade-offs vs the TUI, inherent to the select/input API surface: no
  * side-by-side preview pane (previews are folded into the prompt title), no
  * tabbed multi-question review (one dialog per question), and multi-select is
- * a free-text numbers input instead of checkbox rows. The "Type something."
- * escape is preserved on both variants — multi-select treats any non-index
- * input as a typed custom answer — matching
+ * a free-text numbers input instead of checkbox rows — except on pi-web, which
+ * advertises `supportsMultiSelect` and renders real checkbox rows. The
+ * "Type something." escape is preserved on both variants — multi-select treats
+ * any non-index input as a typed custom answer — matching
  * `ROW_INTENT_META.other.autoAppendOnMultiSelect`.
  */
 
@@ -45,6 +46,13 @@ const MAX_PREVIEW_CHARS = 600;
  * original select → input flow is unchanged.
  */
 export const CUSTOM_ROW_MARKER = "\u2063";
+
+/**
+ * Local pi-web patch: response marker for the checkbox multi-select dialog.
+ * The host answers with this marker + JSON `{ selected: number[]; custom?:
+ * string }`; hosts without `supportsMultiSelect` keep the legacy input walker.
+ */
+export const MULTI_SELECT_RESPONSE_MARKER = "\u2062";
 
 /**
  * The dialog-primitive slice of `ExtensionUIContext` this walker needs.
@@ -147,6 +155,67 @@ async function askSingleSelect(
 
 /** `undefined` means the user dismissed the dialog (cancel the questionnaire). */
 async function askMultiSelect(
+  ui: DialogUI,
+  q: QuestionData,
+  questionIndex: number,
+  header: string,
+): Promise<QuestionAnswer | undefined> {
+  if ((ui as { supportsMultiSelect?: boolean }).supportsMultiSelect === true) {
+    return askMultiSelectCheckboxes(ui, q, questionIndex, header);
+  }
+  return askMultiSelectLegacy(ui, q, questionIndex, header);
+}
+
+/**
+ * pi-web checkbox path. The host advertises `supportsMultiSelect` and renders
+ * the numbered options as checkboxes plus the marked custom-answer row. The
+ * response is `MULTI_SELECT_RESPONSE_MARKER` + JSON; a plain value (a host
+ * that accepted the flag but not the payload) degrades to one selection.
+ */
+async function askMultiSelectCheckboxes(
+  ui: DialogUI,
+  q: QuestionData,
+  questionIndex: number,
+  header: string,
+): Promise<QuestionAnswer | undefined> {
+  const selectWithOptions = ui.select as (
+    title: string,
+    options: string[],
+    opts?: { multiSelect?: boolean },
+  ) => Promise<string | undefined>;
+  const options = q.options.map(formatOptionLine);
+  options.push(`${q.options.length + 1}. ${displayLabel("other")}${CUSTOM_ROW_MARKER}`);
+  const chosen = await selectWithOptions(`${header}${q.question}`, options, { multiSelect: true });
+  if (chosen == null) return undefined;
+
+  const selected: string[] = [];
+  let custom = "";
+  if (chosen.startsWith(MULTI_SELECT_RESPONSE_MARKER)) {
+    try {
+      const payload = JSON.parse(chosen.slice(MULTI_SELECT_RESPONSE_MARKER.length)) as {
+        selected?: unknown;
+        custom?: unknown;
+      };
+      if (Array.isArray(payload.selected)) {
+        for (const value of payload.selected) {
+          if (typeof value !== "number" || !Number.isInteger(value)) continue;
+          const option = q.options[value];
+          if (option && !selected.includes(option.label)) selected.push(option.label);
+        }
+      }
+      if (typeof payload.custom === "string") custom = payload.custom.trim();
+    } catch {
+      // Unparseable payload → leave the answer empty rather than guessing.
+    }
+  } else {
+    const idx = parseIndex(chosen, q.options.length);
+    if (idx != null) selected.push(q.options[idx].label);
+  }
+  return { questionIndex, question: q.question, kind: "multi", answer: custom || null, selected };
+}
+
+/** `undefined` means the user dismissed the dialog (cancel the questionnaire). */
+async function askMultiSelectLegacy(
   ui: DialogUI,
   q: QuestionData,
   questionIndex: number,

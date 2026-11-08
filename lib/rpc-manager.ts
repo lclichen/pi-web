@@ -2272,9 +2272,18 @@ export class AgentSessionWrapper {
 
   private createExtensionUiContext(): ExtensionUiContextLike {
     return {
+      // Capability flag for extensions (rpiv-ask-user-question): they fall
+      // back to their comma-separated input walker on hosts without it.
+      supportsMultiSelect: true,
       select: (title, options, opts) =>
         this.requestExtensionUi(
-          { method: "select", title, options, ...(opts?.timeout ? { timeout: opts.timeout } : {}) },
+          {
+            method: "select",
+            title,
+            options,
+            ...(opts?.multiSelect ? { multiSelect: true } : {}),
+            ...(opts?.timeout ? { timeout: opts.timeout } : {}),
+          },
           undefined,
           (response) => ("value" in response ? response.value : undefined),
           opts?.timeout,

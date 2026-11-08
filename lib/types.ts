@@ -121,6 +121,8 @@ export type ExtensionUiRequest =
       method: "select";
       title: string;
       options: string[];
+      /** Checkbox multi-select; response is a marked JSON payload. */
+      multiSelect?: boolean;
       timeout?: number;
       expiresAt?: number;
     }

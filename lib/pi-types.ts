@@ -100,6 +100,8 @@ interface ExtensionRunnerLike {
 type DialogOptionsLike = {
   signal?: AbortSignal;
   timeout?: number;
+  /** pi-web capability: ask the host for a checkbox multi-select dialog. */
+  multiSelect?: boolean;
 };
 
 type WidgetOptionsLike = {
@@ -108,6 +110,8 @@ type WidgetOptionsLike = {
 };
 
 export interface ExtensionUiContextLike {
+  /** pi-web advertises checkbox multi-select support to extensions. */
+  readonly supportsMultiSelect?: boolean;
   select(title: string, options: string[], opts?: DialogOptionsLike): Promise<string | undefined>;
   confirm(title: string, message: string, opts?: DialogOptionsLike): Promise<boolean>;
   input(title: string, placeholder?: string, opts?: DialogOptionsLike): Promise<string | undefined>;

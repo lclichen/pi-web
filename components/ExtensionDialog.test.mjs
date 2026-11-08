@@ -23,7 +23,7 @@ test("multi-line options split into label + description rows", () => {
   assert.match(source, /ext-select-label/);
   assert.match(source, /ext-select-desc/);
   // 单行选项保持整块 markdown 渲染（plan-mode 等既有用法不变）。
-  assert.match(source, /<MarkdownBody>\{stripOptionOrdinal\(optionText, index\)\}<\/MarkdownBody>/);
+  assert.match(source, /<MarkdownBody>\{customDisplay \?\? stripOptionOrdinal\(optionText, index\)\}<\/MarkdownBody>/);
 });
 
 test("footer keeps cancel without the always-visible shortcut paragraph", () => {
@@ -40,4 +40,15 @@ test("custom answer row expands into an inline editor (ZCode-style)", () => {
   assert.match(source, /onRespond\(request, \{ value: `\$\{CUSTOM_OPTION_MARKER\}\$\{text\}` \}\)/);
   // Esc closes only the inline editor and returns focus to the row.
   assert.match(source, /setCustomEditIndex\(null\);[\s\S]{0,160}customRowRef\.current\?\.focus\(\)/);
+});
+
+test("multi-select renders checkbox rows with a confirm action", () => {
+  assert.match(source, /request\.multiSelect === true/);
+  assert.match(source, /const MULTI_SELECT_RESPONSE_MARKER = "\\u2062"/);
+  assert.match(source, /role=\{editingCustom \? "group" : isMultiSelect && !isCustom \? "checkbox" : "button"\}/);
+  assert.match(source, /aria-checked=\{isMultiSelect && !isCustom \? checked : undefined\}/);
+  assert.match(source, /className=\{`ext-select-check\$\{checked \? " is-checked" : ""\}`\}/);
+  assert.match(source, /onClick=\{submitMulti\}/);
+  assert.match(source, /t\("chat\.confirm"\)/);
+  assert.match(cssSource, /\.ext-select-check\.is-checked \{/);
 });

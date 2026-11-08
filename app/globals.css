@@ -1997,6 +1997,10 @@ span.token.table {
   border-color: var(--text-dim);
 }
 
+.ext-select-option[aria-checked="true"] {
+  background: var(--bg-selected);
+}
+
 .ext-select-option:focus-visible {
   border-color: var(--accent);
   background: var(--bg-selected);
@@ -2028,6 +2032,32 @@ span.token.table {
     border-color 0.1s ease,
     background 0.1s ease,
     color 0.1s ease;
+}
+
+/* Checkbox marker for multi-select rows. */
+.ext-select-check {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  transition:
+    background 0.1s ease,
+    border-color 0.1s ease;
+}
+
+.ext-select-check.is-checked {
+  border-color: var(--accent);
+  background: var(--accent);
 }
 
 .ext-select-label {

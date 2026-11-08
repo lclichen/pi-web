@@ -34,7 +34,7 @@ test("renders extension confirmation and options as markdown", () => {
   // 单行选项按行内 markdown 渲染，去掉与徽章重复的序号前缀。
   assert.match(
     dialogSource,
-    /role=\{editingCustom \? "group" : "button"\}[\s\S]*?data-extension-option[\s\S]*?<span className="ext-select-inline" inert[\s\S]*?<MarkdownBody>\{stripOptionOrdinal\(optionText, index\)\}<\/MarkdownBody>/,
+    /role=\{editingCustom \? "group" : isMultiSelect && !isCustom \? "checkbox" : "button"\}[\s\S]*?data-extension-option[\s\S]*?<span className="ext-select-inline" inert[\s\S]*?<MarkdownBody>\{customDisplay \?\? stripOptionOrdinal\(optionText, index\)\}<\/MarkdownBody>/,
   );
   assert.match(source, /function stripOptionOrdinal\(text: string, index: number\)/);
   assert.match(dialogSource, /aria-keyshortcuts=\{index < 9 \? String\(index \+ 1\) : undefined\}/);

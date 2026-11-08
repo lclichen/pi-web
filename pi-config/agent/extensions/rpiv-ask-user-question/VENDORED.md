@@ -9,4 +9,7 @@
 - 软依赖 @juicesharp/rpiv-i18n 缺失时自动降级英文文案（i18n-bridge shim）。
 - **本地补丁（pi-web）**：`rpc-fallback.ts` 在自定义答案行追加不可见后缀
   `CUSTOM_ROW_MARKER`，并接受 `${CUSTOM_ROW_MARKER}<text>` 作为内联回答；
-  pi-web 据此在原对话框内展开输入框，不再弹第二个输入框。同步上游时需保留。
+  pi-web 据此在原对话框内展开输入框，不再弹第二个输入框。
+  多选同理：宿主声明 `supportsMultiSelect` 时改用 `select` + 复选框，
+  响应为 `MULTI_SELECT_RESPONSE_MARKER` + JSON；其他宿主保持原 `ui.input`
+  逗号输入。同步上游时需保留。

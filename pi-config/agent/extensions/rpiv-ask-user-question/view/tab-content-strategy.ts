@@ -1,33 +1,36 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { type Component, Container, type Editor, Spacer, Text, truncateToWidth } from "@earendil-works/pi-tui";
-import { COLLAPSE_KEY_OFF, formatKeySpecForDisplay } from "../config.js";
-import { t } from "../state/i18n-bridge.js";
-import { formatAnswerScalar } from "../tool/format-answer.js";
-import type { QuestionData } from "../tool/types.js";
-import type { PreviewPane, PreviewPaneProps } from "./components/preview/preview-pane.js";
+import { COLLAPSE_KEY_OFF, formatKeySpecForDisplay, formatNotesKeyForDisplay } from "../config.ts";
+import { t } from "../state/i18n-bridge.ts";
+import { selectSavedNote } from "../state/selectors/derivations.ts";
+import { formatAnswerScalar } from "../tool/format-answer.ts";
+import type { QuestionData } from "../tool/types.ts";
+import type { PreviewPane, PreviewPaneProps } from "./components/preview/preview-pane.ts";
+import type { DialogState } from "./dialog-builder.ts";
 import {
-  type DialogState,
   HINT_PART_CANCEL,
   HINT_PART_CLEAR,
   HINT_PART_COLLAPSE_TEMPLATE,
   HINT_PART_ENTER,
   HINT_PART_NAV,
   HINT_PART_NEW_LINE,
-  HINT_PART_NOTES,
+  HINT_PART_NOTES_TEMPLATE,
   HINT_PART_TAB,
   HINT_PART_TOGGLE,
   INCOMPLETE_WARNING_PREFIX,
   KEY_PLACEHOLDER,
   READY_PROMPT,
   REVIEW_HEADING,
-} from "./dialog-builder.js";
-import type { StatefulView } from "./stateful-view.js";
-import type { TabComponents } from "./tab-components.js";
+} from "./dialog-copy.ts";
+import type { StatefulView } from "./stateful-view.ts";
+import type { TabComponents } from "./tab-components.ts";
 
 const NOTES_HEADER = "Notes:";
 const GLOBAL_NOTES_HEADER = "Global note:";
-const REVIEW_GLOBAL_HINT = "n to add a note";
+const REVIEW_GLOBAL_HINT_TEMPLATE = `${KEY_PLACEHOLDER} to add a note`;
 const REVIEW_NOTE_LABEL = "Note";
+/** Label for a question's saved note — the question tab's resting row and the review entry (#197). */
+const SAVED_NOTE_LABEL = "Note for this answer:";
 
 /**
  * Single-row, width-clipped chrome cell. The footer row count is invariant
@@ -93,6 +96,8 @@ export interface QuestionTabStrategyConfig {
   getCurrentBodyHeight: (width: number) => number;
   /** Resolved collapse key spec (`"ctrl+]"`, `"alt+o"`, or `"off"`). Drives the footer's collapse hint. */
   collapseKey: string;
+  /** Resolved notes key (`resolveNotesKey` output). Named by the footer's notes hint. */
+  notesKey: string;
 }
 
 export class QuestionTabStrategy implements TabContentStrategy {
@@ -128,12 +133,22 @@ export class QuestionTabStrategy implements TabContentStrategy {
   }
 
   midRows(state: DialogState): Component[] {
-    if (!state.notesVisible) return [];
-    return [
-      new Text(this.config.theme.fg("muted", t("notes.header", NOTES_HEADER)), 1, 0),
-      this.config.notesInput,
-      new Spacer(1),
-    ];
+    if (state.notesVisible) {
+      return [
+        new Text(this.config.theme.fg("muted", t("notes.header", NOTES_HEADER)), 1, 0),
+        this.config.notesInput,
+        new Spacer(1),
+      ];
+    }
+    // A saved note stays visible once its editor closes (#197): one clipped row, so a long
+    // or multi-line note cannot crowd the options — `n` reopens it in full. Mid rows are
+    // subtracted from the body allowance (`DialogView.rowsAroundBody`), so the row is
+    // height-safe.
+    const note = selectSavedNote(state.notesByTab, state.answers, state.currentTab);
+    if (note === undefined) return [];
+    const [firstLine = "", ...rest] = note.split("\n");
+    const text = `${t("notes.saved_label", SAVED_NOTE_LABEL)} ${firstLine}${rest.length > 0 ? " …" : ""}`;
+    return [new OneLineClippedText(this.config.theme.fg("dim", text), 1)];
   }
 
   footerRows(state: DialogState): Component[] {
@@ -145,7 +160,10 @@ export class QuestionTabStrategy implements TabContentStrategy {
     return [
       new Spacer(1),
       new OneLineClippedText(
-        this.config.theme.fg("dim", buildHintText(question, this.config.isMulti, state, this.config.collapseKey)),
+        this.config.theme.fg(
+          "dim",
+          buildHintText(question, this.config.isMulti, state, this.config.collapseKey, this.config.notesKey),
+        ),
         1,
       ),
     ];
@@ -165,6 +183,8 @@ export interface SubmitTabStrategyConfig {
   submitPicker: Component | undefined;
   /** Shared notes Editor — mounted into midRows while the global-note editor is open on this tab. */
   notesInput: Editor;
+  /** Resolved notes key (`resolveNotesKey` output). Named by the global-note hint. */
+  notesKey: string;
 }
 
 export class SubmitTabStrategy implements TabContentStrategy {
@@ -193,7 +213,9 @@ export class SubmitTabStrategy implements TabContentStrategy {
         new Text(`   ${this.config.theme.fg("muted", "→")} ${this.config.theme.fg("text", answerText)}`, 1, 0),
       );
       if (a.notes && a.notes.length > 0) {
-        c.addChild(new Text(this.config.theme.fg("dim", `     notes: ${a.notes}`), 1, 0));
+        c.addChild(
+          new Text(this.config.theme.fg("dim", `     ${t("notes.saved_label", SAVED_NOTE_LABEL)} ${a.notes}`), 1, 0),
+        );
       }
     }
     // Committed global note (#182) as a review entry — pressing `n` gets visible
@@ -240,7 +262,9 @@ export class SubmitTabStrategy implements TabContentStrategy {
       missing.length === 0
         ? this.config.theme.fg("muted", t("review.ready", READY_PROMPT))
         : this.config.theme.fg("warning", `${t("review.incomplete", INCOMPLETE_WARNING_PREFIX)} ${missing.join(", ")}`);
-    const out: Component[] = [new Spacer(1), new Text(promptText, 1, 0)];
+    // One row, never wrapped: `footerRowCount` counts it as one, and a wrapped prompt
+    // (long list of unanswered headers) would desync the chrome's row math (#261).
+    const out: Component[] = [new Spacer(1), new OneLineClippedText(promptText, 1)];
     if (this.config.submitPicker) {
       out.push(this.config.submitPicker);
     } else {
@@ -253,7 +277,7 @@ export class SubmitTabStrategy implements TabContentStrategy {
     // with no hint wedged between them. Always present so footerRowCount stays
     // exactly 5. OneLineClippedText (not pi-tui Text) — a wrapped hint would inflate
     // the footer past footerRowCount and desync the chrome's cross-tab height math.
-    out.push(new OneLineClippedText(this.config.theme.fg("dim", buildSubmitHintText(state)), 1));
+    out.push(new OneLineClippedText(this.config.theme.fg("dim", buildSubmitHintText(state, this.config.notesKey)), 1));
     return out;
   }
 
@@ -282,10 +306,12 @@ export function buildHintText(
   isMulti: boolean,
   state: DialogState,
   collapseKey: string,
+  notesKey: string,
 ): string {
   const parts: string[] = [t("hint.enter", HINT_PART_ENTER), t("hint.navigate", HINT_PART_NAV)];
   if (question?.multiSelect === true) parts.push(t("hint.toggle", HINT_PART_TOGGLE));
-  if (question && !state.notesVisible && !state.inputMode) parts.push(t("hint.notes", HINT_PART_NOTES));
+  if (question && !state.notesVisible && !state.inputMode)
+    parts.push(notesHint("hint.notes", HINT_PART_NOTES_TEMPLATE, notesKey));
   if (isMulti) parts.push(t("hint.tab", HINT_PART_TAB));
   parts.push(t("hint.cancel", HINT_PART_CANCEL));
   if (collapseKey !== COLLAPSE_KEY_OFF) {
@@ -304,10 +330,15 @@ export function buildHintText(
  * open the note part drops (the editor is the affordance then) and the Shift+Enter
  * newline hint is appended after cancel, mirroring the question tabs' notes-open shape.
  */
-export function buildSubmitHintText(state: DialogState): string {
+export function buildSubmitHintText(state: DialogState, notesKey: string): string {
   const parts: string[] = [t("hint.enter", HINT_PART_ENTER), t("hint.navigate", HINT_PART_NAV)];
-  if (!state.notesVisible) parts.push(t("review.global_hint", REVIEW_GLOBAL_HINT));
+  if (!state.notesVisible) parts.push(notesHint("review.global_hint", REVIEW_GLOBAL_HINT_TEMPLATE, notesKey));
   parts.push(t("hint.cancel", HINT_PART_CANCEL));
   if (state.notesVisible) parts.push(t("hint.newline", HINT_PART_NEW_LINE));
   return parts.join(" · ");
+}
+
+/** A notes hint with the configured key in place of `{key}`. */
+function notesHint(key: string, template: string, notesKey: string): string {
+  return t(key, template).replace(KEY_PLACEHOLDER, formatNotesKeyForDisplay(notesKey));
 }

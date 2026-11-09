@@ -1,15 +1,15 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import type { Editor, OverlayHandle, TUI } from "@earendil-works/pi-tui";
-import { COLLAPSE_KEY_OFF, formatKeySpecForDisplay } from "../config.js";
-import type { QuestionData, QuestionnaireResult, QuestionParams } from "../tool/types.js";
-import type { WrappingSelectItem } from "../view/components/wrapping-select.js";
-import { COLLAPSED_HINT_TEMPLATE, HINT_PART_CANCEL, KEY_PLACEHOLDER } from "../view/dialog-builder.js";
-import type { QuestionnairePropsAdapter } from "../view/props-adapter.js";
-import { buildQuestionnaire, type QuestionnaireBuilt } from "./build-questionnaire.js";
-import { t } from "./i18n-bridge.js";
-import { type QuestionnaireAction, routeKey } from "./key-router.js";
-import type { QuestionnaireRuntime, QuestionnaireState } from "./state.js";
-import { type ApplyContext, type Effect, reduce } from "./state-reducer.js";
+import { COLLAPSE_KEY_OFF, formatKeySpecForDisplay } from "../config.ts";
+import type { QuestionData, QuestionnaireResult, QuestionParams } from "../tool/types.ts";
+import type { WrappingSelectItem } from "../view/components/wrapping-select.ts";
+import { COLLAPSED_HINT_TEMPLATE, HINT_PART_CANCEL, KEY_PLACEHOLDER } from "../view/dialog-builder.ts";
+import type { QuestionnairePropsAdapter } from "../view/props-adapter.ts";
+import { buildQuestionnaire, type QuestionnaireBuilt } from "./build-questionnaire.ts";
+import { t } from "./i18n-bridge.ts";
+import { type QuestionnaireAction, routeKey } from "./key-router.ts";
+import type { QuestionnaireRuntime, QuestionnaireState } from "./state.ts";
+import { type ApplyContext, type Effect, reduce } from "./state-reducer.ts";
 
 export interface QuestionnaireSessionConfig {
   tui: TUI;
@@ -22,6 +22,8 @@ export interface QuestionnaireSessionConfig {
   editInput: (value: string) => Promise<string | undefined>;
   /** Key spec for the collapse/expand shortcut, e.g. `"ctrl+]"` or `"alt+o"`. */
   collapseKey: string;
+  /** Key that opens the notes editor (`resolveNotesKey` output). */
+  notesKey: string;
   /**
    * True iff `execute()` registered the raw `ctx.ui.onTerminalInput` listener — the only
    * path that can reach a hidden overlay. Gates the `set_overlay_hidden` effect: a host
@@ -30,6 +32,8 @@ export interface QuestionnaireSessionConfig {
    * would hide the overlay into a state nothing can reopen.
    */
   canReopenWhileHidden: boolean;
+  /** Terminal rows → rows the dialog may render; see `QuestionnaireBuildConfig.rowBudget`. */
+  rowBudget: (terminalRows: number) => number;
 }
 
 export interface QuestionnaireSessionComponent {
@@ -73,6 +77,7 @@ export class QuestionnaireSession {
   private readonly keybindings: QuestionnaireRuntime["keybindings"];
   private readonly editInput: QuestionnaireSessionConfig["editInput"];
   private readonly collapseKey: string;
+  private readonly notesKey: string;
   private readonly canReopenWhileHidden: boolean;
   private inputEditorOpen = false;
 
@@ -96,6 +101,7 @@ export class QuestionnaireSession {
     this.keybindings = config.keybindings;
     this.editInput = config.editInput;
     this.collapseKey = config.collapseKey;
+    this.notesKey = config.notesKey;
     this.canReopenWhileHidden = config.canReopenWhileHidden;
 
     const built = buildQuestionnaire({
@@ -107,6 +113,8 @@ export class QuestionnaireSession {
       initialState: this.state,
       getCurrentTab: () => this.state.currentTab,
       collapseKey: this.collapseKey,
+      notesKey: this.notesKey,
+      rowBudget: config.rowBudget,
     });
 
     this.notesInput = built.notesInput;
@@ -127,7 +135,8 @@ export class QuestionnaireSession {
   }
 
   /**
-   * Collapsed render: a single dim row at the bottom of the overlay. pi-tui sizes
+   * Collapsed render: a single dim row (inline presentation: in the editor slot, where it
+   * keeps focus so the same key expands it). For the overlay, pi-tui sizes
    * the overlay to `min(lines.length, maxHeight)`, so returning one line shrinks
    * the bottom-anchored overlay from full-height to one row and the transcript
    * behind it becomes readable (#47). The overlay stays focused and in the
@@ -247,6 +256,7 @@ export class QuestionnaireSession {
       currentItem: this.currentItem(),
       items: this.itemsByTab[this.state.currentTab] ?? [],
       collapseKey: this.collapseKey,
+      notesKey: this.notesKey,
     };
   }
 

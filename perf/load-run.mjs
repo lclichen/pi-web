@@ -153,10 +153,40 @@ async function importUsers(token) {
   }
 }
 
+/**
+ * Host mode is admin-only in pi-web, and the load test drives host sessions —
+ * promote every prefix user to platform admin (idempotent). Note in reports:
+ * admin users are exempt from the per-user session quota (the quota itself is
+ * covered by unit tests).
+ */
+async function promoteLoadUsersToAdmin(token) {
+  const { body } = await fetchJson(
+    `${CONFIG.platform}/api/v1/admin/users?search=${encodeURIComponent(CONFIG.userPrefix)}&limit=200`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+  const users = body?.users ?? body?.data ?? [];
+  let promoted = 0;
+  for (const user of users) {
+    if (!String(user.username ?? "").startsWith(CONFIG.userPrefix)) continue;
+    if (user.role === "admin") {
+      promoted += 1;
+      continue;
+    }
+    const res = await fetch(`${CONFIG.platform}/api/v1/admin/users/${user.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ role: "admin" }),
+    });
+    if (res.ok) promoted += 1;
+    else console.warn(`promote ${user.username} -> ${res.status}`);
+  }
+  return { total: users.length, promoted };
+}
+
 async function cleanupUsers() {
   const token = await platformAdminToken();
   const { body } = await fetchJson(
-    `${CONFIG.platform}/api/v1/admin/users?search=${encodeURIComponent(CONFIG.userPrefix)}&limit=500`,
+    `${CONFIG.platform}/api/v1/admin/users?search=${encodeURIComponent(CONFIG.userPrefix)}&limit=200`,
     { headers: { Authorization: `Bearer ${token}` } },
   );
   const users = body?.users ?? body?.data ?? [];
@@ -337,7 +367,7 @@ async function canaryLoop(cookies, adminCookie, deadline) {
             t: Date.now(),
             heapUsedMB: Math.round(p.heapUsedBytes / 1048576),
             rssMB: Math.round(p.rssBytes / 1048576),
-            loopP95Ms: p.eventLoopDelayMs ? Number(p.eventLoopDelayMs.p95.toFixed(1)) : null,
+            loopP95Ms: p.eventLoopDelayMs ? Number(p.eventLoopDelayMs.p95Ms.toFixed(1)) : null,
             sessions: r3.body?.totals?.wrappers,
             running: r3.body?.totals?.running,
             parseQueued: p.parseQueue?.queued ?? 0,
@@ -372,6 +402,8 @@ async function run() {
   const token = await platformAdminToken();
   const importResult = await importUsers(token);
   console.log(`[load-run] import: created=${importResult?.created} failed=${importResult?.failed}`);
+  const promoteResult = await promoteLoadUsersToAdmin(token);
+  console.log(`[load-run] admin promotion: ${promoteResult.promoted}/${promoteResult.total} (host mode requires admin)`);
 
   const adminCookie = await piwebLogin(CONFIG.adminUser, CONFIG.adminPass).catch(() => null);
 
@@ -403,7 +435,7 @@ async function run() {
               type: "ensure_session",
               cwd: CONFIG.cwd,
               provider: CONFIG.provider,
-              model: CONFIG.model,
+              modelId: CONFIG.model,
             }),
           },
           { okStatuses: [200] },

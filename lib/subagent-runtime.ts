@@ -49,7 +49,9 @@ export interface SubagentRuntimeDependencies {
   registerSession(inner: AgentSessionLike, options?: { exactSystemPrompt?: string; chatOnly?: boolean }): void;
   reopenSession(sessionId: string, sessionFile: string): Promise<HostSession>;
   resolveSessionPath(sessionId: string): Promise<string | null>;
-  invalidateSessionList(): void;
+  /** Invalidate the session list; pass the subagent's file so pi-web can
+   * scope the invalidation to the owning user's space. */
+  invalidateSessionList(sessionFile?: string): void;
   isBuiltInSubagentsEnabled?(): boolean;
 }
 
@@ -282,7 +284,7 @@ export function createSubagentController(dependencies: SubagentRuntimeDependenci
       };
       getSubagentRuns().set(initialRun.sessionId, stored);
       request.onUpdate?.(initialRun);
-      dependencies.invalidateSessionList();
+      dependencies.invalidateSessionList(initialRun.sessionPath);
 
       const handleParentAbort = () => {
         stored.abortRequested = true;
@@ -339,7 +341,7 @@ export function createSubagentController(dependencies: SubagentRuntimeDependenci
         stored.run = result;
         request.onUpdate?.(result);
         getSubagentRuns().delete(initialRun.sessionId);
-        dependencies.invalidateSessionList();
+        dependencies.invalidateSessionList(sessionManager.getSessionFile());
         return result;
       })();
 

@@ -22,7 +22,7 @@ import { userRuntimeForSession } from "./user-models";
 import {
   cacheSessionPath,
   getLatestModelChange,
-  invalidateSessionListCache,
+  invalidateSessionListForSession,
   resolveSessionPath,
 } from "./session-reader";
 import { appendWebUiAddendum } from "./web-system-prompt";
@@ -183,6 +183,10 @@ export interface RpcSessionDebugSnapshot {
 }
 
 const IDLE_RESET_EVENT_TYPES = new Set(["agent_end", "agent_settled", "auto_compaction_end", "compaction_end"]);
+
+/** Events that cannot change a live session's list row (token deltas and
+ * partial tool output — the highest-frequency events a running turn emits). */
+const RUNTIME_LIST_QUIET_EVENT_TYPES = new Set(["message_update", "tool_execution_update"]);
 
 const DEFAULT_SESSION_IDLE_TIMEOUT_MS = 10 * 60 * 1000;
 
@@ -431,6 +435,11 @@ export class AgentSessionWrapper {
   private idleDeadlineAt = 0;
   private lastCommandType: string | null = null;
   private lastCommandAt = 0;
+  /** Memoized live-list row (dev 批次2): recomputed only after an event that
+   * can change it — /api/sessions no longer walks every live session's whole
+   * transcript on every poll. */
+  private runtimeListInfo: SessionInfo | null = null;
+  private runtimeListInfoDirty = true;
 
   constructor(
     public readonly inner: AgentSessionLike,
@@ -513,12 +522,23 @@ export class AgentSessionWrapper {
     return this.suppressCompletionNotifications;
   }
 
+  /** Memoized list row (see runtimeListInfoDirty); null = not listable yet. */
+  getRuntimeListInfo(): SessionInfo | null {
+    if (!this.runtimeListInfoDirty) return this.runtimeListInfo;
+    this.runtimeListInfo = buildRuntimeListInfoFor(this);
+    this.runtimeListInfoDirty = false;
+    return this.runtimeListInfo;
+  }
+
   start(): void {
     this.unsubscribe = this.inner.subscribe((event: AgentEvent) => {
       if (event.type === "agent_start") this.agentRunNeedsCompletion = true;
       if (event.type === "agent_end") {
-        invalidateSessionListCache();
+        this.invalidateOwnSessionList();
       }
+      // Streaming deltas and partial tool output cannot change the list row
+      // (messageCount/firstMessage/last activity); anything else might.
+      if (!RUNTIME_LIST_QUIET_EVENT_TYPES.has(event.type)) this.runtimeListInfoDirty = true;
       const toolCallId = event.toolCallId;
       if (typeof toolCallId === "string") {
         if (event.type === "tool_execution_start" || event.type === "tool_execution_update") {
@@ -533,6 +553,17 @@ export class AgentSessionWrapper {
       if (event.type === "agent_settled") this.notifyAgentRunCompleteIfIdle();
     });
     this.resetIdleTimer();
+  }
+
+  /**
+   * Invalidate the session list for THIS session's space only (dev 批次2).
+   * The file path decides the space; every web-created session of a logged-in
+   * user lives in that user's shard. An unscoped invalidation bumps every
+   * user's list generation and their 2.5s polls re-pull the catalogue — the
+   * multi-user herd-reload freeze amplifier.
+   */
+  private invalidateOwnSessionList(): void {
+    invalidateSessionListForSession(this.sessionFile, this.ownerId);
   }
 
   private notifyAgentRunCompleteIfIdle(): void {
@@ -1191,7 +1222,7 @@ export class AgentSessionWrapper {
                 (error) => {
                   rejectPreflight(error);
                   finishPrompt();
-                  invalidateSessionListCache();
+                  this.invalidateOwnSessionList();
                   // A preflight rejection is returned by the POST itself. Only an
                   // unexpected failure after acceptance needs the asynchronous event.
                   if (preflightAccepted) {
@@ -1279,7 +1310,7 @@ export class AgentSessionWrapper {
           if (!model) throw new Error(`Model not found: ${provider}/${modelId}`);
           await this.inner.setModel(model);
           invalidateModelsCache();
-          invalidateSessionListCache();
+          this.invalidateOwnSessionList();
           return { id: model.id, provider: model.provider };
         }
 
@@ -1327,7 +1358,7 @@ export class AgentSessionWrapper {
 
             const newSessionId = forkedManager.getSessionId();
             cacheSessionPath(newSessionId, newSessionFile);
-            invalidateSessionListCache();
+            this.invalidateOwnSessionList();
             await this.shutdownAfterSessionReplacement("fork");
             return { cancelled: false, newSessionId };
           });
@@ -1351,7 +1382,7 @@ export class AgentSessionWrapper {
 
           const newSessionId = SessionManager.open(forkedPath, sessionDir).getSessionId();
           cacheSessionPath(newSessionId, forkedPath);
-          invalidateSessionListCache();
+          this.invalidateOwnSessionList();
           return { cancelled: false, newSessionId };
         }
 
@@ -1379,7 +1410,7 @@ export class AgentSessionWrapper {
 
             const newSessionId = SessionManager.open(clonedPath, sessionDir).getSessionId();
             cacheSessionPath(newSessionId, clonedPath);
-            invalidateSessionListCache();
+            this.invalidateOwnSessionList();
             await this.shutdownAfterSessionReplacement("clone");
             return { cancelled: false, newSessionId };
           });
@@ -1407,7 +1438,7 @@ export class AgentSessionWrapper {
           ) {
             this.inner.agent.state.thinkingLevel = "xhigh";
           }
-          invalidateSessionListCache();
+          this.invalidateOwnSessionList();
           return null;
         }
 
@@ -1417,7 +1448,7 @@ export class AgentSessionWrapper {
               this.inner.compact(command.customInstructions as string | undefined),
             );
           } finally {
-            invalidateSessionListCache();
+            this.invalidateOwnSessionList();
           }
         }
 
@@ -1425,7 +1456,7 @@ export class AgentSessionWrapper {
           const name = (command.name as string | undefined)?.trim();
           if (!name) throw new Error("Session name cannot be empty");
           this.inner.setSessionName(name);
-          invalidateSessionListCache();
+          this.invalidateOwnSessionList();
           return null;
         }
 
@@ -1708,7 +1739,7 @@ export class AgentSessionWrapper {
               return eventResult.result;
             } finally {
               this.resetIdleTimer();
-              invalidateSessionListCache();
+              this.invalidateOwnSessionList();
             }
           }
           if (eventResult?.operations) {
@@ -1721,7 +1752,7 @@ export class AgentSessionWrapper {
               return result;
             } finally {
               this.resetIdleTimer();
-              invalidateSessionListCache();
+              this.invalidateOwnSessionList();
             }
           }
           if (this.mode !== "host") {
@@ -1744,7 +1775,7 @@ export class AgentSessionWrapper {
             return result;
           } finally {
             this.resetIdleTimer();
-            invalidateSessionListCache();
+            this.invalidateOwnSessionList();
           }
         }
 
@@ -2503,7 +2534,7 @@ const SUBAGENT_CONTROLLER = createSubagentController({
   },
   reopenSession: async (sessionId, sessionFile) => (await startRpcSession(sessionId, sessionFile, undefined)).session,
   resolveSessionPath,
-  invalidateSessionList: invalidateSessionListCache,
+  invalidateSessionList: (sessionFile?: string) => invalidateSessionListForSession(sessionFile),
   isBuiltInSubagentsEnabled,
 });
 
@@ -2622,7 +2653,7 @@ export async function setRpcSessionTools(
       throw new Error("Subagent tool selection is fixed by its profile");
     }
     appendSessionToolSelection(manager, toolNames);
-    invalidateSessionListCache();
+    invalidateSessionListForSession(sessionFile);
     const started = await startRpcSession(sessionId, sessionFile, undefined);
     return { session: started.session, sessionId: started.realSessionId, recreated: false };
   }
@@ -2636,7 +2667,7 @@ export async function setRpcSessionTools(
     typeof existing.isChatOnly === "function" && typeof existing.setActiveToolSelection === "function";
   const crossesChatOnlyBoundary = !hasCurrentResourcePolicy || existing.isChatOnly() !== (toolNames.length === 0);
   appendSessionToolSelection(existing.inner.sessionManager, toolNames);
-  invalidateSessionListCache();
+  invalidateSessionListForSession(existing.sessionFile, existing.ownerId);
 
   if (!crossesChatOnlyBoundary) {
     existing.setActiveToolSelection(toolNames);
@@ -2682,64 +2713,95 @@ function runtimeMessageActivityMs(entry: SessionMessageEntry): number | undefine
   return Number.isNaN(timestamp) ? undefined : timestamp;
 }
 
+/** The registry-entry surface buildRuntimeListInfoFor() needs. */
+interface RuntimeListSource {
+  isAlive(): boolean;
+  isRunning(): boolean;
+  readonly inner: { sessionManager: SessionManager };
+  readonly sessionId: string;
+  readonly sessionFile: string;
+  readonly cwd: string;
+}
+
 /**
- * Return live sessions that should be visible in the session list. Pi delays
- * the first JSONL flush until an assistant message exists, so an accepted new
- * prompt must temporarily be described from its in-memory SessionManager.
+ * One live session's list row. Pi delays the first JSONL flush until an
+ * assistant message exists, so an accepted new prompt must temporarily be
+ * described from its in-memory SessionManager. Module-level so foreign
+ * registry entries (older hot-reload graphs, test doubles) build rows the
+ * same way wrappers do.
+ */
+function buildRuntimeListInfoFor(session: RuntimeListSource): SessionInfo | null {
+  if (!session.isAlive()) return null;
+
+  const manager = session.inner.sessionManager;
+  const header = manager.getHeader();
+  const entries = manager.getEntries() as unknown as Array<{ type: string; timestamp: string } | SessionMessageEntry>;
+  const messages = entries.filter((entry): entry is SessionMessageEntry => entry.type === "message");
+  const firstUserMessage = messages.find((entry) => entry.message.role === "user");
+  const sessionFile = manager.getSessionFile() ?? session.sessionFile;
+  const persisted = Boolean(sessionFile && existsSync(sessionFile));
+  const subagent = readSubagentRun(
+    entries as unknown as SessionEntry[],
+    header?.id ?? session.sessionId,
+    sessionFile ?? "",
+  );
+
+  // An ensure_session call creates an idle, empty runtime while the composer
+  // loads commands. Do not leak it into history before a prompt is accepted.
+  if (!persisted && (!session.isRunning() || !firstUserMessage)) return null;
+
+  const created = header?.timestamp ?? entries[0]?.timestamp ?? new Date().toISOString();
+  const headerTimestamp = new Date(created).getTime();
+  let lastActivityMs = Number.isNaN(headerTimestamp) ? Date.now() : headerTimestamp;
+  for (const message of messages) {
+    const activityMs = runtimeMessageActivityMs(message);
+    if (activityMs !== undefined) lastActivityMs = Math.max(lastActivityMs, activityMs);
+  }
+
+  return {
+    path: sessionFile ?? "",
+    id: header?.id ?? session.sessionId,
+    cwd: header?.cwd ?? session.cwd,
+    name: manager.getSessionName(),
+    created,
+    modified: new Date(lastActivityMs).toISOString(),
+    messageCount: messages.length,
+    firstMessage: firstUserMessage ? runtimeMessageText(firstUserMessage) || "(no messages)" : "(no messages)",
+    ...(subagent
+      ? {
+          parentSessionId: subagent.parentSessionId,
+          relation: {
+            kind: "subagent" as const,
+            parentSessionId: subagent.parentSessionId,
+            profile: subagent.profile,
+            description: subagent.description,
+            status: session.isRunning() ? ("running" as const) : subagent.status,
+          },
+        }
+      : {}),
+    transient: !persisted,
+  };
+}
+
+/**
+ * Return live sessions that should be visible in the session list. Rows come
+ * from each wrapper's memo (invalidated by row-relevant events) — a poll no
+ * longer walks every live session's whole transcript. Registry entries from
+ * an older hot-reload graph build their row inline instead.
  */
 export function getRpcSessionInfos(): SessionInfo[] {
   const sessions: SessionInfo[] = [];
   for (const session of getRegistry().values()) {
-    if (!session.isAlive()) continue;
-
-    const manager = session.inner.sessionManager;
-    const header = manager.getHeader();
-    const entries = manager.getEntries() as unknown as Array<{ type: string; timestamp: string } | SessionMessageEntry>;
-    const messages = entries.filter((entry): entry is SessionMessageEntry => entry.type === "message");
-    const firstUserMessage = messages.find((entry) => entry.message.role === "user");
-    const sessionFile = manager.getSessionFile() ?? session.sessionFile;
-    const persisted = Boolean(sessionFile && existsSync(sessionFile));
-    const subagent = readSubagentRun(
-      entries as unknown as SessionEntry[],
-      header?.id ?? session.sessionId,
-      sessionFile ?? "",
-    );
-
-    // An ensure_session call creates an idle, empty runtime while the composer
-    // loads commands. Do not leak it into history before a prompt is accepted.
-    if (!persisted && (!session.isRunning() || !firstUserMessage)) continue;
-
-    const created = header?.timestamp ?? entries[0]?.timestamp ?? new Date().toISOString();
-    const headerTimestamp = new Date(created).getTime();
-    let lastActivityMs = Number.isNaN(headerTimestamp) ? Date.now() : headerTimestamp;
-    for (const message of messages) {
-      const activityMs = runtimeMessageActivityMs(message);
-      if (activityMs !== undefined) lastActivityMs = Math.max(lastActivityMs, activityMs);
+    let info: SessionInfo | null = null;
+    try {
+      info =
+        typeof session.getRuntimeListInfo === "function"
+          ? session.getRuntimeListInfo()
+          : buildRuntimeListInfoFor(session);
+    } catch {
+      // A wrapper from an older hot-reload graph may lack fields; skip it.
     }
-
-    sessions.push({
-      path: sessionFile ?? "",
-      id: header?.id ?? session.sessionId,
-      cwd: header?.cwd ?? session.cwd,
-      name: manager.getSessionName(),
-      created,
-      modified: new Date(lastActivityMs).toISOString(),
-      messageCount: messages.length,
-      firstMessage: firstUserMessage ? runtimeMessageText(firstUserMessage) || "(no messages)" : "(no messages)",
-      ...(subagent
-        ? {
-            parentSessionId: subagent.parentSessionId,
-            relation: {
-              kind: "subagent" as const,
-              parentSessionId: subagent.parentSessionId,
-              profile: subagent.profile,
-              description: subagent.description,
-              status: session.isRunning() ? ("running" as const) : subagent.status,
-            },
-          }
-        : {}),
-      transient: !persisted,
-    });
+    if (info) sessions.push(info);
   }
   return sessions;
 }

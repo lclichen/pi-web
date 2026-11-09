@@ -13,7 +13,7 @@ import type { RemoteSessionContext } from "@/lib/remote-session";
 import { resolveCoreExtensionPaths } from "@/lib/session-restore-options";
 import { getQuickTemplate, DEFAULT_TEMPLATE_ID } from "@/lib/quick-templates";
 import { readSshConfig } from "@/lib/ssh";
-import { invalidateSessionListCache } from "@/lib/session-reader";
+import { invalidateSessionListForSession } from "@/lib/session-reader";
 import { startRpcSession } from "@/lib/rpc-manager";
 import { requireUserIdentity } from "@/lib/web-session";
 import { isSessionMode, modeAllowedForUser, type SessionMode } from "@/lib/session-modes";
@@ -449,7 +449,8 @@ export async function POST(req: Request) {
       ...(templateIdForMeta ? { templateId: templateIdForMeta } : {}),
       ...(quickSlugForMeta ? { quickDir: quickSlugForMeta } : {}),
     });
-    invalidateSessionListCache();
+    // Scoped to the new session's own space (dev 批次2).
+    invalidateSessionListForSession(session.sessionFile, user.id);
 
     // Host-mode sessions keep the files-route allowed-roots cache in sync so
     // the cwd is immediately readable via /api/files (sandbox/local sessions

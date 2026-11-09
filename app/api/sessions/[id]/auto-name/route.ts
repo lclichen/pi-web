@@ -3,7 +3,7 @@ import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import { generateSessionTitle } from "@/lib/session-title";
 import { getRpcSession, startRpcSession } from "@/lib/rpc-manager";
 import { restoreSessionOptions } from "@/lib/session-restore-options";
-import { invalidateSessionListCache } from "@/lib/session-reader";
+import { invalidateSessionListForSession } from "@/lib/session-reader";
 import { resolveSessionAccess } from "@/lib/session-access";
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -35,7 +35,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     }
 
     session.inner.setSessionName(result.title);
-    invalidateSessionListCache();
+    invalidateSessionListForSession(filePath);
     return NextResponse.json({ title: result.title, usage: result.usage ?? null });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });

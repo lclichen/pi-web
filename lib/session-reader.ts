@@ -1,4 +1,4 @@
-import { SessionManager, getAgentDir, type SessionInfo as PiSessionInfo } from "@earendil-works/pi-coding-agent";
+import { SessionManager, getAgentDir } from "@earendil-works/pi-coding-agent";
 import { closeSync, type Dirent, fstatSync, openSync, readSync } from "fs";
 import { readdir } from "fs/promises";
 import { isAbsolute, join, normalize as normalizePath, relative, resolve as resolvePath, sep } from "path";
@@ -7,10 +7,12 @@ import { normalizeToolCalls } from "./normalize";
 import { getThinkingPreview } from "./message-display";
 import { projectIdentityKey } from "./project-identity";
 import { sessionPathKey } from "./session-path";
+import { checkSessionMembership, listSessionsIncremental, type ScannedSessionInfo } from "./session-list-scanner";
 import {
   isPathInSpace,
   sessionsRoot as sessionsRootPath,
   spaceDir,
+  spaceForSessionPath,
   spaceKey,
   type SessionSpace,
 } from "./session-spaces";
@@ -118,14 +120,17 @@ export async function attachSessionProjectInfo(sessions: SessionInfo[]): Promise
 
   // quick 会话附带模板快照信息（id/name/hash/capturedAt/stale）——前端显示
   // "当前模板·版本"，模板事后变更可对比出 stale。
-  const { getSessionMeta } = await import("./session-metas");
+  const { getSessionMetas } = await import("./session-metas");
   const { readQuickTemplateSnapshot, quickSessionDir, quickTemplateHash } = await import("./quick-session");
   const { getQuickTemplate } = await import("./quick-templates");
+  // One store read for the whole listing — per-session lookups each paid the
+  // mtime stat inside store().
+  const metasById = getSessionMetas();
 
   return sessions.map((session) => {
     const project = session.cwd ? projectByCwd.get(session.cwd) : undefined;
     const projectRoot = project?.projectRoot ?? session.cwd;
-    const meta = getSessionMeta(session.id);
+    const meta = metasById[session.id];
     const quickSlug = (meta as { quickDir?: string } | undefined)?.quickDir;
     const snapshot =
       meta?.mode === "quick" && quickSlug ? readQuickTemplateSnapshot(quickSessionDir(meta.ownerId, quickSlug)) : null;
@@ -170,9 +175,11 @@ export function mergeSessionLists(
 async function loadAllSessions(space: SessionSpace = { kind: "host" }): Promise<SessionInfo[]> {
   // User shards list their own directory; the host space lists the global
   // root (the users/ shard itself holds no session files directly, so it
-  // never leaks into the host listing).
-  const piSessions: PiSessionInfo[] =
-    space.kind === "host" ? await SessionManager.listAll() : await SessionManager.listAll(spaceDir(space));
+  // never leaks into the host listing). The incremental scanner (ported from
+  // upstream #625/#940/#1259) fingerprints every file and rescans only what
+  // changed — a warm listing costs directory reads and stats, and a session
+  // that only grew parses from its last scan offset.
+  const piSessions: ScannedSessionInfo[] = await listSessionsIncremental({ dir: spaceDir(space) });
   const pathToId = new Map<string, string>();
   for (const s of piSessions) pathToId.set(sessionPathKey(s.path), s.id);
 
@@ -246,7 +253,7 @@ export async function listShardSessionCwds(): Promise<string[]> {
   }
   for (const shard of shards) {
     try {
-      const list = await SessionManager.listAll(join(usersDir, shard));
+      const list = await listSessionsIncremental({ dir: join(usersDir, shard) });
       for (const s of list) if (s.cwd) cwds.push(s.cwd);
     } catch {
       // unreadable/partial shard — skip it
@@ -418,8 +425,18 @@ export function spaceBundle(key: string): SpaceCacheBundle {
 }
 
 /** Monotonic list generation — bumped by invalidateSessionListCache so
- * clients can cheaply detect changes (upstream 0.9.0 API shape). */
-export function getSessionListVersion(): number {
+ * clients can cheaply detect changes (upstream 0.9.0 API shape).
+ *
+ * With a space, the answer is that space's own generation: a user's 2.5s
+ * running-poll then only re-pulls their list when THEIR sessions changed, not
+ * on every other user's agent_end (the multi-user herd-reload amplifier). The
+ * membership check catches files the CLI or another process creates/deletes
+ * in this space, throttled to one directory read per second per space. */
+export function getSessionListVersion(space?: SessionSpace): number {
+  if (space) {
+    void checkSessionMembership(spaceDir(space), () => invalidateSessionListCache(space));
+    return spaceBundle(spaceKey(space)).listGeneration ?? 0;
+  }
   return globalThis.__piSessionListGeneration ?? 0;
 }
 
@@ -439,6 +456,24 @@ export function invalidateSessionListCache(space?: SessionSpace): void {
     bundle.listGeneration = (bundle.listGeneration ?? 0) + 1;
     bundle.listCache = undefined;
   }
+}
+
+/**
+ * Invalidate the session list for the space a session belongs to: derived from
+ * the session file's path when known, else from the owning web user (every
+ * web-created session of a logged-in user lives in that user's shard; ownerId 0
+ * = auth-off host identity). Scoping matters under multi-user load: an
+ * unscoped invalidation bumps every user's generation and their next poll
+ * re-pulls the whole catalogue — the "14k requests" storm mechanism.
+ */
+export function invalidateSessionListForSession(
+  sessionFile: string | null | undefined,
+  ownerId = 0,
+): void {
+  const space =
+    spaceForSessionPath(sessionFile) ??
+    (ownerId > 0 ? { kind: "user" as const, userId: ownerId } : { kind: "host" as const });
+  invalidateSessionListCache(space);
 }
 
 /**

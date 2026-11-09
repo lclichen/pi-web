@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionListVersion } from "@/lib/session-reader";
 import { getCompletionNotificationSuppressedRpcSessionIds, getRunningRpcSessionInfos } from "@/lib/rpc-manager";
+import { spaceForRequest } from "@/lib/session-spaces";
 import { requireUserIdentity } from "@/lib/web-session";
 
 export const dynamic = "force-dynamic";
@@ -24,7 +25,9 @@ export async function GET(req: Request) {
   );
   return NextResponse.json(
     {
-      sessionListVersion: getSessionListVersion(),
+      // Per-space generation (dev 批次2): another user's agent_end no longer
+      // makes this client re-pull its whole session list.
+      sessionListVersion: getSessionListVersion(spaceForRequest(identity.session)),
       runningSessionIds,
       completionNotificationSuppressedSessionIds,
     },

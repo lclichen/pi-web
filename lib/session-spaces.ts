@@ -1,4 +1,4 @@
-import { join, resolve, sep } from "path";
+import { join, relative, resolve, sep } from "path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import type { WebSession } from "./web-session";
 
@@ -21,6 +21,27 @@ export function spaceDir(space: SessionSpace): string {
 
 export function spaceKey(space: SessionSpace): string {
   return space.kind === "host" ? "host" : `u${space.userId}`;
+}
+
+/**
+ * The space a session file belongs to, derived from its path: a file under
+ * sessions/users/u<id> is that user's shard, anything else under the sessions
+ * root is the host space, and paths outside the root answer undefined. Used to
+ * scope session-list invalidations so one user's mutation never bumps another
+ * user's cache generation (the multi-user freeze amplifier).
+ */
+export function spaceForSessionPath(filePath: string | null | undefined): SessionSpace | undefined {
+  if (!filePath) return undefined;
+  const root = resolve(sessionsRoot());
+  const usersRoot = resolve(join(sessionsRoot(), "users"));
+  const p = resolve(filePath);
+  if (p === usersRoot || p.startsWith(usersRoot + sep)) {
+    const firstSegment = relative(usersRoot, p).split(sep)[0];
+    const shard = /^u(\d+)$/.exec(firstSegment);
+    return shard ? { kind: "user", userId: Number(shard[1]) } : undefined;
+  }
+  if (p === root || p.startsWith(root + sep)) return { kind: "host" };
+  return undefined;
 }
 
 /** Path fence: does this session file belong to the space? */

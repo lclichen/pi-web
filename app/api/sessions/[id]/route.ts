@@ -6,7 +6,7 @@ import {
   attachSessionProjectInfo,
   resolveSessionIdByPath,
   invalidateSessionPathCache,
-  invalidateSessionListCache,
+  invalidateSessionListForSession,
   buildSessionContext,
   readSessionHeader,
 } from "@/lib/session-reader";
@@ -159,7 +159,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     }
     const sm = SessionManager.open(filePath);
     sm.appendSessionInfo(name.trim());
-    invalidateSessionListCache();
+    invalidateSessionListForSession(filePath);
     return NextResponse.json({ ok: true });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
@@ -259,7 +259,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }
     invalidateSessionPathCache(id);
-    invalidateSessionListCache();
+    invalidateSessionListForSession(filePath);
     return NextResponse.json({ ok: true });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });

@@ -76,7 +76,8 @@ export async function GET(req: Request) {
     });
     // Capture AFTER the scan: mutations during the scan bump the generation,
     // so the client sees a version it cannot reconcile and refreshes again.
-    const sessionListVersion = getSessionListVersion();
+    // Per-space generation (dev 批次2): scoped to this caller's space.
+    const sessionListVersion = getSessionListVersion(space);
     // Live-sessions are per-user unless the caller is an admin on the host space.
     const runningSessionIds = getRunningRpcSessionInfos()
       .filter((r) => (user.role === "admin" ? true : r.ownerId === user.id))

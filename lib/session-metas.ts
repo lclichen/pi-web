@@ -33,36 +33,54 @@ interface MetaFile {
 }
 
 declare global {
-  // eslint-disable-next-line no-var
-  var __piSessionMetas: { path: string; data: MetaFile; mtime: number } | undefined;
+   
+  var __piSessionMetas: {
+    path: string;
+    data: MetaFile;
+    mtime: number;
+    /** statSync throttle (dev 批次2): the list path reads one meta per session. */
+    lastStatAt: number;
+    /** Debounced full-store write (dev 批次2): burst creates coalesce. */
+    writeTimer: NodeJS.Timeout | null;
+  } | undefined;
 }
 
 // The cache reloads when the file's mtime moves — route modules can hold
 // separate module instances (per-bundle), so a write through one instance
 // must be visible to reads through another. Without this, remotefs /
 // remoteterminal resolved freshly-created sessions as "host" mode.
-function store(): { path: string; data: MetaFile } {
+// The mtime stat itself is throttled to META_STAT_TTL_MS: /api/sessions calls
+// getSessionMeta once per listed session, so 100 sessions meant 100 statSync
+// per request before this.
+const META_STAT_TTL_MS = 50;
+const META_WRITE_DEBOUNCE_MS = 10;
+
+function store(): { path: string; data: MetaFile; mtime: number; lastStatAt: number; writeTimer: NodeJS.Timeout | null } {
   const path = metaFilePath();
+  const now = Date.now();
+  const cached = globalThis.__piSessionMetas;
+  const statFresh = cached && cached.path === path && now - cached.lastStatAt < META_STAT_TTL_MS;
+  if (statFresh) return cached;
   let mtime = 0;
   try {
     mtime = statSync(path).mtimeMs;
   } catch {
     // missing file → mtime 0
   }
-  const cached = globalThis.__piSessionMetas;
-  if (!cached || cached.path !== path || cached.mtime !== mtime) {
-    let data: MetaFile = { version: 1, sessions: {} };
-    try {
-      const parsed = JSON.parse(readFileSync(path, "utf8")) as MetaFile;
-      if (parsed && parsed.sessions) data = parsed;
-    } catch {
-      // fresh store
-    }
-    const next = { path, data, mtime };
-    globalThis.__piSessionMetas = next;
-    return next;
+  if (cached && cached.path === path && cached.mtime === mtime) {
+    cached.lastStatAt = now;
+    return cached;
   }
-  return cached;
+  let data: MetaFile = { version: 1, sessions: {} };
+  try {
+    const parsed = JSON.parse(readFileSync(path, "utf8")) as MetaFile;
+    if (parsed && parsed.sessions) data = parsed;
+  } catch {
+    // fresh store
+  }
+  const next = { path, data, mtime, lastStatAt: now, writeTimer: null as NodeJS.Timeout | null };
+  globalThis.__piSessionMetas = next;
+  return next;
 }
 
 function metaFilePath(): string {
@@ -71,11 +89,36 @@ function metaFilePath(): string {
 
 export function recordSessionMeta(sessionId: string, meta: SessionMeta): void {
   const s = store();
+  // Visible to every reader immediately (same in-memory store); the disk write
+  // is debounced so a burst of session creations (load tests, course onboarding)
+  // writes the whole store once instead of once per row.
   s.data.sessions[sessionId] = { ...meta, createdAt: meta.createdAt ?? Date.now() };
+  if (s.writeTimer) return;
+  s.writeTimer = setTimeout(() => {
+    s.writeTimer = null;
+    try {
+      writeFileSync(s.path, JSON.stringify(s.data, null, 2), "utf8");
+      s.mtime = statSync(s.path).mtimeMs;
+      s.lastStatAt = Date.now();
+    } catch {
+      // metadata is best-effort
+    }
+  }, META_WRITE_DEBOUNCE_MS);
+  s.writeTimer.unref?.();
+}
+
+/** Test seam: write a pending debounced store write now. */
+export function flushSessionMetasForTests(): void {
+  const s = globalThis.__piSessionMetas;
+  if (!s?.writeTimer) return;
+  clearTimeout(s.writeTimer);
+  s.writeTimer = null;
   try {
     writeFileSync(s.path, JSON.stringify(s.data, null, 2), "utf8");
+    s.mtime = statSync(s.path).mtimeMs;
+    s.lastStatAt = Date.now();
   } catch {
-    // metadata is best-effort
+    // best-effort
   }
 }
 

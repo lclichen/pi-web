@@ -106,7 +106,10 @@ const WIRE_JSON_CACHE: symbol = Symbol.for("pi-web.agentEventJsonCache");
 export function cachedClientAgentEvent(
   event: AgentEventLike,
 ): AgentEventLike | ClientMessageUpdateEvent | null {
-  const holder = event as Record<symbol, { v: AgentEventLike | ClientMessageUpdateEvent | null } | undefined>;
+  const holder = event as unknown as Record<
+    symbol,
+    { v: AgentEventLike | ClientMessageUpdateEvent | null } | undefined
+  >;
   let cached = holder[CLIENT_EVENT_CACHE];
   if (!cached) {
     cached = { v: toClientAgentEvent(event) };
@@ -117,7 +120,7 @@ export function cachedClientAgentEvent(
 
 /** JSON-encode an event/envelope once per object, shared by every listener. */
 export function cachedAgentEventJson(data: object): string {
-  const holder = data as Record<symbol, { v: string } | undefined>;
+  const holder = data as unknown as Record<symbol, { v: string } | undefined>;
   let cached = holder[WIRE_JSON_CACHE];
   if (!cached) {
     cached = { v: JSON.stringify(data) };

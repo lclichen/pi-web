@@ -8,6 +8,7 @@ import { getThinkingPreview } from "./message-display";
 import { projectIdentityKey } from "./project-identity";
 import { sessionPathKey } from "./session-path";
 import { checkSessionMembership, listSessionsIncremental, type ScannedSessionInfo } from "./session-list-scanner";
+import { openSessionManager } from "./session-open";
 import {
   isPathInSpace,
   sessionsRoot as sessionsRootPath,
@@ -593,7 +594,7 @@ export function readSessionHeader(filePath: string): SessionHeader | null {
 }
 
 export function getSessionEntries(filePath: string): SessionEntry[] {
-  const entries = SessionManager.open(filePath).getEntries();
+  const entries = openSessionManager(filePath).getEntries();
   return entries as unknown as SessionEntry[];
 }
 

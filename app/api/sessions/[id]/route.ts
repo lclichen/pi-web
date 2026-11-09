@@ -19,6 +19,7 @@ import { computeSessionStats } from "@/lib/session-stats";
 import type { SessionEntry } from "@/lib/types";
 import { readSubagentRun, readSubagentSessionResources, SUBAGENT_META_TYPE } from "@/lib/subagents";
 import { readSessionToolSelection } from "@/lib/session-tool-selection";
+import { invalidateSessionManagerCache, openSessionManager, openSessionManagerAsync } from "@/lib/session-open";
 import { jsonResponse } from "@/lib/json-response";
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -44,7 +45,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
     }
 
-    const sm = liveRpc?.inner.sessionManager ?? SessionManager.open(resolvedPath!);
+    // Cold detail view: cached read-only manager, large files parse on a
+    // worker thread instead of stalling the shared event loop (dev 批次3).
+    const sm = liveRpc?.inner.sessionManager ?? (await openSessionManagerAsync(resolvedPath!));
     const filePath = liveRpc?.sessionFile || sm.getSessionFile() || resolvedPath || "";
     const entries = sm.getEntries();
     const leafId = sm.getLeafId();
@@ -157,8 +160,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     if (!filePath) {
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
     }
-    const sm = SessionManager.open(filePath);
+    const sm = openSessionManager(filePath, { mutable: true });
     sm.appendSessionInfo(name.trim());
+    invalidateSessionManagerCache(filePath);
     invalidateSessionListForSession(filePath);
     return NextResponse.json({ ok: true });
   } catch (error) {

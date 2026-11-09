@@ -174,7 +174,7 @@ test("session reads use the live SessionManager before requiring a JSONL path", 
     const pathLookup = source.indexOf("resolveSessionAccess(");
     assert.ok(liveLookup >= 0);
     assert.ok(pathLookup > liveLookup);
-    assert.match(source, /liveRpc\?\.inner\.sessionManager \?\? SessionManager\.open/);
+    assert.match(source, /liveRpc\?\.inner\.sessionManager \?\? \(await openSessionManagerAsync/);
   }
 });
 

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { buildSessionContext } from "@/lib/session-reader";
 import { getRpcSession } from "@/lib/rpc-manager";
+import { openSessionManagerAsync } from "@/lib/session-open";
 import { checkLiveSessionAccess, resolveSessionAccess } from "@/lib/session-access";
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -38,7 +38,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
     }
 
-    const sm = liveRpc?.inner.sessionManager ?? SessionManager.open(filePath!);
+    // History pagination: cached read-only manager (repeat pages are ~1ms map
+    // hits); a cold large transcript parses on a worker thread (dev 批次3).
+    const sm = liveRpc?.inner.sessionManager ?? (await openSessionManagerAsync(filePath!));
     // `before` is the oldest entry already on the client; fetch its ancestors
     // only (excludeLeaf) so prepending the page does not duplicate `before`.
     const context = buildSessionContext(sm.getEntries() as never, before ?? leafId, {

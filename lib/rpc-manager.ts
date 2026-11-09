@@ -26,6 +26,7 @@ import {
   resolveSessionPath,
 } from "./session-reader";
 import { appendWebUiAddendum } from "./web-system-prompt";
+import { invalidateSessionManagerCache, openSessionManager, openSessionManagerAsync } from "./session-open";
 import { readPreferences } from "./preferences-service";
 import { readMcpConfig } from "./mcp-config";
 import { createModeToolClampExtension } from "./extensions/mode-tool-clamp";
@@ -1341,7 +1342,7 @@ export class AgentSessionWrapper {
               newSessionFile = forkedManager.getSessionFile() as string;
             } else {
               // Fork after some history: copy path up to (but not including) the fork point
-              forkedManager = SessionManager.open(currentSessionFile, sessionDir);
+              forkedManager = openSessionManager(currentSessionFile, { sessionDir, mutable: true });
               const forkedPath = forkedManager.createBranchedSession(entry.parentId);
               if (!forkedPath) throw new Error("Failed to create forked session");
               newSessionFile = forkedPath;
@@ -1376,11 +1377,11 @@ export class AgentSessionWrapper {
           if (!sessionManager.getEntry(entryId)) throw new Error("Invalid entry ID for forking");
 
           const sessionDir = sessionManager.getSessionDir();
-          const sourceManager = SessionManager.open(currentSessionFile, sessionDir);
+          const sourceManager = openSessionManager(currentSessionFile, { sessionDir, mutable: true });
           const forkedPath = sourceManager.createBranchedSession(entryId);
           if (!forkedPath) throw new Error("Failed to create forked session");
 
-          const newSessionId = SessionManager.open(forkedPath, sessionDir).getSessionId();
+          const newSessionId = openSessionManager(forkedPath, { sessionDir }).getSessionId();
           cacheSessionPath(newSessionId, forkedPath);
           this.invalidateOwnSessionList();
           return { cancelled: false, newSessionId };
@@ -1404,11 +1405,11 @@ export class AgentSessionWrapper {
 
           return this.withSessionReplacement("clone", async () => {
             const sessionDir = sessionManager.getSessionDir();
-            const sourceManager = SessionManager.open(currentSessionFile, sessionDir);
+            const sourceManager = openSessionManager(currentSessionFile, { sessionDir, mutable: true });
             const clonedPath = sourceManager.createBranchedSession(leafId);
             if (!clonedPath || !existsSync(clonedPath)) throw new Error("Failed to clone current session branch");
 
-            const newSessionId = SessionManager.open(clonedPath, sessionDir).getSessionId();
+            const newSessionId = openSessionManager(clonedPath, { sessionDir }).getSessionId();
             cacheSessionPath(newSessionId, clonedPath);
             this.invalidateOwnSessionList();
             await this.shutdownAfterSessionReplacement("clone");
@@ -2648,11 +2649,12 @@ export async function setRpcSessionTools(
 
   if (!existing?.isAlive()) {
     if (!sessionFile) throw new Error("Session not found");
-    const manager = SessionManager.open(sessionFile, undefined);
+    const manager = openSessionManager(sessionFile, { mutable: true });
     if (readSubagentSessionResources(manager.getEntries() as unknown as SessionEntry[])) {
       throw new Error("Subagent tool selection is fixed by its profile");
     }
     appendSessionToolSelection(manager, toolNames);
+    invalidateSessionManagerCache(sessionFile);
     invalidateSessionListForSession(sessionFile);
     const started = await startRpcSession(sessionId, sessionFile, undefined);
     return { session: started.session, sessionId: started.realSessionId, recreated: false };
@@ -2886,31 +2888,37 @@ export async function startRpcSession(
   const inflight = locks.get(sessionId);
   if (inflight) return inflight;
 
-  let sessionManager: SessionManager;
-  if (sessionFile) {
-    sessionManager = SessionManager.open(sessionFile, sessionDir);
-  } else {
-    if (!cwd) throw new Error("cwd is required for a new session");
-    sessionManager = SessionManager.create(cwd, sessionDir);
-  }
-  const sessionCwd = sessionManager.getCwd();
-  const subagentResources = sessionFile
-    ? readSubagentSessionResources(sessionManager.getEntries() as unknown as SessionEntry[])
-    : null;
-  const persistedToolNames = subagentResources
-    ? undefined
-    : readSessionToolSelection(sessionManager.getEntries() as unknown as SessionEntry[]);
-  const selectedToolNames = subagentResources?.tools ?? persistedToolNames ?? requestedToolNames;
-  // quick 的工具面由模板白名单唯一决定：持久化的工具选择（历史版本 quick
-  // 会话落过 read/bash/edit/write 甚至空集——空集还会误判 chat-only）既不
-  // 读取应用，也不再为新会话追加持久化条目。
-  if (!subagentResources && !quick && persistedToolNames === undefined && requestedToolNames !== undefined) {
-    appendSessionToolSelection(sessionManager, requestedToolNames);
-  }
-  const subagentLoadsResources = Boolean(subagentResources?.loadExtensions || subagentResources?.loadSkills);
-  const chatOnly = !quick && selectedToolNames?.length === 0 && !subagentLoadsResources;
-  const finishStartingSession = trackStartingSession(sessionCwd);
+  // The whole cold-start — including the session-file parse — runs inside the
+  // per-session lock promise (dev 批次3): startRpcSession is async, and a
+  // large transcript parses on a worker thread instead of stalling the shared
+  // event loop while every other user's requests wait.
+  let finishStartingSession: () => void = () => {};
   const starting = (async () => {
+    let sessionManager: SessionManager;
+    if (sessionFile) {
+      sessionManager = await openSessionManagerAsync(sessionFile, { sessionDir, mutable: true });
+    } else {
+      if (!cwd) throw new Error("cwd is required for a new session");
+      sessionManager = SessionManager.create(cwd, sessionDir);
+    }
+    const sessionCwd = sessionManager.getCwd();
+    const subagentResources = sessionFile
+      ? readSubagentSessionResources(sessionManager.getEntries() as unknown as SessionEntry[])
+      : null;
+    const persistedToolNames = subagentResources
+      ? undefined
+      : readSessionToolSelection(sessionManager.getEntries() as unknown as SessionEntry[]);
+    const selectedToolNames = subagentResources?.tools ?? persistedToolNames ?? requestedToolNames;
+    // quick 的工具面由模板白名单唯一决定：持久化的工具选择（历史版本 quick
+    // 会话落过 read/bash/edit/write 甚至空集——空集还会误判 chat-only）既不
+    // 读取应用，也不再为新会话追加持久化条目。
+    if (!subagentResources && !quick && persistedToolNames === undefined && requestedToolNames !== undefined) {
+      appendSessionToolSelection(sessionManager, requestedToolNames);
+    }
+    const subagentLoadsResources = Boolean(subagentResources?.loadExtensions || subagentResources?.loadSkills);
+    const chatOnly = !quick && selectedToolNames?.length === 0 && !subagentLoadsResources;
+    finishStartingSession = trackStartingSession(sessionCwd);
+
     // Some extensions access the SDK's global theme even outside the terminal UI.
     if (!chatOnly) initTheme();
     const agentDir = getAgentDir();

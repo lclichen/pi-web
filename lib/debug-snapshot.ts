@@ -9,6 +9,7 @@ import {
   type EventLoopDelaySnapshot,
   type PerfStatsSnapshot,
 } from "./perf-stats.ts";
+import { sessionParseQueueDepth } from "./session-open.ts";
 import { getProjectTrustStatus } from "./project-trust.ts";
 import {
   getRpcSessionDebugSnapshots,
@@ -40,6 +41,8 @@ export interface DebugProcessInfo {
    * defines the window (DebugPanel: 2s). */
   eventLoopDelayMs: EventLoopDelaySnapshot | null;
   perf: PerfStatsSnapshot;
+  /** Worker parse pool state (large session restores). */
+  parseQueue: { queued: number; active: number };
 }
 
 export interface DebugSnapshot {
@@ -80,6 +83,7 @@ function readProcessInfo(): DebugProcessInfo {
     heapLimitBytes,
     eventLoopDelayMs: readEventLoopDelayAndReset(),
     perf: perfStatsSnapshot(),
+    parseQueue: sessionParseQueueDepth(),
   };
 }
 
@@ -150,6 +154,7 @@ export function buildDebugSnapshot(sessionId: string | null, now = Date.now()): 
       heapLimitBytes: 0,
       eventLoopDelayMs: null,
       perf: perfStatsSnapshot(),
+      parseQueue: { queued: 0, active: 0 },
     }),
     totals: {
       wrappers: wrappers.length,

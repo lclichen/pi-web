@@ -7,6 +7,7 @@ import {
   SessionManager,
   type ModelRuntime,
 } from "@earendil-works/pi-coding-agent";
+import { openSessionManager } from "./session-open";
 import type { AgentSessionLike } from "./pi-types";
 import {
   subagentFinalText,
@@ -366,7 +367,7 @@ export function createSubagentController(dependencies: SubagentRuntimeDependenci
     }
     const sessionPath = await dependencies.resolveSessionPath(sessionId);
     if (!sessionPath) return null;
-    const manager = SessionManager.open(sessionPath);
+    const manager = openSessionManager(sessionPath);
     return readSubagentRun(manager.getEntries() as unknown as SessionEntry[], sessionId, sessionPath);
   }
 

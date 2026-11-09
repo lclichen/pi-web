@@ -1,31 +1,53 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ListChevronsDownUp, ListChevronsUpDown, ListFilter, Pin } from "lucide-react";
 import { useI18n } from "@/hooks/useI18n";
 import type { SessionInfo } from "@/lib/types";
 import type { ProjectRecord } from "@/lib/projects";
 import type { HostDirRecord } from "@/lib/host-dirs";
 import { buildHostGroups, hostDirLabel } from "@/lib/host-groups";
+import {
+  anySidebarGroupExpanded,
+  setAllSidebarGroups,
+  sortSidebarGroups,
+} from "@/lib/sidebar-groups";
+import {
+  hostPinKey,
+  projectPinKey,
+  SIDEBAR_SORT_STORAGE_KEY,
+  SIDEBAR_UNREAD_ONLY_STORAGE_KEY,
+  type SidebarPinState,
+  type SidebarSortMode,
+} from "@/lib/sidebar-state-shared";
 import { formatRelativeTime } from "@/lib/subagent-shared";
 import { ProjectSettingsDialog } from "./ProjectSettingsDialog";
 import { ProjectImportDialog } from "./ProjectImportDialog";
 import { ApplyBundleDialog } from "./ApplyBundleDialog";
 
-const PROJECT_ORDER_STORAGE_KEY = "pi-web:project-order";
-
-function loadProjectOrder(): string[] {
-  if (typeof window === "undefined") return [];
+function loadSortMode(): SidebarSortMode {
+  if (typeof window === "undefined") return "project";
   try {
-    const parsed = JSON.parse(window.localStorage.getItem(PROJECT_ORDER_STORAGE_KEY) ?? "[]") as unknown;
-    return Array.isArray(parsed) ? parsed.filter((value): value is string => typeof value === "string") : [];
+    return window.localStorage.getItem(SIDEBAR_SORT_STORAGE_KEY) === "connection" ? "connection" : "project";
   } catch {
-    return [];
+    return "project";
+  }
+}
+
+function loadUnreadOnly(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(SIDEBAR_UNREAD_ONLY_STORAGE_KEY) === "1";
+  } catch {
+    return false;
   }
 }
 
 interface Props {
   sessions: SessionInfo[];
   runningSessionIds: Set<string>;
+  /** Sessions completed in the background since the user last opened them. */
+  unreadSessionIds: ReadonlySet<string>;
   selectedSessionId: string | null;
   onSelectSession: (session: SessionInfo) => void;
   onNewSessionInProject: (project: ProjectRecord) => void;
@@ -61,6 +83,7 @@ const useT = () => useI18n().t;
 export function ProjectSessionTree({
   sessions,
   runningSessionIds,
+  unreadSessionIds,
   selectedSessionId,
   onSelectSession,
   onNewSessionInProject,
@@ -92,8 +115,10 @@ export function ProjectSessionTree({
   const [query, setQuery] = useState("");
   // Host 目录组不是持久化的 ProjectRecord，菜单按 directory 分发。
   const [menu, setMenu] = useState<{ project?: ProjectRecord; directory?: string; x: number; y: number } | null>(null);
-  // Manual project order (browser-local): move up/down from the group menu.
-  const [projectOrder, setProjectOrder] = useState<string[]>(loadProjectOrder);
+  const [pins, setPins] = useState<SidebarPinState>({ pinnedProjects: [], pinnedSessions: [] });
+  const [sortMode, setSortMode] = useState<SidebarSortMode>(loadSortMode);
+  const [unreadOnly, setUnreadOnly] = useState(loadUnreadOnly);
+  const [viewMenuOpen, setViewMenuOpen] = useState(false);
   const [settingsId, setSettingsId] = useState<string | null>(null);
   const [importId, setImportId] = useState<string | null>(null);
   const [applyBundleId, setApplyBundleId] = useState<string | null>(null);
@@ -106,33 +131,93 @@ export function ProjectSessionTree({
   const [newDialog, setNewDialog] = useState<"sandbox" | "local-machine" | null>(null);
   const [myWorkspaceId, setMyWorkspaceId] = useState<number | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const viewMenuRef = useRef<HTMLDivElement | null>(null);
 
-  const orderedProjects = useMemo(() => {
-    if (projectOrder.length === 0) return projects;
-    const rank = new Map(projectOrder.map((id, index) => [id, index]));
-    return [...projects].sort((a, b) => {
-      const left = rank.get(a.id) ?? Number.MAX_SAFE_INTEGER;
-      const right = rank.get(b.id) ?? Number.MAX_SAFE_INTEGER;
-      return left === right ? a.name.localeCompare(b.name) : left - right;
-    });
-  }, [projectOrder, projects]);
+  const pinnedProjectKeys = useMemo(() => new Set(pins.pinnedProjects), [pins.pinnedProjects]);
+  const pinnedSessionKeys = useMemo(() => new Set(pins.pinnedSessions), [pins.pinnedSessions]);
+  const pinRankByProjectKey = useMemo(
+    () => new Map(pins.pinnedProjects.map((key, index) => [key, index])),
+    [pins.pinnedProjects],
+  );
 
-  const moveProject = useCallback(
-    (projectId: string, delta: -1 | 1) => {
-      const ids = orderedProjects.map((project) => project.id);
-      const index = ids.indexOf(projectId);
-      const target = index + delta;
-      if (index < 0 || target < 0 || target >= ids.length) return;
-      [ids[index], ids[target]] = [ids[target], ids[index]];
-      setProjectOrder(ids);
+  const loadPins = useCallback(() => {
+    fetch("/api/sidebar-state")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: SidebarPinState | null) => {
+        if (!d) return;
+        setPins({
+          pinnedProjects: Array.isArray(d.pinnedProjects) ? d.pinnedProjects : [],
+          pinnedSessions: Array.isArray(d.pinnedSessions) ? d.pinnedSessions : [],
+        });
+      })
+      .catch(() => {});
+  }, []);
+  useEffect(() => {
+    loadPins();
+  }, [loadPins]);
+
+  const applyPin = useCallback(
+    async (patch: { projectKey?: string; sessionId?: string; pinned: boolean }) => {
       try {
-        window.localStorage.setItem(PROJECT_ORDER_STORAGE_KEY, JSON.stringify(ids));
+        const res = await fetch("/api/sidebar-state", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(patch),
+        });
+        const data = (await res.json().catch(() => null)) as SidebarPinState | null;
+        if (!res.ok || !data) return false;
+        setPins({
+          pinnedProjects: Array.isArray(data.pinnedProjects) ? data.pinnedProjects : [],
+          pinnedSessions: Array.isArray(data.pinnedSessions) ? data.pinnedSessions : [],
+        });
+        return true;
       } catch {
-        // Private mode / storage disabled: sort applies to this mount only.
+        return false;
       }
     },
-    [orderedProjects],
+    [],
   );
+
+  const toggleProjectPin = useCallback(
+    (projectKey: string, pinned: boolean) => void applyPin({ projectKey, pinned }),
+    [applyPin],
+  );
+  const toggleSessionPin = useCallback(
+    (sessionId: string, pinned: boolean) => void applyPin({ sessionId, pinned }),
+    [applyPin],
+  );
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(SIDEBAR_SORT_STORAGE_KEY, sortMode);
+    } catch {
+      // Private mode: applies to this mount only.
+    }
+  }, [sortMode]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(SIDEBAR_UNREAD_ONLY_STORAGE_KEY, unreadOnly ? "1" : "0");
+    } catch {
+      // Private mode: applies to this mount only.
+    }
+  }, [unreadOnly]);
+
+  useEffect(() => {
+    if (!viewMenuOpen) return;
+    const close = (e: MouseEvent) => {
+      if (viewMenuRef.current && !viewMenuRef.current.contains(e.target as Node)) setViewMenuOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setViewMenuOpen(false);
+    };
+    window.addEventListener("mousedown", close);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("mousedown", close);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [viewMenuOpen]);
 
   const loadProjects = useCallback(() => {
     fetch("/api/projects")
@@ -200,15 +285,6 @@ export function ProjectSessionTree({
       localStorage.setItem(COLLAPSE_KEY, JSON.stringify([...next]));
       return next;
     });
-  };
-
-  const pin = async (project: ProjectRecord, sessionId: string, pinned: boolean) => {
-    await fetch(`/api/projects/${encodeURIComponent(project.id)}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(pinned ? { unpinSessionId: sessionId } : { pinSessionId: sessionId }),
-    }).catch(() => {});
-    loadProjects();
   };
 
   const duplicate = async (project: ProjectRecord) => {
@@ -346,6 +422,36 @@ export function ProjectSessionTree({
     }
   };
 
+  // Unread-only applies before grouping, so empty projects/directories drop
+  // out of the list instead of leaving a skeleton of headers.
+  const baseSessions = useMemo(() => {
+    if (!unreadOnly) return sessions;
+    const visibleParents = new Set<string>();
+    for (const s of sessions) {
+      if (s.relation?.kind === "subagent") continue;
+      if (unreadSessionIds.has(s.id)) visibleParents.add(s.id);
+    }
+    return sessions.filter((s) =>
+      s.relation?.kind === "subagent"
+        ? visibleParents.has(s.relation.parentSessionId)
+        : visibleParents.has(s.id),
+    );
+  }, [sessions, unreadOnly, unreadSessionIds]);
+
+  // Pinned sessions move out of their project/Host directory group into one
+  // "Pinned" section above everything; their subagent children ride along.
+  const pinnedSessions = useMemo(() => {
+    const order = new Map(pins.pinnedSessions.map((id, index) => [id, index]));
+    return baseSessions
+      .filter((s) => s.relation?.kind !== "subagent" && pinnedSessionKeys.has(s.id))
+      .sort((a, b) => (order.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (order.get(b.id) ?? Number.MAX_SAFE_INTEGER));
+  }, [baseSessions, pinnedSessionKeys, pins.pinnedSessions]);
+
+  const groupSessions = useMemo(
+    () => baseSessions.filter((s) => !pinnedSessionKeys.has(s.id)),
+    [baseSessions, pinnedSessionKeys],
+  );
+
   // Group sessions by project; ungrouped (host-mode/CLI) by projectRoot.
   // Quick sessions (no workspace, no project) are partitioned out entirely —
   // they render in their own "quick" space tab and must never leak into
@@ -353,7 +459,7 @@ export function ProjectSessionTree({
   const byProject = useMemo(() => {
     const map = new Map<string, SessionInfo[]>();
     const ungrouped: SessionInfo[] = [];
-    for (const s of sessions) {
+    for (const s of groupSessions) {
       if (s.mode === "quick") continue;
       // 子智能体会话不带 projectId/mode 元数据，未绑定分组会把它们归进
       // "未知来源"——排除后经 subagentChildren 嵌套在父行下渲染。
@@ -369,14 +475,14 @@ export function ProjectSessionTree({
     for (const list of map.values()) list.sort((a, b) => b.modified.localeCompare(a.modified));
     ungrouped.sort((a, b) => b.modified.localeCompare(a.modified));
     return { map, ungrouped };
-  }, [sessions]);
+  }, [groupSessions]);
 
-  // 子会话按父会话 id 索引——父行落在哪个组（项目/Host 目录/未绑定），
+  // 子会话按父会话 id 索引——父行落在哪个组（项目/Host 目录/未绑定/置顶），
   // 子行就缩进渲染在它下面。父会话不在当前列表时子会话随之隐藏：它们
   // 是一个家族，不是独立会话。
   const subagentChildren = useMemo(() => {
     const map = new Map<string, SessionInfo[]>();
-    for (const s of sessions) {
+    for (const s of baseSessions) {
       if (s.relation?.kind !== "subagent") continue;
       const parent = s.relation.parentSessionId;
       const list = map.get(parent) ?? [];
@@ -385,7 +491,7 @@ export function ProjectSessionTree({
     }
     for (const list of map.values()) list.sort((a, b) => b.modified.localeCompare(a.modified));
     return map;
-  }, [sessions]);
+  }, [baseSessions]);
 
   // Quick-space two-level tree: group by template VERSION (quickGroupKey =
   // "<templateId>@<hash>", derived server-side from the workspace snapshot).
@@ -405,7 +511,7 @@ export function ProjectSessionTree({
         sessions: SessionInfo[];
       }
     >();
-    for (const s of sessions) {
+    for (const s of groupSessions) {
       if (s.mode !== "quick") continue;
       const key = s.quickGroupKey ?? "__unassigned";
       let group = groups.get(key);
@@ -432,7 +538,7 @@ export function ProjectSessionTree({
         sessions: group.sessions.sort((a, b) => b.modified.localeCompare(a.modified)),
       }))
       .sort((a, b) => b.sessions[0]?.modified.localeCompare(a.sessions[0]?.modified ?? "") ?? 0);
-  }, [sessions]);
+  }, [groupSessions]);
 
   // 管理员通过"打开服务器目录"（host 模式）建的会话没有 projectId，按目录
   // 动态分组显示——不区分 mine/host 空间（UI 没有空间切换入口，之前 gate
@@ -447,6 +553,60 @@ export function ProjectSessionTree({
   // 目录根 → 注册记录（显示名/菜单用）。
   const hostDirByRoot = useMemo(() => new Map(hostDirs.map((d) => [d.root, d])), [hostDirs]);
 
+  // Latest activity per project/Host root, including pinned sessions, so
+  // pinning a session never changes where its project sorts.
+  const latestByProject = useMemo(() => {
+    const latest = new Map<string, string>();
+    for (const s of sessions) {
+      if (!s.projectId) continue;
+      if (!latest.has(s.projectId) || s.modified > latest.get(s.projectId)!) latest.set(s.projectId, s.modified);
+    }
+    return latest;
+  }, [sessions]);
+
+  const latestByHostRoot = useMemo(() => {
+    const latest = new Map<string, string>();
+    for (const s of sessions) {
+      if (s.projectId || s.mode !== "host") continue;
+      const root = s.projectRoot ?? s.cwd;
+      if (!latest.has(root) || s.modified > latest.get(root)!) latest.set(root, s.modified);
+    }
+    return latest;
+  }, [sessions]);
+
+  const orderedProjects = useMemo(() => {
+    const items = projects.map((project) => {
+      const key = projectPinKey(project.id);
+      return {
+        key,
+        name: project.name,
+        mode: project.mode,
+        latest: latestByProject.get(project.id) ?? "",
+        pinned: pinnedProjectKeys.has(key),
+        pinRank: pinRankByProjectKey.get(key) ?? -1,
+        project,
+      };
+    });
+    return sortSidebarGroups(items, sortMode).map((item) => item.project);
+  }, [latestByProject, pinRankByProjectKey, pinnedProjectKeys, projects, sortMode]);
+
+  const orderedHostGroups = useMemo(() => {
+    const items = hostGroups.map(([root, list]) => {
+      const key = hostPinKey(root);
+      return {
+        key,
+        name: hostDirByRoot.get(root)?.name?.trim() || hostDirLabel(root),
+        mode: "host",
+        latest: latestByHostRoot.get(root) ?? "",
+        pinned: pinnedProjectKeys.has(key),
+        pinRank: pinRankByProjectKey.get(key) ?? -1,
+        root,
+        list,
+      };
+    });
+    return sortSidebarGroups(items, sortMode).map((item) => [item.root, item.list] as [string, SessionInfo[]]);
+  }, [hostDirByRoot, hostGroups, latestByHostRoot, pinRankByProjectKey, pinnedProjectKeys, sortMode]);
+
   // 未绑定项目的非宿主模式会话，按 mode 聚成一组（沙箱/本机/SSH 各一组）。
   const unboundModeGroups = useMemo(() => {
     const groups = new Map<string, SessionInfo[]>();
@@ -460,10 +620,10 @@ export function ProjectSessionTree({
     return [...groups.entries()];
   }, [byProject.ungrouped]);
 
-  const renderItem = (s: SessionInfo, project: ProjectRecord | null) => {
+  const renderItem = (s: SessionInfo) => {
     const selected = s.id === selectedSessionId;
     const running = runningSessionIds.has(s.id);
-    const pinned = project?.pinnedSessions.includes(s.id) ?? false;
+    const pinned = pinnedSessionKeys.has(s.id);
     const children = subagentChildren.get(s.id);
     return (
       <div key={s.id}>
@@ -471,14 +631,13 @@ export function ProjectSessionTree({
           session={s}
           selected={selected}
           running={running}
+          unread={unreadSessionIds.has(s.id)}
           pinned={pinned}
-          canPin={Boolean(project)}
+          canPin
           onSelect={() => onSelectSession(s)}
           onRename={(name) => void onRenameSession(s.id, name)}
           onDelete={() => void onDeleteSession(s.id)}
-          onTogglePin={() => {
-            if (project) void pin(project, s.id, pinned);
-          }}
+          onTogglePin={() => toggleSessionPin(s.id, !pinned)}
         />
         {children?.map((child) => (
           <ProjectSessionRow
@@ -487,6 +646,7 @@ export function ProjectSessionTree({
             nested
             selected={child.id === selectedSessionId}
             running={runningSessionIds.has(child.id)}
+            unread={unreadSessionIds.has(child.id)}
             pinned={false}
             canPin={false}
             onSelect={() => onSelectSession(child)}
@@ -501,20 +661,38 @@ export function ProjectSessionTree({
 
   const projectSessions = (project: ProjectRecord): { visible: SessionInfo[]; total: number } => {
     const all = byProject.map.get(project.id) ?? [];
-    const pinned = project.pinnedSessions
-      .map((id) => all.find((s) => s.id === id))
-      .filter((s): s is SessionInfo => Boolean(s));
-    const rest = all.filter((s) => !project.pinnedSessions.includes(s.id));
     const expandedAll = showAll.has(project.id);
-    const recent = expandedAll ? rest : rest.slice(0, RECENT_COUNT - Math.min(pinned.length, RECENT_COUNT));
-    return { visible: [...pinned, ...recent], total: all.length };
+    return { visible: expandedAll ? all : all.slice(0, RECENT_COUNT), total: all.length };
   };
+
+  const expandableGroupKeys = useMemo(() => {
+    const keys: string[] = [];
+    if (sessionSpace === "mine") {
+      for (const project of orderedProjects) {
+        if ((byProject.map.get(project.id)?.length ?? 0) > 0) keys.push(project.id);
+      }
+    }
+    if (sessionSpace !== "quick") {
+      for (const [root, list] of orderedHostGroups) {
+        if (list.length > 0) keys.push(`host:${root}`);
+      }
+      for (const [mode, list] of unboundModeGroups) {
+        if (list.length > 0) keys.push(`unbound:${mode}`);
+      }
+    }
+    if (sessionSpace === "quick") {
+      for (const group of quickGroups) {
+        if (group.sessions.length > 0) keys.push(`quick:${group.key}`);
+      }
+    }
+    return keys;
+  }, [byProject.map, orderedHostGroups, orderedProjects, quickGroups, sessionSpace, unboundModeGroups]);
 
   // 全局会话搜索：按名称/首条消息/id 过滤全部会话，平铺显示（含所属项目标记）。
   const searching = query.trim().length > 0;
   const allSessionsSorted = useMemo(
-    () => [...sessions].sort((a, b) => b.modified.localeCompare(a.modified)),
-    [sessions],
+    () => [...baseSessions].sort((a, b) => b.modified.localeCompare(a.modified)),
+    [baseSessions],
   );
   const searchResults = useMemo(() => {
     if (!searching) return [] as SessionInfo[];
@@ -528,6 +706,19 @@ export function ProjectSessionTree({
       )
       .slice(0, 50);
   }, [searching, query, allSessionsSorted]);
+
+  const anyGroupExpanded = anySidebarGroupExpanded(expandableGroupKeys, collapsed);
+  const toggleAllGroups = useCallback(() => {
+    const next = setAllSidebarGroups(collapsed, expandableGroupKeys, anyGroupExpanded);
+    setCollapsed(next);
+    try {
+      window.localStorage.setItem(COLLAPSE_KEY, JSON.stringify([...next]));
+    } catch {
+      // Private mode: applies to this mount only.
+    }
+  }, [anyGroupExpanded, collapsed, expandableGroupKeys]);
+  const hasVisibleTopLevelSession = baseSessions.some((s) => s.relation?.kind !== "subagent");
+  const collapseButtonDisabled = searching || expandableGroupKeys.length === 0;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 2, padding: "6px 4px" }}>
@@ -580,8 +771,8 @@ export function ProjectSessionTree({
         </div>
       )}
 
-      {/* 全局会话搜索 */}
-      <div style={{ padding: "0 4px 8px" }}>
+      {/* 全局会话搜索 + 视图/排序 */}
+      <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "0 4px 8px" }}>
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -591,7 +782,8 @@ export function ProjectSessionTree({
           placeholder={t("sessions.searchSessions")}
           spellCheck={false}
           style={{
-            width: "100%",
+            flex: 1,
+            minWidth: 0,
             boxSizing: "border-box",
             height: 26,
             padding: "0 8px",
@@ -604,6 +796,172 @@ export function ProjectSessionTree({
             outline: "none",
           }}
         />
+        <button
+          type="button"
+          aria-label={anyGroupExpanded ? t("sessions.collapseAllProjects") : t("sessions.expandAllProjects")}
+          title={anyGroupExpanded ? t("sessions.collapseAllProjects") : t("sessions.expandAllProjects")}
+          onClick={toggleAllGroups}
+          disabled={collapseButtonDisabled}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            width: 26,
+            height: 26,
+            padding: 0,
+            flexShrink: 0,
+            border: "1px solid var(--border)",
+            borderRadius: 5,
+            background: "transparent",
+            color: "var(--text-muted)",
+            cursor: collapseButtonDisabled ? "not-allowed" : "pointer",
+            opacity: collapseButtonDisabled ? 0.4 : 1,
+          }}
+        >
+          {anyGroupExpanded ? <ListChevronsDownUp size={14} /> : <ListChevronsUpDown size={14} />}
+        </button>
+        <div ref={viewMenuRef} style={{ position: "relative", flexShrink: 0 }}>
+          <button
+            type="button"
+            aria-label={t("sessions.viewOptions")}
+            title={t("sessions.viewOptions")}
+            aria-haspopup="menu"
+            aria-expanded={viewMenuOpen}
+            onClick={() => setViewMenuOpen((open) => !open)}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: 26,
+              height: 26,
+              padding: 0,
+              position: "relative",
+              border: `1px solid ${viewMenuOpen ? "var(--accent)" : "var(--border)"}`,
+              borderRadius: 5,
+              background: viewMenuOpen ? "var(--bg-selected)" : "transparent",
+              color: viewMenuOpen ? "var(--text)" : "var(--text-muted)",
+              cursor: "pointer",
+            }}
+          >
+            <ListFilter size={14} />
+            {unreadOnly && (
+              <span
+                aria-hidden="true"
+                style={{
+                  position: "absolute",
+                  top: 3,
+                  right: 3,
+                  width: 5,
+                  height: 5,
+                  borderRadius: 999,
+                  background: "var(--accent)",
+                }}
+              />
+            )}
+          </button>
+          {viewMenuOpen && (
+            <div
+              role="menu"
+              aria-label={t("sessions.viewOptions")}
+              style={{
+                position: "absolute",
+                top: 30,
+                right: 0,
+                zIndex: 1200,
+                minWidth: 190,
+                padding: 4,
+                background: "var(--bg-panel)",
+                border: "1px solid var(--border)",
+                borderRadius: 8,
+                boxShadow: "0 8px 24px rgba(0,0,0,0.3)",
+                fontSize: 12,
+              }}
+            >
+              <div style={{ padding: "4px 8px 2px", fontSize: 10, color: "var(--text-dim)" }}>
+                {t("sessions.sortLabel")}
+              </div>
+              {(["project", "connection"] as SidebarSortMode[]).map((mode) => {
+                const active = sortMode === mode;
+                return (
+                  <button
+                    key={mode}
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={active}
+                    onClick={() => {
+                      setSortMode(mode);
+                      setViewMenuOpen(false);
+                    }}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 7,
+                      width: "100%",
+                      padding: "6px 8px",
+                      background: "transparent",
+                      border: "none",
+                      borderRadius: 5,
+                      color: active ? "var(--text)" : "var(--text-muted)",
+                      cursor: "pointer",
+                      textAlign: "left",
+                    }}
+                  >
+                    <span style={{ width: 12, flexShrink: 0, color: "var(--accent)" }}>{active ? "✓" : ""}</span>
+                    <span>
+                      {mode === "project"
+                        ? t("sessions.sortProjectFirst")
+                        : t("sessions.sortConnectionFirst")}
+                    </span>
+                  </button>
+                );
+              })}
+              <div style={{ borderTop: "1px solid var(--border)", margin: "3px 0" }} />
+              <div style={{ padding: "4px 8px 2px", fontSize: 10, color: "var(--text-dim)" }}>
+                {t("sessions.filterLabel")}
+              </div>
+              <button
+                type="button"
+                role="menuitemcheckbox"
+                aria-checked={unreadOnly}
+                onClick={() => setUnreadOnly((value) => !value)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 7,
+                  width: "100%",
+                  padding: "6px 8px",
+                  background: "transparent",
+                  border: "none",
+                  borderRadius: 5,
+                  color: unreadOnly ? "var(--text)" : "var(--text-muted)",
+                  cursor: "pointer",
+                  textAlign: "left",
+                }}
+              >
+                <span
+                  aria-hidden="true"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    width: 12,
+                    height: 12,
+                    flexShrink: 0,
+                    borderRadius: 3,
+                    border: `1px solid ${unreadOnly ? "var(--accent)" : "var(--border)"}`,
+                    background: unreadOnly ? "var(--accent)" : "transparent",
+                    color: "var(--bg)",
+                    fontSize: 9,
+                    fontWeight: 700,
+                  }}
+                >
+                  {unreadOnly ? "✓" : ""}
+                </span>
+                <span>{t("sessions.unreadOnly")}</span>
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {searching && (
@@ -624,7 +982,7 @@ export function ProjectSessionTree({
                         ? `⚡ ${t("sessions.quick")}`
                         : (s.projectRoot ?? t("sessions.ungrouped"))}
                   </div>
-                  {renderItem(s, owner)}
+                  {renderItem(s)}
                 </div>
               );
             })
@@ -634,13 +992,43 @@ export function ProjectSessionTree({
 
       {!searching && (
         <>
+          {/* 已置顶会话：跨项目/Host 目录统一浮到项目区上方；原分组里不再重复。 */}
+          {pinnedSessions.length > 0 && (
+            <div style={{ marginBottom: 2 }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  padding: "4px 6px",
+                  fontSize: 11,
+                  color: "var(--text-dim)",
+                }}
+              >
+                <Pin size={11} aria-hidden="true" />
+                <span>{t("sessions.pinned")}</span>
+                <span style={{ marginLeft: "auto", fontSize: 10 }}>{pinnedSessions.length}</span>
+              </div>
+              {pinnedSessions.map((s) => renderItem(s))}
+            </div>
+          )}
+          {unreadOnly && !hasVisibleTopLevelSession && (
+            <div style={{ padding: "8px 6px", fontSize: 11, color: "var(--text-dim)" }}>
+              {t("sessions.noUnreadSessions")}
+            </div>
+          )}
+
           {/* 项目列表只属于“我的会话”空间：Host(CLI) 是 CLI/服务器目录会话的
           专用视图，混入平台项目组（多为空态）只会稀释真正的 CLI 分组；
           项目的浏览/管理入口在“我的会话”一侧。 */}
           {sessionSpace === "mine" &&
-            orderedProjects.map((project) => {
+            orderedProjects
+              .filter((project) => !unreadOnly || (byProject.map.get(project.id)?.length ?? 0) > 0)
+              .map((project) => {
               const { visible, total } = projectSessions(project);
               const isCollapsed = collapsed.has(project.id);
+              const projectPinned = pinnedProjectKeys.has(projectPinKey(project.id));
+              const projectHasPinnedSessions = pinnedSessions.some((s) => s.projectId === project.id);
               // 焦点会话所属项目高亮 + 左侧模式色条，一眼定位当前所在项目。
               const projectHoldsFocus = Boolean(
                 selectedSessionId && byProject.map.get(project.id)?.some((s) => s.id === selectedSessionId),
@@ -723,6 +1111,9 @@ export function ProjectSessionTree({
                           ? t("SSH")
                           : t("sessions.local")}
                     </span>
+                    {projectPinned && (
+                      <Pin size={11} fill="currentColor" style={{ color: "#f59e0b", flexShrink: 0 }} aria-hidden="true" />
+                    )}
                     <span
                       style={{
                         flex: 1,
@@ -786,7 +1177,7 @@ export function ProjectSessionTree({
                   </div>
                   {!isCollapsed && (
                     <div>
-                      {visible.map((s) => renderItem(s, project))}
+                      {visible.map((s) => renderItem(s))}
                       {total > visible.length && (
                         <button
                           type="button"
@@ -803,7 +1194,7 @@ export function ProjectSessionTree({
                           {t("sessions.showAllSessions", { n: total })}
                         </button>
                       )}
-                      {total === 0 && (
+                      {total === 0 && !projectHasPinnedSessions && (
                         <div style={{ padding: "4px 6px 6px 26px", fontSize: 11, color: "var(--text-dim)" }}>
                           {t("sessions.sessionsYetClickCreate")}
                         </div>
@@ -813,13 +1204,13 @@ export function ProjectSessionTree({
                 </div>
               );
             })}
-          {sessionSpace === "mine" && projects.length === 0 && hostGroups.length === 0 && (
+          {sessionSpace === "mine" && !unreadOnly && projects.length === 0 && hostGroups.length === 0 && (
             <div style={{ padding: "8px 6px", fontSize: 11, color: "var(--text-dim)" }}>
               {t("sessions.projectsYetUseButtonAbove")}
             </div>
           )}
 
-          {sessionSpace === "host" && hostGroups.length === 0 && (
+          {sessionSpace === "host" && !unreadOnly && hostGroups.length === 0 && (
             <div style={{ padding: "8px 6px", fontSize: 11, color: "var(--text-dim)" }}>
               {t("sessions.hostSessionsYetSessionsOpened")}
             </div>
@@ -931,7 +1322,7 @@ export function ProjectSessionTree({
                         </button>
                       )}
                     </div>
-                    {visible.map((s) => renderItem(s, null))}
+                    {visible.map((s) => renderItem(s))}
                     {!isCollapsed && !expandedAll && group.sessions.length > RECENT_COUNT && (
                       <button
                         type="button"
@@ -951,7 +1342,7 @@ export function ProjectSessionTree({
                   </div>
                 );
               })}
-              {quickGroups.length === 0 && (
+              {quickGroups.length === 0 && !unreadOnly && (
                 <div style={{ padding: "8px 6px", fontSize: 11, color: "var(--text-dim)", lineHeight: 1.7 }}>
                   {t("sessions.quickSessionsYetPickTemplate")}
                 </div>
@@ -962,7 +1353,9 @@ export function ProjectSessionTree({
           {/* Host 空间动态分组（admin）。快速空间是纯 quick 列表——Host 目录组
           只属于 mine/host 视图，混进来会稀释快速会话（用户明确要求剔除）。 */}
           {sessionSpace !== "quick" &&
-            hostGroups.map(([root, list]) => {
+            orderedHostGroups
+              .filter(([, list]) => !unreadOnly || list.length > 0)
+              .map(([root, list]) => {
               const key = `host:${root}`;
               const isCollapsed = collapsed.has(key);
               // Mirrors the project branch: "show all" must widen `visible` — this
@@ -972,6 +1365,10 @@ export function ProjectSessionTree({
               const visible = isCollapsed ? [] : expandedAll ? list : list.slice(0, RECENT_COUNT);
               const record = hostDirByRoot.get(root);
               const displayName = record?.name?.trim() ? record.name.trim() : hostDirLabel(root);
+              const hostPinned = pinnedProjectKeys.has(hostPinKey(root));
+              const hostHasPinnedSessions = pinnedSessions.some(
+                (s) => s.mode === "host" && (s.projectRoot ?? s.cwd) === root,
+              );
               return (
                 <div key={key} style={{ marginBottom: 2 }}>
                   <div
@@ -1003,6 +1400,9 @@ export function ProjectSessionTree({
                     >
                       Host
                     </span>
+                    {hostPinned && (
+                      <Pin size={11} fill="currentColor" style={{ color: "#f59e0b", flexShrink: 0 }} aria-hidden="true" />
+                    )}
                     {/* 显示末级文件夹名（完整路径进 tooltip）——全路径太冗余 */}
                     <span
                       style={{
@@ -1060,8 +1460,8 @@ export function ProjectSessionTree({
                       ⋮
                     </button>
                   </div>
-                  {visible.map((s) => renderItem(s, null))}
-                  {!isCollapsed && list.length === 0 && (
+                  {visible.map((s) => renderItem(s))}
+                  {!isCollapsed && list.length === 0 && !hostHasPinnedSessions && (
                     <div style={{ padding: "4px 6px 6px 26px", fontSize: 11, color: "var(--text-dim)" }}>
                       {t("sessions.hostDirEmptyHint")}
                     </div>
@@ -1144,7 +1544,7 @@ export function ProjectSessionTree({
                     </span>
                     <span style={{ fontSize: 10, color: "var(--text-dim)" }}>{list.length}</span>
                   </div>
-                  {visible.map((s) => renderItem(s, null))}
+                  {visible.map((s) => renderItem(s))}
                 </div>
               );
             })}
@@ -1171,6 +1571,18 @@ export function ProjectSessionTree({
             fontSize: 12,
           }}
         >
+          <MenuItem
+            label={
+              pinnedProjectKeys.has(hostPinKey(menu.directory!))
+                ? t("sessions.unpinProject")
+                : t("sessions.pinProject")
+            }
+            onClick={() => {
+              const key = hostPinKey(menu.directory!);
+              toggleProjectPin(key, !pinnedProjectKeys.has(key));
+              setMenu(null);
+            }}
+          />
           <MenuItem
             label={t("sessions.newSession")}
             onClick={() => {
@@ -1260,7 +1672,8 @@ export function ProjectSessionTree({
       {(() => {
         const menuProject = menu?.project;
         if (!menuProject) return null;
-        const orderIndex = orderedProjects.findIndex((project) => project.id === menuProject.id);
+        const menuProjectKey = projectPinKey(menuProject.id);
+        const menuProjectPinned = pinnedProjectKeys.has(menuProjectKey);
         return (
           <div
             ref={menuRef}
@@ -1280,24 +1693,13 @@ export function ProjectSessionTree({
               fontSize: 12,
             }}
           >
-            {orderIndex > 0 && (
-              <MenuItem
-                label={t("sessions.moveProjectUp")}
-                onClick={() => {
-                  moveProject(menuProject.id, -1);
-                  setMenu(null);
-                }}
-              />
-            )}
-            {orderIndex >= 0 && orderIndex < orderedProjects.length - 1 && (
-              <MenuItem
-                label={t("sessions.moveProjectDown")}
-                onClick={() => {
-                  moveProject(menuProject.id, 1);
-                  setMenu(null);
-                }}
-              />
-            )}
+            <MenuItem
+              label={menuProjectPinned ? t("sessions.unpinProject") : t("sessions.pinProject")}
+              onClick={() => {
+                toggleProjectPin(menuProjectKey, !menuProjectPinned);
+                setMenu(null);
+              }}
+            />
             <MenuItem
               label={t("sessions.newSession")}
               onClick={() => {
@@ -1570,6 +1972,7 @@ function ProjectSessionRow({
   session,
   selected,
   running,
+  unread,
   pinned,
   canPin,
   nested = false,
@@ -1581,6 +1984,7 @@ function ProjectSessionRow({
   session: SessionInfo;
   selected: boolean;
   running: boolean;
+  unread: boolean;
   pinned: boolean;
   canPin: boolean;
   /** 子智能体行：更深缩进 + ⌘ 标记（非运行态）。 */
@@ -1744,6 +2148,37 @@ function ProjectSessionRow({
             </span>
           )}
           {running && <span style={{ width: 6, height: 6, borderRadius: 999, background: "#4ade80", flexShrink: 0 }} />}
+          {pinned && canPin && (
+            <button
+              type="button"
+              title={t("sessions.unpin")}
+              aria-label={t("sessions.unpin")}
+              onClick={(e) => {
+                e.stopPropagation();
+                onTogglePin();
+              }}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: 0,
+                background: "transparent",
+                border: "none",
+                cursor: "pointer",
+                color: "#f59e0b",
+                flexShrink: 0,
+              }}
+            >
+              <Pin size={12} fill="currentColor" />
+            </button>
+          )}
+          {unread && (
+            <span
+              title={t("sessions.unread")}
+              aria-label={t("sessions.unread")}
+              style={{ width: 6, height: 6, borderRadius: 999, background: "#f59e0b", flexShrink: 0 }}
+            />
+          )}
           <span
             style={{
               flex: 1,
@@ -1752,6 +2187,7 @@ function ProjectSessionRow({
               textOverflow: "ellipsis",
               whiteSpace: "nowrap",
               fontSize: 12,
+              fontWeight: unread ? 600 : 400,
               color: "var(--text)",
             }}
             title={title}
@@ -1776,28 +2212,30 @@ function ProjectSessionRow({
           <span style={{ fontSize: 10, color: "var(--text-dim)", flexShrink: 0 }}>
             {formatRelativeTime(new Date(session.modified).getTime())}
           </span>
-          {canPin && hovered && (
+          {canPin && !pinned && hovered && (
             <button
               type="button"
-              title={pinned ? t("sessions.unpin") : t("sessions.pin")}
+              title={t("sessions.pin")}
+              aria-label={t("sessions.pin")}
               onClick={(e) => {
                 e.stopPropagation();
                 onTogglePin();
               }}
               style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
                 background: "transparent",
                 border: "none",
                 cursor: "pointer",
                 padding: "0 2px",
-                color: pinned ? "#f59e0b" : "var(--text-dim)",
-                fontSize: 11,
+                color: "var(--text-dim)",
                 flexShrink: 0,
               }}
             >
-              {pinned ? "★" : "☆"}
+              <Pin size={12} />
             </button>
           )}
-          {!canPin && pinned && <span style={{ color: "#f59e0b", fontSize: 11, flexShrink: 0 }}>★</span>}
           {hovered && (
             <>
               <button

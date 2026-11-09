@@ -2479,6 +2479,7 @@ export function SessionSidebar({
               <ProjectSessionTree
                 sessions={allSessions}
                 runningSessionIds={runningSessionIds}
+                unreadSessionIds={unreadSessionIds}
                 selectedSessionId={selectedSessionId}
                 onSelectSession={handleSelectSessionFromList}
                 onNewSessionInProject={(project: ProjectRecord) => {

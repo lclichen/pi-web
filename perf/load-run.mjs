@@ -133,16 +133,24 @@ async function importUsers(token) {
     const n = String(i + 1).padStart(2, "0");
     return `${CONFIG.userPrefix}${n},${CONFIG.userPass}`;
   }).join("\n");
-  const { body } = await fetchJson(
-    `${CONFIG.platform}/api/v1/admin/users/import`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ csv, mustChangePassword: false }),
-    },
-    { okStatuses: [201] },
-  );
-  return body;
+  try {
+    const { body } = await fetchJson(
+      `${CONFIG.platform}/api/v1/admin/users/import`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ csv, mustChangePassword: false }),
+      },
+      { okStatuses: [201] },
+    );
+    return body;
+  } catch (error) {
+    // All rows already exist -> 400 "0 created". Logins below are the verdict.
+    if (String(error.message).startsWith("400 ")) {
+      return { created: 0, failed: CONFIG.users, note: "already imported" };
+    }
+    throw error;
+  }
 }
 
 async function cleanupUsers() {

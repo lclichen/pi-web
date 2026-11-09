@@ -12,6 +12,7 @@ import {
 import { sessionParseQueueDepth } from "./session-open.ts";
 import { getProjectTrustStatus } from "./project-trust.ts";
 import {
+  getMemoryGuardState,
   getRpcSessionDebugSnapshots,
   getRpcStartingSessionCwds,
   type RpcSessionDebugSnapshot,
@@ -43,6 +44,8 @@ export interface DebugProcessInfo {
   perf: PerfStatsSnapshot;
   /** Worker parse pool state (large session restores). */
   parseQueue: { queued: number; active: number };
+  /** Heap-pressure eviction guard (dev 批次4). */
+  memoryGuard: { limitBytes: number; heapUsedBytes: number; lastSweepAt: number | null; lastSweepEvicted: number };
 }
 
 export interface DebugSnapshot {
@@ -84,6 +87,7 @@ function readProcessInfo(): DebugProcessInfo {
     eventLoopDelayMs: readEventLoopDelayAndReset(),
     perf: perfStatsSnapshot(),
     parseQueue: sessionParseQueueDepth(),
+    memoryGuard: getMemoryGuardState(),
   };
 }
 
@@ -155,6 +159,7 @@ export function buildDebugSnapshot(sessionId: string | null, now = Date.now()): 
       eventLoopDelayMs: null,
       perf: perfStatsSnapshot(),
       parseQueue: { queued: 0, active: 0 },
+      memoryGuard: { limitBytes: 0, heapUsedBytes: 0, lastSweepAt: null, lastSweepEvicted: 0 },
     }),
     totals: {
       wrappers: wrappers.length,

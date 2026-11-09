@@ -14,7 +14,7 @@ import { resolveCoreExtensionPaths } from "@/lib/session-restore-options";
 import { getQuickTemplate, DEFAULT_TEMPLATE_ID } from "@/lib/quick-templates";
 import { readSshConfig } from "@/lib/ssh";
 import { invalidateSessionListForSession } from "@/lib/session-reader";
-import { startRpcSession } from "@/lib/rpc-manager";
+import { checkRpcSessionQuota, startRpcSession } from "@/lib/rpc-manager";
 import { requireUserIdentity } from "@/lib/web-session";
 import { isSessionMode, modeAllowedForUser, type SessionMode } from "@/lib/session-modes";
 import { spaceDir } from "@/lib/session-spaces";
@@ -83,6 +83,12 @@ export async function POST(req: Request) {
   const identity = requireUserIdentity(req);
   if (!identity.ok) return NextResponse.json({ error: "登录已失效" }, { status: 401 });
   const { user } = identity.session;
+
+  // Admission quota (dev 批次4): caps live sessions per user and globally so
+  // one user (or an org-wide burst) cannot walk the process into its heap
+  // limit. Admins are exempt from the per-user cap only.
+  const quota = checkRpcSessionQuota({ id: user.id, role: user.role });
+  if (quota) return NextResponse.json({ error: quota.error }, { status: quota.status });
 
   let commandType: string | undefined;
   let promptAccepted = false;

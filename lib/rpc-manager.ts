@@ -27,6 +27,13 @@ import {
 } from "./session-reader";
 import { appendWebUiAddendum } from "./web-system-prompt";
 import { invalidateSessionManagerCache, openSessionManager, openSessionManagerAsync } from "./session-open";
+import {
+  checkSessionQuota,
+  evictIdleSessionsUnderPressure,
+  heapGuardLimitBytes,
+  type EvictableSession,
+} from "./session-guard";
+import { logServerEvent } from "./server-log";
 import { readPreferences } from "./preferences-service";
 import { readMcpConfig } from "./mcp-config";
 import { createModeToolClampExtension } from "./extensions/mode-tool-clamp";
@@ -2509,6 +2516,8 @@ function getRegistry(): Map<string, AgentSessionWrapper> {
     process.once("exit", destroy);
     process.once("SIGINT", shutdown);
     process.once("SIGTERM", shutdown);
+    // Heap-pressure eviction sweeps ride along with the registry lifecycle.
+    startMemoryGuardSweeps();
   }
   return globalThis.__piSessions;
 }
@@ -2610,6 +2619,99 @@ export function getRpcSessionDebugSnapshots(): RpcSessionDebugSnapshot[] {
 /** Session starts currently in flight, grouped by normalized cwd. */
 export function getRpcStartingSessionCwds(): Array<{ cwd: string; count: number }> {
   return Array.from(getStartingSessionCwds(), ([cwd, count]) => ({ cwd, count }));
+}
+
+// ============================================================================
+// Session governance (dev 批次4): admission quota + heap-pressure eviction.
+// ============================================================================
+
+/** Admission check for POST /api/agent/new — counts live sessions per user
+ * (admins exempt) and globally. See lib/session-guard.ts for the knobs. */
+export function checkRpcSessionQuota(user: { id: number; role: "admin" | "user" }): ReturnType<typeof checkSessionQuota> {
+  let globalLive = 0;
+  let perUserLive = 0;
+  for (const session of getRegistry().values()) {
+    if (!session.isAlive()) continue;
+    globalLive += 1;
+    if (session.ownerId === user.id) perUserLive += 1;
+  }
+  return checkSessionQuota({ userId: user.id, role: user.role, perUserLive, globalLive });
+}
+
+declare global {
+   
+  var __piWebMemoryGuardTimer: ReturnType<typeof setInterval> | undefined;
+   
+  var __piWebMemoryGuardLast: { at: number; evicted: string[]; heapUsedBytes: number; limitBytes: number } | undefined;
+}
+
+const MEMORY_GUARD_SWEEP_MS = 60_000;
+
+/**
+ * Evict least-recently-active idle sessions while heap usage is above the
+ * guard limit (default 70% of the V8 heap limit — follows
+ * --max-old-space-size). Running sessions are never evicted: killing an
+ * active turn is not this guard's call. Evicted sessions with an open tab
+ * reconnect through the (worker-parsed) restore path; the guard's job is to
+ * keep the process inside its heap under pathological load, and its
+ * evictions double as the operator's pressure signal in the log.
+ */
+async function runMemoryGuardSweep(): Promise<void> {
+  const limitBytes = heapGuardLimitBytes();
+  if (limitBytes <= 0) return;
+  const candidates: EvictableSession[] = [];
+  for (const snapshot of getRpcSessionDebugSnapshots()) {
+    if (!snapshot.alive || snapshot.running || !snapshot.sessionId) continue;
+    candidates.push({
+      sessionId: snapshot.sessionId,
+      lastActiveAt: snapshot.lastCommandAt ?? snapshot.startedAt,
+    });
+  }
+  const evicted = await evictIdleSessionsUnderPressure(candidates, {
+    heapUsedBytes: () => process.memoryUsage().heapUsed,
+    limitBytes,
+    shutdown: (sessionId) =>
+      getRpcSession(sessionId)?.shutdown().then(() => undefined) ??
+      Promise.reject(new Error("session gone")),
+    onEvict: (session, heapUsedBytes) => {
+      logServerEvent("session_memory_eviction", { sessionId: session.sessionId, heapUsedBytes, limitBytes });
+      console.warn(
+        `[pi-web] memory guard evicted idle session ${session.sessionId} (heap ${Math.round(heapUsedBytes / 1024 / 1024)} MB / limit ${Math.round(limitBytes / 1024 / 1024)} MB); an open tab reconnects and restores it.`,
+      );
+    },
+  });
+  globalThis.__piWebMemoryGuardLast = {
+    at: Date.now(),
+    evicted,
+    heapUsedBytes: process.memoryUsage().heapUsed,
+    limitBytes,
+  };
+}
+
+function startMemoryGuardSweeps(): void {
+  if (globalThis.__piWebMemoryGuardTimer) return;
+  const timer = setInterval(() => {
+    void runMemoryGuardSweep().catch((error) => {
+      console.error("[pi-web] memory guard sweep failed:", error instanceof Error ? error.message : error);
+    });
+  }, MEMORY_GUARD_SWEEP_MS);
+  timer.unref?.();
+  globalThis.__piWebMemoryGuardTimer = timer;
+}
+
+/** Read-only guard state for the debug endpoint. */
+export function getMemoryGuardState(): {
+  limitBytes: number;
+  heapUsedBytes: number;
+  lastSweepAt: number | null;
+  lastSweepEvicted: number;
+} {
+  return {
+    limitBytes: heapGuardLimitBytes(),
+    heapUsedBytes: process.memoryUsage().heapUsed,
+    lastSweepAt: globalThis.__piWebMemoryGuardLast?.at ?? null,
+    lastSweepEvicted: globalThis.__piWebMemoryGuardLast?.evicted.length ?? 0,
+  };
 }
 
 // 子智能体内联扩展桥（lib/subagent-bridge.ts）：tintinweb 建子会话时经

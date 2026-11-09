@@ -216,18 +216,28 @@ function piwebHeaders(cookie) {
 }
 
 async function piwebLogin(username, password) {
-  const { res } = await fetchJson(
-    `${CONFIG.base}/api/webauth/login`,
-    {
+  // The login endpoint rate-limits 10/min per IP: a fleet logging in from one
+  // driver gets 429s with a retry hint ("请 N 秒后重试"). Honor it.
+  for (let attempt = 1; attempt <= 30; attempt += 1) {
+    const res = await fetch(`${CONFIG.base}/api/webauth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ username, password }),
-    },
-    { okStatuses: [200] },
-  );
-  const cookie = (res.headers.get("set-cookie") ?? "").split(";")[0];
-  if (!cookie) throw new Error(`no session cookie for ${username}`);
-  return cookie;
+    });
+    if (res.status === 200) {
+      const cookie = (res.headers.get("set-cookie") ?? "").split(";")[0];
+      if (!cookie) throw new Error(`no session cookie for ${username}`);
+      return cookie;
+    }
+    if (res.status === 429) {
+      const body = await res.json().catch(() => ({}));
+      const waitSec = Number(/(\d+)\s*秒/.exec(String(body.error ?? ""))?.[1] ?? 12);
+      await sleep(Math.min(90, waitSec + 1) * 1000);
+      continue;
+    }
+    throw new Error(`${res.status} login ${username}`);
+  }
+  throw new Error(`login ${username}: rate-limited for too long`);
 }
 
 class SessionDriver {
@@ -409,7 +419,7 @@ async function run() {
 
   const drivers = [];
   const cookies = [];
-  const deadline = startedAt + CONFIG.durationMs;
+  let deadline = startedAt + CONFIG.durationMs; // re-anchored once sessions are up
   let sessionIndex = 0;
 
   const rampStep = CONFIG.users > 1 ? CONFIG.rampMs / (CONFIG.users - 1) : 0;
@@ -454,6 +464,7 @@ async function run() {
   }
 
   if (drivers.length === 0) throw new Error("no sessions were created");
+  deadline = Date.now() + CONFIG.durationMs;
 
   // Prompt loops: each driver runs independently until the deadline; canaries
   // probe concurrently.

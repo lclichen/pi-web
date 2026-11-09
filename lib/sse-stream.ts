@@ -17,6 +17,7 @@
  * envelope + buffer replay). This helper targets simple fan-out streams.
  */
 import { registerEventStreamCloser } from "./agent-event-stream.ts";
+import { resolveSseBacklogLimitBytes, sseByteQueuingStrategy, sseQueuedBytes } from "./sse-backpressure.ts";
 
 export const SSE_HEARTBEAT_INTERVAL_MS = 30_000;
 
@@ -49,61 +50,79 @@ export interface SseStreamOptions {
 export function createSseStream(req: Request, options: SseStreamOptions): ReadableStream<Uint8Array> {
   let cancelStream: (closeController: boolean | "error") => void = () => {};
 
-  return new ReadableStream<Uint8Array>({
-    start(controller) {
-      const encoder = new TextEncoder();
-      let closed = false;
-      let teardown: (() => void) | null = null;
-      let heartbeat: ReturnType<typeof setInterval> | null = null;
-      let abortHandler: (() => void) | null = null;
-      let releaseCloser: () => void = () => {};
+  return new ReadableStream<Uint8Array>(
+    {
+      start(controller) {
+        const encoder = new TextEncoder();
+        let closed = false;
+        let teardown: (() => void) | null = null;
+        let heartbeat: ReturnType<typeof setInterval> | null = null;
+        let abortHandler: (() => void) | null = null;
+        let releaseCloser: () => void = () => {};
+        const backlogLimitBytes = resolveSseBacklogLimitBytes();
 
-      // "error": hard-terminate the response (process shutdown — see
-      // agent-event-stream.ts for why a plain close() zombies the socket).
-      // "true": graceful close after the final frame was written.
-      const cleanup = (closeController: boolean | "error") => {
-        if (closed) return;
-        closed = true;
-        releaseCloser();
-        releaseCloser = () => {};
-        if (heartbeat !== null) clearInterval(heartbeat);
-        heartbeat = null;
-        teardown?.();
-        teardown = null;
-        if (abortHandler) req.signal.removeEventListener("abort", abortHandler);
-        if (closeController === "error") {
-          try {
-            controller.error(new Error("pi-web server shutting down"));
-          } catch {
-            /* already closed */
+        // "error": hard-terminate the response (process shutdown — see
+        // agent-event-stream.ts for why a plain close() zombies the socket;
+        // also a slow consumer past the backlog limit). "true": graceful
+        // close after the final frame was written.
+        const cleanup = (closeController: boolean | "error", reason?: Error) => {
+          if (closed) return;
+          closed = true;
+          releaseCloser();
+          releaseCloser = () => {};
+          if (heartbeat !== null) clearInterval(heartbeat);
+          heartbeat = null;
+          teardown?.();
+          teardown = null;
+          if (abortHandler) req.signal.removeEventListener("abort", abortHandler);
+          if (closeController === "error") {
+            try {
+              controller.error(reason ?? new Error("pi-web server shutting down"));
+            } catch {
+              /* already closed */
+            }
+          } else if (closeController) {
+            try {
+              controller.close();
+            } catch {
+              /* already closed */
+            }
           }
-        } else if (closeController) {
-          try {
-            controller.close();
-          } catch {
-            /* already closed */
-          }
-        }
-      };
-      cancelStream = cleanup;
-      releaseCloser = registerEventStreamCloser(cleanup);
+        };
+        cancelStream = cleanup;
+        releaseCloser = registerEventStreamCloser(cleanup);
 
-      const send = (data: unknown) => {
-        if (closed) return;
-        try {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
-        } catch {
-          cleanup(false);
-        }
-      };
-      const sendComment = (text?: string) => {
-        if (closed) return;
-        try {
-          controller.enqueue(encoder.encode(`:${text ? ` ${text}` : ""}\n\n`));
-        } catch {
-          cleanup(false);
-        }
-      };
+        // Terminal output bursts have no "rebuildable" frames to drop — the
+        // only backpressure escape is closing the connection past the limit.
+        const enqueueBounded = (text: string) => {
+          if (closed) return;
+          const queuedBytes = sseQueuedBytes(controller);
+          if (queuedBytes === null) {
+            cleanup(false);
+            return;
+          }
+          if (queuedBytes > backlogLimitBytes) {
+            console.warn(
+              `[pi-web] SSE stream closed: client backlog ${Math.round(queuedBytes / 1024)} KB exceeds ${Math.round(backlogLimitBytes / 1024)} KB.`,
+            );
+            cleanup(
+              "error",
+              new Error(`pi-web SSE stream closed: client backlog exceeded ${Math.round(backlogLimitBytes / 1024)} KB`),
+            );
+            return;
+          }
+          try {
+            controller.enqueue(encoder.encode(text));
+          } catch {
+            cleanup(false);
+          }
+        };
+        const send = (data: unknown) => {
+          enqueueBounded(`data: ${JSON.stringify(data)}\n\n`);
+        };
+        const sendComment = (text?: string) => {
+          enqueueBounded(`:${text ? ` ${text}` : ""}\n\n`);
+        };
 
       const ctx: SseStreamContext = {
         send,
@@ -128,5 +147,6 @@ export function createSseStream(req: Request, options: SseStreamOptions): Readab
     cancel() {
       cancelStream(false);
     },
-  });
+  },
+  sseByteQueuingStrategy());
 }

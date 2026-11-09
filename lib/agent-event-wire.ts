@@ -89,3 +89,39 @@ export function isEventIncludedInSnapshot(event: AgentEventLike, snapshot: unkno
     event.message === snapshot
   );
 }
+
+// ============================================================================
+// Serialize-once caches (dev 批次1). The wrapper hands the same event object
+// to every SSE listener of a session; without these, each connection repeats
+// the toClientAgentEvent projection AND its JSON.stringify — N tabs on one
+// session pay N× the serialization for every token. The cache rides on the
+// event object itself (symbol keys are invisible to JSON.stringify and to
+// object spread), so it lives exactly as long as the event does.
+// ============================================================================
+
+const CLIENT_EVENT_CACHE: symbol = Symbol.for("pi-web.clientAgentEventCache");
+const WIRE_JSON_CACHE: symbol = Symbol.for("pi-web.agentEventJsonCache");
+
+/** Project an event once per event object, shared by every listener. */
+export function cachedClientAgentEvent(
+  event: AgentEventLike,
+): AgentEventLike | ClientMessageUpdateEvent | null {
+  const holder = event as Record<symbol, { v: AgentEventLike | ClientMessageUpdateEvent | null } | undefined>;
+  let cached = holder[CLIENT_EVENT_CACHE];
+  if (!cached) {
+    cached = { v: toClientAgentEvent(event) };
+    holder[CLIENT_EVENT_CACHE] = cached;
+  }
+  return cached.v;
+}
+
+/** JSON-encode an event/envelope once per object, shared by every listener. */
+export function cachedAgentEventJson(data: object): string {
+  const holder = data as Record<symbol, { v: string } | undefined>;
+  let cached = holder[WIRE_JSON_CACHE];
+  if (!cached) {
+    cached = { v: JSON.stringify(data) };
+    holder[WIRE_JSON_CACHE] = cached;
+  }
+  return cached.v;
+}

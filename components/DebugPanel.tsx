@@ -29,9 +29,34 @@ interface DebugSession {
   streams: number;
 }
 
+interface DebugProcess {
+  rssBytes: number;
+  heapUsedBytes: number;
+  heapTotalBytes: number;
+  externalBytes: number;
+  arrayBuffersBytes: number;
+  heapLimitBytes: number;
+  eventLoopDelayMs: { mean: number; p95: number; max: number } | null;
+  perf: {
+    restore: {
+      queued: number;
+      active: number;
+      completed: number;
+      workerParses: number;
+      syncParses: number;
+      lruHits: number;
+      totalParseMs: number;
+      maxParseMs: number;
+      lastParseMs: number;
+    };
+    scan: { lastMs: number; maxMs: number; count: number; lastChangedFiles: number };
+  };
+}
+
 interface DebugSnapshot {
   now: number;
   uptimeMs: number;
+  process?: DebugProcess;
   totals: {
     wrappers: number;
     alive: number;
@@ -70,6 +95,16 @@ function formatDuration(ms: number): string {
   if (minutes < 60) return `${minutes}m ${seconds % 60}s`;
   const hours = Math.floor(minutes / 60);
   return `${hours}h ${minutes % 60}m`;
+}
+
+function formatMb(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "—";
+  return `${(bytes / 1024 / 1024).toFixed(0)} MB`;
+}
+
+function formatMs(ms: number | undefined | null): string {
+  if (ms === null || ms === undefined || !Number.isFinite(ms)) return "—";
+  return `${ms.toFixed(1)} ms`;
 }
 
 export function DebugPanel({
@@ -219,6 +254,17 @@ export function DebugPanel({
                   [t("debug.running"), snapshot.totals.running],
                   [t("debug.streams"), snapshot.totals.streams],
                   [t("debug.starting"), snapshot.totals.startingCwds],
+                  [
+                    t("debug.heap"),
+                    snapshot.process
+                      ? `${formatMb(snapshot.process.heapUsedBytes)} / ${formatMb(snapshot.process.heapLimitBytes)}`
+                      : "—",
+                  ],
+                  [t("debug.rss"), snapshot.process ? formatMb(snapshot.process.rssBytes) : "—"],
+                  [
+                    t("debug.loopDelay"),
+                    snapshot.process?.eventLoopDelayMs ? formatMs(snapshot.process.eventLoopDelayMs.p95) : "—",
+                  ],
                 ].map(([label, value]) => (
                   <div
                     key={String(label)}

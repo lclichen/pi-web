@@ -1,7 +1,14 @@
+import { getHeapStatistics } from "node:v8";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import type { McpServerInfo } from "./api-types.ts";
 import { listAgentEventStreams, type AgentEventStreamInfo } from "./agent-event-stream.ts";
 import { readMcpConfig } from "./mcp-config.ts";
+import {
+  perfStatsSnapshot,
+  readEventLoopDelayAndReset,
+  type EventLoopDelaySnapshot,
+  type PerfStatsSnapshot,
+} from "./perf-stats.ts";
 import { getProjectTrustStatus } from "./project-trust.ts";
 import {
   getRpcSessionDebugSnapshots,
@@ -21,9 +28,24 @@ export interface DebugMcpServer {
   disabled: boolean;
 }
 
+export interface DebugProcessInfo {
+  rssBytes: number;
+  heapUsedBytes: number;
+  heapTotalBytes: number;
+  externalBytes: number;
+  arrayBuffersBytes: number;
+  heapLimitBytes: number;
+  /** Event-loop delay since the previous debug read (ms); null when the
+   * monitor is not running. Reading resets the histogram — poll cadence
+   * defines the window (DebugPanel: 2s). */
+  eventLoopDelayMs: EventLoopDelaySnapshot | null;
+  perf: PerfStatsSnapshot;
+}
+
 export interface DebugSnapshot {
   now: number;
   uptimeMs: number;
+  process: DebugProcessInfo;
   totals: {
     wrappers: number;
     alive: number;
@@ -39,6 +61,26 @@ export interface DebugSnapshot {
     trust: { requiresTrust: boolean; trusted: boolean; reasons: string[] };
     mcpServers: DebugMcpServer[];
   } | null;
+}
+
+function readProcessInfo(): DebugProcessInfo {
+  const memory = process.memoryUsage();
+  let heapLimitBytes = 0;
+  try {
+    heapLimitBytes = getHeapStatistics().heap_size_limit;
+  } catch {
+    heapLimitBytes = 0;
+  }
+  return {
+    rssBytes: memory.rss,
+    heapUsedBytes: memory.heapUsed,
+    heapTotalBytes: memory.heapTotal,
+    externalBytes: memory.external,
+    arrayBuffersBytes: memory.arrayBuffers,
+    heapLimitBytes,
+    eventLoopDelayMs: readEventLoopDelayAndReset(),
+    perf: perfStatsSnapshot(),
+  };
 }
 
 function read<T>(source: () => T, fallback: T): T {
@@ -99,6 +141,16 @@ export function buildDebugSnapshot(sessionId: string | null, now = Date.now()): 
   return {
     now,
     uptimeMs: Math.round(process.uptime() * 1000),
+    process: read(() => readProcessInfo(), {
+      rssBytes: 0,
+      heapUsedBytes: 0,
+      heapTotalBytes: 0,
+      externalBytes: 0,
+      arrayBuffersBytes: 0,
+      heapLimitBytes: 0,
+      eventLoopDelayMs: null,
+      perf: perfStatsSnapshot(),
+    }),
     totals: {
       wrappers: wrappers.length,
       alive: wrappers.filter((wrapper) => wrapper.alive).length,

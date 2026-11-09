@@ -32,3 +32,9 @@ test("pins projects from both the project and Host directory menus", () => {
   assert.match(source, /hostPinKey/);
   assert.match(source, /projectPinKey/);
 });
+
+test("Host directory groups share the project sort order", () => {
+  assert.match(source, /sortSidebarGroups\(entries, sortMode\)/);
+  assert.match(source, /order: groupRenderOrder\.get\(project\.id\)/);
+  assert.match(source, /order: groupRenderOrder\.get\(key\)/);
+});

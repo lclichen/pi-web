@@ -11,6 +11,7 @@ import {
   anySidebarGroupExpanded,
   setAllSidebarGroups,
   sortSidebarGroups,
+  type SortableSidebarGroup,
 } from "@/lib/sidebar-groups";
 import {
   hostPinKey,
@@ -620,6 +621,66 @@ export function ProjectSessionTree({
     return [...groups.entries()];
   }, [byProject.ungrouped]);
 
+  // One order across platform projects, Host directory groups and unbound
+  // session groups. The groups stay separate render blocks (they have very
+  // different headers), but the flex container's `order` interleaves them so
+  // "project first"/"connection first" also move Host groups instead of
+  // leaving them pinned to the bottom.
+  const groupRenderOrder = useMemo(() => {
+    const entries: Array<SortableSidebarGroup & { kind: "project" | "host" | "unbound" }> = [];
+    if (sessionSpace === "mine") {
+      for (const project of projects) {
+        const key = project.id;
+        entries.push({
+          key,
+          name: project.name,
+          mode: project.mode,
+          latest: latestByProject.get(project.id) ?? "",
+          pinned: pinnedProjectKeys.has(projectPinKey(project.id)),
+          pinRank: pinRankByProjectKey.get(projectPinKey(project.id)) ?? -1,
+          kind: "project",
+        });
+      }
+    }
+    if (sessionSpace !== "quick") {
+      for (const [root] of hostGroups) {
+        const key = hostPinKey(root);
+        entries.push({
+          key,
+          name: hostDirByRoot.get(root)?.name?.trim() || hostDirLabel(root),
+          mode: "host",
+          latest: latestByHostRoot.get(root) ?? "",
+          pinned: pinnedProjectKeys.has(key),
+          pinRank: pinRankByProjectKey.get(key) ?? -1,
+          kind: "host",
+        });
+      }
+      for (const [mode, list] of unboundModeGroups) {
+        entries.push({
+          key: `unbound:${mode}`,
+          name: mode,
+          mode,
+          latest: list[0]?.modified ?? "",
+          pinned: false,
+          pinRank: -1,
+          kind: "unbound",
+        });
+      }
+    }
+    return new Map(sortSidebarGroups(entries, sortMode).map((entry, index) => [entry.key, index]));
+  }, [
+    hostDirByRoot,
+    hostGroups,
+    latestByHostRoot,
+    latestByProject,
+    pinRankByProjectKey,
+    pinnedProjectKeys,
+    projects,
+    sessionSpace,
+    sortMode,
+    unboundModeGroups,
+  ]);
+
   const renderItem = (s: SessionInfo) => {
     const selected = s.id === selectedSessionId;
     const running = runningSessionIds.has(s.id);
@@ -1046,7 +1107,7 @@ export function ProjectSessionTree({
                       ? { color: "#f59e0b", label: bound.status }
                       : { color: "#ef4444", label: t("sessions.container2") };
               return (
-                <div key={project.id} style={{ marginBottom: 2 }}>
+                <div key={project.id} style={{ marginBottom: 2, order: groupRenderOrder.get(project.id) ?? 0 }}>
                   <div
                     onClick={() => toggleCollapsed(project.id)}
                     style={{
@@ -1370,7 +1431,7 @@ export function ProjectSessionTree({
                 (s) => s.mode === "host" && (s.projectRoot ?? s.cwd) === root,
               );
               return (
-                <div key={key} style={{ marginBottom: 2 }}>
+                <div key={key} style={{ marginBottom: 2, order: groupRenderOrder.get(key) ?? 0 }}>
                   <div
                     onClick={() => toggleCollapsed(key)}
                     style={{
@@ -1501,7 +1562,7 @@ export function ProjectSessionTree({
                     : { label: t("sessions.local"), color: "#a78bfa", bg: "rgba(167,139,250,0.12)" };
               const visible = isCollapsed ? [] : list;
               return (
-                <div key={key} style={{ marginBottom: 2 }}>
+                <div key={key} style={{ marginBottom: 2, order: groupRenderOrder.get(key) ?? 0 }}>
                   <div
                     onClick={() => toggleCollapsed(key)}
                     style={{

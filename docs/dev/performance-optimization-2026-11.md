@@ -98,4 +98,15 @@ SDK `loadEntriesFromFile`（session-manager.js:277）：openSync+readSync 循环
 
 ## 6. 压测结论
 
-（VM 50×2 正式压测后回填：金丝雀延迟分位、事件循环延迟 p95、RSS 曲线、单会话内存实测、mock 吞吐对齐、崩溃次数。）
+### 6.1 本机 dev 冒烟（5 用户 × 2 会话 × 180s，mock 300/80，2026-11-09）
+
+- 10 会话全部创建运行；**272 回合 · 10 次真实 bash 工具调用 · 40800 tokens · 0 错误**
+- Mock 公平分享实测吻合：峰值并发流 10，回合间隙活跃 7 流时单流速率 42 tok/s（= floor(300/7)）
+- 回合时长 p50 4.9s / p95 6.7s（150 tokens + 工具轮，受限于 mock 速率而非服务端）
+- 金丝雀（前端可用性）：/api/agent/running p95 **74ms**；/api/sessions p95 **299ms**；/api/agent/debug p95 **44ms**；无超时无 5xx
+- 事件循环延迟 p95 峰值 105.8ms（dev 模式含 webpack；生产构建预期显著更低）；峰值堆 1068MB（dev 基线含编译缓存）
+- 内存守卫正确上报阈值 5541MB（auto = 70% heap limit）
+
+### 6.2 VM 50×2 正式压测
+
+（待部署后回填：金丝雀延迟分位、事件循环延迟 p95、RSS 曲线、单会话内存实测→40G 外推、崩溃次数。）

@@ -107,6 +107,16 @@ SDK `loadEntriesFromFile`（session-manager.js:277）：openSync+readSync 循环
 - 事件循环延迟 p95 峰值 105.8ms（dev 模式含 webpack；生产构建预期显著更低）；峰值堆 1068MB（dev 基线含编译缓存）
 - 内存守卫正确上报阈值 5541MB（auto = 70% heap limit）
 
-### 6.2 VM 50×2 正式压测
+### 6.2 VM 50×2 正式压测（dev-0.85.1 @86b098fe，2026-11-09，报告在 perf/reports/perf-vm-50x2.*）
 
-（待部署后回填：金丝雀延迟分位、事件循环延迟 p95、RSS 曲线、单会话内存实测→40G 外推、崩溃次数。）
+目标负载全量达标：**50 用户 × 2 会话 = 100 并发会话同时运行 15 分钟**（mock 供应商限速 300 tok/s 全局预算）：
+
+- **700 回合 · 100 次真实 bash 工具调用 · 227,791 tokens · 0 错误**；结束时 100 会话仍全部存活——**后端全程无崩溃**
+- Mock 调度精确生效：峰值并发流 100、全局吞吐顶满预算（~299 tok/s）、单流 3 tok/s（= floor(300/100)，与"20 流=15"同一条公平分享曲线）
+- 回合时长 p50 100.3s / p95 101.7s（300 tokens @ 3 tok/s + 工具轮，完全由模拟供应商限速决定，服务端零排队）
+- **金丝雀（前端可用性，压测满负荷期间持续探测）**：/api/agent/running p50 66ms / **p95 80ms**；/api/sessions p50 132ms / **p95 150ms**（p99 1.09s 一处尖峰）；/api/agent/debug p95 255ms——没有出现"前端无法访问"
+- **进程健康**：峰值堆 258MB / RSS 447MB（100 会话！）；事件循环延迟 p95 峰值 **30.5ms**；解析队列 0；内存守卫上限 1404MB（auto=70% heap limit）从未触发逐出
+- 服务端日志零告警：无背压断流、无内存逐出、无 unhandled/uncaught、无 OOM（server-log 文件因全程零 console 告警而未创建，piweb.log 异常计数 0）
+- 登录爬坡受既有限流 10/min/IP 约束，50 用户登录耗时约 5 分钟（驱动已适配 429 重试）
+
+**40G 生产外推**：VM（~2G heap limit）在 100 会话满负荷下峰值堆仅 258MB（每会话约 2MB 增量），40G 服务器按 perf/README.md 基线（--max-old-space-size=24576、MAX_LIVE_SESSIONS=600）容量余量 >50×；瓶颈在模型供应商吞吐而非 pi-web。

@@ -27,6 +27,7 @@ import { parseArgs } from "node:util";
 const { values: args } = parseArgs({
   options: {
     port: { type: "string", default: process.env.MOCK_PORT ?? "3099" },
+    host: { type: "string", default: process.env.MOCK_HOST ?? "127.0.0.1" },
     budget: { type: "string", default: process.env.MOCK_BUDGET ?? "300" },
     cap: { type: "string", default: process.env.MOCK_CAP ?? "80" },
   },
@@ -285,7 +286,7 @@ function recentTokensPerSecond() {
   return tokenTimes.filter((t) => t >= cutoff).length / 5;
 }
 
-server.listen(PORT, "127.0.0.1", () => {
-  console.log(`[mock-model] listening on http://127.0.0.1:${PORT}/v1 (budget ${BUDGET} tok/s, cap ${CAP} tok/s per stream)`);
+server.listen(PORT, args.host, () => {
+  console.log(`[mock-model] listening on http://${args.host}:${PORT}/v1 (budget ${BUDGET} tok/s, cap ${CAP} tok/s per stream)`);
   console.log(`[mock-model] fair share: <=6 streams -> ${CAP} tok/s each; 20 -> ${Math.floor(BUDGET / 20)}; 100 -> ${Math.floor(BUDGET / 100)}`);
 });

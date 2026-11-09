@@ -35,7 +35,7 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test": "node --experimental-strip-types --test \"app/**/*.test.mjs\" \"bench/**/*.test.mjs\" \"components/**/*.test.mjs\" \"hooks/**/*.test.mjs\" \"lib/**/*.test.mjs\" \"public/**/*.test.mjs\"",
+    "test": "node --experimental-strip-types --test \"app/**/*.test.mjs\" \"bench/**/*.test.mjs\" \"components/**/*.test.mjs\" \"hooks/**/*.test.mjs\" \"lib/**/*.test.mjs\" \"perf/**/*.test.mjs\" \"public/**/*.test.mjs\"",
     "test:e2e": "node e2e/run.mjs",
     "clean:next-types": "node scripts/clean-stale-next-types.mjs",
     "copy:monaco": "node scripts/copy-monaco.mjs",

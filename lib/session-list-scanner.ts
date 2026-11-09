@@ -19,7 +19,7 @@ import { createReadStream, existsSync, readFileSync } from "node:fs";
 import { open, readdir, stat } from "node:fs/promises";
 import type { FileHandle } from "node:fs/promises";
 import type { Dirent } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { writePrivateFileAtomicSync } from "./atomic-file.ts";
 import { recordSessionScan } from "./perf-stats.ts";
@@ -482,15 +482,23 @@ export async function scanSessionFileInfo(filePath: string): Promise<ScannedSess
 }
 
 async function enumerateSessionFiles(sessionsDir: string): Promise<string[]> {
-  let dirs: Dirent[];
+  let entries: Dirent[];
   try {
-    const entries = await readdir(sessionsDir, { withFileTypes: true });
-    dirs = entries.filter((entry) => entry.isDirectory() || entry.isSymbolicLink());
+    entries = await readdir(sessionsDir, { withFileTypes: true });
   } catch {
     return [];
   }
 
   const files: string[] = [];
+  // Two layouts: the host root groups sessions into one directory per cwd,
+  // while a per-user shard (sessions/users/u<id>) stores its .jsonl files
+  // directly under the shard. Both must be listed.
+  for (const entry of entries) {
+    if (entry.isFile() && entry.name.endsWith(".jsonl")) {
+      files.push(join(sessionsDir, entry.name));
+    }
+  }
+  const dirs = entries.filter((entry) => entry.isDirectory() || entry.isSymbolicLink());
   for (const dir of dirs) {
     const dirPath = join(sessionsDir, dir.name);
     try {
@@ -680,9 +688,14 @@ export async function listSessionsIncremental(
 
   const index = getIndex();
   const present = new Set(files);
+  // Prune only directories this scan actually enumerated. A host-root scan
+  // must not delete a user shard's cache entries (and vice versa): the two
+  // listings alternate on every poll, and cross-pruning re-parsed every file
+  // on each switch.
+  const scannedDirs = new Set([sessionsDir, ...files.map((file) => dirname(file))]);
   const stale: string[] = [];
   for (const known of index.keys()) {
-    if (!present.has(known)) stale.push(known);
+    if (scannedDirs.has(dirname(known)) && !present.has(known)) stale.push(known);
   }
   for (const pathKey of stale) index.delete(pathKey);
 

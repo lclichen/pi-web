@@ -5,6 +5,7 @@ import { resolveConfigCwdSync } from "@/lib/config-cwd";
 import { requireUserIdentity } from "@/lib/web-session";
 import { isApiRequestAllowed } from "@/lib/request-security";
 import { importSkillsZip } from "@/lib/project-config-bundle";
+import { getProjectTrustStatus } from "@/lib/project-trust";
 import { isUserScopedConfig, userSkillsDir } from "@/lib/user-config";
 
 export const dynamic = "force-dynamic";
@@ -34,6 +35,12 @@ export async function POST(req: Request) {
   }
   const dir = resolveConfigCwdSync(req, { projectId: searchParams.get("projectId"), cwd: searchParams.get("cwd") });
   if (!dir.ok) return NextResponse.json({ error: dir.error }, { status: dir.status });
+  if (scope === "project" && !getProjectTrustStatus(dir.cwd, getAgentDir()).trusted) {
+    return NextResponse.json(
+      { error: "Project resources must be trusted before importing project skills" },
+      { status: 403 },
+    );
+  }
 
   let form: FormData;
   try {

@@ -1393,6 +1393,7 @@ export const zhCNLocale: LocalePlugin = {
     "skills.deleteConfirmTitle": "删除技能",
     "skills.hubUrlLabel": "SkillHub 地址",
     "skills.importedSkillFiles": "已导入技能 {skill}（{n} 个文件）",
+    "skills.offlineSharingUnpacksInto": "离线分发：解压到 {path}",
     "skills.offlineSharingUnpacksIntoProject": "离线分发：解压到项目 .pi/skills/（每个技能目录含 SKILL.md）",
     "skills.scope.global": "全局",
     "skills.scope.path": "路径",

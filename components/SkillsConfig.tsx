@@ -344,7 +344,8 @@ function AddSkillPanel({
     try {
       const body = new FormData();
       body.append("file", f);
-      const res = await fetch(`/api/skills/import?cwd=${encodeURIComponent(cwd)}`, { method: "POST", body });
+      const params = new URLSearchParams({ cwd, scope });
+      const res = await fetch(`/api/skills/import?${params.toString()}`, { method: "POST", body });
       const d = (await res.json()) as { ok?: boolean; skill?: string; files?: number; error?: string };
       if (!res.ok || d.error) throw new Error(d.error ?? `HTTP ${res.status}`);
       setUploadMsg(t("skills.importedSkillFiles", { skill: d.skill ?? "?", n: String(d.files ?? 0) }));
@@ -429,7 +430,7 @@ function AddSkillPanel({
           )}
         </div>
 
-        {/* Offline import: unpack a skills zip into the project */}
+        {/* Offline import: unpack a skills zip into the selected scope */}
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <input
             ref={uploadRef}
@@ -438,10 +439,15 @@ function AddSkillPanel({
             style={{ display: "none" }}
             onChange={(e) => void uploadZip(e.target.files?.[0] ?? null)}
           />
-          <ConfigButton onClick={() => uploadRef.current?.click()} disabled={uploading || !projectResourcesLoaded}>
+          <ConfigButton
+            onClick={() => uploadRef.current?.click()}
+            disabled={uploading || (scope === "project" && !projectResourcesLoaded)}
+          >
             {uploading ? t("projects.importing") : t("skills.uploadSkillBundleZip")}
           </ConfigButton>
-          <span style={{ fontSize: 11, color: "var(--text-dim)" }}>{t("skills.offlineSharingUnpacksIntoProject")}</span>
+          <span style={{ fontSize: 11, color: "var(--text-dim)" }}>
+            {t("skills.offlineSharingUnpacksInto", { path: installPath })}
+          </span>
         </div>
         {uploadMsg && <div style={{ fontSize: 12, color: "#22c55e" }}>{uploadMsg}</div>}
 

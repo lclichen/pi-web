@@ -1393,6 +1393,7 @@ export const enLocale: LocalePlugin = {
     "skills.deleteConfirmTitle": "Delete skill",
     "skills.hubUrlLabel": "SkillHub URL",
     "skills.importedSkillFiles": "Imported skill {skill} ({n} files)",
+    "skills.offlineSharingUnpacksInto": "Offline sharing: unpacks into {path}",
     "skills.offlineSharingUnpacksIntoProject": "Offline sharing: unpacks into the project .pi/skills/ (each skill folder has a SKILL.md)",
     "skills.scope.global": "global",
     "skills.scope.path": "path",

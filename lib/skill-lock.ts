@@ -26,6 +26,9 @@ interface AnnotateSkillOptions {
   agentDir: string;
   globalLockPath?: string;
   projectLockPath?: string;
+  /** Per-user skill store (user-config/u<id>/skills) and its npx lock file. */
+  userSkillsRoot?: string;
+  userLockPath?: string;
 }
 
 export function getGlobalSkillsLockPath({
@@ -111,21 +114,27 @@ export function annotateSkillsWithInstallInfo(
     agentDir,
     globalLockPath = getGlobalSkillsLockPath(),
     projectLockPath = join(cwd, "skills-lock.json"),
+    userSkillsRoot,
+    userLockPath,
   }: AnnotateSkillOptions,
 ): SkillInfo[] {
   const globalEntries = readSkillLock(globalLockPath);
   const projectEntries = readSkillLock(projectLockPath);
+  const userEntries = userLockPath ? readSkillLock(userLockPath) : {};
   const globalSkillsRoot = join(agentDir, "skills");
   const projectSkillsRoot = join(cwd, ".pi", "skills");
 
   return skills.map((skill) => {
     if (!existsSync(skill.filePath)) return skill;
 
-    const install = isWithin(skill.filePath, globalSkillsRoot)
-      ? getInstallInfo(globalEntries, skill.name, "global")
-      : isWithin(skill.filePath, projectSkillsRoot)
-        ? getInstallInfo(projectEntries, skill.name, "project")
-        : undefined;
+    const install =
+      userSkillsRoot && isWithin(skill.filePath, userSkillsRoot)
+        ? getInstallInfo(userEntries, skill.name, "user")
+        : isWithin(skill.filePath, globalSkillsRoot)
+          ? getInstallInfo(globalEntries, skill.name, "global")
+          : isWithin(skill.filePath, projectSkillsRoot)
+            ? getInstallInfo(projectEntries, skill.name, "project")
+            : undefined;
 
     return install ? { ...skill, install } : skill;
   });

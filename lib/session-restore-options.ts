@@ -13,6 +13,8 @@ import { makeRemoteVerifyExtension } from "./extensions/remote-verify";
 import { makeEnvironmentInfoExtension } from "./extensions/environment-info";
 import { makeSshToolsExtension } from "./extensions/ssh-tools";
 import { makeSandboxToolsExtension } from "./extensions/sandbox-tools";
+import { makeHostWorkspaceServiceExtension } from "./extensions/host-workspace";
+import { readSessionHeader, resolveSessionPath } from "./session-reader";
 import { makeBgTasksExtension } from "./extensions/bg-tasks";
 import { makeShareFileExtension } from "./extensions/share";
 import type { RemoteSessionContext } from "./remote-session";
@@ -212,8 +214,23 @@ export async function restoreSessionOptions(req: Request, sessionId: string): Pr
     // 恢复时按 meta.templateId 重建 quick 选项：quickToolSet（MCP 白名单）与
     // 提示词扩展（模板附加）都挂在 quick 选项上——不重建则恢复的快速会话
     // 丢工具策略与模板提示词。
+    extensionFactories = [makeHostWorkspaceServiceExtension(effectiveCwd)];
   } else {
-    extensionFactories = [makeEnvironmentInfoExtension({ mode: "host", username: identity.session.user.username })];
+    const ownerForSpace = meta?.ownerId ?? user.id;
+    let hostCwd: string | undefined;
+    try {
+      const filePath =
+        (ownerForSpace > 0 ? await resolveSessionPath(sessionId, { kind: "user", userId: ownerForSpace }) : null) ??
+        (await resolveSessionPath(sessionId, { kind: "host" }));
+      hostCwd = filePath ? readSessionHeader(filePath)?.cwd : undefined;
+    } catch {
+      // Best-effort: an unreadable session header only loses the workspace
+      // service, never the session itself.
+    }
+    extensionFactories = [
+      makeEnvironmentInfoExtension({ mode: "host", username: identity.session.user.username }),
+      ...(hostCwd ? [makeHostWorkspaceServiceExtension(hostCwd)] : []),
+    ];
   }
 
   const ownerId = meta?.ownerId ?? user.id;

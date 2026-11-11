@@ -34,6 +34,7 @@ import {
   type ProjectRecord,
 } from "@/lib/projects";
 import { makeSandboxToolsExtension } from "@/lib/extensions/sandbox-tools";
+import { makeHostWorkspaceServiceExtension } from "@/lib/extensions/host-workspace";
 import { requireCompatibleAgent } from "@/lib/relay/agent-gate";
 import { isApiRequestAllowed } from "@/lib/request-security";
 import { platformGet } from "@/lib/platform/client";
@@ -341,6 +342,7 @@ export async function POST(req: Request) {
       }
       extensionFactories = [
         makeEnvironmentInfoExtension({ mode: "host", username: user.username, hostDir: effectiveCwd }),
+        ...(effectiveCwd ? [makeHostWorkspaceServiceExtension(effectiveCwd)] : []),
       ];
     }
 
@@ -377,6 +379,7 @@ export async function POST(req: Request) {
       const ws = ensureQuickSessionWorkspace(user.id, template);
       quickSlugForMeta = ws.slug;
       effectiveCwd = ws.dir;
+      extensionFactories = [makeHostWorkspaceServiceExtension(effectiveCwd)];
       templateIdForMeta = templateId;
       quickOptions = {
         systemPrompt: template.systemPrompt,

@@ -16,6 +16,8 @@ import {
   type RelayWorkspaceScope,
 } from "@/lib/relay/workspace-base";
 import { matchRuntimeConfigPath } from "@/lib/relay/runtime-config-bridge";
+import { registerWorkspaceService } from "./workspace-service";
+import { createRelayWorkspaceOperations } from "@/lib/workspace-providers/relay";
 import type { ExecResult, FsEntry, FsReadResult, FsStatResult, GrepMatch } from "@/lib/relay/protocol";
 
 /**
@@ -134,6 +136,7 @@ export function makeRelayToolsExtension(userId: number, options: RelayToolsOptio
   };
 
   const factory = (pi: ExtensionAPI): void => {
+    registerWorkspaceService(pi, () => createRelayWorkspaceOperations({ userId, workspaceDir, machineId }));
     pi.registerTool(
       defineTool({
         name: "read",

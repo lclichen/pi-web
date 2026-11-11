@@ -12,6 +12,8 @@ import { Type } from "@earendil-works/pi-ai";
 import type { Client, SFTPWrapper } from "ssh2";
 import { getSshClient, sshExec, type SshConfig } from "../ssh";
 import { matchRuntimeConfigPath } from "../relay/runtime-config-bridge";
+import { registerWorkspaceService } from "./workspace-service";
+import { createSshWorkspaceOperations } from "../workspace-providers/ssh";
 
 interface ToolResult {
   content: Array<{ type: "text"; text: string }>;
@@ -114,6 +116,7 @@ export function makeSshToolsExtension(opts: {
   };
 
   const factory = (pi: ExtensionAPI): void => {
+    registerWorkspaceService(pi, () => createSshWorkspaceOperations({ getClient: () => client(), workdir }));
     // ---- bash ----
     pi.registerTool(
       defineTool({

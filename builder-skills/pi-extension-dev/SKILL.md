@@ -225,16 +225,15 @@ pi.events.emit("my-ext:status", { hello: true });
 Cache `ctx` from `session_start` (event-bus handlers don't receive one).
 **Full detail: read `references/events.md` §Cross-extension bus.**
 
-### Remote workspace operations (draft)
+### Remote workspace operations
 
-For extensions that need to operate the **current remote workspace** (sandbox,
-local-machine, SSH) rather than the pi-web host, the SDK factories are the
-current supported route: implement `ReadOperations` / `WriteOperations` /
-`EditOperations` / `BashOperations` / `LsOperations` over your transport and
-override the built-in tool names. pi-web's own remote connections are not yet
-exposed as a public provider; a proposed `WorkspaceOperations` contract and
-event-bridge protocol are in `references/remote-workspace.md` (marked draft —
-do not depend on the `pi-web:workspace:*` events until it is wired).
+Extensions can operate the **current remote workspace** (host, sandbox,
+local-machine, SSH) through the v1 `WorkspaceOperations` event bridge; the
+session's mode extension registers it automatically. Use the SDK factories
+(`ReadOperations` / `WriteOperations` / `EditOperations` / `BashOperations` /
+`LsOperations`) when you need your own transport instead. The contract,
+`pi-web:workspace:*` protocol, path rules and v1 limits are in
+`references/remote-workspace.md`.
 
 ## Critical gotchas (will bite you if missed)
 
@@ -286,6 +285,6 @@ Test: `pi -e ~/.pi/agent/extensions/my-ext.ts`.
 - **`references/context-ui.md`** — every `ctx` property + every `ctx.ui` method (dialogs, fire-and-forget, working loader, TUI-only, theme) + RPC UI protocol + per-mode degradation table.
 - **`references/commands-providers.md`** — `registerCommand`/autocomplete, `ExtensionCommandContext` extras (newSession/fork/switchSession/reload + the session-replacement footguns), `registerShortcut`/`registerFlag`, `registerProvider`/`unregisterProvider` (full shapes incl. OAuth, custom streaming), `sendMessage`/`sendUserMessage`/`appendEntry`.
 - **`references/packaging.md`** — loading locations, `settings.json` arrays, `-e` flag, the `package.json` `pi` manifest, `pi-package` keyword, gallery fields, dependency rules (peer vs bundled), package sources + filtering, SDK embedding (`createAgentSession`).
-- **`references/remote-workspace.md`** — draft `WorkspaceOperations` provider contract, proposed `pi-web:workspace:*` event bridge, path/security rules, host/sandbox/relay/ssh adapter checklist. SDK `*Operations` is usable today; the bridge is not wired yet.
+- **`references/remote-workspace.md`** — v1 `WorkspaceOperations` provider contract, `pi-web:workspace:*` event bridge (registered automatically by the mode extensions), path/security rules, host/sandbox/relay/ssh provider semantics, and v1 limits.
 
 When in doubt about an exact signature, read the relevant reference file — they quote the real shapes verbatim.

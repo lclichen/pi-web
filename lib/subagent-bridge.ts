@@ -3,6 +3,7 @@ import { makeRelayToolsExtension } from "./extensions/relay-tools";
 import { makeSshToolsExtension } from "./extensions/ssh-tools";
 import { makeSandboxToolsExtension } from "./extensions/sandbox-tools";
 import { makeEnvironmentInfoExtension } from "./extensions/environment-info";
+import { makeHostWorkspaceServiceExtension } from "./extensions/host-workspace";
 import { makeRemoteVerifyExtension } from "./extensions/remote-verify";
 import { resolveSessionMode } from "./session-metas";
 import { getOwnedProject, ensureProjectHome, type ProjectRecord } from "./projects";
@@ -125,7 +126,10 @@ export function childExtensionsFor(
       ];
     }
     case "host": {
-      return [makeEnvironmentInfoExtension({ mode: "host", username, hostDir: info.cwd })];
+      return [
+        makeEnvironmentInfoExtension({ mode: "host", username, hostDir: info.cwd }),
+        makeHostWorkspaceServiceExtension(info.cwd),
+      ];
     }
     default:
       // quick：父会话本就不注入模式扩展（模板自身约束），保持一致。

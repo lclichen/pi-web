@@ -20,15 +20,15 @@
  * ~/.pi/agent/skills 影响所有会话。打包时 builder-skills/ 会被拷进
  * app/（package-linux），因此 source checkout 与打包部署都能读到。
  *
- * 1.1.4：pi-extension-dev 对齐 0.85.1，并新增 remote-workspace 接口草案
- * （WorkspaceOperations provider / 事件桥协议 / 四模式 adapter 清单）。
+ * 1.1.5：WorkspaceOperations v1 事件桥与 host/sandbox/relay/ssh provider
+ * 落地，pi-extension-dev 的 remote-workspace 参考从草案转为可用规范。
  */
 import JSZip from "jszip";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 export const BUILTIN_AGENT_BUILDER_NAME = "agent-builder";
-export const BUILTIN_AGENT_BUILDER_VERSION = "1.1.4";
+export const BUILTIN_AGENT_BUILDER_VERSION = "1.1.5";
 
 /** Developer skills shipped inside the builder bundle (source of truth:
  *  <repo>/builder-skills/, copied verbatim into .pi/skills/ of the zip).

@@ -32,6 +32,7 @@ import { makeSandboxBgChannel, makeRelayBgChannel } from "../extensions/bg-chann
 import { requireCompatibleAgent } from "../relay/agent-gate.ts";
 import { makeRelayToolsExtension } from "../extensions/relay-tools.ts";
 import { makeSandboxToolsExtension } from "../extensions/sandbox-tools.ts";
+import { makeHostWorkspaceServiceExtension } from "../extensions/host-workspace.ts";
 import {
   countActiveTasks,
   getTask,
@@ -414,6 +415,7 @@ export async function runBatchTask(options: RunTaskOptions): Promise<void> {
               extensionFactories: [
                 makeBgTasksExtension(),
                 makeEnvironmentInfoExtension({ mode: "host", username: options.username ?? "batch" }),
+                makeHostWorkspaceServiceExtension(sessionCwd),
               ],
             },
     );

@@ -1,9 +1,12 @@
-# Remote workspace operations (draft v1)
+# Remote workspace operations (v1)
 
-Status: **draft**. The SDK-level tool-factory path below works today. The
-pi-web event bridge and the four mode adapters are **not wired yet**; this
-document fixes the contract so adapter work and third-party extensions can
-target one shape.
+Status: **implemented for host, sandbox, local-machine and SSH sessions**.
+The reference implementation lives in
+`pi-config/agent/extensions/amedac-core/src/sandbox/workspace-api.ts` (resolved
+from the pi-web repository; extensions only need the contract below); the
+mode extensions register the event bridge automatically. The SDK-level
+tool-factory path below is still the right way to build custom transports
+yourself.
 
 ## What already works today
 
@@ -28,7 +31,7 @@ remote: the built-in `grep`/`find` tools still use the host's ripgrep/fd. A
 remote workspace provider therefore also needs `grep`/`find` methods (below);
 the sandbox mode already routes those through platform APIs.
 
-## Proposed provider contract
+## Provider contract
 
 All paths are either workspace-relative POSIX or absolute inside the
 provider's namespace. `canonicalize` must resolve both and reject escapes.
@@ -163,12 +166,26 @@ extension.
 
 ## Implementation checklist
 
-- [ ] `lib/workspace-operations.ts` — provider contract + SDK adapters (done)
-- [ ] host / sandbox / relay / ssh adapters behind the contract
-- [ ] host event bridge extension (`pi-web:workspace:request`)
-- [ ] wire the bridge into agent-new, restore, subagent bridge and batch
-- [ ] add `WORKSPACE_API_VERSION` negotiation and capability tests
-- [ ] document the bridge as stable only after the adapters ship
+- [x] `amedac-core/src/sandbox/workspace-api.ts` — provider contract + SDK adapters (`lib/workspace-operations.ts` re-exports it)
+- [x] host / sandbox / relay / ssh adapters behind the contract
+- [x] host event bridge extension (`pi-web:workspace:request`); mode extensions register it automatically
+- [x] wire the bridge into agent-new, restore, subagent bridge and batch
+- [x] version check (`v: 1`) and capability/error tests
+- [x] document the bridge as stable for v1
 
-Until the checklist is complete, use the SDK `*Operations` path for your own
-transport, and do not depend on `pi-web:workspace:*` events in production.
+## Known v1 limits
+
+- The event bridge returns the final `exec` result; live streaming is only
+  available through the in-process SDK `BashOperations` adapter.
+- Requests and responses are capped at 32 MiB (base64 inflates binary reads).
+- Runtime config files (`skills/`, `agents/`, `SYSTEM.md`) may live on the
+  pi-web host rather than in the remote workspace. The provider is
+  workspace-scoped; it does not implement the config bridge yet. Read those
+  through normal extension/session APIs, not through the workspace bridge.
+- Every extension loaded in the session can request the workspace; there is
+  no per-extension ACL yet. The provider still enforces its root and
+  read/write capabilities.
+- Path containment is lexical for sandbox/relay/SSH providers (host mode
+  also resolves symlinks). A symlink *inside* a remote workspace can still
+  point outside it; treat remote workspace contents as trusted input or
+  resolve real paths in the transport when that matters.

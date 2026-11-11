@@ -52,6 +52,8 @@ import {
   platformGrep,
 } from "./operations.ts";
 import { registerCommands } from "./commands.ts";
+import { registerWorkspaceService } from "./workspace-service.ts";
+import { createSandboxWorkspaceOperations } from "./workspace-provider.ts";
 
 export function makeSandboxToolsExtension(): InlineExtension {
   const factory = (pi: ExtensionAPI): void => {
@@ -68,6 +70,7 @@ export function makeSandboxToolsExtension(): InlineExtension {
     // The real session cwd arrives at session_start (ctx.cwd); until then use
     // the process cwd (pi is usually launched from the project dir).
     let sessionCwd = process.cwd();
+    let sessionCtx: ExtensionContext | undefined;
     const localCwd = sessionCwd;
     const localRead = createReadTool(localCwd);
     const localWrite = createWriteTool(localCwd);
@@ -93,6 +96,7 @@ export function makeSandboxToolsExtension(): InlineExtension {
     // loaded but cwd not configured) skip entirely — tools pass through.
     pi.on("session_start", async (event, ctx) => {
       sessionCwd = ctx.cwd;
+      sessionCtx = ctx;
       if (!sandboxConfigPresent(sessionCwd)) return;
       const { client, config } = makeClient(ctx.cwd);
       setState({ client, config, containerId: undefined, instanceName: undefined }, sessionCwd);
@@ -116,6 +120,7 @@ export function makeSandboxToolsExtension(): InlineExtension {
 
     pi.on("session_shutdown", async () => {
       setState(undefined, sessionCwd);
+      sessionCtx = undefined;
     });
 
     // Helper: resolve the active container id, or null to fall back to host.
@@ -127,6 +132,14 @@ export function makeSandboxToolsExtension(): InlineExtension {
       const id = await ensureContainer(pi, ctx, st.client);
       return id ?? null;
     }
+
+    registerWorkspaceService(pi, () =>
+      createSandboxWorkspaceOperations({
+        getClient: () => getState(sessionCwd)?.client,
+        getContainerId: () => (sessionCtx ? activeContainerId(sessionCtx) : Promise.resolve(null)),
+        sessionCwd,
+      }),
+    );
 
     /**
      * Local-fallback policy. Embedded hosts (pi-web) set disableLocalFallback in

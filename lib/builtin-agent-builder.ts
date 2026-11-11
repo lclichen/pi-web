@@ -19,13 +19,16 @@
  * builder-skills/ 提供——它们只属于 Agent Builder，不再随配置模板装进
  * ~/.pi/agent/skills 影响所有会话。打包时 builder-skills/ 会被拷进
  * app/（package-linux），因此 source checkout 与打包部署都能读到。
+ *
+ * 1.1.4：pi-extension-dev 对齐 0.85.1，并新增 remote-workspace 接口草案
+ * （WorkspaceOperations provider / 事件桥协议 / 四模式 adapter 清单）。
  */
 import JSZip from "jszip";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 export const BUILTIN_AGENT_BUILDER_NAME = "agent-builder";
-export const BUILTIN_AGENT_BUILDER_VERSION = "1.1.3";
+export const BUILTIN_AGENT_BUILDER_VERSION = "1.1.4";
 
 /** Developer skills shipped inside the builder bundle (source of truth:
  *  <repo>/builder-skills/, copied verbatim into .pi/skills/ of the zip).

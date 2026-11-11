@@ -184,9 +184,9 @@ Key types/exports: `ModelRuntime`, `ModelRegistry`, `createEventBus`, run modes
 `resolveModelScopeWithDiagnotics`, `getAgentDir`, `getPackageDir`, `defineTool`,
 `createReadTool`/`createBashTool`/..., `withFileMutationQueue`, truncation
 helpers, `InlineExtension = { name: string; factory: ExtensionFactory }`,
-`ExtensionFactory`, `ToolDefinition`, `Skill`, `PromptTemplate`, plus (0.84)
-the services split `createAgentSessionServices` + `createAgentSessionFromServices`
-and `SessionManager.create/open/inMemory`.
+`ExtensionFactory`, `ToolDefinition`, `Skill`, `PromptTemplate`, plus the
+0.84 services split `createAgentSessionServices` + `createAgentSessionFromServices`;
+0.85 adds `SessionManager.inMemory()` (also `SessionManager.create/open`).
 
 `createAgentSession(options?) → { session }`:
 - `session.subscribe(event => ...)` — events: `message_update` (with `assistantMessageEvent`), `tool_execution_start`/`_end`, `agent_end`, etc.

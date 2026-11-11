@@ -17,6 +17,20 @@ interface SftpEntry {
 function sftp(client: Client): Promise<SFTPWrapper> {
   return new Promise((resolve, reject) => client.sftp((err, value) => (err ? reject(err) : resolve(value))));
 }
+
+/** Run SFTP work on a fresh channel and always close it (server MaxSessions). */
+async function withSftp<T>(getClient: () => Promise<Client>, fn: (s: SFTPWrapper) => Promise<T>): Promise<T> {
+  const s = await sftp(await getClient());
+  try {
+    return await fn(s);
+  } finally {
+    try {
+      s.end();
+    } catch {
+      // channel already closed
+    }
+  }
+}
 function sftpRead(s: SFTPWrapper, path: string): Promise<Buffer> {
   return new Promise((resolve, reject) => s.readFile(path, (err, data) => (err ? reject(err) : resolve(data))));
 }
@@ -91,27 +105,26 @@ export function createSshWorkspaceOperations(options: SshWorkspaceOptions): Work
 
     canonicalize,
     async readFile(path) {
-      const s = await sftp(await options.getClient());
-      return sftpRead(s, await canonicalize(path));
+      const target = await canonicalize(path);
+      return withSftp(options.getClient, (s) => sftpRead(s, target));
     },
     async writeFile(path, content) {
       if (typeof content !== "string") {
         throw new WorkspaceOperationError("UNSUPPORTED", "SSH workspace writes only UTF-8 text");
       }
       const target = await canonicalize(path);
-      const s = await sftp(await options.getClient());
-      await sftpMkdir(s, target.replace(/\/[^/]*$/, "") || "/");
-      await sftpWrite(s, target, content);
+      await withSftp(options.getClient, async (s) => {
+        await sftpMkdir(s, target.replace(/\/[^/]*$/, "") || "/");
+        await sftpWrite(s, target, content);
+      });
     },
     async mkdir(path) {
       const target = await canonicalize(path);
-      const s = await sftp(await options.getClient());
-      await sftpMkdir(s, target);
+      await withSftp(options.getClient, (s) => sftpMkdir(s, target));
     },
     async stat(path): Promise<WorkspaceStat> {
       const target = await canonicalize(path);
-      const s = await sftp(await options.getClient());
-      const attrs = await sftpStat(s, target);
+      const attrs = await withSftp(options.getClient, (s) => sftpStat(s, target));
       return {
         isFile: !attrs.isDirectory(),
         isDirectory: attrs.isDirectory(),
@@ -121,8 +134,7 @@ export function createSshWorkspaceOperations(options: SshWorkspaceOptions): Work
     },
     async readdir(path): Promise<WorkspaceDirEntry[]> {
       const target = await canonicalize(path);
-      const s = await sftp(await options.getClient());
-      const entries = await sftpReadDir(s, target);
+      const entries = await withSftp(options.getClient, (s) => sftpReadDir(s, target));
       return entries.map((entry) => ({
         name: entry.filename,
         isDirectory: entry.attrs.isDirectory(),

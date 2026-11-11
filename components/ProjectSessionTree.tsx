@@ -340,6 +340,70 @@ export function ProjectSessionTree({
       window.alert(t("sessions.exportFailedRetry"));
     }
   };
+  // 工作区 .pi/ → 项目区配置同步：先 dry-run 做同样的安全/模式校验并拿到
+  // 差异摘要，用户确认后再落盘；凭证与运行态文件由服务端跳过。
+  const syncWorkspaceConfig = async (project: ProjectRecord) => {
+    const url = `/api/projects/${encodeURIComponent(project.id)}/workspace-config-sync`;
+    try {
+      const previewRes = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dryRun: true }),
+      });
+      const preview = (await previewRes.json().catch(() => ({}))) as {
+        error?: string;
+        stats?: { files: number; added: number; overwritten: number; unchanged: number; skipped: number };
+        trust?: { requiresTrust: boolean; trusted: boolean };
+      };
+      if (!previewRes.ok || preview.error || !preview.stats) {
+        window.alert(preview.error ?? t("sessions.operationFailedHttp", { code: previewRes.status }));
+        return;
+      }
+      const stats = preview.stats;
+      const lines = [
+        t("sessions.workspaceSyncConfirm", {
+          files: stats.files,
+          added: stats.added,
+          overwritten: stats.overwritten,
+          unchanged: stats.unchanged,
+        }),
+      ];
+      if (stats.skipped > 0) lines.push(t("sessions.workspaceSyncSkipped", { count: stats.skipped }));
+      if (preview.trust?.requiresTrust && !preview.trust.trusted) {
+        lines.push(t("sessions.workspaceSyncTrustNeeded"));
+      }
+      if (!window.confirm(lines.join("\n\n"))) return;
+
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dryRun: false }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        stats?: { added: number; overwritten: number; unchanged: number };
+        trust?: { requiresTrust: boolean; trusted: boolean };
+      };
+      if (!res.ok || data.error || !data.stats) {
+        window.alert(data.error ?? t("sessions.operationFailedHttp", { code: res.status }));
+        return;
+      }
+      let message = t("sessions.workspaceSyncDone", {
+        added: data.stats.added,
+        overwritten: data.stats.overwritten,
+        unchanged: data.stats.unchanged,
+      });
+      if (data.trust?.requiresTrust && !data.trust.trusted) {
+        message += `\n\n${t("sessions.workspaceSyncTrustNeeded")}`;
+      }
+      window.alert(message);
+      // 同步可能引入扩展/技能/MCP → 让宿主立即重查信任状态。
+      window.dispatchEvent(new Event("pi-web:config-changed"));
+    } catch {
+      window.alert(t("sessions.workspaceSyncFailed"));
+    }
+  };
+
   const remove = async (project: ProjectRecord) => {
     if (!window.confirm(t("sessions.deleteProjectConfirm", { name: project.name }))) return;
     await fetch(`/api/projects/${encodeURIComponent(project.id)}`, { method: "DELETE" }).catch(() => {});
@@ -1800,6 +1864,13 @@ export function ProjectSessionTree({
               label={t("sessions.importProjectConfig")}
               onClick={() => {
                 setImportId(menuProject.id);
+                setMenu(null);
+              }}
+            />
+            <MenuItem
+              label={t("sessions.workspaceSyncConfig")}
+              onClick={() => {
+                void syncWorkspaceConfig(menuProject);
                 setMenu(null);
               }}
             />

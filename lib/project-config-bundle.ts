@@ -111,7 +111,7 @@ export interface ImportStats {
   apkg: boolean;
 }
 
-function isDeniedPath(relPath: string): boolean {
+export function isDeniedConfigPath(relPath: string): boolean {
   const segments = relPath.split("/");
   if (segments.some((s) => DENIED_SEGMENTS.has(s.toLowerCase()))) return true;
   const base = segments[segments.length - 1]?.toLowerCase() ?? "";
@@ -200,7 +200,7 @@ export async function exportProjectConfigBundle(
   for (const section of [".pi", "labs"]) {
     let sectionFiles = 0;
     for await (const file of walkFiles(home, section)) {
-      if (isDeniedPath(file.rel)) continue;
+      if (isDeniedConfigPath(file.rel)) continue;
       const content = await readFile(file.abs);
       const problems = validateBundleConfigText(file.rel, content.toString("utf8"));
       if (problems.length > 0) configProblems.push({ path: file.rel, problem: problems.join("；") });
@@ -268,7 +268,7 @@ export async function exportProjectConfigBundle(
 }
 
 /** Sanitize one zip entry name; returns a posix rel-path or rejects. */
-function sanitizeEntryPath(name: string): string {
+export function sanitizeConfigEntryPath(name: string): string {
   if (name.includes("\0")) throw new Error(`非法文件名: ${JSON.stringify(name.slice(0, 60))}`);
   const normalized = name.replace(/\\/g, "/");
   if (normalized.startsWith("/") || /^[a-zA-Z]:/.test(normalized)) {
@@ -281,11 +281,65 @@ function sanitizeEntryPath(name: string): string {
   return segments.join("/");
 }
 
-function assertAllowed(relPath: string): void {
+export function assertAllowedConfigPath(relPath: string): void {
   const lower = relPath.toLowerCase();
   if (ALLOWED_ROOT_FILES.has(lower)) return;
   if (ALLOWED_PREFIXES.some((p) => lower.startsWith(p) || lower === p.slice(0, -1))) return;
   throw new Error(`包内不支持的路径（仅支持 .pi/ 与 labs/）: ${relPath.slice(0, 80)}`);
+}
+
+/** One validated config file destined for a project home. */
+export interface ConfigWrite {
+  rel: string;
+  content: Buffer;
+  existed?: boolean;
+}
+
+/**
+ * Shared security gate for config files arriving from an upload OR from a
+ * remote workspace: schema-validates mcp.json/models.json and (for non-admins)
+ * refuses project-level stdio MCP servers, which would execute in the pi-web
+ * server process. Throws before any file is written.
+ */
+export function validateConfigWrites(
+  writes: ConfigWrite[],
+  options: { allowStdioMcp?: boolean; action?: string } = {},
+): void {
+  const problems: ConfigFileProblem[] = [];
+  for (const write of writes) {
+    const text = write.content.toString("utf8");
+    const fileProblems = validateBundleConfigText(write.rel, text);
+    if (fileProblems.length > 0) problems.push({ path: write.rel, problem: fileProblems.join("；") });
+    // 控制面隔离：普通用户导入的 stdio MCP 会在 pi-web 服务器进程执行。
+    if (options.allowStdioMcp === false && /(^|\/)mcp\.json$/i.test(write.rel)) {
+      try {
+        const parsed = JSON.parse(stripJsonc(text)) as { mcpServers?: unknown };
+        const servers = parsed?.mcpServers;
+        if (servers && typeof servers === "object" && !Array.isArray(servers)) {
+          const stdio = Object.entries(servers as Record<string, unknown>)
+            .filter(([, entry]) => {
+              if (!entry || typeof entry !== "object" || Array.isArray(entry)) return false;
+              const command = (entry as { command?: unknown }).command;
+              return typeof command === "string" && command.trim().length > 0;
+            })
+            .map(([name]) => name);
+          if (stdio.length > 0) {
+            problems.push({
+              path: write.rel,
+              problem: `项目级 stdio MCP（${stdio.join(", ")}）会在 pi-web 服务器进程执行，普通用户不可导入；请改用 http MCP，或让管理员在全局配置中添加`,
+            });
+          }
+        }
+      } catch {
+        // 语法错误已由上一条 schema 校验报告
+      }
+    }
+  }
+  if (problems.length > 0) {
+    throw new Error(
+      `${options.action ?? "导入"}中止：配置格式无效（未写入任何文件）—— ${formatConfigProblems(problems)}`,
+    );
+  }
 }
 
 export interface ImportOptions {
@@ -372,13 +426,13 @@ export async function importProjectConfigBundle(
   }
 
   // Validate everything first; collect writes for a single pass afterwards.
-  const writes: Array<{ rel: string; content: Buffer; existed: boolean }> = [];
+  const writes: ConfigWrite[] = [];
   let totalBytes = 0;
   const seen = new Set<string>();
   for (const entry of entries) {
-    const rel = sanitizeEntryPath(entry.name);
-    assertAllowed(rel);
-    if (isDeniedPath(rel)) continue; // silently skip denied files (auth.json etc.)
+    const rel = sanitizeConfigEntryPath(entry.name);
+    assertAllowedConfigPath(rel);
+    if (isDeniedConfigPath(rel)) continue; // silently skip denied files (auth.json etc.)
     if (METADATA_ROOT_FILES.has(rel.toLowerCase())) continue; // archive metadata, never written
     if (seen.has(rel)) continue;
     seen.add(rel);
@@ -400,39 +454,7 @@ export async function importProjectConfigBundle(
 
   // Same schema gate on the way in: nothing is written unless mcp.json /
   // models.json parse to the shapes pi + pi-mcp-adapter actually consume.
-  const importProblems: ConfigFileProblem[] = [];
-  for (const write of writes) {
-    const text = write.content.toString("utf8");
-    const problems = validateBundleConfigText(write.rel, text);
-    if (problems.length > 0) importProblems.push({ path: write.rel, problem: problems.join("；") });
-    // 控制面隔离：普通用户导入的 stdio MCP 会在 pi-web 服务器进程执行。
-    if (options.allowStdioMcp === false && /(^|\/)mcp\.json$/i.test(write.rel)) {
-      try {
-        const parsed = JSON.parse(stripJsonc(text)) as { mcpServers?: unknown };
-        const servers = parsed?.mcpServers;
-        if (servers && typeof servers === "object" && !Array.isArray(servers)) {
-          const stdio = Object.entries(servers as Record<string, unknown>)
-            .filter(([, entry]) => {
-              if (!entry || typeof entry !== "object" || Array.isArray(entry)) return false;
-              const command = (entry as { command?: unknown }).command;
-              return typeof command === "string" && command.trim().length > 0;
-            })
-            .map(([name]) => name);
-          if (stdio.length > 0) {
-            importProblems.push({
-              path: write.rel,
-              problem: `项目级 stdio MCP（${stdio.join(", ")}）会在 pi-web 服务器进程执行，普通用户不可导入；请改用 http MCP，或让管理员在全局配置中添加`,
-            });
-          }
-        }
-      } catch {
-        // 语法错误已由上一条 schema 校验报告
-      }
-    }
-  }
-  if (importProblems.length > 0) {
-    throw new Error(`导入中止：包内配置格式无效（未写入任何文件）—— ${formatConfigProblems(importProblems)}`);
-  }
+  validateConfigWrites(writes, options);
 
   const stats: ImportStats = { added: 0, overwritten: 0, files: [], package: packageMeta, apkg: Boolean(apkgHeader) };
   for (const write of writes) {
@@ -560,7 +582,7 @@ export async function importSkillsZip(
   const cleaned: Array<{ rel: string; content: Buffer }> = [];
   let total = 0;
   for (const entry of entries) {
-    const rel = sanitizeEntryPath(entry.name);
+    const rel = sanitizeConfigEntryPath(entry.name);
     if (!skillEntryAllowed(rel)) continue; // skip unsupported files (e.g. binaries)
     const content = await entry.async("nodebuffer");
     total += content.length;

@@ -73,7 +73,14 @@ async function dispatch(ws: WorkspaceOperations, method: string, rawParams: unkn
     case "canonicalize":
       return ws.canonicalize(stringParam(params, "path"));
     case "readFile": {
-      const data = await ws.readFile(stringParam(params, "path"));
+      const path = stringParam(params, "path");
+      // Pre-check when the provider can stat cheaply: never pull a huge file
+      // into memory just to reject it afterwards.
+      const info = await ws.stat(path).catch(() => null);
+      if (info && info.size > MAX_TRANSFER_BYTES) {
+        throw new WorkspaceOperationError("UNSUPPORTED", `file exceeds ${MAX_TRANSFER_BYTES} bytes`);
+      }
+      const data = await ws.readFile(path);
       if (data.length > MAX_TRANSFER_BYTES) {
         throw new WorkspaceOperationError("UNSUPPORTED", `file exceeds ${MAX_TRANSFER_BYTES} bytes`);
       }

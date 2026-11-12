@@ -2662,6 +2662,16 @@ async function runMemoryGuardSweep(): Promise<void> {
   const candidates: EvictableSession[] = [];
   for (const snapshot of getRpcSessionDebugSnapshots()) {
     if (!snapshot.alive || snapshot.running || !snapshot.sessionId) continue;
+    // Long-running extension work (bg-shell tasks, a selected tab's lease)
+    // must not be evicted just because the agent itself is idle.
+    if (
+      hasActiveSessionLivenessProvider({
+        sessionId: snapshot.sessionId,
+        sessionFile: snapshot.sessionFile ?? undefined,
+      })
+    ) {
+      continue;
+    }
     candidates.push({
       sessionId: snapshot.sessionId,
       lastActiveAt: snapshot.lastCommandAt ?? snapshot.startedAt,

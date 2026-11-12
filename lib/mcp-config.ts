@@ -356,6 +356,13 @@ export function setMcpServerDisabled(
 export function writeMcpSettings(cwd: string, scope: ConfigScope, settings: McpSettings): void {
   const path = mcpConfigPath(cwd, scope);
   const cfg = loadWritable(path);
-  cfg.settings = settings;
+  // Preserve adapter settings this UI does not know (new versions add
+  // fields such as allowInstall / deferWithMissingMetadata / semanticSearch).
+  const next = { ...(cfg.settings ?? {}) } as Record<string, unknown>;
+  for (const [key, value] of Object.entries(settings)) {
+    if (value === undefined) delete next[key];
+    else next[key] = value;
+  }
+  cfg.settings = next as McpSettings;
   persist(path, cfg);
 }

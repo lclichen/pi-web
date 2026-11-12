@@ -31,13 +31,16 @@
  *
  * 1.1.8：新增 mcp-server-integration 技能：MCP 服务器搭建、adapter
  * 参数/超时/生命周期，以及 pi-web 注入的 header/_meta 会话与用户标识。
+ *
+ * 1.1.9：补充 adapter 2.38 在 Pi 0.85–0.87 旧路径下的兼容要点
+ * （protocolVersion/tasks/directTools=search/工具名/审批语义变化）。
  */
 import JSZip from "jszip";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 export const BUILTIN_AGENT_BUILDER_NAME = "agent-builder";
-export const BUILTIN_AGENT_BUILDER_VERSION = "1.1.8";
+export const BUILTIN_AGENT_BUILDER_VERSION = "1.1.9";
 
 /** Developer skills shipped inside the builder bundle (source of truth:
  *  <repo>/builder-skills/, copied verbatim into .pi/skills/ of the zip).

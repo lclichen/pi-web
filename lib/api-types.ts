@@ -229,8 +229,24 @@ export interface ServerEntry {
   idleTimeout?: number;
   requestTimeoutMs?: number;
   toolTimeoutMs?: number;
+  /** pi-mcp-adapter 2.20+: MCP protocol era selection. */
+  protocolVersion?: "legacy" | "auto" | "2026-07-28";
+  /** pi-mcp-adapter 2.35+: opt out of MCP Tasks for this server. */
+  tasks?: boolean;
+  /** pi-mcp-adapter 2.33+: do not inherit the parent environment (stdio). */
+  inheritEnv?: boolean;
+  /** pi-mcp-adapter 2.33+: PEM trust bundle for this server origin. */
+  caFile?: string;
+  /** pi-mcp-adapter 2.13+: per-request header command. */
+  requestHeadersCommand?: unknown;
+  /** pi-mcp-adapter 2.34+: keep plugin env values literal. */
+  literalEnv?: boolean;
+  /** pi-mcp-adapter 2.34+: OAuth Client ID Metadata Document URL. */
+  clientMetadataUrl?: string;
+  /** Per-server direct-tool prefix override. */
+  toolPrefix?: McpToolPrefix;
   exposeResources?: boolean;
-  directTools?: boolean | string[];
+  directTools?: boolean | string[] | "search";
   /** Include/exclude specific MCP tools/resources by original or prefixed name (2.13.0). */
   includeTools?: string[];
   excludeTools?: string[];
@@ -278,6 +294,12 @@ export interface McpSettings {
   requestTimeoutMs?: number;
   directTools?: boolean;
   disableProxyTool?: boolean;
+  namespaceProxyTools?: boolean;
+  exposeResources?: boolean;
+  allowInstall?: boolean;
+  deferWithMissingMetadata?: boolean;
+  ancestorConfigRoots?: string[];
+  oauthCredentialStore?: "encrypted-file";
   autoAuth?: boolean;
   sampling?: boolean;
   samplingAutoApprove?: boolean;

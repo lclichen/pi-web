@@ -126,7 +126,17 @@ const sessionId = meta["amedac/session_id"];
 const userId = meta["amedac/user_id"];
 ```
 
-## 5. 自检清单
+## 5. 2.38 兼容要点（Pi 0.85–0.87 旧路径）
+
+- 在 Pi 0.85–0.87 上，`mcp.json` 仍是 adapter 自己的配置；Pi 0.99+ 的内置 MCP 配置接管不会发生。
+- 2.38 新增的可选字段：`protocolVersion: "legacy" | "auto" | "2026-07-28"`、`tasks`、`inheritEnv`、`caFile`、`clientMetadataUrl`、`directTools: "search"`；不设置时行为与旧版一致。
+- `protocolVersion: "auto"` 且服务端支持 MCP Tasks 时，长调用会变成可轮询任务；可用 `tasks: false` 关闭。
+- 2.35 起，自命名（self-namespaced）工具不再重复加前缀，工具名可能变化；升级后检查提示词、白名单和快捷会话模板里的精确工具名。
+- 2.33 起，`directTools: "search"` 的工具要等搜索/网关首次调用后才激活；依赖“开箱即用”的工具面时不要用 search 模式。
+- 2.33 起，审批 broker 会观察缓存调用，session 授权只在 broker abstain 时生效；自定义权限扩展需要复核语义。
+- 2.34 起，重模块按需加载；不要依赖 adapter 模块的加载顺序或顶层副作用。
+
+## 6. 自检清单
 
 1. `.pi/mcp.json` 是合法 JSON；每个 server 有 `command` 或 `url`。
 2. 长任务使用 `requestTimeoutMs`（毫秒），不是 `toolTimeoutMs`。

@@ -99,7 +99,7 @@ interface ServerForm {
   lifecycle: string;
   idleTimeout: string;
   requestTimeoutMs: string;
-  directToolsMode: "off" | "all" | "list";
+  directToolsMode: "off" | "all" | "search" | "list";
   directToolsList: string;
   includeTools: string;
   excludeTools: string;
@@ -148,6 +148,7 @@ function entryToForm(name: string, scope: ConfigScope, entry: ServerEntry): Serv
   let directToolsMode: ServerForm["directToolsMode"] = "off";
   let directToolsList = "";
   if (dt === true) directToolsMode = "all";
+  else if (dt === "search") directToolsMode = "search";
   else if (Array.isArray(dt)) {
     directToolsMode = "list";
     directToolsList = dt.join(", ");
@@ -213,6 +214,7 @@ function formToEntry(form: ServerForm): ServerEntry {
     if (Number.isFinite(n)) entry.requestTimeoutMs = n;
   }
   if (form.directToolsMode === "all") entry.directTools = true;
+  else if (form.directToolsMode === "search") entry.directTools = "search";
   else if (form.directToolsMode === "list") {
     const list = form.directToolsList
       .split(",")
@@ -235,6 +237,41 @@ function formToEntry(form: ServerForm): ServerEntry {
   // not absorb the workspace-override switch state (form.disabled).
   if (form.scope === "project" ? form.disabled : form.scopeDisabled) entry.disabled = true;
   return entry;
+}
+
+/** Fields edited by the form; clearing one must remove it from the saved entry. */
+const MANAGED_ENTRY_KEYS = new Set([
+  "command",
+  "args",
+  "env",
+  "cwd",
+  "socket",
+  "url",
+  "headers",
+  "auth",
+  "bearerToken",
+  "bearerTokenEnv",
+  "lifecycle",
+  "idleTimeout",
+  "toolTimeoutMs",
+  "requestTimeoutMs",
+  "directTools",
+  "includeTools",
+  "excludeTools",
+  "debug",
+]);
+
+/**
+ * The form only knows the pre-2.38 fields. Merge its managed fields over the
+ * original entry so newer adapter options (protocolVersion, tasks, inheritEnv,
+ * caFile, requestHeadersCommand, oauth, piWeb, toolPrefix, …) survive a save.
+ */
+function mergeServerEntry(base: ServerEntry | null, form: ServerForm): ServerEntry {
+  const managed = formToEntry(form);
+  if (!base) return managed;
+  const preserved = { ...base } as Record<string, unknown>;
+  for (const key of MANAGED_ENTRY_KEYS) delete preserved[key];
+  return { ...preserved, ...managed } as ServerEntry;
 }
 
 export function McpServersConfig({
@@ -274,6 +311,9 @@ export function McpServersConfig({
   const [form, setForm] = useState<ServerForm>(emptyServerForm());
   const [originalName, setOriginalName] = useState<string>("");
   const [originalScope, setOriginalScope] = useState<ConfigScope>("project");
+  /** Last loaded entry, kept so saving the visible form does not drop fields
+   *  introduced by newer pi-mcp-adapter versions (protocolVersion/tasks/…). */
+  const [baseEntry, setBaseEntry] = useState<ServerEntry | null>(null);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [formMsg, setFormMsg] = useState<string | null>(null);
@@ -379,6 +419,7 @@ export function McpServersConfig({
     // global entry without changing its own scopeDisabled flag).
     nextForm.disabled = info.disabled;
     setForm(nextForm);
+    setBaseEntry({ ...info.entry });
     setOriginalName(info.name);
     setOriginalScope(info.scope);
     setSelectedKey(serverKey(info.scope, info.name));
@@ -392,6 +433,7 @@ export function McpServersConfig({
   const startCreate = () => {
     setCreating(true);
     setForm(emptyServerForm("project"));
+    setBaseEntry(null);
     setSelectedKey(null);
     setFormError(null);
     setFormMsg(null);
@@ -404,7 +446,7 @@ export function McpServersConfig({
     setSaving(true);
     setFormError(null);
     setFormMsg(null);
-    const entry = formToEntry(form);
+    const entry = mergeServerEntry(baseEntry, form);
     if (!entry.command && !entry.url) {
       setFormError("A command (stdio) or url (http) is required");
       setSaving(false);
@@ -439,6 +481,7 @@ export function McpServersConfig({
         if (!res.ok || body.error) throw new Error(body.error ?? `HTTP ${res.status}`);
         setFormMsg("Server saved.");
       }
+      setBaseEntry(entry);
       await loadDoc();
       void probeAll();
     } catch (err) {
@@ -462,6 +505,7 @@ export function McpServersConfig({
       if (!res.ok || body.error) throw new Error(body.error ?? `HTTP ${res.status}`);
       setSelectedKey(null);
       setForm(emptyServerForm());
+      setBaseEntry(null);
       await loadDoc();
       void probeAll();
     } catch (err) {
@@ -473,7 +517,7 @@ export function McpServersConfig({
 
   /** 测试当前表单里的服务器：结果同时写进详情面板与左侧工具表。 */
   const testConnection = async () => {
-    const entry = formToEntry(form);
+    const entry = mergeServerEntry(baseEntry, form);
     if (!entry.command && !entry.url) {
       setProbeState({ status: "error", error: t("mcp.testNoTarget") });
       return;
@@ -1297,6 +1341,7 @@ export function McpServersConfig({
                       >
                         <option value="off">off</option>
                         <option value="all">all (true)</option>
+                        <option value="search">search (2.33+)</option>
                         <option value="list">whitelist</option>
                       </select>
                     </ConfigField>

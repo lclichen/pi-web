@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import Editor, { loader, type OnMount } from "@monaco-editor/react";
 
 // Self-hosted AMD assets (copied to public/monaco/vs by scripts/copy-monaco.mjs)
@@ -53,11 +53,25 @@ export function MonacoEditor({
   const saveRef = useRef(onSave);
   const lineClickRef = useRef(onLineClick);
   const selectionChangeRef = useRef(onSelectionChange);
+  const editorRef = useRef<Parameters<OnMount>[0] | null>(null);
+  const [mounted, setMounted] = useState(false);
   saveRef.current = onSave;
   lineClickRef.current = onLineClick;
   selectionChangeRef.current = onSelectionChange;
 
+  // @monaco-editor/react reuses an existing model by `path` and skips the first
+  // value sync on mount. After leaving edit mode the old `view:<path>` model
+  // may still hold the pre-edit text, so explicitly reconcile when mounted and
+  // whenever the prop changes (FileViewer re-reads the file after save/cancel).
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor || editor.getValue() === value) return;
+    editor.setValue(value);
+  }, [mounted, value]);
+
   const onMount: OnMount = (editor, monaco) => {
+    editorRef.current = editor;
+    setMounted(true);
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
       saveRef.current?.();
     });

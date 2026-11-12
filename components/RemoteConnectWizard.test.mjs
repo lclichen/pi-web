@@ -28,6 +28,8 @@ test("local step 3 is a machine-selection page, not an auto-advance gate", () =>
   assert.match(localStep, /disabled=\{!localMachineReady\}/, "even one machine needs an explicit Next");
   assert.match(localStep, /onClick=\{\(\) => setStep\(2\)\}/, "step 3 keeps its own Back button");
   assert.match(localStep, /noPairedMachines/, "empty state explains pairing below");
+  // 无机器时配对区已 flex:1 撑满；占位必须一起隐藏，否则高度被对半分。
+  assert.match(localStep, /\{localMachineList\.length > 0 && <div style=\{\{ flex: 1 \}\} \/>\}/);
 });
 
 test("machine list is SSE-driven and preselect never advances", () => {

@@ -1065,7 +1065,8 @@ export function RemoteConnectWizard({
                   />
                 )}
               </div>
-              <div style={{ flex: 1 }} />
+              {/* 无机器时配对区自己撑满剩余高度；再加一个 flex:1 占位会把高度对半分。 */}
+              {localMachineList.length > 0 && <div style={{ flex: 1 }} />}
               <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4 }}>
                 <button onClick={() => setStep(2)} style={secondaryBtn}>
                   {t("remote.back")}

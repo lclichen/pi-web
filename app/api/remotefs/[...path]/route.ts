@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getFileName } from "@/lib/file-paths";
 import { detectFileLanguage } from "@/lib/file-language";
+import { remoteBytesResponse, shouldServeRemoteBytes } from "@/lib/remote-file-response";
 import {
   remoteCreateEmpty,
   remoteDelete,
@@ -12,8 +12,6 @@ import {
   remoteWrite,
   resolveRemoteSession,
 } from "@/lib/remote-session";
-import { getPreviewMime } from "@/lib/file-types";
-import { sliceByteRange } from "@/lib/http-range";
 import { isApiRequestAllowed, hasJsonContentType } from "@/lib/request-security";
 
 export const dynamic = "force-dynamic";
@@ -54,45 +52,20 @@ export async function GET(req: Request, ctx: { params: Promise<{ path: string[] 
       return NextResponse.json({ matches });
     }
     if (type === "read" || type === "download") {
-      // Media/document previews must be served as RAW BYTES with a real
-      // content-type (the JSON text read cannot carry binary: invalid UTF-8
-      // becomes U+FFFD, so remote <img>/<video> rendered broken). Mirrors the
-      // /api/files behaviour, including single-range support.
-      const mime = getPreviewMime(filePath);
-      if (mime) {
+      // Downloads must always be raw bytes: the JSON text read decodes UTF-8
+      // and corrupts binaries such as .zip. Reads only stream bytes for
+      // media/document previews; text files keep the JSON read the viewer
+      // expects. Mirrors /api/files, including single-range support.
+      if (shouldServeRemoteBytes(type, filePath)) {
         try {
           const { bytes } = await remoteReadBinary(remote.ctx, filePath);
-          const headers: Record<string, string> = {
-            "Content-Type": mime,
-            "Accept-Ranges": "bytes",
-            "Cache-Control": "no-store",
-          };
-          if (type === "download") {
-            headers["Content-Disposition"] =
-              `attachment; filename*=UTF-8''${encodeURIComponent(getFileName(filePath))}`;
-          }
-          const ranged = sliceByteRange(bytes, req.headers.get("range"));
-          if (ranged) {
-            headers["Content-Range"] = ranged.contentRange;
-            headers["Content-Length"] = String(ranged.body.length);
-            return new Response(new Uint8Array(ranged.body), { status: 206, headers });
-          }
-          headers["Content-Length"] = String(bytes.length);
-          return new Response(new Uint8Array(bytes), { status: 200, headers });
+          return remoteBytesResponse(type, filePath, bytes, req.headers.get("range"));
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
           return NextResponse.json({ error: msg || "无法读取远程二进制文件" }, { status: 502 });
         }
       }
       const { content, size } = await remoteRead(remote.ctx, filePath);
-      if (type === "download") {
-        return new Response(content, {
-          headers: {
-            "Content-Type": "text/plain; charset=utf-8",
-            "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(getFileName(filePath))}`,
-          },
-        });
-      }
       return NextResponse.json({ content, language: detectFileLanguage(filePath), size });
     }
     return NextResponse.json({ error: `Unsupported type: ${type}` }, { status: 400 });

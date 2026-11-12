@@ -63,11 +63,18 @@ export function MonacoEditor({
   // value sync on mount. After leaving edit mode the old `view:<path>` model
   // may still hold the pre-edit text, so explicitly reconcile when mounted and
   // whenever the prop changes (FileViewer re-reads the file after save/cancel).
+  // Also defer one tick: the child Editor's [path] effect can switch models
+  // after this parent effect, which would otherwise restore the stale model.
   useEffect(() => {
-    const editor = editorRef.current;
-    if (!editor || editor.getValue() === value) return;
-    editor.setValue(value);
-  }, [mounted, value]);
+    const sync = () => {
+      const editor = editorRef.current;
+      if (!editor || editor.getValue() === value) return;
+      editor.setValue(value);
+    };
+    sync();
+    const timer = setTimeout(sync, 0);
+    return () => clearTimeout(timer);
+  }, [mounted, path, value]);
 
   const onMount: OnMount = (editor, monaco) => {
     editorRef.current = editor;

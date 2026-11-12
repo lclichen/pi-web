@@ -8,5 +8,5 @@ test("MonacoEditor reconciles the value prop with a reused model", () => {
   assert.match(source, /const editorRef = useRef/);
   assert.match(source, /editor\.getValue\(\) === value/);
   assert.match(source, /editor\.setValue\(value\)/);
-  assert.match(source, /\}, \[mounted, value\]\)/);
+  assert.match(source, /\}, \[mounted, path, value\]\)/);
 });

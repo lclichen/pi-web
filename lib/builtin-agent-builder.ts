@@ -25,13 +25,16 @@
  *
  * 1.1.6：新增 examples/workspace-probe（可直接放进 .pi/extensions 的
  * workspace_probe 示例工具），remote-workspace 文档标注 v1 示例入口。
+ *
+ * 1.1.7：MCP 打包规范改用 requestTimeoutMs（adapter 2.31 已不再读取
+ * toolTimeoutMs；旧字段由 pi-web 在会话启动时自动迁移）。
  */
 import JSZip from "jszip";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 export const BUILTIN_AGENT_BUILDER_NAME = "agent-builder";
-export const BUILTIN_AGENT_BUILDER_VERSION = "1.1.6";
+export const BUILTIN_AGENT_BUILDER_VERSION = "1.1.7";
 
 /** Developer skills shipped inside the builder bundle (source of truth:
  *  <repo>/builder-skills/, copied verbatim into .pi/skills/ of the zip).
@@ -152,7 +155,8 @@ AGENTS.md                 # 项目指令（Agent 的系统提示载体之一）
 - \`directTools\`：布尔值或字符串数组（把工具直接暴露给模型，不必经 mcp 网关）
 - \`includeTools\` / \`excludeTools\`：字符串数组（工具白/黑名单）
 - \`lifecycle\`：连接时机（如 lazy / keep-alive / eager）
-- \`idleTimeout\` / \`toolTimeoutMs\` / \`requestTimeoutMs\`：数字
+- \`idleTimeout\`（分钟）/ \`requestTimeoutMs\`（毫秒）：数字。旧字段
+  \`toolTimeoutMs\` 已被 pi-mcp-adapter 2.31 忽略，pi-web 会在会话启动时自动迁移。
 
 常见错误：把 \`args\` 写成空格分隔的字符串、\`env\` 写成数组、服务器条目只有
 \`disabled\` 而没有 command/url——这些都会在**导出时直接报错**（导入同样拦），

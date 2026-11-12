@@ -98,7 +98,7 @@ interface ServerForm {
   bearerTokenEnv: string;
   lifecycle: string;
   idleTimeout: string;
-  toolTimeoutMs: string;
+  requestTimeoutMs: string;
   directToolsMode: "off" | "all" | "list";
   directToolsList: string;
   includeTools: string;
@@ -131,7 +131,7 @@ function emptyServerForm(scope: ConfigScope = "project"): ServerForm {
     bearerTokenEnv: "",
     lifecycle: "keep-alive",
     idleTimeout: "",
-    toolTimeoutMs: "",
+    requestTimeoutMs: "",
     directToolsMode: "all",
     directToolsList: "",
     includeTools: "",
@@ -167,11 +167,11 @@ function entryToForm(name: string, scope: ConfigScope, entry: ServerEntry): Serv
     bearerTokenEnv: entry.bearerTokenEnv ?? "",
     lifecycle: entry.lifecycle ?? "",
     idleTimeout: entry.idleTimeout !== undefined ? String(entry.idleTimeout) : "",
-    toolTimeoutMs:
-      entry.toolTimeoutMs !== undefined
-        ? String(entry.toolTimeoutMs)
-        : entry.requestTimeoutMs !== undefined
-          ? String(entry.requestTimeoutMs)
+    requestTimeoutMs:
+      entry.requestTimeoutMs !== undefined
+        ? String(entry.requestTimeoutMs)
+        : entry.toolTimeoutMs !== undefined
+          ? String(entry.toolTimeoutMs)
           : "",
     directToolsMode,
     directToolsList,
@@ -208,9 +208,9 @@ function formToEntry(form: ServerForm): ServerEntry {
     const n = Number(form.idleTimeout);
     if (Number.isFinite(n)) entry.idleTimeout = n;
   }
-  if (form.toolTimeoutMs.trim() !== "") {
-    const n = Number(form.toolTimeoutMs);
-    if (Number.isFinite(n)) entry.toolTimeoutMs = n;
+  if (form.requestTimeoutMs.trim() !== "") {
+    const n = Number(form.requestTimeoutMs);
+    if (Number.isFinite(n)) entry.requestTimeoutMs = n;
   }
   if (form.directToolsMode === "all") entry.directTools = true;
   else if (form.directToolsMode === "list") {
@@ -758,6 +758,7 @@ export function McpServersConfig({
             >
               <input
                 style={inputStyle}
+                placeholder="10"
                 value={settingsDraft.idleTimeout ?? ""}
                 onChange={(e) =>
                   setSettingsDraft((s) => ({
@@ -779,7 +780,7 @@ export function McpServersConfig({
             >
               <input
                 style={inputStyle}
-                placeholder="30000"
+                placeholder="60000"
                 value={settingsDraft.requestTimeoutMs ?? ""}
                 onChange={(e) =>
                   setSettingsDraft((s) => ({
@@ -1250,23 +1251,37 @@ export function McpServersConfig({
                       </select>
                     </ConfigField>
                   </div>
-                  <div style={{ width: 130 }}>
-                    <ConfigField label="idleTimeout">
+                  <div style={{ width: 150 }}>
+                    <ConfigField
+                      label={
+                        <>
+                          idleTimeout (min)
+                          <ConfigInfoTip text={t("mcp.help.serverIdleTimeout")} />
+                        </>
+                      }
+                    >
                       <input
                         style={inputStyle}
                         value={form.idleTimeout}
                         onChange={(e) => set("idleTimeout", e.target.value)}
-                        placeholder="10000"
+                        placeholder="10"
                       />
                     </ConfigField>
                   </div>
-                  <div style={{ width: 150 }}>
-                    <ConfigField label="toolTimeoutMs">
+                  <div style={{ width: 170 }}>
+                    <ConfigField
+                      label={
+                        <>
+                          requestTimeoutMs
+                          <ConfigInfoTip text={t("mcp.help.serverRequestTimeout")} />
+                        </>
+                      }
+                    >
                       <input
                         style={inputStyle}
-                        value={form.toolTimeoutMs}
-                        onChange={(e) => set("toolTimeoutMs", e.target.value)}
-                        placeholder="1800000"
+                        value={form.requestTimeoutMs}
+                        onChange={(e) => set("requestTimeoutMs", e.target.value)}
+                        placeholder="60000"
                       />
                     </ConfigField>
                   </div>

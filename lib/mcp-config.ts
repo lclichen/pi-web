@@ -217,6 +217,50 @@ function persist(path: string, cfg: RawMcpConfig): void {
   atomicWriteFile(path, `${JSON.stringify(cfg, null, 2)}\n`);
 }
 
+/** pi-mcp-adapter renamed the per-server tool timeout to requestTimeoutMs;
+ *  toolTimeoutMs is ignored by 2.31+. Migrate old configs once so long-running
+ *  MCP tools do not silently fall back to the SDK's 60s default. */
+function migrateLegacyTimeoutsInConfig(config: RawMcpConfig): boolean {
+  let changed = false;
+  for (const entry of Object.values(config.mcpServers ?? {})) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+    const server = entry as ServerEntry;
+    if (server.toolTimeoutMs === undefined) continue;
+    if (server.requestTimeoutMs === undefined && typeof server.toolTimeoutMs === "number") {
+      server.requestTimeoutMs = server.toolTimeoutMs;
+    }
+    delete server.toolTimeoutMs;
+    changed = true;
+  }
+  return changed;
+}
+
+/** Migrate one mcp.json in place; returns true when the file was rewritten. */
+export function migrateLegacyMcpTimeouts(path: string): boolean {
+  const { config, error } = readRaw(path);
+  if (error || !config) return false;
+  if (!migrateLegacyTimeoutsInConfig(config)) return false;
+  try {
+    persist(path, config);
+    return true;
+  } catch {
+    return false; // read-only/global configs must not break session startup
+  }
+}
+
+/** Migrate all MCP config layers a session may load (project/quick/user/global). */
+export function migrateLegacyMcpTimeoutsForSession(cwd: string, userId?: number): void {
+  const paths = new Set<string>([
+    mcpConfigPath(cwd, "project"),
+    mcpConfigPath(cwd, "quick"),
+    mcpConfigPath(cwd, "global"),
+    join(homedir(), ".agents", "mcp.json"),
+    join(homedir(), ".agents", "mcp", "mcp.json"),
+  ]);
+  if (isUserScopedConfig(userId)) paths.add(userMcpConfigPath(userId as number));
+  for (const path of paths) migrateLegacyMcpTimeouts(path);
+}
+
 export function createMcpServer(
   cwd: string,
   scope: ConfigScope,

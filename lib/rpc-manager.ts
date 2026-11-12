@@ -35,7 +35,7 @@ import {
 } from "./session-guard";
 import { logServerEvent } from "./server-log";
 import { readPreferences } from "./preferences-service";
-import { readMcpConfig } from "./mcp-config";
+import { migrateLegacyMcpTimeoutsForSession, readMcpConfig } from "./mcp-config";
 import { createModeToolClampExtension } from "./extensions/mode-tool-clamp";
 import { filterActiveToolsForMode, filterToolsForMode, isRemoteMode, mcpExcludedServers, type ToolExclusion } from "./tool-policy";
 import { composeQuickSystemPrompt, createQuickPromptExtension, type QuickTemplateHolder } from "./quick-prompt";
@@ -3014,6 +3014,9 @@ export async function startRpcSession(
       sessionManager = SessionManager.create(cwd, sessionDir);
     }
     const sessionCwd = sessionManager.getCwd();
+    // 旧版 pi-web 写的是 toolTimeoutMs；adapter 2.31 只认 requestTimeoutMs。
+    // 在建会话前一次性迁移，避免长任务调用落回 SDK 的 60s 默认超时。
+    migrateLegacyMcpTimeoutsForSession(sessionCwd, ownerId);
     const subagentResources = sessionFile
       ? readSubagentSessionResources(sessionManager.getEntries() as unknown as SessionEntry[])
       : null;

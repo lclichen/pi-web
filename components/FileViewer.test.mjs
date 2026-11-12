@@ -97,3 +97,15 @@ test("markdown preview links carry PDF page fragments", () => {
   assert.match(source, /parsePdfPageFragment/);
   assert.match(source, /onOpenFile\(linkedFile, parsePdfPageFragment\(href\) \?\? undefined\)/);
 });
+
+test("leaving edit mode invalidates in-flight reads and re-reads the file", () => {
+  const cancel = source.slice(source.indexOf("const handleCancelEdit"), source.indexOf("const handleSave"));
+  assert.match(cancel, /contentRequestRef\.current \+= 1/);
+  assert.match(cancel, /fetchContent\(filePath\)/);
+  assert.match(cancel, /fetchGitDiff\(filePath\)/);
+
+  const save = source.slice(source.indexOf("const handleSave"), source.indexOf("// Enter edit shortcut"));
+  assert.match(save, /contentRequestRef\.current \+= 1/, "stale watch/init reads are invalidated");
+  assert.match(save, /fetchContent\(filePath\)/, "saved file is re-read from disk/remote");
+  assert.match(save, /fetchGitDiff\(filePath\)/, "diff metadata is refreshed after save");
+});

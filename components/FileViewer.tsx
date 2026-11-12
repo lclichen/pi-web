@@ -1229,9 +1229,15 @@ function TextFileViewer({
     setDisplayMode("source");
   }, [data]);
   const handleCancelEdit = useCallback(() => {
+    // Invalidate reads started while the editor was open (watch/SSE or the
+    // initial load); otherwise a late response can repaint stale content after
+    // edit mode closes. Re-read the file so "exit edit" reflects the disk.
+    contentRequestRef.current += 1;
     setEditMode(false);
     setDirty(false);
-  }, []);
+    void fetchContent(filePath);
+    void fetchGitDiff(filePath);
+  }, [fetchContent, fetchGitDiff, filePath]);
 
   const handleSave = useCallback(async () => {
     if (!filePath) return;
@@ -1251,15 +1257,22 @@ function TextFileViewer({
         const e = await res.json().catch(() => ({}));
         throw new Error(e.error ?? `HTTP ${res.status}`);
       }
+      // A watch/initial-read request may still be in flight from before the
+      // save; invalidate it so it cannot overwrite the saved content.
+      contentRequestRef.current += 1;
       setData((prev) => (prev ? { ...prev, content: editContent } : prev));
       setDirty(false);
       setEditMode(false);
+      // Re-read after exiting edit mode: refreshes content, size/line metadata
+      // and the Git diff from the source of truth (local or remote).
+      void fetchContent(filePath);
+      void fetchGitDiff(filePath);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setSaving(false);
     }
-  }, [filePath, editContent, remote]);
+  }, [editContent, fetchContent, fetchGitDiff, filePath, remote]);
 
   // Enter edit shortcut: Ctrl/Cmd+S to save when dirty
   useEffect(() => {

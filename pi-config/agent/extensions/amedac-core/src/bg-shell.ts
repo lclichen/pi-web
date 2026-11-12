@@ -330,17 +330,16 @@ export function makeBgShellExtension(): InlineExtension {
      * deliverAs "followUp" queues while the agent is busy and fires when idle.
      * Manual bg_stop / shutdown cleanup do NOT notify — the user already knows.
      */
-    const notifyTaskExit = async (task: BgTask, ctx: ExtensionContext) => {
+    const notifyTaskExit = async (task: BgTask) => {
       try {
-        const send = (
-          ctx as ExtensionContext & {
-            sendUserMessage?: (content: string, options?: { deliverAs?: "steer" | "followUp" }) => void;
-          }
-        ).sendUserMessage;
+        // SDK 0.85: sendUserMessage is an ExtensionAPI method (pi), not an
+        // ExtensionContext one. Using ctx.* silently no-ops in real sessions.
+        const send = pi.sendUserMessage;
         if (typeof send !== "function") return; // headless host without the channel
         const tail = await tailLog(task, task.sessionId ?? "");
         const tailTrimmed = tail.length > 2048 ? `\n${tail.slice(-2048)}\n(tailed)` : tail ? `\n${tail}` : "";
-        send(
+        send.call(
+          pi,
           `<task-notification>Background task "${task.name}" (${task.taskId}) has ${task.status}` +
             `${task.exitCode != null ? ` with exit code ${task.exitCode}` : ""}.` +
             ` Output file: ${task.outputFile}.${tailTrimmed}</task-notification>`,
@@ -361,7 +360,7 @@ export function makeBgShellExtension(): InlineExtension {
           task.endedAt = Date.now();
           reg.children.delete(task.taskId);
           publish(ctx);
-          void notifyTaskExit(task, ctx);
+          void notifyTaskExit(task);
         });
         return;
       }
@@ -384,7 +383,7 @@ export function makeBgShellExtension(): InlineExtension {
             clearInterval(timer);
             reg.timers.delete(task.taskId);
             publish(ctx);
-            void notifyTaskExit(task, ctx);
+            void notifyTaskExit(task);
           }
         } catch {
           // channel hiccup — keep polling

@@ -362,6 +362,7 @@ export async function runBatchTask(options: RunTaskOptions): Promise<void> {
     const resumeFile = options.resume ? getTask(taskId)?.sessionFile : undefined;
     const coreOptions = {
       ownerId: options.ownerId,
+      ownerName: options.username ?? "batch",
       mode: options.mode,
       ...(options.model ? { initialModel: options.model } : {}),
       ...(options.toolNames ? { toolNames: options.toolNames } : {}),

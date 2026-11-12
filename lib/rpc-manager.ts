@@ -16,6 +16,7 @@ import { validateAgentImages } from "./image-attachments";
 import { applyQueueOp, describeQueueOpError, type QueueOp } from "./queue-ops";
 import { installSubagentBridge } from "./subagent-bridge";
 import { hasActiveSessionLivenessProvider } from "./session-liveness";
+import { registerSessionIdentity, unregisterSessionIdentity } from "./session-identity";
 import { invalidateModelsCache } from "./models-cache";
 import { resolveVisibleModels, selectInitialModelScope } from "./model-scope";
 import { userRuntimeForSession } from "./user-models";
@@ -237,6 +238,8 @@ export interface RpcSessionStartOptions {
   sessionDir?: string;
   /** Owning web user id (0 = implicit host identity when auth is off). */
   ownerId?: number;
+  /** Owning username for MCP identity headers/_meta (optional for CLI/host). */
+  ownerName?: string;
   /** Execution mode for this session's tool layer. */
   mode?: "host" | "sandbox" | "local-machine" | "ssh" | "quick";
   /** Quick mode: template-pinned system prompt / model / MCP allowlist. */
@@ -2526,7 +2529,10 @@ function registerRpcWrapper(wrapper: AgentSessionWrapper): void {
   const registry = getRegistry();
   const sessionId = wrapper.sessionId;
   if (wrapper.sessionFile) cacheSessionPath(sessionId, wrapper.sessionFile);
-  wrapper.onDestroy(() => registry.delete(sessionId));
+  wrapper.onDestroy(() => {
+    registry.delete(sessionId);
+    unregisterSessionIdentity(sessionId);
+  });
   registry.set(sessionId, wrapper);
   wrapper.start();
   if (!wrapper.isChatOnly()) wrapper.beginExtensionBinding();
@@ -2982,6 +2988,7 @@ export async function startRpcSession(
     thinkingLevel,
     sessionDir,
     ownerId,
+    ownerName,
     mode,
     quick,
     additionalExtensionPaths,
@@ -3014,6 +3021,16 @@ export async function startRpcSession(
       sessionManager = SessionManager.create(cwd, sessionDir);
     }
     const sessionCwd = sessionManager.getCwd();
+    // Expose the web identity to third-party extensions (pi-mcp-adapter reads
+    // this registry to stamp outbound MCP headers/_meta). The session id is
+    // known before createAgentSessionServices, so it is visible at connect time.
+    const identitySessionId = sessionManager.getSessionId();
+    if (identitySessionId) {
+      registerSessionIdentity(identitySessionId, {
+        userId: ownerId ?? 0,
+        ...(ownerName?.trim() ? { userName: ownerName.trim() } : {}),
+      });
+    }
     // 旧版 pi-web 写的是 toolTimeoutMs；adapter 2.31 只认 requestTimeoutMs。
     // 在建会话前一次性迁移，避免长任务调用落回 SDK 的 60s 默认超时。
     migrateLegacyMcpTimeoutsForSession(sessionCwd, ownerId);

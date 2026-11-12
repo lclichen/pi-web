@@ -28,19 +28,27 @@
  *
  * 1.1.7：MCP 打包规范改用 requestTimeoutMs（adapter 2.31 已不再读取
  * toolTimeoutMs；旧字段由 pi-web 在会话启动时自动迁移）。
+ *
+ * 1.1.8：新增 mcp-server-integration 技能：MCP 服务器搭建、adapter
+ * 参数/超时/生命周期，以及 pi-web 注入的 header/_meta 会话与用户标识。
  */
 import JSZip from "jszip";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 export const BUILTIN_AGENT_BUILDER_NAME = "agent-builder";
-export const BUILTIN_AGENT_BUILDER_VERSION = "1.1.7";
+export const BUILTIN_AGENT_BUILDER_VERSION = "1.1.8";
 
 /** Developer skills shipped inside the builder bundle (source of truth:
  *  <repo>/builder-skills/, copied verbatim into .pi/skills/ of the zip).
  *  Deliberately OUTSIDE pi-config/agent/: those skills belong to Agent
  *  Builder only, not to every session's global skill list. */
-export const BUILTIN_AGENT_BUILDER_SKILLS = ["pi-extension-dev", "skill-creator", "subagent-creator"] as const;
+export const BUILTIN_AGENT_BUILDER_SKILLS = [
+  "pi-extension-dev",
+  "skill-creator",
+  "subagent-creator",
+  "mcp-server-integration",
+] as const;
 
 const AGENTS_MD = `# Agent Builder
 
@@ -72,6 +80,9 @@ const AGENTS_MD = `# Agent Builder
   词、渐进披露（references/）、脚本效率检查（scripts/skill-efficiency-check.py）。
 - **subagent-creator**——设计子代理：角色边界、工具权限最小化、多代理
   协作与交接（examples/ 有可参考定义）。
+- **mcp-server-integration**——接入 MCP 服务器：.pi/mcp.json 结构、
+  pi-mcp-adapter 参数与超时/生命周期，以及 pi-web 注入的
+  x-amedac-* headers 与 amedac/* _meta 会话/用户标识。
 
 ## 目录纪律（硬约束）
 

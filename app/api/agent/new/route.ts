@@ -422,6 +422,7 @@ export async function POST(req: Request) {
       ...(explicitThinkingLevel ? { thinkingLevel: explicitThinkingLevel } : {}),
       ...(sessionDir ? { sessionDir } : {}),
       ownerId: user.id,
+      ownerName: user.username,
       mode,
       ...(bgChannel ? { bgChannel } : {}),
       ...(quickOptions ? { quick: quickOptions } : {}),

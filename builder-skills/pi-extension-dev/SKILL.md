@@ -285,6 +285,6 @@ Test: `pi -e ~/.pi/agent/extensions/my-ext.ts`.
 - **`references/context-ui.md`** — every `ctx` property + every `ctx.ui` method (dialogs, fire-and-forget, working loader, TUI-only, theme) + RPC UI protocol + per-mode degradation table.
 - **`references/commands-providers.md`** — `registerCommand`/autocomplete, `ExtensionCommandContext` extras (newSession/fork/switchSession/reload + the session-replacement footguns), `registerShortcut`/`registerFlag`, `registerProvider`/`unregisterProvider` (full shapes incl. OAuth, custom streaming), `sendMessage`/`sendUserMessage`/`appendEntry`.
 - **`references/packaging.md`** — loading locations, `settings.json` arrays, `-e` flag, the `package.json` `pi` manifest, `pi-package` keyword, gallery fields, dependency rules (peer vs bundled), package sources + filtering, SDK embedding (`createAgentSession`).
-- **`references/remote-workspace.md`** — v1 `WorkspaceOperations` provider contract, `pi-web:workspace:*` event bridge (registered automatically by the mode extensions), path/security rules, host/sandbox/relay/ssh provider semantics, and v1 limits.
+- **`references/remote-workspace.md`** — v1 `WorkspaceOperations` provider contract, `pi-web:workspace:*` event bridge (registered automatically by the mode extensions), path/security rules, host/sandbox/relay/ssh provider semantics, and v1 limits. Runnable example: `examples/workspace-probe/` (registers a `workspace_probe` tool).
 
 When in doubt about an exact signature, read the relevant reference file — they quote the real shapes verbatim.

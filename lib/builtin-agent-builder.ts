@@ -22,13 +22,16 @@
  *
  * 1.1.5：WorkspaceOperations v1 事件桥与 host/sandbox/relay/ssh provider
  * 落地，pi-extension-dev 的 remote-workspace 参考从草案转为可用规范。
+ *
+ * 1.1.6：新增 examples/workspace-probe（可直接放进 .pi/extensions 的
+ * workspace_probe 示例工具），remote-workspace 文档标注 v1 示例入口。
  */
 import JSZip from "jszip";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 export const BUILTIN_AGENT_BUILDER_NAME = "agent-builder";
-export const BUILTIN_AGENT_BUILDER_VERSION = "1.1.5";
+export const BUILTIN_AGENT_BUILDER_VERSION = "1.1.6";
 
 /** Developer skills shipped inside the builder bundle (source of truth:
  *  <repo>/builder-skills/, copied verbatim into .pi/skills/ of the zip).

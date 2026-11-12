@@ -89,7 +89,7 @@ Rules:
 `pi-web` has a reference adapter module (`lib/workspace-operations.ts`) that
 converts this provider to the SDK's `Read/Write/Edit/Ls/BashOperations`.
 
-## Event bridge protocol (proposed)
+## Event bridge protocol (v1)
 
 Extensions reach the host-owned provider over the shared extension event bus,
 so they never receive SSH passwords, relay tokens or platform API keys.
@@ -141,7 +141,15 @@ server rather than in the remote workspace. The provider must implement the
 same config bridge the mode extensions use; an extension must not assume a
 skill file is in the remote root.
 
-## How an extension uses it (once wired)
+## How an extension uses it (v1)
+
+A runnable reference tool lives in
+[`examples/workspace-probe/`](../examples/workspace-probe/): it registers
+`workspace_probe` (capabilities + stat + bounded read/readdir + optional
+exec). Copy that directory to `<project>/.pi/extensions/workspace-probe/` to
+try it inside a pi-web session.
+
+Minimal request helper:
 
 ```ts
 // Ask the host for the current session's workspace (event bridge).
@@ -159,6 +167,9 @@ async function workspaceRequest(pi: ExtensionAPI, method: string, params?: unkno
   return reply;
 }
 ```
+
+The reference example adds a timeout, reply-id/version checks, and capability
+checks before calling `exec`; production extensions should do the same.
 
 To override a built-in tool, obtain the provider from the host adapter and
 pass the SDK operation wrappers; do not re-implement path containment in the

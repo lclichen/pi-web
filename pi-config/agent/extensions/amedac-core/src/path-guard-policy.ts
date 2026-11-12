@@ -74,6 +74,10 @@ export const SELF_PROTECTED_PATTERNS = [
   ".ssh/**",
 ] as const;
 
+/** Background-task logs are runtime state, but the model is explicitly told to
+ *  read them (bg_run contract). Read-only exception; writes stay denied. */
+const BG_LOG_READ_PATTERNS = [".pi/tmp/bg", ".pi/tmp/bg/**"] as const;
+
 export const DEFAULT_POLICY: PathPolicy = {
   version: 1,
   allowWrite: ["."],
@@ -222,10 +226,14 @@ export function evaluatePathAgainstPolicy(
   const display = normalizePolicyPath(absPath);
   const norm = mapToolPathToPolicy(absPath, cwd, scope);
   if (matchesAny(SELF_PROTECTED_PATTERNS, norm, cwd)) {
-    return {
-      action: "deny",
-      reason: `路径「${display}」属于运行时受保护文件（策略/凭据/会话数据），任何策略都不可放行。`,
-    };
+    // bg_run tells the model to read <cwd>/.pi/tmp/bg/<task>.log. Keep the
+    // write side fully protected while allowing that read path.
+    if (!(kind === "read" && matchesAny(BG_LOG_READ_PATTERNS, norm, cwd))) {
+      return {
+        action: "deny",
+        reason: `路径「${display}」属于运行时受保护文件（策略/凭据/会话数据），任何策略都不可放行。`,
+      };
+    }
   }
   const denyList = kind === "write" ? policy.denyWrite : policy.denyRead;
   if (matchesAny(denyList, norm, cwd)) {

@@ -79,6 +79,17 @@ interface SyncBackupSummary {
   bytes: number;
 }
 
+interface ProjectionInfo {
+  workspaceKey: string;
+  fileCount: number;
+  dirty: string[];
+  conflicts: string[];
+  errors: Array<{ rel: string; error: string }>;
+  truncated: { reason: string; skipped: number } | null;
+  lastVerifiedAt: string | null;
+  last: { updatedAt?: string; timedOut?: boolean } | null;
+}
+
 interface Props {
   sessions: SessionInfo[];
   runningSessionIds: Set<string>;
@@ -168,6 +179,9 @@ export function ProjectSessionTree({
   const [rollbackProject, setRollbackProject] = useState<ProjectRecord | null>(null);
   const [rollbackList, setRollbackList] = useState<SyncBackupSummary[] | null>(null);
   const [rollbackBusy, setRollbackBusy] = useState(false);
+  const [projectionProject, setProjectionProject] = useState<ProjectRecord | null>(null);
+  const [projectionInfo, setProjectionInfo] = useState<ProjectionInfo | null>(null);
+  const [projectionBusy, setProjectionBusy] = useState(false);
   const [containers, setContainers] = useState<Array<{ id: number; name: string; status: string; imageName: string }>>(
     [],
   );
@@ -507,8 +521,9 @@ export function ProjectSessionTree({
         changed?: string[];
         restored?: number;
         deleted?: number;
+        paths?: string[];
         reload?: { reloaded: string[]; pending: string[] };
-        projection?: { needsDiscard?: boolean; dirty?: string[] };
+        projection?: { needsDiscard?: boolean; dirty?: string[]; conflicts?: string[] };
       };
       if (res.status === 409 && data.code === "ROLLBACK_CONFLICT") {
         if (
@@ -547,10 +562,105 @@ export function ProjectSessionTree({
       }
       window.alert(message);
       window.dispatchEvent(new Event("pi-web:config-changed"));
+      if (data.projection?.needsDiscard) {
+        const paths = [
+          ...new Set([
+            ...(data.paths ?? []),
+            ...(data.projection.dirty ?? []),
+            ...(data.projection.conflicts ?? []),
+          ]),
+        ];
+        if (paths.length > 0 && window.confirm(t("sessions.rollbackProjectionConfirm"))) {
+          try {
+            const repair = await fetch(
+              `/api/projects/${encodeURIComponent(rollbackProject.id)}/projection/repair`,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ paths }),
+              },
+            );
+            const repairData = (await repair.json().catch(() => ({}))) as {
+              error?: string;
+              pushed?: string[];
+              deleted?: string[];
+            };
+            if (!repair.ok) {
+              window.alert(repairData.error ?? t("sessions.operationFailedHttp", { code: repair.status }));
+            } else {
+              window.alert(
+                t("sessions.projectionDone", {
+                  count: (repairData.pushed?.length ?? 0) + (repairData.deleted?.length ?? 0) || paths.length,
+                }),
+              );
+            }
+          } catch {
+            window.alert(t("sessions.workspaceSyncFailed"));
+          }
+        }
+      }
     } catch {
       window.alert(t("sessions.workspaceSyncFailed"));
     } finally {
       setRollbackBusy(false);
+    }
+  };
+
+  const openProjection = async (project: ProjectRecord) => {
+    setProjectionProject(project);
+    setProjectionInfo(null);
+    try {
+      const res = await fetch(`/api/projects/${encodeURIComponent(project.id)}/projection`);
+      const data = (await res.json().catch(() => ({}))) as ProjectionInfo & { error?: string };
+      if (!res.ok) {
+        window.alert(data.error ?? t("sessions.operationFailedHttp", { code: res.status }));
+        setProjectionProject(null);
+        return;
+      }
+      setProjectionInfo(data);
+    } catch {
+      window.alert(t("sessions.projectionFailed"));
+      setProjectionProject(null);
+    }
+  };
+
+  const discardProjection = async () => {
+    if (!projectionProject) return;
+    const names = [...(projectionInfo?.dirty ?? []), ...(projectionInfo?.conflicts ?? [])];
+    if (names.length === 0) return;
+    if (
+      !window.confirm(
+        t("sessions.projectionDiscardConfirm", { names: names.slice(0, 10).join(", ") }),
+      )
+    ) {
+      return;
+    }
+    setProjectionBusy(true);
+    try {
+      const res = await fetch(`/api/projects/${encodeURIComponent(projectionProject.id)}/projection/repair`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ all: true }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        pushed?: string[];
+        deleted?: string[];
+      };
+      if (!res.ok) {
+        window.alert(data.error ?? t("sessions.operationFailedHttp", { code: res.status }));
+        return;
+      }
+      window.alert(
+        t("sessions.projectionDone", {
+          count: (data.pushed?.length ?? 0) + (data.deleted?.length ?? 0) || names.length,
+        }),
+      );
+      await openProjection(projectionProject);
+    } catch {
+      window.alert(t("sessions.workspaceSyncFailed"));
+    } finally {
+      setProjectionBusy(false);
     }
   };
 
@@ -2084,6 +2194,13 @@ export function ProjectSessionTree({
               }}
             />
             <MenuItem
+              label={t("sessions.projectionMenu")}
+              onClick={() => {
+                void openProjection(menuProject);
+                setMenu(null);
+              }}
+            />
+            <MenuItem
               label={t("bundles.applyMenu")}
               onClick={() => {
                 setApplyBundleId(menuProject.id);
@@ -2264,6 +2381,18 @@ export function ProjectSessionTree({
           onRollback={(backup) => void runRollback(backup)}
           onClose={() => {
             if (!rollbackBusy) setRollbackProject(null);
+          }}
+        />
+      )}
+
+      {projectionProject && (
+        <ProjectionStatusDialog
+          projectName={projectionProject.name}
+          info={projectionInfo}
+          busy={projectionBusy}
+          onDiscard={() => void discardProjection()}
+          onClose={() => {
+            if (!projectionBusy) setProjectionProject(null);
           }}
         />
       )}
@@ -2617,6 +2746,167 @@ function SyncRollbackDialog({
         >
           <button type="button" onClick={onClose} disabled={busy} style={dialogButtonStyle}>
             {t("sessions.rollbackClose")}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ProjectionStatusDialog({
+  projectName,
+  info,
+  busy,
+  onDiscard,
+  onClose,
+}: {
+  projectName: string;
+  info: ProjectionInfo | null;
+  busy: boolean;
+  onDiscard: () => void;
+  onClose: () => void;
+}) {
+  const { t } = useI18n();
+  const names = [...(info?.dirty ?? []), ...(info?.conflicts ?? [])];
+  const sectionStyle = { padding: "9px 18px", borderBottom: "1px solid var(--border)" } as const;
+  const labelStyle = { fontSize: 11.5, color: "var(--text-dim)" } as const;
+  const listStyle = { margin: "4px 0 0", paddingLeft: 18, fontSize: 12, color: "var(--text)" } as const;
+  return (
+    <div
+      role="presentation"
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 1200,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 16,
+        background: "rgba(0,0,0,0.45)",
+      }}
+      onClick={(event) => {
+        if (!busy && event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="projection-status-title"
+        style={{
+          width: "min(600px, 100%)",
+          maxHeight: "80vh",
+          display: "flex",
+          flexDirection: "column",
+          border: "1px solid var(--border)",
+          borderRadius: 8,
+          background: "var(--bg-panel)",
+          boxShadow: "0 12px 36px rgba(0,0,0,0.28)",
+          overflow: "hidden",
+        }}
+      >
+        <div style={{ padding: "14px 18px 10px", borderBottom: "1px solid var(--border)" }}>
+          <div id="projection-status-title" style={{ fontSize: 15, fontWeight: 700, color: "var(--text)" }}>
+            {t("sessions.projectionTitle", { name: projectName })}
+          </div>
+          <div style={{ marginTop: 6, fontSize: 12, color: "var(--text-muted)" }}>
+            {t("sessions.projectionHint")}
+          </div>
+        </div>
+        <div style={{ flex: 1, minHeight: 0, overflow: "auto" }}>
+          {info === null ? (
+            <div style={{ padding: 16, fontSize: 12, color: "var(--text-muted)" }}>
+              {t("sessions.projectionLoading")}
+            </div>
+          ) : (
+            <>
+              <div style={{ ...sectionStyle, fontSize: 12, color: "var(--text)" }}>
+                {t("sessions.projectionFiles", { count: info.fileCount })}
+                {info.last?.updatedAt ? (
+                  <div style={{ marginTop: 4, ...labelStyle }}>
+                    {t("sessions.projectionLastRun", { time: new Date(info.last.updatedAt).toLocaleString() })}
+                  </div>
+                ) : null}
+                {info.lastVerifiedAt ? (
+                  <div style={{ marginTop: 2, ...labelStyle }}>
+                    {t("sessions.projectionLastVerified", {
+                      time: new Date(info.lastVerifiedAt).toLocaleString(),
+                    })}
+                  </div>
+                ) : null}
+              </div>
+              {info.dirty.length > 0 && (
+                <div style={sectionStyle}>
+                  <div style={labelStyle}>{t("sessions.projectionDirty", { count: info.dirty.length })}</div>
+                  <ul style={listStyle}>
+                    {info.dirty.slice(0, 20).map((rel) => (
+                      <li key={rel} style={{ fontFamily: "var(--font-mono, monospace)" }}>
+                        {rel}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {info.conflicts.length > 0 && (
+                <div style={sectionStyle}>
+                  <div style={labelStyle}>{t("sessions.projectionConflicts", { count: info.conflicts.length })}</div>
+                  <ul style={listStyle}>
+                    {info.conflicts.slice(0, 20).map((rel) => (
+                      <li key={rel} style={{ fontFamily: "var(--font-mono, monospace)" }}>
+                        {rel}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {info.errors.length > 0 && (
+                <div style={sectionStyle}>
+                  <div style={labelStyle}>{t("sessions.projectionErrors", { count: info.errors.length })}</div>
+                  <ul style={listStyle}>
+                    {info.errors.slice(0, 10).map((entry) => (
+                      <li key={entry.rel} style={{ fontFamily: "var(--font-mono, monospace)" }}>
+                        {entry.rel}: {entry.error}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {info.truncated && (
+                <div style={{ ...sectionStyle, color: "var(--warning, #d29922)", fontSize: 12 }}>
+                  {t("sessions.projectionTruncated", {
+                    reason: info.truncated.reason,
+                    count: info.truncated.skipped,
+                  })}
+                </div>
+              )}
+              {names.length === 0 && info.errors.length === 0 && !info.truncated && (
+                <div style={{ padding: 16, fontSize: 12, color: "var(--text-muted)" }}>
+                  {t("sessions.projectionEmpty")}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "flex-end",
+            gap: 8,
+            padding: "10px 18px",
+            borderTop: "1px solid var(--border)",
+          }}
+        >
+          {names.length > 0 && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={onDiscard}
+              style={dialogButtonStyle}
+            >
+              {t(busy ? "sessions.projectionDiscarding" : "sessions.projectionDiscard")}
+            </button>
+          )}
+          <button type="button" onClick={onClose} disabled={busy} style={dialogButtonStyle}>
+            {t("sessions.projectionClose")}
           </button>
         </div>
       </div>

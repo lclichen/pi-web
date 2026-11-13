@@ -83,6 +83,13 @@ import {
   validateSessionToolSelection,
 } from "./session-tool-selection";
 import { acquireProjectConfigReadLock } from "./project-config-lock";
+import {
+  markProjectionAttempted,
+  projectionNeedsRun,
+  reconcileProjection,
+  type ProjectionResult,
+} from "./projection/reconcile";
+import type { ProjectionSessionConfig } from "./projection/types";
 
 // ============================================================================
 // Types
@@ -154,6 +161,8 @@ type AgentSessionWrapperOptions = {
   chatOnly?: boolean;
   /** Owning project (remote sessions) — used by the config lock/busy gate. */
   projectId?: string;
+  /** Downlink projection context (remote project sessions). */
+  projection?: ProjectionSessionConfig;
   /**
    * Append the web-UI output addendum (images / PDF page links) to whatever
    * system prompt this session ends up using. Enabled for regular and
@@ -247,6 +256,8 @@ export interface RpcSessionStartOptions {
   mode?: "host" | "sandbox" | "local-machine" | "ssh" | "quick";
   /** Owning project (remote sessions) — config lock/busy gate + projection. */
   projectId?: string;
+  /** Downlink projection context (remote project sessions). */
+  projection?: ProjectionSessionConfig;
   /** Quick mode: template-pinned system prompt / model / MCP allowlist. */
   quick?: { systemPrompt?: string; model?: { provider: string; modelId: string }; mcpServers?: string[] };
   /** Extra extension entry-point directories injected for this session only. */
@@ -468,6 +479,7 @@ export class AgentSessionWrapper {
     this.quickPrompt = options.quickPrompt;
     this.chatOnly = options.chatOnly ?? false;
     this.projectId = options.projectId;
+    this.projection = options.projection;
     this.onAgentRunComplete = options.onAgentRunComplete;
     this.suppressCompletionNotifications = options.suppressCompletionNotifications ?? false;
     this.installExactSystemPromptContinuation();
@@ -481,6 +493,8 @@ export class AgentSessionWrapper {
   ownerId = 0;
   /** Owning project (remote sessions); empty for host/quick/subagents. */
   projectId?: string;
+  /** Downlink projection context (remote project sessions). */
+  projection?: ProjectionSessionConfig;
   /** Execution mode of this session's tool layer. */
   mode: "host" | "sandbox" | "local-machine" | "ssh" | "quick" = "host";
 
@@ -894,6 +908,33 @@ export class AgentSessionWrapper {
     return "reloaded";
   }
 
+  /**
+   * Downlink projection before a prompt: Host skills/agents/attachments →
+   * workspace. Best-effort and budgeted; a failure never blocks the turn.
+   */
+  async reconcileProjectionNow(): Promise<ProjectionResult | null> {
+    if (!this.projection) return null;
+    if (this.mode !== "sandbox" && this.mode !== "local-machine" && this.mode !== "ssh") return null;
+    if (!projectionNeedsRun(this.projection.projectId)) return null;
+    try {
+      const workspace = await this.projection.workspace();
+      return await reconcileProjection({
+        projectId: this.projection.projectId,
+        hostHome: this.projection.hostHome,
+        workspace,
+        workspaceMeta: this.projection.workspaceMeta,
+        budgetMs: 5_000,
+      });
+    } catch (error) {
+      markProjectionAttempted(this.projection.projectId);
+      console.warn(
+        "[pi-web] workspace projection failed:",
+        error instanceof Error ? error.message : error,
+      );
+      return null;
+    }
+  }
+
   /** Quick mode template switch: re-pin the exact system prompt. */
   /**
    * Quick 工具面封闭世界：扩展绑定（session_start）完成后一次性收敛活动集。
@@ -1198,6 +1239,12 @@ export class AgentSessionWrapper {
 
       switch (type) {
         case "prompt": {
+          // Downlink projection before a fresh turn. Queued/steering prompts
+          // skip it: the workspace is already in use and the next turn will run.
+          const streamingBehavior = command.streamingBehavior as "steer" | "followUp" | undefined;
+          if (!streamingBehavior && !this.inner.isStreaming && this.pendingPromptCount === 0) {
+            await this.reconcileProjectionNow();
+          }
           // Serialize only admission. Once the preceding prompt has either
           // passed or failed preflight, the SDK can atomically decide whether
           // this submission starts a run or joins its streaming queue.
@@ -1210,7 +1257,6 @@ export class AgentSessionWrapper {
               this.extensionUiAbortController = new AbortController();
             }
             const promptImages = command.images as Array<{ type: "image"; data: string; mimeType: string }> | undefined;
-            const streamingBehavior = command.streamingBehavior as "steer" | "followUp" | undefined;
             if (promptImages?.length && streamingBehavior && typeof command.message === "string") {
               // Track for update_queue image protection. The SDK queue stores
               // the *expanded* text; plain texts match, expanded skill text
@@ -3084,6 +3130,7 @@ export async function startRpcSession(
     ownerName,
     mode,
     projectId,
+    projection,
     quick,
     additionalExtensionPaths,
     extensionFactories,
@@ -3409,6 +3456,7 @@ export async function startRpcSession(
       exactSystemPrompt,
       chatOnly,
       ...(projectId ? { projectId } : {}),
+      ...(projection ? { projection } : {}),
       // Web sessions (incl. quick) learn the web output capabilities; only
       // subagent sessions keep their exact prompts. Quick template content now
       // rides the append path, so it composes with the addendum instead of

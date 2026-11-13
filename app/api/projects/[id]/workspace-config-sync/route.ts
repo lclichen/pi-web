@@ -17,6 +17,7 @@ import { consumeSyncPlan, loadSyncPlan, saveSyncPlan } from "@/lib/sync-plan-sto
 import { SyncBaselineConflictError } from "@/lib/sync-backups";
 import { workspaceKeyFor } from "@/lib/workspace-key";
 import { getProjectRuntimeBusy, reloadProjectSessions } from "@/lib/rpc-manager";
+import { markProjectionDirty } from "@/lib/projection/reconcile";
 
 export const dynamic = "force-dynamic";
 
@@ -191,6 +192,8 @@ async function applyPlan(
   }
 
   let reload: Awaited<ReturnType<typeof reloadProjectSessions>> | null = null;
+  // Host skills/agents changed: the next prompt should project them down.
+  markProjectionDirty(project.id);
   try {
     // Per-session reload; do not hold the project read lock here — a reload can
     // start extension work that itself starts sessions, and the project lock is

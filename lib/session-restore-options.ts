@@ -22,6 +22,7 @@ import { registerBgChannel, registerBgSessionMode } from "./extensions/bg-shell"
 import { makeRelayBgChannel, makeSandboxBgChannel, makeSshBgChannel } from "./extensions/bg-channels";
 import { readSshConfig } from "./ssh";
 import { pathScopeForSession, writePathScope } from "./path-scope";
+import { projectionSessionFor } from "./projection/session-context";
 import { requireUserIdentity } from "./web-session";
 
 /**
@@ -273,6 +274,9 @@ export async function restoreSessionOptions(req: Request, sessionId: string): Pr
     ownerName: meta?.ownerName ?? (ownerId === user.id ? user.username : `u${ownerId}`),
     mode,
     ...(project ? { projectId: project.id } : {}),
+    ...(project
+      ? { projection: projectionSessionFor(project, identity.session.user, identity.session.apiKey ?? "") }
+      : {}),
     ...(mode === "quick" ? { quick: quickForRestore ?? {} } : {}),
     // Project-scoped model credentials live in the project home's .pi/.
     ...(effectiveCwd && project ? { projectCredentialDir: effectiveCwd } : {}),

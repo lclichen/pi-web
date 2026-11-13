@@ -253,6 +253,8 @@ export interface RollbackResult {
   applyId: string;
   restored: number;
   deleted: number;
+  /** Every config rel touched by the rollback (restored or deleted). */
+  paths: string[];
 }
 
 /**
@@ -293,7 +295,7 @@ export async function rollbackWorkspaceConfig(
     deletes,
   });
   pruneBackups(home);
-  return { applyId, restored: writes.length, deleted };
+  return { applyId, restored: writes.length, deleted, paths: restores.map((item) => item.rel) };
 }
 
 export interface BackupSummary {

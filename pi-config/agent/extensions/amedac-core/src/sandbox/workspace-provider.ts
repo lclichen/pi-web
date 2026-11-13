@@ -57,6 +57,10 @@ export function createSandboxWorkspaceOperations(options: SandboxWorkspaceOption
       const buffer = typeof content === "string" ? Buffer.from(content, "utf8") : Buffer.from(content);
       await client.toolWrite(containerId, await canonicalize(path), buffer);
     },
+    async remove(path) {
+      const { client, containerId } = await current();
+      await client.toolBash(containerId, `rm -f -- ${shellQuote(await canonicalize(path))}`);
+    },
     async mkdir(path) {
       const { client, containerId } = await current();
       const target = await canonicalize(path);

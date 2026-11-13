@@ -3,6 +3,7 @@ import { relayRpc } from "../relay/forward";
 import { clientCompatibility } from "../client-compat";
 import {
   agentSupportsBinaryRead,
+  agentSupportsBinaryWrite,
   isPathWithin,
   resolveRelayWorkspaceScope,
   toRelayPath,
@@ -86,11 +87,24 @@ export function createRelayWorkspaceOperations(options: RelayWorkspaceOptions): 
         : Buffer.from(result.content ?? "", "utf8");
     },
     async writeFile(path, content) {
-      if (typeof content !== "string") {
-        throw new WorkspaceOperationError("UNSUPPORTED", "Relay workspace writes only UTF-8 text");
-      }
       const scope = scopeOrThrow();
-      await call("fs.write", { path: wirePath(path, scope), content }, scope);
+      if (typeof content === "string") {
+        await call("fs.write", { path: wirePath(path, scope), content }, scope);
+        return;
+      }
+      const info = getAgentForUser(userId, machineId)?.info;
+      if (!agentSupportsBinaryWrite(info)) {
+        throw new WorkspaceOperationError("UNSUPPORTED", "本机 Agent 版本过旧，无法写入二进制文件（需要 ≥ 0.6.0）");
+      }
+      await call(
+        "fs.write",
+        { path: wirePath(path, scope), contentBase64: Buffer.from(content).toString("base64") },
+        scope,
+      );
+    },
+    async remove(path) {
+      const scope = scopeOrThrow();
+      await call("fs.delete", { path: wirePath(path, scope) }, scope);
     },
     async mkdir(path) {
       const scope = scopeOrThrow();

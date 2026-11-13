@@ -8,6 +8,9 @@ import { withProjectConfigWriteLock, ProjectConfigLockBusyError } from "@/lib/pr
 import { rollbackWorkspaceConfig, SyncRollbackConflictError } from "@/lib/sync-backups";
 import { workspaceKeyFor } from "@/lib/workspace-key";
 import { getProjectRuntimeBusy, reloadProjectSessions } from "@/lib/rpc-manager";
+import { markProjectionDirty } from "@/lib/projection/reconcile";
+import { readProjectionStatus } from "@/lib/projection/status";
+import { workspaceDescriptor } from "@/lib/workspace-key";
 
 export const dynamic = "force-dynamic";
 
@@ -73,22 +76,32 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   }
 
   let reload: Awaited<ReturnType<typeof reloadProjectSessions>> | null = null;
+  markProjectionDirty(project.id);
   try {
     reload = await reloadProjectSessions(project.id);
   } catch {
     reload = { reloaded: [], pending: [], failed: [] };
   }
 
+  const descriptor = workspaceDescriptor(project);
+  const projection = readProjectionStatus(project.id, descriptor.key);
+  const dirty = projection?.dirty ?? [];
+  const conflicts = projection?.conflicts ?? [];
   return NextResponse.json({
     ok: true,
     applyId: result.applyId,
     restored: result.restored,
     deleted: result.deleted,
+    paths: result.paths,
     workspaceKey,
     trust: getProjectTrustStatus(home, getAgentDir()),
     reload,
-    // Projection (P1) will report dirty workspace files here; until then the
-    // rollback only changes the Host project area.
-    projection: { needsDiscard: false, dirty: [] },
+    // The workspace may still hold the Agent's edited version; the UI offers
+    // "discard workspace changes" (POST /projection/repair).
+    projection: {
+      needsDiscard: dirty.length > 0 || conflicts.length > 0,
+      dirty,
+      conflicts,
+    },
   });
 }

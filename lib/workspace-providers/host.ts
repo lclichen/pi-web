@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdir, readdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
   WorkspaceOperationError,
@@ -94,6 +94,9 @@ export function createHostWorkspaceOperations(root: string): WorkspaceOperations
     },
     async writeFile(path, content) {
       await writeFile(await canonicalize(path), content);
+    },
+    async remove(path) {
+      await rm(await canonicalize(path), { force: true });
     },
     async mkdir(path) {
       await mkdir(await canonicalize(path), { recursive: true });

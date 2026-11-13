@@ -130,6 +130,8 @@ export interface WorkspaceOperations {
   canonicalize(path: string): Promise<string>;
   readFile(path: string): Promise<Buffer>;
   writeFile(path: string, content: string | Uint8Array): Promise<void>;
+  /** Remove a file (idempotent). Optional: older providers may not implement it. */
+  remove?(path: string): Promise<void>;
   mkdir(path: string): Promise<void>;
   stat(path: string): Promise<WorkspaceStat>;
   readdir(path: string): Promise<WorkspaceDirEntry[]>;

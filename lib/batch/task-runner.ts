@@ -33,6 +33,7 @@ import { requireCompatibleAgent } from "../relay/agent-gate.ts";
 import { makeRelayToolsExtension } from "../extensions/relay-tools.ts";
 import { makeSandboxToolsExtension } from "../extensions/sandbox-tools.ts";
 import { makeHostWorkspaceServiceExtension } from "../extensions/host-workspace.ts";
+import { projectionSessionFor } from "../projection/session-context.ts";
 import {
   countActiveTasks,
   getTask,
@@ -315,6 +316,11 @@ export async function runBatchTask(options: RunTaskOptions): Promise<void> {
       }
     }
 
+    const projectionProject =
+      typeof options.projectId === "string" && options.mode !== "host"
+        ? getOwnedProject(options.projectId, options.ownerId, true)
+        : undefined;
+
     // 1. Resolve the session cwd and per-mode wiring.
     //    - host: prepare a fresh workDir (suffix-if-exists) + materialize files
     //    - sandbox: per-task stub home whose .pi/sandbox-platform.json binds
@@ -365,6 +371,15 @@ export async function runBatchTask(options: RunTaskOptions): Promise<void> {
       ownerName: options.username ?? "batch",
       mode: options.mode,
       ...(options.projectId !== undefined ? { projectId: String(options.projectId) } : {}),
+      ...(projectionProject
+        ? {
+            projection: projectionSessionFor(
+              projectionProject,
+              { id: options.ownerId, role: "user" },
+              options.platformApiKey ?? "",
+            ),
+          }
+        : {}),
       ...(options.model ? { initialModel: options.model } : {}),
       ...(options.toolNames ? { toolNames: options.toolNames } : {}),
       ...(options.thinkingLevel

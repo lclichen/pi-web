@@ -21,6 +21,7 @@ import { spaceDir } from "@/lib/session-spaces";
 import { ensureSandboxHome, ensureLocalHome, ensureQuickHome } from "@/lib/mode-homes";
 import { ensureQuickSessionWorkspace } from "@/lib/quick-session";
 import { pathScopeForSession, writePathScope } from "@/lib/path-scope";
+import { projectionSessionFor } from "@/lib/projection/session-context";
 import { recordSessionMeta } from "@/lib/session-metas";
 import { makeRelayToolsExtension } from "@/lib/extensions/relay-tools";
 import { sessionDirsForProject } from "@/lib/session-context";
@@ -452,6 +453,9 @@ export async function POST(req: Request) {
       ...(coreExtensionPaths ? { additionalExtensionPaths: coreExtensionPaths } : {}),
       ...(projectRef ? { projectCredentialDir: effectiveCwd } : {}),
       ...(projectRef ? { projectId: projectRef.id } : {}),
+      ...(projectRef
+        ? { projection: projectionSessionFor(projectRef, user, identity.session.apiKey ?? "") }
+        : {}),
       ...(user.id > 0 ? { userModelConfigUserId: user.id } : {}),
     });
 

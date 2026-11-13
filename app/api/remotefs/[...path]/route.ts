@@ -17,6 +17,7 @@ import {
 import { isApiRequestAllowed, hasJsonContentType } from "@/lib/request-security";
 import { writeAttachmentAtomic } from "@/lib/project-attachments";
 import { MAX_CHAT_ATTACHMENT_BYTES, MAX_CHAT_ATTACHMENT_TOTAL_BYTES } from "@/lib/attachment-limits";
+import { markProjectionDirty } from "@/lib/projection/reconcile";
 
 export const dynamic = "force-dynamic";
 
@@ -286,6 +287,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ path: string[]
         continue;
       }
     }
+    // Host-only attachments are missing on the remote side; let the next
+    // prompt-time projection push them.
+    if (hostOnly.length > 0 && remote.ctx.projectId) markProjectionDirty(remote.ctx.projectId);
     return NextResponse.json({
       uploaded,
       skipped,

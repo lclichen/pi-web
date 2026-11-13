@@ -34,8 +34,11 @@ async function withSftp<T>(getClient: () => Promise<Client>, fn: (s: SFTPWrapper
 function sftpRead(s: SFTPWrapper, path: string): Promise<Buffer> {
   return new Promise((resolve, reject) => s.readFile(path, (err, data) => (err ? reject(err) : resolve(data))));
 }
-function sftpWrite(s: SFTPWrapper, path: string, content: string): Promise<void> {
+function sftpWrite(s: SFTPWrapper, path: string, content: string | Buffer): Promise<void> {
   return new Promise((resolve, reject) => s.writeFile(path, content, (err) => (err ? reject(err) : resolve())));
+}
+function sftpUnlink(s: SFTPWrapper, path: string): Promise<void> {
+  return new Promise((resolve, reject) => s.unlink(path, (err) => (err ? reject(err) : resolve())));
 }
 function sftpStat(s: SFTPWrapper, path: string): Promise<{ isDirectory(): boolean; size: number; mtime: number }> {
   return new Promise((resolve, reject) => s.stat(path, (err, attrs) => (err ? reject(err) : resolve(attrs))));
@@ -109,14 +112,16 @@ export function createSshWorkspaceOperations(options: SshWorkspaceOptions): Work
       return withSftp(options.getClient, (s) => sftpRead(s, target));
     },
     async writeFile(path, content) {
-      if (typeof content !== "string") {
-        throw new WorkspaceOperationError("UNSUPPORTED", "SSH workspace writes only UTF-8 text");
-      }
       const target = await canonicalize(path);
+      const data = typeof content === "string" ? content : Buffer.from(content);
       await withSftp(options.getClient, async (s) => {
         await sftpMkdir(s, target.replace(/\/[^/]*$/, "") || "/");
-        await sftpWrite(s, target, content);
+        await sftpWrite(s, target, data);
       });
+    },
+    async remove(path) {
+      const target = await canonicalize(path);
+      await withSftp(options.getClient, (s) => sftpUnlink(s, target));
     },
     async mkdir(path) {
       const target = await canonicalize(path);

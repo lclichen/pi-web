@@ -418,9 +418,9 @@ export function ProjectSessionTree({
     refreshSessions();
   };
 
-  // Host 项目区临时附件（.pi/attachments）：先算占用，再确认清理。
-  const cleanAttachments = async (project: ProjectRecord) => {
-    const base = `/api/projects/${encodeURIComponent(project.id)}/attachments`;
+  // Host 临时附件（.pi/attachments）：先算占用，再确认清理。
+  // 项目菜单走项目 home；Host 目录菜单走该目录本身。
+  const cleanAttachmentsAt = async (base: string, label: string) => {
     try {
       const res = await fetch(base);
       const data = (await res.json().catch(() => ({}))) as { bytes?: number; files?: number; error?: string };
@@ -435,11 +435,7 @@ export function ProjectSessionTree({
         return;
       }
       const size = formatSize(bytes);
-      if (
-        !window.confirm(
-          t("sessions.cleanAttachmentsConfirm", { name: project.name, size, count: files }),
-        )
-      ) {
+      if (!window.confirm(t("sessions.cleanAttachmentsConfirm", { name: label, size, count: files }))) {
         return;
       }
       const del = await fetch(base, { method: "DELETE" });
@@ -458,6 +454,12 @@ export function ProjectSessionTree({
       window.alert(t("sessions.cleanAttachmentsFailed"));
     }
   };
+
+  const cleanAttachments = (project: ProjectRecord) =>
+    cleanAttachmentsAt(`/api/projects/${encodeURIComponent(project.id)}/attachments`, project.name);
+
+  const cleanHostAttachments = (dir: string) =>
+    cleanAttachmentsAt(`/api/host/attachments?dir=${encodeURIComponent(dir)}`, dir);
 
   const setContainer = async (project: ProjectRecord, containerId: number | null) => {
     await fetch(`/api/projects/${encodeURIComponent(project.id)}`, {
@@ -1784,6 +1786,15 @@ export function ProjectSessionTree({
               setMenu(null);
             }}
           />
+          <div style={{ borderTop: "1px solid var(--border)" }} />
+          <MenuItem
+            label={t("sessions.cleanAttachments")}
+            onClick={() => {
+              void cleanHostAttachments(menu.directory!);
+              setMenu(null);
+            }}
+          />
+          <div style={{ borderTop: "1px solid var(--border)" }} />
           <MenuItem
             label={t("sessions.copyPath")}
             onClick={() => {

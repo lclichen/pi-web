@@ -364,6 +364,7 @@ export async function runBatchTask(options: RunTaskOptions): Promise<void> {
       ownerId: options.ownerId,
       ownerName: options.username ?? "batch",
       mode: options.mode,
+      ...(options.projectId !== undefined ? { projectId: String(options.projectId) } : {}),
       ...(options.model ? { initialModel: options.model } : {}),
       ...(options.toolNames ? { toolNames: options.toolNames } : {}),
       ...(options.thinkingLevel

@@ -68,6 +68,8 @@ export const SELF_PROTECTED_PATTERNS = [
   ".pi/bin/**",
   ".pi/cache/**",
   ".pi/plans/**",
+  ".pi/.sync-backups",
+  ".pi/.sync-backups/**",
   ".pi/auth.json",
   ".pi/ssh.json",
   ".pi/sandbox-platform.json",
@@ -81,7 +83,10 @@ const BG_LOG_READ_PATTERNS = [".pi/tmp/bg", ".pi/tmp/bg/**"] as const;
 export const DEFAULT_POLICY: PathPolicy = {
   version: 1,
   allowWrite: ["."],
-  denyWrite: [".env", ".env.*", "*.pem", "*.key", "id_rsa*"],
+  // Chat attachments are immutable inputs; tools may read them but must copy
+  // to a workspace directory before modifying. The WebUI/server writes bypass
+  // this agent-side guard.
+  denyWrite: [".env", ".env.*", "*.pem", "*.key", "id_rsa*", ".pi/attachments", ".pi/attachments/**"],
   denyRead: [".env", ".env.*", "*.pem", "*.key", "id_rsa*", ".git/config"],
   askOnOutsideWrite: true,
 };

@@ -2,23 +2,27 @@ import {
   ATTACHMENTS_DIR,
   attachmentFileName,
   attachmentsTarget,
-  dropMentionText,
   ensureUploadDirectory,
   mentionText,
   uploadFiles,
   type UploadTarget,
 } from "./file-upload-client";
+import {
+  CHAT_ATTACHMENT_LIMIT_LABEL,
+  MAX_CHAT_ATTACHMENT_BYTES,
+} from "./attachment-limits";
 
 /**
  * Chat composer attachment upload, independent of React so the behaviour is
  * testable and the component only wires callbacks.
  *
- * - Non-image files are uploaded into the working directory (conflict=skip)
- *   and mentioned; images still reach the model inline.
- * - In HOST sessions the image bytes are also stored under .pi/attachments/
- *   and mentioned, so tools (including MCP servers that take a file path) can
- *   use them. Remote sessions keep images inline only: the relay/SSH write
- *   channel is text-only, so uploading binary bytes there would corrupt them.
+ * - Every attachment gets a unique stored name (`timestamp-random-original`),
+ *   so re-attaching a same-named file never overwrites an older one.
+ * - Non-image files are uploaded into the working directory and mentioned;
+ *   images also reach the model inline.
+ * - Remote sessions keep the Host primary copy under .pi/attachments/ and
+ *   mirror it into the workspace; images are stored the same way now that the
+ *   remote write channel is binary-safe.
  */
 
 export interface ChatAttachmentNotice {
@@ -55,6 +59,19 @@ export async function uploadChatAttachments(
   // mirror it into the remote workspace; host sessions already write locally.
   const uploadOptions = { hostCache: Boolean(target.sessionId) };
 
+  const oversized = [...files, ...images].filter((file) => file.size > MAX_CHAT_ATTACHMENT_BYTES);
+  if (oversized.length > 0) {
+    hooks.addNotice({
+      type: "warning",
+      message: hooks.t("chat.dropTooLarge", {
+        size: CHAT_ATTACHMENT_LIMIT_LABEL,
+        names: oversized.map((file) => file.name).join(", "),
+      }),
+    });
+  }
+  const acceptedFiles = files.filter((file) => file.size <= MAX_CHAT_ATTACHMENT_BYTES);
+  const acceptedImages = images.filter((file) => file.size <= MAX_CHAT_ATTACHMENT_BYTES);
+
   const reportHostOnly = (names: string[], data: { hostDir?: string; warning?: string }) => {
     if (names.length === 0) return;
     hooks.addNotice({
@@ -71,17 +88,15 @@ export async function uploadChatAttachments(
     hooks.addNotice({ type: "warning", message: hooks.t("chat.dropHostWarning", { message: data.warning }) });
   };
 
-  if (files.length > 0) {
+  if (acceptedFiles.length > 0) {
     try {
-      const { status, data } = await api.uploadFiles(target, files, "skip", undefined, uploadOptions);
+      const names = acceptedFiles.map((file) => attachmentFileName(file));
+      const { status, data } = await api.uploadFiles(target, acceptedFiles, "skip", names, uploadOptions);
       if (status !== 200 && status !== 207) throw new Error(data.error ?? `HTTP ${status}`);
       const uploaded = data.uploaded ?? [];
       const skipped = data.skipped ?? [];
       const hostOnly = data.hostOnly ?? [];
-      const mention = dropMentionText(
-        files.filter((file) => !hostOnly.includes(file.name)),
-        [...uploaded, ...skipped],
-      );
+      const mention = mentionText([...uploaded, ...skipped].filter((name) => !hostOnly.includes(name)));
       if (mention) mentions.push(mention);
       if (uploaded.length > 0) {
         uploadedAny = true;
@@ -109,12 +124,12 @@ export async function uploadChatAttachments(
     }
   }
 
-  if (images.length > 0) {
+  if (acceptedImages.length > 0) {
     try {
       const imageDirectory = attachmentsTarget(target);
       if (!(await api.ensureUploadDirectory(imageDirectory))) throw new Error(`Cannot create ${ATTACHMENTS_DIR}`);
-      const names = images.map((file) => attachmentFileName(file));
-      const { status, data } = await api.uploadFiles(imageDirectory, images, "skip", names, uploadOptions);
+      const names = acceptedImages.map((file) => attachmentFileName(file));
+      const { status, data } = await api.uploadFiles(imageDirectory, acceptedImages, "skip", names, uploadOptions);
       if (status !== 200 && status !== 207) throw new Error(data.error ?? `HTTP ${status}`);
       const hostOnly = new Set(data.hostOnly ?? []);
       const stored = new Set([...(data.uploaded ?? []), ...(data.skipped ?? [])]);

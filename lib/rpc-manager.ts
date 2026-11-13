@@ -82,6 +82,7 @@ import {
   readSessionToolSelection,
   validateSessionToolSelection,
 } from "./session-tool-selection";
+import { acquireProjectConfigReadLock } from "./project-config-lock";
 
 // ============================================================================
 // Types
@@ -151,6 +152,8 @@ type ExtensionCommandContextActionsLike = {
 type AgentSessionWrapperOptions = {
   exactSystemPrompt?: () => string;
   chatOnly?: boolean;
+  /** Owning project (remote sessions) — used by the config lock/busy gate. */
+  projectId?: string;
   /**
    * Append the web-UI output addendum (images / PDF page links) to whatever
    * system prompt this session ends up using. Enabled for regular and
@@ -242,6 +245,8 @@ export interface RpcSessionStartOptions {
   ownerName?: string;
   /** Execution mode for this session's tool layer. */
   mode?: "host" | "sandbox" | "local-machine" | "ssh" | "quick";
+  /** Owning project (remote sessions) — config lock/busy gate + projection. */
+  projectId?: string;
   /** Quick mode: template-pinned system prompt / model / MCP allowlist. */
   quick?: { systemPrompt?: string; model?: { provider: string; modelId: string }; mcpServers?: string[] };
   /** Extra extension entry-point directories injected for this session only. */
@@ -410,6 +415,8 @@ export class AgentSessionWrapper {
   private extensionWidgetsResetting = false;
   private pendingPromptCount = 0;
   private activeMutatingCommands = 0;
+  /** Config apply requested a reload while this session was running. */
+  private reloadOnIdle = false;
   private sessionReplacement: "fork" | "clone" | null = null;
   private agentRunNeedsCompletion = false;
   private promptAdmissionTail: Promise<void> = Promise.resolve();
@@ -460,6 +467,7 @@ export class AgentSessionWrapper {
     this.webUiPrompt = options.webUiPrompt ?? false;
     this.quickPrompt = options.quickPrompt;
     this.chatOnly = options.chatOnly ?? false;
+    this.projectId = options.projectId;
     this.onAgentRunComplete = options.onAgentRunComplete;
     this.suppressCompletionNotifications = options.suppressCompletionNotifications ?? false;
     this.installExactSystemPromptContinuation();
@@ -471,6 +479,8 @@ export class AgentSessionWrapper {
 
   /** Owning web user id (0 = implicit host identity when auth is off). */
   ownerId = 0;
+  /** Owning project (remote sessions); empty for host/quick/subagents. */
+  projectId?: string;
   /** Execution mode of this session's tool layer. */
   mode: "host" | "sandbox" | "local-machine" | "ssh" | "quick" = "host";
 
@@ -578,6 +588,15 @@ export class AgentSessionWrapper {
   }
 
   private notifyAgentRunCompleteIfIdle(): void {
+    if (!this.isRunning() && this.reloadOnIdle) {
+      this.reloadOnIdle = false;
+      void this.reloadResources().catch((error) => {
+        console.error(
+          "[pi-web] deferred config reload failed:",
+          error instanceof Error ? error.message : error,
+        );
+      });
+    }
     if (!this.agentRunNeedsCompletion || this.isRunning()) return;
     this.agentRunNeedsCompletion = false;
     if (this.suppressCompletionNotifications) return;
@@ -836,6 +855,43 @@ export class AgentSessionWrapper {
     if (!this.webUiPrompt || this.forceEmptySystemPrompt) return;
     const state = this.inner.agent?.state;
     if (state?.systemPrompt) state.systemPrompt = appendWebUiAddendum(state.systemPrompt);
+  }
+
+  /**
+   * Reload settings/skills/agents/extensions. Shared by the RPC `reload`
+   * command and the project-config apply fan-out.
+   */
+  async reloadResources(): Promise<void> {
+    this.reloadOnIdle = false;
+    if (this.extensionUiAbortController.signal.aborted) {
+      this.extensionUiAbortController = new AbortController();
+    }
+    const activeToolNames = this.inner.getActiveToolNames();
+    await this.waitForExtensionsBound();
+    this.extensionStatuses.clear();
+    this.resetExtensionWidgetsForReload();
+    this.syncProjectTrust();
+    await this.inner.reload();
+    this.setActiveToolSelection(activeToolNames);
+    if (typeof this.inner.bindExtensions !== "function") {
+      this.inner.extensionRunner.setUIContext?.(this.createExtensionUiContext(), "rpc");
+    }
+    this.applyExactSystemPrompt();
+    invalidateModelsCache();
+  }
+
+  /**
+   * Reload now when idle, otherwise mark the wrapper so `agent_settled`
+   * reloads it. The flag is memory-only: an evicted/restarted session rebuilds
+   * from the new files during restore, so nothing needs to be persisted.
+   */
+  async reloadWhenIdle(): Promise<"reloaded" | "pending"> {
+    if (this.isRunning()) {
+      this.reloadOnIdle = true;
+      return "pending";
+    }
+    await this.reloadResources();
+    return "reloaded";
   }
 
   /** Quick mode template switch: re-pin the exact system prompt. */
@@ -1672,21 +1728,7 @@ export class AgentSessionWrapper {
         }
 
         case "reload": {
-          if (this.extensionUiAbortController.signal.aborted) {
-            this.extensionUiAbortController = new AbortController();
-          }
-          const activeToolNames = this.inner.getActiveToolNames();
-          await this.waitForExtensionsBound();
-          this.extensionStatuses.clear();
-          this.resetExtensionWidgetsForReload();
-          this.syncProjectTrust();
-          await this.inner.reload();
-          this.setActiveToolSelection(activeToolNames);
-          if (typeof this.inner.bindExtensions !== "function") {
-            this.inner.extensionRunner.setUIContext?.(this.createExtensionUiContext(), "rpc");
-          }
-          this.applyExactSystemPrompt();
-          invalidateModelsCache();
+          await this.reloadResources();
           return { success: true };
         }
 
@@ -2525,6 +2567,57 @@ function getRegistry(): Map<string, AgentSessionWrapper> {
   return globalThis.__piSessions;
 }
 
+/**
+ * Runtime busy check for project-config writes: live RPC sessions (including
+ * batch sessions, which store projectId) plus active batch tasks (queued,
+ * running, waiting). The route calls this while holding the project write lock,
+ * so a session starting concurrently waits on the read lock.
+ */
+export interface ProjectRuntimeBusy {
+  busy: boolean;
+  sessions: string[];
+  batchTasks: string[];
+}
+
+export async function getProjectRuntimeBusy(projectId: string): Promise<ProjectRuntimeBusy> {
+  const sessions = [...getRegistry().values()]
+    .filter((wrapper) => wrapper.projectId === projectId && wrapper.isAlive() && wrapper.isRunning())
+    .map((wrapper) => wrapper.sessionId);
+  let batchTasks: string[] = [];
+  try {
+    const { listActiveProjectTasks } = await import("./batch/task-store");
+    batchTasks = listActiveProjectTasks(projectId).map((task) => task.taskId);
+  } catch {
+    // batch store unavailable (tests/trimmed builds): sessions still gate
+  }
+  return { busy: sessions.length > 0 || batchTasks.length > 0, sessions, batchTasks };
+}
+
+export interface ProjectReloadResult {
+  reloaded: string[];
+  pending: string[];
+  failed: Array<{ sessionId: string; error: string }>;
+}
+
+/** Reload idle sessions of a project; running ones reload on agent_settled. */
+export async function reloadProjectSessions(projectId: string): Promise<ProjectReloadResult> {
+  const result: ProjectReloadResult = { reloaded: [], pending: [], failed: [] };
+  for (const wrapper of getRegistry().values()) {
+    if (wrapper.projectId !== projectId || !wrapper.isAlive()) continue;
+    try {
+      const status = await wrapper.reloadWhenIdle();
+      if (status === "reloaded") result.reloaded.push(wrapper.sessionId);
+      else result.pending.push(wrapper.sessionId);
+    } catch (error) {
+      result.failed.push({
+        sessionId: wrapper.sessionId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+  return result;
+}
+
 function registerRpcWrapper(wrapper: AgentSessionWrapper): void {
   const registry = getRegistry();
   const sessionId = wrapper.sessionId;
@@ -2990,6 +3083,7 @@ export async function startRpcSession(
     ownerId,
     ownerName,
     mode,
+    projectId,
     quick,
     additionalExtensionPaths,
     extensionFactories,
@@ -3012,7 +3106,12 @@ export async function startRpcSession(
   // large transcript parses on a worker thread instead of stalling the shared
   // event loop while every other user's requests wait.
   let finishStartingSession: () => void = () => {};
+  let releaseConfigRead: (() => void) | undefined;
   const starting = (async () => {
+    // Hold the project config read lock across ResourceLoader construction:
+    // a config apply holds the write lock, so a session start either loads the
+    // complete old set or waits for the complete new set.
+    releaseConfigRead = projectId ? await acquireProjectConfigReadLock(projectId) : undefined;
     let sessionManager: SessionManager;
     if (sessionFile) {
       sessionManager = await openSessionManagerAsync(sessionFile, { sessionDir, mutable: true });
@@ -3309,6 +3408,7 @@ export async function startRpcSession(
     const wrapper = new AgentSessionWrapper(inner, {
       exactSystemPrompt,
       chatOnly,
+      ...(projectId ? { projectId } : {}),
       // Web sessions (incl. quick) learn the web output capabilities; only
       // subagent sessions keep their exact prompts. Quick template content now
       // rides the append path, so it composes with the addendum instead of
@@ -3367,6 +3467,7 @@ export async function startRpcSession(
 
     return { session: wrapper, realSessionId };
   })().finally(() => {
+    releaseConfigRead?.();
     locks.delete(sessionId);
     finishStartingSession();
   });

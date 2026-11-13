@@ -51,6 +51,34 @@ function formatSize(bytes: number): string {
   return `${bytes} B`;
 }
 
+interface SyncPreviewFile {
+  rel: string;
+  change: "added" | "overwritten";
+  existed: boolean;
+  oldBytes: number;
+  newBytes: number;
+  binary: boolean;
+  risk: "high" | "normal";
+  diff?: string;
+}
+
+interface SyncPreviewState {
+  project: ProjectRecord;
+  token: string;
+  expiresAt: number;
+  stats: { files: number; added: number; overwritten: number; unchanged: number; skipped: number };
+  files: SyncPreviewFile[];
+  trust?: { requiresTrust: boolean; trusted: boolean };
+}
+
+interface SyncBackupSummary {
+  applyId: string;
+  ts: string;
+  type: "sync" | "rollback";
+  files: number;
+  bytes: number;
+}
+
 interface Props {
   sessions: SessionInfo[];
   runningSessionIds: Set<string>;
@@ -133,6 +161,13 @@ export function ProjectSessionTree({
   const [hostImportDir, setHostImportDir] = useState<string | null>(null);
   /** Host 目录套用配置模板（仅未初始化目录；服务端 .pi 预检 409）。 */
   const [applyHostDir, setApplyHostDir] = useState<string | null>(null);
+  // 配置同步：预览 modal（token）、应用状态、回滚历史。
+  const [syncPreview, setSyncPreview] = useState<SyncPreviewState | null>(null);
+  const [syncApplying, setSyncApplying] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const [rollbackProject, setRollbackProject] = useState<ProjectRecord | null>(null);
+  const [rollbackList, setRollbackList] = useState<SyncBackupSummary[] | null>(null);
+  const [rollbackBusy, setRollbackBusy] = useState(false);
   const [containers, setContainers] = useState<Array<{ id: number; name: string; status: string; imageName: string }>>(
     [],
   );
@@ -347,54 +382,64 @@ export function ProjectSessionTree({
       window.alert(t("sessions.exportFailedRetry"));
     }
   };
-  // 工作区 .pi/ → 项目区配置同步：先 dry-run 做同样的安全/模式校验并拿到
-  // 差异摘要，用户确认后再落盘；凭证与运行态文件由服务端跳过。
+  // 工作区 .pi/ → 项目区配置同步：dry-run 返回 token + 文件/diff 预览，
+  // 用户在 modal 里确认后 apply 同一个 token（落盘的就是预览字节）。
   const syncWorkspaceConfig = async (project: ProjectRecord) => {
     const url = `/api/projects/${encodeURIComponent(project.id)}/workspace-config-sync`;
     try {
-      const previewRes = await fetch(url, {
+      const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ dryRun: true }),
       });
-      const preview = (await previewRes.json().catch(() => ({}))) as {
+      const data = (await res.json().catch(() => ({}))) as {
         error?: string;
-        stats?: { files: number; added: number; overwritten: number; unchanged: number; skipped: number };
-        trust?: { requiresTrust: boolean; trusted: boolean };
+        token?: string;
+        expiresAt?: number;
+        stats?: SyncPreviewState["stats"];
+        files?: SyncPreviewFile[];
+        trust?: SyncPreviewState["trust"];
       };
-      if (!previewRes.ok || preview.error || !preview.stats) {
-        window.alert(preview.error ?? t("sessions.operationFailedHttp", { code: previewRes.status }));
+      if (!res.ok || data.error || !data.token || !data.stats || !data.files) {
+        window.alert(data.error ?? t("sessions.operationFailedHttp", { code: res.status }));
         return;
       }
-      const stats = preview.stats;
-      const lines = [
-        t("sessions.workspaceSyncConfirm", {
-          files: stats.files,
-          added: stats.added,
-          overwritten: stats.overwritten,
-          unchanged: stats.unchanged,
-        }),
-      ];
-      if (stats.skipped > 0) lines.push(t("sessions.workspaceSyncSkipped", { count: stats.skipped }));
-      if (preview.trust?.requiresTrust && !preview.trust.trusted) {
-        lines.push(t("sessions.workspaceSyncTrustNeeded"));
-      }
-      if (!window.confirm(lines.join("\n\n"))) return;
+      setSyncError(null);
+      setSyncPreview({
+        project,
+        token: data.token,
+        expiresAt: data.expiresAt ?? Date.now() + 5 * 60_000,
+        stats: data.stats,
+        files: data.files,
+        ...(data.trust ? { trust: data.trust } : {}),
+      });
+    } catch {
+      window.alert(t("sessions.workspaceSyncFailed"));
+    }
+  };
 
-      const res = await fetch(url, {
+  const applySyncPreview = async () => {
+    if (!syncPreview) return;
+    const { project, token } = syncPreview;
+    setSyncApplying(true);
+    setSyncError(null);
+    try {
+      const res = await fetch(`/api/projects/${encodeURIComponent(project.id)}/workspace-config-sync`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ dryRun: false }),
+        body: JSON.stringify({ token }),
       });
       const data = (await res.json().catch(() => ({}))) as {
         error?: string;
         stats?: { added: number; overwritten: number; unchanged: number };
-        trust?: { requiresTrust: boolean; trusted: boolean };
+        trust?: SyncPreviewState["trust"];
+        reload?: { reloaded: string[]; pending: string[]; failed: unknown[] };
       };
       if (!res.ok || data.error || !data.stats) {
-        window.alert(data.error ?? t("sessions.operationFailedHttp", { code: res.status }));
+        setSyncError(data.error ?? t("sessions.operationFailedHttp", { code: res.status }));
         return;
       }
+      setSyncPreview(null);
       let message = t("sessions.workspaceSyncDone", {
         added: data.stats.added,
         overwritten: data.stats.overwritten,
@@ -403,11 +448,109 @@ export function ProjectSessionTree({
       if (data.trust?.requiresTrust && !data.trust.trusted) {
         message += `\n\n${t("sessions.workspaceSyncTrustNeeded")}`;
       }
+      if (data.reload && (data.reload.reloaded.length > 0 || data.reload.pending.length > 0)) {
+        message += `\n\n${t("sessions.syncReloadInfo", {
+          reloaded: data.reload.reloaded.length,
+          pending: data.reload.pending.length,
+        })}`;
+      }
       window.alert(message);
       // 同步可能引入扩展/技能/MCP → 让宿主立即重查信任状态。
       window.dispatchEvent(new Event("pi-web:config-changed"));
     } catch {
+      setSyncError(t("sessions.workspaceSyncFailed"));
+    } finally {
+      setSyncApplying(false);
+    }
+  };
+
+  const openRollback = async (project: ProjectRecord) => {
+    setRollbackProject(project);
+    setRollbackList(null);
+    try {
+      const res = await fetch(
+        `/api/projects/${encodeURIComponent(project.id)}/workspace-config-sync/backups`,
+      );
+      const data = (await res.json().catch(() => ({}))) as { backups?: SyncBackupSummary[]; error?: string };
+      if (!res.ok) {
+        window.alert(data.error ?? t("sessions.operationFailedHttp", { code: res.status }));
+        setRollbackProject(null);
+        return;
+      }
+      setRollbackList(data.backups ?? []);
+    } catch {
       window.alert(t("sessions.workspaceSyncFailed"));
+      setRollbackProject(null);
+    }
+  };
+
+  const runRollback = async (backup: SyncBackupSummary) => {
+    if (!rollbackProject) return;
+    if (
+      !window.confirm(
+        t("sessions.rollbackConfirm", { time: new Date(backup.ts).toLocaleString() }),
+      )
+    ) {
+      return;
+    }
+    setRollbackBusy(true);
+    const url = `/api/projects/${encodeURIComponent(rollbackProject.id)}/workspace-config-sync/rollback`;
+    try {
+      let res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ applyId: backup.applyId }),
+      });
+      let data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        code?: string;
+        changed?: string[];
+        restored?: number;
+        deleted?: number;
+        reload?: { reloaded: string[]; pending: string[] };
+        projection?: { needsDiscard?: boolean; dirty?: string[] };
+      };
+      if (res.status === 409 && data.code === "ROLLBACK_CONFLICT") {
+        if (
+          !window.confirm(
+            t("sessions.rollbackForceConfirm", { names: (data.changed ?? []).join(", ") }),
+          )
+        ) {
+          return;
+        }
+        res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ applyId: backup.applyId, force: true }),
+        });
+        data = (await res.json().catch(() => ({}))) as typeof data;
+      }
+      if (!res.ok) {
+        window.alert(data.error ?? t("sessions.operationFailedHttp", { code: res.status }));
+        return;
+      }
+      setRollbackProject(null);
+      let message = t("sessions.rollbackDone", {
+        restored: data.restored ?? 0,
+        deleted: data.deleted ?? 0,
+      });
+      if (data.projection?.needsDiscard && (data.projection.dirty?.length ?? 0) > 0) {
+        message += `\n\n${t("sessions.rollbackDirty", {
+          names: (data.projection.dirty ?? []).slice(0, 10).join(", "),
+        })}`;
+      }
+      if (data.reload && (data.reload.reloaded.length > 0 || data.reload.pending.length > 0)) {
+        message += `\n\n${t("sessions.syncReloadInfo", {
+          reloaded: data.reload.reloaded.length,
+          pending: data.reload.pending.length,
+        })}`;
+      }
+      window.alert(message);
+      window.dispatchEvent(new Event("pi-web:config-changed"));
+    } catch {
+      window.alert(t("sessions.workspaceSyncFailed"));
+    } finally {
+      setRollbackBusy(false);
     }
   };
 
@@ -1934,6 +2077,13 @@ export function ProjectSessionTree({
               }}
             />
             <MenuItem
+              label={t("sessions.rollbackMenu")}
+              onClick={() => {
+                void openRollback(menuProject);
+                setMenu(null);
+              }}
+            />
+            <MenuItem
               label={t("bundles.applyMenu")}
               onClick={() => {
                 setApplyBundleId(menuProject.id);
@@ -2092,6 +2242,32 @@ export function ProjectSessionTree({
         );
       })()}
 
+      {syncPreview && (
+        <SyncPreviewDialog
+          preview={syncPreview}
+          applying={syncApplying}
+          error={syncError}
+          onApply={() => void applySyncPreview()}
+          onClose={() => {
+            if (syncApplying) return;
+            setSyncPreview(null);
+            setSyncError(null);
+          }}
+        />
+      )}
+
+      {rollbackProject && (
+        <SyncRollbackDialog
+          projectName={rollbackProject.name}
+          backups={rollbackList}
+          busy={rollbackBusy}
+          onRollback={(backup) => void runRollback(backup)}
+          onClose={() => {
+            if (!rollbackBusy) setRollbackProject(null);
+          }}
+        />
+      )}
+
       {settingsId && (
         <ProjectSettingsDialog
           projectId={settingsId}
@@ -2141,6 +2317,309 @@ export function ProjectSessionTree({
           onApplied={() => refreshSessions()}
         />
       )}
+    </div>
+  );
+}
+
+const dialogButtonStyle: React.CSSProperties = {
+  padding: "6px 12px",
+  borderRadius: 6,
+  border: "1px solid var(--border)",
+  background: "var(--bg-panel)",
+  color: "var(--text)",
+  fontSize: 12,
+  cursor: "pointer",
+};
+
+function SyncPreviewDialog({
+  preview,
+  applying,
+  error,
+  onApply,
+  onClose,
+}: {
+  preview: SyncPreviewState;
+  applying: boolean;
+  error: string | null;
+  onApply: () => void;
+  onClose: () => void;
+}) {
+  const { t } = useI18n();
+  return (
+    <div
+      role="presentation"
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 1200,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 16,
+        background: "rgba(0,0,0,0.45)",
+      }}
+      onClick={(event) => {
+        if (!applying && event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="sync-preview-title"
+        style={{
+          width: "min(920px, 100%)",
+          maxHeight: "85vh",
+          display: "flex",
+          flexDirection: "column",
+          border: "1px solid var(--border)",
+          borderRadius: 8,
+          background: "var(--bg-panel)",
+          boxShadow: "0 12px 36px rgba(0,0,0,0.28)",
+          overflow: "hidden",
+        }}
+      >
+        <div style={{ padding: "14px 18px 10px", borderBottom: "1px solid var(--border)" }}>
+          <div id="sync-preview-title" style={{ fontSize: 15, fontWeight: 700, color: "var(--text)" }}>
+            {t("sessions.syncPreviewTitle", { name: preview.project.name })}
+          </div>
+          <div style={{ marginTop: 6, fontSize: 12, lineHeight: 1.6, color: "var(--text-muted)" }}>
+            {t("sessions.workspaceSyncConfirm", {
+              files: preview.stats.files,
+              added: preview.stats.added,
+              overwritten: preview.stats.overwritten,
+              unchanged: preview.stats.unchanged,
+            })}
+            {preview.stats.skipped > 0
+              ? ` ${t("sessions.workspaceSyncSkipped", { count: preview.stats.skipped })}`
+              : ""}
+            {preview.trust?.requiresTrust && !preview.trust.trusted
+              ? ` ${t("sessions.workspaceSyncTrustNeeded")}`
+              : ""}
+          </div>
+        </div>
+        <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "10px 18px" }}>
+          {preview.files.length === 0 ? (
+            <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{t("sessions.syncPreviewNoChanges")}</div>
+          ) : (
+            preview.files.map((file, index) => (
+              <details
+                key={file.rel}
+                open={file.risk === "high" || index === 0}
+                style={{ marginBottom: 8, border: "1px solid var(--border)", borderRadius: 6 }}
+              >
+                <summary
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    padding: "6px 9px",
+                    fontSize: 12,
+                    cursor: "pointer",
+                    color: "var(--text)",
+                  }}
+                >
+                  <span
+                    style={{
+                      flexShrink: 0,
+                      fontWeight: 700,
+                      color: file.change === "added" ? "#16a34a" : "#d97706",
+                    }}
+                  >
+                    {t(file.change === "added" ? "sessions.syncPreviewAdded" : "sessions.syncPreviewOverwritten")}
+                  </span>
+                  <code
+                    style={{
+                      minWidth: 0,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                    title={file.rel}
+                  >
+                    {file.rel}
+                  </code>
+                  {file.risk === "high" && (
+                    <span
+                      style={{
+                        flexShrink: 0,
+                        padding: "1px 5px",
+                        borderRadius: 4,
+                        background: "rgba(220,38,38,0.12)",
+                        color: "#dc2626",
+                        fontSize: 10,
+                        fontWeight: 700,
+                      }}
+                    >
+                      {t("sessions.syncPreviewRisk")}
+                    </span>
+                  )}
+                  <span style={{ marginLeft: "auto", flexShrink: 0, fontSize: 11, color: "var(--text-dim)" }}>
+                    {formatSize(file.newBytes)}
+                  </span>
+                </summary>
+                <pre
+                  style={{
+                    margin: 0,
+                    padding: "8px 10px",
+                    borderTop: "1px solid var(--border)",
+                    background: "rgba(127,127,127,0.08)",
+                    fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+                    fontSize: 11,
+                    lineHeight: 1.5,
+                    overflow: "auto",
+                    maxHeight: 280,
+                  }}
+                >
+                  {file.binary
+                    ? t("sessions.syncPreviewBinary", { size: formatSize(file.newBytes) })
+                    : file.diff || ""}
+                </pre>
+              </details>
+            ))
+          )}
+        </div>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "flex-end",
+            gap: 8,
+            padding: "10px 18px",
+            borderTop: "1px solid var(--border)",
+          }}
+        >
+          {error && (
+            <div style={{ marginRight: "auto", fontSize: 12, color: "var(--danger, #dc2626)" }}>{error}</div>
+          )}
+          <button type="button" onClick={onClose} disabled={applying} style={dialogButtonStyle}>
+            {t("sessions.syncPreviewCancel")}
+          </button>
+          <button
+            type="button"
+            onClick={onApply}
+            disabled={applying || preview.files.length === 0}
+            style={{
+              ...dialogButtonStyle,
+              border: "1px solid var(--accent)",
+              background: "var(--accent)",
+              color: "var(--accent-contrast, #fff)",
+              fontWeight: 700,
+            }}
+          >
+            {t(applying ? "sessions.syncPreviewApplying" : "sessions.syncPreviewApply")}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SyncRollbackDialog({
+  projectName,
+  backups,
+  busy,
+  onRollback,
+  onClose,
+}: {
+  projectName: string;
+  backups: SyncBackupSummary[] | null;
+  busy: boolean;
+  onRollback: (backup: SyncBackupSummary) => void;
+  onClose: () => void;
+}) {
+  const { t } = useI18n();
+  return (
+    <div
+      role="presentation"
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 1200,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 16,
+        background: "rgba(0,0,0,0.45)",
+      }}
+      onClick={(event) => {
+        if (!busy && event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="sync-rollback-title"
+        style={{
+          width: "min(560px, 100%)",
+          maxHeight: "80vh",
+          display: "flex",
+          flexDirection: "column",
+          border: "1px solid var(--border)",
+          borderRadius: 8,
+          background: "var(--bg-panel)",
+          boxShadow: "0 12px 36px rgba(0,0,0,0.28)",
+          overflow: "hidden",
+        }}
+      >
+        <div style={{ padding: "14px 18px 10px", borderBottom: "1px solid var(--border)" }}>
+          <div id="sync-rollback-title" style={{ fontSize: 15, fontWeight: 700, color: "var(--text)" }}>
+            {t("sessions.rollbackTitle", { name: projectName })}
+          </div>
+          <div style={{ marginTop: 6, fontSize: 12, color: "var(--text-muted)" }}>
+            {t("sessions.rollbackHint")}
+          </div>
+        </div>
+        <div style={{ flex: 1, minHeight: 0, overflow: "auto" }}>
+          {backups === null ? (
+            <div style={{ padding: 16, fontSize: 12, color: "var(--text-muted)" }}>{t("sessions.rollbackLoading")}</div>
+          ) : backups.length === 0 ? (
+            <div style={{ padding: 16, fontSize: 12, color: "var(--text-muted)" }}>{t("sessions.rollbackEmpty")}</div>
+          ) : (
+            backups.map((backup) => (
+              <div
+                key={backup.applyId}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  padding: "9px 18px",
+                  borderBottom: "1px solid var(--border)",
+                }}
+              >
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 12, color: "var(--text)" }}>
+                    {new Date(backup.ts).toLocaleString()} · {t("sessions.rollbackFiles", { count: backup.files })} ·{" "}
+                    {formatSize(backup.bytes)}
+                  </div>
+                  <div style={{ marginTop: 2, fontSize: 11, color: "var(--text-dim)" }}>
+                    {t(backup.type === "sync" ? "sessions.rollbackTypeSync" : "sessions.rollbackTypeRollback")}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => onRollback(backup)}
+                  style={dialogButtonStyle}
+                >
+                  {t("sessions.rollbackApply")}
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "flex-end",
+            padding: "10px 18px",
+            borderTop: "1px solid var(--border)",
+          }}
+        >
+          <button type="button" onClick={onClose} disabled={busy} style={dialogButtonStyle}>
+            {t("sessions.rollbackClose")}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

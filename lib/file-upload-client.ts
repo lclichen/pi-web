@@ -141,13 +141,6 @@ export function mentionText(paths: string[]): string {
   return paths.map((path) => buildAtMentionText(path, false)).join("");
 }
 
-/** The `@` mentions for uploaded files (skipped names are mentioned too: the
- *  mention then points at the file that was already there). */
-export function dropMentionText(files: File[], present: string[]): string {
-  const names = new Set(present);
-  return mentionText(files.filter((file) => names.has(file.name)).map((file) => file.name));
-}
-
 const MIME_EXTENSIONS: Record<string, string> = {
   "image/png": ".png",
   "image/jpeg": ".jpg",

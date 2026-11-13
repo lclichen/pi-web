@@ -451,6 +451,7 @@ export async function POST(req: Request) {
       ],
       ...(coreExtensionPaths ? { additionalExtensionPaths: coreExtensionPaths } : {}),
       ...(projectRef ? { projectCredentialDir: effectiveCwd } : {}),
+      ...(projectRef ? { projectId: projectRef.id } : {}),
       ...(user.id > 0 ? { userModelConfigUserId: user.id } : {}),
     });
 

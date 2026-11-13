@@ -1,6 +1,6 @@
-import { lstatSync, mkdirSync, readdirSync, renameSync, rmSync, unlinkSync, writeFileSync } from "fs";
+import { lstatSync, readdirSync, rmSync } from "fs";
 import { join } from "path";
-import { randomUUID } from "crypto";
+import { atomicWriteFileSync } from "./atomic-write";
 
 /** Chat attachments for a project live in the Host project home; they are
  *  runtime temp files (mirrored per session), never configuration. */
@@ -14,38 +14,12 @@ export interface AttachmentsStats {
 }
 
 /**
- * Store one attachment atomically: write a sibling temp file, then rename it
- * over the target. Readers see either the previous complete file or the new
- * complete file — never a half-written one. Unlike the old `wx` write this
+ * Store one attachment atomically (temp+rename). Unlike the old `wx` write this
  * REPLACES an existing file: the Host copy is the primary of the bytes the
  * user just uploaded, so a stale leftover must not win.
  */
 export function writeAttachmentAtomic(dir: string, name: string, bytes: Buffer): void {
-  mkdirSync(dir, { recursive: true });
-  const target = join(dir, name);
-  const temp = join(dir, `.upload-${process.pid}-${randomUUID()}`);
-  try {
-    writeFileSync(temp, bytes);
-    try {
-      renameSync(temp, target);
-    } catch (err) {
-      // Windows rename does not always replace an existing destination.
-      const code = (err as NodeJS.ErrnoException).code;
-      if (code === "EEXIST" || code === "EPERM" || code === "EACCES") {
-        unlinkSync(target);
-        renameSync(temp, target);
-      } else {
-        throw err;
-      }
-    }
-  } catch (err) {
-    try {
-      unlinkSync(temp);
-    } catch {
-      // temp already moved or never created
-    }
-    throw err;
-  }
+  atomicWriteFileSync(join(dir, name), bytes);
 }
 
 /** Recursively sum the attachment store. Missing dir = empty. */

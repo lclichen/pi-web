@@ -272,6 +272,7 @@ export async function restoreSessionOptions(req: Request, sessionId: string): Pr
     ...(ownerId !== 0 ? { ownerId } : {}),
     ownerName: meta?.ownerName ?? (ownerId === user.id ? user.username : `u${ownerId}`),
     mode,
+    ...(project ? { projectId: project.id } : {}),
     ...(mode === "quick" ? { quick: quickForRestore ?? {} } : {}),
     // Project-scoped model credentials live in the project home's .pi/.
     ...(effectiveCwd && project ? { projectCredentialDir: effectiveCwd } : {}),

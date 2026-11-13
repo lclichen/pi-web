@@ -22,8 +22,9 @@
  * within the project owner's read capability (same tools/terminal), and the
  * destination stays confined to <project-home>/.pi/.
  */
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import {
   assertAllowedConfigPath,
   isDeniedConfigPath,
@@ -33,6 +34,8 @@ import {
 import { stripJsonc } from "./jsonc.ts";
 import { detectTransport } from "./mcp-config.ts";
 import { mcpServerModePolicy } from "./tool-policy.ts";
+import { isProbablyText, unifiedTextDiff } from "./text-diff.ts";
+import { applyPlannedWrites } from "./sync-backups.ts";
 import type { ServerEntry } from "./api-types.ts";
 import type { SessionMode } from "./session-modes.ts";
 import { WorkspaceOperationError, type WorkspaceOperations } from "./workspace-operations.ts";
@@ -44,6 +47,8 @@ const MAX_DEPTH = 32;
 
 /** Runtime state that lives under .pi/ but must never become project config. */
 const SYNC_EXTRA_DENIED_BASENAMES = new Set(["sandbox-sync.json"]);
+/** Models are managed by the WebUI; a workspace copy must never flow back. */
+const SYNC_DENIED_BASENAMES = new Set(["models.json"]);
 
 export interface WorkspaceConfigFile {
   /** POSIX path relative to the workspace root, always under `.pi/`. */
@@ -69,9 +74,29 @@ export interface WorkspaceConfigSyncStats {
   skippedPaths: string[];
 }
 
+/** sha256 of every collected rel at preview time (null = absent in home). */
+export type WorkspaceConfigSyncBaseline = Record<string, string | null>;
+
+export interface WorkspaceConfigSyncFileChange {
+  rel: string;
+  change: "added" | "overwritten";
+  existed: boolean;
+  oldBytes: number;
+  newBytes: number;
+  binary: boolean;
+  /** High-risk paths load code or change prompt/tool behavior. */
+  risk: "high" | "normal";
+  /** Unified diff for text files (already truncated). */
+  diff?: string;
+}
+
 export interface WorkspaceConfigSyncPlan {
   writes: ConfigWrite[];
   stats: WorkspaceConfigSyncStats;
+  /** All collected rels, not only writes: apply re-checks the full set. */
+  baseline: WorkspaceConfigSyncBaseline;
+  /** Preview list for the diff modal (changed files only). */
+  files: WorkspaceConfigSyncFileChange[];
 }
 
 export interface WorkspaceConfigSyncOptions {
@@ -79,6 +104,20 @@ export interface WorkspaceConfigSyncOptions {
   mode: SessionMode;
   /** Admins may sync project-level stdio MCP; normal users may not. */
   allowStdioMcp: boolean;
+}
+
+export function hashConfigContent(content: Buffer): string {
+  return createHash("sha256").update(content).digest("hex");
+}
+
+function isHighRiskRel(rel: string): boolean {
+  const lower = rel.toLowerCase();
+  return (
+    lower === ".pi/mcp.json" ||
+    lower === ".pi/settings.json" ||
+    lower.startsWith(".pi/extensions/") ||
+    lower.startsWith(".pi/prompts/")
+  );
 }
 
 function safeEntryName(name: string): boolean {
@@ -94,6 +133,7 @@ function isSyncDenied(rel: string): boolean {
     return true;
   }
   const base = rel.split("/").pop()?.toLowerCase() ?? "";
+  if (SYNC_DENIED_BASENAMES.has(base)) return true;
   return SYNC_EXTRA_DENIED_BASENAMES.has(base);
 }
 
@@ -266,19 +306,42 @@ export async function planWorkspaceConfigSync(
   validateMcpForMode(collected.files, options.mode);
 
   const writes: ConfigWrite[] = [];
+  const baseline: WorkspaceConfigSyncBaseline = {};
+  const preview: WorkspaceConfigSyncFileChange[] = [];
   let added = 0;
   let overwritten = 0;
   let unchanged = 0;
   for (const file of collected.files) {
     assertAllowedConfigPath(file.rel);
     const existing = await readExisting(home, file.rel);
+    baseline[file.rel] = existing ? hashConfigContent(existing) : null;
     if (existing?.equals(file.content)) {
       unchanged += 1;
       continue;
     }
-    if (existing) overwritten += 1;
+    const existed = Boolean(existing);
+    if (existed) overwritten += 1;
     else added += 1;
-    writes.push({ rel: file.rel, content: file.content, existed: Boolean(existing) });
+    writes.push({ rel: file.rel, content: file.content, existed });
+    const binary = !isProbablyText(file.content) || Boolean(existing && !isProbablyText(existing));
+    preview.push({
+      rel: file.rel,
+      change: existed ? "overwritten" : "added",
+      existed,
+      oldBytes: existing?.length ?? 0,
+      newBytes: file.content.length,
+      binary,
+      risk: isHighRiskRel(file.rel) ? "high" : "normal",
+      ...(binary
+        ? {}
+        : {
+            diff: unifiedTextDiff(
+              existing?.toString("utf8") ?? "",
+              file.content.toString("utf8"),
+              file.rel,
+            ),
+          }),
+    });
   }
   return {
     writes,
@@ -291,14 +354,31 @@ export async function planWorkspaceConfigSync(
       skipped: collected.skipped.length,
       skippedPaths: collected.skipped,
     },
+    baseline,
+    files: preview,
   };
 }
 
-/** Write a planned sync (unchanged files were already filtered out). */
-export async function applyWorkspaceConfigSync(home: string, plan: WorkspaceConfigSyncPlan): Promise<void> {
-  for (const write of plan.writes) {
-    const target = join(home, write.rel);
-    await mkdir(dirname(target), { recursive: true });
-    await writeFile(target, write.content);
+/** Re-read every collected rel and compare with the preview baseline. */
+export async function verifyWorkspaceConfigBaseline(
+  home: string,
+  baseline: WorkspaceConfigSyncBaseline,
+): Promise<{ ok: true } | { ok: false; changed: string[] }> {
+  const changed: string[] = [];
+  for (const [rel, expected] of Object.entries(baseline)) {
+    assertAllowedConfigPath(rel);
+    const existing = await readExisting(home, rel);
+    const actual = existing ? hashConfigContent(existing) : null;
+    if (actual !== expected) changed.push(rel);
   }
+  return changed.length > 0 ? { ok: false, changed } : { ok: true };
+}
+
+/** Write a planned sync (unchanged files were already filtered out). */
+export async function applyWorkspaceConfigSync(
+  home: string,
+  plan: WorkspaceConfigSyncPlan,
+  options: { projectId?: string; workspaceKey?: string } = {},
+): Promise<{ applyId: string; backupDir: string }> {
+  return applyPlannedWrites(home, plan.writes, options);
 }

@@ -73,7 +73,7 @@ const DENIED_BASENAMES = new Set([
  * so extension dependencies must travel with the archive. "plans" is runtime
  * state (.pi/plans/plan-sess_*.md) — per-session, not portable config.
  */
-const DENIED_SEGMENTS = new Set(["sessions", "tmp", "bin", "cache", "plans", ".git"]);
+const DENIED_SEGMENTS = new Set(["sessions", "tmp", "bin", "cache", "plans", ".git", ".sync-backups"]);
 /** Chat attachments (.pi/attachments/) are runtime prompt payloads, not config. */
 const DENIED_PREFIXES = [".pi/attachments"];
 /** Top-level prefixes an import may write into the project home.

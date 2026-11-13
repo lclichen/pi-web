@@ -16,6 +16,7 @@ import {
 } from "@/lib/remote-session";
 import { isApiRequestAllowed, hasJsonContentType } from "@/lib/request-security";
 import { writeAttachmentAtomic } from "@/lib/project-attachments";
+import { MAX_CHAT_ATTACHMENT_BYTES, MAX_CHAT_ATTACHMENT_TOTAL_BYTES } from "@/lib/attachment-limits";
 
 export const dynamic = "force-dynamic";
 
@@ -201,6 +202,16 @@ export async function POST(req: Request, ctx: { params: Promise<{ path: string[]
     const names = files.map((f) => sanitizeName(f.name));
     if (names.some((n) => n === null)) {
       return NextResponse.json({ error: "Invalid file name" }, { status: 400 });
+    }
+    // Chat attachments (hostCache=1) share the composer's 32MB/100MB limit.
+    // File-explorer uploads keep the transport limits (no host cache).
+    if (url.searchParams.get("hostCache") === "1") {
+      if (files.some((file) => file.size > MAX_CHAT_ATTACHMENT_BYTES)) {
+        return NextResponse.json({ error: "每个附件必须不超过 32MB" }, { status: 413 });
+      }
+      if (files.reduce((sum, file) => sum + file.size, 0) > MAX_CHAT_ATTACHMENT_TOTAL_BYTES) {
+        return NextResponse.json({ error: "单次附件总量必须不超过 100MB" }, { status: 413 });
+      }
     }
 
     const entries = await remoteList(remote.ctx, dirPath);

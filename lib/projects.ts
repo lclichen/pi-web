@@ -12,6 +12,7 @@ import {
 import { join, relative, resolve } from "path";
 import { randomUUID } from "crypto";
 import { dataDir } from "./mode-homes";
+import { cleanupProjectSyncPlans } from "./sync-plan-store";
 import { writeSshConfig, type SshConfigInput } from "./ssh";
 import { applyBundleToDirectory, bundleExists, isValidBundleName } from "./config-bundles-store";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
@@ -28,11 +29,16 @@ import type { SessionMode } from "./session-modes";
  * copies its config snapshot — that is the "多套配置切换" workflow.
  */
 
-/** Runtime chat attachments live under .pi/attachments in a project home;
- *  project duplication must not carry them (they are machine-local temps). */
-function isRuntimeAttachmentPath(relPath: string): boolean {
+/** Runtime chat attachments and sync backups live under .pi but are
+ *  machine-local temps; project duplication must not carry them. */
+function isRuntimeConfigPath(relPath: string): boolean {
   const normalized = relPath.replace(/\\/g, "/").replace(/^\.\//, "");
-  return normalized === ".pi/attachments" || normalized.startsWith(".pi/attachments/");
+  return (
+    normalized === ".pi/attachments" ||
+    normalized.startsWith(".pi/attachments/") ||
+    normalized === ".pi/.sync-backups" ||
+    normalized.startsWith(".pi/.sync-backups/")
+  );
 }
 
 export interface ProjectRecord {
@@ -252,7 +258,7 @@ export async function createProject(input: {
               recursive: true,
               // Runtime chat attachments are per-machine temp files; never
               // carry them into a duplicate project.
-              filter: (src) => !isRuntimeAttachmentPath(relative(seedHome, src)),
+              filter: (src) => !isRuntimeConfigPath(relative(seedHome, src)),
             });
             // The copy carries the seed's sandbox credentials; re-write this
             // project's own binding on top.
@@ -341,6 +347,20 @@ export function deleteProject(projectId: string): boolean {
     rmSync(projectHome(project), { recursive: true, force: true });
   } catch {
     // home removal is best-effort
+  }
+  // Runtime state keyed by the project id: projection manifests, unconsumed
+  // sync-plan tokens and the collected-files library (P2).
+  try {
+    cleanupProjectSyncPlans(projectId);
+  } catch {
+    // best-effort
+  }
+  for (const dir of ["projection", "collections"]) {
+    try {
+      rmSync(join(dataDir(), dir, projectId), { recursive: true, force: true });
+    } catch {
+      // best-effort
+    }
   }
   return true;
 }

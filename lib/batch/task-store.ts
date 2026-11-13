@@ -332,6 +332,16 @@ export function countActiveTasks(): number {
   return n;
 }
 
+/** Active (queued/running/waiting) tasks bound to a project. */
+export function listActiveProjectTasks(projectId: string): BatchTask[] {
+  const id = String(projectId);
+  return [...store().values()].filter(
+    (task) =>
+      String(task.projectId ?? "") === id &&
+      (task.state === "queued" || task.state === "running" || task.state === "waiting_input"),
+  );
+}
+
 /** Per-user concurrency: queued + running + waiting_input tasks of one owner.
  *  （含 queued：排队也占用户配额——否则用户可以无限堆队把全局闸堵死。） */
 export function countUserActiveTasks(ownerId: number): number {

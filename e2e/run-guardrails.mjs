@@ -329,48 +329,71 @@ async function runScenarios() {
     console.log("PASS: pending dialog survives a page reload");
   }
 
-  // S7: 两个窗口同会话 → 双端弹窗，一处作答两端关闭
-  // 已知问题（本套件暴露）：会话已有 pending ask 时，新开第二个窗口会停在
-  // 「正在加载会话...」——默认仅告警不红；E2E_STRICT=1 时按失败处理。
+  // S7: 两个窗口同会话（顺序 A：ask 已存在再开第二窗口）→ 双端弹窗，一处作答两端关闭。
+  // 回归：每页曾各自开 3 条 relay-status SSE（EnvironmentsMenu /
+  // LocalMachinesDialog / useAgentInstallInfo），两窗口 + agent 事件流超过
+  // 浏览器 HTTP/1.1 的 6 连接上限，第二窗口的 /api/sessions/<id> 排不到连接而卡加载。
   {
-    // 默认跳过：该场景在当前构建暴露了「pending ask 时第二窗口卡加载」的
-    // 已知问题；需要复现时 E2E_MULTI_WINDOW=1（配合 E2E_STRICT=1 断言失败）。
-    if (!want("multi-window") || process.env.E2E_MULTI_WINDOW !== "1") return;
+    if (!want("multi-window")) return;
     await resetPage();
     const cwd = scenarioDir("multi-window");
     const target = join(outsideDir, "multi-window.txt");
-    const sid = await createSession({ cwd });
+    const sid = await createSession({ cwd, prompt: "run the requested write", target });
     await openSession(sid);
-    await page.getByRole("textbox").first().waitFor({ timeout: 120_000 });
-    mock.queueTarget(target);
-    await page.locator("textarea").last().fill("run the requested write");
-    await page.getByRole("button", { name: "Send", exact: true }).click();
     await askDialog().waitFor({ timeout: 120_000 });
 
     const page2 = await context.newPage();
     try {
       await page2.goto(`${base}/?session=${encodeURIComponent(sid)}`, { waitUntil: "domcontentloaded" });
-      try {
-        await page2.getByRole("textbox").first().waitFor({ timeout: 30_000 });
-        const dialog2 = page2.getByRole("dialog", { name: /路径护栏/ });
-        await dialog2.waitFor({ timeout: 30_000 });
-        await page
-          .getByRole("dialog", { name: /路径护栏/ })
-          .getByRole("button", { name: "允许一次", exact: true })
-          .click();
-        await dialog2.waitFor({ state: "hidden", timeout: 30_000 });
-        await waitAssistantDone(1);
-        assert.ok(existsSync(target));
-        console.log("PASS: multi-window dialog mirrors and closes on one answer");
-      } catch (error) {
-        await page2.screenshot({ path: join(artifacts, "known-issue-multi-window.png") }).catch(() => {});
-        if (process.env.E2E_STRICT === "1") throw error;
-        console.warn(
-          "KNOWN ISSUE: second window stays at 'loading session' while a pending ask exists (see known-issue-multi-window.png)",
-        );
-        await choose("拒绝");
-        await waitAssistantDone(1);
-      }
+      await page2.locator("textarea").last().waitFor({ timeout: 60_000 });
+      const dialog2 = page2.getByRole("dialog", { name: /路径护栏/ });
+      await dialog2.waitFor({ timeout: 30_000 });
+      await page
+        .getByRole("dialog", { name: /路径护栏/ })
+        .getByRole("button", { name: "允许一次", exact: true })
+        .click();
+      await dialog2.waitFor({ state: "hidden", timeout: 30_000 });
+      await waitAssistantDone(1);
+      assert.ok(existsSync(target));
+      console.log("PASS: multi-window dialog mirrors and closes on one answer");
+    } finally {
+      await page2.close();
+    }
+  }
+
+  // S8: 顺序 B — 双窗口先打开，再发 prompt 触发 ask；两窗口都保持可用。
+  {
+    if (!want("multi-window-b")) return;
+    await resetPage();
+    const cwd = scenarioDir("multi-window-b");
+    const inside = join(cwd, "warm.txt");
+    const target = join(outsideDir, "multi-window-b.txt");
+    const sid = await createSession({ cwd, prompt: "warm up", target: inside });
+    await openSession(sid);
+    await waitAssistantDone(1);
+    assert.ok(existsSync(inside));
+
+    const page2 = await context.newPage();
+    try {
+      await page2.goto(`${base}/?session=${encodeURIComponent(sid)}`, { waitUntil: "domcontentloaded" });
+      await page2.locator("textarea").last().waitFor({ timeout: 60_000 });
+      assert.equal(await page.locator("textarea").last().isVisible(), true);
+
+      mock.queueTarget(target);
+      await page.locator("textarea").last().fill("run the requested write");
+      await page.getByRole("button", { name: "Send", exact: true }).click();
+      await askDialog().waitFor({ timeout: 60_000 });
+      const dialog2 = page2.getByRole("dialog", { name: /路径护栏/ });
+      await dialog2.waitFor({ timeout: 30_000 });
+
+      await page
+        .getByRole("dialog", { name: /路径护栏/ })
+        .getByRole("button", { name: "允许一次", exact: true })
+        .click();
+      await dialog2.waitFor({ state: "hidden", timeout: 30_000 });
+      await waitAssistantDone(2);
+      assert.ok(existsSync(target));
+      console.log("PASS: two windows open before the prompt; ask mirrors and one answer closes both");
     } finally {
       await page2.close();
     }
@@ -383,7 +406,15 @@ try {
     [join(root, "node_modules/next/dist/bin/next"), mode, "-H", "127.0.0.1", "-p", String(port)],
     {
       cwd: root,
-      env: { ...process.env, PI_CODING_AGENT_DIR: agentDir, PI_WEB_PASSWORD: "", NEXT_TELEMETRY_DISABLED: "1" },
+      env: {
+        ...process.env,
+        PI_CODING_AGENT_DIR: agentDir,
+        // Isolate per-user web state (user settings/locale, session metas, logs)
+        // from a developer checkout's data/ directory.
+        PI_WEB_DATA_DIR: join(agentDir, "web-data"),
+        PI_WEB_PASSWORD: "",
+        NEXT_TELEMETRY_DISABLED: "1",
+      },
       stdio: ["ignore", "pipe", "pipe"],
     },
   );
@@ -407,7 +438,7 @@ try {
   const executable = chromium.executablePath();
   const channel = process.env.E2E_BROWSER_CHANNEL || (existsSync(executable) ? undefined : "chrome");
   browser = await chromium.launch({ channel });
-  context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  context = await browser.newContext({ viewport: { width: 1280, height: 800 }, locale: "en-US" });
   // 首次访问的「WebUI 操作教学」会全屏遮罩并拦截点击；E2E 一律跳过。
   await context.addInitScript(() => {
     try {

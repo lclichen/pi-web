@@ -46,10 +46,12 @@ npm run test:e2e:guardrails
   dialog appears deterministically.
 - Scenarios: ask options + allow-once / deny / deny-and-never-again /
   allow-and-never-again (decisions file, second-turn skip), session switch
-  (hide + replay), page reload (replay), audit-free assertions.
-- Known issue (documented, skipped by default): with a pending ask, opening a
-  second window on the same session stays at “loading session”. Reproduce with
-  `E2E_MULTI_WINDOW=1` (add `E2E_STRICT=1` to fail instead of warn).
+  (hide + replay), page reload (replay), multi-window mirroring in both orders
+  (ask first, and both windows open before the prompt; one answer closes both),
+  audit-free assertions.
+- Each page keeps a single relay-status SSE. A second window therefore cannot
+  exhaust the browser's six HTTP/1.1 connections per host (the earlier
+  “loading session” hang); keep that budget in mind when adding a resident SSE.
 - Runs its own dev server on a free loopback port (same `.next/dev` lock rule).
 
 Real-channel checks (run against the VM / real targets, not part of `npm test`):

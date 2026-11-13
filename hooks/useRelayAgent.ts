@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { AgentInfo, MachineStatus } from "@/lib/relay/protocol";
 
 export interface RelayStatusResponse {
@@ -23,86 +23,120 @@ export interface UseRelayAgent extends RelayStatusResponse {
   refresh: () => void;
 }
 
+const DEFAULT_STATE: RelayStatusResponse = {
+  online: false,
+  relayPort: 30142,
+  advertiseUrl: null,
+  publicBaseUrl: null,
+};
+const RECONNECT_DELAY_MS = 2000;
+
 /**
- * Tracks the Local Agent connection status via the /api/agent-relay/status SSE
- * stream, with a visible-tab poll fallback. Mirrors the EventSource patterns in
- * hooks/useAgentSession.ts and components/SessionSidebar.tsx.
+ * One relay-status subscription per page. EnvironmentsMenu, LocalMachinesDialog
+ * and its useAgentInstallInfo hook all call useRelayAgent(); letting each open
+ * its own EventSource burned the browser's six HTTP/1.1 connections per host.
+ * With a second window open (plus each window's agent event stream), ordinary
+ * API fetches queued forever — the second window sat at "Loading session..."
+ * until the other tab closed. The store keeps a single EventSource and fans
+ * state out to every subscriber.
  */
-export function useRelayAgent(): UseRelayAgent {
-  const [state, setState] = useState<RelayStatusResponse>({
-    online: false,
-    relayPort: 30142,
-    advertiseUrl: null,
-    publicBaseUrl: null,
-  });
-  const [ready, setReady] = useState(false);
-  const stoppedRef = useRef(false);
-  const apply = useCallback((data: Partial<RelayStatusResponse>) => {
-    if (stoppedRef.current) return;
-    setState((prev) => ({ ...prev, ...data }));
-    setReady(true);
-  }, []);
-  const esRef = useRef<EventSource | null>(null);
-  const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+export class RelayStatusStore {
+  private state: RelayStatusResponse = DEFAULT_STATE;
+  private ready = false;
+  private listeners = new Set<() => void>();
+  private source: EventSource | null = null;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private seedStarted = false;
 
-  useEffect(() => {
-    stoppedRef.current = false;
-    let stopped = false;
+  getSnapshot = (): RelayStatusResponse => this.state;
 
-    // Seed relayPort/advertiseUrl + initial status from a one-shot fetch so the
-    // pairing command is correct even before the SSE frame lands.
-    const seed = async () => {
+  isReady = (): boolean => this.ready;
+
+  subscribe = (listener: () => void): (() => void) => {
+    this.listeners.add(listener);
+    this.ensureConnected();
+    return () => {
+      this.listeners.delete(listener);
+    };
+  };
+
+  refresh = (): void => {
+    void this.fetchStatus();
+  };
+
+  /** Idempotent: the first subscriber opens the sole EventSource. */
+  ensureConnected(): void {
+    if (typeof window === "undefined") return;
+    if (!this.seedStarted) {
+      this.seedStarted = true;
+      void this.fetchStatus();
+    }
+    if (this.source) return;
+    this.connect();
+  }
+
+  private apply(data: Partial<RelayStatusResponse>): void {
+    this.state = { ...this.state, ...data };
+    this.ready = true;
+    for (const listener of this.listeners) listener();
+  }
+
+  private async fetchStatus(): Promise<void> {
+    try {
+      const res = await fetch("/api/agent-relay/status", { cache: "no-store" });
+      if (!res.ok) return;
+      this.apply((await res.json()) as RelayStatusResponse);
+    } catch {
+      // SSE still drives updates.
+    }
+  }
+
+  private connect(): void {
+    if (this.source || typeof EventSource === "undefined") return;
+    const es = new EventSource("/api/agent-relay/status/events");
+    this.source = es;
+    es.onmessage = (event) => {
       try {
-        const res = await fetch("/api/agent-relay/status", { cache: "no-store" });
-        if (!res.ok) return;
-        const data = (await res.json()) as RelayStatusResponse;
-        apply(data);
+        this.apply(JSON.parse(event.data) as Partial<RelayStatusResponse>);
       } catch {
-        // ignore — SSE will still drive updates
+        // Ignore malformed frames (heartbeats are comment lines, not onmessage).
       }
     };
-    void seed();
-
-    const connect = () => {
-      if (stopped) return;
-      const es = new EventSource("/api/agent-relay/status/events");
-      esRef.current = es;
-      es.onmessage = (e) => {
-        try {
-          const data = JSON.parse(e.data) as Partial<RelayStatusResponse>;
-          apply(data);
-        } catch {
-          // ignore malformed frames (heartbeats are comment lines, not onmessage)
-        }
-      };
-      es.onerror = () => {
-        if (es.readyState === EventSource.CLOSED) {
-          es.close();
-          // manual reconnect with a guard (EventSource won't retry on fatal)
-          if (!stopped) {
-            reconnectTimer.current = setTimeout(connect, 2000);
-          }
-        }
-        // CONNECTING: let EventSource auto-reconnect
-      };
+    es.onerror = () => {
+      if (es.readyState !== EventSource.CLOSED) return; // CONNECTING: auto-reconnect
+      es.close();
+      if (this.source === es) this.source = null;
+      if (this.reconnectTimer === null) {
+        this.reconnectTimer = setTimeout(() => {
+          this.reconnectTimer = null;
+          this.connect();
+        }, RECONNECT_DELAY_MS);
+      }
     };
-    connect();
+  }
+}
 
-    return () => {
-      stopped = true;
-      esRef.current?.close();
-      esRef.current = null;
-      if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
+let sharedStore: RelayStatusStore | null = null;
+
+export function getRelayStatusStore(): RelayStatusStore {
+  sharedStore ??= new RelayStatusStore();
+  return sharedStore;
+}
+
+export function useRelayAgent(): UseRelayAgent {
+  const store = getRelayStatusStore();
+  const [state, setState] = useState<RelayStatusResponse>(() => store.getSnapshot());
+  const [ready, setReady] = useState(() => store.isReady());
+
+  useEffect(() => {
+    const sync = () => {
+      setState(store.getSnapshot());
+      setReady(store.isReady());
     };
-  }, []);
+    sync();
+    return store.subscribe(sync);
+  }, [store]);
 
-  const refresh = useCallback(() => {
-    fetch("/api/agent-relay/status", { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        if (d && !stoppedRef.current) apply(d as Partial<RelayStatusResponse>);
-      })
-      .catch(() => {});
-  }, [apply]);
+  const refresh = useCallback(() => store.refresh(), [store]);
   return { ...state, ready, refresh };
 }

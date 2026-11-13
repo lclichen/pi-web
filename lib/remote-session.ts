@@ -11,6 +11,7 @@ import { requireCompatibleAgent } from "./relay/agent-gate";
 import {
   agentSupportsBinaryRead,
   agentSupportsBinaryWrite,
+  decodeUtf8Exact,
   resolveRelayWorkspaceScope,
   toRelayPath,
   type RelayWorkspaceScope,
@@ -516,10 +517,18 @@ export async function remoteWriteBytes(ctx: RemoteSessionContext, path: string, 
   if (ctx.mode === "local-machine") {
     const agent = getAgentForUser(ctx.userId, ctx.machineId);
     if (!agentSupportsBinaryWrite(agent?.info)) {
-      const version = agent?.info?.agentVersion ?? "未知";
-      throw new Error(
-        `本机 Agent 版本过旧（${version}），无法写入二进制文件（需要 ≥ 0.6.0）；请升级 agent-client 后重试`,
-      );
+      // Legacy text-only channel: text survives a UTF-8 round trip, binary
+      // does not. Keep text uploads working and fail binary ones loudly.
+      const text = decodeUtf8Exact(bytes);
+      if (text === null) {
+        const version = agent?.info?.agentVersion ?? "未知";
+        throw new Error(
+          `本机 Agent 版本过旧（${version}），无法写入二进制文件（需要 ≥ 0.6.0）；请升级 agent-client 后重试`,
+        );
+      }
+      const scope = localScope(ctx);
+      await localRelay(ctx, "fs.write", { path: localWirePath(ctx, path, scope), content: text }, scope);
+      return;
     }
     const scope = localScope(ctx);
     await localRelay(

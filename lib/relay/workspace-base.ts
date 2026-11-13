@@ -87,6 +87,15 @@ export function agentSupportsBinaryWrite(info: AgentInfo | null | undefined): bo
 }
 
 /**
+ * Exact UTF-8 decode: null when the bytes cannot round-trip (binary).
+ * Legacy agents (pre binary-write) can still receive text losslessly.
+ */
+export function decodeUtf8Exact(bytes: Uint8Array): string | null {
+  const text = Buffer.from(bytes).toString("utf8");
+  return Buffer.from(text, "utf8").equals(Buffer.from(bytes)) ? text : null;
+}
+
+/**
  * Pick the wire strategy for a project workspace on the connected agent.
  * `info` may be null (agent offline): returns an error the caller can show.
  */

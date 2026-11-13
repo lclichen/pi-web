@@ -64,6 +64,8 @@ export function PolicyConfig({ embedded = false, cwd }: { embedded?: boolean; cw
   // 工具护栏视图（P2）：声明矩阵 + MCP 服务器模式可见性（只读；失败不阻断
   // 路径策略主体）。
   const [toolPolicy, setToolPolicy] = useState<ToolPolicyState | null>(null);
+  const [toolError, setToolError] = useState<string | null>(null);
+  const [tab, setTab] = useState<"path" | "tools">("path");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -81,9 +83,12 @@ export function PolicyConfig({ embedded = false, cwd }: { embedded?: boolean; cw
     try {
       const res = await fetch(`/api/tools/policy?cwd=${encodeURIComponent(cwd)}`, { cache: "no-store" });
       const d = (await res.json()) as ToolPolicyState & { error?: string };
-      setToolPolicy(res.ok && !d.error ? d : null);
-    } catch {
+      if (!res.ok || d.error) throw new Error(d.error ?? `HTTP ${res.status}`);
+      setToolPolicy(d);
+      setToolError(null);
+    } catch (e) {
       setToolPolicy(null);
+      setToolError(e instanceof Error ? e.message : String(e));
     }
   }, [cwd]);
 
@@ -180,9 +185,46 @@ export function PolicyConfig({ embedded = false, cwd }: { embedded?: boolean; cw
 
   return (
     <ConfigPanelShell embedded={embedded} title={t("settings.policy")} closeLabel={t("i18n.close")} onClose={() => {}}>
-      <div style={{ padding: 18, overflowY: "auto", height: "100%", boxSizing: "border-box", maxWidth: 720 }}>
-        <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: "var(--text)" }}>{t("settings.policy")}</h2>
-        <p style={{ margin: "6px 0 0", fontSize: 11, color: "var(--text-dim)", lineHeight: 1.6 }}>
+      <div className="policy-subtabs" role="tablist" aria-label={t("settings.policy")}>
+        <button
+          type="button"
+          role="tab"
+          id="policy-tab-path"
+          aria-selected={tab === "path"}
+          aria-controls="policy-panel-path"
+          className={`policy-subtab${tab === "path" ? " is-active" : ""}`}
+          onClick={() => setTab("path")}
+        >
+          {t("policy.pathTitle")}
+        </button>
+        <button
+          type="button"
+          role="tab"
+          id="policy-tab-tools"
+          aria-selected={tab === "tools"}
+          aria-controls="policy-panel-tools"
+          className={`policy-subtab${tab === "tools" ? " is-active" : ""}`}
+          onClick={() => setTab("tools")}
+        >
+          {t("policy.toolsTitle")}
+        </button>
+      </div>
+      <div
+        id="policy-panel-path"
+        role="tabpanel"
+        aria-labelledby="policy-tab-path"
+        hidden={tab !== "path"}
+        style={{
+          padding: 18,
+          overflowY: "auto",
+          flex: 1,
+          minHeight: 0,
+          boxSizing: "border-box",
+          width: "100%",
+          maxWidth: 720,
+        }}
+      >
+        <p style={{ margin: 0, fontSize: 11, color: "var(--text-dim)", lineHeight: 1.6 }}>
           {t("policy.intro")} <code style={{ fontFamily: "var(--font-mono)" }}>.pi/path-policy.json</code>
         </p>
 
@@ -397,109 +439,6 @@ export function PolicyConfig({ embedded = false, cwd }: { embedded?: boolean; cw
                 </p>
               </div>
             )}
-
-            {/* 工具护栏（P2 只读视图）：操作层声明 + 模式矩阵 + MCP 可见性。 */}
-            <div className="policy-section-title" style={{ marginTop: 20 }}>
-              {t("policy.toolsTitle")}
-            </div>
-            <p style={{ margin: "0 0 8px", fontSize: 11, color: "var(--text-dim)", lineHeight: 1.6 }}>
-              {t("policy.toolsIntro")}
-              {toolPolicy ? (
-                <>
-                  {" "}
-                  {t("policy.toolsMode")} <code style={{ fontFamily: "var(--font-mono)" }}>{toolPolicy.mode}</code>
-                </>
-              ) : null}
-            </p>
-            {toolPolicy && (
-              <>
-                <div className="policy-table-wrap">
-                  <table className="policy-table">
-                    <thead>
-                      <tr>
-                        <th>{t("policy.toolsColTool")}</th>
-                        <th>{t("policy.toolsColLayer")}</th>
-                        <th>{t("policy.toolsColRisk")}</th>
-                        <th>sandbox</th>
-                        <th>local-machine</th>
-                        <th>ssh</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {toolPolicy.tools.map((tool) => {
-                        const channels: Array<{ key: string; value: string }> = tool.remote
-                          ? [
-                              { key: "sandbox", value: tool.remote.sandbox },
-                              { key: "local-machine", value: tool.remote["local-machine"] },
-                              { key: "ssh", value: tool.remote.ssh },
-                            ]
-                          : [
-                              { key: "sandbox", value: "—" },
-                              { key: "local-machine", value: "—" },
-                              { key: "ssh", value: "—" },
-                            ];
-                        return (
-                          <tr key={tool.name}>
-                            <td className="is-mono">{tool.name}</td>
-                            <td>{tool.plane}</td>
-                            <td>{tool.risk}</td>
-                            {channels.map((channel) => (
-                              <td
-                                key={channel.key}
-                                className={
-                                  channel.value === "unsupported" ? "policy-cell-unsupported" : undefined
-                                }
-                              >
-                                {channel.value}
-                              </td>
-                            ))}
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-
-                <div className="policy-section-title" style={{ marginTop: 14 }}>
-                  {t("policy.toolsMcp")}
-                </div>
-                {toolPolicy.mcp.length === 0 ? (
-                  <p style={{ margin: 0, fontSize: 12, color: "var(--text-dim)" }}>{t("policy.toolsMcpNone")}</p>
-                ) : (
-                  <div className="policy-table-wrap" style={{ maxHeight: 200 }}>
-                    <table className="policy-table">
-                      <thead>
-                        <tr>
-                          <th>{t("policy.toolsMcpColServer")}</th>
-                          <th>{t("policy.toolsMcpColTransport")}</th>
-                          <th>{t("policy.toolsMcpColDeclaration")}</th>
-                          <th>{t("policy.toolsMcpColStatus")}</th>
-                          <th>{t("policy.toolsMcpColNote")}</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {toolPolicy.mcp.map((server) => (
-                          <tr key={server.name}>
-                            <td className="is-mono">{server.name}</td>
-                            <td>{server.transport}</td>
-                            <td>{server.declaration?.plane ? `plane:${server.declaration.plane}` : "—"}</td>
-                            <td className={server.excludedInMode ? "policy-cell-unsupported" : "policy-cell-ok"}>
-                              {server.excludedInMode ? t("policy.toolsMcpExcluded") : t("policy.toolsMcpAvailable")}
-                            </td>
-                            <td className="policy-cell-wrap">
-                              {server.excludedInMode ? (server.reason ?? "—") : "—"}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-                <p style={{ margin: "8px 0 0", fontSize: 11, color: "var(--text-dim)", lineHeight: 1.6 }}>
-                  {t("policy.toolsMcpHint")}
-                </p>
-              </>
-            )}
           </>
         )}
 
@@ -543,6 +482,117 @@ export function PolicyConfig({ embedded = false, cwd }: { embedded?: boolean; cw
                 {saving ? t("common.saving") : t("common.save")}
               </ConfigButton>
             </div>
+          </>
+        )}
+      </div>
+      <div
+        id="policy-panel-tools"
+        role="tabpanel"
+        aria-labelledby="policy-tab-tools"
+        hidden={tab !== "tools"}
+        style={{
+          padding: 18,
+          overflowY: "auto",
+          flex: 1,
+          minHeight: 0,
+          boxSizing: "border-box",
+          width: "100%",
+          maxWidth: 720,
+        }}
+      >
+        {loading && <p style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 14 }}>{t("apiKeys.loading")}</p>}
+        {toolError && (
+          <p role="alert" style={{ color: "var(--danger)", fontSize: 12, marginTop: 12 }}>
+            {toolError}
+          </p>
+        )}
+        {toolPolicy && (
+          <>
+            <p style={{ margin: 0, fontSize: 11, color: "var(--text-dim)", lineHeight: 1.6 }}>
+              {t("policy.toolsIntro")} {t("policy.toolsMode")}{" "}
+              <code style={{ fontFamily: "var(--font-mono)" }}>{toolPolicy.mode}</code>
+            </p>
+            <div className="policy-table-wrap" style={{ marginTop: 12 }}>
+              <table className="policy-table">
+                <thead>
+                  <tr>
+                    <th>{t("policy.toolsColTool")}</th>
+                    <th>{t("policy.toolsColLayer")}</th>
+                    <th>{t("policy.toolsColRisk")}</th>
+                    <th>sandbox</th>
+                    <th>local-machine</th>
+                    <th>ssh</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {toolPolicy.tools.map((tool) => {
+                    const channels: Array<{ key: string; value: string }> = tool.remote
+                      ? [
+                          { key: "sandbox", value: tool.remote.sandbox },
+                          { key: "local-machine", value: tool.remote["local-machine"] },
+                          { key: "ssh", value: tool.remote.ssh },
+                        ]
+                      : [
+                          { key: "sandbox", value: "—" },
+                          { key: "local-machine", value: "—" },
+                          { key: "ssh", value: "—" },
+                        ];
+                    return (
+                      <tr key={tool.name}>
+                        <td className="is-mono">{tool.name}</td>
+                        <td>{tool.plane}</td>
+                        <td>{tool.risk}</td>
+                        {channels.map((channel) => (
+                          <td
+                            key={channel.key}
+                            className={channel.value === "unsupported" ? "policy-cell-unsupported" : undefined}
+                          >
+                            {channel.value}
+                          </td>
+                        ))}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="policy-section-title" style={{ marginTop: 14 }}>
+              {t("policy.toolsMcp")}
+            </div>
+            {toolPolicy.mcp.length === 0 ? (
+              <p style={{ margin: 0, fontSize: 12, color: "var(--text-dim)" }}>{t("policy.toolsMcpNone")}</p>
+            ) : (
+              <div className="policy-table-wrap" style={{ maxHeight: 200 }}>
+                <table className="policy-table">
+                  <thead>
+                    <tr>
+                      <th>{t("policy.toolsMcpColServer")}</th>
+                      <th>{t("policy.toolsMcpColTransport")}</th>
+                      <th>{t("policy.toolsMcpColDeclaration")}</th>
+                      <th>{t("policy.toolsMcpColStatus")}</th>
+                      <th>{t("policy.toolsMcpColNote")}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {toolPolicy.mcp.map((server) => (
+                      <tr key={server.name}>
+                        <td className="is-mono">{server.name}</td>
+                        <td>{server.transport}</td>
+                        <td>{server.declaration?.plane ? `plane:${server.declaration.plane}` : "—"}</td>
+                        <td className={server.excludedInMode ? "policy-cell-unsupported" : "policy-cell-ok"}>
+                          {server.excludedInMode ? t("policy.toolsMcpExcluded") : t("policy.toolsMcpAvailable")}
+                        </td>
+                        <td className="policy-cell-wrap">{server.excludedInMode ? (server.reason ?? "—") : "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <p style={{ margin: "8px 0 0", fontSize: 11, color: "var(--text-dim)", lineHeight: 1.6 }}>
+              {t("policy.toolsMcpHint")}
+            </p>
           </>
         )}
       </div>

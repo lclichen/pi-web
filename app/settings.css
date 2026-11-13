@@ -1766,7 +1766,8 @@
 }
 
 /* Agents 管理（配置包 = Agent 定义载体） */
-.bundle-subtabs {
+.bundle-subtabs,
+.policy-subtabs {
   display: flex;
   flex-shrink: 0;
   gap: 2px;
@@ -1775,7 +1776,8 @@
   background: var(--bg-panel);
 }
 
-.bundle-subtab {
+.bundle-subtab,
+.policy-subtab {
   padding: 6px 12px 7px;
   border: 0;
   border-bottom: 2px solid transparent;
@@ -1785,7 +1787,8 @@
   cursor: pointer;
 }
 
-.bundle-subtab.is-active {
+.bundle-subtab.is-active,
+.policy-subtab.is-active {
   border-bottom-color: var(--accent);
   color: var(--text);
   font-weight: 600;

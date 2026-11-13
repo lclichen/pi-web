@@ -1015,6 +1015,7 @@ export const zhTWLocale: LocalePlugin = {
     "policy.locked": "唯讀：專案策略隨配置包分發，一般使用者不可修改（伺服器管理員可在此調整）；Host 模式的伺服器目錄由管理員編輯。",
     "policy.noDecisions": "暫無記錄——Agent 觸發越界詢問後，選擇「始終允許」或「拒絕且不再詢問」會記錄在此。",
     "policy.noPatterns": "（無）",
+    "policy.pathTitle": "路徑護欄",
     "policy.removeDecision": "移除",
     "policy.saved": "策略已儲存。",
     "policy.selfProtectedNote": "恆生效保護（任何策略不可放行）：策略/決策檔案本身、.pi/ 執行態目錄（sessions/tmp/bin/cache/plans）、憑證檔案與 .ssh/。",

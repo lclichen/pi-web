@@ -1015,6 +1015,7 @@ export const zhCNLocale: LocalePlugin = {
     "policy.locked": "只读：项目策略随配置包分发，普通用户不可修改（服务器管理员可在此调整）；Host 模式的服务器目录由管理员编辑。",
     "policy.noDecisions": "暂无记录——Agent 触发越界询问后，选择“始终允许”或“拒绝且不再询问”会记录在此。",
     "policy.noPatterns": "（无）",
+    "policy.pathTitle": "路径护栏",
     "policy.removeDecision": "移除",
     "policy.saved": "策略已保存。",
     "policy.selfProtectedNote": "恒生效保护（任何策略不可放行）：策略/决策文件本身、.pi/ 运行态目录（sessions/tmp/bin/cache/plans）、凭据文件与 .ssh/。",

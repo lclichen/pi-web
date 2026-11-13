@@ -1015,6 +1015,7 @@ export const enLocale: LocalePlugin = {
     "policy.locked": "Read-only: project policies ship with the config bundle and are locked for regular users (a server admin can adjust them here). Host-mode server directories are editable by admins.",
     "policy.noDecisions": "No records yet — choosing \"always allow\" or \"deny and never ask again\" on a guardrail prompt records here.",
     "policy.noPatterns": "(none)",
+    "policy.pathTitle": "Path guardrails",
     "policy.removeDecision": "Remove",
     "policy.saved": "Policy saved.",
     "policy.selfProtectedNote": "Always-enforced protections (no policy may allow): the policy/decision files themselves, .pi/ runtime dirs (sessions/tmp/bin/cache/plans), credential files and .ssh/.",

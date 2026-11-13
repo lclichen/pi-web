@@ -358,6 +358,9 @@ export function AppShell() {
     setSearchTarget((current) => (current === target ? null : current));
   }, []);
   const [explorerRefreshKey, setExplorerRefreshKey] = useState(0);
+  const handleFilesUploaded = useCallback(() => {
+    setExplorerRefreshKey((k) => k + 1);
+  }, []);
   const [settingsSection, setSettingsSection] = useState<SettingsSection | null>(null);
   const [modelsRefreshKey, setModelsRefreshKey] = useState(0);
   const [projectTrust, setProjectTrust] = useState<ProjectTrustStatus | null>(null);
@@ -4068,6 +4071,7 @@ export function AppShell() {
                   onSoundToggle={onSoundToggle}
                   playDoneSound={playDoneSound}
                   unlockAudio={unlockAudio}
+                  onFilesUploaded={handleFilesUploaded}
                 />
               ) : initialCwdStatus === "validating" ? (
                 <div

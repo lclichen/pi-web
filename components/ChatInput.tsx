@@ -331,15 +331,9 @@ export function buildSlashCommandLayout(commands: SlashCommandPaletteItem[], dor
   };
 }
 
-const CLIENT_IMAGE_COMPRESSION_THRESHOLD_BYTES = 1024 * 1024;
-const CLIENT_MAX_IMAGE_SIDE = 1024;
-const CLIENT_JPEG_QUALITY = 0.85;
-
-export function shouldCompressImageFile(file: Pick<File, "size" | "type">): boolean {
-  return file.size > CLIENT_IMAGE_COMPRESSION_THRESHOLD_BYTES && file.type !== "image/gif";
-}
-
-function readImageFile(file: Blob, mimeType: string): Promise<{ data: string; mimeType: string }> {
+// Attached images go to pi as they are: pi resizes prompt images itself,
+// following images.autoResize and the model's inputLimits.images.resize.
+export function readImageFile(file: Blob, mimeType: string): Promise<{ data: string; mimeType: string }> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
@@ -353,32 +347,6 @@ function readImageFile(file: Blob, mimeType: string): Promise<{ data: string; mi
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
-}
-
-export async function compressImageFile(file: File): Promise<{ data: string; mimeType: string }> {
-  const original = () => readImageFile(file, file.type);
-  if (!shouldCompressImageFile(file) || typeof createImageBitmap !== "function") return original();
-
-  const bitmap = await createImageBitmap(file).catch(() => null);
-  if (!bitmap) return original();
-
-  try {
-    const scale = Math.min(1, CLIENT_MAX_IMAGE_SIDE / Math.max(bitmap.width, bitmap.height));
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
-    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return original();
-    ctx.fillStyle = "#fff";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-    const data = canvas.toDataURL("image/jpeg", CLIENT_JPEG_QUALITY).split(",")[1];
-    return data && data.length < Math.ceil(file.size / 3) * 4 ? { data, mimeType: "image/jpeg" } : original();
-  } catch {
-    return original();
-  } finally {
-    bitmap.close();
-  }
 }
 
 function imageToDraftImage(image: AttachedImage): ChatDraftImage {
@@ -1101,7 +1069,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
       try {
         const newImages = await Promise.all(
           imageFiles.map(async (file) => ({
-            ...(await compressImageFile(file)),
+            ...(await readImageFile(file, file.type)),
             previewUrl: URL.createObjectURL(file),
           })),
         );
@@ -1753,7 +1721,17 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
   const handlePaste = useCallback(
     (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
       const items = Array.from(e.clipboardData?.items ?? []);
-      const imageItems = items.filter((item) => item.type.startsWith("image/"));
+      const fileItems = items.filter((item) => item.kind === "file");
+      const imageItems = fileItems.filter((item) => item.type.startsWith("image/"));
+      // With a handler, files (images included) go through the chat drop path:
+      // images still attach inline, and every file is stored/uploaded the same
+      // way as a drop, so pasted files no longer vanish.
+      if (!compact && fileItems.length && onAttachFiles) {
+        e.preventDefault();
+        const files = fileItems.map((item) => item.getAsFile()).filter((f): f is File => f !== null);
+        if (files.length) onAttachFiles(files);
+        return;
+      }
       if (!compact && imageItems.length) {
         e.preventDefault();
         const files = imageItems.map((item) => item.getAsFile()).filter((f): f is File => f !== null);
@@ -1792,7 +1770,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
         ta.setSelectionRange(start + markdown.length, start + markdown.length);
       });
     },
-    [compact, processImageFiles, updateAtQuery],
+    [compact, onAttachFiles, processImageFiles, updateAtQuery],
   );
 
   useEffect(() => {
@@ -2861,7 +2839,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
             >
               <button
                 onClick={() => fileInputRef.current?.click()}
-                title={t("chat.attachImage")}
+                title={t(onAttachFiles ? "chat.attachFiles" : "chat.attachImage")}
                 style={{
                   flexShrink: 0,
                   display: "flex",

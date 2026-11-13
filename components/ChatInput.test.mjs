@@ -18,7 +18,6 @@ const {
   canClearBuiltinCommandInput,
   canRestoreUserMessage,
   canRunBuiltinSlashCommandWhileStreaming,
-  compressImageFile,
   cycleListIndex,
   filterModelOptions,
   getUpwardMenuMaxHeight,
@@ -26,8 +25,8 @@ const {
   getUserMessageDraftImages,
   isExactSlashCommand,
   modelSupportsImageInput,
+  readImageFile,
   replaceLinksWithMarkdown,
-  shouldCompressImageFile,
 } = await jiti.import("./ChatInput.tsx");
 const { ModelSelector } = await jiti.import("./ModelSelector.tsx");
 const { clearDraft, getDraft, mergeRestoredSubmissionDraft, mergeRestoredSubmissionText, rekeyDraft, setDraft } =
@@ -499,60 +498,21 @@ test("file mention menu remeasures when its layout container shifts the anchor",
   assert.match(block, /anchorObserver\?\.observe\(layoutContainer\)/);
 });
 
-test("compresses large images while preserving small images and GIFs", async () => {
-  assert.equal(shouldCompressImageFile({ size: 1024 * 1024, type: "image/png" }), false);
-  assert.equal(shouldCompressImageFile({ size: 1024 * 1024 + 1, type: "image/png" }), true);
-  assert.equal(shouldCompressImageFile({ size: 2 * 1024 * 1024, type: "image/gif" }), false);
-
-  const originals = {
-    FileReader: globalThis.FileReader,
-    createImageBitmap: globalThis.createImageBitmap,
-    document: globalThis.document,
-  };
-  let bitmapCalls = 0;
-  let closed = false;
-  const canvas = {
-    width: 0,
-    height: 0,
-    getContext: () => ({ fillStyle: "", fillRect() {}, drawImage() {} }),
-    toDataURL: () => "data:image/jpeg;base64,COMPRESSED",
-  };
-
+test("reads attached images as they are — pi resizes prompt images itself", async () => {
+  const originals = { FileReader: globalThis.FileReader };
   globalThis.FileReader = class {
     readAsDataURL() {
       this.result = "data:image/png;base64,ORIGINAL";
       this.onload();
     }
   };
-  globalThis.createImageBitmap = async () => {
-    bitmapCalls += 1;
-    return {
-      width: 2048,
-      height: 1024,
-      close() {
-        closed = true;
-      },
-    };
-  };
-  globalThis.document = { createElement: () => canvas };
-
   try {
-    assert.deepEqual(await compressImageFile({ size: 1024, type: "image/png" }), {
+    assert.deepEqual(await readImageFile({ size: 2 * 1024 * 1024, type: "image/png" }, "image/png"), {
       data: "ORIGINAL",
       mimeType: "image/png",
     });
-    assert.deepEqual(await compressImageFile({ size: 2 * 1024 * 1024, type: "image/png" }), {
-      data: "COMPRESSED",
-      mimeType: "image/jpeg",
-    });
-    assert.equal(bitmapCalls, 1);
-    assert.equal(canvas.width, 1024);
-    assert.equal(canvas.height, 512);
-    assert.equal(closed, true);
   } finally {
     globalThis.FileReader = originals.FileReader;
-    globalThis.createImageBitmap = originals.createImageBitmap;
-    globalThis.document = originals.document;
   }
 });
 

@@ -16,7 +16,12 @@ import type {
   UserMessage,
 } from "@/lib/types";
 import { normalizeCustomPanelLines } from "@/lib/ansi";
-import { encodeFilePathForApi } from "@/lib/file-paths";
+import {
+  splitDroppedItems,
+  type DroppedItem,
+  type UploadTarget,
+} from "@/lib/file-upload-client";
+import { uploadChatAttachments } from "@/lib/chat-attachments";
 import { asBracketedPaste, toTerminalKeyData } from "@/lib/terminal-input";
 import {
   countToolCallBlocks,
@@ -124,6 +129,8 @@ interface Props {
   onSoundToggle?: () => void;
   playDoneSound?: () => void;
   unlockAudio?: () => void;
+  /** A chat drop/attach wrote files into the workspace (refresh the explorer). */
+  onFilesUploaded?: () => void;
 }
 
 function phaseLabel(
@@ -385,6 +392,7 @@ export function ChatWindow({
   remoteSession,
   onSubagentCallsChange,
   onPlanActivity,
+  onFilesUploaded,
 }: Props) {
   const { t } = useI18n();
   const isMobile = useIsMobile();
@@ -464,6 +472,7 @@ export function ChatWindow({
     slashCommandsLoading,
     queuedMessages,
     notices,
+    addNotice,
     extensionDialog,
     extensionCustomUi,
     extensionStatuses,
@@ -1004,15 +1013,6 @@ export function ChatWindow({
     [onContextUsageChange],
   );
 
-  const onDrop = useCallback(
-    (files: File[]) => {
-      chatInputRef?.current?.addImages(files);
-    },
-    [chatInputRef],
-  );
-
-  const { isDragOver, handleDragEnter, handleDragOver, handleDragLeave, handleDrop } = useDragDrop(onDrop);
-
   const visibleMessages = messages.filter((m) => isMessageGroupAnchor(m) || m.role === "assistant");
   // Stable Map identity: `messages` doesn't change during streaming updates
   // (the streaming message lives in streamState), so memoized MessageViews
@@ -1122,40 +1122,56 @@ export function ChatWindow({
       ? session.id
       : null;
 
-  // Attach button: images keep the existing inline path; other files are
-  // uploaded into the session's working directory and mentioned, so the model
-  // can read them with its ordinary tools (phones have no drag-and-drop).
-  const handleAttachFiles = useCallback(
-    async (files: File[]) => {
-      const images = files.filter((file) => file.type.startsWith("image/"));
-      const others = files.filter((file) => !file.type.startsWith("image/"));
-      if (images.length > 0) chatInputRef?.current?.addImages(images);
-      if (others.length === 0) return;
+  // Chat drops and the composer's attach button land here. Images attach to
+  // the prompt as before; in host sessions each image is ALSO stored under
+  // .pi/attachments/ and mentioned, so tools — including MCP servers that take
+  // a file path — can use the image bytes (see lib/chat-attachments.ts).
+  const uploadChatFiles = useCallback(
+    (target: UploadTarget, files: File[], images: File[]) =>
+      uploadChatAttachments(target, files, images, {
+        addNotice,
+        t,
+        insertText: (text) => chatInputRef?.current?.insertText(text),
+        onUploaded: onFilesUploaded,
+      }),
+    [addNotice, chatInputRef, onFilesUploaded, t],
+  );
 
-      const targetDirectory = linkCwd ?? messageCwd;
-      if (!targetDirectory) return;
-      const form = new FormData();
-      for (const file of others) form.append("files", file, file.name);
-      const url = remoteFileSessionId
-        ? `/api/remotefs/${encodeFilePathForApi(targetDirectory)}?src=${encodeURIComponent(remoteFileSessionId)}&type=upload&conflict=skip`
-        : `/api/files/${encodeFilePathForApi(targetDirectory)}?type=upload&conflict=skip`;
-      try {
-        const response = await fetch(url, { method: "POST", body: form });
-        const data = (await response.json().catch(() => ({}))) as { uploaded?: string[]; error?: string };
-        if (!response.ok) {
-          console.warn("Attach upload failed:", data.error ?? `HTTP ${response.status}`);
-          return;
-        }
-        const names = data.uploaded ?? [];
-        if (names.length > 0) {
-          const mentions = names.map((name) => (/\s/.test(name) ? `@"${name}"` : `@${name}`)).join(" ");
-          chatInputRef?.current?.insertText(`${mentions} `);
-        }
-      } catch (error) {
-        console.warn("Attach upload failed:", error instanceof Error ? error.message : error);
+  const onDrop = useCallback(
+    (items: DroppedItem[]) => {
+      const { images, files, folders } = splitDroppedItems(items);
+      if (images.length > 0) chatInputRef?.current?.addImages(images);
+      if (folders.length > 0) {
+        addNotice({ type: "warning", message: t("chat.dropFoldersUnsupported", { names: folders.join(", ") }) });
       }
+      if (files.length === 0 && images.length === 0) return;
+
+      // Remote sessions upload through the virtual workspace root ("/"), the
+      // same base the file explorer uses; session.cwd there is a host-side
+      // stub home and must never be sent to /api/remotefs.
+      const target: UploadTarget | null = remoteFileSessionId
+        ? { directory: "/", sessionId: remoteFileSessionId }
+        : messageCwd
+          ? { directory: messageCwd }
+          : null;
+      if (!target) {
+        // An image still reaches the model inline; only files need a directory.
+        if (files.length > 0) addNotice({ type: "warning", message: t("chat.dropNeedsCwd") });
+        return;
+      }
+      void uploadChatFiles(target, files, images);
     },
-    [chatInputRef, linkCwd, messageCwd, remoteFileSessionId],
+    [addNotice, chatInputRef, messageCwd, remoteFileSessionId, t, uploadChatFiles],
+  );
+
+  const { isDragOver, handleDragEnter, handleDragOver, handleDragLeave, handleDrop } = useDragDrop(onDrop);
+
+  // Attach button: the same path a drop takes (phones have no drag-and-drop).
+  const handleAttachFiles = useCallback(
+    (files: File[]) => {
+      onDrop(files.map((file) => ({ kind: "file" as const, file })));
+    },
+    [onDrop],
   );
 
   const promptAnchorSpacerRef = useRef<HTMLDivElement | null>(null);

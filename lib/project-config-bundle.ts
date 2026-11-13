@@ -74,6 +74,8 @@ const DENIED_BASENAMES = new Set([
  * state (.pi/plans/plan-sess_*.md) — per-session, not portable config.
  */
 const DENIED_SEGMENTS = new Set(["sessions", "tmp", "bin", "cache", "plans", ".git"]);
+/** Chat attachments (.pi/attachments/) are runtime prompt payloads, not config. */
+const DENIED_PREFIXES = [".pi/attachments"];
 /** Top-level prefixes an import may write into the project home.
  * DEPRECATED (2026-10-23): labs/ 不是标准目录——Agent 相关配置统一收敛到
  * .pi/（方便路径白名单防 Agent 自改运行文件）。导入仍兼容历史包；导出
@@ -112,7 +114,9 @@ export interface ImportStats {
 }
 
 export function isDeniedConfigPath(relPath: string): boolean {
-  const segments = relPath.split("/");
+  const normalized = relPath.replace(/\\/g, "/").replace(/^\.\//, "");
+  if (DENIED_PREFIXES.some((prefix) => normalized === prefix || normalized.startsWith(`${prefix}/`))) return true;
+  const segments = normalized.split("/");
   if (segments.some((s) => DENIED_SEGMENTS.has(s.toLowerCase()))) return true;
   const base = segments[segments.length - 1]?.toLowerCase() ?? "";
   if (DENIED_BASENAMES.has(base)) return true;

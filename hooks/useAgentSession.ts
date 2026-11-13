@@ -2598,6 +2598,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     slashCommandsLoading,
     queuedMessages,
     notices: noticeState.visible,
+    addNotice,
     extensionDialog,
     extensionCustomUi,
     extensionStatuses,

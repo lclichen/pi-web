@@ -39,6 +39,7 @@ writeFileSync(
 const jiti = createJiti(import.meta.url, { tsconfigPaths: true });
 const { GET } = await jiti.import("./[id]/events/route.ts");
 const { getRpcSession } = await jiti.import("../../../lib/rpc-manager.ts");
+const { createWebSession, WEB_SESSION_COOKIE } = await jiti.import("@/lib/web-session.ts");
 
 const HOST = "127.0.0.1:30141";
 
@@ -74,6 +75,59 @@ test("known synthetic session opens an SSE stream", async () => {
     assert.ok(res.body, "SSE response must expose a readable body");
   } finally {
     await res.body?.cancel().catch(() => {});
+  }
+});
+
+test("auth-on: session shard fences other users and serves the owner", async () => {
+  const userId = 2;
+  const sessionId = "qa-events-user2";
+  const userDir = join(AGENT_DIR, "sessions", "users", `u${userId}`);
+  mkdirSync(userDir, { recursive: true });
+  writeFileSync(
+    join(userDir, `2026-01-02T00-00-00-000Z_${sessionId}.jsonl`),
+    [
+      JSON.stringify({ type: "session", version: 3, id: sessionId, timestamp, cwd: project }),
+      JSON.stringify({
+        type: "message",
+        id: "u1",
+        parentId: null,
+        timestamp,
+        message: { role: "user", content: [{ type: "text", text: "hi" }] },
+      }),
+    ].join(String.fromCharCode(10)) + String.fromCharCode(10),
+  );
+
+  const owner = createWebSession(
+    { id: userId, username: "u2", email: null, role: "user", status: "active" },
+    "sk_test",
+    "",
+  ).sid;
+  const other = createWebSession(
+    { id: 3, username: "u3", email: null, role: "user", status: "active" },
+    "sk_test",
+    "",
+  ).sid;
+  const previousAuth = process.env.PI_WEB_AUTH;
+  process.env.PI_WEB_AUTH = "on";
+  try {
+    const call = (sid, id) =>
+      GET(
+        new Request(`http://${HOST}/api/agent/${id}/events`, {
+          headers: { host: HOST, ...(sid ? { cookie: `${WEB_SESSION_COOKIE}=${sid}` } : {}) },
+        }),
+        { params: Promise.resolve({ id }) },
+      );
+
+    assert.equal((await call(null, sessionId)).status, 401);
+    assert.equal((await call(other, sessionId)).status, 404);
+
+    const own = await call(owner, sessionId);
+    assert.equal(own.status, 200);
+    assert.match(own.headers.get("content-type") ?? "", /text\/event-stream/);
+    await own.body?.cancel().catch(() => {});
+  } finally {
+    process.env.PI_WEB_AUTH = previousAuth ?? "";
+    await getRpcSession(sessionId)?.shutdown?.().catch?.(() => {});
   }
 });
 

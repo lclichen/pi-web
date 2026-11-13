@@ -152,6 +152,21 @@
 限制：SSH 为同机回环（验证协议/工具行为，不覆盖跨网络）；sandbox 往返目前以
 文本断言为主（容器内文件不可从宿主直接断言）。
 
+## 3.9 已落地（2026-11-13）：auth-on 多用户 handler 夹具
+
+新增 `createWebSession()` 直造真实 web 会话的测试夹具（`pi_web_sid` cookie，
+无需平台登录），三条路由的行为测试补上 **auth-on** 分支：
+
+| 路由 | 新增断言 |
+| --- | --- |
+| `/api/policy` | 无 cookie 401；普通用户：自己的项目 home 锁定（`lockReason=project:sandbox`）、PUT 403、Host 目录 403、他人项目 403、决策记录仍可移除；管理员：可读可改项目策略 |
+| `/api/tools/policy` | 无 cookie 401；用户只读自己的项目（mode 解析 + stdio 剔除）；Host 目录/他人项目 403；管理员可读任意项目 |
+| `/api/agent/events` | 无 cookie 401；他人访问用户分片会话 404；属主打开 SSE 200 |
+
+仍未覆盖：**live registry 所有权栅栏**（`checkLiveSessionAccess` 的 wrapper 路径）
+需要给 `rpc-manager` 增加注册测试桩或导出 `registerRpcWrapper`；目前只能覆盖
+“未运行会话”的用户分片栅栏。
+
 ## 4. 现状已知风险（本轮核对发现）
 
 1. **路径护栏 ask 无硬超时**：仅当用户开启"问询自动继续"（默认 300s）才会自动

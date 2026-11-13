@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -47,6 +47,7 @@ writeFileSync(
 
 const jiti = createJiti(import.meta.url, { tsconfigPaths: true });
 const { GET } = await jiti.import("./route.ts");
+const { createWebSession, WEB_SESSION_COOKIE } = await jiti.import("@/lib/web-session.ts");
 
 const HOST = "127.0.0.1:30141";
 
@@ -108,6 +109,59 @@ test("rejects missing cwd and untrusted hosts", async () => {
     req(`/api/tools/policy?cwd=${encodeURIComponent(sandboxHome)}`, { host: "evil.example.com" }),
   );
   assert.equal(untrusted.status, 403);
+});
+
+test("auth-on: users only use their own project homes; admins can read any project", async () => {
+  const projectId = "qa-tool-policy-u2";
+  const home = join(DATA_DIR, "sandbox-homes", "u2", projectId);
+  mkdirSync(join(home, ".pi"), { recursive: true });
+  writeFileSync(
+    join(home, ".pi", "mcp.json"),
+    JSON.stringify({ mcpServers: { userstdio: { command: "npx", args: ["-y", "x"] } } }),
+  );
+  const projects = JSON.parse(readFileSync(join(DATA_DIR, "projects.json"), "utf8"));
+  projects.projects[projectId] = {
+    id: projectId,
+    name: "p-u2",
+    ownerId: 2,
+    mode: "sandbox",
+    createdAt: 2,
+    pinnedSessions: [],
+  };
+  writeFileSync(join(DATA_DIR, "projects.json"), JSON.stringify(projects));
+
+  const session = (id, role) =>
+    createWebSession({ id, username: `u${id}`, email: null, role, status: "active" }, "sk_test", "").sid;
+  const u2 = session(2, "user");
+  const u3 = session(3, "user");
+  const admin = session(1, "admin");
+  const withCookie = (sid, cwd) =>
+    GET(
+      new Request(`http://${HOST}/api/tools/policy?cwd=${encodeURIComponent(cwd)}`, {
+        headers: { host: HOST, cookie: `${WEB_SESSION_COOKIE}=${sid}` },
+      }),
+    );
+
+  const previousAuth = process.env.PI_WEB_AUTH;
+  process.env.PI_WEB_AUTH = "on";
+  try {
+    assert.equal((await GET(req(`/api/tools/policy?cwd=${encodeURIComponent(home)}`))).status, 401);
+
+    const own = await withCookie(u2, home);
+    assert.equal(own.status, 200);
+    const ownData = await own.json();
+    assert.equal(ownData.mode, "sandbox");
+    assert.equal(ownData.mcp.find((server) => server.name === "userstdio")?.excludedInMode, true);
+
+    // Host 空间仅管理员
+    assert.equal((await withCookie(u2, DATA_DIR)).status, 403);
+    // 别人的项目不可读
+    assert.equal((await withCookie(u3, home)).status, 403);
+    // 管理员可读任意项目
+    assert.equal((await withCookie(admin, home)).status, 200);
+  } finally {
+    process.env.PI_WEB_AUTH = previousAuth ?? "";
+  }
 });
 
 test.after(() => {

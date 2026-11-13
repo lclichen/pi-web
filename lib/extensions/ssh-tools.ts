@@ -79,9 +79,13 @@ export function makeSshToolsExtension(opts: {
   sshConfig: SshConfig;
   workdir: string;
   projectHome?: string;
+  /** Test seam：注入连接/命令执行（生产不传，走真实 SSH 连接池）。 */
+  getClient?: () => Promise<Client>;
+  exec?: typeof sshExec;
 }): InlineExtension {
   const { projectId, sshConfig, workdir, projectHome } = opts;
-  const client = () => getSshClient(projectId, sshConfig);
+  const client = opts.getClient ?? (() => getSshClient(projectId, sshConfig));
+  const exec = opts.exec ?? sshExec;
 
   const bridgeRuntimeConfig = (p: string, ctxCwd?: string) =>
     matchRuntimeConfigPath(p, { homes: [projectHome, ctxCwd] });
@@ -130,7 +134,7 @@ export function makeSshToolsExtension(opts: {
         execute: async (_id, params) => {
           try {
             const c = await client();
-            const r = await sshExec(c, params.command, workdir, (params.timeout ?? 120) * 1000);
+            const r = await exec(c, params.command, workdir, (params.timeout ?? 120) * 1000);
             const out = [r.stdout, r.stderr ? `[stderr]\n${r.stderr}` : "", r.code !== 0 ? `[exit ${r.code}]` : ""]
               .filter(Boolean)
               .join("\n");
@@ -276,7 +280,7 @@ export function makeSshToolsExtension(opts: {
             const c = await client();
             const base = remotePath(workdir, params.path ?? workdir);
             const inc = params.include ? ` --include='${params.include.replace(/'/g, "")}'` : "";
-            const r = await sshExec(
+            const r = await exec(
               c,
               `grep -rnE${inc} -- '${params.pattern.replace(/'/g, `'\\''`)}' ${base} 2>/dev/null | head -100`,
               workdir,
@@ -304,7 +308,7 @@ export function makeSshToolsExtension(opts: {
             const c = await client();
             const base = remotePath(workdir, params.path ?? workdir);
             const pat = params.pattern.replace(/'/g, "");
-            const r = await sshExec(c, `find ${base} -name '${pat}' 2>/dev/null | head -100`, workdir);
+            const r = await exec(c, `find ${base} -name '${pat}' 2>/dev/null | head -100`, workdir);
             return ok(r.stdout || "No matches");
           } catch (err) {
             return fail(err instanceof Error ? err.message : String(err));

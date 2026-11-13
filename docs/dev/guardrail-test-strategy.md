@@ -125,6 +125,18 @@
 又暴露并修复一个真实缺陷：**Windows 盘符路径的决策记录无法通过
 `DELETE /api/policy?path=...` 删除**（只接受 `/` 开头）——现已接受盘符绝对路径。
 
+## 3.7 已落地（2026-11-13）：remote 工具层单测（relay / ssh）
+
+为两条远端工具层补上缺失的单测（此前只有桥接/路径工具的部分覆盖），
+给工厂增加**测试注入缝**（生产默认仍走真实通道）：
+
+| 文件 | 用例 | 覆盖 |
+| --- | --- | --- |
+| `lib/extensions/relay-tools.test.mjs` | 10 | base/legacy-prefix 两种路径策略、绝对路径透传/相对化、无 Agent/版本过低 fail-closed、write + AGENTS.md 镜像、edit 读改写与歧义检测、bash argv/cwd/非零退出、ls/find/grep 参数与空结果、runtime-config 桥接、user_bash 走 exec.run |
+| `lib/extensions/ssh-tools.test.mjs` | 8 | exec workdir/timeout/非零退出、SFTP 相对/绝对路径、write 建父目录、edit 读改写、ls 排序与空目录、grep/find 命令转义拼接、桥接不发 SFTP、user_bash `cd workdir` 与 exit 结算 |
+
+注入缝：`RelayToolsOptions.rpc/agentForUser`、`makeSshToolsExtension({getClient, exec})`。
+
 ## 4. 现状已知风险（本轮核对发现）
 
 1. **路径护栏 ask 无硬超时**：仅当用户开启"问询自动继续"（默认 300s）才会自动

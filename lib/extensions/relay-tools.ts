@@ -39,6 +39,9 @@ export interface RelayToolsOptions {
   workspaceDir?: string;
   /** Paired machine this project is bound to (multi-machine). */
   machineId?: string;
+  /** Test seam：注入通道实现（生产不传，走真实 relay）。 */
+  rpc?: typeof relayRpc;
+  agentForUser?: typeof getAgentForUser;
 }
 
 interface ToolResult {
@@ -79,10 +82,10 @@ async function mirrorInstructionsFile(
 }
 
 export function makeRelayToolsExtension(userId: number, options: RelayToolsOptions = {}): InlineExtension {
-  const { projectHome, workspaceDir, machineId } = options;
+  const { projectHome, workspaceDir, machineId, rpc = relayRpc, agentForUser = getAgentForUser } = options;
   /** Resolve per call: an agent may upgrade/reconnect mid-session. */
   const currentScope = (): RelayWorkspaceScope => {
-    const info = getAgentForUser(userId, machineId)?.info;
+    const info = agentForUser(userId, machineId)?.info;
     if (info) {
       const compat = clientCompatibility(info.agentVersion);
       if (!compat.compatible) return { error: compat.message };
@@ -94,7 +97,7 @@ export function makeRelayToolsExtension(userId: number, options: RelayToolsOptio
     params: Record<string, unknown> | undefined,
     scope: RelayWorkspaceScope,
   ) =>
-    relayRpc(
+    rpc(
       method,
       { ...(params ?? {}), ...(scope.base ? { base: scope.base } : {}) },
       { userId, ...(machineId ? { machineId } : {}) },

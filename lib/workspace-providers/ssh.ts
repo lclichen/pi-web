@@ -51,12 +51,26 @@ function sftpReadDir(s: SFTPWrapper, path: string): Promise<SftpEntry[]> {
 
 /** Recursive mkdir; an existing directory is success, other errors stay errors. */
 function sftpMkdir(s: SFTPWrapper, path: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    s.mkdir(path, { recursive: true } as never, (err) => {
-      if (!err) return resolve();
-      s.stat(path, (statErr) => (statErr ? reject(err) : resolve()));
-    });
-  });
+  // ssh2's mkdir takes SFTP attrs, not fs-style options, so `recursive` was
+  // silently ignored and nested `.pi/skills/<name>` writes failed with
+  // "No such file". Walk the segments and tolerate existing directories.
+  const absolute = path.startsWith("/");
+  const parts = path.split("/").filter((part) => part && part !== ".");
+  return (async () => {
+    let current = absolute ? "" : ".";
+    for (const part of parts) {
+      current = `${current}/${part}`;
+      await new Promise<void>((resolve, reject) => {
+        s.mkdir(current, (err) => {
+          if (!err) return resolve();
+          s.stat(current, (statErr, attrs) => {
+            if (!statErr && attrs.isDirectory()) return resolve();
+            reject(err);
+          });
+        });
+      });
+    }
+  })();
 }
 
 function normalizeRemote(path: string): string {

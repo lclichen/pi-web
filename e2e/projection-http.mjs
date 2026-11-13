@@ -18,9 +18,15 @@ import { createJiti } from "jiti";
 const base = process.env.PI_WEB_BASE ?? "http://127.0.0.1:30141";
 const dataDir = process.env.PI_WEB_DATA_DIR ?? "/home/llmx/amedac/piweb-data";
 const require = createRequire(import.meta.url);
-const creds = require("../scripts/vm-credentials.cjs");
 const username = process.env.VM_APP_ADMIN_USER ?? "admin";
-const password = process.env.VM_APP_ADMIN_PASSWORD ?? creds.appAccounts?.[username];
+let password = process.env.VM_APP_ADMIN_PASSWORD;
+if (!password) {
+  try {
+    password = require("../scripts/vm-credentials.cjs").appAccounts?.[username];
+  } catch {
+    // The VM checkout does not ship the gitignored credentials file.
+  }
+}
 if (!password) throw new Error("缺少 admin 密码（VM_APP_ADMIN_PASSWORD 或 vm-credentials.cjs）");
 
 const jiti = createJiti(import.meta.url, { tsconfigPaths: true });

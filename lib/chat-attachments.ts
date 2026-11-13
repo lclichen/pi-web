@@ -51,14 +51,37 @@ export async function uploadChatAttachments(
 ): Promise<void> {
   let uploadedAny = false;
   const mentions: string[] = [];
+  // Remote chat uploads keep their primary copy on the Host ("项目区") and
+  // mirror it into the remote workspace; host sessions already write locally.
+  const uploadOptions = { hostCache: Boolean(target.sessionId) };
+
+  const reportHostOnly = (names: string[], data: { hostDir?: string; warning?: string }) => {
+    if (names.length === 0) return;
+    hooks.addNotice({
+      type: "warning",
+      message: hooks.t("chat.dropHostOnly", {
+        names: names.join(", "),
+        dir: data.hostDir ?? "",
+        message: data.warning ?? "",
+      }),
+    });
+  };
+  const reportHostWarning = (data: { warning?: string }) => {
+    if (!data.warning) return;
+    hooks.addNotice({ type: "warning", message: hooks.t("chat.dropHostWarning", { message: data.warning }) });
+  };
 
   if (files.length > 0) {
     try {
-      const { status, data } = await api.uploadFiles(target, files, "skip");
+      const { status, data } = await api.uploadFiles(target, files, "skip", undefined, uploadOptions);
       if (status !== 200 && status !== 207) throw new Error(data.error ?? `HTTP ${status}`);
       const uploaded = data.uploaded ?? [];
       const skipped = data.skipped ?? [];
-      const mention = dropMentionText(files, [...uploaded, ...skipped]);
+      const hostOnly = data.hostOnly ?? [];
+      const mention = dropMentionText(
+        files.filter((file) => !hostOnly.includes(file.name)),
+        [...uploaded, ...skipped],
+      );
       if (mention) mentions.push(mention);
       if (uploaded.length > 0) {
         uploadedAny = true;
@@ -70,6 +93,8 @@ export async function uploadChatAttachments(
           message: hooks.t("chat.dropAlreadyExists", { names: skipped.join(", ") }),
         });
       }
+      reportHostOnly(hostOnly, data);
+      if (hostOnly.length === 0) reportHostWarning(data);
       for (const failure of data.errors ?? []) {
         hooks.addNotice({
           type: "error",
@@ -84,19 +109,24 @@ export async function uploadChatAttachments(
     }
   }
 
-  if (images.length > 0 && !target.sessionId) {
+  if (images.length > 0) {
     try {
       const imageDirectory = attachmentsTarget(target);
       if (!(await api.ensureUploadDirectory(imageDirectory))) throw new Error(`Cannot create ${ATTACHMENTS_DIR}`);
       const names = images.map((file) => attachmentFileName(file));
-      const { status, data } = await api.uploadFiles(imageDirectory, images, "skip", names);
+      const { status, data } = await api.uploadFiles(imageDirectory, images, "skip", names, uploadOptions);
       if (status !== 200 && status !== 207) throw new Error(data.error ?? `HTTP ${status}`);
+      const hostOnly = new Set(data.hostOnly ?? []);
       const stored = new Set([...(data.uploaded ?? []), ...(data.skipped ?? [])]);
-      const paths = names.filter((name) => stored.has(name)).map((name) => `${ATTACHMENTS_DIR}/${name}`);
+      const paths = names
+        .filter((name) => stored.has(name) && !hostOnly.has(name))
+        .map((name) => `${ATTACHMENTS_DIR}/${name}`);
       if (paths.length > 0) {
         mentions.push(mentionText(paths));
         uploadedAny = true;
       }
+      reportHostOnly([...hostOnly], data);
+      if (hostOnly.size === 0) reportHostWarning(data);
       for (const failure of data.errors ?? []) {
         hooks.addNotice({
           type: "error",

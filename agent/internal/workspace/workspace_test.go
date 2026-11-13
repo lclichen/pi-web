@@ -127,3 +127,34 @@ func TestReadBase64KeepsBinaryBytes(t *testing.T) {
 		t.Fatal("base64 mode must not emit a lossy utf8 content field")
 	}
 }
+
+func TestWriteBase64KeepsBinaryBytes(t *testing.T) {
+	root := t.TempDir()
+	binary := []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0xff, 0x00, 0x7f}
+	ws := &Workspace{Root: root}
+	if _, err := ws.Write(map[string]interface{}{
+		"path":          "docs/pic.png",
+		"contentBase64": "iVBORw0KGgr/AH8=",
+	}); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	got, err := os.ReadFile(filepath.Join(root, "docs", "pic.png"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != len(binary) {
+		t.Fatalf("written length = %d, want %d", len(got), len(binary))
+	}
+	for i := range binary {
+		if got[i] != binary[i] {
+			t.Fatalf("byte %d = %#x, want %#x", i, got[i], binary[i])
+		}
+	}
+}
+
+func TestWriteRejectsInvalidBase64(t *testing.T) {
+	ws := &Workspace{Root: t.TempDir()}
+	if _, err := ws.Write(map[string]interface{}{"path": "x.bin", "contentBase64": "%%%"}); err == nil {
+		t.Fatal("invalid base64 must fail instead of writing garbage")
+	}
+}

@@ -3,17 +3,19 @@ import { resolveSessionMode } from "./session-metas";
 import { requireUserIdentity } from "./web-session";
 import { getAgentForUser } from "./relay/registry";
 import { platformGet, platformPost } from "./platform/client";
-import { readSandboxHomeConfig } from "./mode-homes";
+import { readSandboxHomeConfig, dataDir } from "./mode-homes";
 import { ensureProjectHome, getOwnedProject, readProjectSandboxConfig } from "./projects";
 import { getSshClient, readSshConfig, type SshConfig } from "./ssh";
 import { relayRpc } from "./relay/forward";
 import { requireCompatibleAgent } from "./relay/agent-gate";
 import {
   agentSupportsBinaryRead,
+  agentSupportsBinaryWrite,
   resolveRelayWorkspaceScope,
   toRelayPath,
   type RelayWorkspaceScope,
 } from "./relay/workspace-base";
+import { join } from "path";
 import type { SessionMode } from "./session-modes";
 
 /**
@@ -103,11 +105,17 @@ export async function resolveRemoteSession(
     // project binding use the user's default (most recent) machine + its root.
     let machineId: string | undefined;
     let workdir: string | undefined;
+    let projectId: string | undefined;
+    let homePrefix: string | undefined;
     if (meta?.projectId && (user.role === "admin" || meta.ownerId === user.id || user.id === 0)) {
       const project = getOwnedProject(meta.projectId, meta.ownerId ?? user.id, user.role === "admin");
       if (project && project.mode === "local-machine") {
         if (project.machineId) machineId = project.machineId;
         if (project.workdir) workdir = project.workdir;
+        projectId = project.id;
+        // Host-side project home: chat uploads keep their primary copy here
+        // before mirroring into the user's machine.
+        homePrefix = ensureProjectHome(project);
       }
     }
     // Online + version check (outdated clients fail with an upgrade message
@@ -130,6 +138,8 @@ export async function resolveRemoteSession(
         isAdmin: user.role === "admin",
         machineId: gate.machineId,
         ...(workdir ? { workdir } : {}),
+        ...(projectId ? { projectId } : {}),
+        ...(homePrefix ? { homePrefix } : {}),
       },
     };
   }
@@ -142,10 +152,15 @@ export async function resolveRemoteSession(
     return { ok: false, status: 401, error: "沙箱模式需要平台凭证，请重新登录" };
   }
   let containerId = 0;
+  let projectId: string | undefined;
+  let homePrefix: string | undefined;
   if (meta?.projectId) {
     const project = getOwnedProject(meta.projectId, ownerId, user.role === "admin");
     if (project && project.mode === "sandbox") {
       containerId = Number(readProjectSandboxConfig(project).containerId) || 0;
+      projectId = project.id;
+      // Host-side project home for the primary copy of chat uploads.
+      homePrefix = ensureProjectHome(project);
     }
   }
   if (!containerId) {
@@ -169,7 +184,15 @@ export async function resolveRemoteSession(
   }
   return {
     ok: true,
-    ctx: { mode, userId: user.id, apiKey: identity.session.apiKey, containerId, isAdmin: user.role === "admin" },
+    ctx: {
+      mode,
+      userId: user.id,
+      apiKey: identity.session.apiKey,
+      containerId,
+      isAdmin: user.role === "admin",
+      ...(projectId ? { projectId } : {}),
+      ...(homePrefix ? { homePrefix } : {}),
+    },
   };
 }
 
@@ -212,7 +235,7 @@ interface SftpListEntry {
 function sftpOf(client: unknown): Promise<{
   readdir(p: string, cb: (e: Error | undefined, l: SftpListEntry[]) => void): void;
   readFile(p: string, cb: (e: Error | undefined, d: Buffer) => void): void;
-  writeFile(p: string, c: string, cb: (e: Error | undefined) => void): void;
+  writeFile(p: string, c: string | Buffer, cb: (e: Error | undefined) => void): void;
   mkdir(p: string, o: { recursive: true }, cb: (e: Error | undefined) => void): void;
 }> {
   return new Promise((resolve, reject) => {
@@ -453,6 +476,59 @@ export async function remoteWrite(ctx: RemoteSessionContext, path: string, conte
     path: containerPath(path),
     content: Buffer.from(content, "utf8").toString("base64"),
   });
+}
+
+/**
+ * Binary-safe write. The text `remoteWrite` path decodes multipart bytes as a
+ * UTF-8 string, which destroys images/PDFs/zips; this variant carries raw
+ * bytes (base64 over the wire) instead.
+ *
+ * - sandbox: the platform write tool already takes base64 content.
+ * - ssh: SFTP writes a Buffer directly.
+ * - local-machine: fs.write contentBase64 (agent >= 0.6.0, "binary-write");
+ *   older agents fail with an actionable message instead of writing garbage.
+ */
+export async function remoteWriteBytes(ctx: RemoteSessionContext, path: string, bytes: Buffer): Promise<void> {
+  if (ctx.mode === "ssh") {
+    const client = await sshClientFor(ctx);
+    const s = await sftpOf(client);
+    await new Promise<void>((resolve, reject) =>
+      s.writeFile(sshPath(ctx, path), bytes, (e) => (e ? reject(e) : resolve())),
+    );
+    return;
+  }
+  if (ctx.mode === "local-machine") {
+    const agent = getAgentForUser(ctx.userId, ctx.machineId);
+    if (!agentSupportsBinaryWrite(agent?.info)) {
+      const version = agent?.info?.agentVersion ?? "未知";
+      throw new Error(
+        `本机 Agent 版本过旧（${version}），无法写入二进制文件（需要 ≥ 0.6.0）；请升级 agent-client 后重试`,
+      );
+    }
+    const scope = localScope(ctx);
+    await localRelay(
+      ctx,
+      "fs.write",
+      { path: localWirePath(ctx, path, scope), contentBase64: bytes.toString("base64") },
+      scope,
+    );
+    return;
+  }
+  await platformPost(`/api/v1/containers/${ctx.containerId}/tools/write`, ctx.apiKey, {
+    path: containerPath(path),
+    content: bytes.toString("base64"),
+  });
+}
+
+/**
+ * Host-side directory holding the primary copy of chat attachments for a
+ * remote session. Project-bound sessions use the project home (the "项目区"
+ * on the Host); pre-project sessions fall back to a per-user, per-session
+ * directory under the data dir.
+ */
+export function hostAttachmentsDir(ctx: RemoteSessionContext, sessionId: string): string {
+  if (ctx.homePrefix) return join(ctx.homePrefix, ".pi", "attachments");
+  return join(dataDir(), "attachments", `u${ctx.userId}`, sessionId);
 }
 
 /** Create an EMPTY file or a directory (the platform write schema rejects

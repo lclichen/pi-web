@@ -88,13 +88,25 @@ func (w *Workspace) Read(params map[string]interface{}) (interface{}, error) {
 	}, nil
 }
 
-// Write creates/truncates a file (creating parent dirs).
+// Write creates/truncates a file (creating parent dirs). Binary payloads use
+// contentBase64 (advertised as the "binary-write" feature): the UTF-8 content
+// string cannot carry arbitrary bytes, so images/PDFs uploaded from the WebUI
+// would be corrupted.
 func (w *Workspace) Write(params map[string]interface{}) (interface{}, error) {
 	p := paramString(params, "path", "")
 	if p == "" {
 		return nil, fmt.Errorf("path required")
 	}
-	content := paramString(params, "content", "")
+	var data []byte
+	if encoded := paramString(params, "contentBase64", ""); encoded != "" {
+		decoded, err := base64.StdEncoding.DecodeString(encoded)
+		if err != nil {
+			return nil, fmt.Errorf("contentBase64: %w", err)
+		}
+		data = decoded
+	} else {
+		data = []byte(paramString(params, "content", ""))
+	}
 	abs, err := w.resolve(p)
 	if err != nil {
 		return nil, err
@@ -102,7 +114,7 @@ func (w *Workspace) Write(params map[string]interface{}) (interface{}, error) {
 	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
 		return nil, err
 	}
-	if err := os.WriteFile(abs, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(abs, data, 0o644); err != nil {
 		return nil, err
 	}
 	var size int64

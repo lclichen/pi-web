@@ -362,6 +362,8 @@ export const zhTWLocale: LocalePlugin = {
     "chat.dropAlreadyExists": "已在工作目錄中且未覆寫，參照指向現有檔案：{names}",
     "chat.dropFailed": "上傳失敗：{message}",
     "chat.dropFoldersUnsupported": "無法直接拖入資料夾，請拖入其中的檔案：{names}",
+    "chat.dropHostOnly": "已儲存到 Host 專案區（{dir}）；遠端副本寫入失敗，遠端工具無法讀取：{names}。{message}",
+    "chat.dropHostWarning": "Host 主副本警告：{message}",
     "chat.dropNeedsCwd": "請先選擇工作目錄再新增檔案。",
     "chat.dropUploaded": "已複製 {count} 個檔案到工作目錄",
     "chat.enableSound": "開啟完成提示音",

@@ -211,7 +211,7 @@ func buildInfo(version, root string, entry *config.ServerConfig) protocol.AgentI
 		AgentVersion:  version,
 		MachineID:     entry.MachineID,
 		Label:         entry.Label,
-		Features:      []string{protocol.FeatureWorkspaceBase, protocol.FeatureBinaryRead},
+		Features:      []string{protocol.FeatureWorkspaceBase, protocol.FeatureBinaryRead, protocol.FeatureBinaryWrite},
 	}
 }
 

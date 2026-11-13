@@ -24,6 +24,10 @@ const (
 	// FeatureBinaryRead: fs.read accepts encoding="base64" and returns
 	// contentBase64 (binary-safe reads for images/audio/video previews).
 	FeatureBinaryRead = "binary-read"
+	// FeatureBinaryWrite: fs.write accepts contentBase64 and writes the
+	// decoded bytes (binary-safe uploads; the UTF-8 content string corrupts
+	// images/PDFs). Agent >= 0.6.0.
+	FeatureBinaryWrite = "binary-write"
 )
 
 // Hello is the first frame the agent sends after the WebSocket opens, carrying

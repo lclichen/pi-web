@@ -362,6 +362,8 @@ export const enLocale: LocalePlugin = {
     "chat.dropAlreadyExists": "Already in the working directory and not replaced; the mention points to the existing file: {names}",
     "chat.dropFailed": "Upload failed: {message}",
     "chat.dropFoldersUnsupported": "Folders cannot be dropped here; drop the files inside instead: {names}",
+    "chat.dropHostOnly": "Saved to the Host project area ({dir}); the remote copy failed, so remote tools cannot read: {names}. {message}",
+    "chat.dropHostWarning": "Host primary copy warning: {message}",
     "chat.dropNeedsCwd": "Choose a working directory before adding files.",
     "chat.dropUploaded": "Copied {count} file(s) into the working directory",
     "chat.enableSound": "Enable completion sound",

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { detectFileLanguage } from "@/lib/file-language";
 import { remoteBytesResponse, shouldServeRemoteBytes } from "@/lib/remote-file-response";
 import {
+  hostAttachmentsDir,
   remoteCreateEmpty,
   remoteDelete,
   remoteFind,
@@ -10,9 +11,12 @@ import {
   remoteReadBinary,
   remoteRename,
   remoteWrite,
+  remoteWriteBytes,
   resolveRemoteSession,
 } from "@/lib/remote-session";
 import { isApiRequestAllowed, hasJsonContentType } from "@/lib/request-security";
+import fs from "fs";
+import { join } from "path";
 
 export const dynamic = "force-dynamic";
 
@@ -214,6 +218,30 @@ export async function POST(req: Request, ctx: { params: Promise<{ path: string[]
     const uploaded: string[] = [];
     const skipped: string[] = [];
     const errors: Array<{ name: string; error: string }> = [];
+    // Chat uploads ask for a Host-side primary copy ("项目区"), written before
+    // the remote mirror so a failed/unsupported binary write still keeps the
+    // original bytes on the server.
+    const hostCache = url.searchParams.get("hostCache") === "1";
+    const hostDir = hostCache ? hostAttachmentsDir(remote.ctx, sessionId) : null;
+    const hostCached: string[] = [];
+    const hostOnly: string[] = [];
+    let hostWarning: string | undefined;
+
+    const cacheHostCopy = (name: string, bytes: Buffer) => {
+      if (!hostDir) return;
+      fs.mkdirSync(hostDir, { recursive: true });
+      try {
+        fs.writeFileSync(join(hostDir, name), bytes, { flag: "wx" });
+        hostCached.push(name);
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === "EEXIST") {
+          hostCached.push(name);
+          return;
+        }
+        hostWarning = `Host 副本写入失败：${err instanceof Error ? err.message : String(err)}`;
+      }
+    };
+
     for (let i = 0; i < files.length; i += 1) {
       const name = names[i] as string;
       const exists = byName.has(name);
@@ -225,16 +253,39 @@ export async function POST(req: Request, ctx: { params: Promise<{ path: string[]
         errors.push({ name, error: "Cannot replace a directory" });
         continue;
       }
+      let bytes: Buffer;
       try {
-        const content = Buffer.from(await files[i].arrayBuffer()).toString("utf8");
-        const target = dirPath === "/" ? `/${name}` : `${dirPath}/${name}`;
-        await remoteWrite(remote.ctx, target, content);
-        uploaded.push(name);
+        bytes = Buffer.from(await files[i].arrayBuffer());
       } catch (err) {
         errors.push({ name, error: err instanceof Error ? err.message : String(err) });
+        continue;
       }
+      const target = dirPath === "/" ? `/${name}` : `${dirPath}/${name}`;
+      try {
+        await remoteWriteBytes(remote.ctx, target, bytes);
+        uploaded.push(name);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (!hostDir) {
+          errors.push({ name, error: message });
+          continue;
+        }
+        // Remote mirror failed (e.g. an agent older than 0.6.0 for binary
+        // writes): keep the Host primary copy and tell the caller the file is
+        // NOT readable on the remote side.
+        cacheHostCopy(name, bytes);
+        hostOnly.push(name);
+        hostWarning ??= message;
+        continue;
+      }
+      cacheHostCopy(name, bytes);
     }
-    return NextResponse.json({ uploaded, skipped, errors });
+    return NextResponse.json({
+      uploaded,
+      skipped,
+      errors,
+      ...(hostDir ? { hostCached, hostOnly, hostDir, ...(hostWarning ? { warning: hostWarning } : {}) } : {}),
+    });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ error: msg }, { status: /No such file|ENOENT|not exist/i.test(msg) ? 404 : 502 });

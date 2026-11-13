@@ -362,6 +362,8 @@ export const zhCNLocale: LocalePlugin = {
     "chat.dropAlreadyExists": "已在工作目录中且未覆盖，引用指向现有文件：{names}",
     "chat.dropFailed": "上传失败：{message}",
     "chat.dropFoldersUnsupported": "无法直接拖入文件夹，请拖入其中的文件：{names}",
+    "chat.dropHostOnly": "已保存到 Host 项目区（{dir}）；远端副本写入失败，远端工具无法读取：{names}。{message}",
+    "chat.dropHostWarning": "Host 主副本警告：{message}",
     "chat.dropNeedsCwd": "请先选择工作目录再添加文件。",
     "chat.dropUploaded": "已复制 {count} 个文件到工作目录",
     "chat.enableSound": "开启完成提示音",

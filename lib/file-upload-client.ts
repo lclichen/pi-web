@@ -24,6 +24,14 @@ export interface UploadResponse {
   conflicts?: string[];
   nonReplaceable?: string[];
   error?: string;
+  /** Remote uploads with hostCache=1: names also written to the Host primary store. */
+  hostCached?: string[];
+  /** Saved on the Host but NOT mirrored remotely (the path is not readable on the remote side). */
+  hostOnly?: string[];
+  /** Absolute Host directory holding the primary copies. */
+  hostDir?: string;
+  /** Human-readable warning about the Host/remote mirror. */
+  warning?: string;
 }
 
 /** A directory files can be written to, plus the remote session that owns it. */
@@ -54,6 +62,7 @@ export async function uploadFiles(
   files: File[],
   strategy: UploadConflictStrategy,
   fileNames?: string[],
+  options: { hostCache?: boolean } = {},
 ): Promise<{ status: number; data: UploadResponse }> {
   const formData = new FormData();
   files.forEach((file, index) => {
@@ -63,7 +72,10 @@ export async function uploadFiles(
 
   const base = directoryUrl(target);
   const separator = base.includes("?") ? "&" : "?";
-  const response = await fetch(`${base}${separator}type=upload&conflict=${strategy}`, {
+  // The Host primary copy only exists for remote targets; host sessions are
+  // already writing into their own workspace.
+  const hostCache = options.hostCache && target.sessionId ? "&hostCache=1" : "";
+  const response = await fetch(`${base}${separator}type=upload&conflict=${strategy}${hostCache}`, {
     method: "POST",
     body: formData,
   });

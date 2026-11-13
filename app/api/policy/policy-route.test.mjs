@@ -45,7 +45,7 @@ test("PUT enforces the edit lock before any write; DELETE requires an absolute d
   assert.match(put, /lockReason === "not-admin"/, "非管理员给出明确锁定文案");
 
   const del = src.slice(src.indexOf("export async function DELETE"));
-  assert.match(del, /!entryPath\.startsWith\("\/"\)/, "DELETE 只接受绝对路径");
+  assert.match(del, /const isAbsolute =/, "DELETE 只接受绝对路径（含 Windows 盘符）");
 });
 
 test("GET exposes lock state so the UI can render read-only policy for non-admin users", () => {

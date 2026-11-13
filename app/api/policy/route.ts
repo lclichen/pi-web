@@ -143,7 +143,14 @@ export async function DELETE(req: Request) {
   const dir = resolveConfigCwdSync(req, { projectId: searchParams.get("projectId"), cwd: searchParams.get("cwd") });
   if (!dir.ok) return NextResponse.json({ error: dir.error }, { status: dir.status });
   const entryPath = searchParams.get("path") ?? "";
-  if (!entryPath.startsWith("/")) {
+  // Windows 盘符路径同样是绝对路径（决策文件里存的就是 C:/...）。
+  const isAbsolute =
+    entryPath.startsWith("/") ||
+    (entryPath.length >= 3 &&
+      /[A-Za-z]/.test(entryPath[0]) &&
+      entryPath[1] === ":" &&
+      (entryPath[2] === "/" || entryPath.charCodeAt(2) === 92));
+  if (!isAbsolute) {
     return NextResponse.json({ error: "需要绝对路径参数 path" }, { status: 400 });
   }
   const target = join(dir.cwd, PATH_DECISIONS_FILE);

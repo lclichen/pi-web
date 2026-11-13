@@ -111,6 +111,20 @@
   则第一窗口在第二窗口加载后输入框消失。需要单独排查 RPC 事件流与页面加载
   的交叉问题。
 
+## 3.6 已落地（2026-11-13）：L4 路由真实 handler 行为测试
+
+三条路由从“源级契约”升级为**直调 handler**（auth off = 隐式 host admin，
+`PI_WEB_DATA_DIR` 注入临时数据目录）：
+
+| 文件 | 用例 | 覆盖 |
+| --- | --- | --- |
+| `app/api/policy/policy-route.behavior.test.mjs` | 5 | GET 默认值/锁定、Host/Origin 门禁、PUT 规范化与 Content-Type、DELETE 决策删除、POST 试运行（命令/路径/scope 映射） |
+| `app/api/tools/policy/route.behavior.test.mjs` | 3 | host vs sandbox 项目模式解析、stdio/HTTP/`plane=host`/`workspace` 声明分流、门禁 |
+| `app/api/agent/events-route.behavior.test.mjs` | 3 | aborted→204、未知会话→404、合成会话→SSE 200（text/event-stream） |
+
+又暴露并修复一个真实缺陷：**Windows 盘符路径的决策记录无法通过
+`DELETE /api/policy?path=...` 删除**（只接受 `/` 开头）——现已接受盘符绝对路径。
+
 ## 4. 现状已知风险（本轮核对发现）
 
 1. **路径护栏 ask 无硬超时**：仅当用户开启"问询自动继续"（默认 300s）才会自动

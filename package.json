@@ -37,6 +37,7 @@
     "format:check": "prettier --check .",
     "test": "node --experimental-strip-types --test \"app/**/*.test.mjs\" \"bench/**/*.test.mjs\" \"components/**/*.test.mjs\" \"hooks/**/*.test.mjs\" \"lib/**/*.test.mjs\" \"perf/**/*.test.mjs\" \"public/**/*.test.mjs\"",
     "test:e2e": "node e2e/run.mjs",
+    "test:e2e:guardrails": "node e2e/run-guardrails.mjs",
     "clean:next-types": "node scripts/clean-stale-next-types.mjs",
     "copy:monaco": "node scripts/copy-monaco.mjs",
     "predev": "node scripts/clean-stale-next-types.mjs && node scripts/copy-monaco.mjs",

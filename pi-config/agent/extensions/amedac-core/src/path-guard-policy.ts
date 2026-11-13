@@ -126,11 +126,19 @@ function globToRegExp(pattern: string): RegExp {
 
 /** absPath（绝对）是否命中 pattern（工作区相对、绝对 glob，或 ~ 字面量）。
  *  注意先拼后归一："." 的相对语义在归一化中会坍缩成根，不能先 normalize。 */
+/** Windows 盘符绝对路径（C:/ 或 C:\）——决策/策略里常见，必须按绝对模式处理。 */
+function isWindowsDriveAbsolute(value: string): boolean {
+  if (value.length < 3) return false;
+  const code = value.charCodeAt(0);
+  const letter = (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
+  return letter && value[1] === ":" && (value[2] === "/" || value.charCodeAt(2) === 92);
+}
+
 export function matchesPattern(pattern: string, absPath: string, cwd: string): boolean {
   const norm = normalizePolicyPath(absPath);
   const base = normalizePolicyPath(cwd);
   const rawPat = pattern.trim();
-  const isAbsolute = rawPat.startsWith("/") || rawPat.startsWith("~");
+  const isAbsolute = rawPat.startsWith("/") || rawPat.startsWith("~") || isWindowsDriveAbsolute(rawPat);
   const absolutePat = normalizePolicyPath(isAbsolute ? rawPat : `${base}/${rawPat}`);
   return globToRegExp(absolutePat).test(norm);
 }

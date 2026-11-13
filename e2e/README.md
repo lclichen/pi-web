@@ -35,6 +35,23 @@ Coverage:
 - A local extension checks dialog keyboard navigation, Esc cancellation,
   collapse/expand draft preservation, countdown display, and server-side expiry.
 
+Guardrail UI suite (separate runner, deterministic — no real model):
+
+```sh
+npm run test:e2e:guardrails
+```
+
+- A local OpenAI-compatible mock model (`e2e/mock-model.mjs`) drives a real
+  `write` tool call to an out-of-workspace path, so the **path guard ask**
+  dialog appears deterministically.
+- Scenarios: ask options + allow-once / deny / deny-and-never-again /
+  allow-and-never-again (decisions file, second-turn skip), session switch
+  (hide + replay), page reload (replay), audit-free assertions.
+- Known issue (documented, skipped by default): with a pending ask, opening a
+  second window on the same session stays at “loading session”. Reproduce with
+  `E2E_MULTI_WINDOW=1` (add `E2E_STRICT=1` to fail instead of warn).
+- Runs its own dev server on a free loopback port (same `.next/dev` lock rule).
+
 Model prompts, live model streaming, and agent execution are outside this suite.
 Failures save a screenshot, Playwright trace, and server log under
 `test-results/e2e/`; CI uploads that directory. Open a trace with

@@ -254,18 +254,34 @@ async function sshRun(ctx: RemoteSessionContext, command: string): Promise<void>
         err: Error | undefined,
         stream: {
           on(ev: "close", cb: (c: number) => void): void;
+          on(ev: "exit", cb: (code: number | undefined, signal?: string) => void): void;
           stderr: { on(ev: "data", cb: (d: Buffer) => void): void };
+          end?: () => void;
         },
       ) => {
         if (err) return reject(err);
         let stderr = "";
+        let settled = false;
+        const finish = (code: number | undefined) => {
+          if (settled) return;
+          settled = true;
+          if (typeof code === "number" && code !== 0) {
+            reject(new Error(`远程命令失败（exit ${code}）：${stderr.trim().slice(0, 200)}`));
+          } else {
+            resolve();
+          }
+        };
         stream.stderr.on("data", (d) => {
           stderr += d.toString();
         });
-        stream.on("close", (code) => {
-          if (code !== 0) reject(new Error(`远程命令失败（exit ${code}）：${stderr.trim().slice(0, 200)}`));
-          else resolve();
+        // Some OpenSSH servers send exit-status but never close the channel,
+        // so a close-only promise hangs forever (SSH mkdir/rm/rename). The
+        // exit event is authoritative; let stderr flush for a tick first.
+        stream.on("exit", (code) => {
+          stream.end?.();
+          setTimeout(() => finish(code), 10);
         });
+        stream.on("close", (code) => finish(code));
       },
     );
   });

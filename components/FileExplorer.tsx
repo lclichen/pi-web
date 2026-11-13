@@ -13,6 +13,7 @@ import {
 import type { GitFileStatus, GitFileStatusKind, GitStatusResponse } from "@/lib/git-types";
 import type { FileIndexEntry } from "@/lib/file-fuzzy";
 import { buildSearchTree, type SearchTreeNode } from "@/lib/search-tree";
+import { copyText } from "@/lib/clipboard";
 import { useI18n } from "@/hooks/useI18n";
 type Translate = ReturnType<typeof useI18n>["t"];
 
@@ -1367,10 +1368,11 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
           ...(data.expiresAt ? { expiresAt: data.expiresAt } : {}),
         });
         try {
-          await navigator.clipboard?.writeText(data.url);
+          await copyText(data.url);
           setShareCopied(true);
         } catch {
-          // 剪贴板不可用（非安全上下文）：链接已展示，用户可手动复制。
+          // 剪贴板不可用（非安全上下文/无用户手势）：链接已展示，用户可点按钮重试或手动复制。
+          setShareCopied(false);
         }
       } catch (e) {
         setShareState({
@@ -1386,10 +1388,10 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
   const copyShareUrl = useCallback(async () => {
     if (!shareState?.url) return;
     try {
-      await navigator.clipboard.writeText(shareState.url);
+      await copyText(shareState.url);
       setShareCopied(true);
     } catch {
-      // ignore — the URL stays selectable in the dialog
+      setShareCopied(false);
     }
   }, [shareState]);
 

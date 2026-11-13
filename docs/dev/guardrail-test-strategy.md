@@ -137,6 +137,17 @@
 
 注入缝：`RelayToolsOptions.rpc/agentForUser`、`makeSshToolsExtension({getClient, exec})`。
 
+## 3.8 已落地（2026-11-13）：remote 真实通道 E2E 结果
+
+| 通道 | 方式 | 结果 |
+| --- | --- | --- |
+| local-machine | Python SDK 自动配对/启动 Go agent（Windows 本机）+ `qa/test_modes.py` 工具往返 | ✅ 3 条通过（99.5s；write/read 落盘在配对机器 workspace） |
+| sandbox | VM 容器 79 + `qa/test_modes.py`（`pwd`→/workspace、write/read 往返） | ✅ 2 条通过（25.2s） |
+| ssh | VM 本机 sshd 回环 + `e2e/ssh-real.mjs`（真实 ssh2） | ✅ PASS（exec/SFTP/edit/ls/grep/find/user_bash） |
+
+限制：SSH 为同机回环（验证协议/工具行为，不覆盖跨网络）；sandbox 往返目前以
+文本断言为主（容器内文件不可从宿主直接断言）。
+
 ## 4. 现状已知风险（本轮核对发现）
 
 1. **路径护栏 ask 无硬超时**：仅当用户开启"问询自动继续"（默认 300s）才会自动

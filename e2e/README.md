@@ -52,6 +52,16 @@ npm run test:e2e:guardrails
   `E2E_MULTI_WINDOW=1` (add `E2E_STRICT=1` to fail instead of warn).
 - Runs its own dev server on a free loopback port (same `.next/dev` lock rule).
 
+Real-channel checks (run against the VM / real targets, not part of `npm test`):
+
+- `e2e/ssh-real.mjs` — runs INSIDE the VM: real ssh2 loopback to `127.0.0.1`,
+  exercises `ssh-tools` bash/read/write/edit/ls/grep/find + `user_bash`
+  against a temp remote dir, then cleans up. Prereq: a loopback key at
+  `~/.ssh/qa_loopback` appended to `authorized_keys`:
+  `ssh-keygen -q -t ed25519 -N "" -f ~/.ssh/qa_loopback && cat ~/.ssh/qa_loopback.pub >> ~/.ssh/authorized_keys`.
+- Local-machine / sandbox real tool round-trips live in the Python SDK QA suite
+  (`qa/test_modes.py`: write/read must land on the paired machine / container).
+
 Model prompts, live model streaming, and agent execution are outside this suite.
 Failures save a screenshot, Playwright trace, and server log under
 `test-results/e2e/`; CI uploads that directory. Open a trace with

@@ -12,12 +12,14 @@ bundled `agent-client` binary.
   just a code / URL; the address and code are filled automatically.
 - Remembered relay address and client name (a name left empty is not sent, so
   the CLI keeps the machine's existing name).
-- Saved servers come from `~/.agent-client/config.json`,
-  `~/.agent-client/profiles/*.json` and the legacy `~/.pi-agent/config.json`;
+- Saved servers come from the CLI's single store
+  `~/.agent-client/config.json` (0.5.0+ `servers` map). Older layouts
+  (`profiles/*.json`, the legacy `~/.pi-agent/config.json`) are still listed;
   a config the CLI wrote elsewhere is picked up from its `token saved to …`
   line, so the list is never empty right after a successful pairing.
 - Pairing a new server connects it automatically; every server can be
-  connected/disconnected on its own afterwards.
+  connected/disconnected on its own afterwards. Each connection is started as
+  `agent-client run --server <url>` from the shared config file.
 - Connect/disconnect several servers at once; per-server status
   (connecting / connected / reconnecting / failed), version and workspace root.
 - Bundles the matching `agent-client` for each architecture, so installing the

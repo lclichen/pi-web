@@ -58,6 +58,42 @@ func TestScanServerConfigsMissingDir(t *testing.T) {
 	}
 }
 
+func TestScanServerConfigsSingleV2Store(t *testing.T) {
+	home := withTempHome(t)
+	dir := filepath.Join(home, ".agent-client")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "config.json")
+	body := `{
+	  "version": 2,
+	  "current": "http://b:30142",
+	  "servers": {
+	    "http://a:30142": {"server":"http://a:30142","token":"ta","label":"LapTop","workspaceRoot":"/home/me/proj"},
+	    "http://b:30142/": {"server":"http://b:30142/","token":"tb","machineId":"m2"}
+	  }
+	}`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	servers := scanServerConfigs()
+	if len(servers) != 2 {
+		t.Fatalf("got %d servers, want 2: %+v", len(servers), servers)
+	}
+	if !servers[0].Default || servers[0].Server != "http://b:30142/" {
+		t.Fatalf("current server should sort first and be default: %+v", servers[0])
+	}
+	if servers[1].Default || servers[1].Label != "LapTop" || servers[1].WorkspaceRoot != "/home/me/proj" {
+		t.Fatalf("second server = %+v", servers[1])
+	}
+	for _, s := range servers {
+		if !sameConfigPath(s.Path, path) {
+			t.Fatalf("path = %q, want the shared v2 file %q", s.Path, path)
+		}
+	}
+}
+
 func TestSaveSettingsKeepsLabelWhenEmpty(t *testing.T) {
 	home := withTempHome(t)
 	_ = home
@@ -82,15 +118,23 @@ func TestSaveSettingsKeepsLabelWhenEmpty(t *testing.T) {
 func TestServerForPairMatchesSavedPathOrAddress(t *testing.T) {
 	a := newApp()
 	configPath := filepath.Join("home", ".agent-client", "config.json")
+	customPath := filepath.Join("home", "custom.json")
 	a.servers = []serverEntry{
 		{Path: configPath, Server: "http://a:30142", Label: "A"},
-		{Path: filepath.Join("home", ".agent-client", "profiles", "b.json"), Server: "http://b:30142", Label: "B"},
+		{Path: configPath, Server: "http://b:30142", Label: "B"},
+		{Path: customPath, Server: "http://custom:1", Label: "C"},
 	}
-	if s, ok := a.serverForPair("http://unrelated:1", configPath); !ok || s.Label != "A" {
-		t.Fatalf("path match = %+v, %v", s, ok)
-	}
+	// Address match wins even when the v2 file is shared by many servers.
 	if s, ok := a.serverForPair("http://b:30142/", ""); !ok || s.Label != "B" {
 		t.Fatalf("address match = %+v, %v (trailing slash tolerated)", s, ok)
+	}
+	// A path that holds exactly one connection can still identify it.
+	if s, ok := a.serverForPair("http://unrelated:1", customPath); !ok || s.Label != "C" {
+		t.Fatalf("path match = %+v, %v", s, ok)
+	}
+	// A shared v2 path is ambiguous without the address.
+	if _, ok := a.serverForPair("http://unrelated:1", configPath); ok {
+		t.Fatal("ambiguous path must not match")
 	}
 	if _, ok := a.serverForPair("http://c:30142", ""); ok {
 		t.Fatal("unknown server must not match")
@@ -129,5 +173,25 @@ func TestEnsureServerVisibleAddsCustomPath(t *testing.T) {
 	a.ensureServerVisible(path)
 	if len(a.servers) != 1 {
 		t.Fatalf("duplicate added: %+v", a.servers)
+	}
+}
+
+func TestEnsureServerVisibleAddsEveryV2EntryOnce(t *testing.T) {
+	withTempHome(t)
+	path := filepath.Join(t.TempDir(), "config.json")
+	body := `{"version":2,"current":"http://a:30142","servers":{
+	  "http://a:30142":{"server":"http://a:30142","token":"ta"},
+	  "http://b:30142":{"server":"http://b:30142","token":"tb"}}}`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	a := newApp()
+	a.ensureServerVisible(path)
+	if len(a.servers) != 2 {
+		t.Fatalf("v2 entries not added: %+v", a.servers)
+	}
+	a.ensureServerVisible(path)
+	if len(a.servers) != 2 {
+		t.Fatalf("duplicates added: %+v", a.servers)
 	}
 }

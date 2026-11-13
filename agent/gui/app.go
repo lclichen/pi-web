@@ -266,45 +266,56 @@ func (a *app) startPair(address, code, label string) {
 }
 
 // ensureServerVisible adds a config the CLI just wrote when the directory scan
-// did not see it (legacy/custom config location).
+// did not see it (legacy/custom config location). A v2 file can hold several
+// servers; missing ones are appended by normalized URL.
 func (a *app) ensureServerVisible(path string) {
 	if path == "" {
 		return
 	}
-	a.mu.Lock()
-	for _, server := range a.servers {
-		if sameConfigPath(server.Path, path) {
-			a.mu.Unlock()
-			return
-		}
-	}
-	a.mu.Unlock()
-
-	entry, ok := readServerEntry(path, false)
-	if !ok {
+	entries := readServerEntries(path, false)
+	if len(entries) == 0 {
 		return
 	}
 	a.mu.Lock()
-	a.servers = append(a.servers, entry)
+	for _, entry := range entries {
+		found := false
+		for _, server := range a.servers {
+			if server.key() == entry.key() {
+				found = true
+				break
+			}
+		}
+		if !found {
+			a.servers = append(a.servers, entry)
+		}
+	}
 	a.mu.Unlock()
 	a.invalidate()
 }
 
 // serverForPair finds the saved entry a successful `pair` just wrote: by the
-// config path printed by the CLI, else by the normalized server URL.
+// server address it just used, else by the config path when that path holds
+// exactly one connection (a custom/legacy single-server file). A v2 file may
+// contain many servers, so a bare path match would be ambiguous.
 func (a *app) serverForPair(address, savedPath string) (serverEntry, bool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if savedPath != "" {
-		for _, server := range a.servers {
-			if sameConfigPath(server.Path, savedPath) {
-				return server, true
-			}
-		}
-	}
 	for _, server := range a.servers {
 		if sameServerAddress(server.Server, address) {
 			return server, true
+		}
+	}
+	if savedPath != "" {
+		var match serverEntry
+		count := 0
+		for _, server := range a.servers {
+			if sameConfigPath(server.Path, savedPath) {
+				match = server
+				count++
+			}
+		}
+		if count == 1 {
+			return match, true
 		}
 	}
 	return serverEntry{}, false
@@ -362,55 +373,69 @@ func savedConfigPath(output string) string {
 // --- connections ------------------------------------------------------------
 
 func (a *app) startConnection(server serverEntry) {
+	key := server.key()
 	a.mu.Lock()
-	if existing, ok := a.conns[server.Path]; ok && existing.cmd != nil {
+	if existing, ok := a.conns[key]; ok && existing.cmd != nil {
 		a.mu.Unlock()
 		return
 	}
 	conn := &connection{status: connConnecting, detail: "正在启动客户端…"}
-	a.conns[server.Path] = conn
+	a.conns[key] = conn
 	bin := a.agentBin
 	a.mu.Unlock()
 	a.invalidate()
 
 	if bin == "" {
-		a.setConn(server.Path, connFailed, "未找到 agent-client 可执行文件")
+		a.setConn(key, connFailed, "未找到 agent-client 可执行文件")
 		return
 	}
-	cmd := exec.Command(bin, "run", "--config", server.Path)
+	// --server picks THIS connection out of the shared config file (v2 keeps
+	// every server in one map). --root pins the saved workspace when known;
+	// otherwise the CLI resolves the current directory / home.
+	args := []string{"run"}
+	if server.Path != "" {
+		args = append(args, "--config", server.Path)
+	}
+	if server.Server != "" {
+		args = append(args, "--server", server.Server)
+	}
+	if server.WorkspaceRoot != "" {
+		args = append(args, "--root", server.WorkspaceRoot)
+	}
+	cmd := exec.Command(bin, args...)
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
-		a.setConn(server.Path, connFailed, err.Error())
+		a.setConn(key, connFailed, err.Error())
 		return
 	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		a.setConn(server.Path, connFailed, err.Error())
+		a.setConn(key, connFailed, err.Error())
 		return
 	}
 	if err := cmd.Start(); err != nil {
-		a.setConn(server.Path, connFailed, err.Error())
+		a.setConn(key, connFailed, err.Error())
 		return
 	}
 	a.mu.Lock()
-	if current := a.conns[server.Path]; current == conn {
+	if current := a.conns[key]; current == conn {
 		conn.cmd = cmd
 	}
 	a.mu.Unlock()
 
-	go a.pumpLog(server.Path, stderr)
-	go a.pumpLog(server.Path, stdout)
+	go a.pumpLog(key, stderr)
+	go a.pumpLog(key, stdout)
 	go func() {
 		waitErr := cmd.Wait()
 		a.mu.Lock()
-		current := a.conns[server.Path]
+		current := a.conns[key]
 		if current == nil || current.cmd != cmd {
 			a.mu.Unlock()
 			return
 		}
 		switch {
 		case current.stopping:
-			delete(a.conns, server.Path)
+			delete(a.conns, key)
 		case waitErr == nil:
 			current.cmd = nil
 			current.status = connFailed
@@ -418,7 +443,11 @@ func (a *app) startConnection(server serverEntry) {
 		default:
 			current.cmd = nil
 			current.status = connFailed
-			current.detail = "客户端已退出：" + waitErr.Error()
+			// Keep the actionable line the client printed (token invalid /
+			// machine already connected) instead of a bare exit status.
+			if !actionableFailure(current.detail) {
+				current.detail = "客户端已退出：" + waitErr.Error()
+			}
 		}
 		a.mu.Unlock()
 		a.invalidate()
@@ -431,6 +460,15 @@ func (a *app) pumpLog(path string, reader io.Reader) {
 	for scanner.Scan() {
 		a.handleLogLine(path, scanner.Text())
 	}
+}
+
+// actionableFailure reports whether a connection detail already tells the user
+// what to do (token re-pair, machine already connected). Such a line must not
+// be replaced by the bare "client exited" status when the process ends.
+func actionableFailure(detail string) bool {
+	return strings.Contains(detail, "另一个客户端") ||
+		strings.Contains(detail, "重新配对") ||
+		strings.Contains(detail, "连接失败")
 }
 
 func (a *app) handleLogLine(path, line string) {
@@ -447,6 +485,12 @@ func (a *app) handleLogLine(path, line string) {
 		detail = "连接断开：" + detail
 	case strings.Contains(line, "reconnecting in"):
 		status, detail = connReconnecting, "正在重连…"
+	case strings.Contains(line, "该机器已在另一个客户端连接"):
+		status, detail = connFailed, "该机器已在另一个客户端连接；请先停止那个客户端"
+	case strings.Contains(line, "token 无效或已过期"):
+		status, detail = connFailed, "token 已失效，请重新配对"
+	case strings.Contains(line, "agent-client: connection failed:"):
+		status, detail = connFailed, strings.TrimSpace(line[strings.Index(line, "connection failed:"):])
 	default:
 		return
 	}
@@ -634,7 +678,7 @@ func (a *app) view(c *ui.Context) {
 					return
 				}
 				for _, server := range servers {
-					a.serverRow(c, server, conns[server.Path], t)
+					a.serverRow(c, server, conns[server.key()], t)
 				}
 			})
 		})
@@ -663,7 +707,7 @@ func (a *app) serverRow(c *ui.Context, server serverEntry, conn connView, t *ui.
 			})
 			ui.Text(c, statusText(conn.status, conn.active)).FontSize(11).TextColor(statusColor(t, conn.status, conn.active))
 			if conn.active {
-				ui.Button(c, "断开").OnClick(func() { a.stopConnection(server.Path) })
+				ui.Button(c, "断开").OnClick(func() { a.stopConnection(server.key()) })
 			} else {
 				ui.Button(c, "连接").OnClick(func() { a.startConnection(server) })
 			}

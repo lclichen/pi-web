@@ -15,8 +15,10 @@ import (
 	"github.com/egoist/mygo"
 )
 
-// serverEntry is one saved pairing: ~/.agent-client/config.json (the first
-// server) or one of ~/.agent-client/profiles/*.json (additional servers).
+// serverEntry is one saved pairing. agent-client >= 0.5 keeps every server in
+// ONE file (~/.agent-client/config.json) as a map; older versions spread them
+// over that file plus profiles/*.json and the pre-0.3 ~/.pi-agent/config.json.
+// All are listed here; Path tells the CLI which file holds the credentials.
 type serverEntry struct {
 	Path          string
 	Server        string
@@ -26,7 +28,14 @@ type serverEntry struct {
 	Default       bool
 }
 
-// cliConfig mirrors the fields of the agent-client config we need. Unknown
+// key identifies a connection in GUI state. Two config files may spell the
+// same relay differently (trailing slash, case), so the normalized URL — not
+// the file path — is the identity.
+func (s serverEntry) key() string {
+	return strings.ToLower(strings.TrimRight(strings.TrimSpace(s.Server), "/"))
+}
+
+// cliConfig mirrors the fields of one agent-client connection entry. Unknown
 // fields are ignored and never written by the GUI.
 type cliConfig struct {
 	Server        string `json:"server"`
@@ -34,6 +43,13 @@ type cliConfig struct {
 	WorkspaceRoot string `json:"workspaceRoot"`
 	MachineID     string `json:"machineId"`
 	Label         string `json:"label"`
+}
+
+// cliStore is the v2 single-file shape (servers keyed by relay URL).
+type cliStore struct {
+	Version int                  `json:"version"`
+	Current string               `json:"current"`
+	Servers map[string]cliConfig `json:"servers"`
 }
 
 func agentClientDir() (string, error) {
@@ -54,9 +70,9 @@ func legacyAgentClientDir() (string, error) {
 	return filepath.Join(home, ".pi-agent"), nil
 }
 
-// scanServerConfigs reads the CLI's default config, every per-server profile
-// and the legacy pre-0.3 config. Entries without server+token (half-paired
-// files) are skipped.
+// scanServerConfigs reads the CLI's single v2 store, every legacy per-server
+// profile and the pre-0.3 config. Entries without server+token (half-paired
+// files) are skipped; the same relay found in several files is listed once.
 func scanServerConfigs() []serverEntry {
 	paths := make([]string, 0, 4)
 	if dir, err := agentClientDir(); err == nil {
@@ -70,17 +86,33 @@ func scanServerConfigs() []serverEntry {
 	}
 
 	out := make([]serverEntry, 0, len(paths))
-	seen := make(map[string]bool, len(paths))
+	seenPath := make(map[string]bool, len(paths))
+	seenServer := make(map[string]bool, len(paths))
+	defaultConfig := ""
+	if dir, err := agentClientDir(); err == nil {
+		defaultConfig = configPathKey(filepath.Join(dir, "config.json"))
+	}
 	for _, path := range paths {
 		key := configPathKey(path)
-		if seen[key] {
+		if seenPath[key] {
 			continue
 		}
-		seen[key] = true
-		if entry, ok := readServerEntry(path, len(out) == 0); ok {
+		seenPath[key] = true
+		for _, entry := range readServerEntries(path, key == defaultConfig) {
+			serverKey := entry.key()
+			if seenServer[serverKey] {
+				continue // an earlier (v2/default) source wins
+			}
+			seenServer[serverKey] = true
 			out = append(out, entry)
 		}
 	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].Default != out[j].Default {
+			return out[i].Default
+		}
+		return out[i].Server < out[j].Server
+	})
 	return out
 }
 
@@ -92,14 +124,42 @@ func configPathKey(path string) string {
 	return clean
 }
 
-// readServerEntry loads one config file into a list row.
-func readServerEntry(path string, isDefault bool) (serverEntry, bool) {
+// readServerEntries loads one config file (v2 map or legacy single object).
+// defaultFile marks the legacy single-object layout as the default entry; in
+// v2 the server matching "current" is flagged instead.
+func readServerEntries(path string, defaultFile bool) []serverEntry {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return serverEntry{}, false
+		return nil
+	}
+	var store cliStore
+	if json.Unmarshal(data, &store) == nil && store.Servers != nil {
+		out := make([]serverEntry, 0, len(store.Servers))
+		for key, cfg := range store.Servers {
+			if cfg.Server == "" {
+				cfg.Server = key
+			}
+			if entry, ok := entryFromConfig(path, cfg); ok {
+				entry.Default = sameServerAddress(cfg.Server, store.Current)
+				out = append(out, entry)
+			}
+		}
+		return out
 	}
 	var cfg cliConfig
-	if json.Unmarshal(data, &cfg) != nil || cfg.Server == "" || cfg.Token == "" {
+	if json.Unmarshal(data, &cfg) != nil {
+		return nil
+	}
+	entry, ok := entryFromConfig(path, cfg)
+	if !ok {
+		return nil
+	}
+	entry.Default = defaultFile
+	return []serverEntry{entry}
+}
+
+func entryFromConfig(path string, cfg cliConfig) (serverEntry, bool) {
+	if cfg.Server == "" || cfg.Token == "" {
 		return serverEntry{}, false
 	}
 	label := strings.TrimSpace(cfg.Label)
@@ -112,7 +172,6 @@ func readServerEntry(path string, isDefault bool) (serverEntry, bool) {
 		Label:         label,
 		MachineID:     cfg.MachineID,
 		WorkspaceRoot: cfg.WorkspaceRoot,
-		Default:       isDefault,
 	}, true
 }
 

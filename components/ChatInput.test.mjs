@@ -405,6 +405,42 @@ test("renders the compact composer with the standard Send button and no session 
   assert.doesNotMatch(html, /type="file"|Attach image|Change tool preset/);
 });
 
+test("the attach button takes any file and says so when a handler is wired", () => {
+  const html = renderToStaticMarkup(
+    React.createElement(
+      I18nProvider,
+      null,
+      React.createElement(ChatInput, {
+        onSend() {},
+        onAbort() {},
+        onAttachFiles() {},
+        isStreaming: false,
+      }),
+    ),
+  );
+
+  assert.match(html, /title="Attach files"/);
+  assert.match(html, /type="file"/);
+  assert.doesNotMatch(html, /accept="image\/\*"/);
+});
+
+test("pasted files go through the chat drop path when a handler is available", () => {
+  const source = readFileSync(new URL("./ChatInput.tsx", import.meta.url), "utf8");
+  const start = source.indexOf("const handlePaste = useCallback(");
+  assert.notEqual(start, -1);
+  const block = source.slice(start, start + 1400);
+  // Files (images included) are handed to onAttachFiles before the image-only
+  // fallback, so a pasted PDF lands in the working directory instead of being
+  // dropped on the floor.
+  assert.match(block, /item\.kind === "file"/);
+  assert.match(block, /fileItems\.map\(\(item\) => item\.getAsFile\(\)\)/);
+  assert.match(block, /if \(files\.length\) onAttachFiles\(files\);/);
+  assert.ok(
+    block.indexOf("onAttachFiles(files)") < block.indexOf("processImageFiles(files)"),
+    "the shared path is tried first",
+  );
+});
+
 test("shows and locks the optimistic model while a switch is pending", () => {
   const html = renderToStaticMarkup(
     React.createElement(

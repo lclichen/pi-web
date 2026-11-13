@@ -30,6 +30,12 @@ export interface AgentConn {
   ownerUserId: number;
   /** Stable machine identity ("default" for pre-machineId agents). */
   machineId: string;
+  /** Per-process id the agent sends (X-Agent-Instance). A reconnect of the
+   *  SAME process may replace its own socket; a different process may not. */
+  instanceId: string;
+  /** Last time this socket showed life (message/ping/pong). Guards against
+   *  treating a half-open socket as a live connection forever. */
+  lastActivity: number;
   /** Monotonic attach sequence — the default-machine tie-breaker (clock
    *  resolution is not enough when two machines connect in the same ms). */
   seq: number;
@@ -43,12 +49,34 @@ export interface StatusUpdate {
   status: RelayStatus;
 }
 
+/** What a live machine connection looks like to a client that tried to
+ *  attach a second time (409 body). */
+export interface ConnectionConflict {
+  hostname?: string;
+  agentVersion?: string;
+  connectedAt: number;
+  /** Empty for clients older than 0.5 (no X-Agent-Instance header). */
+  instanceId?: string;
+}
+
+/** Attach parameters negotiated with the agent before the WS handshake. */
+export interface ConnectionClaim {
+  userId: number;
+  machineId: string;
+  /** X-Agent-Instance of the process dialing; "" for legacy clients. */
+  instanceId: string;
+  /** X-Agent-Replace: take over even if another live process holds the slot. */
+  replace: boolean;
+}
+
 interface RelayRegistry {
   pairCodes: Map<string, PairingCode>;
   /** Latest connection (single-slot compat; see agentsByUser). */
   agent: AgentConn | null;
   /** Multi-slot: live agents per (user, machine). */
   agentsByUser: Map<number, Map<string, AgentConn>>;
+  /** `${userId}:${machineId}` slots with a claim in flight (double-dial guard). */
+  attaching: Set<string>;
   statusSubscribers: Set<(update: StatusUpdate) => void>;
   // PTY output subscribers, keyed `${machineId}:${agentSid}`. The agent pushes
   // unsolicited pty.output "event" frames; these fan out to the SSE streams.
@@ -76,6 +104,7 @@ function newRegistry(): RelayRegistry {
     pairCodes: new Map(),
     agent: null,
     agentsByUser: new Map(),
+    attaching: new Set(),
     statusSubscribers: new Set(),
     ptySubscribers: new Map(),
     ptyExitSubscribers: new Map(),
@@ -113,6 +142,21 @@ export function createPairingCode(ownerUserId = 0, label?: string): PairingCode 
   };
   reg.pairCodes.set(code, pc);
   return pc;
+}
+
+/** Validate a pairing code WITHOUT consuming it. The exchange path peeks
+ *  first so a refusal (machine already connected) does not burn the code the
+ *  user would need after stopping the other client. */
+export function peekPairingCode(rawCode: string): { userId: number; label?: string } | null {
+  const reg = getRegistry();
+  const code = normalizeCode(rawCode);
+  const pc = reg.pairCodes.get(code);
+  const now = Date.now();
+  if (!pc || pc.consumed || pc.expiresAt <= now) {
+    if (pc) reg.pairCodes.delete(code);
+    return null;
+  }
+  return { userId: pc.ownerUserId, ...(pc.label ? { label: pc.label } : {}) };
 }
 
 /** Validate + atomically consume a pairing code. Returns the owning user id
@@ -171,13 +215,115 @@ export function defaultMachineForUser(userId: number): string {
   return getAgentForUser(userId)?.machineId ?? DEFAULT_MACHINE_ID;
 }
 
+function attachKey(userId: number, machineId: string): string {
+  return `${userId}:${machineId}`;
+}
+
+/** A client that pings every 25s keeps its slot fresh; anything older than
+ *  this is treated as a candidate for replacement after a probe. */
+const ACTIVITY_FRESH_MS = 90_000;
+const ALIVE_PROBE_TIMEOUT_MS = 3_000;
+
+/** Does this registry entry still have a listening client on the other end?
+ *  readyState catches normal closes; a ping/pong probe catches half-open
+ *  sockets that the server never saw close (NAT reboot, cable pull). */
+export async function agentConnAlive(conn: AgentConn): Promise<boolean> {
+  if (conn.ws.readyState !== 1 /* OPEN */) return false;
+  if (Date.now() - conn.lastActivity < ACTIVITY_FRESH_MS) return true;
+  const ws = conn.ws as WebSocket & { ping?: () => void };
+  if (typeof ws.ping !== "function") return true; // cannot probe; assume live
+  return new Promise<boolean>((resolve) => {
+    let settled = false;
+    const finish = (alive: boolean): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      conn.ws.off("pong", onPong);
+      resolve(alive);
+    };
+    const onPong = (): void => finish(true);
+    const timer = setTimeout(() => finish(false), ALIVE_PROBE_TIMEOUT_MS);
+    conn.ws.once("pong", onPong);
+    try {
+      ws.ping?.();
+    } catch {
+      finish(false);
+    }
+  });
+}
+
+function conflictOf(conn: AgentConn): ConnectionConflict {
+  return {
+    ...(conn.info?.hostname && conn.info.hostname !== "agent" ? { hostname: conn.info.hostname } : {}),
+    ...(conn.info?.agentVersion && conn.info.agentVersion !== "unknown"
+      ? { agentVersion: conn.info.agentVersion }
+      : {}),
+    connectedAt: conn.connectedAt,
+    ...(conn.instanceId ? { instanceId: conn.instanceId } : {}),
+  };
+}
+
+/** A live holder of (user, machine), or null when the slot is free/dead. */
+export async function liveConnectionConflict(userId: number, machineId: string): Promise<ConnectionConflict | null> {
+  const conn = getRegistry().agentsByUser.get(userId)?.get(machineId);
+  if (!conn) return null;
+  return (await agentConnAlive(conn)) ? conflictOf(conn) : null;
+}
+
+/**
+ * Reserve the (user, machine) slot for an incoming socket. Returns null when
+ * the caller may proceed, or the live connection's details when it must be
+ * refused (409). Allowed cases:
+ *   - no existing connection, or its socket is dead;
+ *   - the SAME agent process reconnecting (same X-Agent-Instance);
+ *   - an explicit takeover (X-Agent-Replace / pair --force).
+ * A successful claim must be completed by attachAgentSocket (which releases
+ * it) or releaseAgentConnectionClaim (on handshake failure).
+ */
+export async function claimAgentConnection(claim: ConnectionClaim): Promise<ConnectionConflict | null> {
+  const key = attachKey(claim.userId, claim.machineId);
+  const reg = getRegistry();
+  if (reg.attaching.has(key)) {
+    // Another dial for this slot is still in its handshake.
+    return { connectedAt: Date.now() };
+  }
+  const existing = reg.agentsByUser.get(claim.userId)?.get(claim.machineId) ?? null;
+  if (existing && !claim.replace) {
+    const sameProcess = claim.instanceId !== "" && existing.instanceId === claim.instanceId;
+    if (!sameProcess && (await agentConnAlive(existing))) {
+      return conflictOf(existing);
+    }
+  }
+  // Re-check: a concurrent dial may have claimed the slot during the probe.
+  if (reg.attaching.has(key)) {
+    return existing ? conflictOf(existing) : { connectedAt: Date.now() };
+  }
+  reg.attaching.add(key);
+  return null;
+}
+
+/** Release a claim that did not reach attachAgentSocket (handshake error). */
+export function releaseAgentConnectionClaim(userId: number, machineId: string): void {
+  getRegistry().attaching.delete(attachKey(userId, machineId));
+}
+
 /**
  * Wire a freshly-upgraded WebSocket into the registry. The agent must send an
  * initial `{type:"hello", info}` frame; until then the connection carries
  * placeholder info (older agents never send hello — keep them usable).
+ *
+ * Low-level: it eagerly replaces the machine's previous socket. The WS
+ * endpoint calls claimAgentConnection first so a SECOND live process is
+ * refused with 409 instead of silently evicting the first one.
  */
-export function attachAgentSocket(ws: WebSocket, ownerUserId = 0, machineId = DEFAULT_MACHINE_ID): void {
+export function attachAgentSocket(
+  ws: WebSocket,
+  ownerUserId = 0,
+  machineId = DEFAULT_MACHINE_ID,
+  options: { instanceId?: string } = {},
+): void {
   const reg = getRegistry();
+  reg.attaching.delete(attachKey(ownerUserId, machineId));
 
   // One live agent per (user, machine): evict that machine's previous
   // connection ONLY. The legacy single-slot field keeps pointing at the most
@@ -194,6 +340,7 @@ export function attachAgentSocket(ws: WebSocket, ownerUserId = 0, machineId = DE
     }
   }
 
+  const now = Date.now();
   const conn: AgentConn = {
     ws,
     // hello is OPTIONAL (older agents never send it — the server used to drop
@@ -206,11 +353,13 @@ export function attachAgentSocket(ws: WebSocket, ownerUserId = 0, machineId = DE
       workspaceRoot: ".",
       agentVersion: "unknown",
     },
-    connectedAt: Date.now(),
+    connectedAt: now,
     pending: new Map(),
     nextId: 1,
     ownerUserId,
     machineId,
+    instanceId: options.instanceId ?? "",
+    lastActivity: now,
     seq: nextAttachSeq(),
   };
   byMachine.set(machineId, conn);
@@ -218,6 +367,7 @@ export function attachAgentSocket(ws: WebSocket, ownerUserId = 0, machineId = DE
   reg.agent = conn;
 
   const onMessage = (raw: unknown): void => {
+    conn.lastActivity = Date.now();
     let msg: AgentToRelayMessage;
     try {
       const text = typeof raw === "string" ? raw : Buffer.isBuffer(raw) ? raw.toString("utf8") : String(raw);
@@ -275,6 +425,7 @@ export function attachAgentSocket(ws: WebSocket, ownerUserId = 0, machineId = DE
 
   const cleanup = (): void => {
     ws.off("message", onMessage);
+    reg.attaching.delete(attachKey(conn.ownerUserId, conn.machineId));
     rejectAllPending(conn, new Error("agent disconnected"));
     const current = reg.agentsByUser.get(conn.ownerUserId);
     if (current?.get(conn.machineId) === conn) {
@@ -288,6 +439,13 @@ export function attachAgentSocket(ws: WebSocket, ownerUserId = 0, machineId = DE
   };
 
   ws.on("message", onMessage);
+  // The agent pings every 25s; either direction of traffic proves liveness.
+  ws.on("ping", () => {
+    conn.lastActivity = Date.now();
+  });
+  ws.on("pong", () => {
+    conn.lastActivity = Date.now();
+  });
   ws.once("close", cleanup);
   ws.once("error", cleanup);
   notifyStatusFor(ownerUserId);
@@ -301,13 +459,13 @@ function rejectAllPending(conn: AgentConn, err: Error): void {
   conn.pending.clear();
 }
 
-/** Force-disconnect one of the user's machines (unpair). The socket's close
- *  handler runs the normal cleanup + status notification. */
-export function disconnectMachine(userId: number, machineId: string): boolean {
+/** Force-disconnect one of the user's machines (unpair / token rotation). The
+ *  socket's close handler runs the normal cleanup + status notification. */
+export function disconnectMachine(userId: number, machineId: string, code = 4001, reason = "unpaired"): boolean {
   const conn = getRegistry().agentsByUser.get(userId)?.get(machineId);
   if (!conn) return false;
   try {
-    conn.ws.close(4001, "unpaired");
+    conn.ws.close(code, reason);
   } catch {
     // already closing
   }

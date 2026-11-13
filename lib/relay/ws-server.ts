@@ -1,7 +1,18 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import type { Duplex } from "node:stream";
 import { URL } from "node:url";
 import { WebSocketServer, type WebSocket } from "ws";
-import { attachAgentSocket, consumePairingCode, DEFAULT_MACHINE_ID, isKnownAgentToken } from "./registry";
+import {
+  attachAgentSocket,
+  claimAgentConnection,
+  consumePairingCode,
+  DEFAULT_MACHINE_ID,
+  disconnectMachine,
+  isKnownAgentToken,
+  liveConnectionConflict,
+  peekPairingCode,
+  releaseAgentConnectionClaim,
+} from "./registry";
 import { issueAgentToken, lookupTokenRecord, touchAgentToken } from "./relay-store";
 import { clientIpOf, consumeRateLimit } from "../rate-limit";
 import { clientCompatibility, REQUIRED_CLIENT_VERSION } from "../client-compat";
@@ -53,6 +64,16 @@ export async function startRelayServer(): Promise<void> {
   });
 
   server.on("upgrade", (req, socket, head) => {
+    handleUpgrade(req, socket, head).catch((err: unknown) => {
+      writeHttpResponse(socket, 500, "Internal Server Error", { error: String(err) });
+    });
+  });
+
+  // The agent sends X-Agent-Instance (its per-process id) and optionally
+  // X-Agent-Replace. A second live process for the same machine is refused
+  // with 409 BEFORE the upgrade, so it cannot silently evict the live
+  // connection (and its pair-time token rotation cannot strand it).
+  async function handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer): Promise<void> {
     const url = new URL(req.url ?? "/", "http://localhost");
     if (url.pathname !== "/ws") {
       socket.destroy();
@@ -60,23 +81,54 @@ export async function startRelayServer(): Promise<void> {
     }
     const token = url.searchParams.get("token") ?? "";
     if (!isKnownAgentToken(token)) {
-      socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
-      socket.destroy();
+      writeHttpResponse(socket, 401, "Unauthorized");
       return;
     }
     const record = lookupTokenRecord(token);
     if (!record) {
-      socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
-      socket.destroy();
+      writeHttpResponse(socket, 401, "Unauthorized");
       return;
     }
-    wss.handleUpgrade(req, socket, head, (ws: WebSocket) => {
-      attachAgentSocket(ws, record.userId, record.machineId);
-      // Rolling token expiry: an actively-used machine never expires; an
-      // abandoned pairing dies after 90 days.
-      void touchAgentToken(token, record.machineId).catch(() => {});
-    });
-  });
+    const rawInstance = req.headers["x-agent-instance"];
+    const instanceHeader = typeof rawInstance === "string" ? rawInstance : "";
+    const instanceId = /^[A-Za-z0-9_-]{1,64}$/.test(instanceHeader) ? instanceHeader : "";
+    const replaceHeader = req.headers["x-agent-replace"];
+    const replace = replaceHeader === "1" || replaceHeader === "true";
+
+    let conflict;
+    try {
+      conflict = await claimAgentConnection({
+        userId: record.userId,
+        machineId: record.machineId,
+        instanceId,
+        replace,
+      });
+    } catch (err) {
+      writeHttpResponse(socket, 500, "Internal Server Error", { error: String(err) });
+      return;
+    }
+    if (conflict) {
+      writeHttpResponse(socket, 409, "Conflict", {
+        error: "this machine is already connected; stop the other client or use --replace",
+        code: "machine-connected",
+        connection: conflict,
+      });
+      return;
+    }
+
+    let attached = false;
+    try {
+      wss.handleUpgrade(req, socket, head, (ws: WebSocket) => {
+        attached = true;
+        attachAgentSocket(ws, record.userId, record.machineId, { instanceId });
+        // Rolling token expiry: an actively-used machine never expires; an
+        // abandoned pairing dies after 90 days.
+        void touchAgentToken(token, record.machineId).catch(() => {});
+      });
+    } finally {
+      if (!attached) releaseAgentConnectionClaim(record.userId, record.machineId);
+    }
+  }
 
   await new Promise<void>((resolve, reject) => {
     server.on("error", reject);
@@ -124,8 +176,10 @@ async function handleHttp(req: IncomingMessage, res: ServerResponse): Promise<vo
       hostname?: unknown;
       label?: unknown;
       clientVersion?: unknown;
+      force?: unknown;
     };
     const code = typeof body.code === "string" ? body.code : "";
+    const force = body.force === true;
     // Version gate at pairing time: an outdated binary must not obtain a
     // token (it would connect and then fail every protocol expectation).
     const clientVersion = typeof body.clientVersion === "string" ? body.clientVersion : "";
@@ -140,12 +194,13 @@ async function handleHttp(req: IncomingMessage, res: ServerResponse): Promise<vo
       );
       return;
     }
+    // Peek (do not consume) so a refusal below leaves the user's code usable.
     // consumePairingCode returns the minting user's id — the agent token MUST
     // bind to it, otherwise every later per-user lookup (status/panel/RPC)
     // treats the connected agent as someone else's and reports offline
     // ("No local agent connected" despite a green dot).
-    const ownerUserId = consumePairingCode(code);
-    if (ownerUserId === null) {
+    const pending = peekPairingCode(code);
+    if (pending === null) {
       res.writeHead(401, { "content-type": "application/json" });
       res.end(JSON.stringify({ error: "invalid or expired pairing code" }));
       return;
@@ -157,6 +212,29 @@ async function handleHttp(req: IncomingMessage, res: ServerResponse): Promise<vo
       typeof body.machineId === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(body.machineId)
         ? body.machineId
         : DEFAULT_MACHINE_ID;
+    // Rotating the token of a machine that is CURRENTLY connected would strand
+    // that client on a dead credential at its next reconnect. Refuse unless
+    // the user explicitly forces it (then the live socket is closed too).
+    if (!force) {
+      const conflict = await liveConnectionConflict(pending.userId, machineId);
+      if (conflict) {
+        res.writeHead(409, { "content-type": "application/json" });
+        res.end(
+          JSON.stringify({
+            error: "this machine is already connected; stop the other client first or re-pair with --force",
+            code: "machine-connected",
+            connection: conflict,
+          }),
+        );
+        return;
+      }
+    }
+    const ownerUserId = consumePairingCode(code);
+    if (ownerUserId === null) {
+      res.writeHead(401, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "invalid or expired pairing code" }));
+      return;
+    }
     const hostname = typeof body.hostname === "string" ? body.hostname.slice(0, 100) : undefined;
     // Label precedence: the agent's own --label flag, else the label the user
     // chose when minting the code in the pairing dialog.
@@ -164,6 +242,11 @@ async function handleHttp(req: IncomingMessage, res: ServerResponse): Promise<vo
       (typeof body.label === "string" && body.label.trim() ? body.label.trim().slice(0, 50) : undefined) ??
       ownerUserId.label;
     const token = await issueAgentToken({ userId: ownerUserId.userId, machineId, hostname, label });
+    if (force) {
+      // The old token is gone; the live socket keeps working on the old
+      // handshake until closed. Close it now so both sides agree on reality.
+      disconnectMachine(ownerUserId.userId, machineId, 4002, "token rotated");
+    }
     res.writeHead(200, { "content-type": "application/json" });
     res.end(JSON.stringify({ token, wsPath: "/ws", machineId, requiredVersion: REQUIRED_CLIENT_VERSION }));
     return;
@@ -171,6 +254,22 @@ async function handleHttp(req: IncomingMessage, res: ServerResponse): Promise<vo
 
   res.writeHead(404, { "content-type": "application/json" });
   res.end(JSON.stringify({ error: "not found" }));
+}
+
+function writeHttpResponse(socket: Duplex, status: number, statusText: string, payload?: unknown): void {
+  const body = payload === undefined ? "" : JSON.stringify(payload);
+  const head = [
+    `HTTP/1.1 ${status} ${statusText}`,
+    ...(body ? ["Content-Type: application/json", `Content-Length: ${Buffer.byteLength(body)}`] : []),
+    "Connection: close",
+    "",
+    body,
+  ].join("\r\n");
+  try {
+    socket.end(head);
+  } catch {
+    socket.destroy(); // peer already gone
+  }
 }
 
 function readJson(req: IncomingMessage): Promise<unknown> {

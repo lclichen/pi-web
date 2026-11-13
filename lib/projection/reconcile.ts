@@ -256,7 +256,9 @@ async function runReconcile(input: ProjectionInput): Promise<ProjectionResult> {
     status.errors.push({ rel: "", error: rootError });
     status.durationMs = Date.now() - startedAt;
     await writeProjectionStatus(input.projectId, input.workspaceMeta.key, status);
-    markProjectionClean(input.projectId);
+    // Permanent config error: record the attempt so prompts are not delayed by
+    // a retry on every turn; the next TTL window re-checks after a fix.
+    markProjectionAttempted(input.projectId);
     return { status, dirty: [], conflicts: [], errors: status.errors };
   }
 

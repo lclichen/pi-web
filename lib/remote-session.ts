@@ -17,6 +17,7 @@ import {
   type RelayWorkspaceScope,
 } from "./relay/workspace-base";
 import { join } from "path";
+import { randomBytes } from "crypto";
 import type { SessionMode } from "./session-modes";
 
 /**
@@ -504,8 +505,12 @@ export async function remoteWrite(ctx: RemoteSessionContext, path: string, conte
  * - ssh: SFTP writes a Buffer directly.
  * - local-machine: fs.write contentBase64 (agent >= 0.6.0, "binary-write");
  *   older agents fail with an actionable message instead of writing garbage.
+ *
+ * Writes go to a sibling temp file and are renamed into place: a concurrent
+ * reader (share_file, an @mention read, the file explorer) sees either the
+ * previous complete file or the new complete file, never a half-written one.
  */
-export async function remoteWriteBytes(ctx: RemoteSessionContext, path: string, bytes: Buffer): Promise<void> {
+async function writeBytesDirect(ctx: RemoteSessionContext, path: string, bytes: Buffer): Promise<void> {
   if (ctx.mode === "ssh") {
     const client = await sshClientFor(ctx);
     const s = await sftpOf(client);
@@ -543,6 +548,21 @@ export async function remoteWriteBytes(ctx: RemoteSessionContext, path: string, 
     path: containerPath(path),
     content: bytes.toString("base64"),
   });
+}
+
+export async function remoteWriteBytes(ctx: RemoteSessionContext, path: string, bytes: Buffer): Promise<void> {
+  const temp = `${path}.upload-${randomBytes(6).toString("hex")}`;
+  try {
+    await writeBytesDirect(ctx, temp, bytes);
+    await remoteRename(ctx, temp, path);
+  } catch (err) {
+    try {
+      await remoteDelete(ctx, temp);
+    } catch {
+      // best-effort cleanup; the target was never touched by the failed write
+    }
+    throw err;
+  }
 }
 
 /**

@@ -15,8 +15,7 @@ import {
   resolveRemoteSession,
 } from "@/lib/remote-session";
 import { isApiRequestAllowed, hasJsonContentType } from "@/lib/request-security";
-import fs from "fs";
-import { join } from "path";
+import { writeAttachmentAtomic } from "@/lib/project-attachments";
 
 export const dynamic = "force-dynamic";
 
@@ -218,26 +217,22 @@ export async function POST(req: Request, ctx: { params: Promise<{ path: string[]
     const uploaded: string[] = [];
     const skipped: string[] = [];
     const errors: Array<{ name: string; error: string }> = [];
-    // Chat uploads ask for a Host-side primary copy ("项目区"), written before
-    // the remote mirror so a failed/unsupported binary write still keeps the
-    // original bytes on the server.
+    // Chat uploads ask for a Host-side primary copy ("项目区"). It is written
+    // FIRST (atomically) and the remote mirror second: a Host reader/share
+    // during the mirror sees the complete new file, and a failed remote write
+    // still keeps the original bytes on the server.
     const hostCache = url.searchParams.get("hostCache") === "1";
     const hostDir = hostCache ? hostAttachmentsDir(remote.ctx, sessionId) : null;
     const hostCached: string[] = [];
     const hostOnly: string[] = [];
     let hostWarning: string | undefined;
 
-    const cacheHostCopy = (name: string, bytes: Buffer) => {
+    const cacheHostCopy = (name: string, bytes: Buffer): void => {
       if (!hostDir) return;
-      fs.mkdirSync(hostDir, { recursive: true });
       try {
-        fs.writeFileSync(join(hostDir, name), bytes, { flag: "wx" });
+        writeAttachmentAtomic(hostDir, name, bytes);
         hostCached.push(name);
       } catch (err) {
-        if ((err as NodeJS.ErrnoException).code === "EEXIST") {
-          hostCached.push(name);
-          return;
-        }
         hostWarning = `Host 副本写入失败：${err instanceof Error ? err.message : String(err)}`;
       }
     };
@@ -260,6 +255,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ path: string[]
         errors.push({ name, error: err instanceof Error ? err.message : String(err) });
         continue;
       }
+      // Host primary first: complete before the (slower) remote mirror starts.
+      cacheHostCopy(name, bytes);
       const target = dirPath === "/" ? `/${name}` : `${dirPath}/${name}`;
       try {
         await remoteWriteBytes(remote.ctx, target, bytes);
@@ -271,14 +268,12 @@ export async function POST(req: Request, ctx: { params: Promise<{ path: string[]
           continue;
         }
         // Remote mirror failed (e.g. an agent older than 0.6.0 for binary
-        // writes): keep the Host primary copy and tell the caller the file is
-        // NOT readable on the remote side.
-        cacheHostCopy(name, bytes);
+        // writes): the Host primary copy is already complete; tell the caller
+        // the file is NOT readable on the remote side.
         hostOnly.push(name);
         hostWarning ??= message;
         continue;
       }
-      cacheHostCopy(name, bytes);
     }
     return NextResponse.json({
       uploaded,

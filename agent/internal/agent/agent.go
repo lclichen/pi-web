@@ -5,10 +5,10 @@ package agent
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
-	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -77,71 +77,37 @@ func cancelPtyReap() {
 func Run(args []string, version string) int {
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
 	configPath := fs.String("config", "", "path to config.json (default ~/.agent-client/config.json)")
-	server := fs.String("server", "", "use the per-server config profile for this relay URL (`pair --server URL` creates it)")
+	server := fs.String("server", "", "connect to one saved relay URL (see --list)")
 	rootOverride := fs.String("root", "", "override workspace root (also for service units: WorkingDirectory may be /)")
+	replace := fs.Bool("replace", false, "take over a connection that another client process holds for this machine")
+	interactive := fs.Bool("interactive", false, "choose and control connections from a menu")
+	list := fs.Bool("list", false, "list saved connections and exit")
 	_ = fs.Parse(args)
 
-	cfg, err := loadRunConfig(*configPath, *server)
+	store, err := config.LoadStore(*configPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "agent-client: load config failed: %v\n", err)
 		fmt.Fprintln(os.Stderr, "Run `./agent-client pair --code CODE --server URL` first.")
 		return 2
 	}
-	if cfg.Server == "" || cfg.Token == "" {
-		fmt.Fprintln(os.Stderr, "agent-client: config missing server/token; pair first.")
+	if *list {
+		printConnections(store, "")
+		return 0
+	}
+	if *interactive || (*server == "" && isTerminal(os.Stdin)) {
+		return runInteractive(store, *rootOverride, version, *replace)
+	}
+	entry := store.Resolve(*server)
+	if entry == nil {
+		if *server != "" {
+			fmt.Fprintf(os.Stderr, "agent-client: no saved connection for %s\n", *server)
+		} else {
+			fmt.Fprintln(os.Stderr, "agent-client: several connections saved — pass --server URL (or run interactively):")
+		}
+		printConnections(store, "  ")
 		return 2
 	}
-	// Stable machine identity for multi-machine relays; generates + persists on
-	// first run. Failure is non-fatal (identity regenerates next start).
-	if _, err := cfg.EnsureMachineID(); err != nil {
-		log.Printf("warning: %v", err)
-	}
-
-	absRoot, note, err := resolveWorkspaceRoot(*rootOverride, cfg)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "agent-client: %v\n", err)
-		return 2
-	}
-	if note != "" {
-		log.Printf("%s", note)
-	}
-	// Persist the resolved root so restarts (and the WebUI, via hello) always
-	// see the directory this run actually serves — a deleted saved root
-	// self-heals instead of being re-announced forever.
-	if cfg.WorkspaceRoot == "" || !sameCleanPath(absRoot, cfg.WorkspaceRoot) {
-		cfg.WorkspaceRoot = absRoot
-		if err := cfg.Save(); err != nil {
-			log.Printf("warning: could not persist workspace root %s: %v", absRoot, err)
-		}
-	}
-
-	ws := &workspace.Workspace{Root: absRoot}
-	info := buildInfo(version, ws.GetRoot(), cfg)
-	log.Printf("agent-client %s starting; server=%s root=%s os=%s/%s",
-		version, cfg.Server, absRoot, runtime.GOOS, runtime.GOARCH)
-
-	connectLoop(toWSURL(cfg.Server, cfg.Token), info, ws, cfg, version)
-	return 0
-}
-
-// loadRunConfig picks the config file for this run:
-// explicit --config > --server profile (multi-relay installs) > default file.
-func loadRunConfig(configPath, server string) (*config.Config, error) {
-	if configPath != "" {
-		return config.Load(configPath)
-	}
-	if server != "" {
-		p, err := config.ProfilePath(server)
-		if err != nil {
-			return nil, err
-		}
-		cfg, err := config.Load(p)
-		if err != nil {
-			return nil, fmt.Errorf("no saved profile for %s (%s): pair with that server first: %w", server, p, err)
-		}
-		return cfg, nil
-	}
-	return config.Load("")
+	return runOne(store, entry, *rootOverride, version, *replace)
 }
 
 // sameCleanPath compares two paths after making them absolute; case-insensitive
@@ -188,16 +154,16 @@ func meaningfulCwd() (string, bool) {
 	return abs, true
 }
 
-// resolveWorkspaceRoot decides which directory to share:
+// resolveWorkspaceRoot decides which directory to share for one connection:
 //  1. --root (must exist) — explicit, and the right choice for service units;
 //  2. the process cwd when it is a user-chosen directory — starting the client
 //     from another path switches the workspace there instead of resurrecting a
 //     stale saved root;
-//  3. the saved workspaceRoot (service mode: cwd is / or home) when it exists;
+//  3. the connection's saved workspaceRoot (service mode: cwd is / or home);
 //  4. the home directory.
 //
 // Returns a human-readable note when a saved root was ignored or missing.
-func resolveWorkspaceRoot(flagRoot string, cfg *config.Config) (string, string, error) {
+func resolveWorkspaceRoot(flagRoot string, entry *config.ServerConfig) (string, string, error) {
 	if flagRoot != "" {
 		abs, err := filepath.Abs(flagRoot)
 		if err != nil {
@@ -210,22 +176,22 @@ func resolveWorkspaceRoot(flagRoot string, cfg *config.Config) (string, string, 
 	}
 	if cwd, ok := meaningfulCwd(); ok {
 		note := ""
-		if cfg.WorkspaceRoot != "" && !sameCleanPath(cfg.WorkspaceRoot, cwd) {
+		if entry.WorkspaceRoot != "" && !sameCleanPath(entry.WorkspaceRoot, cwd) {
 			note = fmt.Sprintf(
 				"workspace root is %s (ignoring saved root %s because the client was started here)",
-				cwd, cfg.WorkspaceRoot,
+				cwd, entry.WorkspaceRoot,
 			)
 		}
 		return cwd, note, nil
 	}
 	note := ""
-	if cfg.WorkspaceRoot != "" {
-		if abs, err := filepath.Abs(cfg.WorkspaceRoot); err == nil {
+	if entry.WorkspaceRoot != "" {
+		if abs, err := filepath.Abs(entry.WorkspaceRoot); err == nil {
 			if st, statErr := os.Stat(abs); statErr == nil && st.IsDir() {
 				return abs, "", nil
 			}
 		}
-		note = fmt.Sprintf("saved workspace root %s no longer exists; falling back", cfg.WorkspaceRoot)
+		note = fmt.Sprintf("saved workspace root %s no longer exists; falling back", entry.WorkspaceRoot)
 	}
 	if home, err := os.UserHomeDir(); err == nil && home != "" {
 		if st, statErr := os.Stat(home); statErr == nil && st.IsDir() {
@@ -235,7 +201,7 @@ func resolveWorkspaceRoot(flagRoot string, cfg *config.Config) (string, string, 
 	return "", note, fmt.Errorf("cannot determine a workspace root; pass --root PATH")
 }
 
-func buildInfo(version, root string, cfg *config.Config) protocol.AgentInfo {
+func buildInfo(version, root string, entry *config.ServerConfig) protocol.AgentInfo {
 	host, _ := os.Hostname()
 	return protocol.AgentInfo{
 		Hostname:      host,
@@ -243,8 +209,8 @@ func buildInfo(version, root string, cfg *config.Config) protocol.AgentInfo {
 		Arch:          runtime.GOARCH,
 		WorkspaceRoot: root,
 		AgentVersion:  version,
-		MachineID:     cfg.MachineID,
-		Label:         cfg.Label,
+		MachineID:     entry.MachineID,
+		Label:         entry.Label,
 		Features:      []string{protocol.FeatureWorkspaceBase, protocol.FeatureBinaryRead},
 	}
 }
@@ -270,7 +236,17 @@ func toWSURL(server, token string) string {
 	return u.String()
 }
 
-func connectLoop(wsURL string, info protocol.AgentInfo, ws *workspace.Workspace, cfg *config.Config, version string) {
+func connectLoop(
+	wsURL string,
+	info protocol.AgentInfo,
+	ws *workspace.Workspace,
+	store *config.Store,
+	entry *config.ServerConfig,
+	version, instanceID string,
+	replace bool,
+	stop <-chan struct{},
+	onStatus func(string),
+) error {
 	backoff := time.Second
 	const maxBackoff = 30 * time.Second
 	// A connection that stayed up for a while is a healthy link: the next drop
@@ -278,15 +254,36 @@ func connectLoop(wsURL string, info protocol.AgentInfo, ws *workspace.Workspace,
 	// of making the user wait 30s after every network blip.
 	const healthyConn = 30 * time.Second
 	for {
+		select {
+		case <-stop:
+			return nil
+		default:
+		}
 		start := time.Now()
-		if err := serveOnce(wsURL, info, ws, cfg, version); err != nil {
+		err := serveOnce(wsURL, info, ws, store, entry, version, instanceID, replace, stop, onStatus)
+		if err != nil {
+			switch {
+			case errors.Is(err, errTokenInvalid):
+				onStatus("token 失效")
+				return err
+			case errors.Is(err, errDuplicateConnection):
+				onStatus("已在其他客户端连接")
+				return err
+			case errors.Is(err, errStopped):
+				return nil
+			}
 			log.Printf("disconnected: %v", err)
 		}
 		if time.Since(start) >= healthyConn {
 			backoff = time.Second
 		}
 		log.Printf("reconnecting in %s ...", backoff)
-		time.Sleep(backoff)
+		onStatus(fmt.Sprintf("重连中（%s 后）", backoff))
+		select {
+		case <-stop:
+			return nil
+		case <-time.After(backoff):
+		}
 		backoff *= 2
 		if backoff > maxBackoff {
 			backoff = maxBackoff
@@ -313,106 +310,12 @@ func (s *safeConn) ping() error {
 	return s.c.WriteControl(websocket.PingMessage, nil, time.Now().Add(pingTimeout))
 }
 
-func serveOnce(wsURL string, info protocol.AgentInfo, ws *workspace.Workspace, cfg *config.Config, version string) error {
-	dialer := websocket.Dialer{HandshakeTimeout: 10 * time.Second}
-	conn, resp, err := dialer.Dial(wsURL, http.Header{})
-	if resp != nil {
-		_ = resp.Body.Close()
-	}
-	if err != nil {
-		return fmt.Errorf("dial: %w", err)
-	}
-	defer conn.Close()
-
-	sc := &safeConn{c: conn}
-	// PTY sessions live across reconnects (see schedulePtyReap): point the
-	// emitters at THIS connection and cancel any pending reap from the
-	// previous disconnect; on exit, schedule one.
-	currentConn.Store(sc)
-	cancelPtyReap()
-	defer schedulePtyReap()
-
-	// Idle connections get silently cut by NATs/firewalls; without a heartbeat
-	// the agent only notices on the next write. Ping every 25s and drop the
-	// socket if the pong falls behind — the read loop then errors out and the
-	// outer loop reconnects.
-	//
-	// SetPongHandler must be called from the same goroutine as ReadMessage
-	// (gorilla/websocket treats it as a read method; concurrent calls race the
-	// handler field and the pong is silently dropped).
-	var lastPong atomic.Int64
-	lastPong.Store(time.Now().Unix())
-	conn.SetPongHandler(func(string) error {
-		lastPong.Store(time.Now().Unix())
-		return nil
-	})
-	go keepalive(sc, &lastPong)
-
-	hello, _ := json.Marshal(protocol.Hello{Type: "hello", Info: info})
-	if err := sc.writeText(hello); err != nil {
-		return fmt.Errorf("write hello: %w", err)
-	}
-	log.Printf("connected; serving requests")
-
-	for {
-		_, msg, err := conn.ReadMessage()
-		if err != nil {
-			return fmt.Errorf("read: %w", err)
-		}
-		// workspace.set-root needs the write side (to re-announce hello with
-		// the new root), so handle it inline rather than in a goroutine.
-		if isMethod(msg, "workspace.set-root") {
-			go func() {
-				resp := handleSetRoot(msg, ws, cfg)
-				out, _ := json.Marshal(resp)
-				_ = sc.writeText(out)
-				if resp.OK {
-					// Re-announce so the relay's registry info reflects the new
-					// root immediately (the web UI reads it from the hello).
-					hello, _ := json.Marshal(protocol.Hello{Type: "hello", Info: buildInfo(version, ws.GetRoot(), cfg)})
-					_ = sc.writeText(hello)
-					log.Printf("workspace root changed to %s", ws.GetRoot())
-				}
-			}()
-			continue
-		}
-		go handleRequest(sc, msg, ws)
-	}
-}
-
 // isMethod reports whether the frame is a request for the given method.
 func isMethod(msg []byte, method string) bool {
 	var probe struct {
 		Method string `json:"method"`
 	}
 	return json.Unmarshal(msg, &probe) == nil && probe.Method == method
-}
-
-// handleSetRoot validates and hot-swaps the workspace root, persisting it to
-// the config so it survives restarts.
-func handleSetRoot(msg []byte, ws *workspace.Workspace, cfg *config.Config) protocol.Response {
-	var req protocol.Request
-	if err := json.Unmarshal(msg, &req); err != nil {
-		return protocol.Response{OK: false, Error: err.Error()}
-	}
-	path, _ := req.Params["path"].(string)
-	if path == "" {
-		return protocol.Response{ID: req.ID, OK: false, Error: "path required"}
-	}
-	abs, err := filepath.Abs(path)
-	if err != nil {
-		return protocol.Response{ID: req.ID, OK: false, Error: err.Error()}
-	}
-	st, statErr := os.Stat(abs)
-	if statErr != nil || !st.IsDir() {
-		return protocol.Response{ID: req.ID, OK: false, Error: fmt.Sprintf("not a directory: %s", abs)}
-	}
-	ws.SetRoot(abs)
-	cfg.WorkspaceRoot = abs
-	if err := cfg.Save(); err != nil {
-		return protocol.Response{ID: req.ID, OK: false, Error: "root applied but save failed: " + err.Error()}
-	}
-	return protocol.Response{ID: req.ID, OK: true, Result: map[string]interface{}{"root": abs}}
 }
 
 const (

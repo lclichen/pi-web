@@ -35,11 +35,13 @@ curl -fsSL http://<PIWEB_BASE>/api/agent-relay/download/install.sh | sh -s -- ht
 # 1) pair (the code + relay URL come from pi-web's "连接本地机器" dialog)
 ./agent-client pair --code 3JFSG6 --server http://<RELAY_HOST>:30142 [--root /path/to/share]
 #    (installed in PATH? run `agent-client` without ./)
-#    -> writes ~/.agent-client/config.json (mode 0600)
-#    -> pairing a DIFFERENT server later goes to profiles/<server>.json instead
+#    -> writes/updates ONE file: ~/.agent-client/config.json (mode 0600)
+#       each connection is an entry in "servers", keyed by relay URL
 
-# 2) run (persistent loop; auto-reconnects)
-./agent-client run [--root /path/to/share]
+# 2) connect
+./agent-client run                        # terminal: pick from a list and stay in control
+./agent-client run --server URL           # scripts / systemd: connect to one entry
+./agent-client run --list                 # show saved connections and the current one
 #    started in a project directory? that directory becomes the workspace root
 ```
 
@@ -52,24 +54,80 @@ otherwise a cwd that is a real project directory (not `/`, not the home dir)
 becomes the root, so starting the client from another path switches it there
 instead of resurrecting a stale saved path. Service units (`cwd=/` or home) keep
 using the saved root; a saved root that no longer exists is dropped with a log
-warning and falls back to the home dir. The resolved root is persisted, so the
-WebUI always sees the directory the running client actually serves.
+warning and falls back to the home dir. The resolved root is persisted **per
+connection**, so the WebUI always sees the directory the running client
+actually serves.
 
-### Multiple pi-web servers on one machine (0.4.1+)
+### Interactive mode (0.5.0+)
 
-The first pairing keeps using `~/.agent-client/config.json`. Pairing another
-server does **not** overwrite it: it is stored in its own profile
-`~/.agent-client/profiles/<scheme>_<host>_<port>.json` (mode 0600), and `pair`
-prints the exact run command:
+Started from a terminal (or with `--interactive`), `run` opens a three-zone
+screen and stays open, so adding / switching / disconnecting / re-pairing no
+longer needs a restart:
 
-```bash
-./agent-client pair --code <CODE> --server http://10.0.0.5:30142
-#   -> token saved to ~/.agent-client/profiles/http_10.0.0.5_30142.json
-./agent-client run --server http://10.0.0.5:30142
+```
+┌ 日志区：connecting / connected / reconnecting / re-pair errors scroll here
+├ 状态区：Agent Client — 已保存的连接
+│         [1] http://10.99.9.7:30142  实验室服务器  已连接
+│         [2] http://10.0.0.5:30142   工位机        未连接
+│         编号=连接/切换  n=新建连接  d=断开  r=重新配对  l=刷新  q=退出
+└ 交互区：请选择（编号或 n/d/r/l/q）：
 ```
 
-Each server has its own token, machine id and workspace root, so several
-clients can run side by side. `--config FILE` still selects an arbitrary file.
+The status zone refreshes itself the moment a connection changes (connected,
+reconnecting, token expired, duplicate refusal) — no Enter or `l` needed — and
+the prompt/log rows stay pinned instead of scrolling the menu away. It uses the
+terminal's alternate screen and is enabled only for a real TTY; pipes and
+`TERM=dumb` fall back to the plain line-oriented output. On Windows VT escape
+processing is enabled when the console supports it, otherwise the fallback is
+used.
+
+- `n` pairs a new relay without leaving the menu: paste the whole
+  `./agent-client pair --code … --server …` line from pi-web (or just the relay
+  address/host:port), then the code and an optional client name. On success it
+  saves the connection and connects to it.
+- `r` stops the current connection and asks for a fresh pairing code, then
+  saves the new token in place and reconnects. Use it whenever a token is
+  revoked or expired (`token 失效` shows in the list) — there is no need to
+  delete the client or its config.
+
+In a service or script (no TTY) `run` connects to `--server`, else the last
+used / only saved connection.
+
+### Multiple pi-web servers on one machine (0.5.0+)
+
+Every connection lives in the same `~/.agent-client/config.json` map:
+
+```json
+{
+  "version": 2,
+  "current": "http://10.0.0.5:30142",
+  "servers": {
+    "http://10.99.9.7:30142": { "server": "...", "token": "...", "machineId": "...", "label": "实验室服务器" },
+    "http://10.0.0.5:30142":  { "server": "...", "token": "...", "machineId": "...", "label": "工位机" }
+  }
+}
+```
+
+Pairing another server adds an entry instead of creating a second file; each
+entry keeps its own token, machine id, label and workspace root. Existing
+installs are migrated automatically on first load: the old single config, the
+0.4.x `~/.agent-client/profiles/*.json` files and the pre-0.3
+`~/.pi-agent/config.json` are merged into the map (the old files are left in
+place as a backup). `--config FILE` still selects an arbitrary file.
+
+### Duplicate connections and token rotation (0.5.0+)
+
+- The client sends a per-process `X-Agent-Instance` id when it connects. The
+  relay remembers it and refuses a **second live client for the same machine**
+  with HTTP 409 (`该机器已在另一个客户端连接（hostname，vX.Y.Z）`). The
+  already-running client keeps its connection instead of being silently
+  evicted.
+- A reconnect of the same process (network blip) is always accepted. To
+  deliberately take over, start the second client with `--replace`.
+- `pair` refuses to rotate the token of a machine that is currently connected
+  (that rotation would strand the live client at its next reconnect) unless
+  `--force` is given. With `--force` the relay closes the old connection after
+  issuing the new token.
 
 ### Run as a service (CentOS 7 / systemd)
 
@@ -88,8 +146,8 @@ exists.
 
 | Command | Description |
 |---|---|
-| `agent-client pair --code CODE --server URL [--root PATH]` | exchange code for token, save config (per-server profile when another server is already configured) |
-| `agent-client run [--config FILE] [--server URL] [--root PATH]` | connect & serve (default subcommand) |
+| `agent-client pair --code CODE --server URL [--root PATH] [--label NAME] [--force]` | exchange code for token, save/update the connection in the config map (`--force` rotates a connected machine's token) |
+| `agent-client run [--config FILE] [--server URL] [--root PATH] [--replace] [--interactive] [--list]` | connect & serve (default subcommand); interactive on a TTY |
 | `agent-client version` / `--version` / `-V` | print version |
 | `agent-client help` | usage |
 
@@ -119,8 +177,14 @@ exists.
 - **No shell**: `exec.run` takes an `argv` array and spawns directly — there is
   no shell-injection surface.
 - **Token**: the pairing code is single-use + 5-min TTL; it is exchanged for a
-  32-byte token stored at `~/.agent-client/config.json` (0600). The same token is
-  stored server-side at `~/.pi/relay.json` (0600).
+  32-byte token stored per connection in `~/.agent-client/config.json` (0600).
+  The same token is stored server-side at `~/.pi/relay.json` (0600) and refreshed
+  on every connect (90-day rolling expiry). A revoked/expired token is fixed by
+  re-pairing, not by deleting the client.
+- **Duplicate protection (0.5.0+)**: the relay pairs `X-Agent-Instance` with the
+  machine slot and answers a second live process with 409 instead of closing
+  the existing connection; `pair` answers 409 while the machine is online
+  unless `--force` is used.
 - **Outbound only**: the agent dials the relay; no port is opened on the user's
   machine.
 

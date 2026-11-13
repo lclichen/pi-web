@@ -1,13 +1,19 @@
-// Package config loads/saves the client's pairing credentials to
-// ~/.agent-client/config.json with mode 0600. Configs written by older
-// pi-agent builds (~/.pi-agent/config.json) are read as a fallback and keep
-// being written in place, so upgrading does not require re-pairing.
+// Package config stores the client's pairing credentials in ONE file
+// (~/.agent-client/config.json, mode 0600) as a map keyed by relay URL:
 //
-// A machine can talk to several pi-web relays. The first pairing keeps using
-// the default config.json (backward compatible); pairing a DIFFERENT server
-// goes to ~/.agent-client/profiles/<server-key>.json instead of overwriting
-// the existing credentials. `agent-client run --server URL` selects such a
-// profile, so multiple clients can run side by side.
+//	{
+//	  "version": 2,
+//	  "current": "http://10.99.9.7:30142",
+//	  "servers": {
+//	    "http://10.99.9.7:30142": { "server": "...", "token": "...", "machineId": "...", "label": "..." }
+//	  }
+//	}
+//
+// Older layouts are migrated on load: the single v1 config
+// (~/.agent-client/config.json with server/token at the top level), the
+// per-server profiles in ~/.agent-client/profiles/*.json, and the pre-0.3
+// ~/.pi-agent/config.json. Migration writes the v2 file and leaves the old
+// files in place as a backup.
 package config
 
 import (
@@ -15,44 +21,34 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
-// Config holds the relay endpoint + token + optional workspace root.
-type Config struct {
+const CurrentVersion = 2
+
+// ServerConfig is one saved relay connection. The map key in Store.Servers is
+// its Server (trimmed, no trailing slash).
+type ServerConfig struct {
 	Server        string `json:"server"`
 	Token         string `json:"token"`
 	WorkspaceRoot string `json:"workspaceRoot,omitempty"`
-	// MachineID is a stable per-install identity (generated on first use) so
-	// the relay can distinguish this machine from the user's OTHER machines.
+	// MachineID is the stable per-server machine identity (generated on first
+	// pairing) so the relay can distinguish this machine from the user's others.
 	MachineID string `json:"machineId,omitempty"`
-	// Label is the user-chosen display name sent at pairing time.
+	// Label is the user-chosen display name sent at pairing/hello time.
 	Label string `json:"label,omitempty"`
-
-	file string `json:"-"`
 }
 
-// EnsureMachineID returns the config's machine id, generating + persisting a
-// fresh random one when absent. Called before pairing and before connecting so
-// the identity is stable across restarts and re-pairings.
-func (c *Config) EnsureMachineID() (string, error) {
-	if c.MachineID != "" {
-		return c.MachineID, nil
-	}
-	raw := make([]byte, 16)
-	if _, err := rand.Read(raw); err != nil {
-		return "", fmt.Errorf("generate machine id: %w", err)
-	}
-	c.MachineID = hex.EncodeToString(raw)
-	if err := c.Save(); err != nil {
-		// Non-fatal for the current run: the id is still returned, it just may
-		// not survive a restart.
-		return c.MachineID, nil
-	}
-	return c.MachineID, nil
+// Store is the v2 config file.
+type Store struct {
+	Version int                      `json:"version"`
+	Current string                   `json:"current,omitempty"`
+	Servers map[string]*ServerConfig `json:"servers"`
+
+	file string
 }
 
 // DefaultDir returns ~/.agent-client.
@@ -91,59 +87,211 @@ func LegacyPath() (string, error) {
 	return filepath.Join(d, "config.json"), nil
 }
 
-// ProfilePath returns the per-server config file used when this install is
-// paired with more than one pi-web relay:
-//
-//	~/.agent-client/profiles/<key>.json
-//
-// Keeping one file per server means a second pairing never overwrites the
-// first server's token/machine id/workspace root, and several
-// `agent-client run` processes can coexist on the same machine.
-func ProfilePath(server string) (string, error) {
+// ProfilesDir is the per-server layout written by 0.4.x and migrated here.
+func ProfilesDir() (string, error) {
 	d, err := DefaultDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(d, "profiles", profileKey(server)+".json"), nil
+	return filepath.Join(d, "profiles"), nil
 }
 
-// profileKey turns a relay URL into a stable, filesystem-safe file name.
-// http://10.99.9.7:30141 -> http_10.99.9.7_30141; bare hosts are accepted too.
-func profileKey(server string) string {
-	s := strings.TrimSpace(server)
-	if u, err := url.Parse(s); err == nil && u.Scheme != "" && u.Host != "" {
-		s = u.Scheme + "_" + u.Host
-	}
-	var b strings.Builder
-	for _, r := range s {
-		switch {
-		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '.', r == '-', r == '_':
-			b.WriteRune(r)
-		default:
-			b.WriteByte('_')
-		}
-	}
-	key := strings.Trim(b.String(), "._-")
-	if key == "" {
-		key = "server"
-	}
-	return key
+// normalizeServer trims the URL and trailing slashes so equivalent spellings
+// map to one entry.
+func normalizeServer(server string) string {
+	return strings.TrimRight(strings.TrimSpace(server), "/")
 }
 
-// Path returns the on-disk path this config is bound to.
-func (c *Config) Path() string { return c.file }
+// Path returns the on-disk path this store is bound to.
+func (s *Store) Path() string { return s.file }
 
 // SetPath overrides the on-disk path used by Save.
-func (c *Config) SetPath(p string) {
+func (s *Store) SetPath(p string) {
 	if p != "" {
-		c.file = p
+		s.file = p
 	}
 }
 
-// Load reads config from the given path (or the default if empty). When the
-// default path is missing, a legacy ~/.pi-agent/config.json is used instead
-// (and remains the save target, so old installs keep working).
-func Load(path string) (*Config, error) {
+// List returns the saved connections sorted by server URL.
+func (s *Store) List() []*ServerConfig {
+	out := make([]*ServerConfig, 0, len(s.Servers))
+	for _, cfg := range s.Servers {
+		out = append(out, cfg)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Server < out[j].Server })
+	return out
+}
+
+// Get returns the entry for a server URL, tolerating a trailing slash.
+func (s *Store) Get(server string) *ServerConfig {
+	return s.Servers[normalizeServer(server)]
+}
+
+// Set stores (or replaces) one connection and points Current at it.
+func (s *Store) Set(cfg *ServerConfig) {
+	cfg.Server = normalizeServer(cfg.Server)
+	if s.Servers == nil {
+		s.Servers = make(map[string]*ServerConfig)
+	}
+	// Drop an older spelling of the same server.
+	for key := range s.Servers {
+		if normalizeServer(key) == cfg.Server {
+			delete(s.Servers, key)
+		}
+	}
+	s.Servers[cfg.Server] = cfg
+	s.Current = cfg.Server
+}
+
+// Delete removes a connection; Current clears when it pointed there.
+func (s *Store) Delete(server string) {
+	key := normalizeServer(server)
+	delete(s.Servers, key)
+	if s.Current == key {
+		s.Current = ""
+	}
+}
+
+// Resolve picks the connection to use: an explicit server wins, then Current,
+// then the only saved entry. nil when the choice is ambiguous or empty.
+func (s *Store) Resolve(server string) *ServerConfig {
+	if server = normalizeServer(server); server != "" {
+		return s.Get(server)
+	}
+	if s.Current != "" {
+		if cfg := s.Get(s.Current); cfg != nil {
+			return cfg
+		}
+	}
+	if len(s.Servers) == 1 {
+		for _, cfg := range s.Servers {
+			return cfg
+		}
+	}
+	return nil
+}
+
+// NewMachineID returns a fresh stable machine identity (32 hex chars).
+func NewMachineID() (string, error) {
+	raw := make([]byte, 16)
+	if _, err := rand.Read(raw); err != nil {
+		return "", fmt.Errorf("generate machine id: %w", err)
+	}
+	return hex.EncodeToString(raw), nil
+}
+
+// EnsureMachineID returns the entry's machine id, generating + saving one when
+// absent. Failure to persist is not fatal for the current run.
+func (s *Store) EnsureMachineID(server string) (string, error) {
+	cfg := s.Get(server)
+	if cfg == nil {
+		return "", fmt.Errorf("no saved connection for %s", normalizeServer(server))
+	}
+	if cfg.MachineID != "" {
+		return cfg.MachineID, nil
+	}
+	id, err := NewMachineID()
+	if err != nil {
+		return "", err
+	}
+	cfg.MachineID = id
+	if err := s.Save(); err != nil {
+		return cfg.MachineID, nil
+	}
+	return cfg.MachineID, nil
+}
+
+// Save writes the store atomically with mode 0600.
+func (s *Store) Save() error {
+	if s.file == "" {
+		p, err := DefaultPath()
+		if err != nil {
+			return err
+		}
+		s.file = p
+	}
+	if s.Version == 0 {
+		s.Version = CurrentVersion
+	}
+	if s.Servers == nil {
+		s.Servers = make(map[string]*ServerConfig)
+	}
+	if err := os.MkdirAll(filepath.Dir(s.file), 0o700); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(s, "", "  ")
+	if err != nil {
+		return err
+	}
+	tmp := s.file + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, s.file)
+}
+
+// v1File is the pre-0.5 single-connection file shape (also each profile file).
+type v1File struct {
+	Server        string `json:"server"`
+	Token         string `json:"token"`
+	WorkspaceRoot string `json:"workspaceRoot,omitempty"`
+	MachineID     string `json:"machineId,omitempty"`
+	Label         string `json:"label,omitempty"`
+}
+
+// addFileEntries merges one legacy file into the store. It accepts the v1
+// single-connection shape AND a v2 map (a profile that an explicit
+// `run --config` already migrated in place). Existing servers win.
+func (s *Store) addFileEntries(raw []byte, source string) bool {
+	_ = source
+	var probe struct {
+		Servers map[string]*ServerConfig `json:"servers"`
+	}
+	if json.Unmarshal(raw, &probe) == nil && probe.Servers != nil {
+		added := false
+		for key, cfg := range probe.Servers {
+			if cfg == nil || cfg.Token == "" {
+				continue
+			}
+			server := normalizeServer(cfg.Server)
+			if server == "" {
+				server = normalizeServer(key)
+			}
+			if server == "" {
+				continue
+			}
+			if _, exists := s.Servers[server]; exists {
+				continue
+			}
+			cfg.Server = server
+			s.Servers[server] = cfg
+			added = true
+		}
+		return added
+	}
+	var old v1File
+	if json.Unmarshal(raw, &old) != nil || normalizeServer(old.Server) == "" || old.Token == "" {
+		return false
+	}
+	server := normalizeServer(old.Server)
+	if _, exists := s.Servers[server]; exists {
+		return false // the v2/default entry wins
+	}
+	s.Servers[server] = &ServerConfig{
+		Server:        server,
+		Token:         old.Token,
+		WorkspaceRoot: old.WorkspaceRoot,
+		MachineID:     old.MachineID,
+		Label:         old.Label,
+	}
+	return true
+}
+
+// LoadStore reads the v2 store at path (or the default path), migrating the
+// legacy single file, the per-server profiles and ~/.pi-agent/config.json on
+// first use. It never fails when nothing exists yet: an empty store is
+// returned for pairing to fill.
+func LoadStore(path string) (*Store, error) {
 	explicit := path != ""
 	if !explicit {
 		p, err := DefaultPath()
@@ -152,46 +300,86 @@ func Load(path string) (*Config, error) {
 		}
 		path = p
 	}
+	s := &Store{Version: CurrentVersion, Servers: make(map[string]*ServerConfig), file: path}
+	migrated := false
+
 	data, err := os.ReadFile(path)
-	if err != nil && !explicit {
-		if legacy, legacyErr := LegacyPath(); legacyErr == nil {
-			if legacyData, readErr := os.ReadFile(legacy); readErr == nil {
-				path = legacy
-				data = legacyData
-				err = nil
+	switch {
+	case err == nil:
+		var probe struct {
+			Servers map[string]*ServerConfig `json:"servers"`
+		}
+		if json.Unmarshal(data, &probe) == nil && probe.Servers != nil {
+			// v2
+			var parsed Store
+			if err := json.Unmarshal(data, &parsed); err != nil {
+				return nil, fmt.Errorf("parse config %s: %w", path, err)
+			}
+			parsed.file = path
+			parsed.normalize()
+			return &parsed, nil
+		}
+		// v1 single file at the same path.
+		if s.addFileEntries(data, path) {
+			migrated = true
+		}
+	case !os.IsNotExist(err):
+		return nil, fmt.Errorf("read config %s: %w", path, err)
+	}
+
+	if !explicit {
+		// 0.4.x per-server profiles.
+		if dir, err := ProfilesDir(); err == nil {
+			if matches, _ := filepath.Glob(filepath.Join(dir, "*.json")); len(matches) > 0 {
+				sort.Strings(matches)
+				for _, profile := range matches {
+					if raw, err := os.ReadFile(profile); err == nil && s.addFileEntries(raw, profile) {
+						migrated = true
+					}
+				}
+			}
+		}
+		// Pre-0.3 legacy file.
+		if legacy, err := LegacyPath(); err == nil && legacy != path {
+			if raw, err := os.ReadFile(legacy); err == nil && s.addFileEntries(raw, legacy) {
+				migrated = true
 			}
 		}
 	}
-	if err != nil {
-		return nil, fmt.Errorf("read config %s: %w", path, err)
+
+	if migrated {
+		if err := s.Save(); err != nil {
+			return nil, fmt.Errorf("migrate config to %s: %w", path, err)
+		}
 	}
-	var c Config
-	if err := json.Unmarshal(data, &c); err != nil {
-		return nil, fmt.Errorf("parse config %s: %w", path, err)
-	}
-	c.file = path
-	return &c, nil
+	return s, nil
 }
 
-// Save writes the config atomically with mode 0600.
-func (c *Config) Save() error {
-	if c.file == "" {
-		p, err := DefaultPath()
-		if err != nil {
-			return err
+func (s *Store) normalize() {
+	if s.Servers == nil {
+		s.Servers = make(map[string]*ServerConfig)
+	}
+	out := make(map[string]*ServerConfig, len(s.Servers))
+	for key, cfg := range s.Servers {
+		if cfg == nil || cfg.Token == "" {
+			continue
 		}
-		c.file = p
+		server := normalizeServer(cfg.Server)
+		if server == "" {
+			server = normalizeServer(key)
+		}
+		if server == "" {
+			continue
+		}
+		cfg.Server = server
+		out[server] = cfg
 	}
-	if err := os.MkdirAll(filepath.Dir(c.file), 0o700); err != nil {
-		return err
+	s.Servers = out
+	if s.Version < CurrentVersion {
+		s.Version = CurrentVersion
 	}
-	data, err := json.MarshalIndent(c, "", "  ")
-	if err != nil {
-		return err
+	s.Current = normalizeServer(s.Current)
+	if _, ok := s.Servers[s.Current]; !ok {
+		s.Current = ""
 	}
-	tmp := c.file + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, c.file)
 }

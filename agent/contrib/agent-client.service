@@ -12,12 +12,16 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-# Edit: point to the binary.
+# Edit: point to the binary. Add `--server URL` when several relays are saved;
+# without it the client uses the last paired / only connection (no TTY here,
+# so the interactive menu is not used).
 ExecStart=/usr/local/bin/agent-client run
 # Optionally pin the shared workspace root (default: service working directory).
 # WorkingDirectory=/home/youruser/projects
-# Config is read from ~/.agent-client/config.json (legacy ~/.pi-agent/config.json
-# is still honored).
+# All connections live in ~/.agent-client/config.json (legacy
+# ~/.pi-agent/config.json is migrated automatically).
+# A second client for the same machine is refused by the relay (409) while
+# this service is connected; use `--replace` only for a deliberate takeover.
 User=youruser
 Restart=always
 RestartSec=3

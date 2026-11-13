@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,6 +11,10 @@ import (
 	"piagent/internal/protocol"
 	"piagent/internal/workspace"
 )
+
+func testEntry(root string) *config.ServerConfig {
+	return &config.ServerConfig{Server: "http://relay:30142", Token: "t", WorkspaceRoot: root}
+}
 
 // The relay's per-request `base` must reach the method implementations —
 // regressing this silently puts project workspaces back on the agent root.
@@ -70,7 +75,7 @@ func TestResolveWorkspaceRootPrefersCwd(t *testing.T) {
 	oldRoot := t.TempDir()
 	t.Chdir(project)
 
-	root, note, err := resolveWorkspaceRoot("", &config.Config{WorkspaceRoot: oldRoot})
+	root, note, err := resolveWorkspaceRoot("", testEntry(oldRoot))
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
@@ -87,11 +92,11 @@ func TestResolveWorkspaceRootFlagWinsAndMustExist(t *testing.T) {
 	t.Chdir(t.TempDir())
 	flagRoot := t.TempDir()
 
-	root, _, err := resolveWorkspaceRoot(flagRoot, &config.Config{WorkspaceRoot: t.TempDir()})
+	root, _, err := resolveWorkspaceRoot(flagRoot, testEntry(t.TempDir()))
 	if err != nil || !sameCleanPath(root, flagRoot) {
 		t.Fatalf("root = %q (err %v), want --root %q", root, err, flagRoot)
 	}
-	if _, _, err := resolveWorkspaceRoot(filepath.Join(flagRoot, "missing"), &config.Config{}); err == nil {
+	if _, _, err := resolveWorkspaceRoot(filepath.Join(flagRoot, "missing"), testEntry("")); err == nil {
 		t.Fatal("a missing --root must be rejected")
 	}
 }
@@ -101,7 +106,7 @@ func TestResolveWorkspaceRootServiceModeUsesSavedRoot(t *testing.T) {
 	t.Chdir(home) // service cwd: home is not a workspace choice
 	saved := t.TempDir()
 
-	root, note, err := resolveWorkspaceRoot("", &config.Config{WorkspaceRoot: saved})
+	root, note, err := resolveWorkspaceRoot("", testEntry(saved))
 	if err != nil || !sameCleanPath(root, saved) || note != "" {
 		t.Fatalf("root = %q note = %q err = %v, want saved %q", root, note, err, saved)
 	}
@@ -112,7 +117,7 @@ func TestResolveWorkspaceRootDeletedSavedRootFallsBack(t *testing.T) {
 	t.Chdir(home)
 	gone := filepath.Join(t.TempDir(), "gone")
 
-	root, note, err := resolveWorkspaceRoot("", &config.Config{WorkspaceRoot: gone})
+	root, note, err := resolveWorkspaceRoot("", testEntry(gone))
 	if err != nil || !sameCleanPath(root, home) {
 		t.Fatalf("root = %q (err %v), want home %q", root, err, home)
 	}
@@ -121,28 +126,44 @@ func TestResolveWorkspaceRootDeletedSavedRootFallsBack(t *testing.T) {
 	}
 }
 
-func TestPairTargetConfigPath(t *testing.T) {
-	setTestHome(t)
-
-	// Fresh install → default config file (empty sentinel).
-	if path, profile := pairTargetConfigPath("", "http://a:1"); path != "" || profile {
-		t.Fatalf("fresh install: path=%q profile=%v, want the default file", path, profile)
+// A relay 409 must surface the live holder so the user knows what to stop.
+func TestParseConflictReportsHolder(t *testing.T) {
+	err := parseConflict([]byte(`{"code":"machine-connected","connection":{"hostname":"lab","agentVersion":"0.5.0"}}`))
+	if !isDuplicateConnection(err) {
+		t.Fatalf("err = %v, want errDuplicateConnection", err)
 	}
-	first := &config.Config{Server: "http://a:1", Token: "t"}
-	if err := first.Save(); err != nil {
+	var dup *duplicateConnectionError
+	if !errors.As(err, &dup) || !strings.Contains(dup.Error(), "lab") || !strings.Contains(dup.Error(), "0.5.0") {
+		t.Fatalf("holder detail = %q", err.Error())
+	}
+	// A body without connection details still yields the sentinel.
+	if !isDuplicateConnection(parseConflict(nil)) {
+		t.Fatal("empty 409 body lost the duplicate sentinel")
+	}
+}
+
+// A relay URL's trailing slash must not create a second config entry, and an
+// explicit --server must win over the last-used one.
+func TestStoreResolveKeepsOneEntryPerServer(t *testing.T) {
+	setTestHome(t)
+	dir := filepath.Join(t.TempDir(), "conf")
+	store, err := config.LoadStore(filepath.Join(dir, "config.json"))
+	if err != nil {
 		t.Fatal(err)
 	}
-	// Same server (trailing slash tolerated) → keep the default file.
-	if path, profile := pairTargetConfigPath("", "http://a:1/"); path != "" || profile {
-		t.Fatalf("re-pair: path=%q profile=%v, want the default file", path, profile)
+	store.Set(&config.ServerConfig{Server: "http://a:1/", Token: "ta"})
+	store.Set(&config.ServerConfig{Server: "http://b:1", Token: "tb"})
+	store.Set(&config.ServerConfig{Server: "http://a:1", Token: "ta2"})
+	if len(store.Servers) != 2 {
+		t.Fatalf("servers = %v, want 2 entries keyed by normalized URL", store.List())
 	}
-	// Different server → its own profile.
-	path, profile := pairTargetConfigPath("", "http://b:1")
-	if !profile || path == "" {
-		t.Fatalf("second server: path=%q profile=%v, want a profile file", path, profile)
+	if got := store.Get("http://a:1"); got == nil || got.Token != "ta2" {
+		t.Fatalf("re-pair did not replace the entry: %+v", got)
 	}
-	// Explicit --config always wins.
-	if path, profile := pairTargetConfigPath("custom.json", "http://b:1"); path != "custom.json" || profile {
-		t.Fatalf("explicit config: path=%q profile=%v, want custom.json", path, profile)
+	if got := store.Resolve("http://a:1/"); got == nil || got.Server != "http://a:1" {
+		t.Fatalf("Resolve(trailing slash) = %+v, want the a:1 entry", got)
+	}
+	if got := store.Resolve(""); got == nil || got.Server != "http://a:1" {
+		t.Fatalf("Resolve(current) = %+v, want the last paired server", got)
 	}
 }

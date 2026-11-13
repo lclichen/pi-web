@@ -44,6 +44,13 @@ function loadUnreadOnly(): boolean {
   }
 }
 
+function formatSize(bytes: number): string {
+  if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
+  if (bytes >= 1024 ** 2) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
+  if (bytes >= 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${bytes} B`;
+}
+
 interface Props {
   sessions: SessionInfo[];
   runningSessionIds: Set<string>;
@@ -409,6 +416,47 @@ export function ProjectSessionTree({
     await fetch(`/api/projects/${encodeURIComponent(project.id)}`, { method: "DELETE" }).catch(() => {});
     loadProjects();
     refreshSessions();
+  };
+
+  // Host 项目区临时附件（.pi/attachments）：先算占用，再确认清理。
+  const cleanAttachments = async (project: ProjectRecord) => {
+    const base = `/api/projects/${encodeURIComponent(project.id)}/attachments`;
+    try {
+      const res = await fetch(base);
+      const data = (await res.json().catch(() => ({}))) as { bytes?: number; files?: number; error?: string };
+      if (!res.ok) {
+        window.alert(data.error ?? t("sessions.operationFailedHttp", { code: res.status }));
+        return;
+      }
+      const bytes = data.bytes ?? 0;
+      const files = data.files ?? 0;
+      if (bytes <= 0) {
+        window.alert(t("sessions.cleanAttachmentsEmpty"));
+        return;
+      }
+      const size = formatSize(bytes);
+      if (
+        !window.confirm(
+          t("sessions.cleanAttachmentsConfirm", { name: project.name, size, count: files }),
+        )
+      ) {
+        return;
+      }
+      const del = await fetch(base, { method: "DELETE" });
+      const removed = (await del.json().catch(() => ({}))) as { bytes?: number; files?: number; error?: string };
+      if (!del.ok) {
+        window.alert(removed.error ?? t("sessions.operationFailedHttp", { code: del.status }));
+        return;
+      }
+      window.alert(
+        t("sessions.cleanAttachmentsDone", {
+          size: formatSize(removed.bytes ?? bytes),
+          count: removed.files ?? files,
+        }),
+      );
+    } catch {
+      window.alert(t("sessions.cleanAttachmentsFailed"));
+    }
   };
 
   const setContainer = async (project: ProjectRecord, containerId: number | null) => {
@@ -2003,6 +2051,23 @@ export function ProjectSessionTree({
                 }}
               />
             )}
+            <div style={{ borderTop: "1px solid var(--border)" }} />
+            <div
+              style={{
+                padding: "4px 10px",
+                color: "var(--text-dim)",
+                fontSize: 10,
+              }}
+            >
+              {t("sessions.tempFiles")}
+            </div>
+            <MenuItem
+              label={t("sessions.cleanAttachments")}
+              onClick={() => {
+                void cleanAttachments(menuProject);
+                setMenu(null);
+              }}
+            />
             <div style={{ borderTop: "1px solid var(--border)" }} />
             <MenuItem
               label={t("sessions.deleteProject")}

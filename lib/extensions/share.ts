@@ -19,9 +19,9 @@
 import { defineTool, type ExtensionAPI, type InlineExtension } from "@earendil-works/pi-coding-agent";
 import { Type } from "@earendil-works/pi-ai";
 import { join, resolve, sep } from "node:path";
-import { statSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { createShare, SHARE_MAX_BYTES, ShareLimitError } from "../share-store.ts";
-import { remoteReadBinary, type RemoteSessionContext } from "../remote-session.ts";
+import { hostAttachmentsDir, remoteReadBinary, type RemoteSessionContext } from "../remote-session.ts";
 import { getPreviewMime } from "../file-types.ts";
 import { getPublicBaseUrl } from "../server-settings.ts";
 
@@ -57,6 +57,32 @@ function withinRoot(child: string, root: string): boolean {
   const c = resolve(child);
   const r = resolve(root);
   return c === r || c.startsWith(r.endsWith(sep) ? r : r + sep);
+}
+
+/**
+ * Remote sessions keep a Host-side primary copy of chat attachments in the
+ * project home (`hostAttachmentsDir`). The remote bridge cannot see that
+ * directory, so a `.pi/attachments/<name>` mention or an absolute Host path
+ * would make share_file fail there. Resolve such paths to the Host store —
+ * fenced to that one directory (never arbitrary project-home files).
+ */
+function hostAttachmentPath(
+  remote: RemoteSessionContext | undefined,
+  sessionId: string,
+  raw: string,
+): string | null {
+  if (!remote) return null;
+  const dir = hostAttachmentsDir(remote, sessionId);
+  const normalized = raw.replace(/\\/g, "/").replace(/^\.\//, "");
+  let candidate: string;
+  if (isAbsoluteLike(normalized)) {
+    candidate = resolve(normalized);
+  } else {
+    const prefix = ".pi/attachments/";
+    const relativePath = normalized.startsWith(prefix) ? normalized.slice(prefix.length) : normalized;
+    candidate = resolve(join(dir, relativePath));
+  }
+  return candidate !== resolve(dir) && withinRoot(candidate, dir) ? candidate : null;
 }
 
 export function makeShareFileExtension(opts: ShareFileExtensionOptions): InlineExtension {
@@ -166,19 +192,42 @@ export function makeShareFileExtension(opts: ShareFileExtensionOptions): InlineE
               };
             }
             let bytes: Buffer;
+            let hostFallback = false;
             try {
               bytes = (await remoteReadBinary(opts.remote, raw)).bytes;
             } catch (e) {
-              return {
-                content: [
-                  {
-                    type: "text",
-                    text: `Error: 读取远程文件失败（${e instanceof Error ? e.message : String(e)}）——容器/Agent 可能离线`,
-                  },
-                ],
-                details: {} as ShareDetails,
-                isError: true,
-              };
+              const remoteError = e instanceof Error ? e.message : String(e);
+              // Host primary copy of a chat attachment (project-home
+              // .pi/attachments). The remote bridge cannot read it, but the
+              // link is created from the server-side bytes just the same.
+              const hostPath = hostAttachmentPath(opts.remote, sessionId, raw);
+              if (!hostPath) {
+                return {
+                  content: [
+                    {
+                      type: "text",
+                      text: `Error: 读取远程文件失败（${remoteError}）——容器/Agent 可能离线`,
+                    },
+                  ],
+                  details: {} as ShareDetails,
+                  isError: true,
+                };
+              }
+              try {
+                bytes = readFileSync(hostPath);
+                hostFallback = true;
+              } catch {
+                return {
+                  content: [
+                    {
+                      type: "text",
+                      text: `Error: 读取远程文件失败（${remoteError}），Host 项目区也没有该附件：${raw}`,
+                    },
+                  ],
+                  details: {} as ShareDetails,
+                  isError: true,
+                };
+              }
             }
             if (bytes.length === 0) {
               return {
@@ -213,6 +262,9 @@ export function makeShareFileExtension(opts: ShareFileExtensionOptions): InlineE
                   text:
                     `Share link created (kind=snapshot — 内容为当前快照, expires ` +
                     `${new Date(entry.expiresAt).toISOString()}, max ${entry.maxDownloads} downloads):\n${url}\n` +
+                    (hostFallback
+                      ? "Source: Host project-area attachment (.pi/attachments); the remote workspace copy was not used.\n"
+                      : "") +
                     `Pass this URL to the MCP tool's file/url parameter. Do NOT paste the file contents.`,
                 },
               ],

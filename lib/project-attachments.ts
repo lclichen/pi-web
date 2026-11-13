@@ -1,0 +1,63 @@
+import { lstatSync, readdirSync, rmSync } from "fs";
+import { join } from "path";
+
+/** Chat attachments for a project live in the Host project home; they are
+ *  runtime temp files (mirrored per session), never configuration. */
+export function projectAttachmentsDir(projectHomePath: string): string {
+  return join(projectHomePath, ".pi", "attachments");
+}
+
+export interface AttachmentsStats {
+  bytes: number;
+  files: number;
+}
+
+/** Recursively sum the attachment store. Missing dir = empty. */
+export function measureAttachments(dir: string): AttachmentsStats {
+  const stats: AttachmentsStats = { bytes: 0, files: 0 };
+  let entries;
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return stats;
+  }
+  for (const entry of entries) {
+    const full = join(dir, entry.name);
+    if (entry.isFile()) {
+      try {
+        stats.bytes += lstatSync(full).size;
+        stats.files += 1;
+      } catch {
+        // vanished mid-walk — ignore
+      }
+    } else if (entry.isDirectory()) {
+      const nested = measureAttachments(full);
+      stats.bytes += nested.bytes;
+      stats.files += nested.files;
+    }
+  }
+  return stats;
+}
+
+export type CleanAttachmentsResult =
+  | { ok: true; bytes: number; files: number }
+  | { ok: false; error: string };
+
+/**
+ * Remove the attachment store. Refuses a symlinked/replaced directory so a
+ * tampered project home cannot redirect the delete outside the store.
+ */
+export function cleanAttachments(dir: string): CleanAttachmentsResult {
+  let stat;
+  try {
+    stat = lstatSync(dir);
+  } catch {
+    return { ok: true, bytes: 0, files: 0 };
+  }
+  if (!stat.isDirectory() || stat.isSymbolicLink()) {
+    return { ok: false, error: "临时文件目录不可清理" };
+  }
+  const stats = measureAttachments(dir);
+  rmSync(dir, { recursive: true, force: true });
+  return { ok: true, ...stats };
+}

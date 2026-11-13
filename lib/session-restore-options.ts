@@ -115,6 +115,7 @@ export async function restoreSessionOptions(req: Request, sessionId: string): Pr
         apiKey,
         containerId: project?.containerId ?? 0,
         isAdmin: user.role === "admin",
+        ...(project && project.mode === "sandbox" ? { homePrefix: ensureProjectHome(project) } : {}),
       };
     }
   } else if (mode === "local-machine") {
@@ -154,6 +155,7 @@ export async function restoreSessionOptions(req: Request, sessionId: string): Pr
       ...(project?.machineId ? { machineId: project.machineId } : {}),
       ...(project?.workdir ? { workdir: project.workdir } : {}),
       isAdmin: user.role === "admin",
+      ...(project && project.mode === "local-machine" ? { homePrefix: effectiveCwd } : {}),
     };
   } else if (mode === "ssh") {
     // SSH mode: the SDK session runs server-side in the project home; the
@@ -188,6 +190,7 @@ export async function restoreSessionOptions(req: Request, sessionId: string): Pr
           sshConfig,
           workdir: project.workdir ?? "/",
           isAdmin: user.role === "admin",
+          homePrefix: effectiveCwd,
         };
       }
     }

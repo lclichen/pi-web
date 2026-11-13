@@ -9,7 +9,7 @@ import {
   statSync,
   writeFileSync,
 } from "fs";
-import { join, resolve } from "path";
+import { join, relative, resolve } from "path";
 import { randomUUID } from "crypto";
 import { dataDir } from "./mode-homes";
 import { writeSshConfig, type SshConfigInput } from "./ssh";
@@ -27,6 +27,13 @@ import type { SessionMode } from "./session-modes";
  * layered on top of the admin-managed global agent dir. Duplicating a project
  * copies its config snapshot — that is the "多套配置切换" workflow.
  */
+
+/** Runtime chat attachments live under .pi/attachments in a project home;
+ *  project duplication must not carry them (they are machine-local temps). */
+function isRuntimeAttachmentPath(relPath: string): boolean {
+  const normalized = relPath.replace(/\\/g, "/").replace(/^\.\//, "");
+  return normalized === ".pi/attachments" || normalized.startsWith(".pi/attachments/");
+}
 
 export interface ProjectRecord {
   id: string;
@@ -241,7 +248,12 @@ export async function createProject(input: {
       if (existsSync(seedHome)) {
         for (const entry of readdirSync(seedHome)) {
           if (entry === ".pi") {
-            cpSync(join(seedHome, ".pi"), join(home, ".pi"), { recursive: true });
+            cpSync(join(seedHome, ".pi"), join(home, ".pi"), {
+              recursive: true,
+              // Runtime chat attachments are per-machine temp files; never
+              // carry them into a duplicate project.
+              filter: (src) => !isRuntimeAttachmentPath(relative(seedHome, src)),
+            });
             // The copy carries the seed's sandbox credentials; re-write this
             // project's own binding on top.
             if (project.mode === "sandbox") {

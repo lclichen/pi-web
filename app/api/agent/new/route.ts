@@ -184,6 +184,7 @@ export async function POST(req: Request) {
             apiKey: identity.session.apiKey,
             containerId: projectContainerId,
             isAdmin: user.role === "admin",
+            homePrefix: home,
           };
         }
         extensionFactories = [
@@ -233,6 +234,7 @@ export async function POST(req: Request) {
           sshConfig,
           workdir: project.workdir ?? "/",
           isAdmin: user.role === "admin",
+          homePrefix: home,
         };
       } else {
         const gate = requireCompatibleAgent(user.id, project.machineId);
@@ -262,6 +264,7 @@ export async function POST(req: Request) {
           ...(project.machineId ? { machineId: project.machineId } : {}),
           ...(project.workdir ? { workdir: project.workdir } : {}),
           isAdmin: user.role === "admin",
+          homePrefix: home,
         };
       }
       // 目录契约（lib/session-context.ts）：SDK 会话 cwd 一律 = 服务器侧

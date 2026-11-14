@@ -1274,6 +1274,7 @@ export const zhCNLocale: LocalePlugin = {
     "sessions.projectionLastVerified": "附件完整校验：{time}",
     "sessions.projectionLoading": "正在读取工作区同步状态…",
     "sessions.projectionMenu": "工作区同步状态…",
+    "sessions.projectionTimedOut": "上次同步超时，将自动重试",
     "sessions.projectionTitle": "工作区同步状态 · {name}",
     "sessions.projectionTruncated": "投影被截断：{reason}（跳过 {count}）",
     "sessions.projectsYetUseButtonAbove": "还没有项目——点上方按钮创建第一个。",

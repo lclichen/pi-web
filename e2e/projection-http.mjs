@@ -106,6 +106,15 @@ try {
   assert.equal(status.data.fileCount, 1);
   assert.deepEqual(status.data.dirty, []);
 
+  const badges = await api("/api/projection-statuses");
+  assert.equal(badges.res.ok, true, JSON.stringify(badges.data));
+  const badge = badges.data.statuses?.[projectId];
+  assert.ok(badge, "project badge present after a reconcile");
+  assert.equal(badge.fileCount, 1);
+  assert.equal(badge.dirty, 0);
+  assert.equal(badge.conflicts, 0);
+  assert.equal(badge.errors, 0);
+
   await sshExec(ssh, `printf 'remote-local-edit\\n' > ${JSON.stringify(remotePath(".pi/skills/http/SKILL.md"))}`, "/", 15_000);
   const forced = await api(`/api/projects/${projectId}/projection/repair`, {
     method: "POST",

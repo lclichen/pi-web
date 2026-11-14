@@ -90,6 +90,18 @@ interface ProjectionInfo {
   last: { updatedAt?: string; timedOut?: boolean } | null;
 }
 
+/** Compact row badge state from /api/projection-statuses. */
+interface ProjectionBadge {
+  dirty: number;
+  conflicts: number;
+  errors: number;
+  truncated: { reason: string; skipped: number } | null;
+  timedOut: boolean;
+  fileCount: number;
+  updatedAt: string | null;
+  lastVerifiedAt: string | null;
+}
+
 interface Props {
   sessions: SessionInfo[];
   runningSessionIds: Set<string>;
@@ -182,6 +194,7 @@ export function ProjectSessionTree({
   const [projectionProject, setProjectionProject] = useState<ProjectRecord | null>(null);
   const [projectionInfo, setProjectionInfo] = useState<ProjectionInfo | null>(null);
   const [projectionBusy, setProjectionBusy] = useState(false);
+  const [projectionBadges, setProjectionBadges] = useState<Record<string, ProjectionBadge>>({});
   const [containers, setContainers] = useState<Array<{ id: number; name: string; status: string; imageName: string }>>(
     [],
   );
@@ -285,6 +298,17 @@ export function ProjectSessionTree({
   useEffect(() => {
     loadProjects();
   }, [loadProjects, projectsRefreshKey]);
+
+  // Project-row projection badges: only projects that have reconciled appear.
+  const loadProjectionBadges = useCallback(() => {
+    fetch("/api/projection-statuses")
+      .then((r) => (r.ok ? r.json() : { statuses: {} }))
+      .then((d: { statuses?: Record<string, ProjectionBadge> }) => setProjectionBadges(d.statuses ?? {}))
+      .catch(() => {});
+  }, []);
+  useEffect(() => {
+    loadProjectionBadges();
+  }, [loadProjectionBadges, projectsRefreshKey]);
 
   // Host 目录注册表（admin-only；非管理员接口 403 → 空列表）。
   const loadHostDirs = useCallback(() => {
@@ -618,6 +642,7 @@ export function ProjectSessionTree({
         return;
       }
       setProjectionInfo(data);
+      loadProjectionBadges();
     } catch {
       window.alert(t("sessions.projectionFailed"));
       setProjectionProject(null);
@@ -1473,6 +1498,27 @@ export function ProjectSessionTree({
                     : bound
                       ? { color: "#f59e0b", label: bound.status }
                       : { color: "#ef4444", label: t("sessions.container2") };
+              const badge = projectionBadges[project.id];
+              const badgeCount = badge ? badge.dirty + badge.conflicts + badge.errors : 0;
+              const badgeParts: string[] = [];
+              if (badge && badge.dirty > 0) badgeParts.push(t("sessions.projectionDirty", { count: badge.dirty }));
+              if (badge && badge.conflicts > 0)
+                badgeParts.push(t("sessions.projectionConflicts", { count: badge.conflicts }));
+              if (badge && badge.errors > 0) badgeParts.push(t("sessions.projectionErrors", { count: badge.errors }));
+              if (badge?.truncated)
+                badgeParts.push(
+                  t("sessions.projectionTruncated", {
+                    reason: badge.truncated.reason,
+                    count: badge.truncated.skipped,
+                  }),
+                );
+              if (badge?.timedOut) badgeParts.push(t("sessions.projectionTimedOut"));
+              const badgeTitle = badgeParts.join(" · ");
+              const showBadge = Boolean(badge && (badgeCount > 0 || badge.truncated || badge.timedOut));
+              const badgeColor =
+                badge && (badge.conflicts > 0 || badge.errors > 0 || badge.timedOut)
+                  ? "var(--danger)"
+                  : "var(--warning)";
               return (
                 <div key={project.id} style={{ marginBottom: 2, order: groupRenderOrder.get(project.id) ?? 0 }}>
                   <div
@@ -1553,6 +1599,30 @@ export function ProjectSessionTree({
                     >
                       {project.name}
                     </span>
+                    {showBadge && (
+                      <button
+                        type="button"
+                        title={badgeTitle}
+                        aria-label={badgeTitle}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void openProjection(project);
+                        }}
+                        style={{
+                          flexShrink: 0,
+                          border: "none",
+                          background: "transparent",
+                          padding: "0 2px",
+                          cursor: "pointer",
+                          fontSize: 9.5,
+                          fontWeight: 700,
+                          lineHeight: 1,
+                          color: badgeColor,
+                        }}
+                      >
+                        ●{badgeCount > 0 ? badgeCount : ""}
+                      </button>
+                    )}
                     {project.mode === "sandbox" && (
                       <span
                         title={t("sessions.runInsideContainer")}

@@ -34,9 +34,21 @@ export function isAttachmentRel(rel: string): boolean {
   return normalizeProjectionRel(rel).startsWith(PROJECTION_ATTACHMENTS_PREFIX);
 }
 
+/**
+ * Repo internals and package-manager caches inside a skill are not runtime
+ * content: projecting `.git` copies history/objects and `node_modules/.cache`
+ * burns the 64MB budget on rebuild artifacts.
+ */
+function isProjectionExcludedPath(rel: string): boolean {
+  const normalized = normalizeProjectionRel(rel);
+  if (normalized.split("/").includes(".git")) return true;
+  return normalized.includes("/node_modules/.cache");
+}
+
 /** Directories the Host walk descends into (`.pi` itself plus the subtrees). */
 export function isProjectionDir(rel: string): boolean {
   const normalized = normalizeProjectionRel(rel);
+  if (isProjectionExcludedPath(normalized)) return false;
   if (normalized === ".pi") return true;
   return [
     ".pi/skills",
@@ -47,6 +59,7 @@ export function isProjectionDir(rel: string): boolean {
 
 export function isProjectedPath(rel: string): boolean {
   const normalized = normalizeProjectionRel(rel);
+  if (isProjectionExcludedPath(normalized)) return false;
   if (!PROJECTION_PREFIXES.some((prefix) => normalized.startsWith(prefix))) return false;
   if (normalized === ".pi/.sync-backups" || normalized.startsWith(".pi/.sync-backups/")) return false;
   if (isAttachmentRel(normalized)) {

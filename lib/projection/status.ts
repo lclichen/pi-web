@@ -49,3 +49,32 @@ export function emptyProjectionStatus(hostDigest = ""): ProjectionStatus {
     lastVerifiedAt: null,
   };
 }
+
+/** Compact projection state for project-row badges. */
+export interface ProjectionBadgeSummary {
+  dirty: number;
+  conflicts: number;
+  errors: number;
+  truncated: { reason: string; skipped: number } | null;
+  timedOut: boolean;
+  fileCount: number;
+  updatedAt: string | null;
+  lastVerifiedAt: string | null;
+}
+
+export function projectionBadgeSummary(
+  status: ProjectionStatus | null,
+  fileCount = 0,
+): ProjectionBadgeSummary | null {
+  if (!status) return null;
+  return {
+    dirty: status.dirty.length,
+    conflicts: status.conflicts.length,
+    errors: status.errors.length,
+    truncated: status.truncated ?? null,
+    timedOut: status.timedOut === true,
+    fileCount,
+    updatedAt: status.updatedAt ?? null,
+    lastVerifiedAt: status.lastVerifiedAt ?? null,
+  };
+}

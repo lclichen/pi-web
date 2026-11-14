@@ -114,6 +114,7 @@ try {
   assert.equal(badge.dirty, 0);
   assert.equal(badge.conflicts, 0);
   assert.equal(badge.errors, 0);
+  assert.equal(badge.pending, false);
 
   await sshExec(ssh, `printf 'remote-local-edit\\n' > ${JSON.stringify(remotePath(".pi/skills/http/SKILL.md"))}`, "/", 15_000);
   const forced = await api(`/api/projects/${projectId}/projection/repair`, {

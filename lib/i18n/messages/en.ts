@@ -1274,6 +1274,7 @@ export const enLocale: LocalePlugin = {
     "sessions.projectionLastVerified": "Attachment full check: {time}",
     "sessions.projectionLoading": "Loading projection status…",
     "sessions.projectionMenu": "Workspace sync status…",
+    "sessions.projectionPending": "Host changes are waiting to sync (they apply on the next prompt)",
     "sessions.projectionTimedOut": "Last sync timed out; it will retry",
     "sessions.projectionTitle": "Workspace sync status · {name}",
     "sessions.projectionTruncated": "Projection truncated: {reason} ({count} skipped)",

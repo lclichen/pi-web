@@ -97,6 +97,7 @@ interface ProjectionBadge {
   errors: number;
   truncated: { reason: string; skipped: number } | null;
   timedOut: boolean;
+  pending: boolean;
   fileCount: number;
   updatedAt: string | null;
   lastVerifiedAt: string | null;
@@ -309,6 +310,11 @@ export function ProjectSessionTree({
   useEffect(() => {
     loadProjectionBadges();
   }, [loadProjectionBadges, projectsRefreshKey]);
+  useEffect(() => {
+    const refresh = () => loadProjectionBadges();
+    window.addEventListener("pi-web:config-changed", refresh);
+    return () => window.removeEventListener("pi-web:config-changed", refresh);
+  }, [loadProjectionBadges]);
 
   // Host 目录注册表（admin-only；非管理员接口 403 → 空列表）。
   const loadHostDirs = useCallback(() => {
@@ -1513,8 +1519,11 @@ export function ProjectSessionTree({
                   }),
                 );
               if (badge?.timedOut) badgeParts.push(t("sessions.projectionTimedOut"));
+              if (badge?.pending) badgeParts.push(t("sessions.projectionPending"));
               const badgeTitle = badgeParts.join(" · ");
-              const showBadge = Boolean(badge && (badgeCount > 0 || badge.truncated || badge.timedOut));
+              const showBadge = Boolean(
+                badge && (badgeCount > 0 || badge.truncated || badge.timedOut || badge.pending),
+              );
               const badgeColor =
                 badge && (badge.conflicts > 0 || badge.errors > 0 || badge.timedOut)
                   ? "var(--danger)"

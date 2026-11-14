@@ -4,6 +4,7 @@ import { requireUserIdentity } from "@/lib/web-session";
 import { isApiRequestAllowed } from "@/lib/request-security";
 import { workspaceDescriptor } from "@/lib/workspace-key";
 import { loadProjectionManifest } from "@/lib/projection/manifest";
+import { isProjectionDirty } from "@/lib/projection/reconcile";
 import { projectionBadgeSummary, readProjectionStatus } from "@/lib/projection/status";
 
 export const dynamic = "force-dynamic";
@@ -21,9 +22,14 @@ export async function GET(req: Request) {
   for (const project of listProjects(identity.session.user.id)) {
     const descriptor = workspaceDescriptor(project);
     const status = readProjectionStatus(project.id, descriptor.key);
-    if (!status) continue;
+    const pending = isProjectionDirty(project.id);
+    if (!status && !pending) continue;
     const manifest = loadProjectionManifest(project.id, descriptor.key);
-    statuses[project.id] = projectionBadgeSummary(status, manifest ? Object.keys(manifest.files).length : 0);
+    statuses[project.id] = projectionBadgeSummary(
+      status,
+      manifest ? Object.keys(manifest.files).length : 0,
+      pending,
+    );
   }
   return NextResponse.json({ statuses });
 }

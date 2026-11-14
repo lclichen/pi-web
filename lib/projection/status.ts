@@ -57,6 +57,8 @@ export interface ProjectionBadgeSummary {
   errors: number;
   truncated: { reason: string; skipped: number } | null;
   timedOut: boolean;
+  /** Host changed since the last reconcile (sync apply / upload / rollback). */
+  pending: boolean;
   fileCount: number;
   updatedAt: string | null;
   lastVerifiedAt: string | null;
@@ -65,16 +67,18 @@ export interface ProjectionBadgeSummary {
 export function projectionBadgeSummary(
   status: ProjectionStatus | null,
   fileCount = 0,
+  pending = false,
 ): ProjectionBadgeSummary | null {
-  if (!status) return null;
+  if (!status && !pending) return null;
   return {
-    dirty: status.dirty.length,
-    conflicts: status.conflicts.length,
-    errors: status.errors.length,
-    truncated: status.truncated ?? null,
-    timedOut: status.timedOut === true,
+    dirty: status?.dirty.length ?? 0,
+    conflicts: status?.conflicts.length ?? 0,
+    errors: status?.errors.length ?? 0,
+    truncated: status?.truncated ?? null,
+    timedOut: status?.timedOut === true,
+    pending,
     fileCount,
-    updatedAt: status.updatedAt ?? null,
-    lastVerifiedAt: status.lastVerifiedAt ?? null,
+    updatedAt: status?.updatedAt ?? null,
+    lastVerifiedAt: status?.lastVerifiedAt ?? null,
   };
 }

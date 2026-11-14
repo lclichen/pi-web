@@ -84,6 +84,11 @@ export function markProjectionClean(projectId: string): void {
   state.dirty = false;
 }
 
+/** True when Host changed since the last reconcile (not merely TTL-expired). */
+export function isProjectionDirty(projectId: string): boolean {
+  return projectState.get(projectId)?.dirty === true;
+}
+
 /** A failed attempt waits the normal TTL instead of retrying on every prompt. */
 export function markProjectionAttempted(projectId: string): void {
   const state = projectState.get(projectId) ?? { lastReconcileAt: 0, dirty: false };

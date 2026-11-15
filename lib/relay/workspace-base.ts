@@ -27,6 +27,8 @@ export const RELAY_WORKSPACE_BASE_FEATURE = "workspace-base";
 export const RELAY_BINARY_READ_FEATURE = "binary-read";
 /** fs.write accepts contentBase64 (binary-safe uploads). Agent >= 0.6.0. */
 export const RELAY_BINARY_WRITE_FEATURE = "binary-write";
+/** fs.manifest returns a batched stat listing (projection fast path). Agent >= 0.7.0. */
+export const RELAY_PROJECTION_MANIFEST_FEATURE = "projection-v1";
 
 export interface RelayWorkspaceScope {
   /** Absolute base directory for agents with per-request roots. */
@@ -84,6 +86,10 @@ export function agentSupportsBinaryRead(info: AgentInfo | null | undefined): boo
 
 export function agentSupportsBinaryWrite(info: AgentInfo | null | undefined): boolean {
   return Boolean(info?.features?.includes(RELAY_BINARY_WRITE_FEATURE));
+}
+
+export function agentSupportsProjectionManifest(info: AgentInfo | null | undefined): boolean {
+  return Boolean(info?.features?.includes(RELAY_PROJECTION_MANIFEST_FEATURE));
 }
 
 /**

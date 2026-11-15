@@ -1,11 +1,12 @@
 import { spawn } from "node:child_process";
-import { mkdir, readdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
   WorkspaceOperationError,
   type WorkspaceDirEntry,
   type WorkspaceExecOptions,
   type WorkspaceExecResult,
+  type WorkspaceManifest,
   type WorkspaceOperations,
   type WorkspaceStat,
 } from "../workspace-operations";
@@ -109,6 +110,55 @@ export function createHostWorkspaceOperations(root: string): WorkspaceOperations
         size: info.size,
         mtimeMs: info.mtimeMs,
       };
+    },
+    async manifest(roots): Promise<WorkspaceManifest> {
+      const base = await rootReal();
+      const entries: WorkspaceManifest["entries"] = [];
+      let truncated = false;
+      const walk = async (dir: string, relDir: string): Promise<void> => {
+        let dirents;
+        try {
+          dirents = await readdir(dir, { withFileTypes: true });
+        } catch {
+          truncated = true;
+          return;
+        }
+        for (const entry of dirents) {
+          if (truncated) return;
+          if (entry.isSymbolicLink()) continue;
+          const rel = relDir ? `${relDir}/${entry.name}` : entry.name;
+          if (entry.isDirectory()) {
+            if (entry.name === ".git") continue;
+            if (entry.name === ".cache" && relDir.endsWith("node_modules")) continue;
+            await walk(join(dir, entry.name), rel);
+            continue;
+          }
+          if (!entry.isFile()) continue;
+          const info = await stat(join(dir, entry.name)).catch(() => null);
+          if (!info) {
+            truncated = true;
+            return;
+          }
+          if (entries.length >= 10_000) {
+            truncated = true;
+            return;
+          }
+          entries.push({ path: rel, size: info.size, mtimeMs: info.mtimeMs });
+        }
+      };
+      for (const root of roots) {
+        const raw = resolve(absoluteRoot, root);
+        const link = await lstat(raw).catch(() => null);
+        if (!link || link.isSymbolicLink()) continue;
+        const abs = await canonicalize(root);
+        const info = await stat(abs).catch(() => null);
+        if (!info) continue;
+        const relRoot = relative(base, abs).split(sep).join("/");
+        if (info.isDirectory()) await walk(abs, relRoot);
+        else if (info.isFile()) entries.push({ path: relRoot, size: info.size, mtimeMs: info.mtimeMs });
+        if (truncated) break;
+      }
+      return { entries, truncated };
     },
     async readdir(path): Promise<WorkspaceDirEntry[]> {
       const dir = await canonicalize(path);

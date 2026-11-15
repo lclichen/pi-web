@@ -14,6 +14,9 @@ export const PROJECTION_SKILLS_PREFIX = ".pi/skills/";
 export const PROJECTION_AGENTS_PREFIX = ".pi/agents/";
 export const PROJECTION_ATTACHMENTS_PREFIX = ".pi/attachments/";
 
+/** Roots passed to a provider's batched manifest (no trailing slash). */
+export const PROJECTION_ROOTS = [".pi/skills", ".pi/agents", ".pi/attachments"] as const;
+
 export const PROJECTION_MAX_FILES = 2_000;
 export const PROJECTION_MAX_BYTES = 64 * 1024 * 1024;
 export const PROJECTION_MAX_FILE_BYTES = 32 * 1024 * 1024;

@@ -56,6 +56,7 @@ export type AgentToRelayMessage = RpcResponse | RpcChunk | RpcEnd | AgentHello;
 export type RpcMethod =
   | "workspace.info"
   | "fs.list"
+  | "fs.manifest"
   | "fs.read"
   | "fs.write"
   | "fs.stat"
@@ -96,6 +97,19 @@ export interface FsEntry {
   isDir: boolean;
   size: number;
   mtime: number; // epoch ms
+}
+
+/** One row in fs.manifest (agent >= 0.7.0, feature "projection-v1"). */
+export interface FsManifestEntry {
+  path: string; // relative to the request's base (workspace root)
+  size: number;
+  mtime: number; // epoch ms
+}
+
+/** Result of fs.manifest. Truncated listings must not drive deletions. */
+export interface FsManifestResult {
+  entries: FsManifestEntry[];
+  truncated: boolean;
 }
 
 /** Result of fs.read. Base64 mode (agent >= binary-read feature) omits

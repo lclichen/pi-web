@@ -98,6 +98,18 @@ try {
   assert.equal(await remoteText(".pi/skills/demo/SKILL.md"), "# Demo skill v1\n");
   assert.equal(await remoteSha(".pi/attachments/pic.bin"), await remoteShaOfHost(".pi/attachments/pic.bin"));
 
+  // 1b) The SSH manifest fast path returns the same three files in one exec.
+  const manifest = await workspace.manifest([".pi/skills", ".pi/agents", ".pi/attachments"]);
+  assert.equal(manifest.truncated, false);
+  assert.deepEqual(manifest.entries.map((entry) => entry.path).sort(), [
+    ".pi/agents/helper.md",
+    ".pi/attachments/pic.bin",
+    ".pi/skills/demo/SKILL.md",
+  ]);
+  for (const entry of manifest.entries) {
+    assert.ok(entry.size > 0 && entry.mtimeMs > 0);
+  }
+
   // 2) Second reconcile adopts (no write).
   const second = await reconcile();
   assert.deepEqual(second.status.pushed, []);

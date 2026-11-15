@@ -332,6 +332,16 @@ export class PlatformClient {
     return res.entries;
   }
 
+  async toolManifest(
+    containerId: number,
+    roots: string[],
+  ): Promise<{ entries: Array<{ path: string; size: number; mtimeMs: number }>; truncated: boolean }> {
+    return this.request(`/api/v1/containers/${containerId}/tools/manifest`, {
+      method: "POST",
+      body: { roots },
+    });
+  }
+
   async toolBash(
     containerId: number,
     command: string,

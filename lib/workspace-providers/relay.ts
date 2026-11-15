@@ -4,17 +4,26 @@ import { clientCompatibility } from "../client-compat";
 import {
   agentSupportsBinaryRead,
   agentSupportsBinaryWrite,
+  agentSupportsProjectionManifest,
   isPathWithin,
   resolveRelayWorkspaceScope,
   toRelayPath,
   type RelayWorkspaceScope,
 } from "../relay/workspace-base";
-import type { ExecResult, FsEntry, FsReadResult, FsStatResult, GrepMatch } from "../relay/protocol";
+import type {
+  ExecResult,
+  FsEntry,
+  FsManifestResult,
+  FsReadResult,
+  FsStatResult,
+  GrepMatch,
+} from "../relay/protocol";
 import {
   WorkspaceOperationError,
   type WorkspaceDirEntry,
   type WorkspaceExecOptions,
   type WorkspaceExecResult,
+  type WorkspaceManifest,
   type WorkspaceOperations,
   type WorkspaceStat,
 } from "../workspace-operations";
@@ -119,6 +128,38 @@ export function createRelayWorkspaceOperations(options: RelayWorkspaceOptions): 
         isDirectory: result.isDir,
         size: result.size,
         mtimeMs: result.mtime,
+      };
+    },
+    async manifest(roots): Promise<WorkspaceManifest> {
+      const info = getAgentForUser(userId, machineId)?.info;
+      if (!agentSupportsProjectionManifest(info)) {
+        throw new WorkspaceOperationError(
+          "UNSUPPORTED",
+          "本机 Agent 版本过旧，无法批量读取工作区清单（需要 ≥ 0.7.0）",
+        );
+      }
+      const scope = scopeOrThrow();
+      const result = await call<FsManifestResult>(
+        "fs.manifest",
+        { roots: roots.map((root) => wirePath(root, scope)) },
+        scope,
+      );
+      // Legacy prefix strategy (pre workspace-base) prefixes every path; newer
+      // agents on this feature never take it, but stripping keeps both correct.
+      const prefix = (scope.prefix ?? "").replace(/\/+$/, "");
+      const strip = (path: string): string => {
+        let rel = path.replace(/\\/g, "/").replace(/^\.\//, "");
+        if (prefix) {
+          if (rel === prefix) rel = "";
+          else if (rel.startsWith(`${prefix}/`)) rel = rel.slice(prefix.length + 1);
+        }
+        return rel;
+      };
+      return {
+        entries: (result.entries ?? [])
+          .map((entry) => ({ path: strip(entry.path), size: entry.size, mtimeMs: entry.mtime }))
+          .filter((entry) => entry.path.length > 0),
+        truncated: result.truncated === true,
       };
     },
     async readdir(path): Promise<WorkspaceDirEntry[]> {

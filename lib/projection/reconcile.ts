@@ -8,6 +8,7 @@ import {
   PROJECTION_MAX_BYTES,
   PROJECTION_MAX_FILE_BYTES,
   PROJECTION_MAX_FILES,
+  PROJECTION_ROOTS,
   isAttachmentRel,
   isProjectedPath,
   isProjectionDir,
@@ -239,6 +240,45 @@ async function deleteWorkspaceFile(ws: WorkspaceOperations, rel: string): Promis
   throw new WorkspaceOperationError("UNSUPPORTED", "workspace provider has no remove()");
 }
 
+/**
+ * Batched workspace listing (agent/platform/SSH manifest) used instead of one
+ * stat round trip per file. Returns null when the provider has no fast path,
+ * the call fails/times out, or the listing is truncated — the caller then uses
+ * per-file stats so a missing entry is never mistaken for a deletion.
+ */
+async function loadWorkspaceIndex(
+  workspace: WorkspaceOperations,
+  deadline: number,
+): Promise<Map<string, WorkspaceStat> | null> {
+  if (!workspace.manifest) return null;
+  const remaining = deadline - Date.now();
+  if (remaining <= 0) return null;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const attempt = workspace.manifest([...PROJECTION_ROOTS]);
+    // The call may outlive the race on a slow link; observe its rejection so
+    // it cannot surface as an unhandled promise rejection.
+    attempt.catch(() => {});
+    const timeout = new Promise<null>((resolve) => {
+      timer = setTimeout(() => resolve(null), Math.min(remaining, 3_000));
+      timer.unref?.();
+    });
+    const result = await Promise.race([attempt, timeout]);
+    if (!result || result.truncated) return null;
+    const index = new Map<string, WorkspaceStat>();
+    for (const entry of result.entries) {
+      const rel = normalizeProjectionRel(entry.path);
+      if (!isProjectedPath(rel)) continue;
+      index.set(rel, { isFile: true, isDirectory: false, size: entry.size, mtimeMs: entry.mtimeMs });
+    }
+    return index;
+  } catch {
+    return null;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 export function reconcileProjection(input: ProjectionInput): Promise<ProjectionResult> {
   const existing = inflight.get(input.projectId);
   if (existing) return existing;
@@ -267,6 +307,9 @@ async function runReconcile(input: ProjectionInput): Promise<ProjectionResult> {
     return { status, dirty: [], conflicts: [], errors: status.errors };
   }
 
+  const workspace = input.workspace;
+  const workspaceIndex = await loadWorkspaceIndex(workspace, deadline);
+
   const host = await walkHost(input.hostHome);
   const hostFiles = new Map<string, { file: HostFile; sha256: string }>();
   const hostFailed = new Set<string>();
@@ -281,7 +324,6 @@ async function runReconcile(input: ProjectionInput): Promise<ProjectionResult> {
   status.hostDigest = hostDigestOf(new Map([...hostFiles].map(([rel, value]) => [rel, value.sha256])));
   status.truncated = host.truncated;
 
-  const workspace = input.workspace;
   const manifest: ProjectionManifest =
     (await loadOrMigrateManifest(input.projectId, input.workspaceMeta)) ?? {
       version: 1,
@@ -330,7 +372,7 @@ async function runReconcile(input: ProjectionInput): Promise<ProjectionResult> {
     const attachment = isAttachmentRel(rel);
     let stat: WorkspaceStat | null;
     try {
-      stat = await workspaceStat(workspace, rel);
+      stat = workspaceIndex ? (workspaceIndex.get(rel) ?? null) : await workspaceStat(workspace, rel);
     } catch (error) {
       status.errors.push({ rel, error: error instanceof Error ? error.message : String(error) });
       continue;

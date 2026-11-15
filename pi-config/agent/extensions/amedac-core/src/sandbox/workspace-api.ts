@@ -73,6 +73,19 @@ export interface WorkspaceStat {
   mtimeMs: number;
 }
 
+/** One regular file in a batched workspace manifest (path is workspace-relative). */
+export interface WorkspaceManifestEntry {
+  path: string;
+  size: number;
+  mtimeMs: number;
+}
+
+/** `truncated` means the listing is incomplete and must not drive deletions. */
+export interface WorkspaceManifest {
+  entries: WorkspaceManifestEntry[];
+  truncated: boolean;
+}
+
 export interface WorkspaceDirEntry {
   name: string;
   isDirectory: boolean;
@@ -134,6 +147,12 @@ export interface WorkspaceOperations {
   remove?(path: string): Promise<void>;
   mkdir(path: string): Promise<void>;
   stat(path: string): Promise<WorkspaceStat>;
+  /**
+   * Batched stat-only listing for several root directories. Optional: older
+   * providers/agents/platforms do not implement it, and callers must fall back
+   * to per-file stat. `truncated` results are not authoritative.
+   */
+  manifest?(roots: string[]): Promise<WorkspaceManifest>;
   readdir(path: string): Promise<WorkspaceDirEntry[]>;
   exec(command: string, options?: WorkspaceExecOptions): Promise<WorkspaceExecResult>;
 

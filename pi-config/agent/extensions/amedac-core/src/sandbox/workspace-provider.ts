@@ -1,4 +1,4 @@
-import type { PlatformClient } from "./client.ts";
+import { PlatformError, type PlatformClient } from "./client.ts";
 import { platformFind, platformGrep } from "./operations.ts";
 import { toContainerPath } from "./paths.ts";
 import {
@@ -6,6 +6,7 @@ import {
   type WorkspaceDirEntry,
   type WorkspaceExecOptions,
   type WorkspaceExecResult,
+  type WorkspaceManifest,
   type WorkspaceOperations,
   type WorkspaceStat,
 } from "./workspace-api.ts";
@@ -41,6 +42,9 @@ export function createSandboxWorkspaceOperations(options: SandboxWorkspaceOption
     }
     return mapped;
   };
+  // Older platforms 404 the endpoint; remember it so every reconcile does not
+  // pay for the failed HTTP call before falling back to per-file stats.
+  let manifestUnsupported = false;
 
   return {
     version: 1,
@@ -75,6 +79,34 @@ export function createSandboxWorkspaceOperations(options: SandboxWorkspaceOption
         size: info.size,
         mtimeMs: info.mtimeMs,
       };
+    },
+    async manifest(roots): Promise<WorkspaceManifest> {
+      if (manifestUnsupported) {
+        throw new WorkspaceOperationError("UNSUPPORTED", "Sandbox platform does not support tools/manifest");
+      }
+      const { client, containerId } = await current();
+      const mapped: string[] = [];
+      for (const root of roots) mapped.push(await canonicalize(root));
+      try {
+        const result = await client.toolManifest(containerId, mapped);
+        const entries: WorkspaceManifest["entries"] = [];
+        for (const entry of result.entries ?? []) {
+          const path = entry.path.replace(/\\/g, "/");
+          let rel = path;
+          if (path === ROOT) rel = "";
+          else if (path.startsWith(`${ROOT}/`)) rel = path.slice(ROOT.length + 1);
+          else rel = path.replace(/^\/+/, "");
+          if (!rel) continue;
+          entries.push({ path: rel, size: entry.size, mtimeMs: entry.mtimeMs });
+        }
+        return { entries, truncated: result.truncated === true };
+      } catch (error) {
+        if (error instanceof PlatformError && (error.status === 404 || error.status === 405)) {
+          manifestUnsupported = true;
+          throw new WorkspaceOperationError("UNSUPPORTED", "Sandbox platform does not support tools/manifest");
+        }
+        throw error;
+      }
     },
     async readdir(path): Promise<WorkspaceDirEntry[]> {
       const { client, containerId } = await current();

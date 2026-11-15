@@ -5,6 +5,7 @@ import {
   type WorkspaceDirEntry,
   type WorkspaceExecOptions,
   type WorkspaceExecResult,
+  type WorkspaceManifest,
   type WorkspaceOperations,
   type WorkspaceStat,
 } from "../workspace-operations";
@@ -150,6 +151,54 @@ export function createSshWorkspaceOperations(options: SshWorkspaceOptions): Work
         size: attrs.size,
         mtimeMs: attrs.mtime * 1000,
       };
+    },
+    async manifest(roots): Promise<WorkspaceManifest> {
+      const targets: string[] = [];
+      for (const root of roots) targets.push(await canonicalize(root));
+      if (targets.length === 0) return { entries: [], truncated: false };
+      const quoted = targets.map((target) => shellQuote(target)).join(" ");
+      // GNU find's -printf is the one-round-trip fast path. On a non-GNU host
+      // find fails (empty stdout) and the caller falls back to per-file stats.
+      const script = [
+        `for p in ${quoted}; do`,
+        `  [ -e "$p" ] || continue;`,
+        `  find "$p" \\( -type d -name .git -prune \\) -o \\( -type d -path '*/node_modules/.cache' -prune \\) -o -type f -printf '%s\\t%T@\\t%p\\n'`,
+        `done`,
+      ].join("\n");
+      const client = await options.getClient();
+      const result = await sshExec(client, script, "/", 30_000);
+      if (result.code === 124) return { entries: [], truncated: true };
+      if (result.code !== 0 && !result.stdout.trim()) {
+        throw new WorkspaceOperationError(
+          "UNSUPPORTED",
+          `SSH manifest failed: ${result.stderr.trim().slice(0, 200) || `exit ${result.code}`}`,
+        );
+      }
+      const workspaceRoot = normalizeRemote(options.workdir || "/");
+      const entries: WorkspaceManifest["entries"] = [];
+      // A non-zero find (e.g. permission-denied subtree) means the listing is
+      // incomplete: callers must fall back instead of deleting "missing" files.
+      let truncated = result.code !== 0;
+      for (const line of result.stdout.split("\n")) {
+        if (!line) continue;
+        const first = line.indexOf("\t");
+        const second = first < 0 ? -1 : line.indexOf("\t", first + 1);
+        if (first <= 0 || second < 0) continue;
+        const size = Number(line.slice(0, first));
+        const seconds = Number(line.slice(first + 1, second));
+        const path = line.slice(second + 1).replace(/\\/g, "/");
+        let rel = path;
+        if (workspaceRoot === "/") rel = path.replace(/^\/+/, "");
+        else if (path === workspaceRoot) rel = "";
+        else if (path.startsWith(`${workspaceRoot}/`)) rel = path.slice(workspaceRoot.length + 1);
+        if (!rel || !Number.isFinite(size) || !Number.isFinite(seconds)) continue;
+        if (entries.length >= 10_000) {
+          truncated = true;
+          break;
+        }
+        entries.push({ path: rel, size, mtimeMs: Math.round(seconds * 1000) });
+      }
+      return { entries, truncated };
     },
     async readdir(path): Promise<WorkspaceDirEntry[]> {
       const target = await canonicalize(path);

@@ -28,6 +28,10 @@ const (
 	// decoded bytes (binary-safe uploads; the UTF-8 content string corrupts
 	// images/PDFs). Agent >= 0.6.0.
 	FeatureBinaryWrite = "binary-write"
+	// FeatureProjectionManifest: fs.manifest returns one stat-only listing for
+	// several roots, so workspace projection avoids one stat round trip per
+	// file. Agent >= 0.7.0.
+	FeatureProjectionManifest = "projection-v1"
 )
 
 // Hello is the first frame the agent sends after the WebSocket opens, carrying
@@ -63,4 +67,18 @@ type FsEntry struct {
 	IsDir bool   `json:"isDir"`
 	Size  int64  `json:"size"`
 	Mtime int64  `json:"mtime"`
+}
+
+// ManifestEntry is one file in an fs.manifest result (`mtime` is UnixMilli).
+type ManifestEntry struct {
+	Path  string `json:"path"`
+	Size  int64  `json:"size"`
+	Mtime int64  `json:"mtime"`
+}
+
+// ManifestResult is the fs.manifest reply. Truncated=true means the caller must
+// NOT treat missing paths as absent (fall back to per-file stats).
+type ManifestResult struct {
+	Entries   []ManifestEntry `json:"entries"`
+	Truncated bool            `json:"truncated"`
 }

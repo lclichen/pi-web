@@ -3,6 +3,7 @@ package workspace
 import (
 	"encoding/base64"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -46,6 +47,118 @@ func (w *Workspace) List(params map[string]interface{}) (interface{}, error) {
 		})
 	}
 	return out, nil
+}
+
+// maxManifestEntries bounds one fs.manifest response. Truncated results are not
+// authoritative: the caller falls back to per-file stats instead of treating
+// missing paths as deleted.
+const maxManifestEntries = 10000
+
+// Manifest returns a stat-only listing for several roots in one round trip.
+// Paths are relative to this workspace (request `base`), slash-separated.
+// Symlinks (including symlinked roots), .git and node_modules/.cache are
+// skipped: projection only copies regular files and those trees are noise.
+func (w *Workspace) Manifest(params map[string]interface{}) (interface{}, error) {
+	roots := paramStrings(params, "roots")
+	if len(roots) == 0 {
+		return nil, fmt.Errorf("roots required")
+	}
+	realRoot := w.realRoot(w.GetRoot())
+	entries := make([]protocol.ManifestEntry, 0)
+	truncated := false
+
+	for _, raw := range roots {
+		if raw == "" {
+			continue
+		}
+		target := raw
+		if !filepath.IsAbs(target) {
+			target = filepath.Join(w.GetRoot(), target)
+		}
+		li, lerr := os.Lstat(target)
+		if lerr == nil && li.Mode()&os.ModeSymlink != 0 {
+			continue
+		}
+		abs, err := w.resolve(target)
+		if err != nil {
+			return nil, err
+		}
+		if lerr != nil {
+			if os.IsNotExist(lerr) {
+				continue
+			}
+			return nil, lerr
+		}
+		if !li.IsDir() {
+			if li.Mode().IsRegular() {
+				if len(entries) >= maxManifestEntries {
+					truncated = true
+					break
+				}
+				rel, err := filepath.Rel(realRoot, abs)
+				if err != nil {
+					return nil, err
+				}
+				entries = append(entries, protocol.ManifestEntry{
+					Path:  filepath.ToSlash(rel),
+					Size:  li.Size(),
+					Mtime: li.ModTime().UnixMilli(),
+				})
+			}
+			continue
+		}
+		err = filepath.WalkDir(abs, func(path string, d fs.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				// A child we cannot read makes the listing incomplete.
+				truncated = true
+				return nil
+			}
+			if d.Type()&os.ModeSymlink != 0 {
+				if d.IsDir() {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			if d.IsDir() {
+				if d.Name() == ".git" {
+					return filepath.SkipDir
+				}
+				if d.Name() == ".cache" && filepath.Base(filepath.Dir(path)) == "node_modules" {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			info, err := d.Info()
+			if err != nil {
+				truncated = true
+				return nil
+			}
+			if !info.Mode().IsRegular() {
+				return nil
+			}
+			if len(entries) >= maxManifestEntries {
+				truncated = true
+				return filepath.SkipAll
+			}
+			rel, err := filepath.Rel(realRoot, path)
+			if err != nil {
+				return nil
+			}
+			entries = append(entries, protocol.ManifestEntry{
+				Path:  filepath.ToSlash(rel),
+				Size:  info.Size(),
+				Mtime: info.ModTime().UnixMilli(),
+			})
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
+		if truncated {
+			break
+		}
+	}
+	return protocol.ManifestResult{Entries: entries, Truncated: truncated}, nil
 }
 
 // Read reads a file's contents (capped at maxReadSize).
@@ -207,4 +320,25 @@ func (w *Workspace) Rename(params map[string]interface{}) (interface{}, error) {
 		return nil, err
 	}
 	return map[string]interface{}{"ok": true, "path": w.relToRoot(absTo)}, nil
+}
+
+// paramStrings reads a JSON array of strings (also accepts []string in tests).
+func paramStrings(params map[string]interface{}, key string) []string {
+	v, ok := params[key]
+	if !ok {
+		return nil
+	}
+	switch list := v.(type) {
+	case []string:
+		return list
+	case []interface{}:
+		out := make([]string, 0, len(list))
+		for _, item := range list {
+			if s, ok := item.(string); ok {
+				out = append(out, s)
+			}
+		}
+		return out
+	}
+	return nil
 }

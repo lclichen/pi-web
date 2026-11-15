@@ -174,6 +174,13 @@ exists.
   JSON strings mangle invalid UTF-8). Advertised as
   `features: ["workspace-base", "binary-read"]`; pi-web falls back to a
   `base64 -w0` exec for older agents and shows an upgrade hint if neither works.
+- **Projection manifest (0.7.0+)**: `fs.manifest { roots }` returns
+  `{ entries: [{ path, size, mtime }], truncated }` for regular files under the
+  requested roots in one round trip. Workspace projection uses it instead of
+  one `fs.stat` per file; symlinked roots/files, `.git` and
+  `node_modules/.cache` are skipped. Advertised as `features: ["projection-v1"]`
+  (alongside `workspace-base`, `binary-read`, `binary-write`); pi-web falls back
+  to per-file stats for older agents.
 - **No shell**: `exec.run` takes an `argv` array and spawns directly — there is
   no shell-injection surface.
 - **Token**: the pairing code is single-use + 5-min TTL; it is exchanged for a

@@ -158,3 +158,92 @@ func TestWriteRejectsInvalidBase64(t *testing.T) {
 		t.Fatal("invalid base64 must fail instead of writing garbage")
 	}
 }
+
+func writeTestFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestManifestReturnsBaseRelativeFilesAndSkipsNoise(t *testing.T) {
+	root := t.TempDir()
+	base := filepath.Join(root, "demo")
+	writeTestFile(t, filepath.Join(base, ".pi/skills/demo/SKILL.md"), "# demo")
+	writeTestFile(t, filepath.Join(base, ".pi/skills/demo/scripts/run.sh"), "echo hi")
+	writeTestFile(t, filepath.Join(base, ".pi/skills/demo/.git/config"), "noise")
+	writeTestFile(t, filepath.Join(base, ".pi/skills/demo/node_modules/lib/a.js"), "keep")
+	writeTestFile(t, filepath.Join(base, ".pi/skills/demo/node_modules/.cache/a.js"), "noise")
+	writeTestFile(t, filepath.Join(base, ".pi/attachments/pic.bin"), "binary")
+
+	view, err := (&Workspace{Root: root}).For(map[string]interface{}{"base": base})
+	if err != nil {
+		t.Fatalf("For: %v", err)
+	}
+	raw, err := view.Manifest(map[string]interface{}{
+		"roots": []interface{}{".pi/skills", ".pi/attachments", ".pi/missing"},
+	})
+	if err != nil {
+		t.Fatalf("Manifest: %v", err)
+	}
+	result := raw.(protocol.ManifestResult)
+	if result.Truncated {
+		t.Fatal("small tree must not be truncated")
+	}
+	got := map[string]protocol.ManifestEntry{}
+	for _, entry := range result.Entries {
+		got[entry.Path] = entry
+	}
+	want := []string{
+		".pi/attachments/pic.bin",
+		".pi/skills/demo/SKILL.md",
+		".pi/skills/demo/node_modules/lib/a.js",
+		".pi/skills/demo/scripts/run.sh",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("entries = %v, want %d files", got, len(want))
+	}
+	for _, path := range want {
+		entry, ok := got[path]
+		if !ok {
+			t.Fatalf("missing %s in %v", path, got)
+		}
+		if entry.Size <= 0 || entry.Mtime <= 0 {
+			t.Fatalf("%s: size=%d mtime=%d", path, entry.Size, entry.Mtime)
+		}
+	}
+	if _, ok := got[".pi/skills/demo/.git/config"]; ok {
+		t.Fatal(".git must be skipped")
+	}
+	if _, ok := got[".pi/skills/demo/node_modules/.cache/a.js"]; ok {
+		t.Fatal("node_modules/.cache must be skipped")
+	}
+}
+
+func TestManifestRejectsEscapingRootsAndSkipsSymlinks(t *testing.T) {
+	root := t.TempDir()
+	if _, err := (&Workspace{Root: root}).Manifest(map[string]interface{}{
+		"roots": []interface{}{"../outside"},
+	}); err == nil || !strings.Contains(err.Error(), "outside workspace root") {
+		t.Fatalf("escaping root error = %v", err)
+	}
+
+	outside := t.TempDir()
+	writeTestFile(t, filepath.Join(outside, "secret.txt"), "secret")
+	link := filepath.Join(root, "linked")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	raw, err := (&Workspace{Root: root}).Manifest(map[string]interface{}{
+		"roots": []interface{}{"linked"},
+	})
+	if err != nil {
+		t.Fatalf("Manifest: %v", err)
+	}
+	if entries := raw.(protocol.ManifestResult).Entries; len(entries) != 0 {
+		t.Fatalf("symlinked root must be skipped, got %v", entries)
+	}
+}

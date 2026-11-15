@@ -211,7 +211,12 @@ func buildInfo(version, root string, entry *config.ServerConfig) protocol.AgentI
 		AgentVersion:  version,
 		MachineID:     entry.MachineID,
 		Label:         entry.Label,
-		Features:      []string{protocol.FeatureWorkspaceBase, protocol.FeatureBinaryRead, protocol.FeatureBinaryWrite},
+		Features: []string{
+			protocol.FeatureWorkspaceBase,
+			protocol.FeatureBinaryRead,
+			protocol.FeatureBinaryWrite,
+			protocol.FeatureProjectionManifest,
+		},
 	}
 }
 
@@ -523,6 +528,8 @@ func callMethod(method string, params map[string]interface{}, ws *workspace.Work
 		}, nil
 	case "fs.list":
 		return view.List(params)
+	case "fs.manifest":
+		return view.Manifest(params)
 	case "fs.read":
 		return view.Read(params)
 	case "fs.write":

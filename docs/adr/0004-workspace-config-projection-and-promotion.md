@@ -467,6 +467,19 @@ DELETE /api/projects/:id/collected/:collectId
 4. Apptainer bind/host-local 快路径——需要平台 executor 支持额外 bind（SSH executor
    目前明确拒绝 mountDirs），不是 pi-web 单侧能完成；仅同机 local executor 可行。
 
+**P2 进展（2026-11-15）**
+- 已完成 `fs.manifest` / `projection-v1`：agent 0.7.0（五平台 dist）返回
+  `{entries:[{path,size,mtime}],truncated}`；平台新增
+  `POST /api/v1/containers/:id/tools/manifest`（Mock 本地遍历、SSH/Apptainer 单次
+  `find -printf`）；pi-web `WorkspaceOperations.manifest` 快路径覆盖 relay/sandbox/
+  ssh/host；清单失败/超时/`truncated`/非零退出一律回退逐文件 stat，绝不用不完整清单
+  驱动删除。
+- 已完成：项目行状态徽标（dirty/conflict/error/pending，可点开丢弃）；跳过
+  `.git` 与 `node_modules/.cache`。
+- 真机验证：`e2e/projection-real.mjs`（SSH 清单 + 全投影规则）、
+  `e2e/projection-http.mjs`（HTTP 路由/徽标）、
+  `e2e/platform-manifest-real.mjs`（真实 Apptainer 容器 `/tools/manifest`）均 PASS。
+
 **P3（不建议近期做）**
 - 并发多工作区（需要 project workspace 记录/选择器/租约）；对象存储数据面；
   FUSE/网络挂载（违反 relay 出站-only/零依赖）。

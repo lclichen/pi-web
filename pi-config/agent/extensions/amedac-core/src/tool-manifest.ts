@@ -44,6 +44,8 @@ export interface ToolManifestEntry {
   remote?: RemoteSemantics;
   /** 显式模式限制；缺省 = 声明兼容的全部模式（quick 另受封闭世界钳制）。 */
   modes?: readonly SessionModeName[];
+  /** 工具真正有意义的宿主平台（缺省 = 全平台）。平台不匹配时不纳入模式剔除提示。 */
+  platforms?: readonly string[];
   origin: ToolOrigin;
   /** 引入理由/边界说明（评审留痕）。 */
   notes?: string;
@@ -129,8 +131,9 @@ export const TOOL_MANIFEST: readonly ToolManifestEntry[] = [
     // 工具）。远端会话若出现该工具，其执行位置是宿主服务器——P1 装配层
     // clamp 的目标；声明为 unsupported 使该缺口不可被静默忽略。
     remote: { sandbox: "unsupported", "local-machine": "unsupported", ssh: "unsupported" },
+    platforms: ["win32"],
     origin: "builtin",
-    notes: "远端未代理（Windows 专属工具）；仅 host/quick 语义成立。",
+    notes: "Windows 专属工具（Linux 上注册但不可用）；平台不匹配时不计入剔除提示。",
   },
 
   // ---- amedac-core 扩展工具 ----

@@ -1282,6 +1282,7 @@ export function ChatWindow({
         {t("toolPolicy.excludedNotice", {
           count: toolPolicyExclusions.excluded.length,
           mode: toolPolicyExclusions.mode,
+          names: toolPolicyExclusions.excluded.map((entry) => entry.name).join(", "),
         })}
       </div>
     ) : null;

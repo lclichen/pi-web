@@ -35,6 +35,11 @@ export interface ToolExclusion {
   reason: string;
 }
 
+/** 工具在当前宿主平台是否有意义（manifest.platforms 缺省 = 全平台）。 */
+export function isToolPlatformRelevant(entry: { platforms?: readonly string[] }, platform: string = process.platform): boolean {
+  return !entry.platforms || entry.platforms.includes(platform);
+}
+
 /**
  * 声明工具的模式兼容过滤。未在 manifest 声明的工具（MCP direct tools 等）
  * 原样通过——它们的剔除由 filterActiveToolsForMode 按服务器声明处理。
@@ -42,12 +47,18 @@ export interface ToolExclusion {
 export function filterToolsForMode(
   names: readonly string[],
   mode: SessionMode,
+  platform: string = process.platform,
 ): { allowed: string[]; excluded: ToolExclusion[] } {
   const allowed: string[] = [];
   const excluded: ToolExclusion[] = [];
   for (const name of names) {
     const entry = manifestFor(name);
     if (!entry) {
+      allowed.push(name);
+      continue;
+    }
+    // 平台无关工具（如 Linux 上的 powershell）不产生“被禁用”噪音：原样通过。
+    if (!isToolPlatformRelevant(entry, platform)) {
       allowed.push(name);
       continue;
     }
@@ -132,9 +143,9 @@ export interface ActiveToolFilterOptions {
  */
 export function filterActiveToolsForMode(
   names: readonly string[],
-  opts: ActiveToolFilterOptions,
+  opts: ActiveToolFilterOptions & { platform?: string },
 ): { allowed: string[]; excluded: ToolExclusion[] } {
-  const declared = filterToolsForMode(names, opts.mode);
+  const declared = filterToolsForMode(names, opts.mode, opts.platform);
   if (opts.excludedMcpServers.size === 0) return declared;
   const allowed: string[] = [];
   const excluded = [...declared.excluded];

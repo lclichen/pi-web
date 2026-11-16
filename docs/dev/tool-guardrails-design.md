@@ -316,6 +316,9 @@ notes 里写明为什么不能走 workspace 通道。bg_run 在 host 模式下�
 >   名单与原因，ChatWindow 输入区上方显示常驻琥珀提示（tooltip 列原因）；
 >   护栏判定审计 `guardrail-audit.ts` 追加 JSONL 到
 >   `<cwd>/.pi/guardrail-audit.jsonl`（2MB 轮转、自保护、失败静默）。
+>   **2026-11-16 改进**：横幅直接列出被移除的工具名（不再只能靠 tooltip）；
+>   manifest 新增 `platforms`，平台无关工具（如 Linux 上的 powershell）不纳入
+>   模式剔除提示，避免“1 个工具被禁用”的噪音。
 >   **待做**：P3（MCP 远端执行）。
 
 > **P2 状态（2026-11-05 已落地，UI 已视觉验收）**：只读视图

@@ -39,7 +39,7 @@ export const zhTWLocale: LocalePlugin = {
     "admin.createFailedHint": "建立失敗（使用者名稱重複或密碼不符合策略）",
     "admin.createdUser": "已建立使用者 {name}",
     "admin.deleteContainerConfirm": "確定刪除容器 {name}（{owner}）？實例與可寫層將被清理",
-    "admin.deleteImageExistingContainersBuilt": "確定刪除鏡像 {name}？（不影響已用該鏡像建立的容器）",
+    "admin.deleteImageExistingContainersBuilt": "確定刪除鏡像 {name}？仍有容器或快照在使用時必須先刪除它們。",
     "admin.deleteQuotaUsersLoseTheir": "確定刪除配額 {name}？使用該配額的使用者將失去配額限制依據",
     "admin.deleteUserConfirm": "確定刪除使用者 {name}？其容器與工作區將一併清理",
     "admin.deleteWorkspaceConfirm": "確定刪除工作區 {name}（{owner}）？儲存目錄將一併刪除",

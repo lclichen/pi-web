@@ -39,7 +39,7 @@ export const zhCNLocale: LocalePlugin = {
     "admin.createFailedHint": "创建失败（用户名重复或密码不符合策略）",
     "admin.createdUser": "已创建用户 {name}",
     "admin.deleteContainerConfirm": "确定删除容器 {name}（{owner}）？实例与可写层将被清理",
-    "admin.deleteImageExistingContainersBuilt": "确定删除镜像 {name}？（不影响已用该镜像创建的容器）",
+    "admin.deleteImageExistingContainersBuilt": "确定删除镜像 {name}？仍有容器或快照在使用时必须先删除它们。",
     "admin.deleteQuotaUsersLoseTheir": "确定删除配额 {name}？使用该配额的用户将失去配额限制依据",
     "admin.deleteUserConfirm": "确定删除用户 {name}？其容器与工作区将一并清理",
     "admin.deleteWorkspaceConfirm": "确定删除工作区 {name}（{owner}）？存储目录将一并删除",

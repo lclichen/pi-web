@@ -39,7 +39,7 @@ export const enLocale: LocalePlugin = {
     "admin.createFailedHint": "Creation failed (duplicate username or password policy violation)",
     "admin.createdUser": "Created user {name}",
     "admin.deleteContainerConfirm": "Delete container {name} ({owner})? The instance and writable layer will be cleaned up",
-    "admin.deleteImageExistingContainersBuilt": "Delete image {name}? (existing containers built from it are unaffected)",
+    "admin.deleteImageExistingContainersBuilt": "Delete image {name}? Containers or snapshots still using it must be removed first.",
     "admin.deleteQuotaUsersLoseTheir": "Delete quota {name}? Users on it lose their quota basis",
     "admin.deleteUserConfirm": "Delete user {name}? Their containers and workspaces will be cleaned up too",
     "admin.deleteWorkspaceConfirm": "Delete workspace {name} ({owner})? Its storage directory is removed too",

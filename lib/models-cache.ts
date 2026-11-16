@@ -25,6 +25,12 @@ declare global {
 
 const MODELS_CACHE_TTL_MS = 60_000;
 const MAX_MODELS_CACHE_ENTRIES = 32;
+/**
+ * Cap the first uncached load. The SDK's package loader can run an unbounded
+ * `npm install` for a configured-but-missing package; without this guard
+ * /api/models never answers on a machine that cannot reach the registry.
+ */
+export const MODELS_LOAD_TIMEOUT_MS = 15_000;
 // Never interpolate the caught error here; SDK errors can contain paths and provider details.
 const SAFE_MODEL_LOAD_FAILURE_MESSAGE =
   "Model list is temporarily unavailable. Check your configuration and try again.";
@@ -55,7 +61,18 @@ export function withSafeModelLoadFailure(data: ModelsData): ModelsData {
   return { ...data, modelError: SAFE_MODEL_LOAD_FAILURE_MESSAGE };
 }
 
-export function loadModelsWithCache(cwd: string, loader: () => Promise<ModelsData>): Promise<ModelsData> {
+export interface LoadModelsWithCacheOptions {
+  /** Cap the first uncached load; no timeout when omitted/0. */
+  timeoutMs?: number;
+  /** Data returned when the cap fires. Timeout results are never cached. */
+  onTimeout?: () => ModelsData;
+}
+
+export function loadModelsWithCache(
+  cwd: string,
+  loader: () => Promise<ModelsData>,
+  options: LoadModelsWithCacheOptions = {},
+): Promise<ModelsData> {
   const state = getModelsCacheState();
   const cached = state.entries.get(cwd);
   if (cached) {
@@ -67,7 +84,8 @@ export function loadModelsWithCache(cwd: string, loader: () => Promise<ModelsDat
   if (existingLoad) return existingLoad;
 
   const generation = state.generation;
-  const loadPromise: Promise<ModelsData> = Promise.resolve()
+  let loadPromise: Promise<ModelsData>;
+  const work = Promise.resolve()
     .then(loader)
     .then((data) => {
       if (state.generation === generation && state.inFlight.get(cwd) === loadPromise) {
@@ -83,11 +101,42 @@ export function loadModelsWithCache(cwd: string, loader: () => Promise<ModelsDat
         state.entries.set(cwd, { data, expiresAt: now + MODELS_CACHE_TTL_MS });
       }
       return data;
-    })
-    .finally(() => {
-      if (state.inFlight.get(cwd) === loadPromise) state.inFlight.delete(cwd);
     });
 
+  const timeoutMs = options.timeoutMs ?? 0;
+  if (timeoutMs > 0 && options.onTimeout) {
+    let settled = false;
+    loadPromise = new Promise<ModelsData>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        if (state.inFlight.get(cwd) === loadPromise) state.inFlight.delete(cwd);
+        resolve(options.onTimeout!());
+      }, timeoutMs);
+      work.then(
+        (data) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          resolve(data);
+        },
+        (error) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          reject(error);
+        },
+      );
+    });
+  } else {
+    loadPromise = work;
+  }
+
   state.inFlight.set(cwd, loadPromise);
+  void loadPromise
+    .finally(() => {
+      if (state.inFlight.get(cwd) === loadPromise) state.inFlight.delete(cwd);
+    })
+    .catch(() => {});
   return loadPromise;
 }

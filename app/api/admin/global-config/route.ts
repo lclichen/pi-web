@@ -8,8 +8,8 @@ export const dynamic = "force-dynamic";
 
 /**
  * 全局配置（管理员）— 设置页「全局配置」分区的唯一后端：
- *   GET  /api/admin/global-config   对外地址 / SkillHub / 配置包上限 / 平台工作区上限
- *   PUT  /api/admin/global-config   { publicBaseUrl?, skillhubUrl?, bundleMaxMb?, workspaceMaxBytes? }
+ *   GET  /api/admin/global-config   对外地址 / SkillHub / npm 包自动安装 / 配置包上限 / 平台工作区上限
+ *   PUT  /api/admin/global-config   { publicBaseUrl?, skillhubUrl?, disableNpmPackages?, bundleMaxMb?, workspaceMaxBytes? }
  *
  * 前两项与配置包上限落在 pi-web server-settings（立即生效，无需重启）；工作区
  * 单文件上限由平台执行，这里转调平台的 /api/v1/admin/limits（写 runtime-settings）。
@@ -29,6 +29,8 @@ interface GlobalConfigView {
   publicBaseUrl: string | null;
   /** Effective SkillHub base URL; null = skills.sh flow. */
   skillhubUrl: string | null;
+  /** Whether npm package auto-install/updates are disabled. */
+  disableNpmPackages: boolean;
   /** Config-bundle cap override in MB; null = deployment default. */
   bundleMaxMb: number | null;
   /** Workspace per-file cap from the platform; null when unreachable. */
@@ -49,6 +51,7 @@ async function currentView(apiKey: string): Promise<GlobalConfigView> {
   return {
     publicBaseUrl: getPublicBaseUrl() ?? null,
     skillhubUrl: settings.skillhubUrl ?? null,
+    disableNpmPackages: settings.disableNpmPackages,
     bundleMaxMb: settings.bundleUploadMaxMb ?? null,
     workspace: await readPlatformLimits(apiKey),
   };
@@ -87,6 +90,7 @@ export async function PUT(req: Request) {
   let body: {
     publicBaseUrl?: unknown;
     skillhubUrl?: unknown;
+    disableNpmPackages?: unknown;
     bundleMaxMb?: unknown;
     workspaceMaxBytes?: unknown;
   };
@@ -99,12 +103,14 @@ export async function PUT(req: Request) {
   const patch: {
     publicBaseUrl?: string;
     skillhubUrl?: string;
+    disableNpmPackages?: boolean;
     bundleUploadMaxMb?: number | null;
   } = {};
   if (typeof body.publicBaseUrl === "string") patch.publicBaseUrl = body.publicBaseUrl;
   else if (body.publicBaseUrl === null) patch.publicBaseUrl = "";
   if (typeof body.skillhubUrl === "string") patch.skillhubUrl = body.skillhubUrl;
   else if (body.skillhubUrl === null) patch.skillhubUrl = "";
+  if (typeof body.disableNpmPackages === "boolean") patch.disableNpmPackages = body.disableNpmPackages;
   if (body.bundleMaxMb === null) patch.bundleUploadMaxMb = null;
   else if (body.bundleMaxMb !== undefined) patch.bundleUploadMaxMb = Number(body.bundleMaxMb);
 

@@ -16,6 +16,8 @@ import { dataDir } from "./mode-homes";
  *   PI_WEB_PUBLIC_URL=...     externally reachable base URL used when the
  *                             server mints absolute links (file shares); empty
  *                             = derive from the request Host
+ *   PI_WEB_DISABLE_NPM_PACKAGES=1  disable SDK npm auto-install/update checks
+ *                             (equivalent to PI_OFFLINE=1; admin can toggle it)
  */
 
 /** Config-bundle upload default cap (MB). Also the env seed. */
@@ -28,6 +30,13 @@ export const UPLOAD_MAX_MB_FLOOR = 1;
 export interface ServerSettings {
   /** Whether the Lab Training teaching panel (and its toolbar toggle) is offered. */
   labTraining: boolean;
+  /**
+   * Disable npm package auto-install / update checks process-wide (sets
+   * PI_OFFLINE=1). Intended for machines that cannot reach an npm registry:
+   * the SDK otherwise tries to install missing configured packages while
+   * loading resources, which has no timeout and can hang /api/models.
+   */
+  disableNpmPackages: boolean;
   /** Intranet SkillHub base URL (http(s)); empty/absent = skills.sh flow. */
   skillhubUrl?: string;
   /** Config-bundle upload cap in MB (absent = BUNDLE_UPLOAD_DEFAULT_MB). */
@@ -50,6 +59,8 @@ function settingsPath(): string {
 function envDefaults(): ServerSettings {
   const raw = (process.env.PI_WEB_LAB_TRAINING ?? "").trim().toLowerCase();
   const off = raw === "off" || raw === "0" || raw === "false" || raw === "no";
+  const truthy = (value: string | undefined): boolean =>
+    /^(1|true|yes|on)$/i.test((value ?? "").trim());
   // 非法 env 不致命：忽略（回落 skills.sh 流程），错误在运行时设置时显式暴露。
   let hub: string | undefined;
   try {
@@ -66,6 +77,7 @@ function envDefaults(): ServerSettings {
   }
   return {
     labTraining: !off,
+    disableNpmPackages: truthy(process.env.PI_WEB_DISABLE_NPM_PACKAGES) || truthy(process.env.PI_OFFLINE),
     ...(hub ? { skillhubUrl: hub } : {}),
     ...(seedMb !== undefined ? { bundleUploadMaxMb: seedMb } : {}),
     ...(publicBaseUrl ? { publicBaseUrl } : {}),
@@ -160,12 +172,14 @@ function parseStored(raw: unknown): Partial<ServerSettings> | undefined {
   if (raw === null || typeof raw !== "object") return undefined;
   const parsed = raw as {
     labTraining?: unknown;
+    disableNpmPackages?: unknown;
     skillhubUrl?: unknown;
     bundleUploadMaxMb?: unknown;
     publicBaseUrl?: unknown;
   };
   const out: Partial<ServerSettings> = {};
   if (typeof parsed.labTraining === "boolean") out.labTraining = parsed.labTraining;
+  if (typeof parsed.disableNpmPackages === "boolean") out.disableNpmPackages = parsed.disableNpmPackages;
   const hub = normalizeSkillhubUrlSetting(parsed.skillhubUrl);
   if (hub !== undefined) out.skillhubUrl = hub;
   try {
@@ -196,14 +210,41 @@ export function getServerSettings(): ServerSettings {
   return globalThis.__piServerSettingsStore.data;
 }
 
+/** True when pi-web itself put PI_OFFLINE into the process env (not the operator). */
+let npmOfflineAppliedBySettings = false;
+
+/**
+ * Project the admin setting onto PI_OFFLINE, the only switch the pi SDK exposes
+ * for "do not install missing packages / do not check for updates". Setting it
+ * before any package load prevents the SDK's unbounded `npm install` from
+ * blocking /api/models on machines without registry access.
+ */
+export function applyPackageNetworkMode(): void {
+  const disabled = getServerSettings().disableNpmPackages === true;
+  if (disabled) {
+    if (process.env.PI_OFFLINE !== "1") {
+      process.env.PI_OFFLINE = "1";
+      npmOfflineAppliedBySettings = true;
+    }
+    return;
+  }
+  // Never clear an operator-provided PI_OFFLINE; only undo our own injection.
+  if (npmOfflineAppliedBySettings) {
+    delete process.env.PI_OFFLINE;
+    npmOfflineAppliedBySettings = false;
+  }
+}
+
 export function updateServerSettings(patch: {
   labTraining?: boolean;
+  disableNpmPackages?: boolean;
   skillhubUrl?: string;
   bundleUploadMaxMb?: number | null;
   publicBaseUrl?: string;
 }): ServerSettings {
   const next: ServerSettings = { ...getServerSettings() };
   if (typeof patch.labTraining === "boolean") next.labTraining = patch.labTraining;
+  if (typeof patch.disableNpmPackages === "boolean") next.disableNpmPackages = patch.disableNpmPackages;
   if (patch.skillhubUrl !== undefined) {
     // 显式传值：合法 → 覆盖；空串 → 清除（回到 skills.sh 流程）。undefined = 不动。
     const hub = normalizeSkillhubUrlSetting(patch.skillhubUrl);
@@ -224,5 +265,6 @@ export function updateServerSettings(patch: {
   mkdirSync(dataDir(), { recursive: true });
   writeFileSync(settingsPath(), JSON.stringify(next, null, 2), "utf8");
   globalThis.__piServerSettingsStore = { path: settingsPath(), data: next };
+  applyPackageNetworkMode();
   return next;
 }

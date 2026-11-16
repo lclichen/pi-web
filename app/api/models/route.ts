@@ -4,6 +4,7 @@ import { createAgentSessionServices, getAgentDir, ModelRuntime, type SettingsMan
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import {
   loadModelsWithCache,
+  MODELS_LOAD_TIMEOUT_MS,
   withModelRuntimeError,
   withSafeModelLoadFailure,
   type ModelsData,
@@ -176,7 +177,12 @@ export async function GET(req: Request) {
 
   try {
     const cacheKey = `${cwd}::${isAdmin ? "global" : `u${user.id}`}`;
-    return Response.json(await loadModelsWithCache(cacheKey, () => loadModels(cwd, user.id, isAdmin)));
+    return Response.json(
+      await loadModelsWithCache(cacheKey, () => loadModels(cwd, user.id, isAdmin), {
+        timeoutMs: MODELS_LOAD_TIMEOUT_MS,
+        onTimeout: () => withSafeModelLoadFailure(EMPTY_MODELS),
+      }),
+    );
   } catch {
     return Response.json(withSafeModelLoadFailure(EMPTY_MODELS));
   }

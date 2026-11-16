@@ -13,6 +13,7 @@ interface PlatformLimits {
 interface GlobalConfigView {
   publicBaseUrl: string | null;
   skillhubUrl: string | null;
+  disableNpmPackages: boolean;
   bundleMaxMb: number | null;
   workspace: PlatformLimits | null;
 }
@@ -22,13 +23,14 @@ interface EffectiveLimits {
   bundleConfirmMb: number;
 }
 
-type ConfigKind = "publicBaseUrl" | "skillhubUrl" | "bundle" | "workspace";
+type ConfigKind = "publicBaseUrl" | "skillhubUrl" | "npmPackages" | "bundle" | "workspace";
 
 /**
  * 管理员 · 全局配置 — 部署级设置的唯一入口：
  *   · 对外访问地址：share_file / POST /api/share 生成链接时的前缀（留空 = 按
  *     请求 Host 自动推断；跨设备/反向代理场景必须显式配置）。
  *   · SkillHub 默认地址：技能搜索与安装的内网源（留空 = skills.sh 公网流程）。
+ *   · npm 包自动安装/更新：离线机器上阻止 SDK 为缺失包执行 npm install。
  *   · 上传限制：配置包硬上限落在 pi-web server-settings（立即生效），工作区
  *     单文件上限由平台执行（写平台 runtime-settings，无需重启）。
  */
@@ -167,6 +169,20 @@ export function AdminGlobalConfig() {
           </button>
         </div>
         <div style={metaStyle}>{view?.skillhubUrl ? view.skillhubUrl : t("settings.skillhubUrlDefault")}</div>
+      </section>
+
+      <section style={cardStyle}>
+        <label style={labelStyle}>{t("settings.disableNpmPackages")}</label>
+        <div style={hintStyle}>{t("settings.disableNpmPackagesHint")}</div>
+        <label style={{ ...rowStyle, cursor: busy ? "default" : "pointer" }}>
+          <input
+            type="checkbox"
+            checked={view?.disableNpmPackages ?? false}
+            disabled={busy !== null}
+            onChange={(e) => void save("npmPackages", { disableNpmPackages: e.target.checked })}
+          />
+          <span style={{ fontSize: 12, color: "var(--text)" }}>{t("settings.disableNpmPackagesToggle")}</span>
+        </label>
       </section>
 
       <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", marginTop: 6 }}>

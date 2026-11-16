@@ -15,6 +15,7 @@ import {
 import { hasJsonContentType, isApiRequestAllowed } from "@/lib/request-security";
 import { getProjectTrustStatus } from "@/lib/project-trust";
 import { isPluginSourceCheckable } from "@/lib/plugin-updates";
+import { isNpmPackagesDisabled } from "@/lib/server-settings";
 import type {
   PluginDiagnostic,
   PluginPackageInfo,
@@ -562,6 +563,7 @@ async function readPlugins(cwd: string, userId: number): Promise<PluginsResponse
     totals,
     diagnostics,
     projectResourcesLoaded: projectTrust.trusted,
+    packagesOffline: isNpmPackagesDisabled(),
   };
 }
 
@@ -714,6 +716,19 @@ export async function POST(req: Request) {
         return NextResponse.json(await readPlugins(body.cwd, configDir.userId));
       }
       return NextResponse.json({ error: `Unsupported action for origin=directory: ${body.action}` }, { status: 400 });
+    }
+
+    if (body.action === "install" || body.action === "update") {
+      const localInstall =
+        body.action === "install" &&
+        !!source &&
+        (isAbsolute(source) || source.startsWith("./") || source.startsWith("../") || source === "." || source === "..");
+      if (isNpmPackagesDisabled() && !localInstall) {
+        return NextResponse.json(
+          { error: "当前已禁止 npm 包自动安装/更新（离线模式）；本地扩展仍可通过路径安装。" },
+          { status: 409 },
+        );
+      }
     }
 
     if (body.action === "install") {

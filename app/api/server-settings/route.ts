@@ -30,6 +30,8 @@ export async function PATCH(req: Request) {
   let body: {
     labTraining?: unknown;
     disableNpmPackages?: unknown;
+    npmRegistry?: unknown;
+    pipIndexUrl?: unknown;
     skillhubUrl?: unknown;
     bundleUploadMaxMb?: unknown;
     publicBaseUrl?: unknown;
@@ -42,12 +44,18 @@ export async function PATCH(req: Request) {
   const patch: {
     labTraining?: boolean;
     disableNpmPackages?: boolean;
+    npmRegistry?: string;
+    pipIndexUrl?: string;
     skillhubUrl?: string;
     bundleUploadMaxMb?: number | null;
     publicBaseUrl?: string;
   } = {};
   if (typeof body.labTraining === "boolean") patch.labTraining = body.labTraining;
   if (typeof body.disableNpmPackages === "boolean") patch.disableNpmPackages = body.disableNpmPackages;
+  if (typeof body.npmRegistry === "string") patch.npmRegistry = body.npmRegistry;
+  else if (body.npmRegistry === null) patch.npmRegistry = "";
+  if (typeof body.pipIndexUrl === "string") patch.pipIndexUrl = body.pipIndexUrl;
+  else if (body.pipIndexUrl === null) patch.pipIndexUrl = "";
   if (typeof body.skillhubUrl === "string") patch.skillhubUrl = body.skillhubUrl;
   // null 清除覆盖（回到请求 Host 自动推断）；字符串由 update 侧校验。
   if (typeof body.publicBaseUrl === "string") patch.publicBaseUrl = body.publicBaseUrl;

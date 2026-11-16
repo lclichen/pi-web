@@ -180,6 +180,8 @@ export interface PluginsResponse {
   totals: PluginResourceCounts;
   diagnostics: PluginDiagnostic[];
   projectResourcesLoaded: boolean;
+  /** True when the server blocks npm/git installs and update checks (PI_OFFLINE). */
+  packagesOffline?: boolean;
 }
 
 // ---- Subagents & MCP management ----

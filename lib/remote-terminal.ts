@@ -5,6 +5,8 @@ import { relayRpc } from "./relay/forward";
 import { subscribePtyExit, subscribePtyOutput } from "./relay/registry";
 import { getSshClient } from "./ssh";
 import { requireUserIdentity } from "./web-session";
+import { getAgentForUser } from "./relay/registry";
+import { packageMirrorExportScript } from "./package-mirror-env";
 import { localScope, type RemoteSessionContext } from "./remote-session";
 
 /**
@@ -128,6 +130,7 @@ export async function createRemoteTerminal(
   ensureReaper();
 
   const sid = randomUUID();
+  const mirrorScript = packageMirrorExportScript();
   const entry: RemoteTerminal = {
     kind: ctx.mode === "sandbox" ? "platform" : ctx.mode === "ssh" ? "ssh" : "relay",
     ctx,
@@ -170,6 +173,7 @@ export async function createRemoteTerminal(
     });
     ws.on("open", () => {
       ws.send(JSON.stringify({ type: "resize", cols: opts.cols, rows: opts.rows }));
+      if (mirrorScript) ws.send(JSON.stringify({ type: "input", data: mirrorScript }));
     });
     await new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error("连接沙箱终端超时")), 10_000);
@@ -215,6 +219,7 @@ export async function createRemoteTerminal(
     });
     const wd = (ctx.workdir ?? "").trim();
     if (wd && wd !== "/") stream.write(`cd '${wd.replace(/'/g, `'\\''`)}'\n`);
+    if (mirrorScript) stream.write(mirrorScript);
   } else {
     // pty.create returns the agent-side session id; output arrives as
     // unsolicited pty.output pushes fanned out by subscribePtyOutput (keyed by
@@ -253,6 +258,16 @@ export async function createRemoteTerminal(
       },
       machineId,
     );
+    // POSIX shells only: Windows agent shells may be cmd/PowerShell, where
+    // `export` is invalid. Remote registry mirrors are a best-effort convenience.
+    const agentOs = getAgentForUser(ctx.userId, ctx.machineId)?.info?.os;
+    if (mirrorScript && agentOs !== "windows") {
+      void relayRpc(
+        "pty.input",
+        { sessionId: agentSid, data: mirrorScript },
+        { userId: ctx.userId, machineId: ctx.machineId },
+      ).catch(() => {});
+    }
   }
 
   return { sessionId: sid };

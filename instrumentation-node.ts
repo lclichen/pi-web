@@ -45,8 +45,9 @@ export async function registerNodeInstrumentation(): Promise<void> {
     // Apply the admin "disable npm packages" setting before the SDK can load
     // extension packages. Without this, a missing configured package triggers
     // an unbounded `npm install` during /api/models on offline machines.
-    const { applyPackageNetworkMode } = await import("@/lib/server-settings");
+    const { applyPackageNetworkMode, applyPackageRegistryEnv } = await import("@/lib/server-settings");
     applyPackageNetworkMode();
+    applyPackageRegistryEnv();
     // Prewarm the pi SDK import (upstream `6425d0d`): the first route that
     // touches @earendil-works/pi-coding-agent otherwise pays seconds of module
     // loading inside the request (worst on Windows/cold deploys).

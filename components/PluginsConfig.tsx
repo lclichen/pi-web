@@ -291,6 +291,7 @@ function AddPluginPanel({
   projectResourcesLoaded,
   isAdmin,
   busy,
+  packagesOffline,
   actionError,
   extensionPath,
   directoryName,
@@ -308,6 +309,7 @@ function AddPluginPanel({
   projectResourcesLoaded: boolean;
   isAdmin: boolean;
   busy: boolean;
+  packagesOffline: boolean;
   actionError: string | null;
   extensionPath: string;
   directoryName: string;
@@ -322,6 +324,7 @@ function AddPluginPanel({
   const { t } = useI18n();
   const inputRef = useRef<HTMLInputElement>(null);
   const examples = ["npm:@scope/pi-plugin", "git:https://github.com/user/repo", "/absolute/path/to/plugin"];
+  const remoteSource = /^(npm:|git:|https?:|ssh:)/i.test(source.trim());
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -399,7 +402,7 @@ function AddPluginPanel({
             outline: "none",
           }}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && source.trim() && !busy) onInstall();
+            if (e.key === "Enter" && source.trim() && !busy && !(packagesOffline && remoteSource)) onInstall();
           }}
         />
       </ConfigField>
@@ -414,12 +417,16 @@ function AddPluginPanel({
         <ConfigButton
           variant="primary"
           onClick={onInstall}
-          disabled={busy || !source.trim()}
+          disabled={busy || !source.trim() || (packagesOffline && remoteSource)}
+          title={packagesOffline && remoteSource ? t("i18n.offlinePackagesHint") : undefined}
           className="is-pushed-right"
         >
           {busy ? t("i18n.installing") : t("i18n.install")}
         </ConfigButton>
       </div>
+      {packagesOffline && (
+        <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.5 }}>{t("i18n.offlinePackagesHint")}</div>
+      )}
 
       <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
         <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)" }}>Examples</div>
@@ -542,6 +549,7 @@ function PackageDetail({
   updateStatus,
   checkingUpdate,
   updateError,
+  packagesOffline,
   onAction,
   onCheckUpdate,
   onReloadSession,
@@ -555,6 +563,7 @@ function PackageDetail({
   updateStatus?: PluginUpdateResult;
   checkingUpdate: boolean;
   updateError: string | null;
+  packagesOffline: boolean;
   onAction: (action: PluginAction, pkg: PluginPackageInfo) => void;
   onCheckUpdate: () => void;
   onReloadSession: () => void;
@@ -638,8 +647,8 @@ function PackageDetail({
               size="small"
               variant={updateAvailable ? "primary" : undefined}
               onClick={updateAvailable || !canCheckForUpdates ? () => onAction("update", pkg) : onCheckUpdate}
-              disabled={busy || reloadBusy || checkingUpdate}
-              title={updateAvailable ? t("i18n.updateAvailable") : undefined}
+              disabled={busy || reloadBusy || checkingUpdate || packagesOffline}
+              title={packagesOffline ? t("i18n.offlinePackagesHint") : updateAvailable ? t("i18n.updateAvailable") : undefined}
             >
               {busyKey === `update:${key}`
                 ? t("i18n.updating")
@@ -796,6 +805,7 @@ export function PluginsConfig({
   const [updatingAll, setUpdatingAll] = useState(false);
 
   const packages = useMemo(() => data?.packages ?? [], [data?.packages]);
+  const packagesOffline = data?.packagesOffline ?? false;
   const selectedPackage = packages.find((pkg) => packageKey(pkg) === selected) ?? null;
   const projectResourcesLoaded = data?.projectResourcesLoaded ?? true;
 
@@ -837,6 +847,7 @@ export function PluginsConfig({
 
   const checkForUpdates = useCallback(
     async (pkg?: PluginPackageInfo) => {
+      if (packagesOffline) return;
       const targets = pkg ? [pkg] : packages.filter((item) => item.canCheckForUpdates);
       const keys = targets.map(packageKey);
       if (keys.length === 0) return;
@@ -877,10 +888,11 @@ export function PluginsConfig({
         if (!pkg) setCheckingAll(false);
       }
     },
-    [cwd, packages],
+    [cwd, packages, packagesOffline],
   );
 
   const updateAllPluginsAction = useCallback(async () => {
+    if (packagesOffline) return;
     setUpdatingAll(true);
     setActionError(null);
     setActionMessage(null);
@@ -904,7 +916,7 @@ export function PluginsConfig({
     } finally {
       setUpdatingAll(false);
     }
-  }, [cwd, sessionId, t]);
+  }, [cwd, packagesOffline, sessionId, t]);
 
   const runAction = useCallback(
     async (action: PluginAction, pkg: PluginPackageInfo) => {
@@ -1072,6 +1084,17 @@ export function PluginsConfig({
       closeLabel={t("i18n.close")}
       onClose={onClose}
     >
+      {packagesOffline && (
+        <div
+          role="status"
+          className="config-trust-notice"
+          style={{ display: "flex", alignItems: "center", gap: 10 }}
+        >
+          <span style={{ flex: 1, minWidth: 200 }}>
+            {t("i18n.offlinePackages")} · {t("i18n.offlinePackagesHint")}
+          </span>
+        </div>
+      )}
       {!projectResourcesLoaded && (
         <div role="status" className="config-trust-notice" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           <span style={{ flex: 1, minWidth: 200 }}>{t("trust.pluginsNotLoaded")}</span>
@@ -1161,6 +1184,7 @@ export function PluginsConfig({
                 projectResourcesLoaded={projectResourcesLoaded}
                 isAdmin={isAdmin}
                 busy={addBusy}
+                packagesOffline={packagesOffline}
                 actionError={actionError}
                 extensionPath={extensionPath}
                 directoryName={directoryName}
@@ -1184,6 +1208,7 @@ export function PluginsConfig({
                 updateStatus={updateStatuses[packageKey(selectedPackage)]}
                 checkingUpdate={checkingUpdates.has(packageKey(selectedPackage))}
                 updateError={updateError}
+                packagesOffline={packagesOffline}
                 onAction={runAction}
                 onCheckUpdate={() => void checkForUpdates(selectedPackage)}
                 onReloadSession={reloadSession}
@@ -1224,8 +1249,8 @@ export function PluginsConfig({
           <ConfigButton
             variant={availableUpdateCount > 0 ? "primary" : "secondary"}
             onClick={() => void (availableUpdateCount > 0 ? updateAllPluginsAction() : checkForUpdates())}
-            disabled={footerBusy}
-            title={availableUpdateCount > 0 ? t("i18n.updateAllPluginsHint") : undefined}
+            disabled={footerBusy || packagesOffline}
+            title={packagesOffline ? t("i18n.offlinePackagesHint") : availableUpdateCount > 0 ? t("i18n.updateAllPluginsHint") : undefined}
           >
             {updatingAll
               ? t("i18n.updating")

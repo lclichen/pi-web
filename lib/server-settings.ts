@@ -18,6 +18,8 @@ import { dataDir } from "./mode-homes";
  *                             = derive from the request Host
  *   PI_WEB_DISABLE_NPM_PACKAGES=1  disable SDK npm auto-install/update checks
  *                             (equivalent to PI_OFFLINE=1; admin can toggle it)
+ *   PI_WEB_NPM_REGISTRY=...   npm registry mirror for installs and terminals
+ *   PI_WEB_PIP_INDEX_URL=...  PyPI simple index for pip in terminals
  */
 
 /** Config-bundle upload default cap (MB). Also the env seed. */
@@ -37,6 +39,10 @@ export interface ServerSettings {
    * loading resources, which has no timeout and can hang /api/models.
    */
   disableNpmPackages: boolean;
+  /** Optional npm registry mirror (https://registry.npmmirror.com). */
+  npmRegistry?: string;
+  /** Optional PyPI simple index URL (https://pypi.tuna.tsinghua.edu.cn/simple). */
+  pipIndexUrl?: string;
   /** Intranet SkillHub base URL (http(s)); empty/absent = skills.sh flow. */
   skillhubUrl?: string;
   /** Config-bundle upload cap in MB (absent = BUNDLE_UPLOAD_DEFAULT_MB). */
@@ -75,9 +81,23 @@ function envDefaults(): ServerSettings {
   } catch (e) {
     console.warn(`[pi-web] 忽略非法 PI_WEB_PUBLIC_URL: ${e instanceof Error ? e.message : e}`);
   }
+  let npmRegistry: string | undefined;
+  try {
+    npmRegistry = normalizePackageMirrorUrl(process.env.PI_WEB_NPM_REGISTRY, "PI_WEB_NPM_REGISTRY");
+  } catch (e) {
+    console.warn(`[pi-web] 忽略非法 PI_WEB_NPM_REGISTRY: ${e instanceof Error ? e.message : e}`);
+  }
+  let pipIndexUrl: string | undefined;
+  try {
+    pipIndexUrl = normalizePackageMirrorUrl(process.env.PI_WEB_PIP_INDEX_URL, "PI_WEB_PIP_INDEX_URL");
+  } catch (e) {
+    console.warn(`[pi-web] 忽略非法 PI_WEB_PIP_INDEX_URL: ${e instanceof Error ? e.message : e}`);
+  }
   return {
     labTraining: !off,
     disableNpmPackages: truthy(process.env.PI_WEB_DISABLE_NPM_PACKAGES) || truthy(process.env.PI_OFFLINE),
+    ...(npmRegistry ? { npmRegistry } : {}),
+    ...(pipIndexUrl ? { pipIndexUrl } : {}),
     ...(hub ? { skillhubUrl: hub } : {}),
     ...(seedMb !== undefined ? { bundleUploadMaxMb: seedMb } : {}),
     ...(publicBaseUrl ? { publicBaseUrl } : {}),
@@ -155,6 +175,34 @@ export function normalizePublicBaseUrl(raw: unknown): string | undefined {
 }
 
 /**
+ * Validate an npm registry / PyPI index URL. Empty/null clears the override;
+ * credentials and query/hash are rejected (mirror URLs are meant to be shared
+ * in env/terminal output). Returns undefined when cleared.
+ */
+export function normalizePackageMirrorUrl(raw: unknown, field: string): string | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  if (typeof raw !== "string") throw new Error(`${field} 必须是字符串`);
+  const trimmed = raw.trim().replace(/\/+$/, "");
+  if (!trimmed) return undefined;
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    throw new Error(`${field} 地址无效: ${raw}`);
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error(`${field} 必须是 http(s) 地址: ${raw}`);
+  }
+  if (parsed.username || parsed.password) {
+    throw new Error(`${field} 不能包含账号密码: ${raw}`);
+  }
+  if (parsed.search || parsed.hash) {
+    throw new Error(`${field} 不能包含查询串或锚点: ${raw}`);
+  }
+  return `${parsed.origin}${parsed.pathname === "/" ? "" : parsed.pathname}`;
+}
+
+/**
  * 绝对链接使用的对外地址：管理员覆盖（含 env 播种）> PI_WEB_PUBLIC_URL。
  * 都没有时返回 undefined — 由调用方按请求 Host 推断。
  */
@@ -173,6 +221,8 @@ function parseStored(raw: unknown): Partial<ServerSettings> | undefined {
   const parsed = raw as {
     labTraining?: unknown;
     disableNpmPackages?: unknown;
+    npmRegistry?: unknown;
+    pipIndexUrl?: unknown;
     skillhubUrl?: unknown;
     bundleUploadMaxMb?: unknown;
     publicBaseUrl?: unknown;
@@ -180,6 +230,18 @@ function parseStored(raw: unknown): Partial<ServerSettings> | undefined {
   const out: Partial<ServerSettings> = {};
   if (typeof parsed.labTraining === "boolean") out.labTraining = parsed.labTraining;
   if (typeof parsed.disableNpmPackages === "boolean") out.disableNpmPackages = parsed.disableNpmPackages;
+  try {
+    const registry = normalizePackageMirrorUrl(parsed.npmRegistry, "npmRegistry");
+    if (registry) out.npmRegistry = registry;
+  } catch {
+    // stored garbage — ignore the field, keep the rest
+  }
+  try {
+    const pip = normalizePackageMirrorUrl(parsed.pipIndexUrl, "pipIndexUrl");
+    if (pip) out.pipIndexUrl = pip;
+  } catch {
+    // stored garbage — ignore the field, keep the rest
+  }
   const hub = normalizeSkillhubUrlSetting(parsed.skillhubUrl);
   if (hub !== undefined) out.skillhubUrl = hub;
   try {
@@ -235,9 +297,44 @@ export function applyPackageNetworkMode(): void {
   }
 }
 
+/** Effective offline-package state (admin setting or operator PI_OFFLINE). */
+export function isNpmPackagesDisabled(): boolean {
+  return getServerSettings().disableNpmPackages === true || process.env.PI_OFFLINE === "1";
+}
+
+/** Original values captured before pi-web projects mirror settings into env. */
+const originalPackageEnv = new Map<string, string | undefined>();
+
+function setPackageEnv(name: string, value: string | undefined): void {
+  if (!originalPackageEnv.has(name)) originalPackageEnv.set(name, process.env[name]);
+  if (value !== undefined) {
+    process.env[name] = value;
+    return;
+  }
+  const original = originalPackageEnv.get(name);
+  if (original === undefined) delete process.env[name];
+  else process.env[name] = original;
+}
+
+/**
+ * Mirror settings into the env vars npm/pip actually read. This covers SDK
+ * package installs (it spawns npm with process.env) and host terminals
+ * (local-terminal copies process.env); remote terminals get an export prefix
+ * in lib/remote-terminal.ts.
+ */
+export function applyPackageRegistryEnv(): void {
+  const settings = getServerSettings();
+  setPackageEnv("NPM_CONFIG_REGISTRY", settings.npmRegistry);
+  // npm reads either case depending on platform; keep both in sync.
+  setPackageEnv("npm_config_registry", settings.npmRegistry);
+  setPackageEnv("PIP_INDEX_URL", settings.pipIndexUrl);
+}
+
 export function updateServerSettings(patch: {
   labTraining?: boolean;
   disableNpmPackages?: boolean;
+  npmRegistry?: string;
+  pipIndexUrl?: string;
   skillhubUrl?: string;
   bundleUploadMaxMb?: number | null;
   publicBaseUrl?: string;
@@ -245,6 +342,16 @@ export function updateServerSettings(patch: {
   const next: ServerSettings = { ...getServerSettings() };
   if (typeof patch.labTraining === "boolean") next.labTraining = patch.labTraining;
   if (typeof patch.disableNpmPackages === "boolean") next.disableNpmPackages = patch.disableNpmPackages;
+  if (patch.npmRegistry !== undefined) {
+    const registry = normalizePackageMirrorUrl(patch.npmRegistry, "npmRegistry");
+    if (registry) next.npmRegistry = registry;
+    else delete next.npmRegistry;
+  }
+  if (patch.pipIndexUrl !== undefined) {
+    const pip = normalizePackageMirrorUrl(patch.pipIndexUrl, "pipIndexUrl");
+    if (pip) next.pipIndexUrl = pip;
+    else delete next.pipIndexUrl;
+  }
   if (patch.skillhubUrl !== undefined) {
     // 显式传值：合法 → 覆盖；空串 → 清除（回到 skills.sh 流程）。undefined = 不动。
     const hub = normalizeSkillhubUrlSetting(patch.skillhubUrl);
@@ -266,5 +373,6 @@ export function updateServerSettings(patch: {
   writeFileSync(settingsPath(), JSON.stringify(next, null, 2), "utf8");
   globalThis.__piServerSettingsStore = { path: settingsPath(), data: next };
   applyPackageNetworkMode();
+  applyPackageRegistryEnv();
   return next;
 }

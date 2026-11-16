@@ -175,6 +175,8 @@ tail -f logs/platform.log # 跟踪平台日志
 | `PI_WEB_SANDBOX_EXTENSION_PATH` | 沙盒桥接扩展路径（会话以 `.pi/extensions/` 发现加载） |
 | `PI_WEB_LAB_TRAINING` | 教学面板功能开关 |
 | `PI_WEB_DISABLE_NPM_PACKAGES` | `1` = 禁止 SDK 为缺失包执行 npm install、跳过包更新检查与工具下载（等价 `PI_OFFLINE=1`；管理员也可在「全局配置」页切换） |
+| `PI_WEB_NPM_REGISTRY` | npm 镜像源（包安装与新建 Host 终端生效）；留空用 npm 默认源 |
+| `PI_WEB_PIP_INDEX_URL` | PyPI 镜像 simple 地址（新建终端中的 pip 生效）；留空用 PyPI 默认源 |
 
 ## 四、升级
 

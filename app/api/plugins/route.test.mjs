@@ -131,3 +131,17 @@ test("attributes packages from the raw global settings and the user diff", async
     delete process.env.PI_WEB_AUTH;
   }
 });
+
+test("reports offline package mode to the UI", async () => {
+  const previous = process.env.PI_OFFLINE;
+  process.env.PI_OFFLINE = "1";
+  try {
+    const response = await GET(new Request(`http://localhost/api/plugins?cwd=${encodeURIComponent(cwd)}`));
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(body.packagesOffline, true);
+  } finally {
+    if (previous === undefined) delete process.env.PI_OFFLINE;
+    else process.env.PI_OFFLINE = previous;
+  }
+});

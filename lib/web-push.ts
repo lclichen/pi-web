@@ -1,10 +1,11 @@
 import { SessionManager } from "@earendil-works/pi-coding-agent";
-import { existsSync, mkdirSync, readFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync } from "fs";
 import { dirname, join } from "path";
 import webpush from "web-push";
 import { writePrivateFileAtomicSync } from "./atomic-file";
 import { enLocale } from "./i18n/messages/en";
 import { zhCNLocale } from "./i18n/messages/zh-CN";
+import { dataDir } from "./mode-homes";
 import { getAgentDir } from "./session-reader";
 import { userPushPath } from "./user-config";
 
@@ -31,6 +32,8 @@ interface WebPushEnvironment {
   saveState: (state: PushStateFile) => void;
   loadUserSubscriptions: (userId: number) => PushSubscriptionRecord[];
   saveUserSubscriptions: (userId: number, subscriptions: PushSubscriptionRecord[]) => void;
+  /** One browser endpoint belongs to one login: drop it from every other user. */
+  removeEndpointFromOtherUsers: (endpoint: string, keepUserId: number) => void;
   generateVapidKeys: () => PushStateFile["vapidKeys"];
   listSessionNames: () => Promise<Map<string, string>>;
 }
@@ -38,11 +41,32 @@ interface WebPushEnvironment {
 export interface WebPushNotifier {
   getVapidPublicKey: () => string;
   addSubscription: (subscription: PushSubscriptionRecord, userId?: number) => void;
+  removeSubscription: (endpoint: string, userId?: number) => void;
   notifySessionComplete: (sessionId: string, ownerId?: number) => Promise<void>;
 }
 
 function stateFilePath(): string {
   return join(getAgentDir(), "web-push.json");
+}
+
+function loadUserSubscriptionsFromDisk(userId: number): PushSubscriptionRecord[] {
+  const path = userPushPath(userId);
+  if (!existsSync(path)) return [];
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
+    if (typeof parsed !== "object" || parsed === null) return [];
+    const subscriptions = (parsed as Partial<UserPushFile>).subscriptions;
+    return Array.isArray(subscriptions) ? subscriptions : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveUserSubscriptionsToDisk(userId: number, subscriptions: PushSubscriptionRecord[]): void {
+  const path = userPushPath(userId);
+  mkdirSync(dirname(path), { recursive: true });
+  const data: UserPushFile = { version: 1, subscriptions };
+  writePrivateFileAtomicSync(path, JSON.stringify(data));
 }
 
 function getDefaultEnvironment(): WebPushEnvironment {
@@ -70,23 +94,25 @@ function getDefaultEnvironment(): WebPushEnvironment {
       mkdirSync(dirname(path), { recursive: true });
       writePrivateFileAtomicSync(path, JSON.stringify(state));
     },
-    loadUserSubscriptions(userId) {
-      const path = userPushPath(userId);
-      if (!existsSync(path)) return [];
+    loadUserSubscriptions: loadUserSubscriptionsFromDisk,
+    saveUserSubscriptions: saveUserSubscriptionsToDisk,
+    removeEndpointFromOtherUsers(endpoint, keepUserId) {
+      let entries;
       try {
-        const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
-        if (typeof parsed !== "object" || parsed === null) return [];
-        const subscriptions = (parsed as Partial<UserPushFile>).subscriptions;
-        return Array.isArray(subscriptions) ? subscriptions : [];
+        entries = readdirSync(join(dataDir(), "user-config"), { withFileTypes: true });
       } catch {
-        return [];
+        return;
       }
-    },
-    saveUserSubscriptions(userId, subscriptions) {
-      const path = userPushPath(userId);
-      mkdirSync(dirname(path), { recursive: true });
-      const data: UserPushFile = { version: 1, subscriptions };
-      writePrivateFileAtomicSync(path, JSON.stringify(data));
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+        const match = /^u(\d+)$/.exec(entry.name);
+        if (!match) continue;
+        const userId = Number(match[1]);
+        if (userId === keepUserId) continue;
+        const subscriptions = loadUserSubscriptionsFromDisk(userId);
+        const next = subscriptions.filter((subscription) => subscription.endpoint !== endpoint);
+        if (next.length !== subscriptions.length) saveUserSubscriptionsToDisk(userId, next);
+      }
     },
     generateVapidKeys: () => webpush.generateVAPIDKeys(),
     async listSessionNames() {
@@ -147,13 +173,31 @@ export function createWebPushNotifier(environment: WebPushEnvironment): WebPushN
       return state.vapidKeys.publicKey;
     },
     addSubscription(subscription, userId = 0) {
+      // A browser has one push endpoint regardless of who logs in. Claiming it
+      // for this user must remove it from every other user (and from the
+      // auth-off legacy bucket), otherwise the previous user's session
+      // completions keep arriving on this device.
+      environment.removeEndpointFromOtherUsers(subscription.endpoint, userId);
+      if (userId > 0 && state.subscriptions.some((s) => s.endpoint === subscription.endpoint)) {
+        state.subscriptions = state.subscriptions.filter((s) => s.endpoint !== subscription.endpoint);
+        saveState();
+      }
       const subscriptions = subscriptionsFor(userId);
       saveSubscriptionsFor(userId, [
         ...subscriptions.filter((s) => s.endpoint !== subscription.endpoint),
         subscription,
       ]);
     },
+    removeSubscription(endpoint, userId = 0) {
+      const subscriptions = subscriptionsFor(userId);
+      const next = subscriptions.filter((s) => s.endpoint !== endpoint);
+      if (next.length !== subscriptions.length) saveSubscriptionsFor(userId, next);
+    },
     async notifySessionComplete(sessionId, ownerId = 0) {
+      // With auth enabled, an ownerless session must not fall back to the
+      // shared auth-off bucket: that would broadcast to subscriptions whose
+      // owner cannot be verified.
+      if (ownerId <= 0 && process.env.PI_WEB_AUTH === "on") return;
       const initial = subscriptionsFor(ownerId);
       if (initial.length === 0) return;
       const sessionName = (await environment.listSessionNames()).get(sessionId);
@@ -162,6 +206,7 @@ export function createWebPushNotifier(environment: WebPushEnvironment): WebPushN
         body: localeText(locale, "taskFinished"),
         url: `/?session=${encodeURIComponent(sessionId)}`,
         tag: `pi-session-complete:${sessionId}`,
+        ownerId,
       });
 
       let subscriptions = initial;
@@ -199,6 +244,10 @@ export function getVapidPublicKey(): Promise<string> {
 
 export function addSubscription(subscription: PushSubscriptionRecord, userId = 0): Promise<void> {
   return getNotifier().then((notifier) => notifier.addSubscription(subscription, userId));
+}
+
+export function removePushSubscription(endpoint: string, userId = 0): Promise<void> {
+  return getNotifier().then((notifier) => notifier.removeSubscription(endpoint, userId));
 }
 
 export async function notifySessionComplete(sessionId: string, ownerId = 0): Promise<void> {

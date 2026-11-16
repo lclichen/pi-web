@@ -10,6 +10,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
+import { teardownPushSubscription } from "@/lib/push-client";
 import { ConfigButton } from "./SettingsUi";
 
 interface AccountUser {
@@ -198,8 +199,9 @@ export function AccountSettings() {
         <p className="settings-general-description">{t("account.logoutDescription")}</p>
         <ConfigButton
           variant="danger"
-          onClick={() => {
-            void fetch("/api/webauth/logout", { method: "POST" }).catch(() => {});
+          onClick={async () => {
+            await teardownPushSubscription();
+            await fetch("/api/webauth/logout", { method: "POST" }).catch(() => {});
             window.location.href = "/login";
           }}
         >

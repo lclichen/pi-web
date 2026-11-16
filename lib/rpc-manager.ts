@@ -2687,7 +2687,21 @@ const SUBAGENT_CONTROLLER = createSubagentController({
     });
     registerRpcWrapper(wrapper);
   },
-  reopenSession: async (sessionId, sessionFile) => (await startRpcSession(sessionId, sessionFile, undefined)).session,
+  reopenSession: async (sessionId, sessionFile) => {
+    const meta = getSessionMeta(sessionId);
+    return (
+      await startRpcSession(sessionId, sessionFile, undefined, {
+        ...(meta
+          ? {
+              ownerId: meta.ownerId,
+              mode: meta.mode,
+              ...(meta.ownerName ? { ownerName: meta.ownerName } : {}),
+              ...(meta.projectId ? { projectId: meta.projectId } : {}),
+            }
+          : {}),
+      })
+    ).session;
+  },
   resolveSessionPath,
   invalidateSessionList: (sessionFile?: string) => invalidateSessionListForSession(sessionFile),
   isBuiltInSubagentsEnabled,
@@ -2913,7 +2927,17 @@ export async function setRpcSessionTools(
     appendSessionToolSelection(manager, toolNames);
     invalidateSessionManagerCache(sessionFile);
     invalidateSessionListForSession(sessionFile);
-    const started = await startRpcSession(sessionId, sessionFile, undefined);
+    const meta = getSessionMeta(sessionId);
+    const started = await startRpcSession(sessionId, sessionFile, undefined, {
+      ...(meta
+        ? {
+            ownerId: meta.ownerId,
+            mode: meta.mode,
+            ...(meta.ownerName ? { ownerName: meta.ownerName } : {}),
+            ...(meta.projectId ? { projectId: meta.projectId } : {}),
+          }
+        : {}),
+    });
     return { session: started.session, sessionId: started.realSessionId, recreated: false };
   }
 
@@ -2937,14 +2961,20 @@ export async function setRpcSessionTools(
   const sessionCwd = existing.cwd;
   const model = existing.inner.model;
   const currentThinkingLevel = existing.inner.agent.state?.thinkingLevel;
+  const preservedOptions = {
+    ownerId: existing.ownerId,
+    mode: existing.mode,
+    ...(existing.projectId ? { projectId: existing.projectId } : {}),
+  };
   await existing.shutdown();
 
   if (persistedFile) {
-    const started = await startRpcSession(sessionId, persistedFile, undefined);
+    const started = await startRpcSession(sessionId, persistedFile, undefined, preservedOptions);
     return { session: started.session, sessionId: started.realSessionId, recreated: true };
   }
 
   const started = await startRpcSession(`__recreate__${randomUUID()}`, "", sessionCwd, {
+    ...preservedOptions,
     toolNames,
     ...(model ? { initialModel: { provider: model.provider, modelId: model.id } } : {}),
     allowInitialModelFallback: true,

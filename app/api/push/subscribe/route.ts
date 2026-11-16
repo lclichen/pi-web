@@ -1,4 +1,4 @@
-import { addSubscription, type PushSubscriptionRecord } from "@/lib/web-push";
+import { addSubscription, removePushSubscription, type PushSubscriptionRecord } from "@/lib/web-push";
 import { requireUserIdentity } from "@/lib/web-session";
 
 export const dynamic = "force-dynamic";
@@ -45,5 +45,25 @@ export async function POST(req: Request): Promise<Response> {
     },
     identity.session.user.id,
   );
+  return Response.json({ ok: true });
+}
+
+// DELETE /api/push/subscribe — drop this browser's endpoint on logout.
+// A push endpoint belongs to the browser profile, not the login; leaving it
+// registered would keep delivering the previous user's completions here.
+export async function DELETE(req: Request): Promise<Response> {
+  const identity = requireUserIdentity(req);
+  if (!identity.ok) return Response.json({ error: "登录已失效" }, { status: identity.status });
+
+  let body: { endpoint?: unknown };
+  try {
+    body = (await req.json()) as { endpoint?: unknown };
+  } catch {
+    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+  const endpoint = typeof body.endpoint === "string" && /^https:\/\//.test(body.endpoint) ? body.endpoint : null;
+  if (!endpoint) return Response.json({ error: "Invalid push endpoint" }, { status: 400 });
+
+  await removePushSubscription(endpoint, identity.session.user.id);
   return Response.json({ ok: true });
 }

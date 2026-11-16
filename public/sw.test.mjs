@@ -89,6 +89,83 @@ test("push ignores malformed payloads", async () => {
   assert.deepEqual(event.shown, []);
 });
 
+const originalFetch = globalThis.fetch;
+
+function stubCurrentUser(id) {
+  globalThis.fetch = async (url) => {
+    assert.equal(url, "/api/webauth/me");
+    return { ok: true, json: async () => ({ user: id === null ? null : { id } }) };
+  };
+}
+
+function stubLoggedOut() {
+  globalThis.fetch = async () => ({ ok: false, status: 401, json: async () => ({ user: null }) });
+}
+
+function restoreFetch() {
+  globalThis.fetch = originalFetch;
+}
+
+const OWNER_PAYLOAD = {
+  title: "Session complete",
+  body: "Task finished.",
+  url: "/?session=session-1",
+  tag: "pi-session-complete:session-1",
+  ownerId: 7,
+};
+
+test("push is shown for the user who owns the session", async () => {
+  stubCurrentUser(7);
+  try {
+    const event = dispatchPush(OWNER_PAYLOAD, [{ url: "https://pi.test/", visibilityState: "hidden" }]);
+    await event.pending;
+    assert.equal(event.shown.length, 1);
+  } finally {
+    restoreFetch();
+  }
+});
+
+test("push for another user is suppressed on a shared browser", async () => {
+  stubCurrentUser(8);
+  try {
+    const event = dispatchPush(OWNER_PAYLOAD, [{ url: "https://pi.test/", visibilityState: "hidden" }]);
+    await event.pending;
+    assert.deepEqual(event.shown, []);
+  } finally {
+    restoreFetch();
+  }
+});
+
+test("push after logout is suppressed", async () => {
+  stubLoggedOut();
+  try {
+    const event = dispatchPush(OWNER_PAYLOAD, [{ url: "https://pi.test/", visibilityState: "hidden" }]);
+    await event.pending;
+    assert.deepEqual(event.shown, []);
+  } finally {
+    restoreFetch();
+  }
+});
+
+test("auth-off pushes do not consult a web session", async () => {
+  let fetched = false;
+  globalThis.fetch = async () => {
+    fetched = true;
+    throw new Error("auth-off must not fetch /me");
+  };
+  try {
+    const event = dispatchPush(
+      { ...OWNER_PAYLOAD, ownerId: 0 },
+      [{ url: "https://pi.test/", visibilityState: "hidden" }],
+    );
+    await event.pending;
+    assert.equal(event.shown.length, 1);
+    assert.equal(fetched, false);
+  } finally {
+    restoreFetch();
+  }
+});
+
 test("notification click focuses an existing client at the session URL", async () => {
   const calls = [];
   const focusedClient = {

@@ -47,7 +47,7 @@ import {
   shouldShowBrowserNotification,
   showBrowserNotification,
 } from "@/lib/browser-notifications";
-import { setupPushSubscription } from "@/lib/push-client";
+import { setupPushSubscription, teardownPushSubscription } from "@/lib/push-client";
 import { getInitialNavigation } from "@/lib/initial-navigation";
 import { rekeyDraft } from "@/lib/draft-store";
 import { clearLastOpen, getLastOpenSession, setLastOpenSession, workspaceKeyOf } from "@/lib/workspace-memory";
@@ -3442,6 +3442,7 @@ export function AppShell() {
                     <button
                       type="button"
                       onClick={async () => {
+                        await teardownPushSubscription();
                         await fetch("/api/webauth/logout", { method: "POST" }).catch(() => {});
                         window.location.href = "/login";
                       }}

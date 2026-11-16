@@ -75,23 +75,47 @@ self.addEventListener("push", (event) => {
   } catch {
     // Ignore malformed or missing push payloads.
   }
-  const { title, body, url, tag } = payload;
+  const { title, body, url, tag, ownerId } = payload;
   if (typeof title !== "string" || !title || typeof body !== "string" || !body) return;
 
-  // The in-page notification path handles the visible case (and plays the
-  // completion sound). Only surface a system notification when no window for
-  // this app is visible — e.g. a backgrounded iOS PWA.
   event.waitUntil(
-    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
+    (async () => {
+      // A push endpoint belongs to the browser profile, not the login. After a
+      // logout or an account switch on a shared device, the previous user's
+      // completion must not surface here. Auth-off (ownerId 0) has no web
+      // session to compare against, so it keeps the old behavior.
+      if (typeof ownerId === "number" && ownerId > 0) {
+        const current = await currentUserId();
+        if (current !== ownerId) return;
+      }
+      // The in-page notification path handles the visible case (and plays the
+      // completion sound). Only surface a system notification when no window
+      // for this app is visible — e.g. a backgrounded iOS PWA.
+      const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
       if (clients.some((client) => client.visibilityState === "visible")) return;
-      return self.registration.showNotification(title, {
+      await self.registration.showNotification(title, {
         body,
         data: { url: typeof url === "string" && url ? url : "/" },
         ...(typeof tag === "string" && tag ? { tag, renotify: true } : {}),
       });
-    }),
+    })(),
   );
 });
+
+async function currentUserId() {
+  try {
+    const response = await fetch("/api/webauth/me", {
+      cache: "no-store",
+      credentials: "same-origin",
+    });
+    if (!response.ok) return null;
+    const data = await response.json();
+    return typeof data?.user?.id === "number" ? data.user.id : null;
+  } catch {
+    // Offline/unreachable: fail closed rather than leak to a stale login.
+    return null;
+  }
+}
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();

@@ -8,7 +8,7 @@
  * platform re-authorizes every call. The full legacy console stays one click
  * away until later batches (dashboard/logs/quotas/LLM) migrate in.
  */
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
 
 export interface PlatformUserRow {
@@ -52,7 +52,16 @@ interface Props {
   onClose: () => void;
 }
 
-type Tab = "overview" | "users" | "containers" | "images" | "quotas" | "workspaces" | "llm" | "logs";
+const ADMIN_TABS = [
+  { id: "overview", label: "admin.overview", group: "overview" },
+  { id: "users", label: "admin.users", group: "access" },
+  { id: "quotas", label: "admin.quotas", group: "access" },
+  { id: "containers", label: "admin.containers", group: "sandbox" },
+  { id: "images", label: "admin.images", group: "sandbox" },
+  { id: "workspaces", label: "admin.workspaces", group: "sandbox" },
+  { id: "logs", label: "admin.logs", group: "audit" },
+] as const;
+type Tab = (typeof ADMIN_TABS)[number]["id"];
 type ActionFn = (path: string, init?: RequestInit) => Promise<boolean>;
 
 export function PlatformAdminDialog({ open, onClose }: Props) {
@@ -118,57 +127,62 @@ export function PlatformAdminDialog({ open, onClose }: Props) {
       >
         {/* header + tabs */}
         <div
+          role="tablist"
           style={{
             display: "flex",
             alignItems: "center",
             gap: 4,
             padding: "10px 16px 0",
             borderBottom: "1px solid var(--border)",
+            overflowX: "auto",
+            flexShrink: 0,
           }}
         >
-          {(["overview", "users", "containers", "images", "quotas", "workspaces", "llm", "logs"] as const).map(
-            (key) => (
+          {ADMIN_TABS.map((item, index) => (
+            <Fragment key={item.id}>
+              {index > 0 && ADMIN_TABS[index - 1].group !== item.group && (
+                <span
+                  aria-hidden="true"
+                  style={{
+                    flexShrink: 0,
+                    width: 1,
+                    height: 16,
+                    margin: "0 4px",
+                    background: "var(--border)",
+                  }}
+                />
+              )}
               <button
-                key={key}
                 type="button"
+                role="tab"
+                aria-selected={tab === item.id}
                 onClick={() => {
-                  setTab(key);
+                  setTab(item.id);
                   setError(null);
                   setNotice(null);
                 }}
                 style={{
+                  flexShrink: 0,
                   padding: "7px 14px 9px",
                   fontSize: 12.5,
                   cursor: "pointer",
                   background: "none",
                   border: "none",
-                  borderBottom: `2px solid ${tab === key ? "var(--accent)" : "transparent"}`,
-                  color: tab === key ? "var(--text)" : "var(--text-muted)",
-                  fontWeight: tab === key ? 600 : 400,
+                  borderBottom: `2px solid ${tab === item.id ? "var(--accent)" : "transparent"}`,
+                  color: tab === item.id ? "var(--text)" : "var(--text-muted)",
+                  fontWeight: tab === item.id ? 600 : 400,
                 }}
               >
-                {key === "overview"
-                  ? t("admin.overview")
-                  : key === "users"
-                    ? t("admin.users")
-                    : key === "containers"
-                      ? t("admin.containers")
-                      : key === "images"
-                        ? t("admin.images")
-                        : key === "quotas"
-                          ? t("admin.quotas")
-                          : key === "workspaces"
-                            ? t("admin.workspaces")
-                            : key === "llm"
-                              ? "LLM"
-                              : t("admin.logs")}
+                {t(item.label)}
               </button>
-            ),
-          )}
+            </Fragment>
+          ))}
           <div style={{ flex: 1 }} />
           <button
             type="button"
             onClick={onClose}
+            title={t("i18n.close")}
+            aria-label={t("i18n.close")}
             style={{
               background: "none",
               border: "none",
@@ -201,7 +215,6 @@ export function PlatformAdminDialog({ open, onClose }: Props) {
         {tab === "images" && <ImagesTab action={action} notify={(n) => setNotice(n)} />}
         {tab === "quotas" && <QuotasTab action={action} notify={(n) => setNotice(n)} />}
         {tab === "workspaces" && <WorkspacesTab action={action} notify={(n) => setNotice(n)} />}
-        {tab === "llm" && <LlmTab action={action} notify={(n) => setNotice(n)} />}
         {tab === "logs" && <LogsTab notify={(n) => setNotice(n)} />}
       </div>
     </div>
@@ -1700,195 +1713,6 @@ function WorkspacesTab({ action, notify }: { action: ActionFn; notify: (msg: str
         total={total}
         noun={t("admin.items")}
       />
-    </>
-  );
-}
-
-interface LlmBindingRow {
-  id: number;
-  platform_user_id: number;
-  username?: string | null;
-  max_budget: number;
-  budget_duration: string | null;
-  models: string[] | null;
-  granted_at: string;
-  revoked_at: string | null;
-}
-
-function LlmTab({ action, notify }: { action: ActionFn; notify: (msg: string) => void }) {
-  const { t } = useI18n();
-  const [rows, setRows] = useState<LlmBindingRow[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [grantUserId, setGrantUserId] = useState("");
-  const [grantBudget, setGrantBudget] = useState("10");
-  const [plaintext, setPlaintext] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await fetch("/api/admin/llm/bindings", { credentials: "same-origin" });
-      const data = (await res.json()) as { bindings?: LlmBindingRow[]; error?: string };
-      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
-      setRows(data.bindings ?? []);
-    } catch (e) {
-      notify(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoading(false);
-    }
-  }, [notify]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  const doGrant = async () => {
-    if (!/^\d+$/.test(grantUserId) || !/^\d+(\.\d+)?$/.test(grantBudget)) return;
-    const ok = await action("/api/admin/llm/bindings", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        platformUserId: Number(grantUserId),
-        maxBudget: Number(grantBudget),
-        budgetDuration: "monthly",
-      }),
-    });
-    if (ok) {
-      notify(t("admin.grantedUserBudgetMo", { id: grantUserId, budget: grantBudget }));
-      setGrantUserId("");
-      void load();
-    }
-  };
-
-  const doRevoke = async (b: LlmBindingRow) => {
-    if (!window.confirm(t("admin.revokeLlmAccessUserTheir", { id: String(b.platform_user_id) }))) return;
-    if (await action(`/api/admin/llm/bindings/${b.platform_user_id}`, { method: "DELETE" })) {
-      notify(t("admin.revokedLlmAccessUser", { id: String(b.platform_user_id) }));
-      void load();
-    }
-  };
-
-  return (
-    <>
-      <div
-        style={{
-          display: "flex",
-          gap: 8,
-          padding: "10px 16px",
-          borderBottom: "1px solid var(--border)",
-          alignItems: "center",
-          flexWrap: "wrap",
-        }}
-      >
-        <span style={{ fontSize: 11, color: "var(--text-dim)" }}>{t("admin.llmAccessGrantsPlatformUsers")}</span>
-        <div style={{ flex: 1 }} />
-        <input
-          value={grantUserId}
-          onChange={(e) => setGrantUserId(e.target.value)}
-          placeholder={t("admin.userId")}
-          style={{
-            width: 90,
-            padding: "5px 8px",
-            fontSize: 12,
-            background: "var(--bg)",
-            border: "1px solid var(--border)",
-            borderRadius: 6,
-            color: "var(--text)",
-            fontFamily: "var(--font-mono)",
-          }}
-        />
-        <input
-          value={grantBudget}
-          onChange={(e) => setGrantBudget(e.target.value)}
-          placeholder={t("admin.budget")}
-          style={{
-            width: 70,
-            padding: "5px 8px",
-            fontSize: 12,
-            background: "var(--bg)",
-            border: "1px solid var(--border)",
-            borderRadius: 6,
-            color: "var(--text)",
-            fontFamily: "var(--font-mono)",
-          }}
-        />
-        <button
-          type="button"
-          disabled={!/^\d+$/.test(grantUserId) || !/^\d+(\.\d+)?$/.test(grantBudget)}
-          onClick={() => void doGrant()}
-          style={{
-            padding: "5px 12px",
-            fontSize: 12,
-            border: "1px solid var(--accent)",
-            color: "var(--accent)",
-            background: "none",
-            borderRadius: 6,
-            cursor: "pointer",
-            opacity: !/^\d+$/.test(grantUserId) || !/^\d+(\.\d+)?$/.test(grantBudget) ? 0.4 : 1,
-          }}
-        >
-          {t("admin.grant")}
-        </button>
-      </div>
-      <div style={{ flex: 1, overflow: "auto", padding: "0 8px" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-          <thead>
-            <tr style={{ textAlign: "left", color: "var(--text-dim)", fontSize: 10.5 }}>
-              <th style={{ padding: "8px 8px", fontWeight: 500 }}>#</th>
-              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("admin.users")}</th>
-              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("admin.budget")}</th>
-              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("admin.cycle")}</th>
-              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("admin.models")}</th>
-              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("chat.status")}</th>
-              <th style={{ padding: "8px 8px", fontWeight: 500 }}>{t("admin.actions")}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading && (
-              <tr>
-                <td colSpan={7} style={{ padding: 18, textAlign: "center", color: "var(--text-dim)" }}>
-                  {t("admin.loading")}
-                </td>
-              </tr>
-            )}
-            {!loading && rows.length === 0 && (
-              <tr>
-                <td colSpan={7} style={{ padding: 18, textAlign: "center", color: "var(--text-dim)" }}>
-                  {t("admin.llmGrants")}
-                </td>
-              </tr>
-            )}
-            {!loading &&
-              rows.map((b) => (
-                <tr key={b.id} style={{ borderTop: "1px solid var(--border)" }}>
-                  <td style={{ padding: "7px 8px", color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>
-                    {b.id}
-                  </td>
-                  <td style={{ padding: "7px 8px", fontWeight: 500 }}>
-                    #{b.platform_user_id}
-                    {b.username ? ` ${b.username}` : ""}
-                  </td>
-                  <td style={{ padding: "7px 8px", fontFamily: "var(--font-mono)" }}>{b.max_budget}</td>
-                  <td style={{ padding: "7px 8px", color: "var(--text-muted)" }}>{b.budget_duration ?? "—"}</td>
-                  <td style={{ padding: "7px 8px", color: "var(--text-muted)", fontSize: 11 }}>
-                    {b.models ? b.models.join(", ") : t("admin.all")}
-                  </td>
-                  <td
-                    style={{ padding: "7px 8px", color: b.revoked_at ? "var(--text-dim)" : "var(--success, #22c55e)" }}
-                  >
-                    {b.revoked_at ? t("admin.revoked") : t("admin.active")}
-                  </td>
-                  <td style={{ padding: "7px 8px" }}>
-                    {!b.revoked_at && (
-                      <MiniButton onClick={() => void doRevoke(b)} danger>
-                        {t("admin.revoke")}
-                      </MiniButton>
-                    )}
-                  </td>
-                </tr>
-              ))}
-          </tbody>
-        </table>
-      </div>
     </>
   );
 }

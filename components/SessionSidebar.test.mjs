@@ -97,8 +97,17 @@ test("subagent completion stays silent and never becomes unread", () => {
   assert.match(source, /if \(completedWithNotifications\.length > 0\) \{\s*onBackgroundTaskDone\?\.\(\)/);
   assert.match(
     source,
-    /filter\(\(session\) => session\.relation\?\.kind !== "subagent"\)[\s\S]*?unreadEligibleIds\.has\(id\)/,
+    /filter\(\(session\) => session\.relation\?\.kind !== "subagent" && isOwnSession\(session, authUserId\)\)[\s\S]*?unreadEligibleIds\.has\(id\)/,
   );
+});
+
+test("tab badge and unread markers stay inside the current login", () => {
+  assert.match(source, /const authUserId = authInfo\?\.user\?\.id \?\? 0/);
+  assert.match(source, /badgeCounts\(allSessions, runningSessionIds, unreadSessionIds, authUserId\)/);
+  assert.match(source, /ownSessionIds\.has\(id\)/);
+  assert.match(source, /loadUnreadSessionIds\(authUserId\)/);
+  assert.match(source, /saveUnreadSessionIds\(authUserId, unreadSessionIds\)/);
+  assert.match(source, /getProjectActivity\(activitySessions, runningSessionIds, unreadSessionIds\)/);
 });
 
 test("includes project activity counts in accessible labels", () => {

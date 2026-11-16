@@ -21,6 +21,7 @@ import { getProjectActivity, getRecentProjects, sessionsForProject } from "@/lib
 import { workspaceKeyOf } from "@/lib/workspace-memory";
 import { hostDirLabel } from "@/lib/host-groups";
 import { applyFaviconBadge } from "@/lib/favicon-badge";
+import { badgeCounts, isOwnSession, unreadStorageKey } from "@/lib/session-badge";
 import { formatRelativeTime } from "@/lib/i18n/format";
 import { useI18n } from "@/hooks/useI18n";
 import { useResizablePanel } from "@/hooks/useResizablePanel";
@@ -215,7 +216,6 @@ interface ValidatedProject {
   key: string;
 }
 
-const UNREAD_SESSIONS_STORAGE_KEY = "pi-web:unread-session-ids";
 const LAST_CUSTOM_CWD_STORAGE_KEY = "pi-web:last-custom-cwd";
 const RUNNING_SESSIONS_POLL_MS = 2500;
 const SESSION_PANE_DEFAULT_HEIGHT = 320;
@@ -241,10 +241,10 @@ function saveLastCustomCwd(cwd: string): void {
   }
 }
 
-function loadUnreadSessionIds(): Set<string> {
+function loadUnreadSessionIds(userId?: number | null): Set<string> {
   if (typeof window === "undefined") return new Set();
   try {
-    const raw = window.localStorage.getItem(UNREAD_SESSIONS_STORAGE_KEY);
+    const raw = window.localStorage.getItem(unreadStorageKey(userId));
     if (!raw) return new Set();
     const parsed = JSON.parse(raw) as unknown;
     if (Array.isArray(parsed)) return new Set(parsed.filter((id): id is string => typeof id === "string"));
@@ -254,11 +254,12 @@ function loadUnreadSessionIds(): Set<string> {
   }
 }
 
-function saveUnreadSessionIds(ids: Set<string>): void {
+function saveUnreadSessionIds(userId: number | null | undefined, ids: Set<string>): void {
   if (typeof window === "undefined") return;
+  const key = unreadStorageKey(userId);
   try {
-    if (ids.size === 0) window.localStorage.removeItem(UNREAD_SESSIONS_STORAGE_KEY);
-    else window.localStorage.setItem(UNREAD_SESSIONS_STORAGE_KEY, JSON.stringify([...ids]));
+    if (ids.size === 0) window.localStorage.removeItem(key);
+    else window.localStorage.setItem(key, JSON.stringify([...ids]));
   } catch {
     // ignore storage quota / privacy-mode errors
   }
@@ -477,7 +478,12 @@ export function SessionSidebar({
   onSessionsChange,
 }: Props) {
   const { t } = useI18n();
+  const authUserId = authInfo?.user?.id ?? 0;
   const [allSessions, setAllSessions] = useState<SessionInfo[]>([]);
+  const ownSessionIds = useMemo(
+    () => new Set(allSessions.filter((session) => isOwnSession(session, authUserId)).map((session) => session.id)),
+    [allSessions, authUserId],
+  );
   // Remote-session context comes from AppShell as the SINGLE source of truth
   // (the same object feeds the terminal and file viewer). The sidebar used to
   // compute its own copy — transient disagreement between the two was the
@@ -568,7 +574,8 @@ export function SessionSidebar({
   const [changesCollapsed, setChangesCollapsed] = useState(true);
   const [explorerRefreshDone, setExplorerRefreshDone] = useState(false);
   const [runningSessionIds, setRunningSessionIds] = useState<Set<string>>(() => new Set());
-  const [unreadSessionIds, setUnreadSessionIds] = useState<Set<string>>(() => loadUnreadSessionIds());
+  const [unreadSessionIds, setUnreadSessionIds] = useState<Set<string>>(() => loadUnreadSessionIds(authUserId));
+  const [unreadLoadedFor, setUnreadLoadedFor] = useState(authUserId);
   const previousRunningSessionIdsRef = useRef<Set<string>>(new Set());
   // Last "running but unlisted" id-set we already force-refreshed for.
   const unlistedKeyRef = useRef<string>("");
@@ -667,10 +674,12 @@ export function SessionSidebar({
           );
           setRunningSessionIds(new Set(data.runningSessionIds ?? []));
         }
-        // Drop markers for deleted sessions and for subagents, whose completion
-        // is intentionally silent even if an older client marked them unread.
+        // Drop markers for deleted sessions, subagents, and sessions owned by
+        // another user (admins receive other users' live rows for support).
         const unreadEligibleIds = new Set(
-          data.sessions.filter((session) => session.relation?.kind !== "subagent").map((session) => session.id),
+          data.sessions
+            .filter((session) => session.relation?.kind !== "subagent" && isOwnSession(session, authUserId))
+            .map((session) => session.id),
         );
         setUnreadSessionIds((prev) => {
           if (prev.size === 0) return prev;
@@ -688,7 +697,7 @@ export function SessionSidebar({
       // re-run on every parent render that passed a fresh object — a fetch →
       // onSessionsChange → parent re-render → fetch loop.
     },
-    [authInfo?.user?.role, sessionSpace],
+    [authInfo?.user?.role, sessionSpace, authUserId],
   );
 
   const initialLoadDone = useRef(false);
@@ -741,16 +750,28 @@ export function SessionSidebar({
     setExplorerOpen(loadExplorerOpen());
   }, []);
 
-  // Persist unread markers so they survive a browser refresh before the user
-  // has actually opened the completed session.
+  // Unread markers belong to one login: a shared browser keeps a key per user.
   useEffect(() => {
-    saveUnreadSessionIds(unreadSessionIds);
-  }, [unreadSessionIds]);
+    if (unreadLoadedFor === authUserId) return;
+    setUnreadSessionIds(loadUnreadSessionIds(authUserId));
+    setUnreadLoadedFor(authUserId);
+  }, [authUserId, unreadLoadedFor]);
+
+  // Persist unread markers so they survive a browser refresh before the user
+  // has actually opened the completed session. Only write once the current
+  // login's set is loaded, so an auth change cannot copy the previous user's
+  // markers into the new user's key.
+  useEffect(() => {
+    if (unreadLoadedFor !== authUserId) return;
+    saveUnreadSessionIds(authUserId, unreadSessionIds);
+  }, [unreadSessionIds, authUserId, unreadLoadedFor]);
 
   // Background tabs otherwise show nothing once the completion chime fades.
+  // Count only this login's sessions: an admin's running poll includes every
+  // user's sessions, while the unread filter only shows visible ones.
   useEffect(() => {
-    applyFaviconBadge({ unread: unreadSessionIds.size, running: runningSessionIds.size });
-  }, [unreadSessionIds, runningSessionIds]);
+    applyFaviconBadge(badgeCounts(allSessions, runningSessionIds, unreadSessionIds, authUserId));
+  }, [allSessions, runningSessionIds, unreadSessionIds, authUserId]);
 
   useEffect(() => {
     let stopped = false;
@@ -832,7 +853,9 @@ export function SessionSidebar({
 
   useEffect(() => {
     const previous = previousRunningSessionIdsRef.current;
-    const completedInBackground = [...previous].filter((id) => !runningSessionIds.has(id) && id !== selectedSessionId);
+    const completedInBackground = [...previous].filter(
+      (id) => !runningSessionIds.has(id) && id !== selectedSessionId && ownSessionIds.has(id),
+    );
     const knownSubagentIds = new Set(
       allSessions.filter((session) => session.relation?.kind === "subagent").map((session) => session.id),
     );
@@ -870,7 +893,7 @@ export function SessionSidebar({
         (id) => currentSuppressedCompletionSessionIdsRef.current.has(id) || knownSubagentIds.has(id),
       ),
     );
-  }, [runningSessionIds, selectedSessionId, allSessions, loadSessions, onBackgroundTaskDone]);
+  }, [runningSessionIds, selectedSessionId, allSessions, ownSessionIds, loadSessions, onBackgroundTaskDone]);
 
   useEffect(() => {
     if (!selectedSessionId) return;
@@ -1268,10 +1291,15 @@ export function SessionSidebar({
   const selectedProject = projectFor(selectedCwd);
 
   // Per-project activity counts (running / unread) for the workspace selector.
-  // Uses the same stable server key as the project list and filtering.
+  // Uses the same stable server key as the project list and filtering; other
+  // users' support rows and subagents never contribute to this login's dots.
+  const activitySessions = useMemo(
+    () => allSessions.filter((session) => session.relation?.kind !== "subagent" && isOwnSession(session, authUserId)),
+    [allSessions, authUserId],
+  );
   const projectActivity = useMemo(
-    () => getProjectActivity(allSessions, runningSessionIds, unreadSessionIds),
-    [allSessions, runningSessionIds, unreadSessionIds],
+    () => getProjectActivity(activitySessions, runningSessionIds, unreadSessionIds),
+    [activitySessions, runningSessionIds, unreadSessionIds],
   );
 
   // Any activity in a project other than the one currently selected — shown as

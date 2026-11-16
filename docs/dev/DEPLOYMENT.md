@@ -174,6 +174,7 @@ tail -f logs/platform.log # 跟踪平台日志
 | `PI_WEB_DATA_DIR` | 会话元数据 / 项目数据目录 |
 | `PI_WEB_SANDBOX_EXTENSION_PATH` | 沙盒桥接扩展路径（会话以 `.pi/extensions/` 发现加载） |
 | `PI_WEB_LAB_TRAINING` | 教学面板功能开关 |
+| `PI_WEB_DISABLE_NPM_PACKAGES` | `1` = 禁止 SDK 为缺失包执行 npm install、跳过包更新检查与工具下载（等价 `PI_OFFLINE=1`；管理员也可在「全局配置」页切换） |
 
 ## 四、升级
 

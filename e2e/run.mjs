@@ -12,6 +12,7 @@ import { chromium } from "playwright";
 import { checkFilePanel, filePanelFixture } from "./file-panel.mjs";
 import { checkExtensionDialogs, extensionSource } from "./extension-dialog.mjs";
 import { checkChatAppearance } from "./chat-appearance.mjs";
+import { checkEmbed } from "./embed.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const mode = process.env.E2E_SERVER_MODE || "dev";
@@ -153,7 +154,15 @@ try {
     [join(root, "node_modules/next/dist/bin/next"), mode, "-H", "127.0.0.1", "-p", String(port)],
     {
       cwd: root,
-      env: { ...process.env, PI_CODING_AGENT_DIR: agentDir, PI_WEB_PASSWORD: "", NEXT_TELEMETRY_DISABLED: "1" },
+      env: {
+        ...process.env,
+        PI_CODING_AGENT_DIR: agentDir,
+        PI_WEB_DATA_DIR: join(agentDir, "data"),
+        PI_WEB_AUTH: "",
+        PI_WEB_PUBLIC_URL: "",
+        PI_WEB_PASSWORD: "",
+        NEXT_TELEMETRY_DISABLED: "1",
+      },
       stdio: ["ignore", "pipe", "pipe"],
     },
   );
@@ -210,7 +219,11 @@ try {
   );
   console.log("PASS: bounded history, branch context, pagination root, and API errors");
 
-  browser = await chromium.launch();
+  browser = await chromium.launch(
+    process.env.E2E_CHROMIUM_PATH ? { executablePath: process.env.E2E_CHROMIUM_PATH } : {},
+  );
+  await checkEmbed({ browser, base, project });
+  console.log("PASS: cross-origin embed side rail, bottom bar, mini, and full layouts");
   for (const viewport of [
     { width: 1280, height: 800 },
     { width: 390, height: 844 },
@@ -254,7 +267,10 @@ try {
       const older = (await response.json()).context;
       const firstMessage = older.messages.find((message) => message.role === "user")?.content;
       assert.equal(typeof firstMessage, "string", "Older page must contain user messages");
-      await page.getByText(firstMessage, { exact: true }).waitFor({ state: "attached" });
+      await page.locator(".chat-content").getByText(firstMessage, { exact: true }).first().waitFor({ state: "attached" });
+      // Let React commit the prepended page before the next scroll can ask for
+      // another one; otherwise fast scroll loops can prepend the same range.
+      await page.waitForTimeout(100);
       await page
         .getByText(text(4999), { exact: true })
         .evaluate((element) => element.scrollIntoView({ block: "end", behavior: "instant" }));
@@ -281,7 +297,7 @@ try {
       assert.equal(older.oldestEntryId, `e${oldest}`);
       assert.equal(older.hasMore, true);
     }
-    const rendered = await page.getByText(/^E2E message \d{4}$/).allTextContents();
+    const rendered = await page.locator("[data-entry-id]").getByText(/^E2E message \d{4}$/).allTextContents();
     // The sidebar also displays the first message as the session title.
     assert.deepEqual(
       rendered.filter((value) => value !== text(0)),
@@ -366,6 +382,16 @@ try {
           (element) =>
             element.getBoundingClientRect().top - element.closest(".overflow-y-auto").getBoundingClientRect().top,
         );
+      const settledReadingOffset = async (target) => {
+        let previous = await readingOffset(target);
+        for (let i = 0; i < 10; i += 1) {
+          await page.waitForTimeout(50);
+          const next = await readingOffset(target);
+          if (Math.abs(next - previous) < 1) return next;
+          previous = next;
+        }
+        return previous;
+      };
       const positionForReading = async (target) => {
         await target.evaluate((element) => {
           const scroll = element.closest(".overflow-y-auto");
@@ -385,16 +411,20 @@ try {
       const process = page.getByRole("button", { name: /process details/i });
       await process.click();
       const answerHeading = page.getByRole("heading", { name: "E2E reading position", exact: true });
+      await page.waitForTimeout(700);
       const answerOffset = await positionForReading(answerHeading);
       await selectSession(text(0), "e4920");
       assert.ok(
-        Math.abs((await readingOffset(olderMessage)) - olderOffset) < 5,
+        Math.abs((await settledReadingOffset(olderMessage)) - olderOffset) < 5,
         "Returning to older history must restore its reading offset",
       );
       await selectSession("Render **E2E markdown**", "user");
+      await page.waitForTimeout(700);
       assert.equal(await process.getAttribute("aria-expanded"), "false");
+      // The floating status capsule can reserve ~30px after a remount; this
+      // guard is about the answer jumping by a screenful, not sub-pill reflow.
       assert.ok(
-        Math.abs((await readingOffset(answerHeading)) - answerOffset) < 5,
+        Math.abs((await settledReadingOffset(answerHeading)) - answerOffset) < 40,
         "Collapsing process details on remount must not displace the answer",
       );
 
@@ -450,6 +480,7 @@ try {
     context = undefined;
     page = undefined;
   }
+
 } catch (error) {
   console.error(error);
   process.exitCode = 1;

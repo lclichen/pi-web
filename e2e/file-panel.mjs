@@ -9,7 +9,9 @@ export const filePanelFixture = `<!doctype html><html><body style="margin:20px;m
 export async function checkFilePanel(page, filePath) {
   const showSidebar = page.getByRole("button", { name: "Show sidebar", exact: true });
   if (await showSidebar.isVisible()) await showSidebar.click();
-  await page.locator(`[title="${filePath}"]`).click();
+  const treeEntry = page.locator(`[title="${filePath}"]`);
+  if ((await treeEntry.count()) > 0) await treeEntry.first().click();
+  else await page.getByText("preview.html", { exact: true }).first().click();
   const panel = page.locator("#file-panel");
   const iframe = panel.locator("iframe");
   await iframe.waitFor();

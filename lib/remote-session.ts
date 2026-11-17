@@ -1,4 +1,4 @@
-import { getRpcSessionOwner } from "./rpc-manager";
+import { getRpcSession, getRpcSessionOwner } from "./rpc-manager";
 import { resolveSessionMode } from "./session-metas";
 import { requireUserIdentity } from "./web-session";
 import { getAgentForUser } from "./relay/registry";
@@ -6,6 +6,7 @@ import { platformGet, platformPost } from "./platform/client";
 import { readSandboxHomeConfig, dataDir } from "./mode-homes";
 import { ensureProjectHome, getOwnedProject, readProjectSandboxConfig } from "./projects";
 import { getSshClient, readSshConfig, type SshConfig } from "./ssh";
+import { withSftp } from "./ssh-sftp.ts";
 import { relayRpc } from "./relay/forward";
 import { requireCompatibleAgent } from "./relay/agent-gate";
 import {
@@ -70,6 +71,15 @@ export async function resolveRemoteSession(
   const ownerId = owner?.ownerId ?? meta?.ownerId ?? 0;
   if (user.id !== 0 && ownerId !== user.id && user.role !== "admin") {
     return { ok: false, status: 404, error: "会话不存在" };
+  }
+  if (identity.session.embed) {
+    // Remote files belong to a project; a host-directory token has no remote
+    // workspace, and a project token cannot cross into another project.
+    const embedScope = identity.session.embed.scope;
+    const sessionProjectId = getRpcSession(sessionId)?.projectId ?? meta?.projectId;
+    if (embedScope.kind !== "project" || sessionProjectId !== embedScope.projectId) {
+      return { ok: false, status: 404, error: "会话不存在" };
+    }
   }
 
   if (mode === "ssh") {
@@ -234,19 +244,6 @@ interface SftpListEntry {
   attrs: { isDirectory(): boolean; size: number };
 }
 
-function sftpOf(client: unknown): Promise<{
-  readdir(p: string, cb: (e: Error | undefined, l: SftpListEntry[]) => void): void;
-  readFile(p: string, cb: (e: Error | undefined, d: Buffer) => void): void;
-  writeFile(p: string, c: string | Buffer, cb: (e: Error | undefined) => void): void;
-  mkdir(p: string, o: { recursive: true }, cb: (e: Error | undefined) => void): void;
-}> {
-  return new Promise((resolve, reject) => {
-    (client as { sftp(cb: (e: Error | undefined, s: unknown) => void): void }).sftp((e, s) =>
-      e ? reject(e) : resolve(s as Parameters<typeof resolve>[0]),
-    );
-  });
-}
-
 async function sshRun(ctx: RemoteSessionContext, command: string): Promise<void> {
   const client = await sshClientFor(ctx);
   await new Promise<void>((resolve, reject) => {
@@ -347,10 +344,10 @@ function absoluteRelativeToRoot(path: string, root: string): string | null {
 
 export async function remoteList(ctx: RemoteSessionContext, path: string): Promise<RemoteEntry[]> {
   if (ctx.mode === "ssh") {
-    const client = await sshClientFor(ctx);
-    const s = await sftpOf(client);
-    const list = await new Promise<SftpListEntry[]>((resolve, reject) =>
-      s.readdir(sshPath(ctx, path), (e, l) => (e ? reject(e) : resolve(l))),
+    const list = await withSftp(await sshClientFor(ctx), (s) =>
+      new Promise<SftpListEntry[]>((resolve, reject) =>
+        s.readdir(sshPath(ctx, path), (e, l) => (e ? reject(e) : resolve(l))),
+      ),
     );
     return list.map((e) => ({ name: e.filename, isDir: e.attrs.isDirectory(), size: e.attrs.size, modified: "" }));
   }
@@ -382,10 +379,10 @@ export async function remoteList(ctx: RemoteSessionContext, path: string): Promi
 
 export async function remoteRead(ctx: RemoteSessionContext, path: string): Promise<{ content: string; size: number }> {
   if (ctx.mode === "ssh") {
-    const client = await sshClientFor(ctx);
-    const s = await sftpOf(client);
-    const buf = await new Promise<Buffer>((resolve, reject) =>
-      s.readFile(sshPath(ctx, path), (e, d) => (e ? reject(e) : resolve(d))),
+    const buf = await withSftp(await sshClientFor(ctx), (s) =>
+      new Promise<Buffer>((resolve, reject) =>
+        s.readFile(sshPath(ctx, path), (e, d) => (e ? reject(e) : resolve(d))),
+      ),
     );
     return { content: buf.toString("utf8"), size: buf.length };
   }
@@ -426,10 +423,10 @@ export async function remoteReadBinary(
   path: string,
 ): Promise<{ bytes: Buffer; size: number }> {
   if (ctx.mode === "ssh") {
-    const client = await sshClientFor(ctx);
-    const s = await sftpOf(client);
-    const buf = await new Promise<Buffer>((resolve, reject) =>
-      s.readFile(sshPath(ctx, path), (e, d) => (e ? reject(e) : resolve(d))),
+    const buf = await withSftp(await sshClientFor(ctx), (s) =>
+      new Promise<Buffer>((resolve, reject) =>
+        s.readFile(sshPath(ctx, path), (e, d) => (e ? reject(e) : resolve(d))),
+      ),
     );
     return { bytes: buf, size: buf.length };
   }
@@ -478,10 +475,10 @@ export async function remoteReadBinary(
 
 export async function remoteWrite(ctx: RemoteSessionContext, path: string, content: string): Promise<void> {
   if (ctx.mode === "ssh") {
-    const client = await sshClientFor(ctx);
-    const s = await sftpOf(client);
-    await new Promise<void>((resolve, reject) =>
-      s.writeFile(sshPath(ctx, path), content, (e) => (e ? reject(e) : resolve())),
+    await withSftp(await sshClientFor(ctx), (s) =>
+      new Promise<void>((resolve, reject) =>
+        s.writeFile(sshPath(ctx, path), content, (e) => (e ? reject(e) : resolve())),
+      ),
     );
     return;
   }
@@ -512,10 +509,10 @@ export async function remoteWrite(ctx: RemoteSessionContext, path: string, conte
  */
 async function writeBytesDirect(ctx: RemoteSessionContext, path: string, bytes: Buffer): Promise<void> {
   if (ctx.mode === "ssh") {
-    const client = await sshClientFor(ctx);
-    const s = await sftpOf(client);
-    await new Promise<void>((resolve, reject) =>
-      s.writeFile(sshPath(ctx, path), bytes, (e) => (e ? reject(e) : resolve())),
+    await withSftp(await sshClientFor(ctx), (s) =>
+      new Promise<void>((resolve, reject) =>
+        s.writeFile(sshPath(ctx, path), bytes, (e) => (e ? reject(e) : resolve())),
+      ),
     );
     return;
   }

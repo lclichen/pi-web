@@ -110,11 +110,28 @@ export async function getSshClient(projectId: string, config: SshConfig): Promis
   const entry = pool.get(projectId);
   if (entry?.connecting) return entry.connecting;
   if (entry) {
+    // Consume and close the probe channel: an ignored exec stream held a
+    // session channel open on every call, contributing to MaxSessions
+    // exhaustion ("Channel open failure: open failed").
     const alive = await new Promise<boolean>((resolve) => {
+      let settled = false;
+      const finish = (value: boolean) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(value);
+      };
+      const timer = setTimeout(() => finish(false), 3_000);
       try {
-        entry!.client.exec("true", (err) => resolve(!err));
+        entry!.client.exec("true", (err, stream) => {
+          if (err) return finish(false);
+          stream.on("close", () => finish(true));
+          stream.on("error", () => finish(false));
+          stream.resume();
+          stream.stderr.resume();
+        });
       } catch {
-        resolve(false);
+        finish(false);
       }
     });
     if (alive) return entry.client;

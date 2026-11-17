@@ -11,6 +11,7 @@ import type { BashOperations } from "@earendil-works/pi-coding-agent";
 import { Type } from "@earendil-works/pi-ai";
 import type { Client, SFTPWrapper } from "ssh2";
 import { getSshClient, sshExec, type SshConfig } from "../ssh";
+import { withSftp } from "../ssh-sftp.ts";
 import { matchRuntimeConfigPath } from "../relay/runtime-config-bridge";
 import { registerWorkspaceService } from "./workspace-service";
 import { createSshWorkspaceOperations } from "../workspace-providers/ssh";
@@ -33,12 +34,6 @@ function remotePath(workdir: string, path: string): string {
   const p = path.trim();
   if (p.startsWith("/")) return p;
   return `${workdir.replace(/\/+$/, "")}/${p}`;
-}
-
-function sftp(client: Client): Promise<SFTPWrapper> {
-  return new Promise((resolve, reject) => {
-    client.sftp((err, s) => (err ? reject(err) : resolve(s)));
-  });
 }
 
 function sftpRead(s: SFTPWrapper, path: string): Promise<Buffer> {
@@ -162,8 +157,7 @@ export function makeSshToolsExtension(opts: {
           if (bridged) return readLocalFile(bridged.path);
           try {
             const c = await client();
-            const s = await sftp(c);
-            const buf = await sftpRead(s, remotePath(workdir, params.path));
+            const buf = await withSftp(c, (s) => sftpRead(s, remotePath(workdir, params.path)));
             const lines = buf.toString("utf8").split("\n");
             const numbered = lines.map((line, i) => `${i + 1}→${line}`).join("\n");
             return ok(`${numbered}\n\n(${params.path}, ${lines.length} lines)`);
@@ -187,17 +181,18 @@ export function makeSshToolsExtension(opts: {
         execute: async (_id, params) => {
           try {
             const c = await client();
-            const s = await sftp(c);
             const target = remotePath(workdir, params.path);
             const dir = target.replace(/\/[^/]*$/, "") || "/";
-            await new Promise<void>((resolve, reject) => {
-              s.mkdir(dir, { recursive: true } as never, (err) => {
-                // recursive mkdir fails if parts exist — tolerate and verify
-                if (err && !s) return reject(err);
-                resolve();
+            await withSftp(c, async (s) => {
+              await new Promise<void>((resolve, reject) => {
+                s.mkdir(dir, { recursive: true } as never, (err) => {
+                  // recursive mkdir fails if parts exist — tolerate and verify
+                  if (err && !s) return reject(err);
+                  resolve();
+                });
               });
+              await sftpWrite(s, target, params.content);
             });
-            await sftpWrite(s, target, params.content);
             return ok(`Wrote ${params.path} (${params.content.length} bytes)`);
           } catch (err) {
             return fail(err instanceof Error ? err.message : String(err));
@@ -220,15 +215,16 @@ export function makeSshToolsExtension(opts: {
         execute: async (_id, params) => {
           try {
             const c = await client();
-            const s = await sftp(c);
             const target = remotePath(workdir, params.path);
-            const buf = await sftpRead(s, target);
-            const content = buf.toString("utf8");
-            if (!content.includes(params.oldText)) {
-              return fail(`oldText not found in ${params.path}`);
-            }
-            await sftpWrite(s, target, content.replace(params.oldText, params.newText));
-            return ok(`Edited ${params.path}`);
+            return await withSftp(c, async (s) => {
+              const buf = await sftpRead(s, target);
+              const content = buf.toString("utf8");
+              if (!content.includes(params.oldText)) {
+                return fail(`oldText not found in ${params.path}`);
+              }
+              await sftpWrite(s, target, content.replace(params.oldText, params.newText));
+              return ok(`Edited ${params.path}`);
+            });
           } catch (err) {
             return fail(err instanceof Error ? err.message : String(err));
           }
@@ -250,8 +246,7 @@ export function makeSshToolsExtension(opts: {
           if (bridged) return listLocalDir(bridged.path);
           try {
             const c = await client();
-            const s = await sftp(c);
-            const list = await sftpList(s, remotePath(workdir, params.path));
+            const list = await withSftp(c, (s) => sftpList(s, remotePath(workdir, params.path)));
             const lines = list
               .map((e) => `${e.attrs.isDirectory() ? "d" : "-"} ${e.filename}`)
               .sort()

@@ -38,3 +38,9 @@ test("Host directory groups share the project sort order", () => {
   assert.match(source, /order: groupRenderOrder\.get\(project\.id\)/);
   assert.match(source, /order: groupRenderOrder\.get\(key\)/);
 });
+
+test("projection badges refresh on a timer and when the tab becomes visible", () => {
+  assert.match(source, /setInterval\(refreshIfVisible, 60_000\)/);
+  assert.match(source, /document\.addEventListener\("visibilitychange", refreshIfVisible\)/);
+  assert.match(source, /document\.visibilityState === "visible"/);
+});

@@ -315,6 +315,20 @@ export function ProjectSessionTree({
     window.addEventListener("pi-web:config-changed", refresh);
     return () => window.removeEventListener("pi-web:config-changed", refresh);
   }, [loadProjectionBadges]);
+  // Reconcile runs inside the agent process (prompt/repair) and has no window
+  // event to announce itself, so a badge could sit on stale dirty/pending state
+  // until the next project refresh. Poll while visible; skip hidden tabs.
+  useEffect(() => {
+    const refreshIfVisible = () => {
+      if (document.visibilityState === "visible") loadProjectionBadges();
+    };
+    const timer = setInterval(refreshIfVisible, 60_000);
+    document.addEventListener("visibilitychange", refreshIfVisible);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", refreshIfVisible);
+    };
+  }, [loadProjectionBadges]);
 
   // Host 目录注册表（admin-only；非管理员接口 403 → 空列表）。
   const loadHostDirs = useCallback(() => {

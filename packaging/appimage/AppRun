@@ -82,7 +82,9 @@ fi
 # 不向包外落地）。路径每次启动都不同，install-pi-config.sh 每次启动
 # 无条件刷新链接；--web 前台监护保证服务存活期间挂载点必然有效。
 export PI_CONFIG_LINK_ROOT="$PAYLOAD"
-[ -x "$PAYLOAD/runtime/bin/node" ] && export PI_NODE="${PI_NODE:-$PAYLOAD/runtime/bin/node}"
+if [ -x "$PAYLOAD/runtime/bin/node" ]; then
+  export PI_NODE="${PI_NODE:-$PAYLOAD/runtime/bin/node}"
+fi
 
 # ---- 统一配置模板合并（幂等；CLI 与 WebUI 共用，失败不阻塞）----
 [ -x "$PAYLOAD/scripts/install-pi-config.sh" ] && bash "$PAYLOAD/scripts/install-pi-config.sh" >/dev/null 2>&1 || true

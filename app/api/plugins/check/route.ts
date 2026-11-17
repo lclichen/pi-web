@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { PluginScope } from "@/lib/api-types";
 import { getAllowedFileRoots, isExistingFilePathAllowed } from "@/lib/file-access";
 import { checkPluginUpdates } from "@/lib/plugin-updates";
+import { isNpmPackagesDisabled } from "@/lib/server-settings";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +24,13 @@ export async function POST(req: Request) {
     const scope = body.scope === "global" || body.scope === "project" ? (body.scope as PluginScope) : undefined;
     if ((source && !scope) || (!source && scope)) {
       return NextResponse.json({ error: "source and scope must be provided together" }, { status: 400 });
+    }
+
+    // Offline mode: the UI already disables the buttons, but a direct call must
+    // not reach npm/git probes that can hang with no registry. An empty update
+    // list is the honest answer — nothing can be checked right now.
+    if (isNpmPackagesDisabled()) {
+      return NextResponse.json({ updates: [] });
     }
 
     const updates = await checkPluginUpdates(cwd, source && scope ? { source, scope } : undefined);

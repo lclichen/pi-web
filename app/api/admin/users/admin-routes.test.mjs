@@ -54,7 +54,10 @@ test("the panel never touches platform URLs from the browser", async () => {
 });
 
 test("P2 tabs exist: containers lifecycle + image catalogue actions", async () => {
-  assert.match(dialogSource, /"containers" \| "images"/);
+  // Tabs now live in ADMIN_TABS (single-row regroup); structural coverage is in
+  // components/PlatformAdminDialog.test.mjs — this test pins the actions.
+  assert.match(dialogSource, /\{ id: "containers", label: "admin\.containers", group: "sandbox" \}/);
+  assert.match(dialogSource, /\{ id: "images", label: "admin\.images", group: "sandbox" \}/);
   assert.match(dialogSource, /\/api\/admin\/containers\/\$\{row\.id\}\/\$\{act\}/);
   assert.match(dialogSource, /\/api\/admin\/containers\/\$\{row\.id\}`/);
   assert.match(dialogSource, /\/api\/admin\/images\/\$\{img\.id\}/);
@@ -75,14 +78,15 @@ test("the legacy external console link is fully retired", async () => {
   assert.ok(!/完整管理台/.test(dialogSource), "no legacy console mention should remain");
 });
 
-test("P3 tabs exist: overview/quotas/workspaces/llm/logs", async () => {
-  assert.match(
-    dialogSource,
-    /"overview" \| "users" \| "containers" \| "images" \| "quotas" \| "workspaces" \| "llm" \| "logs"/,
-  );
+test("P3 tabs exist: overview/quotas/workspaces/logs (LLM page retired)", async () => {
+  for (const id of ["overview", "quotas", "workspaces", "logs"]) {
+    assert.match(dialogSource, new RegExp(`\\{ id: "${id}", label: "admin\\.`), `${id} tab stays registered`);
+  }
   assert.match(dialogSource, /\/api\/admin\/overview/);
   assert.match(dialogSource, /\/api\/admin\/quotas/);
   assert.match(dialogSource, /\/api\/admin\/workspaces/);
-  assert.match(dialogSource, /\/api\/admin\/llm\/bindings/);
   assert.match(dialogSource, /\/api\/admin\/logs/);
+  // The per-user LLM virtual-key page was intentionally removed (78eeaf4c);
+  // its BFF routes remain server-side but the panel must not call them.
+  assert.ok(!/\/api\/admin\/llm/.test(dialogSource), "panel must not call the retired LLM BFF");
 });

@@ -272,7 +272,7 @@ export function EmbedConfig({ isAdmin = false }: Props) {
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {products.map((product, index) => (
                 <div
-                  key={`${product.id}-${index}`}
+                  key={index}
                   style={{
                     display: "grid",
                     gridTemplateColumns: "minmax(90px, 0.7fr) minmax(120px, 1fr) auto",

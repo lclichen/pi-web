@@ -105,6 +105,8 @@
   * 技能搜索与安装（内部调用 npx skills ...）
   * OAuth 登录、模型发现与测试、models.dev 目录
   其余功能（会话读写、聊天界面、文件预览、Git Worktree 等）完全离线可用。
+  说明：npm 包自动安装/更新检查默认禁用（离线优先）；需要时由管理员在
+  WebUI「全局配置」取消勾选，或设置 PI_WEB_DISABLE_NPM_PACKAGES=0。
 
 【目录结构】
   app/        pi-web 应用本体（bin / .next / public / node_modules）

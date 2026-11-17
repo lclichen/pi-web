@@ -95,7 +95,13 @@ function envDefaults(): ServerSettings {
   }
   return {
     labTraining: !off,
-    disableNpmPackages: truthy(process.env.PI_WEB_DISABLE_NPM_PACKAGES) || truthy(process.env.PI_OFFLINE),
+    // Offline-first default: an intranet deployment usually has no public
+    // registry, and the SDK's missing-package install has no timeout. Admins
+    // re-enable installs explicitly in 全局配置 (or PI_WEB_DISABLE_NPM_PACKAGES=0).
+    disableNpmPackages:
+      process.env.PI_WEB_DISABLE_NPM_PACKAGES === undefined
+        ? true
+        : truthy(process.env.PI_WEB_DISABLE_NPM_PACKAGES) || truthy(process.env.PI_OFFLINE),
     ...(npmRegistry ? { npmRegistry } : {}),
     ...(pipIndexUrl ? { pipIndexUrl } : {}),
     ...(hub ? { skillhubUrl: hub } : {}),

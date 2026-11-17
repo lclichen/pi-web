@@ -174,7 +174,7 @@ tail -f logs/platform.log # 跟踪平台日志
 | `PI_WEB_DATA_DIR` | 会话元数据 / 项目数据目录 |
 | `PI_WEB_SANDBOX_EXTENSION_PATH` | 沙盒桥接扩展路径（会话以 `.pi/extensions/` 发现加载） |
 | `PI_WEB_LAB_TRAINING` | 教学面板功能开关 |
-| `PI_WEB_DISABLE_NPM_PACKAGES` | `1` = 禁止 SDK 为缺失包执行 npm install、跳过包更新检查与工具下载（等价 `PI_OFFLINE=1`；管理员也可在「全局配置」页切换） |
+| `PI_WEB_DISABLE_NPM_PACKAGES` | **默认禁用**（离线优先）。设为 `0` 显式允许 SDK 为缺失包执行 npm install、包更新检查与工具下载；设为 `1` 等价 `PI_OFFLINE=1`。管理员也可在「全局配置」页切换（默认勾选，取消即启用） |
 | `PI_WEB_NPM_REGISTRY` | npm 镜像源（包安装与新建 Host 终端生效）；留空用 npm 默认源 |
 | `PI_WEB_PIP_INDEX_URL` | PyPI 镜像 simple 地址（新建终端中的 pip 生效）；留空用 PyPI 默认源 |
 
@@ -229,3 +229,13 @@ tar -xzf ../amedac.ai-pi-linux-x64-<新版本>.tar.gz --strip-components=1 -C . 
 | 终端黑屏只有 ready | 平台 <1.0 无 PTY 版本症状，升级到含 node-pty 的版本（≥ `18bd49f`） |
 | 远程文件/终端报「该会话是 Host 模式」 | pi-web < `68d7e55` 的已知 bug，升级即可 |
 | 新建终端偶发 429 | 平台限制每容器并发 3 个 PTY；旧泄漏连接约 1 分钟内自动回收 |
+
+### 已知限制（0.0.4-alpha）
+
+- **远程终端的镜像环境是创建时快照**：管理员修改 npm/PyPI 镜像或离线开关后，已经打开的远程
+  终端（沙箱 / SSH / 本机 relay）仍保留旧环境；关闭并重新打开终端即可生效。Host 本机终端
+  同样只在新建时继承进程环境。
+- **Windows relay 终端不注入镜像环境**：`NPM_CONFIG_REGISTRY` / `PIP_INDEX_URL` 的 `export`
+  前缀只发给 POSIX shell；Windows 本机 Agent 的 PTY 目前仍是桩实现，本地终端不可用。
+- 其余投影/同步侧的已知边界（选择性收取、大附件分块、Apptainer bind、单活动工作区）见
+  `docs/adr/0004-workspace-config-projection-and-promotion.md` 的 P2/P3 列表。

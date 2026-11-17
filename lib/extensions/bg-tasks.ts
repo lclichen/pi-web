@@ -8,6 +8,15 @@
  * forward browser stop requests (`stop_subagent`) onto the bus — the package
  * then aborts the run and its parent tool call is notified normally.
  *
+ * The main Stop button also stops the session's subagents. The package treats
+ * Esc as "stop the turn, leave detached agents running" (stop those from
+ * /agents), which in the WebUI reads as a dead Stop button: a user who stops
+ * the run expects the agents it spawned to stop too. The stopper therefore
+ * tracks the ids the package announces on `subagents:started` /
+ * `subagents:created` and replays stop requests for all of them on Stop.
+ * Lifecycle events are top-level only, so nested children and workflow agents
+ * are left to their owner, which unwinds them when the top-level run aborts.
+ *
  * Display needs no bridge: the browser already derives background runs (with
  * agentId + startedAt) from the Agent tool-call details in the transcript.
  */
@@ -17,18 +26,27 @@ import { randomUUID } from "crypto";
 interface StopOutcome {
   ok: boolean;
   error?: string;
+  /** stopAll only: how many runs this call aborted. */
+  stopped?: number;
 }
 
-type Stopper = (agentId: string) => Promise<StopOutcome>;
+interface SessionStopper {
+  stop: (agentId: string) => Promise<StopOutcome>;
+  stopAll: () => StopOutcome;
+}
+
+interface EventBusLike {
+  on: (event: string, handler: (data: unknown) => void) => () => void;
+  emit: (event: string, data: unknown) => void;
+}
 
 declare global {
-  // eslint-disable-next-line no-var
-  var __piWebSubagentStop: Map<string, Stopper> | undefined;
+  var __piWebSubagentStop: Map<string, SessionStopper> | undefined;
 }
 
 const STOP_TIMEOUT_MS = 10_000;
 
-function stoppers(): Map<string, Stopper> {
+function stoppers(): Map<string, SessionStopper> {
   if (!globalThis.__piWebSubagentStop) {
     globalThis.__piWebSubagentStop = new Map();
   }
@@ -39,7 +57,72 @@ function stoppers(): Map<string, Stopper> {
 export async function stopSubagentRun(sessionId: string, agentId: string): Promise<StopOutcome> {
   const stopper = stoppers().get(sessionId);
   if (!stopper) return { ok: false, error: "会话没有可用的子智能体停止通道（扩展未加载）" };
-  return stopper(agentId);
+  return stopper.stop(agentId);
+}
+
+/** RPC-layer entry: stop every top-level subagent this session started. */
+export async function stopSessionSubagents(sessionId: string): Promise<StopOutcome> {
+  const stopper = stoppers().get(sessionId);
+  if (!stopper) return { ok: false, error: "会话没有可用的子智能体停止通道（扩展未加载）" };
+  return stopper.stopAll();
+}
+
+/**
+ * Build the per-session stopper. Exported for tests: the tracking contract is
+ * "remember started/created ids, forget settled ones, replay stop on demand",
+ * and it must survive the package not being loaded at all (no events → no-op).
+ */
+export function createSessionStopper(bus: EventBusLike): SessionStopper {
+  const running = new Set<string>();
+
+  const remember = (raw: unknown) => {
+    const id = (raw as { id?: unknown } | null | undefined)?.id;
+    if (typeof id === "string" && id) running.add(id);
+  };
+  const forget = (raw: unknown) => {
+    const id = (raw as { id?: unknown } | null | undefined)?.id;
+    if (typeof id === "string") running.delete(id);
+  };
+  bus.on("subagents:started", remember);
+  // Background spawns and detached resumes announce before the run starts;
+  // tracking `created` is what lets Stop also cancel queued agents.
+  bus.on("subagents:created", remember);
+  bus.on("subagents:completed", forget);
+  bus.on("subagents:failed", forget);
+
+  const requestStop = (agentId: string) => {
+    bus.emit("subagents:rpc:stop", { agentId, requestId: randomUUID() });
+  };
+
+  return {
+    stop: async (agentId: string) => {
+      const requestId = randomUUID();
+      return new Promise<StopOutcome>((resolve) => {
+        // Object holder: the timeout and the reply handler each need the
+        // other's handle, and both are declared before either is assigned.
+        const state: { unsub?: () => void } = {};
+        const timer = setTimeout(() => {
+          state.unsub?.();
+          resolve({ ok: false, error: "停止请求超时（子智能体可能已结束）" });
+        }, STOP_TIMEOUT_MS);
+        state.unsub = bus.on(`subagents:rpc:stop:reply:${requestId}`, (raw) => {
+          clearTimeout(timer);
+          state.unsub?.();
+          const reply = raw as { success?: boolean; error?: string };
+          resolve(reply?.success ? { ok: true } : { ok: false, error: reply?.error ?? "停止失败" });
+        });
+        bus.emit("subagents:rpc:stop", { agentId, requestId });
+      });
+    },
+    stopAll: () => {
+      const ids = [...running];
+      running.clear();
+      // Fire-and-forget: the package's abort() is synchronous, and the caller
+      // (Stop) must not wait on one agent's reply before aborting the parent.
+      for (const agentId of ids) requestStop(agentId);
+      return { ok: true, stopped: ids.length };
+    },
+  };
 }
 
 export function makeBgTasksExtension(): InlineExtension {
@@ -47,23 +130,7 @@ export function makeBgTasksExtension(): InlineExtension {
     const register = (sessionId: string) => {
       const bus = pi.events;
       if (!bus?.emit || !bus?.on) return;
-      stoppers().set(sessionId, async (agentId: string) => {
-        const requestId = randomUUID();
-        return new Promise<StopOutcome>((resolve) => {
-          let unsub: (() => void) | undefined;
-          const timer = setTimeout(() => {
-            unsub?.();
-            resolve({ ok: false, error: "停止请求超时（子智能体可能已结束）" });
-          }, STOP_TIMEOUT_MS);
-          unsub = bus.on(`subagents:rpc:stop:reply:${requestId}`, (raw) => {
-            clearTimeout(timer);
-            unsub?.();
-            const reply = raw as { success?: boolean; error?: string };
-            resolve(reply?.success ? { ok: true } : { ok: false, error: reply?.error ?? "停止失败" });
-          });
-          bus.emit("subagents:rpc:stop", { agentId, requestId });
-        });
-      });
+      stoppers().set(sessionId, createSessionStopper(bus));
     };
 
     pi.on("session_start", async (_event, ctx) => {
@@ -74,8 +141,9 @@ export function makeBgTasksExtension(): InlineExtension {
       const sessionId = ctx.sessionManager?.getSessionId?.();
       if (sessionId) register(sessionId);
     });
-    pi.on("session_shutdown", async () => {
-      // The map is best-effort; stale entries are overwritten on next start.
+    pi.on("session_shutdown", async (_event, ctx) => {
+      const sessionId = ctx?.sessionManager?.getSessionId?.();
+      if (sessionId) stoppers().delete(sessionId);
     });
   };
 }

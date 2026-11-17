@@ -1366,6 +1366,20 @@ export class AgentSessionWrapper {
           // Stop must unwind extension commands that have not started the agent yet.
           this.extensionUiAbortController.abort(new DOMException("Extension UI cancelled by Stop", "AbortError"));
           try {
+            // Stop means "stop everything this session started": the subagents
+            // package leaves detached agents running on Esc by design, which
+            // leaves the WebUI Stop button looking dead while an Agent tool is
+            // active. Abort them first so a foreground tool call unblocks before
+            // we wait for the parent run to become idle.
+            try {
+              const { stopSessionSubagents } = await import("./extensions/bg-tasks");
+              await stopSessionSubagents(this.inner.sessionId);
+            } catch (error) {
+              console.error(
+                "[pi-web] failed to stop session subagents:",
+                error instanceof Error ? error.message : error,
+              );
+            }
             await this.withFinalIdleReset(() => this.inner.abort());
             return null;
           } finally {

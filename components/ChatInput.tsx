@@ -30,6 +30,8 @@ import {
 } from "@/lib/draft-store";
 import { MAX_ATTACHED_IMAGE_BYTES, MAX_ATTACHED_IMAGES, isBase64ImageWithinLimits } from "@/lib/image-attachments";
 import { encodeFilePathForApi } from "@/lib/file-paths";
+import { isEmbedCommandAllowed, normalizeEmbedCommandName, slashCommandNameFromText } from "@/lib/embed-commands";
+import type { EmbedDensity } from "@/lib/embed-types";
 import {
   buildEntriesFromFiles,
   buildAtInsertText,
@@ -110,6 +112,13 @@ interface Props {
   remoteFileSessionId?: string | null;
   /** 管理员支持视图只读：输入框可选中/复制，但不能发送（接管后解除）。 */
   readOnly?: boolean;
+  /** Embedded widget: hide non-essential controls and use a dense layout. */
+  embedded?: boolean;
+  embeddedDensity?: EmbedDensity;
+  /** Product command allowlist (names without slash; `*` allows all). */
+  allowedCommandNames?: string[] | null;
+  /** A known but disallowed slash command was typed; caller shows a notice. */
+  onBlockedCommand?: (name: string) => void;
 }
 
 export interface ChatInputHandle {
@@ -808,12 +817,20 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
     remoteFileSessionId = null,
     compact = false,
     readOnly = false,
+    embedded = false,
+    embeddedDensity = "comfortable",
+    allowedCommandNames = null,
+    onBlockedCommand,
   }: Props,
   ref,
 ) {
   const { t } = useI18n();
   const { fontSize } = useChatAppearance();
   const isMobile = useIsMobile();
+  const denseControls = isMobile || (embedded && embeddedDensity !== "comfortable");
+  const denseEmbed = embedded && embeddedDensity !== "comfortable";
+  const miniEmbed = embedded && embeddedDensity === "mini";
+  const composerPadding = miniEmbed ? 6 : denseEmbed ? 10 : 16;
   const [value, setValue] = useState(() => (draftKey ? (getDraft(draftKey)?.value ?? "") : ""));
   const [toolDropdownOpen, setToolDropdownOpen] = useState(false);
   const [thinkingDropdownOpen, setThinkingDropdownOpen] = useState(false);
@@ -1205,23 +1222,48 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
     if (readOnly) return;
     const msg = value.trim();
     if (!msg && !attachedImages.length) return;
+    const slashName = slashCommandNameFromText(msg);
+    if (slashName && !isEmbedCommandAllowed(allowedCommandNames, slashName)) {
+      const target = normalizeEmbedCommandName(slashName);
+      const known =
+        BUILTIN_SLASH_COMMANDS.some((command) => normalizeEmbedCommandName(command.name) === target) ||
+        (slashCommands ?? []).some((command) => normalizeEmbedCommandName(command.name) === target);
+      if (known) {
+        onBlockedCommand?.(slashName);
+        return;
+      }
+    }
     onAudioUnlock?.();
     const builtinAllowed = !isStreaming || canRunBuiltinSlashCommandWhileStreaming(msg);
     if (builtinAllowed && (await runBuiltinCommand(msg))) return;
     if (isStreaming) return;
     clearInput();
     onSend(msg, attachedImages.length ? attachedImages : undefined);
-  }, [value, attachedImages, isStreaming, runBuiltinCommand, onSend, clearInput, onAudioUnlock, readOnly]);
+  }, [
+    value,
+    attachedImages,
+    isStreaming,
+    runBuiltinCommand,
+    onSend,
+    clearInput,
+    onAudioUnlock,
+    readOnly,
+    allowedCommandNames,
+    onBlockedCommand,
+    slashCommands,
+  ]);
 
   const slashQuery =
     !compact && value.startsWith("/") && !/\s/.test(value.slice(1)) ? value.slice(1).toLowerCase() : null;
 
   const filteredSlashCommands = (() => {
     if (slashQuery === null) return [];
-    const builtinCommands = isStreaming
-      ? BUILTIN_SLASH_COMMANDS.filter((command) => command.availableWhileStreaming)
-      : BUILTIN_SLASH_COMMANDS;
-    const commands = [...builtinCommands, ...(slashCommands ?? [])];
+    const builtinCommands = (
+      isStreaming ? BUILTIN_SLASH_COMMANDS.filter((command) => command.availableWhileStreaming) : BUILTIN_SLASH_COMMANDS
+    ).filter((command) => isEmbedCommandAllowed(allowedCommandNames, command.name));
+    const commands = [...builtinCommands, ...(slashCommands ?? [])].filter((command) =>
+      isEmbedCommandAllowed(allowedCommandNames, command.name),
+    );
     return [...commands]
       .filter((command) => {
         const name = command.name.toLowerCase();
@@ -1915,8 +1957,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
   }, [isStreaming]);
 
   useEffect(() => {
-    if (!isMobile) setControlsMenuOpen(false);
-  }, [isMobile]);
+    if (!denseControls) setControlsMenuOpen(false);
+  }, [denseControls]);
 
   return (
     <fieldset
@@ -1928,8 +1970,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
         margin: 0,
         border: 0,
         background: "transparent",
-        padding: compact ? 0 : "0 16px 8px",
-        paddingRight: compact ? 0 : isMobile ? 16 : 52, // desktop: 16px base + 36px for ChatMinimap alignment
+        padding: compact ? 0 : denseEmbed ? `0 ${composerPadding}px ${miniEmbed ? 4 : 6}px` : "0 16px 8px",
+        paddingRight: compact ? 0 : denseEmbed ? composerPadding : isMobile ? 16 : 52, // desktop: 16px base + 36px for ChatMinimap alignment
         opacity: builtinCommandPending ? 0.5 : 1,
         transition: "opacity 0.15s",
       }}
@@ -2164,8 +2206,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
                     src={img.previewUrl}
                     alt=""
                     style={{
-                      width: 56,
-                      height: 56,
+                      width: denseEmbed ? 40 : 56,
+                      height: denseEmbed ? 40 : 56,
                       objectFit: "cover",
                       borderRadius: 6,
                       border: "1px solid var(--border)",
@@ -2680,7 +2722,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
                 lineHeight: 1.6,
                 fontFamily: "inherit",
                 minHeight: compact ? 96 : 24,
-                maxHeight: 200,
+                maxHeight: denseEmbed ? (miniEmbed ? 72 : 120) : 200,
                 overflow: "auto",
               }}
             />
@@ -2820,17 +2862,17 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
         {!compact && (
           <div
             style={{
-              marginTop: 8,
-              display: isMobile ? "grid" : "flex",
-              gridTemplateColumns: isMobile ? "minmax(0, 1fr) auto" : undefined,
+              marginTop: denseEmbed ? 4 : 8,
+              display: denseControls ? "grid" : "flex",
+              gridTemplateColumns: denseControls ? "minmax(0, 1fr) auto" : undefined,
               alignItems: "center",
-              gap: 6,
+              gap: denseEmbed ? 4 : 6,
             }}
           >
             {/* LEFT: attach + model selector (idle) or steer/followup toggle (streaming) */}
             <div
               style={{
-                flex: isMobile ? "1 1 auto" : "0 0 auto",
+                flex: denseControls ? "1 1 auto" : "0 0 auto",
                 minWidth: 0,
                 display: "flex",
                 alignItems: "center",
@@ -2893,7 +2935,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
             </div>
 
             {/* spacer */}
-            {!isMobile && <div style={{ flex: 1 }} />}
+            {!denseControls && <div style={{ flex: 1 }} />}
 
             {/* RIGHT: thinking + tools preset + compact + sound (idle) | Stop + sound (streaming) */}
             <div
@@ -2904,10 +2946,10 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
                 alignItems: "center",
                 justifyContent: "flex-end",
                 position: "relative",
-                marginLeft: isMobile ? 0 : "auto",
+                marginLeft: denseControls ? 0 : "auto",
               }}
             >
-              {isMobile && (
+              {denseControls && (
                 <button
                   type="button"
                   title={controlsMenuOpen ? undefined : t("chat.moreControls")}
@@ -2952,10 +2994,10 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
               )}
               <div
                 style={{
-                  display: isMobile ? (controlsMenuOpen ? "flex" : "none") : "flex",
+                  display: denseControls ? (controlsMenuOpen ? "flex" : "none") : "flex",
                   alignItems: "center",
-                  gap: isMobile ? 1 : 2,
-                  ...(isMobile
+                  gap: denseControls ? 1 : 2,
+                  ...(denseControls
                     ? {
                         position: "absolute",
                         right: 0,
@@ -2991,8 +3033,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
                         alignItems: "center",
                         justifyContent: "center",
                         gap: 5,
-                        padding: isMobile ? "0 6px" : "8px 12px",
-                        width: isMobile ? "auto" : undefined,
+                        padding: denseControls ? "0 6px" : "8px 12px",
+                        width: denseControls ? "auto" : undefined,
                         height: 32,
                         background: thinkingDropdownOpen ? "var(--bg-hover)" : "none",
                         border: "none",
@@ -3027,7 +3069,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
                         <line x1="7" y1="18" x2="12" y2="18" />
                         <line x1="8" y1="21" x2="11" y2="21" />
                       </svg>
-                      {(!isMobile || controlsMenuOpen) && (
+                      {(!denseControls || controlsMenuOpen) && (
                         <span style={{ whiteSpace: "nowrap" }}>{thinkingDisplayLabel}</span>
                       )}
                     </button>
@@ -3036,7 +3078,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
                         style={{
                           position: "absolute",
                           bottom: "calc(100% + 6px)",
-                          ...(isMobile ? { left: 0 } : { right: 0 }),
+                          ...(denseControls ? { left: 0 } : { right: 0 }),
                           zIndex: 100,
                           background: "var(--bg)",
                           border: "1px solid var(--border)",
@@ -3132,7 +3174,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
                     )}
                   </div>
                 )}
-                {!isStreaming && onToolPresetChange && (
+                {!embedded && !isStreaming && onToolPresetChange && (
                   <div ref={toolDropdownRef} style={{ position: "relative" }}>
                     <button
                       onClick={() => !isStreaming && setToolDropdownOpen((v) => !v)}
@@ -3144,8 +3186,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
                         alignItems: "center",
                         justifyContent: "center",
                         gap: 5,
-                        padding: isMobile ? "0 6px" : "8px 12px",
-                        width: isMobile ? "auto" : undefined,
+                        padding: denseControls ? "0 6px" : "8px 12px",
+                        width: denseControls ? "auto" : undefined,
                         height: 32,
                         background: toolDropdownOpen ? "var(--bg-hover)" : "none",
                         border: "none",
@@ -3178,7 +3220,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
                       >
                         <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
                       </svg>
-                      {(!isMobile || controlsMenuOpen) && (
+                      {(!denseControls || controlsMenuOpen) && (
                         <span style={{ whiteSpace: "nowrap" }}>{toolPresetLabel}</span>
                       )}
                     </button>
@@ -3187,8 +3229,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
                         style={{
                           position: "absolute",
                           bottom: "calc(100% + 6px)",
-                          right: isMobile ? undefined : 0,
-                          left: isMobile ? 0 : undefined,
+                          right: denseControls ? undefined : 0,
+                          left: denseControls ? 0 : undefined,
                           zIndex: 100,
                           background: "var(--bg)",
                           border: "1px solid var(--border)",
@@ -3275,7 +3317,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
                   </div>
                 )}
 
-                {!isStreaming && onCompact && (
+                {!embedded && !isStreaming && onCompact && (
                   <div>
                     <button
                       onClick={isCompacting ? onAbortCompaction : onCompact}
@@ -3285,8 +3327,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
                         alignItems: "center",
                         justifyContent: "center",
                         gap: 5,
-                        padding: isMobile ? "0 6px" : "8px 12px",
-                        width: isMobile ? "auto" : undefined,
+                        padding: denseControls ? "0 6px" : "8px 12px",
+                        width: denseControls ? "auto" : undefined,
                         height: 32,
                         background: isCompacting ? "rgba(239,68,68,0.08)" : "none",
                         border: "none",
@@ -3314,7 +3356,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
                           <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
                             <rect x="2" y="2" width="6" height="6" rx="1" fill="currentColor" />
                           </svg>
-                          {(!isMobile || controlsMenuOpen) && (
+                          {(!denseControls || controlsMenuOpen) && (
                             <span style={{ whiteSpace: "nowrap" }}>{t("chat.compacting")}</span>
                           )}
                         </>
@@ -3335,7 +3377,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
                             <line x1="10" y1="14" x2="3" y2="21" />
                             <line x1="21" y1="3" x2="14" y2="10" />
                           </svg>
-                          {(!isMobile || controlsMenuOpen) && (
+                          {(!denseControls || controlsMenuOpen) && (
                             <span style={{ whiteSpace: "nowrap" }}>{t("chat.compact")}</span>
                           )}
                         </>
@@ -3379,7 +3421,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
                   </button>
                 )}
 
-                {onSoundToggle !== undefined && (
+                {!embedded && onSoundToggle !== undefined && (
                   <button
                     onClick={onSoundToggle}
                     title={soundEnabled ? t("chat.disableSound") : t("chat.enableSound")}
@@ -3444,7 +3486,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
                     )}
                   </button>
                 )}
-                {isMobile && controlsMenuOpen && (
+                {denseControls && controlsMenuOpen && (
                   <button
                     type="button"
                     title={t("chat.collapseControls")}

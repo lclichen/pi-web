@@ -53,6 +53,8 @@ import type { ToolEntry } from "@/lib/tool-presets";
 import { findChatScrollAnchor, type ChatScrollPosition } from "@/lib/chat-scroll-position";
 import { parseTodoWidgetLine } from "@/lib/extensions/todo-protocol";
 import type { CapsuleBgTask } from "./ChatStatusWidget";
+import { isEmbedCommandAllowed, slashCommandNameFromText, EMBED_BUILTIN_COMMANDS, normalizeEmbedCommandName } from "@/lib/embed-commands";
+import type { EmbedDensity } from "@/lib/embed-types";
 import {
   captureScrollDistance,
   getPromptAnchorSpacerHeight,
@@ -131,6 +133,13 @@ interface Props {
   unlockAudio?: () => void;
   /** A chat drop/attach wrote files into the workspace (refresh the explorer). */
   onFilesUploaded?: () => void;
+  /** Embedded widget mode: hide AppShell chrome and use a dense layout. */
+  embedded?: boolean;
+  embeddedDensity?: EmbedDensity;
+  /** Short container (bottom bar): bottom-align the empty-state composer. */
+  embeddedShort?: boolean;
+  /** Product command allowlist (names without slash; `*` allows all). */
+  commandAllowlist?: string[] | null;
 }
 
 function phaseLabel(
@@ -393,9 +402,16 @@ export function ChatWindow({
   onSubagentCallsChange,
   onPlanActivity,
   onFilesUploaded,
+  embedded = false,
+  embeddedDensity = "comfortable",
+  embeddedShort = false,
+  commandAllowlist = null,
 }: Props) {
   const { t } = useI18n();
   const isMobile = useIsMobile();
+  const compactEmbed = embedded && embeddedDensity !== "comfortable";
+  const miniEmbed = embedded && embeddedDensity === "mini";
+  const embedColumnPadding = miniEmbed ? 6 : compactEmbed ? 10 : CHAT_COLUMN_PADDING;
   const completionNotificationsEnabled = session?.relation?.kind !== "subagent";
 
   // Wrap onAgentEnd to play the completion sound. This is more reliable than
@@ -535,6 +551,33 @@ export function ChatWindow({
     deferInitialScroll: Boolean(pendingScrollRestore),
   });
   const sessionBusy = agentRunning || bashRunning;
+
+  const embedCommandDenied = useCallback(
+    (name: string) => t("embed.commandNotAllowed", { name: `/${name}` }),
+    [t],
+  );
+  const handleBuiltinCommand = useCallback(
+    async (message: string) => {
+      const name = slashCommandNameFromText(message);
+      const normalized = name ? normalizeEmbedCommandName(name) : null;
+      const isBuiltin =
+        normalized !== null && (EMBED_BUILTIN_COMMANDS as readonly string[]).includes(normalized);
+      // Only built-ins are executed before the prompt path. Extension/skill
+      // commands and arbitrary slash-prefixed text fall through to the normal
+      // send path (where the server re-checks registered commands).
+      if (name && isBuiltin && !isEmbedCommandAllowed(commandAllowlist, name)) {
+        const error = embedCommandDenied(name);
+        addNotice({ type: "error", message: error });
+        return { handled: true as const, error };
+      }
+      return handleBuiltinSlashCommand(message);
+    },
+    [addNotice, commandAllowlist, embedCommandDenied, handleBuiltinSlashCommand],
+  );
+  const handleBlockedCommand = useCallback(
+    (name: string) => addNotice({ type: "error", message: embedCommandDenied(name) }),
+    [addNotice, embedCommandDenied],
+  );
 
   // Manual retry for a turn that ended with stopReason "error": branch back to
   // the user message that produced it (so the failed attempt stays in the tree)
@@ -1328,7 +1371,11 @@ export function ChatWindow({
       slashCommands={slashCommands}
       slashCommandsLoading={slashCommandsLoading}
       onLoadSlashCommands={loadSlashCommands}
-      onBuiltinCommand={handleBuiltinSlashCommand}
+      onBuiltinCommand={handleBuiltinCommand}
+      embedded={embedded}
+      embeddedDensity={embeddedDensity}
+      allowedCommandNames={commandAllowlist}
+      onBlockedCommand={handleBlockedCommand}
       soundEnabled={soundEnabled}
       onSoundToggle={onSoundToggle}
       onAudioUnlock={unlockAudio}
@@ -1420,14 +1467,14 @@ export function ChatWindow({
       <div
         style={{
           position: "absolute",
-          top: 12,
+          top: compactEmbed ? 4 : 12,
           left: 0,
-          right: isMobile ? 0 : CHAT_MINIMAP_WIDTH,
+          right: isMobile || embedded ? 0 : CHAT_MINIMAP_WIDTH,
           zIndex: 40,
           display: "flex",
           // Toasts live in the top-right corner
           justifyContent: "flex-end",
-          padding: `0 ${CHAT_COLUMN_PADDING}px`,
+          padding: `0 ${compactEmbed ? embedColumnPadding : CHAT_COLUMN_PADDING}px`,
           pointerEvents: "none",
         }}
       >
@@ -1435,78 +1482,92 @@ export function ChatWindow({
       </div>
 
       {isEmptyNew ? (
-        <div className="flex flex-1 flex-col items-center justify-center overflow-y-auto px-4 py-8">
+        <div
+          className="flex flex-1 flex-col items-center justify-center overflow-y-auto px-4 py-8"
+          style={
+            compactEmbed || embeddedShort
+              ? {
+                  padding: miniEmbed ? 6 : "10px 8px",
+                  ...(embeddedShort ? { justifyContent: "flex-end" } : {}),
+                }
+              : undefined
+          }
+        >
           <div className="w-full" style={{ maxWidth: "var(--chat-content-max-width, 820px)" }}>
-            <div
-              className="mb-3"
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: 12,
-                marginLeft: 16,
-                marginRight: isMobile ? 16 : 52,
-                fontFamily: "var(--font-mono)",
-              }}
-            >
+            {!embedded && (
               <div
+                className="mb-3"
                 style={{
                   display: "flex",
                   alignItems: "center",
-                  gap: isMobile ? 7 : 10,
-                  minWidth: 0,
-                  flex: 1,
-                  lineHeight: 1.4,
-                  overflow: "hidden",
+                  justifyContent: "space-between",
+                  gap: 12,
+                  marginLeft: 16,
+                  marginRight: isMobile ? 16 : 52,
+                  fontFamily: "var(--font-mono)",
                 }}
               >
-                <Image
-                  src="/icons/apple-touch-icon.png"
-                  width={32}
-                  height={32}
-                  alt=""
-                  priority
-                  style={{ flexShrink: 0 }}
-                />
-                <span
+                <div
                   style={{
-                    fontSize: 22,
-                    color: "var(--text)",
-                    fontWeight: 700,
-                    letterSpacing: 0,
-                    flexShrink: 0,
-                    whiteSpace: "nowrap",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: isMobile ? 7 : 10,
+                    minWidth: 0,
+                    flex: 1,
+                    lineHeight: 1.4,
+                    overflow: "hidden",
                   }}
                 >
-                  amedac.ai
-                </span>
-                <NewSessionUpdateLink label={(version) => t("appUpdate.releaseNotes", { version })} />
+                  <Image
+                    src="/icons/apple-touch-icon.png"
+                    width={32}
+                    height={32}
+                    alt=""
+                    priority
+                    style={{ flexShrink: 0 }}
+                  />
+                  <span
+                    style={{
+                      fontSize: 22,
+                      color: "var(--text)",
+                      fontWeight: 700,
+                      letterSpacing: 0,
+                      flexShrink: 0,
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    amedac.ai
+                  </span>
+                  <NewSessionUpdateLink label={(version) => t("appUpdate.releaseNotes", { version })} />
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2, flexShrink: 0 }}>
+                  <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                    web <span style={{ color: "var(--text)" }}>v{process.env.NEXT_PUBLIC_APP_VERSION ?? "0.0.0"}</span>
+                  </span>
+                  <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                    pi <span style={{ color: "var(--text)" }}>v{process.env.NEXT_PUBLIC_PI_VERSION ?? "0.0.0"}</span>
+                  </span>
+                </div>
               </div>
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2, flexShrink: 0 }}>
-                <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                  web <span style={{ color: "var(--text)" }}>v{process.env.NEXT_PUBLIC_APP_VERSION ?? "0.0.0"}</span>
-                </span>
-                <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                  pi <span style={{ color: "var(--text)" }}>v{process.env.NEXT_PUBLIC_PI_VERSION ?? "0.0.0"}</span>
-                </span>
-              </div>
-            </div>
-            <SessionToolbar
-              cwd={messageCwd ?? ""}
-              quickMode={quickMode || session?.mode === "quick" || (!session && newSessionMode === "quick")}
-              newSessionTemplateId={newSessionTemplateId}
-              onNewSessionTemplateChange={onNewSessionTemplateChange}
-              sessionId={session?.id ?? null}
-              hasLabTraining={hasLabTraining}
-              onSendCommand={(cmd) => handleSend(cmd)}
-              onApplyPreferences={(action) => {
-                if (!session?.id) return;
-                import("@/lib/agent-client").then(({ sendAgentCommand }) =>
-                  sendAgentCommand(session.id!, { type: "apply_preferences", cwd: messageCwd, action }).catch(() => {}),
-                );
-              }}
-              disabled={sessionBusy}
-            />
+            )}
+            {!embedded && (
+              <SessionToolbar
+                cwd={messageCwd ?? ""}
+                quickMode={quickMode || session?.mode === "quick" || (!session && newSessionMode === "quick")}
+                newSessionTemplateId={newSessionTemplateId}
+                onNewSessionTemplateChange={onNewSessionTemplateChange}
+                sessionId={session?.id ?? null}
+                hasLabTraining={hasLabTraining}
+                onSendCommand={(cmd) => handleSend(cmd)}
+                onApplyPreferences={(action) => {
+                  if (!session?.id) return;
+                  import("@/lib/agent-client").then(({ sendAgentCommand }) =>
+                    sendAgentCommand(session.id!, { type: "apply_preferences", cwd: messageCwd, action }).catch(() => {}),
+                  );
+                }}
+                disabled={sessionBusy}
+              />
+            )}
             <ExtensionWidgets widgets={belowEditorWidgets} />
             {chatInputElement}
             <ExtensionStatusBar statuses={extensionStatuses} widgets={extensionWidgets} />
@@ -1525,40 +1586,50 @@ export function ChatWindow({
                 onInput={sendExtensionCustomInput}
               />
             )}
-            <ChatStatusWidget
-              subagentCalls={subagentCalls}
-              onOpenAgents={() => onOpenAgentsPanel?.()}
-              onOpenPlan={() => onOpenPlanPanel?.()}
-              sessionId={session?.id ?? null}
-              cwd={session?.cwd ?? newSessionCwd ?? null}
-              refreshSignal={capsuleRefresh}
-              onTopReserveChange={setCapsuleTopPad}
-              agentRunning={agentRunning}
-              bashRunning={bashRunning}
-              planActive={planPanelActive}
-              plan={plan}
-              todos={capsuleTodos}
-              bgTasks={capsuleBgTasks}
-              goal={capsuleGoal}
-              planMode={planMode}
-            />
+            {!compactEmbed && (
+              <ChatStatusWidget
+                subagentCalls={subagentCalls}
+                onOpenAgents={() => onOpenAgentsPanel?.()}
+                onOpenPlan={() => onOpenPlanPanel?.()}
+                sessionId={session?.id ?? null}
+                cwd={session?.cwd ?? newSessionCwd ?? null}
+                refreshSignal={capsuleRefresh}
+                onTopReserveChange={setCapsuleTopPad}
+                agentRunning={agentRunning}
+                bashRunning={bashRunning}
+                planActive={planPanelActive}
+                plan={plan}
+                todos={capsuleTodos}
+                bgTasks={capsuleBgTasks}
+                goal={capsuleGoal}
+                planMode={planMode}
+              />
+            )}
             <div
               style={{
                 position: "absolute",
-                top: 12,
+                top: compactEmbed ? 4 : 12,
                 left: 0,
-                right: isMobile ? 0 : CHAT_MINIMAP_WIDTH,
+                right: isMobile || embedded ? 0 : CHAT_MINIMAP_WIDTH,
                 zIndex: 40,
-                padding: `0 ${CHAT_COLUMN_PADDING}px`,
+                padding: `0 ${compactEmbed ? embedColumnPadding : CHAT_COLUMN_PADDING}px`,
                 pointerEvents: "none",
               }}
             />
             <div
               ref={scrollContainerRef}
               className="min-w-0 flex-1 overflow-x-hidden overflow-y-auto pt-4 [scrollbar-width:none]"
-              style={{ visibility: pendingScrollRestore ? "hidden" : undefined }}
+              style={{
+                visibility: pendingScrollRestore ? "hidden" : undefined,
+                ...(compactEmbed ? { paddingTop: miniEmbed ? 2 : 6 } : {}),
+              }}
             >
-              <div style={{ minWidth: 0, padding: `${capsuleTopPad}px ${CHAT_COLUMN_PADDING}px 0` }}>
+              <div
+                style={{
+                  minWidth: 0,
+                  padding: `${capsuleTopPad}px ${compactEmbed ? embedColumnPadding : CHAT_COLUMN_PADDING}px 0`,
+                }}
+              >
                 <div
                   ref={messageContentRef}
                   onPointerUp={captureQuotedSelection}
@@ -1896,7 +1967,7 @@ export function ChatWindow({
                 </div>
               </div>
             </div>
-            {isMobile || pendingScrollRestore ? null : (
+            {isMobile || embedded || pendingScrollRestore ? null : (
               <ChatMinimap
                 messages={messages}
                 streamingMessage={streamState.streamingMessage}
@@ -2068,10 +2139,10 @@ export function ChatWindow({
               position: "absolute",
               bottom: "100%",
               left: 0,
-              right: isMobile ? 0 : CHAT_MINIMAP_WIDTH,
+              right: isMobile || embedded ? 0 : CHAT_MINIMAP_WIDTH,
               display: "flex",
               justifyContent: "center",
-              paddingBottom: 10,
+              paddingBottom: compactEmbed ? 4 : 10,
               pointerEvents: "none",
               zIndex: 20,
             }}
@@ -2100,41 +2171,48 @@ export function ChatWindow({
           </div>
           <div
             style={{
-              padding: `0 ${CHAT_COLUMN_PADDING}px`,
-              paddingRight: isMobile ? CHAT_COLUMN_PADDING : CHAT_INPUT_RIGHT_PADDING,
+              padding: `0 ${compactEmbed ? embedColumnPadding : CHAT_COLUMN_PADDING}px`,
+              paddingRight:
+                isMobile || embedded
+                  ? compactEmbed
+                    ? embedColumnPadding
+                    : CHAT_COLUMN_PADDING
+                  : CHAT_INPUT_RIGHT_PADDING,
             }}
           >
             <div style={{ maxWidth: "var(--chat-content-max-width, 820px)", margin: "0 auto" }}>
               <ExtensionWidgets widgets={belowEditorWidgets} />
             </div>
           </div>
-          <div
-            style={{
-              padding: `0 ${CHAT_COLUMN_PADDING}px`,
-              paddingRight: isMobile ? CHAT_COLUMN_PADDING : CHAT_INPUT_RIGHT_PADDING,
-            }}
-          >
-            <div style={{ maxWidth: "var(--chat-content-max-width, 820px)", margin: "0 auto" }}>
-              <SessionToolbar
-                cwd={messageCwd ?? ""}
-                quickMode={quickMode || session?.mode === "quick" || (!session && newSessionMode === "quick")}
-                newSessionTemplateId={newSessionTemplateId}
-                onNewSessionTemplateChange={onNewSessionTemplateChange}
-                sessionId={session?.id ?? null}
-                hasLabTraining={hasLabTraining}
-                onSendCommand={(cmd) => handleSend(cmd)}
-                onApplyPreferences={(action) => {
-                  if (!session?.id) return;
-                  import("@/lib/agent-client").then(({ sendAgentCommand }) =>
-                    sendAgentCommand(session.id!, { type: "apply_preferences", cwd: messageCwd, action }).catch(
-                      () => {},
-                    ),
-                  );
-                }}
-                disabled={sessionBusy}
-              />
+          {!embedded && (
+            <div
+              style={{
+                padding: `0 ${CHAT_COLUMN_PADDING}px`,
+                paddingRight: isMobile ? CHAT_COLUMN_PADDING : CHAT_INPUT_RIGHT_PADDING,
+              }}
+            >
+              <div style={{ maxWidth: "var(--chat-content-max-width, 820px)", margin: "0 auto" }}>
+                <SessionToolbar
+                  cwd={messageCwd ?? ""}
+                  quickMode={quickMode || session?.mode === "quick" || (!session && newSessionMode === "quick")}
+                  newSessionTemplateId={newSessionTemplateId}
+                  onNewSessionTemplateChange={onNewSessionTemplateChange}
+                  sessionId={session?.id ?? null}
+                  hasLabTraining={hasLabTraining}
+                  onSendCommand={(cmd) => handleSend(cmd)}
+                  onApplyPreferences={(action) => {
+                    if (!session?.id) return;
+                    import("@/lib/agent-client").then(({ sendAgentCommand }) =>
+                      sendAgentCommand(session.id!, { type: "apply_preferences", cwd: messageCwd, action }).catch(
+                        () => {},
+                      ),
+                    );
+                  }}
+                  disabled={sessionBusy}
+                />
+              </div>
             </div>
-          </div>
+          )}
           {chatInputElement}
           <ExtensionStatusBar statuses={extensionStatuses} widgets={extensionWidgets} />
         </div>

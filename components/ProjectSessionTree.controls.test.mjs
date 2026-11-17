@@ -39,6 +39,13 @@ test("Host directory groups share the project sort order", () => {
   assert.match(source, /order: groupRenderOrder\.get\(key\)/);
 });
 
+test("opens the embed-link dialog from the project menu", () => {
+  assert.match(source, /import \{ EmbedTokenDialog \} from "\.\/EmbedTokenDialog"/);
+  assert.match(source, /t\("embed\.createLink"\)/);
+  assert.match(source, /setEmbedProject\(\{ id: menuProject\.id, name: menuProject\.name \}\)/);
+  assert.match(source, /<EmbedTokenDialog\s+projectId=\{embedProject\.id\}/);
+});
+
 test("projection badges refresh on a timer and when the tab becomes visible", () => {
   assert.match(source, /setInterval\(refreshIfVisible, 60_000\)/);
   assert.match(source, /document\.addEventListener\("visibilitychange", refreshIfVisible\)/);

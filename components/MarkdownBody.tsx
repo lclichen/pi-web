@@ -4,6 +4,7 @@ import { createContext, useContext, useMemo, type ComponentProps, type MouseEven
 import ReactMarkdown, { type Components, type ExtraProps } from "react-markdown";
 import { parsePdfPageFragment, resolveLocalFileHref, shouldOpenLocalFileInApp } from "@/lib/file-links";
 import { encodeFilePathForApi } from "@/lib/file-paths";
+import { withEmbedToken } from "@/lib/embed-client";
 import {
   markdownRehypePlugins,
   markdownRemarkPlugins,
@@ -40,10 +41,14 @@ function MarkdownImage({ src, alt, cwd, ...props }: ComponentProps<"img"> & Extr
   const href = typeof src === "string" ? src : undefined;
   const filePath = href ? resolveLocalFileHref(href, cwd) : null;
   const imageSrc = filePath
-    ? remoteSessionId
-      ? `/api/remotefs/${encodeFilePathForApi(filePath)}?src=${encodeURIComponent(remoteSessionId)}`
-      : `/api/files/${encodeFilePathForApi(filePath)}?type=read`
-    : href;
+    ? withEmbedToken(
+        remoteSessionId
+          ? `/api/remotefs/${encodeFilePathForApi(filePath)}?src=${encodeURIComponent(remoteSessionId)}`
+          : `/api/files/${encodeFilePathForApi(filePath)}?type=read`,
+      )
+    : href
+      ? withEmbedToken(href)
+      : href;
   // Dynamic local paths are served directly by the file API.
   // eslint-disable-next-line @next/next/no-img-element
   const image = <img src={imageSrc} alt={alt ?? ""} loading="lazy" {...props} />;

@@ -28,12 +28,13 @@ test("opens one settings panel from direct sidebar shortcuts", () => {
 });
 
 test("keeps enabled configuration surfaces inside the settings panel", () => {
-  for (const section of ["general", "models", "skills", "agents", "mcp", "plugins"]) {
+  for (const section of ["general", "models", "skills", "agents", "mcp", "plugins", "embed"]) {
     assert.match(panelSource, new RegExp(`id: "${section}"`));
   }
   for (const component of ["ModelsConfig", "SkillsConfig", "SubagentsConfig", "PluginsConfig"]) {
     assert.match(panelSource, new RegExp(`<${component}\\s+embedded`));
   }
+  assert.match(panelSource, /<EmbedConfig isAdmin=\{isAdmin\} \/>/);
   // This fork surfaces the tintinweb subagents config and the MCP servers
   // config as settings sections (upstream's built-in AgentsConfig stays out).
   assert.match(panelSource, /<SubagentsConfig\s+embedded/);

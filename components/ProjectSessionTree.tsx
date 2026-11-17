@@ -25,6 +25,7 @@ import { formatRelativeTime } from "@/lib/subagent-shared";
 import { ProjectSettingsDialog } from "./ProjectSettingsDialog";
 import { ProjectImportDialog } from "./ProjectImportDialog";
 import { ApplyBundleDialog } from "./ApplyBundleDialog";
+import { EmbedTokenDialog } from "./EmbedTokenDialog";
 
 function loadSortMode(): SidebarSortMode {
   if (typeof window === "undefined") return "project";
@@ -180,6 +181,7 @@ export function ProjectSessionTree({
   const [unreadOnly, setUnreadOnly] = useState(loadUnreadOnly);
   const [viewMenuOpen, setViewMenuOpen] = useState(false);
   const [settingsId, setSettingsId] = useState<string | null>(null);
+  const [embedProject, setEmbedProject] = useState<{ id: string; name: string } | null>(null);
   const [importId, setImportId] = useState<string | null>(null);
   const [applyBundleId, setApplyBundleId] = useState<string | null>(null);
   const [hostImportDir, setHostImportDir] = useState<string | null>(null);
@@ -2307,6 +2309,13 @@ export function ProjectSessionTree({
                 setMenu(null);
               }}
             />
+            <MenuItem
+              label={t("embed.createLink")}
+              onClick={() => {
+                setEmbedProject({ id: menuProject.id, name: menuProject.name });
+                setMenu(null);
+              }}
+            />
             {menuProject.mode === "sandbox" &&
               (() => {
                 // 绑定信息：项目 → 容器 → 镜像 三位一体（debug 友好）。
@@ -2498,6 +2507,14 @@ export function ProjectSessionTree({
             loadProjects();
             refreshSessions();
           }}
+        />
+      )}
+
+      {embedProject && (
+        <EmbedTokenDialog
+          projectId={embedProject.id}
+          projectName={embedProject.name}
+          onClose={() => setEmbedProject(null)}
         />
       )}
 

@@ -19,6 +19,7 @@ import { isThinkingExpandedByDefault, setThinkingExpandedByDefault } from "@/lib
 import { ModelsConfig } from "./ModelsConfig";
 import { AccountSettings } from "./AccountSettings";
 import { ApiKeysConfig } from "./ApiKeysConfig";
+import { EmbedConfig } from "./EmbedConfig";
 import { SkillsConfig } from "./SkillsConfig";
 import { PluginsConfig } from "./PluginsConfig";
 import { McpServersConfig } from "./McpServersConfig";
@@ -141,6 +142,14 @@ export function SettingsSectionIcon({
         <path d="M7 11V7a5 5 0 0 1 10 0v4" />
         <circle cx="8" cy="16" r="0.6" />
         <circle cx="12" cy="16" r="0.6" />
+      </svg>
+    );
+  if (section === "embed")
+    return (
+      <svg {...common}>
+        <rect x="3" y="4" width="18" height="16" rx="2" />
+        <path d="M3 9h18M9 9v11" />
+        <path d="m14 13 3 2-3 2" />
       </svg>
     );
   if (section === "agents")
@@ -599,6 +608,7 @@ export function SettingsPanel({
     { id: "general", label: t("settings.general"), requiresProject: false, group: "personal" },
     { id: "account", label: t("settings.account"), requiresProject: false, group: "personal" },
     { id: "api-keys", label: t("settings.apiKeys"), requiresProject: false, group: "personal" },
+    { id: "embed", label: t("embed.settingsTitle"), requiresProject: false, group: "personal" },
     { id: "models", label: t("common.models"), requiresProject: false, group: "workspace" },
     { id: "skills", label: t("common.skills"), requiresProject: true, group: "workspace" },
     { id: "agents", label: t("common.agents"), requiresProject: true, group: "workspace" },
@@ -794,6 +804,7 @@ export function SettingsPanel({
           )}
           {sectionHost("account", <AccountSettings />)}
           {sectionHost("api-keys", <ApiKeysConfig />)}
+          {sectionHost("embed", <EmbedConfig isAdmin={isAdmin} />)}
           {sectionHost("models", <ModelsConfig embedded onClose={onClose} />)}
           {cwd && sectionHost("skills", <SkillsConfig embedded key={cwd} cwd={cwd} onClose={onClose} isAdmin={isAdmin} />)}
           {cwd && sectionHost("agents", <SubagentsConfig embedded key={cwd} cwd={cwd} onClose={onClose} isAdmin={isAdmin} />)}

@@ -3,6 +3,7 @@ export const SETTINGS_SECTION_VALUES = [
   "models",
   "account",
   "api-keys",
+  "embed",
   "skills",
   "agents",
   "mcp",

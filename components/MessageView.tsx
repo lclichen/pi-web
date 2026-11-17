@@ -29,6 +29,7 @@ import { isThinkingExpandedByDefault, THINKING_EXPANDED_EVENT } from "@/lib/thin
 import { TurnWrittenFiles } from "./TurnWrittenFiles";
 import type { WrittenFile } from "@/lib/turn-written-files";
 import { skillExpansionToCommand } from "@/lib/slash-display";
+import { withEmbedToken } from "@/lib/embed-client";
 import type { SubagentToolDetails } from "@/lib/subagent-extension";
 import type {
   AgentMessage,
@@ -2454,7 +2455,7 @@ function imageSource(img: ImageContent): string {
   if (img.source) {
     return img.source.type === "base64"
       ? `data:${img.source.media_type};base64,${img.source.data}`
-      : (img.source.url ?? "");
+      : withEmbedToken(img.source.url ?? "");
   }
   return flat.data ? `data:${flat.mimeType};base64,${flat.data}` : "";
 }

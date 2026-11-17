@@ -54,6 +54,7 @@ NODE_BIN="$PKG/runtime/bin/node"
 # 无事可做时该脚本自身静默退出；实际有动作时按其输出约定打印 >>（常规）/!!（显著动作） 行，经 update_project.py 部署时默认折叠（--verbose 全量透传）。
 if [ -x "$PKG/scripts/install-pi-config.sh" ] && [ -d "$PKG/config/pi" ]; then
   export PI_CONFIG_LINK_ROOT="${PI_CONFIG_LINK_ROOT:-$PKG}"
+  export PI_NODE="$NODE_BIN"
   bash "$PKG/scripts/install-pi-config.sh" \
     || echo -e '\033[1;33m!!\033[0m pi 配置模板合并失败（不影响服务启动；可手动执行 scripts/install-pi-config.sh 排查）'
 fi

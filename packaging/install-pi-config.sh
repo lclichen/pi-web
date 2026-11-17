@@ -53,7 +53,9 @@
 #       settings.json: 字段级合并 —— 目标不存在则整体安装；已存在则只把模板的
 #                      packages 数组并进目标（目标条目优先、保持原顺序；同名
 #                      npm 包保留最高版本以清理升级残留），其余字段（defaultModel
-#                      等）一律不动。
+#                      等）一律不动。解析器回退链：包内 Node（正常情况）→
+#                      PI_NODE/PATH node → python3/python → raw 行级兜底（只删
+#                      退休条目，compact/对象条目会跳过并保留原文件）。
 #       退休条目清理: 模板里 config/pi/.retired-packages 逐行列出已改名/移除
 #                      的随包条目，两种形式（# 为注释）:
 #                      * 含冒号的行 = 包 source 字符串（如 npm:foo@1.0.0
@@ -126,30 +128,33 @@ log()  { printf '\033[1;32m>>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m!!\033[0m %s\n' "$*"; }
 note() { printf '  %s\n' "$*"; }   # log/warn 行的缩进补充说明
 
-# 用 node 做 settings.json 的字段级合并:
+# 用 Node/Python 做 settings.json 的字段级合并:
 #   packages —— 目标已有条目优先、保持原顺序；同名 npm 包保留最高版本，
 #     模板里新增的条目按"源字符串"去重追加；
 #   extensions —— 字符串数组并集（携带模板的 -builtin:<name> 等开关项，
 #     与用户自有的扩展条目互不覆盖）。
-# 其余字段一律不动。返回 0 = 合并完成（可能无新增）；1 = 无法执行
-# （本机无可用 node 或 JSON 解析失败），调用方跳过合并、保持现状。
-# node 查找顺序: $PI_NODE > 包内 runtime/bin/node > PATH 中的 node。
+# 其余字段一律不动。返回 0 = 合并完成（可能无新增）；1 = 所有解析器都
+# 不可用（调用方保持现状）。
+# 解析器顺序: $PI_NODE > 包内 runtime/bin/node > PATH node > python3/python
+#             > raw 行级兜底（仅删除退休条目，要求 pretty JSON）。
 merge_settings_packages() {
   local target="$1" bundled="$2"
   local node_bin="${PI_NODE:-}"
   if [ -z "$node_bin" ] && [ -x "$BUNDLED_ROOT/runtime/bin/node" ]; then
     node_bin="$BUNDLED_ROOT/runtime/bin/node"
   fi
+  if [ -z "$node_bin" ] && [ -x "$ROOT/runtime/bin/node" ]; then
+    node_bin="$ROOT/runtime/bin/node"
+  fi
   if [ -z "$node_bin" ] && command -v node >/dev/null 2>&1; then
     node_bin="$(command -v node)"
   fi
-  [ -z "$node_bin" ] && return 1
-  [ -x "$node_bin" ] || return 1
   # 退休条目名单（改名/移除的随包条目，见文件头说明）；无名单文件时为空
   local retired_file=""
   [ -f "$BUNDLED/.retired-packages" ] && retired_file="$BUNDLED/.retired-packages"
-  PI_MERGE_TARGET="$target" PI_MERGE_BUNDLED="$bundled" \
-    PI_MERGE_RETIRED="$retired_file" "$node_bin" <<'NODE'
+  if [ -n "$node_bin" ] && [ -x "$node_bin" ]; then
+    if PI_MERGE_TARGET="$target" PI_MERGE_BUNDLED="$bundled" \
+      PI_MERGE_RETIRED="$retired_file" "$node_bin" <<'NODE'
 const fs = require("fs");
 const targetPath = process.env.PI_MERGE_TARGET;
 const bundledPath = process.env.PI_MERGE_BUNDLED;
@@ -299,6 +304,286 @@ if (retiredDropped.length > 0 || added > 0 || addedExtensions > 0 || droppedDup.
   console.log(`${TAG} settings.json ${messages.join("，")}，无变更`);
 }
 NODE
+    then
+      return 0
+    fi
+  fi
+  if merge_settings_python "$target" "$bundled"; then
+    return 0
+  fi
+  if merge_settings_raw "$target" "$retired_file"; then
+    return 0
+  fi
+  return 1
+}
+
+# Python 兜底（无 node / node 无法运行时）：与 Node 版保持同一合并规则。
+# 包内通常自带 runtime/bin/node，这里主要覆盖从源码/精简包手动运行脚本的场景。
+merge_settings_python() {
+  local target="$1" bundled="$2"
+  local python_bin=""
+  if command -v python3 >/dev/null 2>&1; then
+    python_bin="$(command -v python3)"
+  elif command -v python >/dev/null 2>&1; then
+    python_bin="$(command -v python)"
+  fi
+  [ -n "$python_bin" ] || return 1
+  local retired_file=""
+  [ -f "$BUNDLED/.retired-packages" ] && retired_file="$BUNDLED/.retired-packages"
+  PI_MERGE_TARGET="$target" PI_MERGE_BUNDLED="$bundled" \
+    PI_MERGE_RETIRED="$retired_file" "$python_bin" - <<'PY'
+import json
+import os
+import re
+import sys
+import time
+
+target_path = os.environ["PI_MERGE_TARGET"]
+bundled_path = os.environ["PI_MERGE_BUNDLED"]
+try:
+    with open(bundled_path, encoding="utf-8") as handle:
+        bundled = json.load(handle)
+except Exception:
+    sys.exit(1)
+if not isinstance(bundled, dict):
+    sys.exit(0)
+
+retired = []
+retired_path = os.environ.get("PI_MERGE_RETIRED", "")
+if retired_path:
+    try:
+        with open(retired_path, encoding="utf-8") as handle:
+            retired = [line.strip() for line in handle if line.strip() and not line.strip().startswith("#")]
+    except Exception:
+        retired = []
+
+has_packages = isinstance(bundled.get("packages"), list)
+has_extensions = isinstance(bundled.get("extensions"), list)
+if not has_packages and not has_extensions and not retired:
+    sys.exit(0)
+try:
+    with open(target_path, encoding="utf-8") as handle:
+        target = json.load(handle)
+except Exception:
+    sys.exit(1)
+
+def key(entry):
+    if isinstance(entry, dict):
+        return str(entry.get("source", ""))
+    return str(entry).strip()
+
+def npm_spec(value):
+    match = re.match(r"^npm:(@?[^@]+(?:/[^@]+)?)@(\d+(?:\.\d+)*)$", value)
+    return (match.group(1), tuple(int(part) for part in match.group(2).split("."))) if match else None
+
+def is_retired(value):
+    for line in retired:
+        if line == value:
+            return True
+        match = re.match(r"^npm:(@?[^@]+(?:/[^@]+)?)@\*$", line)
+        if match:
+            spec = npm_spec(value)
+            if spec and spec[0] == match.group(1):
+                return True
+    return False
+
+def cmp_ver(left, right):
+    for index in range(max(len(left), len(right))):
+        delta = (left[index] if index < len(left) else 0) - (right[index] if index < len(right) else 0)
+        if delta:
+            return delta
+    return 0
+
+def dedupe(entries):
+    order = []
+    slots = {}
+    dropped = []
+    for entry in entries:
+        value = key(entry)
+        spec = npm_spec(value)
+        identity = f"npm:{spec[0]}" if spec else f"plain:{value}"
+        if identity not in slots:
+            slot = {"entry": entry, "key": value, "version": spec[1] if spec else None}
+            slots[identity] = slot
+            order.append(slot)
+            continue
+        existing = slots[identity]
+        if spec and existing["version"] and cmp_ver(spec[1], existing["version"]) > 0:
+            dropped.append(existing["key"])
+            existing["entry"] = entry
+            existing["key"] = value
+            existing["version"] = spec[1]
+        else:
+            dropped.append(value)
+    return [slot["entry"] for slot in order], dropped
+
+def count_keys(values):
+    counts = {}
+    for value in values:
+        counts[value] = counts.get(value, 0) + 1
+    return counts
+
+added = 0
+dropped_dup = []
+retired_dropped = []
+if has_packages:
+    if not isinstance(target.get("packages"), list):
+        target["packages"] = []
+    kept = []
+    for entry in target["packages"]:
+        value = key(entry)
+        if is_retired(value):
+            retired_dropped.append(value)
+        else:
+            kept.append(entry)
+    target["packages"] = kept
+    original_keys = [key(entry) for entry in kept]
+    merged, _ = dedupe(kept + list(bundled.get("packages") or []))
+    target["packages"] = merged
+    before = count_keys(original_keys)
+    after = count_keys(key(entry) for entry in merged)
+    for value, count in after.items():
+        added += max(0, count - before.get(value, 0))
+    for value, count in before.items():
+        dropped_dup.extend([value] * max(0, count - after.get(value, 0)))
+
+added_extensions = 0
+if isinstance(target.get("extensions"), list):
+    kept = []
+    for entry in target["extensions"]:
+        value = entry.strip() if isinstance(entry, str) else ""
+        if value and is_retired(value):
+            retired_dropped.append(value)
+        else:
+            kept.append(entry)
+    target["extensions"] = kept
+if has_extensions:
+    if not isinstance(target.get("extensions"), list):
+        target["extensions"] = []
+    seen = {
+        entry.strip() if isinstance(entry, str) else ""
+        for entry in target["extensions"]
+    }
+    for entry in bundled["extensions"]:
+        value = entry.strip() if isinstance(entry, str) else ""
+        if value and value not in seen:
+            target["extensions"].append(entry)
+            seen.add(value)
+            added_extensions += 1
+
+messages = []
+if retired_dropped:
+    messages.append(f"清理退休条目 {len(retired_dropped)} 个（{' '.join(retired_dropped[:3])}{' …' if len(retired_dropped) > 3 else ''}）")
+if added > 0:
+    messages.append(f"packages 新增 {added} 个条目")
+elif has_packages:
+    messages.append("packages 已包含模板全部条目")
+if dropped_dup:
+    messages.append(f"清理同名旧版本 {len(dropped_dup)} 条（{' '.join(dropped_dup[:3])}{' …' if len(dropped_dup) > 3 else ''}）")
+if added_extensions > 0:
+    messages.append(f"extensions 新增 {added_extensions} 个条目")
+elif has_extensions:
+    messages.append("extensions 已包含模板全部条目")
+tag = "\x1b[1;32m>>\x1b[0m"
+if retired_dropped or added > 0 or added_extensions > 0 or dropped_dup:
+    mode = os.stat(target_path).st_mode
+    temp_path = f"{target_path}.tmp-{os.getpid()}-{int(time.time() * 1000)}"
+    try:
+        with open(temp_path, "w", encoding="utf-8") as handle:
+            json.dump(target, handle, ensure_ascii=False, indent=2)
+            handle.write("\n")
+        os.chmod(temp_path, mode)
+        os.replace(temp_path, target_path)
+    except Exception:
+        try:
+            os.unlink(temp_path)
+        except OSError:
+            pass
+        raise
+    print(f"{tag} settings.json {'，'.join(messages)}")
+else:
+    print(f"{tag} settings.json {'，'.join(messages)}，无变更")
+PY
+}
+
+# 最后兜底（无 node、无 python）：只按行删除 pretty JSON 中 packages /
+# extensions 数组里的精确字符串条目，不改动其它字段。要求数组是脚本/pi
+# 常规的 one-entry-per-line 格式；compact/对象条目/自定义 JSON 会直接跳过，
+# 避免把配置文件写坏。修改前先备份到 .bundle-backup/。
+merge_settings_raw() {
+  local target="$1" retired_file="$2"
+  [ -f "$target" ] && [ -f "$retired_file" ] || return 1
+  # 只处理一行一个元素的常规 pretty JSON；compact 形态不猜。
+  grep -Eq '^[[:space:]]*"(packages|extensions)"[[:space:]]*:[[:space:]]*\[[[:space:]]*$' "$target" || return 1
+
+  local tmp tmp2 backup
+  tmp="$(mktemp "${target}.tmp.XXXXXX")" || return 1
+  tmp2="$(mktemp "${target}.tmp2.XXXXXX")" || { rm -f "$tmp"; return 1; }
+  backup="$AGENT_DIR/.bundle-backup/settings.json.raw-$(date +%Y%m%d%H%M%S)"
+  local changed=0
+  if ! awk -v rfile="$retired_file" '
+    function is_retired(value, spec, pos, name) {
+      if (value in retired) return 1;
+      if (substr(value, 1, 4) == "npm:") {
+        spec = substr(value, 5);
+        pos = match(spec, /@[0-9]/);
+        name = pos ? substr(spec, 1, pos - 1) : spec;
+        if (name in wildcard) return 1;
+      }
+      return 0;
+    }
+    BEGIN {
+      while ((getline line < rfile) > 0) {
+        gsub(/^[ \t]+|[ \t]+$/, "", line);
+        if (line == "" || substr(line, 1, 1) == "#") continue;
+        if (substr(line, 1, 4) == "npm:" && substr(line, length(line) - 1) == "@*") {
+          wildcard[substr(line, 5, length(line) - 6)] = 1;
+        } else {
+          retired[line] = 1;
+        }
+      }
+    }
+    {
+      line = $0;
+      if (inarray == 0) {
+        if (line ~ /^[ \t]*"packages"[ \t]*:[ \t]*\[[ \t]*$/) { inarray = "packages"; print; next }
+        if (line ~ /^[ \t]*"extensions"[ \t]*:[ \t]*\[[ \t]*$/) { inarray = "extensions"; print; next }
+        print; next;
+      }
+      if (line ~ /^[ \t]*\][ \t]*,?[ \t]*$/) { inarray = 0; print; next }
+      if (line ~ /^[ \t]*"[^"\\]*"[ \t]*,?[ \t]*$/) {
+        value = line;
+        sub(/^[ \t]*"/, "", value);
+        sub(/"[ \t]*,?[ \t]*$/, "", value);
+        if (is_retired(value)) { changed = 1; next }
+      }
+      print;
+    }
+    END { exit changed ? 0 : 2 }
+  ' "$target" > "$tmp"; then
+    rm -f "$tmp" "$tmp2"
+    return 1
+  fi
+  # 删除数组末尾元素后，前一行可能多出逗号；只在 `]` 前修正。
+  awk '
+    BEGIN { prev = ""; have = 0 }
+    {
+      if (!have) { prev = $0; have = 1; next }
+      if ($0 ~ /^[ \t]*\][ \t]*,?[ \t]*$/ && prev ~ /,[ \t]*$/) sub(/,[ \t]*$/, "", prev);
+      print prev;
+      prev = $0;
+    }
+    END { if (have) print prev }
+  ' "$tmp" > "$tmp2" || { rm -f "$tmp" "$tmp2"; return 1; }
+  mkdir -p "$(dirname "$backup")" || { rm -f "$tmp" "$tmp2"; return 1; }
+  cp -a "$target" "$backup" || { rm -f "$tmp" "$tmp2"; return 1; }
+  if mv "$tmp2" "$target"; then
+    rm -f "$tmp"
+    warn "  settings.json: 无 Node/Python，已用 raw 兜底删除退休条目（备份: $backup；模板新增条目需下次有解析器时再合并）"
+    return 0
+  fi
+  rm -f "$tmp" "$tmp2"
+  return 1
 }
 
 # 陈旧的受管扩展（带版本标记的真实目录、当前模板已不含，如升级后

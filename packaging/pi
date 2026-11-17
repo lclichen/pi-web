@@ -32,6 +32,7 @@ fi
 # AMEDAC_PKG_MODE=copy 可切换为真实拷贝模式（与包位置解耦）。
 if [ -x "$DIR/scripts/install-pi-config.sh" ]; then
   export PI_CONFIG_LINK_ROOT="${PI_CONFIG_LINK_ROOT:-$DIR}"
+  [ -x "$DIR/runtime/bin/node" ] && export PI_NODE="${PI_NODE:-$DIR/runtime/bin/node}"
   "$DIR/scripts/install-pi-config.sh" || true
 fi
 

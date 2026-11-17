@@ -170,7 +170,8 @@ tail -f logs/platform.log # 跟踪平台日志
 | 变量 | 说明 |
 | --- | --- |
 | `PI_WEB_AUTH` | `on` = 多用户账号体系（WebUI 自己的用户库） |
-| `PI_WEB_PLATFORM_URL` | 沙盒平台地址；学生用户的平台凭证在 WebUI 内绑定 |
+| `PI_WEB_PLATFORM_URL` | 沙盒平台地址；学生用户的平台凭证在 WebUI 内绑定（服务端调用用） |
+| `PI_WEB_PLATFORM_PUBLIC_URL` | 平台对外地址（可选）。OIDC 等需要浏览器跳转平台时使用；留空时若平台地址是 127.0.0.1/localhost，会自动改用浏览器访问 WebUI 的主机名 + 平台端口 |
 | `PI_WEB_DATA_DIR` | 会话元数据 / 项目数据目录 |
 | `PI_WEB_SANDBOX_EXTENSION_PATH` | 沙盒桥接扩展路径（会话以 `.pi/extensions/` 发现加载） |
 | `PI_WEB_LAB_TRAINING` | 教学面板功能开关 |

@@ -15,6 +15,59 @@ export function platformUrl(): string {
   return base;
 }
 
+function isLoopbackHostname(hostname: string): boolean {
+  const host = hostname.toLowerCase();
+  return host === "localhost" || host === "127.0.0.1" || host === "0.0.0.0" || host === "::1" || host === "[::1]";
+}
+
+function normalizeBrowserBase(raw: string): string | undefined {
+  try {
+    const url = new URL(raw.trim());
+    if (url.protocol !== "http:" && url.protocol !== "https:") return undefined;
+    if (url.username || url.password || url.search || url.hash) return undefined;
+    return `${url.origin}${url.pathname.replace(/\/+$/, "")}`;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Platform base URL a *browser* can reach, for redirects (OIDC begin).
+ *
+ * `platformUrl()` is the server-to-server address and is normally
+ * `http://127.0.0.1:<port>`; sending the browser there would point at the
+ * user's own machine. `PI_WEB_PLATFORM_PUBLIC_URL` overrides explicitly;
+ * otherwise a loopback platform host is rewritten to the hostname the browser
+ * used for pi-web (`browserOrigin`), keeping the platform port (standard
+ * co-located deployment). The caller supplies the browser origin so this module
+ * stays free of request/settings imports (avoids a server-settings → mode-homes
+ * → client cycle).
+ */
+export function platformBrowserUrl(browserOrigin: string): string {
+  const configured = process.env.PI_WEB_PLATFORM_PUBLIC_URL;
+  if (configured?.trim()) {
+    const normalized = normalizeBrowserBase(configured);
+    if (normalized) return normalized;
+    console.warn("[pi-web] ignoring invalid PI_WEB_PLATFORM_PUBLIC_URL");
+  }
+  const base = new URL(platformUrl());
+  const basePath = base.pathname.replace(/\/+$/, "");
+  if (!isLoopbackHostname(base.hostname)) {
+    return `${base.origin}${basePath}`;
+  }
+  let origin: URL;
+  try {
+    origin = new URL(browserOrigin);
+  } catch {
+    return `${base.origin}${basePath}`;
+  }
+  if (isLoopbackHostname(origin.hostname)) {
+    return `${base.origin}${basePath}`;
+  }
+  base.hostname = origin.hostname;
+  return `${base.protocol}//${base.host}${basePath}`;
+}
+
 function toError(status: number, body: unknown): PlatformError {
   const err: PlatformError = new Error(
     body && typeof body === "object" && "message" in body && typeof (body as { message: unknown }).message === "string"

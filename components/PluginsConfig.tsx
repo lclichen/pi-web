@@ -841,6 +841,18 @@ export function PluginsConfig({
     void loadPlugins();
   }, [cwd]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // 全局配置里切换离线包模式 / 镜像后，本分区通常已挂载但不会重新拉取；
+  // 重新加载 /api/plugins 以刷新 packagesOffline（按钮禁用状态与提示条）。
+  useEffect(() => {
+    const refresh = () => {
+      setUpdateStatuses({});
+      setUpdateError(null);
+      void loadPlugins();
+    };
+    window.addEventListener("pi-web:server-settings-changed", refresh);
+    return () => window.removeEventListener("pi-web:server-settings-changed", refresh);
+  }, [loadPlugins]);
+
   useEffect(() => {
     if (selected) setLastSettingsSelection("plugins", selected, cwd);
   }, [cwd, selected]);

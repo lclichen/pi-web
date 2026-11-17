@@ -15,7 +15,7 @@
 #
 # 首次运行前可用环境变量定制初始管理员密码：
 #   ADMIN_PASSWORD='你的强密码' ./scripts/start-all.sh
-# （不设则随机生成并展示/落盘 admin-password.txt；平台要求至少 8 字符）
+# （不设则使用统一初始密码 amedac-admin，并落盘 admin-password.txt；平台要求至少 8 字符）
 #
 # 端口自动管理：无显式指定时从偏好端口（3000/30141）开始探测空闲端口，
 # 选中的端口写入 run/ports.env 供下次优先复用；以下途径可固定端口（优先级
@@ -49,13 +49,12 @@ NODE_BIN="$PKG/runtime/bin/node"
 [ -x "$NODE_BIN" ] || NODE_BIN="$(command -v node || true)"
 [ -n "$NODE_BIN" ] || { echo "ERROR: 未找到 Node.js（runtime/bin/node 与 PATH 均不可用）" >&2; exit 1; }
 
-# 合并 pi 配置模板（幂等）。AppImage 下 AppRun 已运行过并设置了
-# PI_CONFIG_LINK_ROOT（本次挂载点），这里不覆盖；tar.gz 下本脚本往往是
-# 用户的第一个入口（README 快速开始），必须补跑——否则 ~/.pi/agent 的
-# npm/ 与随包扩展软链不会建立，pi-web 沙盒会话缺扩展。
+# 合并 pi 配置模板（幂等）。AppImage 下 AppRun 已运行过并设置了PI_CONFIG_LINK_ROOT（本次挂载点），这里不覆盖；
+# tar.gz 下本脚本往往是用户的第一个入口（README 快速开始），必须补跑——否则 ~/.pi/agent 的 npm/ 与随包扩展软链不会建立，pi-web 沙盒会话缺扩展。
+# 无事可做时该脚本自身静默退出；实际有动作时按其输出约定打印 >>（常规）/!!（显著动作） 行，经 update_project.py 部署时默认折叠（--verbose 全量透传）。
 if [ -x "$PKG/scripts/install-pi-config.sh" ] && [ -d "$PKG/config/pi" ]; then
   export PI_CONFIG_LINK_ROOT="${PI_CONFIG_LINK_ROOT:-$PKG}"
-  bash "$PKG/scripts/install-pi-config.sh" >/dev/null 2>&1 \
+  bash "$PKG/scripts/install-pi-config.sh" \
     || echo -e '\033[1;33m!!\033[0m pi 配置模板合并失败（不影响服务启动；可手动执行 scripts/install-pi-config.sh 排查）'
 fi
 
@@ -180,20 +179,20 @@ start_platform() {
     generated=1
     log "生成默认平台配置: $PLATFORM_ENV_FILE"
     mkdir -p "$(dirname "$PLATFORM_ENV_FILE")"
-    # 生产模式强制强密钥：JWT ≥32 字符、管理员密码不能是默认弱值。
-    # 管理员密码随机生成并落盘 admin-password.txt（仅属主可读），
-    # 登录后可在 WebUI 内修改，改完可删掉该文件（密码展示也会随之消失）。
+    # 生产模式强制强密钥：JWT ≥32 字符、管理员密码不能是已知默认弱值。
+    # 管理员初始密码统一为 amedac-admin 并落盘 admin-password.txt（仅属主可读），
+    # 登录后建议在 WebUI 内修改；首次登录成功后该文件会由 WebUI 删除。
     # 注意：端口不在本文件里——由 start-all 自动探测并记忆在 run/ports.env；
     # 要固定端口就在此文件加一行 PORT=xxxx（优先级高于自动探测）。
     JWT="$(head -c 64 /dev/urandom | od -An -tx1 | tr -d ' \n')"
-    # 管理员初始密码：默认随机生成；启动前手动指定：环境变量 ADMIN_PASSWORD=xxx
-    # （平台生产模式会拒绝弱密码——至少 8 字符，且不能是已知弱默认口令，
-    # 不满足时平台启动自检会直接报错退出）。
+    # 管理员初始密码：默认统一为 amedac-admin（内网部署，方便首次登录）；
+    # 启动前可用 ADMIN_PASSWORD=xxx 覆盖。平台生产模式会拒绝已知弱默认值，
+    # 但 amedac-admin 不在拒绝名单内；登录后建议在 WebUI 内修改。
     if [ -n "${ADMIN_PASSWORD:-}" ]; then
       ADMIN_PW="$ADMIN_PASSWORD"
-      warn "使用 ADMIN_PASSWORD 指定的管理员初始密码（不会随机生成）"
+      warn "使用 ADMIN_PASSWORD 指定的管理员初始密码（不会使用统一初始密码）"
     else
-      ADMIN_PW="ame-$(head -c 12 /dev/urandom | base64 | tr -d '=+/')A7"
+      ADMIN_PW="amedac-admin"
     fi
     cat > "$PLATFORM_ENV_FILE" <<EOF
 # sandbox-platform 配置（本文件由 start-all.sh 首次运行生成，可自由编辑）
@@ -216,12 +215,12 @@ TRUST_PROXY=0
 EOF
     printf '%s\n' "$ADMIN_PW" > "$ADMIN_PW_FILE"
     chmod 600 "$PLATFORM_ENV_FILE" "$ADMIN_PW_FILE"
-    # 初始密码直接展示在启动输出里（而不是只给一个文件路径）；登录后
-    # 修改密码并删除 admin-password.txt，之后的启动不再展示。
+    # 初始密码直接展示在启动输出里（而不是只给一个文件路径）；首次登录
+    # 成功后 WebUI 会消费并删除 admin-password.txt，之后的启动不再展示。
     warn "管理员账号（平台与 WebUI 共用）: admin"
     warn "初始密码: $ADMIN_PW"
-    warn "（已同时保存到 $(basename "$CONFIG_DIR")/admin-password.txt；登录后请立即修改密码，"
-    warn " 修改后删除该文件，启动时就不会再展示。）"
+    warn "（已同时保存到 $(basename "$CONFIG_DIR")/admin-password.txt；建议登录后在 设置 → 账户 修改密码，"
+    warn " 首次登录成功后该文件会自动删除；内网部署不修改也可继续使用。）"
   fi
 
   [ -f "$PLATFORM_DIR/.env" ] && \
@@ -392,11 +391,11 @@ if [ "$START_WEB" = "1" ]; then
   log "全部服务已启动:"
   log "  沙盒平台  http://127.0.0.1:$PLATFORM_PORT  (logs/platform.log)"
   log "  WebUI     http://0.0.0.0:$WEB_PORT        (logs/web.log)"
-  # 初始密码仍在（未修改/未删文件）时，每次启动都直接展示出来——用户
-  # 不需要去翻文件路径；改密并删除 admin-password.txt 后不再展示。
+  # 初始密码仍在（未登录/未删文件）时，每次启动都直接展示出来——用户
+  # 不需要去翻文件路径；首次登录成功后 WebUI 会自动删除该文件。
   if [ -f "$ADMIN_PW_FILE" ]; then
-    warn "管理员初始密码仍是生成值: admin / $(head -n 1 "$ADMIN_PW_FILE" 2>/dev/null || echo '?')"
-    warn "（登录 WebUI 修改密码后删除 $ADMIN_PW_FILE，启动时就不会再展示）"
+    warn "管理员仍在使用初始密码: admin / $(head -n 1 "$ADMIN_PW_FILE" 2>/dev/null || echo '?')"
+    warn "（建议登录后进入 设置 → 账户 修改；首次登录成功后 $ADMIN_PW_FILE 会自动删除）"
   fi
   log "停止: ./scripts/stop-all.sh   状态: ./scripts/status-all.sh"
 else

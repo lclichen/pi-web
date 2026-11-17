@@ -130,12 +130,12 @@ cd amedac.ai-pi-linux-x64
 
 首次运行会自动完成：
 
-1. 生成 `config/platform.env`（sqlite 数据库落在 `data/platform/`、64 位随机 JWT 密钥、随机强密码的种子管理员——初始密码写入 `config/admin-password.txt`，仅属主可读）；
+1. 生成 `config/platform.env`（sqlite 数据库落在 `data/platform/`、64 位随机 JWT 密钥、统一初始密码 `amedac-admin` 的种子管理员——可用 `ADMIN_PASSWORD` 覆盖；初始密码写入 `config/admin-password.txt`，仅属主可读）；
 2. 启动沙盒平台（端口 `3000`，`/health` 就绪才继续）；
 3. 生成 `config/piweb.env`（指向平台、开启登录、数据落 `data/piweb/`、扩展指到包内 `sandbox/extension/`）；
 4. 启动 WebUI（端口 `30141`）。
 
-浏览器访问 `http://<主机IP>:30141/`，用 **admin** 和 **`config/admin-password.txt` 里的初始密码**登录（WebUI 与沙盒平台共用同一套账号），**登录后立即改密并可删除该密码文件**。
+浏览器访问 `http://<主机IP>:30141/`，用 **admin** 和统一初始密码 **`amedac-admin`**（或 `config/admin-password.txt` 中的值；WebUI 与沙盒平台共用同一套账号）登录。建议登录后在 设置 → 账户 修改密码；内网部署可不改。首次用初始密码登录成功后该文件会自动删除。
 
 其他命令：
 

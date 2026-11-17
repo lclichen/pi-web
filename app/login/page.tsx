@@ -93,7 +93,7 @@ function LoginForm() {
         }
         if (d.usedInitialPassword) {
           // 仍在用初始密码——文件已被服务端消费（横幅消失），进站后提示改密。
-          setNotice("你正在使用初始密码登录。为了安全，请进入 设置 → 账户 立即修改密码。");
+          setNotice("你正在使用初始密码登录。建议进入 设置 → 账户 修改密码（内网部署可不改）。");
         }
         router.replace(next);
         router.refresh();
@@ -206,7 +206,7 @@ function LoginForm() {
                   填入并登录
                 </button>
                 <span style={{ color: "var(--text-muted, #9a9a9a)" }}>
-                  出于安全，初始密码仅在本机（127.0.0.1）显示；登录后请立即在 设置 → 账户 修改密码。
+                  初始密码仅在本机（127.0.0.1）显示；建议登录后在 设置 → 账户 修改密码（内网部署可不改）。
                 </span>
               </>
             ) : (

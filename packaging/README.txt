@@ -14,9 +14,9 @@
     ./scripts/start-all.sh   —— 一键启动 沙盒平台 + WebUI（首次运行自动生成配置）
     ./scripts/status-all.sh  —— 服务状态与日志位置
     ./scripts/stop-all.sh    —— 停止全部
-    浏览器访问 http://<本机IP>:30141 ，管理员初始密码在首次启动时随机生成：
-    查看数据目录下 config/admin-password.txt（默认 ~/.local/share/amedac/config/，
-    或启动日志中），登录后请立即改密并删除该文件。
+    浏览器访问 http://<本机IP>:30141 ，管理员账号 admin，统一初始密码 amedac-admin；
+    初始密码同时保存在数据目录下 config/admin-password.txt（默认 ~/.local/share/amedac/config/，
+    或见启动日志）。建议登录后在 设置 → 账户 修改；首次登录成功后该文件会自动删除。
     创建沙箱容器需要目标机已安装 Apptainer（https://apptainer.org）。
 
   纯 pi / pi-web（无沙盒组件）:

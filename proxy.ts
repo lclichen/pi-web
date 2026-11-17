@@ -2,6 +2,13 @@ import { NextResponse, type NextRequest } from "next/server";
 import { isApiRequestAllowed, isApiRequestHostAllowed } from "@/lib/request-security";
 import { isValidBasicAuthorization, isWebPasswordEnabled } from "@/lib/web-auth";
 import { getWebSession } from "@/lib/web-session";
+import {
+  embedResponseHeaders,
+  embedTokenFromPath,
+  isEmbedApiAllowed,
+  resolveEmbedAccess,
+  resolveEmbedRequest,
+} from "@/lib/embed-auth";
 
 // Next 16 runs the proxy (middleware) on the Node.js runtime, so it can read
 // the real session store — not just cookie presence. This is the central
@@ -18,6 +25,39 @@ export function proxy(request: NextRequest) {
       return new NextResponse("Untrusted request", { status: 403 });
     }
     return NextResponse.json({ error: "Untrusted API request" }, { status: 403 });
+  }
+
+  // Embed tokens are bearer credentials scoped to one workspace. API requests
+  // carrying one bypass the cookie/Basic gates but are still default-denied to
+  // the chat-only surface; the routes re-check identity and scope.
+  if (isApiRequest) {
+    const embed = resolveEmbedRequest(request);
+    if (embed.kind === "invalid") {
+      return NextResponse.json({ error: "嵌入链接已失效" }, { status: 401 });
+    }
+    if (embed.kind === "ok") {
+      if (!isEmbedApiAllowed(request.method, pathname)) {
+        return NextResponse.json({ error: "Access denied" }, { status: 403 });
+      }
+      const response = NextResponse.next();
+      response.headers.set("Cache-Control", "no-store");
+      return response;
+    }
+  }
+
+  // The embed page validates its own token server-side. Proxy only adds the
+  // product's frame-ancestors/Referrer policy so a valid link can be framed by
+  // the approved parent origins; an invalid link renders the not-found page.
+  if (pathname === "/embed" || pathname.startsWith("/embed/")) {
+    const response = NextResponse.next();
+    const token = embedTokenFromPath(pathname);
+    const access = token ? resolveEmbedAccess(token) : null;
+    if (access) {
+      for (const [key, value] of Object.entries(embedResponseHeaders(access.profile))) {
+        response.headers.set(key, value);
+      }
+    }
+    return response;
   }
 
   // Relay agent downloads are curl-able installers (the pairing modal emits
@@ -84,4 +124,4 @@ export function proxy(request: NextRequest) {
   return NextResponse.next();
 }
 
-export const config = { matcher: ["/", "/api/:path*"] };
+export const config = { matcher: ["/", "/embed", "/embed/:path*", "/api/:path*"] };

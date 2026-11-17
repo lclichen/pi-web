@@ -98,6 +98,11 @@ export async function getAllowedFileRootsForRequest(req: Request | undefined | n
     // must never hand host roots to an unauthenticated request).
     return new Set<string>();
   }
+  // Embed tokens are fenced to the token's workspace even when the owner is
+  // an admin: the token must never widen into every host directory.
+  if (identity.session?.embed) {
+    return new Set(identity.session.embed.allowedRoots);
+  }
   // No request object = trusted in-process caller (auth off / server-side).
   if (!identity.session || identity.session.user.id === 0) {
     return getAllowedFileRoots({ kind: "host" });

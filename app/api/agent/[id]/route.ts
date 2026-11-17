@@ -1,9 +1,58 @@
 import { NextResponse } from "next/server";
 import { checkLiveSessionAccess, resolveSessionAccess, sessionOwnerInfo } from "@/lib/session-access";
-import { startRpcSession, getRpcSession, setRpcSessionTools } from "@/lib/rpc-manager";
+import { startRpcSession, getRpcSession, setRpcSessionTools, type AgentSessionWrapper } from "@/lib/rpc-manager";
 import { restoreSessionOptions } from "@/lib/session-restore-options";
 import { requireUserIdentity } from "@/lib/web-session";
 import { hasAdminTakeover, isReadOnlyAgentCommand } from "@/lib/admin-takeover";
+import {
+  isEmbedCommandAllowed,
+  normalizeEmbedCommandName,
+  slashCommandNameFromText,
+} from "@/lib/embed-commands";
+
+/** Keep the product's command palette and the actual command surface aligned. */
+function filterEmbedCommandResult(result: unknown, allowedCommands: string[]): unknown {
+  if (!result || typeof result !== "object" || !Array.isArray((result as { commands?: unknown }).commands)) {
+    return result;
+  }
+  const commands = (result as { commands: unknown[] }).commands.filter((command) => {
+    if (!command || typeof command !== "object") return false;
+    const name = (command as { name?: unknown }).name;
+    return typeof name === "string" && isEmbedCommandAllowed(allowedCommands, name);
+  });
+  return { ...result, commands };
+}
+
+/**
+ * A slash prompt may name a command that the product does not expose. The
+ * client hides/blocks known commands, but direct API callers are checked here
+ * against the session's registered command list. Non-command slash text such
+ * as "/tmp/file" is left alone.
+ */
+async function embedPromptCommandDenied(
+  session: AgentSessionWrapper,
+  body: { type?: unknown; message?: unknown },
+  allowedCommands: string[],
+): Promise<string | null> {
+  if (body.type !== "prompt" || typeof body.message !== "string") return null;
+  const name = slashCommandNameFromText(body.message);
+  if (!name || isEmbedCommandAllowed(allowedCommands, name)) return null;
+  if (session.isRunning()) return null;
+  try {
+    const probe = (await session.send({ type: "get_commands" })) as {
+      commands?: Array<{ name?: unknown }>;
+    } | null;
+    const target = normalizeEmbedCommandName(name);
+    const known = (probe?.commands ?? []).some(
+      (command) =>
+        typeof command?.name === "string" && normalizeEmbedCommandName(command.name) === target,
+    );
+    return known ? `命令 /${name} 未对当前产品开放` : null;
+  } catch {
+    // Probe failure should not turn arbitrary slash-prefixed text into a 403.
+    return null;
+  }
+}
 
 // POST /api/agent/[id] - Send a command to an existing session
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -26,6 +75,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     // 管理员支持视图：默认只读。运行中会话的归属可见；写入类命令需要显式
     // 接管（POST /api/sessions/:id/takeover），避免"点进去就改了别人的会话"。
     const identity = requireUserIdentity(req);
+    const embed = identity.ok ? identity.session.embed : undefined;
     if (identity.ok) {
       const caller = identity.session.user;
       if (caller.role === "admin" && caller.id !== 0 && !isReadOnlyAgentCommand(commandType ?? "")) {
@@ -71,9 +121,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       });
     }
     if (existing?.isAlive()) {
+      if (embed) {
+        const denied = await embedPromptCommandDenied(existing, body, embed.allowedCommands);
+        if (denied) return NextResponse.json({ error: denied, code: "embed_command_denied" }, { status: 403 });
+      }
       const result = await existing.send(body);
       promptAccepted = body.type === "prompt";
-      return NextResponse.json({ success: true, data: result });
+      return NextResponse.json({
+        success: true,
+        data: embed && body.type === "get_commands" ? filterEmbedCommandResult(result, embed.allowedCommands) : result,
+      });
     }
 
     const access = await resolveSessionAccess(req, id);
@@ -99,10 +156,17 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       ...options,
       ...(toolNames !== undefined ? { toolNames } : {}),
     });
+    if (embed) {
+      const denied = await embedPromptCommandDenied(session, body, embed.allowedCommands);
+      if (denied) return NextResponse.json({ error: denied, code: "embed_command_denied" }, { status: 403 });
+    }
     const result = await session.send(body);
     promptAccepted = body.type === "prompt";
 
-    return NextResponse.json({ success: true, data: result });
+    return NextResponse.json({
+      success: true,
+      data: embed && body.type === "get_commands" ? filterEmbedCommandResult(result, embed.allowedCommands) : result,
+    });
   } catch (error) {
     return NextResponse.json(
       {

@@ -21,6 +21,11 @@ async function pathAllowedForCaller(req: Request, target: string, extraRoots: st
   if (!identity.ok) return false;
   const allowedRoots = new Set(await getAllowedFileRootsForRequest(req));
   const { user } = identity.session;
+  if (identity.session.embed) {
+    // Token holders may only read within their workspace; no owner-wide
+    // project-home or user-config fallback.
+    return isExistingFilePathAllowed(target, allowedRoots);
+  }
   if (isUserScopedConfig(user.id)) {
     allowedRoots.add(userSkillsDir(user.id));
     allowedRoots.add(path.join(userConfigDir(user.id), ".agents", "skills"));

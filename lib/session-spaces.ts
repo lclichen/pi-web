@@ -62,6 +62,11 @@ export function isPathInSpace(filePath: string, space: SessionSpace): boolean {
  * caller's user shard, unless an admin explicitly asks for the host space.
  */
 export function spaceForRequest(session: WebSession, searchParams?: URLSearchParams): SessionSpace {
+  if (session.embed) {
+    // Embed tokens only ever see the token owner's own shard (auth-off host
+    // space). They never inherit the admin ?space=host escape hatch.
+    return session.user.id === 0 ? { kind: "host" } : { kind: "user", userId: session.user.id };
+  }
   if (session.user.id === 0) return { kind: "host" }; // implicit host identity (auth off)
   if (searchParams?.get("space") === "host" && session.user.role === "admin") {
     return { kind: "host" };

@@ -128,11 +128,15 @@ export async function GET(req: Request) {
   if (!identity.ok) return Response.json({ error: "登录已失效" }, { status: identity.status });
   const { user } = identity.session;
   const isAdmin = user.role === "admin";
+  const embed = identity.session.embed;
 
   // Project-scoped model config: ?projectId= resolves the home server-side
   // (ownership-checked), so a not-yet-materialized session can pick models.
   const projectId = new URL(req.url).searchParams.get("projectId");
   const explicitCwd = new URL(req.url).searchParams.get("cwd");
+  if (embed && projectId && (embed.scope.kind !== "project" || projectId !== embed.scope.projectId)) {
+    return Response.json({ error: "Access denied" }, { status: 403 });
+  }
   let cwd: string;
   if (projectId) {
     const project = getOwnedProject(projectId, user.id, isAdmin);
@@ -158,6 +162,11 @@ export async function GET(req: Request) {
     }
     const allowedRoots = await getAllowedFileRootsForRequest(req);
     if (!isExistingFilePathAllowed(cwd, allowedRoots)) {
+      // Embed tokens must stay inside their workspace — no owner/admin-wide
+      // project-home fallback.
+      if (embed) {
+        return Response.json({ error: "Access denied" }, { status: 403 });
+      }
       // Project homes are config carriers outside the regular roots — allow the
       // caller's own projects (the two-layer merge reads their .pi/ here).
       // Existing sessions' cwds pass too: the transient allowed-roots set is

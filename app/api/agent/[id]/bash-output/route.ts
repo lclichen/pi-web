@@ -10,6 +10,8 @@ import {
 import { isBashOutputPathReferencedBySession } from "@/lib/session-file-references";
 import { requireUserIdentity } from "@/lib/web-session";
 import { spaceForRequest } from "@/lib/session-spaces";
+import { checkLiveSessionAccess, resolveSessionAccess } from "@/lib/session-access";
+import { getRpcSession } from "@/lib/rpc-manager";
 
 // GET /api/agent/[id]/bash-output?path=<absPath>
 // Reads a bash output temp file referenced by this session. Inline display is
@@ -18,6 +20,14 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const { id } = await params;
   const identity = requireUserIdentity(_req);
   if (!identity.ok) return NextResponse.json({ error: "登录已失效" }, { status: identity.status });
+  const live = getRpcSession(id);
+  if (live?.isAlive()) {
+    const fence = checkLiveSessionAccess(_req, id);
+    if (!fence.ok) return NextResponse.json({ error: fence.error }, { status: fence.status });
+  } else {
+    const access = await resolveSessionAccess(_req, id);
+    if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
+  }
   const space = spaceForRequest(identity.session);
   let path: string | null = null;
   let download = false;
@@ -38,7 +48,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ error: "invalid path" }, { status: 400 });
   }
 
-  if (!(await isBashOutputPathReferencedBySession(resolved, id))) {
+  if (!(await isBashOutputPathReferencedBySession(resolved, id, space))) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 

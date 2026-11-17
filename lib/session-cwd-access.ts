@@ -1,6 +1,7 @@
 import { listAllSessions } from "./session-reader";
 import { requireUserIdentity } from "./web-session";
 import { spaceForRequest } from "./session-spaces";
+import { samePath } from "./paths";
 import type { SessionSpace } from "./session-spaces";
 
 /**
@@ -17,6 +18,8 @@ import type { SessionSpace } from "./session-spaces";
 async function callerSessionCwds(req: Request): Promise<string[]> {
   const identity = requireUserIdentity(req);
   if (!identity.ok) return [];
+  // Token scopes must not widen through the owner's other sessions.
+  if (identity.session.embed) return [];
   const { user } = identity.session;
   const spaces: SessionSpace[] =
     user.id === 0 || user.role === "admin"
@@ -34,6 +37,9 @@ async function callerSessionCwds(req: Request): Promise<string[]> {
 export async function isCallerSessionCwdAllowed(req: Request, cwd: string): Promise<boolean> {
   const identity = requireUserIdentity(req);
   if (!identity.ok) return false;
+  if (identity.session.embed) {
+    return samePath(cwd, identity.session.embed.scope.cwd);
+  }
   const { user } = identity.session;
 
   // Admins (and the implicit host identity of auth-off mode) may open any

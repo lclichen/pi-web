@@ -4,6 +4,8 @@ import { join } from "node:path";
 import { dataDir } from "./mode-homes.ts";
 import { writePrivateFileAtomicSync } from "./atomic-file.ts";
 import { platformDelete } from "./platform/client.ts";
+import { isEmbedApiAllowed, resolveEmbedRequest } from "./embed-auth.ts";
+import type { EmbedScope } from "./embed-types.ts";
 
 /**
  * Web login sessions for PI_WEB_AUTH=on (multi-user mode).
@@ -58,6 +60,16 @@ export interface WebSession {
    * API key, so every other route rejects it.
    */
   changeTicket?: string;
+  /**
+   * Set when the request authenticated with an embedded-widget token instead
+   * of a login cookie. Scope and command limits are enforced downstream.
+   */
+  embed?: {
+    scope: EmbedScope;
+    productId: string;
+    allowedRoots: string[];
+    allowedCommands: string[];
+  };
 }
 
 export const WEB_SESSION_COOKIE = "pi_web_sid";
@@ -273,6 +285,38 @@ export function hostIdentity(): PlatformUser {
 export function requireUserIdentity(
   request: Request,
 ): { ok: true; session: WebSession } | { ok: false; status: number } {
+  // Embed tokens take precedence over cookies: an embed page must stay inside
+  // its workspace even when the surrounding browser also has a pi-web login.
+  const embed = request ? resolveEmbedRequest(request) : { kind: "none" as const };
+  if (embed.kind === "invalid") return { ok: false, status: 401 };
+  if (embed.kind === "ok") {
+    let pathname = "";
+    try {
+      pathname = new URL(request.url).pathname;
+    } catch {
+      return { ok: false, status: 400 };
+    }
+    if (!isEmbedApiAllowed(request.method, pathname)) return { ok: false, status: 403 };
+    const { record, profile } = embed.access;
+    return {
+      ok: true,
+      session: {
+        sid: `embed:${record.id}`,
+        user: { ...record.user },
+        apiKey: record.apiKey,
+        apiKeyId: record.apiKeyId,
+        createdAt: record.createdAt,
+        lastSeenAt: Date.now(),
+        embed: {
+          scope: { ...record.scope },
+          productId: record.productId,
+          allowedRoots: [...record.allowedRoots],
+          allowedCommands: [...profile.allowedCommands],
+        },
+      },
+    };
+  }
+
   if (!isWebAuthEnabled()) {
     return {
       ok: true,

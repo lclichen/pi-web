@@ -17,6 +17,7 @@ import { invalidateSessionListForSession } from "@/lib/session-reader";
 import { checkRpcSessionQuota, startRpcSession } from "@/lib/rpc-manager";
 import { requireUserIdentity } from "@/lib/web-session";
 import { isSessionMode, modeAllowedForUser, type SessionMode } from "@/lib/session-modes";
+import { samePath } from "@/lib/paths";
 import { spaceDir } from "@/lib/session-spaces";
 import { ensureSandboxHome, ensureLocalHome, ensureQuickHome } from "@/lib/mode-homes";
 import { ensureQuickSessionWorkspace } from "@/lib/quick-session";
@@ -95,13 +96,36 @@ export async function POST(req: Request) {
   let commandType: string | undefined;
   let promptAccepted = false;
   try {
-    const body = (await req.json()) as { cwd?: string; mode?: unknown; [key: string]: unknown };
-    const { cwd, ...command } = body;
-    commandType = typeof command.type === "string" ? command.type : undefined;
+    const body = (await req.json()) as { cwd?: string; mode?: unknown; projectId?: unknown; [key: string]: unknown };
+    const embed = identity.session.embed;
     const rawMode = body.mode;
     if (rawMode !== undefined && !isSessionMode(rawMode)) {
       return NextResponse.json({ error: `Invalid mode: ${String(rawMode)}` }, { status: 400 });
     }
+    if (embed) {
+      // New sessions may only be created inside the token's workspace.
+      if (embed.scope.kind === "project") {
+        const requestedProjectId = typeof body.projectId === "string" ? body.projectId : undefined;
+        if (requestedProjectId && requestedProjectId !== embed.scope.projectId) {
+          return NextResponse.json({ error: "Access denied" }, { status: 403 });
+        }
+        body.projectId = embed.scope.projectId;
+        body.cwd = embed.scope.cwd;
+        delete body.mode;
+      } else {
+        if (typeof body.projectId === "string" && body.projectId) {
+          return NextResponse.json({ error: "Access denied" }, { status: 403 });
+        }
+        if (typeof body.cwd === "string" && body.cwd && !samePath(body.cwd, embed.scope.cwd)) {
+          return NextResponse.json({ error: "Access denied" }, { status: 403 });
+        }
+        body.cwd = embed.scope.cwd;
+        body.mode = "host";
+        delete body.projectId;
+      }
+    }
+    const { cwd, ...command } = body;
+    commandType = typeof command.type === "string" ? command.type : undefined;
     // The PROJECT decides the runtime mode for project-scoped sessions — an
     // absent client mode must not register the live session as "host": the
     // ownership registry outranks sidecar metas in the remote file/terminal

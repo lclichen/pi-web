@@ -293,8 +293,12 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
     const allowedRoots = await allowedRootsWithSessionCwds(request, await getAllowedFileRootsForRequest(request));
     const allowedByRoot = isFilePathAllowed(filePath, allowedRoots);
+    const identity = requireUserIdentity(request);
+    const embedToken = identity.ok ? identity.session.embed : undefined;
+    // Embed tokens must not borrow another session's file references to step
+    // outside their workspace; the allowed-roots fence is authoritative.
     const allowedBySessionReference =
-      !allowedByRoot && type !== "list" && (await isFilePathReferencedBySession(filePath, sessionId));
+      !embedToken && !allowedByRoot && type !== "list" && (await isFilePathReferencedBySession(filePath, sessionId));
     if (!allowedByRoot && !allowedBySessionReference) {
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }

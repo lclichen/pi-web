@@ -1,8 +1,26 @@
-import { resolveSessionPath } from "./session-reader";
-import { getRpcSessionOwner } from "./rpc-manager";
+import { readSessionHeader, resolveSessionPath } from "./session-reader";
+import { getRpcSession, getRpcSessionOwner } from "./rpc-manager";
 import { resolveSessionMode } from "./session-metas";
 import { requireUserIdentity, type WebSession } from "./web-session";
 import { spaceForRequest, type SessionSpace } from "./session-spaces";
+import { samePath } from "./paths";
+
+/**
+ * Embed tokens are workspace-scoped. Live sessions expose their real cwd and
+ * projectId; cold host sessions are matched through the session-file header.
+ */
+function embedSessionMatches(session: WebSession, sessionId: string, path: string | null): boolean {
+  const scope = session.embed?.scope;
+  if (!scope) return true;
+  const live = getRpcSession(sessionId);
+  const meta = resolveSessionMode(sessionId);
+  if (scope.kind === "project") {
+    return (live?.projectId ?? meta?.projectId) === scope.projectId;
+  }
+  if ((live?.mode ?? meta?.mode ?? "host") !== "host") return false;
+  const cwd = live?.cwd ?? (path ? readSessionHeader(path)?.cwd : undefined);
+  return Boolean(cwd && samePath(cwd, scope.cwd));
+}
 
 /**
  * 会话归属（管理员支持视图的"归属提示/只读"判定）。
@@ -43,6 +61,9 @@ export async function resolveSessionAccess(
   // Auth off: implicit host admin sees everything (single-user status quo).
   if (user.id === 0) {
     const path = await resolveSessionPath(sessionId, { kind: "host" });
+    if (!embedSessionMatches(session, sessionId, path)) {
+      return { ok: false, status: 404, error: "会话不存在" };
+    }
     return { ok: true, session, space: { kind: "host" }, path };
   }
 
@@ -53,13 +74,17 @@ export async function resolveSessionAccess(
 
   const space = spaceForRequest(session, searchParams);
   let path = await resolveSessionPath(sessionId, space);
-  if (!path && space.kind !== "host" && user.role === "admin") {
-    // Admin fallback: the host space (CLI sessions).
+  if (!path && space.kind !== "host" && user.role === "admin" && !session.embed) {
+    // Admin fallback: the host space (CLI sessions). Embed tokens never
+    // inherit this fallback — their workspace fence is the whole point.
     path = await resolveSessionPath(sessionId, { kind: "host" });
   }
   // resolveSessionPath already refuses paths outside the space fence; a miss
   // means "not yours" (or genuinely missing) — 404 either way for non-admins.
   if (!path && user.role !== "admin") {
+    return { ok: false, status: 404, error: "会话不存在" };
+  }
+  if (session.embed && (!path || !embedSessionMatches(session, sessionId, path))) {
     return { ok: false, status: 404, error: "会话不存在" };
   }
   return { ok: true, session, space, path };
@@ -88,6 +113,9 @@ export function checkLiveSessionAccess(
   const identity = requireUserIdentity(req);
   if (!identity.ok) return { ok: false, status: 401, error: "登录已失效" };
   const { user } = identity.session;
+  if (!embedSessionMatches(identity.session, sessionId, null)) {
+    return { ok: false, status: 404, error: "会话不存在" };
+  }
   if (user.id === 0) return { ok: true };
   const owner = getRpcSessionOwner(sessionId);
   if (owner && owner.ownerId !== 0 && owner.ownerId !== user.id && user.role !== "admin") {

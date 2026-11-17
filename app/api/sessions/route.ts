@@ -17,6 +17,7 @@ import { spaceForRequest } from "@/lib/session-spaces";
 import { getSessionMetas, inferLegacyModeFromCwd } from "@/lib/session-metas";
 import { getProject } from "@/lib/projects";
 import { getAgentForUser } from "@/lib/relay/registry";
+import { filterSessionsForEmbedScope } from "@/lib/embed-scope";
 
 export const dynamic = "force-dynamic";
 
@@ -49,7 +50,7 @@ export async function GET(req: Request) {
       ),
       Promise.resolve(getSessionMetas()),
     ]);
-    const sessions = mergeSessionLists(persistedSessions, runtimeSessions).map((s) => {
+    const allSessions = mergeSessionLists(persistedSessions, runtimeSessions).map((s) => {
       const meta = metas[s.id];
       // 无 meta 的遗留沙箱会话按 cwd 兜底推断，避免落进 Host 目录组。
       const mode = meta?.mode ?? inferLegacyModeFromCwd(s.cwd);
@@ -74,13 +75,17 @@ export async function GET(req: Request) {
         ...(meta?.ownerName ? { ownerName: meta.ownerName } : {}),
       };
     });
+    const sessions = identity.session.embed
+      ? filterSessionsForEmbedScope(allSessions, identity.session.embed.scope)
+      : allSessions;
     // Capture AFTER the scan: mutations during the scan bump the generation,
     // so the client sees a version it cannot reconcile and refreshes again.
     // Per-space generation (dev 批次2): scoped to this caller's space.
     const sessionListVersion = getSessionListVersion(space);
     // Live-sessions are per-user unless the caller is an admin on the host space.
+    const visibleSessionIds = new Set(sessions.map((session) => session.id));
     const runningSessionIds = getRunningRpcSessionInfos()
-      .filter((r) => (user.role === "admin" ? true : r.ownerId === user.id))
+      .filter((r) => (user.role === "admin" ? true : r.ownerId === user.id) && visibleSessionIds.has(r.sessionId))
       .map((r) => r.sessionId);
     // Web-push completion-notification suppression rides along behind the same
     // per-user fence so other users' session ids never leak.

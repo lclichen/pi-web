@@ -627,7 +627,7 @@ function escapeRegExp(value: string): string {
 
 /** 受保护模式的字面量核心：`*.pem` → `.pem`，`secrets/**` → `secrets`。 */
 function literalCore(pattern: string): string | null {
-  let core = pattern
+  const core = pattern
     .replace(/^\*\*\//, "")
     .replace(/\/\*\*$/, "")
     .replace(/\*\*/g, "")

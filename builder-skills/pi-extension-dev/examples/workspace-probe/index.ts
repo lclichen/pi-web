@@ -60,8 +60,6 @@ function workspaceRequest<T>(pi: ExtensionAPI, method: string, params?: unknown)
   return new Promise<T>((resolve, reject) => {
     const event = `${REPLY_PREFIX}${id}`;
     let settled = false;
-    let off: (() => void) | undefined;
-    let timer: ReturnType<typeof setTimeout> | undefined;
     const finish = (fn: () => void) => {
       if (settled) return;
       settled = true;
@@ -69,7 +67,7 @@ function workspaceRequest<T>(pi: ExtensionAPI, method: string, params?: unknown)
       off?.();
       fn();
     };
-    off = pi.events.on(event, (raw: unknown) => {
+    const off = pi.events.on(event, (raw: unknown) => {
       const reply = raw as WorkspaceReply;
       if (reply?.id !== id || reply?.v !== 1) return;
       finish(() => {
@@ -77,7 +75,7 @@ function workspaceRequest<T>(pi: ExtensionAPI, method: string, params?: unknown)
         else reject(new Error(`${reply.error.code}: ${reply.error.message}`));
       });
     });
-    timer = setTimeout(
+    const timer = setTimeout(
       () => finish(() => reject(new Error(`workspace request timed out after ${REQUEST_TIMEOUT_MS}ms`))),
       REQUEST_TIMEOUT_MS,
     );

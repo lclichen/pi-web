@@ -157,7 +157,7 @@ export function ProjectSettingsDialog({ projectId, onClose, onChanged }: Props) 
           />
         </label>
         <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
-          AGENTS.md 保存在项目目录并随"复制项目"携带；会话以此作为提示词上下文（新建会话生效）。 在沙箱/本机会话中由
+          AGENTS.md 保存在项目目录并随「复制项目」携带；会话以此作为提示词上下文（新建会话生效）。 在沙箱/本机会话中由
           Agent 对工作区根 AGENTS.md 的修改也会同步回这里。
         </div>
 

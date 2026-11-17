@@ -93,6 +93,9 @@ export function AdminGlobalConfig() {
       const d = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) throw new Error(d.error ?? `HTTP ${res.status}`);
       setNotice(t("settings.globalConfigSaved"));
+      // 其他分区（插件页的离线状态、镜像提示）已经挂载但不会重新拉取；
+      // 主动通知它们用新设置刷新，否则要等切换/重开页面才生效。
+      window.dispatchEvent(new Event("pi-web:server-settings-changed"));
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -104,7 +107,22 @@ export function AdminGlobalConfig() {
   const bundleDefault = effective?.bundleMaxMb ?? 2048;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 14, padding: "18px 22px", maxWidth: 760 }}>
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: 14,
+        padding: "18px 22px",
+        maxWidth: 760,
+        height: "100%",
+        maxHeight: "100%",
+        boxSizing: "border-box",
+        // The settings dialog's main area is overflow:hidden; sections that do
+        // not manage their own split view (this one) must scroll themselves or
+        // everything below the fold is unreachable.
+        overflowY: "auto",
+      }}
+    >
       <div>
         <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>{t("settings.globalConfig")}</div>
         <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 4, lineHeight: 1.6 }}>

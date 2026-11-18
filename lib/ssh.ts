@@ -7,6 +7,7 @@
  * dedicated filename + explicit deny keep this file out of shared bundles —
  * see DENIED_BASENAMES in project-config-bundle.ts).
  */
+import { randomBytes } from "node:crypto";
 import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Client } from "ssh2";
@@ -320,19 +321,72 @@ export interface SshExecResult {
   stderr: string;
 }
 
+/**
+ * Strip the per-exec fence from a channel's output.
+ *
+ * The remote login shell may print a greeting (`.bashrc`/`.profile`, a
+ * terminal-title escape, …) before the command runs. That text used to appear
+ * in every tool result; the fence keeps only the command's own output. A
+ * missing fence (command replaced the shell or exited early) falls back to the
+ * raw text. Exported for tests.
+ */
+export function stripSshExecFence(text: string): { text: string; code?: number } {
+  const begin = /@@PI_SSH_EXEC_BEGIN_[0-9a-f]+@@/.exec(text);
+  if (!begin) return { text };
+  let out = text.slice(begin.index + begin[0].length);
+  if (out.startsWith("\r\n")) out = out.slice(2);
+  else if (out.startsWith("\n")) out = out.slice(1);
+  const end = /@@PI_SSH_EXEC_END_[0-9a-f]+@@(?:\s+(\d+))?/.exec(out);
+  if (!end) return { text: out };
+  let body = out.slice(0, end.index);
+  if (body.endsWith("\r\n")) body = body.slice(0, -2);
+  else if (body.endsWith("\n")) body = body.slice(0, -1);
+  return { text: body, ...(end[1] !== undefined ? { code: Number(end[1]) } : {}) };
+}
+
 /** Run a command in `cwd` on the remote host (best-effort cd; failures surface via stderr). */
 export function sshExec(client: Client, command: string, cwd: string, timeoutMs = 120_000): Promise<SshExecResult> {
   return new Promise((resolve, reject) => {
     const quotedCwd = `'${cwd.replace(/'/g, `'\\''`)}'`;
+    // The fence absorbs login-shell startup output (a crucial adaptation for
+    // hosts whose .bashrc prints a greeting): stdout/stderr outside the
+    // markers are discarded, the END marker carries the real exit code.
+    const nonce = randomBytes(8).toString("hex");
+    const begin = `@@PI_SSH_EXEC_BEGIN_${nonce}@@`;
+    const end = `@@PI_SSH_EXEC_END_${nonce}@@`;
     // 注意 `{ ${command}; }` 必须单行收尾：`command\n; }` 里的 `;` 会成为
     // 空语句（newline 已终结 command），bash 报 syntax error near `;`。
-    client.exec(`cd ${quotedCwd} 2>/dev/null || cd /; { ${command}; }`, (err, stream) => {
+    const script = [
+      `cd ${quotedCwd} 2>/dev/null || cd /`,
+      `printf '%s\\n' '${begin}'`,
+      `printf '%s\\n' '${begin}' >&2`,
+      `{ ${command}; }`,
+      `rc=$?`,
+      `printf '\\n%s %s\\n' '${end}' "$rc"`,
+      `printf '\\n%s %s\\n' '${end}' "$rc" >&2`,
+      `exit $rc`,
+    ].join("\n");
+    client.exec(script, (err, stream) => {
       if (err) return reject(err);
       let stdout = "";
       let stderr = "";
+      let settled = false;
+      const finish = (fallbackCode: number) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        const out = stripSshExecFence(stdout);
+        const errOut = stripSshExecFence(stderr);
+        const code = out.code ?? errOut.code ?? fallbackCode;
+        resolve({ code, stdout: out.text, stderr: errOut.text });
+      };
       const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
         stream.close();
-        resolve({ code: 124, stdout, stderr: stderr + "\n[timeout]" });
+        const out = stripSshExecFence(stdout);
+        const errOut = stripSshExecFence(stderr);
+        resolve({ code: 124, stdout: out.text, stderr: `${errOut.text}\n[timeout]` });
       }, timeoutMs);
       stream.on("data", (d: Buffer) => {
         stdout += d.toString();
@@ -340,10 +394,7 @@ export function sshExec(client: Client, command: string, cwd: string, timeoutMs 
       stream.stderr.on("data", (d: Buffer) => {
         stderr += d.toString();
       });
-      stream.on("close", (code?: number) => {
-        clearTimeout(timer);
-        resolve({ code: code ?? 0, stdout, stderr });
-      });
+      stream.on("close", (code?: number) => finish(code ?? 0));
     });
   });
 }

@@ -13,7 +13,7 @@ import { join, relative, resolve } from "path";
 import { randomUUID } from "crypto";
 import { dataDir } from "./mode-homes";
 import { cleanupProjectSyncPlans } from "./sync-plan-store";
-import { writeSshConfig, type SshConfigInput } from "./ssh";
+import { dropSshClient, writeSshConfig, type SshConfigInput } from "./ssh";
 import { applyBundleToDirectory, bundleExists, isValidBundleName } from "./config-bundles-store";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { platformUrl } from "./platform/client";
@@ -343,6 +343,13 @@ export function deleteProject(projectId: string): boolean {
   if (!project) return false;
   delete store().data.projects[projectId];
   persist();
+  // Drop the pooled SSH connection (one per project, shared by every session):
+  // a deleted project must not leave a live client behind.
+  try {
+    dropSshClient(projectId);
+  } catch {
+    // best-effort
+  }
   try {
     rmSync(projectHome(project), { recursive: true, force: true });
   } catch {

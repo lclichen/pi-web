@@ -304,7 +304,7 @@ export function requireUserIdentity(
         sid: `embed:${record.id}`,
         user: { ...record.user },
         apiKey: record.apiKey,
-        apiKeyId: record.apiKeyId,
+        apiKeyId: "",
         createdAt: record.createdAt,
         lastSeenAt: Date.now(),
         embed: {

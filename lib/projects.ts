@@ -18,6 +18,7 @@ import { applyBundleToDirectory, bundleExists, isValidBundleName } from "./confi
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { platformUrl } from "./platform/client";
 import { trustProject } from "./project-trust";
+import type { EmbedProjectBinding } from "./embed-types";
 import type { SessionMode } from "./session-modes";
 
 /**
@@ -63,6 +64,8 @@ export interface ProjectRecord {
   ssh?: SshConfigInput;
   /** Optional preset config bundle applied to the fresh home. */
   presetBundle?: string;
+  /** Product integration binding (fixed stable project reference). */
+  embed?: EmbedProjectBinding;
   /** Game-save slots (sandbox): snapshot save points, newest first, ≤2. */
   snapshotSlots?: Array<{ id: number; name: string; createdAt: number }>;
 }
@@ -187,6 +190,8 @@ export async function createProject(input: {
   ssh?: SshConfigInput;
   /** Optional preset config bundle applied to the fresh home. */
   presetBundle?: string;
+  /** Product integration binding. */
+  embed?: EmbedProjectBinding;
 }): Promise<{ ok: true; project: ProjectRecord } | { ok: false; error: string }> {
   const name = input.name.trim();
   if (!name || name.length > 64) return { ok: false, error: "项目名不能为空且不超过 64 字符" };
@@ -205,6 +210,7 @@ export async function createProject(input: {
     mode: input.mode as ProjectRecord["mode"],
     createdAt: Date.now(),
     pinnedSessions: [],
+    ...(input.embed ? { embed: { ...input.embed } } : {}),
     ...(input.mode === "sandbox" && input.containerId !== undefined ? { containerId: input.containerId } : {}),
     ...(input.mode === "sandbox" && input.imageId !== undefined ? { imageId: input.imageId } : {}),
     ...((input.mode === "local-machine" || input.mode === "ssh") && input.workdir ? { workdir: input.workdir } : {}),
@@ -336,6 +342,35 @@ export function updateProject(
   }
   persist();
   return { ok: true, project };
+}
+
+/** Find a product-bound project for a stable product/user/client/slot key. */
+export function findEmbedProject(
+  productId: string,
+  ownerId: number,
+  clientId: string,
+  externalRef: string,
+): ProjectRecord | undefined {
+  return Object.values(store().data.projects).find(
+    (project) =>
+      project.ownerId === ownerId &&
+      project.embed?.productId === productId &&
+      project.embed.clientId === clientId &&
+      project.embed.externalRef === externalRef,
+  );
+}
+
+/** Bind/rebind a project to a product integration (or clear with null). */
+export function setProjectEmbed(
+  projectId: string,
+  embed: EmbedProjectBinding | null,
+): ProjectRecord | undefined {
+  const project = store().data.projects[projectId];
+  if (!project) return undefined;
+  if (embed) project.embed = { ...embed };
+  else delete project.embed;
+  persist();
+  return project;
 }
 
 export function deleteProject(projectId: string): boolean {

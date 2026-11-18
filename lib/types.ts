@@ -372,6 +372,8 @@ export interface SessionInfo {
   /** True while the runtime session exists only in memory and its JSONL file
    *  has not been created yet. Disk-backed actions must wait until this clears. */
   transient?: boolean;
+  /** Embedded product archive tombstone (hidden from embed lists by default). */
+  archivedAt?: number;
 }
 
 export type SessionMode = SessionInfo["mode"];

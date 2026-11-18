@@ -25,6 +25,8 @@ export interface SessionMeta {
   promptPin?: { hash: string; len: number; tools: number };
   ownerName?: string;
   createdAt?: number;
+  /** Embedded product session archive (hidden from embed session lists). */
+  archivedAt?: number;
 }
 
 interface MetaFile {
@@ -87,12 +89,7 @@ function metaFilePath(): string {
   return join(dataDir(), "session-metas.json");
 }
 
-export function recordSessionMeta(sessionId: string, meta: SessionMeta): void {
-  const s = store();
-  // Visible to every reader immediately (same in-memory store); the disk write
-  // is debounced so a burst of session creations (load tests, course onboarding)
-  // writes the whole store once instead of once per row.
-  s.data.sessions[sessionId] = { ...meta, createdAt: meta.createdAt ?? Date.now() };
+function schedulePersist(s: ReturnType<typeof store>): void {
   if (s.writeTimer) return;
   s.writeTimer = setTimeout(() => {
     s.writeTimer = null;
@@ -105,6 +102,26 @@ export function recordSessionMeta(sessionId: string, meta: SessionMeta): void {
     }
   }, META_WRITE_DEBOUNCE_MS);
   s.writeTimer.unref?.();
+}
+
+export function recordSessionMeta(sessionId: string, meta: SessionMeta): void {
+  const s = store();
+  // Visible to every reader immediately (same in-memory store); the disk write
+  // is debounced so a burst of session creations (load tests, course onboarding)
+  // writes the whole store once instead of once per row.
+  s.data.sessions[sessionId] = { ...meta, createdAt: meta.createdAt ?? Date.now() };
+  schedulePersist(s);
+}
+
+/** Archive/unarchive a project-bound session (embedded product session list). */
+export function setSessionArchived(sessionId: string, archived: boolean): boolean {
+  const s = store();
+  const meta = s.data.sessions[sessionId];
+  if (!meta) return false;
+  if (archived) meta.archivedAt = Date.now();
+  else delete meta.archivedAt;
+  schedulePersist(s);
+  return true;
 }
 
 /** Test seam: write a pending debounced store write now. */

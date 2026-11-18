@@ -4,10 +4,20 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { useConfirm } from "./use-confirm";
 import { ConfigButton, ConfigEmptyState, ConfigInfoTip } from "./SettingsUi";
-import type { EmbedProductProfile, EmbedTokenView } from "@/lib/embed-types";
+import type { EmbedProductProfile } from "@/lib/embed-types";
 
 interface Props {
   isAdmin?: boolean;
+}
+
+interface BundleOption {
+  name: string;
+  version?: string;
+}
+
+interface UserOption {
+  id: number;
+  username: string;
 }
 
 const cardStyle: React.CSSProperties = {
@@ -31,51 +41,58 @@ const fieldStyle: React.CSSProperties = {
   fontSize: 12,
 };
 
-function formatDate(value: number): string {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "" : date.toLocaleString();
+function parseList(value: string): string[] {
+  return value
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
 }
 
 /**
- * Settings → Embed: every user manages their own links; admins additionally
- * maintain product profiles (command allowlist + parent-origin allowlist).
+ * Settings → Embed (admin): product user groups, fixed Agent bundle, default
+ * project mode, command/origin policy. End users authenticate in the embed
+ * page with their API key; there are no token links to manage here.
  */
 export function EmbedConfig({ isAdmin = false }: Props) {
   const { t } = useI18n();
   const { confirm, confirmDialog } = useConfirm();
-  const [tokens, setTokens] = useState<EmbedTokenView[]>([]);
   const [products, setProducts] = useState<EmbedProductProfile[]>([]);
-  const [productsEnabled, setProductsEnabled] = useState<{ id: string; name: string }[]>([]);
+  const [bundles, setBundles] = useState<BundleOption[]>([]);
+  const [users, setUsers] = useState<UserOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [memberPicker, setMemberPicker] = useState<number | null>(null);
+  const [memberQuery, setMemberQuery] = useState("");
+  const [memberResults, setMemberResults] = useState<UserOption[]>([]);
 
   const load = useCallback(async () => {
+    if (!isAdmin) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
-      const [tokenRes, enabledRes, profileRes] = await Promise.all([
-        fetch("/api/embed/tokens", { cache: "no-store" }),
-        fetch("/api/embed/products", { cache: "no-store" }),
-        isAdmin ? fetch("/api/admin/embed-profiles", { cache: "no-store" }) : Promise.resolve(null),
+      const [profileRes, bundleRes, userRes] = await Promise.all([
+        fetch("/api/admin/embed-profiles", { cache: "no-store" }),
+        fetch("/api/bundles", { cache: "no-store" }),
+        fetch("/api/admin/users?limit=200&offset=0", { cache: "no-store" }),
       ]);
-      const tokenData = (await tokenRes.json().catch(() => ({}))) as { tokens?: EmbedTokenView[]; error?: string };
-      if (!tokenRes.ok) throw new Error(tokenData.error ?? `HTTP ${tokenRes.status}`);
-      setTokens(tokenData.tokens ?? []);
-
-      const enabledData = (await enabledRes.json().catch(() => ({}))) as {
-        products?: { id: string; name: string }[];
+      const profileData = (await profileRes.json().catch(() => ({}))) as {
+        products?: EmbedProductProfile[];
+        error?: string;
       };
-      if (enabledRes.ok) setProductsEnabled(enabledData.products ?? []);
-
-      if (profileRes) {
-        const profileData = (await profileRes.json().catch(() => ({}))) as {
-          products?: EmbedProductProfile[];
-          error?: string;
-        };
-        if (!profileRes.ok) throw new Error(profileData.error ?? `HTTP ${profileRes.status}`);
-        setProducts(profileData.products ?? []);
+      if (!profileRes.ok) throw new Error(profileData.error ?? `HTTP ${profileRes.status}`);
+      setProducts(profileData.products ?? []);
+      if (bundleRes.ok) {
+        const data = (await bundleRes.json().catch(() => ({}))) as { bundles?: BundleOption[] };
+        setBundles(data.bundles ?? []);
+      }
+      if (userRes.ok) {
+        const data = (await userRes.json().catch(() => ({}))) as { users?: UserOption[] };
+        setUsers(data.users ?? []);
       }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -88,12 +105,34 @@ export function EmbedConfig({ isAdmin = false }: Props) {
     void load();
   }, [load]);
 
-  const productNames = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const product of productsEnabled) map.set(product.id, product.name);
-    for (const product of products) map.set(product.id, product.name);
-    return map;
-  }, [products, productsEnabled]);
+  useEffect(() => {
+    if (memberPicker === null || !memberQuery.trim()) {
+      setMemberResults([]);
+      return;
+    }
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      void fetch(`/api/admin/users?search=${encodeURIComponent(memberQuery.trim())}&limit=8`, {
+        cache: "no-store",
+        signal: controller.signal,
+      })
+        .then(async (response) => {
+          const data = (await response.json().catch(() => ({}))) as { users?: UserOption[] };
+          if (response.ok) setMemberResults(data.users ?? []);
+        })
+        .catch(() => {});
+    }, 200);
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, [memberPicker, memberQuery]);
+
+  const userNames = useMemo(() => new Map(users.map((user) => [user.id, user.username])), [users]);
+
+  const updateProduct = useCallback((index: number, patch: Partial<EmbedProductProfile>) => {
+    setProducts((current) => current.map((product, i) => (i === index ? { ...product, ...patch } : product)));
+  }, []);
 
   const saveProducts = useCallback(async () => {
     setSaving(true);
@@ -129,6 +168,9 @@ export function EmbedConfig({ isAdmin = false }: Props) {
         allowedCommands: [],
         allowedOrigins: [],
         enabled: true,
+        members: [],
+        configBundle: null,
+        defaultMode: "local-machine",
       },
     ]);
   }, []);
@@ -150,41 +192,28 @@ export function EmbedConfig({ isAdmin = false }: Props) {
     [confirm, products, t],
   );
 
-  const revoke = useCallback(
-    async (token: EmbedTokenView) => {
-      const ok = await confirm({
-        title: t("embed.revoke"),
-        message: t("embed.revokeConfirm", { name: token.label }),
-        confirmLabel: t("embed.revoke"),
-        abortLabel: t("common.cancel"),
-        danger: true,
-      });
-      if (!ok) return;
-      setError(null);
-      setNotice(null);
-      try {
-        const response = await fetch(`/api/embed/tokens/${encodeURIComponent(token.id)}`, { method: "DELETE" });
-        if (!response.ok) {
-          const data = (await response.json().catch(() => ({}))) as { error?: string };
-          throw new Error(data.error ?? `HTTP ${response.status}`);
-        }
-        setTokens((current) => current.filter((item) => item.id !== token.id));
-      } catch (cause) {
-        setError(cause instanceof Error ? cause.message : String(cause));
-      }
+  const addMember = useCallback(
+    (productIndex: number, user: UserOption) => {
+      const product = products[productIndex];
+      if (!product) return;
+      const members = product.members ?? [];
+      if (members.includes(user.id)) return;
+      updateProduct(productIndex, { members: [...members, user.id] });
+      setMemberQuery("");
+      setMemberResults([]);
+      setMemberPicker(null);
+      if (!userNames.has(user.id)) setUsers((current) => [...current, user]);
     },
-    [confirm, t],
+    [products, updateProduct, userNames],
   );
 
-  const updateProduct = useCallback((index: number, patch: Partial<EmbedProductProfile>) => {
-    setProducts((current) => current.map((product, i) => (i === index ? { ...product, ...patch } : product)));
-  }, []);
-
-  const parseList = (value: string): string[] =>
-    value
-      .split(",")
-      .map((entry) => entry.trim())
-      .filter(Boolean);
+  if (!isAdmin) {
+    return (
+      <div style={{ padding: 18 }}>
+        <ConfigEmptyState>{t("embed.adminOnly")}</ConfigEmptyState>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -193,18 +222,16 @@ export function EmbedConfig({ isAdmin = false }: Props) {
         flexDirection: "column",
         gap: 14,
         padding: "18px 22px",
-        maxWidth: 900,
+        maxWidth: 980,
         height: "100%",
         maxHeight: "100%",
         boxSizing: "border-box",
         overflowY: "auto",
       }}
     >
-      <div>
-        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 14, fontWeight: 700 }}>
-          {t("embed.settingsTitle")}
-          <ConfigInfoTip text={t("embed.settingsHint")} />
-        </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 14, fontWeight: 700 }}>
+        {t("embed.settingsTitle")}
+        <ConfigInfoTip text={t("embed.settingsHint")} />
       </div>
 
       {error && (
@@ -216,74 +243,31 @@ export function EmbedConfig({ isAdmin = false }: Props) {
 
       <section style={cardStyle}>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <strong style={{ flex: 1, fontSize: 13 }}>{t("embed.tokens")}</strong>
-          <ConfigInfoTip text={t("embed.tokensHint")} />
+          <strong style={{ flex: 1, fontSize: 13 }}>{t("embed.products")}</strong>
+          <ConfigButton size="small" onClick={addProduct}>
+            {t("embed.addProduct")}
+          </ConfigButton>
         </div>
         {loading ? (
           <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{t("embed.loading")}</div>
-        ) : tokens.length === 0 ? (
-          <ConfigEmptyState>{t("embed.noTokens")}</ConfigEmptyState>
+        ) : products.length === 0 ? (
+          <ConfigEmptyState>{t("embed.noProducts")}</ConfigEmptyState>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {tokens.map((token) => (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {products.map((product, index) => (
               <div
-                key={token.id}
+                key={index}
                 style={{
                   display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  minWidth: 0,
-                  padding: "8px 10px",
+                  flexDirection: "column",
+                  gap: 8,
+                  padding: 10,
                   border: "1px solid var(--border)",
                   borderRadius: 7,
                   background: "var(--bg)",
                 }}
               >
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 12, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis" }}>
-                    {token.label}
-                  </div>
-                  <div style={{ display: "flex", gap: 8, marginTop: 2, fontSize: 10, color: "var(--text-dim)" }}>
-                    <span>{productNames.get(token.productId) ?? token.productId}</span>
-                    <span>{isAdmin ? `${token.ownerName} · ` : ""}{formatDate(token.expiresAt)}</span>
-                  </div>
-                </div>
-                <ConfigButton variant="danger" size="small" onClick={() => void revoke(token)}>
-                  {t("embed.revoke")}
-                </ConfigButton>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
-
-      {isAdmin && (
-        <section style={cardStyle}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <strong style={{ flex: 1, fontSize: 13 }}>{t("embed.products")}</strong>
-            <ConfigInfoTip text={t("embed.commandsHint")} />
-            <ConfigButton size="small" onClick={addProduct}>
-              {t("embed.addProduct")}
-            </ConfigButton>
-          </div>
-          {products.length === 0 ? (
-            <ConfigEmptyState>{t("embed.noProducts")}</ConfigEmptyState>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {products.map((product, index) => (
-                <div
-                  key={index}
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "minmax(90px, 0.7fr) minmax(120px, 1fr) auto",
-                    gap: 8,
-                    alignItems: "center",
-                    padding: 10,
-                    border: "1px solid var(--border)",
-                    borderRadius: 7,
-                    background: "var(--bg)",
-                  }}
-                >
+                <div style={{ display: "grid", gridTemplateColumns: "minmax(90px, 0.7fr) minmax(120px, 1fr) auto", gap: 8 }}>
                   <input
                     value={product.id}
                     aria-label={t("embed.productId")}
@@ -311,31 +295,173 @@ export function EmbedConfig({ isAdmin = false }: Props) {
                       {t("common.delete")}
                     </ConfigButton>
                   </div>
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "minmax(160px, 1fr) minmax(160px, 1fr)", gap: 8 }}>
                   <input
                     value={product.allowedCommands.join(", ")}
                     aria-label={t("embed.allowedCommands")}
                     placeholder={t("embed.allowedCommandsPlaceholder")}
                     onChange={(event) => updateProduct(index, { allowedCommands: parseList(event.target.value) })}
-                    style={{ ...fieldStyle, gridColumn: "1 / 3" }}
+                    style={fieldStyle}
                   />
                   <input
                     value={product.allowedOrigins.join(", ")}
                     aria-label={t("embed.allowedOrigins")}
                     placeholder={t("embed.allowedOriginsPlaceholder")}
                     onChange={(event) => updateProduct(index, { allowedOrigins: parseList(event.target.value) })}
-                    style={{ ...fieldStyle, gridColumn: "1 / 4" }}
+                    style={fieldStyle}
                   />
+                  <select
+                    value={product.defaultMode ?? "local-machine"}
+                    aria-label={t("embed.defaultMode")}
+                    onChange={(event) =>
+                      updateProduct(index, { defaultMode: event.target.value as EmbedProductProfile["defaultMode"] })
+                    }
+                    style={fieldStyle}
+                  >
+                    <option value="local-machine">local-machine</option>
+                    <option value="sandbox">sandbox</option>
+                    <option value="ssh">ssh</option>
+                  </select>
+                  <select
+                    value={product.configBundle ?? ""}
+                    aria-label={t("embed.configBundle")}
+                    onChange={(event) => updateProduct(index, { configBundle: event.target.value || null })}
+                    style={fieldStyle}
+                  >
+                    <option value="">{t("embed.noBundle")}</option>
+                    {bundles.map((bundle) => (
+                      <option key={bundle.name} value={bundle.name}>
+                        {bundle.name}
+                        {bundle.version ? ` (${bundle.version})` : ""}
+                      </option>
+                    ))}
+                  </select>
                 </div>
-              ))}
-            </div>
-          )}
-          <div style={{ display: "flex", justifyContent: "flex-end" }}>
-            <ConfigButton variant="primary" disabled={saving} onClick={() => void saveProducts()}>
-              {saving ? t("embed.saving") : t("embed.saveProducts")}
-            </ConfigButton>
+
+                <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", fontSize: 11 }}>
+                  <span style={{ color: "var(--text-muted)" }}>{t("embed.members")}:</span>
+                  {product.members === undefined ? (
+                    <span style={{ color: "var(--text-dim)" }}>{t("embed.allUsers")}</span>
+                  ) : product.members.length === 0 ? (
+                    <span style={{ color: "var(--text-dim)" }}>{t("embed.noMembers")}</span>
+                  ) : (
+                    product.members.map((memberId) => (
+                      <span
+                        key={memberId}
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 4,
+                          padding: "2px 6px",
+                          borderRadius: 999,
+                          border: "1px solid var(--border)",
+                          color: "var(--text-muted)",
+                        }}
+                      >
+                        {userNames.get(memberId) ?? `#${memberId}`}
+                        <button
+                          type="button"
+                          aria-label={t("embed.removeMember")}
+                          onClick={() =>
+                            updateProduct(index, {
+                              members: (product.members ?? []).filter((id) => id !== memberId),
+                            })
+                          }
+                          style={{
+                            border: "none",
+                            background: "transparent",
+                            color: "var(--text-dim)",
+                            cursor: "pointer",
+                            padding: 0,
+                          }}
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (product.members === undefined) updateProduct(index, { members: [] });
+                      setMemberPicker(memberPicker === index ? null : index);
+                      setMemberQuery("");
+                      setMemberResults([]);
+                    }}
+                    style={{
+                      border: "1px solid var(--border)",
+                      borderRadius: 999,
+                      background: "transparent",
+                      color: "var(--text-muted)",
+                      cursor: "pointer",
+                      padding: "2px 8px",
+                    }}
+                  >
+                    + {t("embed.addMember")}
+                  </button>
+                </div>
+
+                {memberPicker === index && (
+                  <div style={{ position: "relative", maxWidth: 320 }}>
+                    <input
+                      autoFocus
+                      value={memberQuery}
+                      onChange={(event) => setMemberQuery(event.target.value)}
+                      placeholder={t("embed.memberSearch")}
+                      style={{ ...fieldStyle, width: "100%" }}
+                    />
+                    {memberResults.length > 0 && (
+                      <div
+                        style={{
+                          position: "absolute",
+                          top: "100%",
+                          left: 0,
+                          right: 0,
+                          zIndex: 20,
+                          marginTop: 4,
+                          maxHeight: 220,
+                          overflowY: "auto",
+                          border: "1px solid var(--border)",
+                          borderRadius: 6,
+                          background: "var(--bg-panel)",
+                          boxShadow: "0 8px 24px rgba(0,0,0,0.25)",
+                        }}
+                      >
+                        {memberResults.map((user) => (
+                          <button
+                            key={user.id}
+                            type="button"
+                            onClick={() => addMember(index, user)}
+                            style={{
+                              width: "100%",
+                              padding: "6px 8px",
+                              border: "none",
+                              background: "transparent",
+                              color: "var(--text)",
+                              textAlign: "left",
+                              cursor: "pointer",
+                              fontSize: 12,
+                            }}
+                          >
+                            {user.username}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
-        </section>
-      )}
+        )}
+        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+          <ConfigButton variant="primary" disabled={saving} onClick={() => void saveProducts()}>
+            {saving ? t("embed.saving") : t("embed.saveProducts")}
+          </ConfigButton>
+        </div>
+      </section>
       {confirmDialog}
     </div>
   );

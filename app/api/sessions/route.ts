@@ -33,6 +33,7 @@ export async function GET(req: Request) {
   try {
     const searchParams = new URL(req.url).searchParams;
     const force = searchParams.get("force") === "1";
+    const includeArchived = searchParams.get("includeArchived") === "1";
     const space = spaceForRequest(identity.session, searchParams);
     // MERGE-NOTE(upgrade/0.84): upstream's listAllSessions({ force }) became
     // listAllSessions(space, { force }) — dev shards the catalogue per user.
@@ -73,11 +74,16 @@ export async function GET(req: Request) {
         // 管理员支持视图：归属提示（普通用户只会看到自己的会话，无影响）。
         ...(ownerId !== undefined ? { ownerId } : {}),
         ...(meta?.ownerName ? { ownerName: meta.ownerName } : {}),
+        ...(meta?.archivedAt ? { archivedAt: meta.archivedAt } : {}),
       };
     });
-    const sessions = identity.session.embed
+    const scopedSessions = identity.session.embed
       ? filterSessionsForEmbedScope(allSessions, identity.session.embed.scope)
       : allSessions;
+    const sessions =
+      identity.session.embed && !includeArchived
+        ? scopedSessions.filter((session) => !session.archivedAt)
+        : scopedSessions;
     // Capture AFTER the scan: mutations during the scan bump the generation,
     // so the client sees a version it cannot reconcile and refreshes again.
     // Per-space generation (dev 批次2): scoped to this caller's space.

@@ -22,6 +22,7 @@ import { readSubagentRun, readSubagentSessionResources, SUBAGENT_META_TYPE } fro
 import { readSessionToolSelection } from "@/lib/session-tool-selection";
 import { invalidateSessionManagerCache, openSessionManager, openSessionManagerAsync } from "@/lib/session-open";
 import { jsonResponse } from "@/lib/json-response";
+import { setSessionArchived } from "@/lib/session-metas";
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -147,13 +148,19 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   }
 }
 
-// PATCH /api/sessions/[id]  body: { name: string }
+// PATCH /api/sessions/[id]  body: { name?: string; archived?: boolean }
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   try {
-    const { name } = (await req.json()) as { name?: string };
-    if (typeof name !== "string") {
-      return NextResponse.json({ error: "name is required" }, { status: 400 });
+    const body = (await req.json()) as { name?: unknown; archived?: unknown };
+    if (body.name !== undefined && typeof body.name !== "string") {
+      return NextResponse.json({ error: "name must be a string" }, { status: 400 });
+    }
+    if (body.archived !== undefined && typeof body.archived !== "boolean") {
+      return NextResponse.json({ error: "archived must be a boolean" }, { status: 400 });
+    }
+    if (body.name === undefined && body.archived === undefined) {
+      return NextResponse.json({ error: "name or archived is required" }, { status: 400 });
     }
     const access = await resolveSessionAccess(req, id, new URL(req.url).searchParams);
     if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
@@ -161,9 +168,14 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     if (!filePath) {
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
     }
-    const sm = openSessionManager(filePath, { mutable: true });
-    sm.appendSessionInfo(name.trim());
-    invalidateSessionManagerCache(filePath);
+    if (body.name !== undefined) {
+      const sm = openSessionManager(filePath, { mutable: true });
+      sm.appendSessionInfo(body.name.trim());
+      invalidateSessionManagerCache(filePath);
+    }
+    if (body.archived !== undefined && !setSessionArchived(id, body.archived)) {
+      return NextResponse.json({ error: "该会话缺少元数据，无法归档" }, { status: 409 });
+    }
     invalidateSessionListForSession(filePath);
     return NextResponse.json({ ok: true });
   } catch (error) {

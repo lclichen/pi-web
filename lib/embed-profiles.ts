@@ -6,19 +6,22 @@ import { normalizeEmbedCommandName } from "./embed-commands.ts";
 import type { EmbedProductProfile } from "./embed-types.ts";
 
 /**
- * Product profiles for embeddable sessions:
+ * Product profiles for embedded product integration:
  *   <dataDir>/embed-profiles.json
  *
- * A token binds one product profile; the profile decides which slash commands
- * are visible/allowed and which parent origins may frame the page. Profiles are
- * admin-managed through /api/admin/embed-profiles and apply immediately.
+ * A product is also its user group: `members` is the allowlist of platform
+ * user ids. The product binds a fixed Agent config bundle and a default
+ * project mode used by the product project API.
  */
 
 const FILE_NAME = "embed-profiles.json";
 const MAX_PRODUCTS = 50;
 const MAX_COMMANDS = 200;
 const MAX_ORIGINS = 20;
+const MAX_MEMBERS = 5000;
 const MAX_NAME_LENGTH = 80;
+const PROJECT_MODES = new Set(["local-machine", "sandbox", "ssh"]);
+const BUNDLE_NAME_RE = /^[\w][\w.-]{0,63}$/;
 
 export const DEFAULT_EMBED_PROFILE: EmbedProductProfile = {
   id: "default",
@@ -26,6 +29,8 @@ export const DEFAULT_EMBED_PROFILE: EmbedProductProfile = {
   allowedCommands: ["compact", "reload", "name", "copy", "clone"],
   allowedOrigins: [],
   enabled: true,
+  configBundle: null,
+  defaultMode: "local-machine",
 };
 
 interface ProfileFile {
@@ -54,6 +59,7 @@ function cloneProfile(profile: EmbedProductProfile): EmbedProductProfile {
     ...profile,
     allowedCommands: [...profile.allowedCommands],
     allowedOrigins: [...profile.allowedOrigins],
+    ...(profile.members ? { members: [...profile.members] } : {}),
   };
 }
 
@@ -67,7 +73,7 @@ function readStore(): ProfileStore {
   try {
     mtime = statSync(path).mtimeMs;
   } catch {
-    // Missing file: fall back to the built-in profile (not persisted).
+    // Missing file: built-in profile (not persisted).
   }
   if (cached && cached.path === path && cached.mtime === mtime) {
     cached.lastStatAt = now;
@@ -80,7 +86,6 @@ function readStore(): ProfileStore {
       const parsed = JSON.parse(readFileSync(path, "utf8")) as Partial<ProfileFile>;
       if (Array.isArray(parsed.products)) products = validateEmbedProfiles(parsed.products);
     } catch {
-      // A malformed store must not brick token auth; the default is safe.
       products = [cloneProfile(DEFAULT_EMBED_PROFILE)];
     }
   }
@@ -160,13 +165,47 @@ export function validateEmbedProfiles(input: unknown): EmbedProductProfile[] {
       if (!allowedOrigins.includes(origin)) allowedOrigins.push(origin);
     }
 
+    let members: number[] | undefined;
+    if (item.members !== undefined) {
+      if (!Array.isArray(item.members) || item.members.length > MAX_MEMBERS) {
+        throw new Error(`Product ${id}: members must be an array (max ${MAX_MEMBERS})`);
+      }
+      const seen = new Set<number>();
+      for (const member of item.members) {
+        if (typeof member !== "number" || !Number.isInteger(member) || member < 0) {
+          throw new Error(`Product ${id}: member ids must be non-negative integers`);
+        }
+        seen.add(member);
+      }
+      members = [...seen];
+    }
+
+    let configBundle: string | null = null;
+    if (item.configBundle !== undefined && item.configBundle !== null) {
+      if (typeof item.configBundle !== "string" || !BUNDLE_NAME_RE.test(item.configBundle.trim())) {
+        throw new Error(`Product ${id}: invalid configBundle`);
+      }
+      configBundle = item.configBundle.trim();
+    }
+
+    const defaultMode =
+      item.defaultMode === undefined
+        ? "local-machine"
+        : typeof item.defaultMode === "string" && PROJECT_MODES.has(item.defaultMode)
+          ? item.defaultMode
+          : null;
+    if (!defaultMode) throw new Error(`Product ${id}: defaultMode must be local-machine, sandbox, or ssh`);
+
     return {
       id,
       name,
       allowedCommands,
       allowedOrigins,
       enabled: item.enabled !== false,
-    };
+      ...(members !== undefined ? { members } : {}),
+      configBundle,
+      defaultMode,
+    } as EmbedProductProfile;
   });
 }
 
@@ -179,6 +218,11 @@ export function getEmbedProfile(id: string): EmbedProductProfile | undefined {
   return profile ? cloneProfile(profile) : undefined;
 }
 
+/** Product user-group check. An absent members list means every active user. */
+export function isProductMember(profile: EmbedProductProfile, userId: number): boolean {
+  return profile.members === undefined || profile.members.includes(userId);
+}
+
 /** Replace the full profile list (admin API). */
 export function saveEmbedProfiles(input: unknown): EmbedProductProfile[] {
   const products = validateEmbedProfiles(input);
@@ -188,7 +232,7 @@ export function saveEmbedProfiles(input: unknown): EmbedProductProfile[] {
   try {
     mtime = statSync(path).mtimeMs;
   } catch {
-    // The write above succeeded; a missing stat only disables cache freshness.
+    // Write succeeded; cache freshness only.
   }
   globalThis.__piEmbedProfiles = {
     path,

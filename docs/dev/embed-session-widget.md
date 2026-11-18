@@ -1,67 +1,160 @@
-# Embedded session widget
+# Embedded product integration
 
-`/embed/<token>` is a session-only chat surface for another product. It has no
-project sidebar, environment menu, or settings; a token is bound to one project
-(or host directory) and one product profile.
+`/embed/p/<projectId>` is a session-only Agent surface for another product.
+A **project id is a stable reference, not a credential**: the product stores it
+and authenticates every open with the end-user's platform API key. The page URL
+only carries a short-lived access token in its hash.
 
-## Create a link
+## Register a product
 
-1. Admin: Settings → **Embed** → add a product.
-   - **Allowed commands**: comma-separated names without the leading slash,
-     e.g. `compact, name, copy, skill:deploy`. `*` allows every command.
-   - **Allowed parent origins**: comma-separated origins, e.g.
-     `https://app.example.com`. Empty allows any parent (the URL token is still
-     required). The page emits `Content-Security-Policy: frame-ancestors …`.
-2. Any user: project menu → **Create embed link**. Choose the product and TTL
-   (1 / 7 / 30 days), then copy the URL. The URL is shown once.
-3. Revoke links in Settings → **Embed**. Revocation invalidates the token
-   immediately and removes its dedicated platform key.
+Settings → **Embed** (admin):
 
-Set Settings → Global config → **Public base URL** when the link must be opened
-from another machine; otherwise the URL uses the request host.
+- **Members**: the product user group (platform user ids). An absent list means
+  every active user; an empty list means nobody.
+- **Agent config bundle**: fixed bundle applied to new product projects.
+- **Default project mode**: `local-machine` (default), `sandbox`, or `ssh`.
+- **Allowed commands / parent origins** as before.
 
-## Embed
+Changing the group or bundle revokes existing short-lived access tokens, so
+pages re-authenticate immediately.
+
+## Product API
+
+All calls use the user's platform API key:
+
+```http
+X-Platform-API-Key: sk_...
+```
+
+or `Authorization: Bearer sk_...`. Browser products must be listed in
+`allowedOrigins`; the endpoints answer CORS preflight. Electron/local clients
+can call from their main process instead.
+
+```text
+POST /api/embed/products/<productId>/projects
+GET  /api/embed/products/<productId>/projects?clientId=...
+POST /api/embed/products/<productId>/projects/<projectId>/open
+POST /api/embed/products/<productId>/projects/<projectId>/reapply-config
+POST /api/embed/products/<productId>/agent/pair-code
+GET  /api/embed/products/<productId>/agent/machines
+```
+
+Create/reuse:
+
+```json
+{
+  "clientId": "device-or-install-id",
+  "externalRef": "default",
+  "mode": "local-machine",
+  "machineId": "…",
+  "workdir": "/home/user/app-workspace",
+  "name": "My product workspace"
+}
+```
+
+- The default reuse key is `product + user + clientId + externalRef`; pass a
+  different `externalRef` for another project and switch by using its
+  `project.id`/`embedUrl`.
+- `projectId` in the body binds an existing owned project (unbound or same
+  product).
+- Local-machine creation validates `machineId`/`workdir` against the live
+  agent; offline returns `503 {code:"agent_offline"}`.
+- The response includes `{project, reused, embedUrl, configUpdateAvailable}`.
+
+Open:
+
+```json
+{ "sessionId": "optional-existing-session" }
+```
+
+returns `{url, token, expiresAt, project}`. The URL looks like:
+
+```text
+https://pi.example.com/embed/p/<projectId>?session=<id>#token=emba_...&expires=...
+```
+
+The token is short-lived (12h default, `PI_WEB_EMBED_ACCESS_TTL_MINUTES`). If it
+expires, call `open` again; the project and sessions persist.
+
+## Page authentication
+
+- Product with a user API key: call `open`, then use the returned URL. The
+  access token is read from the hash, stored in `sessionStorage`, and stripped
+  from the address bar.
+- No token (manual/direct link): the page asks for the user's API key and
+  exchanges it at `/api/embed/auth`. The key stays inside the pi-web iframe and
+  is never visible to the parent page; “Remember” stores it locally, and
+  “Switch account” clears it.
+- `projectId` alone does not grant access; the platform user must own the
+  project and belong to the product group.
+
+## Sessions
+
+- New chat, project-scoped session list, session switch.
+- Rename, archive/unarchive, delete; “Show archived” toggles the list.
+- `?session=<id>` restores an exact session; otherwise the last session opened
+  in this project/browser is used, then the most recent.
+- Session files persist on the server; closing the iframe or an agent runtime
+  eviction does not delete them.
+
+## Local agent bootstrap
+
+The product local client is expected to drive `agent-client`:
+
+1. Call `POST .../agent/pair-code` and run
+   `./agent-client pair --code <code> --server <publicBaseUrl>` if the machine
+   is not paired yet.
+2. Run `./agent-client run` (or reuse the existing connection).
+3. Call `GET .../agent/machines` to discover `machineId`; create the project
+   with that `machineId` and the desired workspace `workdir`.
+
+Multiple pi-web users on the same OS account need separate `agent-client`
+`--config` files (or separate OS users), because one client config holds one
+server token/machine id. This is a product-side isolation requirement for now.
+
+## Config bundle updates
+
+A project records the applied bundle version + sha256. `open`/list report
+`configUpdateAvailable` when the product bundle changed. Reapply explicitly:
+
+- product API: `POST .../projects/<id>/reapply-config`
+- embed page: the refresh button shown when an update is available
+
+Apply is the existing additive-with-overwrite bundle import; it does not
+automatically overwrite on page open.
+
+## Embedding
 
 ```html
 <iframe
-  src="https://pi.example.com/embed/emb_…"
+  src="https://pi.example.com/embed/p/<projectId>#token=emba_..."
   title="Agent"
   style="width: 380px; height: 720px; border: 0"
   allow="clipboard-write"
 ></iframe>
 ```
 
-Do not use `sandbox` without `allow-same-origin`: the iframe's API requests are
-same-origin to pi-web, and an opaque origin would make them cross-origin (and
-break localStorage drafts).
-
-Suggested container sizes:
+Do not use `sandbox` without `allow-same-origin`; API calls and local storage
+need the pi-web iframe origin. Suggested sizes:
 
 | Form factor | Size | Layout |
 |---|---|---|
 | Side rail | `≥280×600` | mobile chat layout, icon header, full-width session popover |
-| Bottom bar | `≥600×220` | compact header, hidden status capsule, scrollable transcript, tucked controls |
-| Mini card | `≥280×180` | one-line header, compact composer, scrollable transcript |
+| Bottom bar | `≥600×220` | compact header, hidden status capsule, scrollable transcript |
+| Mini card | `≥280×180` | one-line header, compact composer |
 | Full page | `≥480×480` | comfortable header and transcript |
 
-Below roughly `280×180` the input remains usable, but long conversations are not
-practical. Density is measured from the iframe viewport with a `ResizeObserver`
-(`comfortable` / `compact` / `mini`), so the same URL adapts to all of them.
+The page measures the iframe container and switches
+`comfortable`/`compact`/`mini` automatically. Pages use
+`Referrer-Policy: no-referrer` and `Cache-Control: no-store`.
 
-## Scope and identity
+## Security notes
 
-- A token exposes the bound project's **session list** and lets the holder
-  create/switch sessions inside that project. It cannot switch projects.
-- The token is the credential: anyone with the URL acts as its creator within
-  that project until expiry or revocation. Create one token per product/user
-  when separate identities are required.
-- API access is default-deny: session list/read, agent commands/events, model
-  list, file read/upload/search inside the workspace. Project management,
-  admin routes, session rename/delete/takeover, and Git status are closed.
-- Commands are filtered in the menu, blocked when typed, and re-checked on the
-  server against the session's registered commands.
-- Tokens are stored hashed (`embed-tokens.json`, mode 0600); the raw URL is not
-  persisted. The token's platform key is stored server-side for BFF calls and
-  deleted on revoke.
-- The page sends `Referrer-Policy: no-referrer` and `Cache-Control: no-store`.
-  Avoid logging iframe URLs because the path contains the token.
+- Project ids are public references; never treat them as secrets.
+- The platform API key is a long-lived credential. Products holding it can see
+  it; use a dedicated key per product/user where possible.
+- Access tokens are in-memory server-side, scoped to one project, and expire;
+  they cannot manage projects/admin routes.
+- Product group membership is checked on every project API call and on page
+  exchange. Removing a member revokes their current access tokens.
+- Host directory projects are not product projects; use a ProjectRecord mode.

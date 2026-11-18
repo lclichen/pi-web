@@ -1,25 +1,19 @@
-import { readSessionHeader, resolveSessionPath } from "./session-reader";
+import { resolveSessionPath } from "./session-reader";
 import { getRpcSession, getRpcSessionOwner } from "./rpc-manager";
 import { resolveSessionMode } from "./session-metas";
 import { requireUserIdentity, type WebSession } from "./web-session";
 import { spaceForRequest, type SessionSpace } from "./session-spaces";
-import { samePath } from "./paths";
 
 /**
- * Embed tokens are workspace-scoped. Live sessions expose their real cwd and
- * projectId; cold host sessions are matched through the session-file header.
+ * Embed access tokens are project-scoped. Live/warm sessions expose projectId
+ * through the registry or sidecar metas.
  */
-function embedSessionMatches(session: WebSession, sessionId: string, path: string | null): boolean {
+function embedSessionMatches(session: WebSession, sessionId: string): boolean {
   const scope = session.embed?.scope;
   if (!scope) return true;
   const live = getRpcSession(sessionId);
   const meta = resolveSessionMode(sessionId);
-  if (scope.kind === "project") {
-    return (live?.projectId ?? meta?.projectId) === scope.projectId;
-  }
-  if ((live?.mode ?? meta?.mode ?? "host") !== "host") return false;
-  const cwd = live?.cwd ?? (path ? readSessionHeader(path)?.cwd : undefined);
-  return Boolean(cwd && samePath(cwd, scope.cwd));
+  return (live?.projectId ?? meta?.projectId) === scope.projectId;
 }
 
 /**
@@ -61,7 +55,7 @@ export async function resolveSessionAccess(
   // Auth off: implicit host admin sees everything (single-user status quo).
   if (user.id === 0) {
     const path = await resolveSessionPath(sessionId, { kind: "host" });
-    if (!embedSessionMatches(session, sessionId, path)) {
+    if (!embedSessionMatches(session, sessionId)) {
       return { ok: false, status: 404, error: "会话不存在" };
     }
     return { ok: true, session, space: { kind: "host" }, path };
@@ -84,7 +78,7 @@ export async function resolveSessionAccess(
   if (!path && user.role !== "admin") {
     return { ok: false, status: 404, error: "会话不存在" };
   }
-  if (session.embed && (!path || !embedSessionMatches(session, sessionId, path))) {
+  if (session.embed && (!path || !embedSessionMatches(session, sessionId))) {
     return { ok: false, status: 404, error: "会话不存在" };
   }
   return { ok: true, session, space, path };
@@ -113,7 +107,7 @@ export function checkLiveSessionAccess(
   const identity = requireUserIdentity(req);
   if (!identity.ok) return { ok: false, status: 401, error: "登录已失效" };
   const { user } = identity.session;
-  if (!embedSessionMatches(identity.session, sessionId, null)) {
+  if (!embedSessionMatches(identity.session, sessionId)) {
     return { ok: false, status: 404, error: "会话不存在" };
   }
   if (user.id === 0) return { ok: true };

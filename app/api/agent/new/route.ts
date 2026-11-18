@@ -103,26 +103,17 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: `Invalid mode: ${String(rawMode)}` }, { status: 400 });
     }
     if (embed) {
-      // New sessions may only be created inside the token's workspace.
-      if (embed.scope.kind === "project") {
-        const requestedProjectId = typeof body.projectId === "string" ? body.projectId : undefined;
-        if (requestedProjectId && requestedProjectId !== embed.scope.projectId) {
-          return NextResponse.json({ error: "Access denied" }, { status: 403 });
-        }
-        body.projectId = embed.scope.projectId;
-        body.cwd = embed.scope.cwd;
-        delete body.mode;
-      } else {
-        if (typeof body.projectId === "string" && body.projectId) {
-          return NextResponse.json({ error: "Access denied" }, { status: 403 });
-        }
-        if (typeof body.cwd === "string" && body.cwd && !samePath(body.cwd, embed.scope.cwd)) {
-          return NextResponse.json({ error: "Access denied" }, { status: 403 });
-        }
-        body.cwd = embed.scope.cwd;
-        body.mode = "host";
-        delete body.projectId;
+      // New sessions may only be created inside the access token's project.
+      const requestedProjectId = typeof body.projectId === "string" ? body.projectId : undefined;
+      if (requestedProjectId && requestedProjectId !== embed.scope.projectId) {
+        return NextResponse.json({ error: "Access denied" }, { status: 403 });
       }
+      if (typeof body.cwd === "string" && body.cwd && !samePath(body.cwd, embed.scope.cwd)) {
+        return NextResponse.json({ error: "Access denied" }, { status: 403 });
+      }
+      body.projectId = embed.scope.projectId;
+      body.cwd = embed.scope.cwd;
+      delete body.mode;
     }
     const { cwd, ...command } = body;
     commandType = typeof command.type === "string" ? command.type : undefined;

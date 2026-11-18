@@ -1,21 +1,19 @@
+import { getEmbedAccessToken } from "./embed-access.ts";
 import { getEmbedProfile } from "./embed-profiles.ts";
-import { getEmbedTokenByRaw } from "./embed-tokens.ts";
 import type {
+  EmbedAccessRecord,
   EmbedPageContext,
   EmbedProductProfile,
-  EmbedTokenRecord,
 } from "./embed-types.ts";
 
 /**
- * Server-side embed token resolution and API fence.
- *
- * The page and every token-authenticated API request share this module so the
- * visible command set, workspace scope and frame-ancestors policy can never
- * drift between them.
+ * Server-side resolution for short-lived embed access tokens and the public
+ * project page context. Project ids are stable references; access tokens are
+ * the only credential the page/API carries.
  */
 
 export interface EmbedAccess {
-  record: EmbedTokenRecord;
+  record: EmbedAccessRecord;
   profile: EmbedProductProfile;
 }
 
@@ -24,33 +22,21 @@ export type EmbedRequestAccess =
   | { kind: "invalid" }
   | { kind: "ok"; access: EmbedAccess };
 
-/** `emb_` tokens carried by fetch (Authorization) / EventSource or images. */
+/** `emba_` tokens carried by fetch / EventSource / media URLs. */
 export function extractEmbedToken(request: Request): string | null {
   const authorization = request.headers.get("authorization");
   if (authorization) {
     const match = authorization.match(/^Bearer\s+(\S+)\s*$/i);
-    if (match?.[1]?.startsWith("emb_")) return match[1];
+    if (match?.[1]?.startsWith("emba_")) return match[1];
   }
   const direct = request.headers.get("x-embed-token")?.trim();
-  if (direct?.startsWith("emb_")) return direct;
+  if (direct?.startsWith("emba_")) return direct;
   const query = new URL(request.url).searchParams.get("embed_token")?.trim();
-  return query?.startsWith("emb_") ? query : null;
-}
-
-/** `/embed/<token>` — used by the page route and its proxy headers. */
-export function embedTokenFromPath(pathname: string): string | null {
-  const match = /^\/embed\/([^/]+)\/?$/.exec(pathname);
-  if (!match) return null;
-  try {
-    const token = decodeURIComponent(match[1]);
-    return token.startsWith("emb_") ? token : null;
-  } catch {
-    return null;
-  }
+  return query?.startsWith("emba_") ? query : null;
 }
 
 export function resolveEmbedAccess(raw: string): EmbedAccess | null {
-  const record = getEmbedTokenByRaw(raw);
+  const record = getEmbedAccessToken(raw);
   if (!record) return null;
   const profile = getEmbedProfile(record.productId);
   if (!profile || !profile.enabled) return null;
@@ -64,36 +50,35 @@ export function resolveEmbedRequest(request: Request): EmbedRequestAccess {
   return access ? { kind: "ok", access } : { kind: "invalid" };
 }
 
-/** Page bootstrap: token + product + project must all still exist. */
-export async function getEmbedPageContext(raw: string, initialSessionId?: string): Promise<EmbedPageContext | null> {
-  const access = resolveEmbedAccess(raw);
-  if (!access) return null;
-  const { record, profile } = access;
-  let mode = record.mode;
-  let label = record.label;
-  if (record.scope.kind === "project") {
-    const { getProject } = await import("./projects.ts");
-    const project = getProject(record.scope.projectId);
-    if (!project) return null;
-    mode = project.mode;
-    label = label || project.name;
-  }
+/**
+ * Public page bootstrap for `/embed/p/<projectId>`. Authentication happens in
+ * the client auth gate; this only exposes names/config that the iframe needs.
+ */
+export async function getEmbedProjectPageContext(
+  projectId: string,
+  initialSessionId?: string,
+): Promise<EmbedPageContext | null> {
+  const { getProject, projectHome } = await import("./projects.ts");
+  const project = getProject(projectId);
+  if (!project?.embed) return null;
+  const profile = getEmbedProfile(project.embed.productId);
+  if (!profile || !profile.enabled) return null;
+  const { embedConfigUpdateAvailable } = await import("./embed-workspaces.ts");
   return {
-    token: raw,
     product: { id: profile.id, name: profile.name },
-    scope: { ...record.scope },
-    label,
-    mode,
+    project: { id: project.id, name: project.name, mode: project.mode },
+    scope: { kind: "project", projectId: project.id, cwd: projectHome(project) },
+    label: project.name,
     allowedCommands: [...profile.allowedCommands],
-    expiresAt: record.expiresAt,
+    configUpdateAvailable: embedConfigUpdateAvailable(project, profile),
     ...(initialSessionId ? { initialSessionId } : {}),
   };
 }
 
 /**
- * Default-deny API surface for embed tokens. Only the chat client's real
- * endpoints are listed; project/admin/session-management routes stay closed.
- * Method matters: session deletion/rename and file deletion are never allowed.
+ * Default-deny API surface for access tokens. Session rename/archive/delete
+ * are allowed because they remain project-scoped; project/admin routes stay
+ * closed.
  */
 export function isEmbedApiAllowed(method: string, pathname: string): boolean {
   const verb = method.toUpperCase();
@@ -101,16 +86,18 @@ export function isEmbedApiAllowed(method: string, pathname: string): boolean {
   const get = verb === "GET";
   const post = verb === "POST";
   const put = verb === "PUT";
+  const patch = verb === "PATCH";
+  const del = verb === "DELETE";
 
   if (get && path === "/api/models") return true;
   if (get && path === "/api/git/status") return true;
   if (get && path === "/api/sessions") return true;
   if (get && /^\/api\/sessions\/(?!search$)[^/]+$/.test(path)) return true;
+  if ((patch || del) && /^\/api\/sessions\/(?!search$)[^/]+$/.test(path)) return true;
   if (get && /^\/api\/sessions\/(?!search$)[^/]+\/(?:context|state|plan|plan-versions)$/.test(path)) return true;
   if (get && /^\/api\/sessions\/(?!search$)[^/]+\/entries\/[^/]+\/(?:thinking|tool-result-image)$/.test(path)) {
     return true;
   }
-  if (get && /^\/api\/sessions\/(?!search$)[^/]+\/images\/[^/]+$/.test(path)) return true;
 
   if (post && path === "/api/agent/new") return true;
   if ((get || post) && /^\/api\/agent\/[^/]+$/.test(path)) return true;
@@ -122,6 +109,7 @@ export function isEmbedApiAllowed(method: string, pathname: string): boolean {
   if (get && path === "/api/skills") return true;
   if ((get || post || put) && (path === "/api/files" || path.startsWith("/api/files/"))) return true;
   if ((get || post || put) && (path === "/api/remotefs" || path.startsWith("/api/remotefs/"))) return true;
+  if (post && path === "/api/embed/workspace/reapply-config") return true;
 
   return false;
 }

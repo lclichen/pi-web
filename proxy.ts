@@ -2,9 +2,15 @@ import { NextResponse, type NextRequest } from "next/server";
 import { isApiRequestAllowed, isApiRequestHostAllowed } from "@/lib/request-security";
 import { isValidBasicAuthorization, isWebPasswordEnabled } from "@/lib/web-auth";
 import { getWebSession } from "@/lib/web-session";
+import { getEmbedProfile } from "@/lib/embed-profiles";
+import { getProject } from "@/lib/projects";
+import {
+  embedProductIdFromPath,
+  embedCorsPreflight,
+  isEmbedOriginAllowed,
+} from "@/lib/embed-cors";
 import {
   embedResponseHeaders,
-  embedTokenFromPath,
   isEmbedApiAllowed,
   resolveEmbedAccess,
   resolveEmbedRequest,
@@ -15,9 +21,64 @@ import {
 // anonymous gate for EVERY /api route; per-route requireUserIdentity calls
 // remain as defense in depth and to resolve per-user ownership.
 
+function projectIdFromEmbedPage(pathname: string): string | null {
+  const match = /^\/embed\/p\/([^/]+)\/?$/.exec(pathname);
+  if (!match) return null;
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return null;
+  }
+}
+
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const isApiRequest = pathname === "/api" || pathname.startsWith("/api/");
+
+  // Product API: CORS/API-key-authenticated. The productId is in the path so
+  // preflight can enforce the product's origin allowlist before auth.
+  const productId = isApiRequest ? embedProductIdFromPath(pathname) : null;
+  if (productId) {
+    if (!isApiRequestHostAllowed(request)) {
+      return NextResponse.json({ error: "Untrusted API request" }, { status: 403 });
+    }
+    const product = getEmbedProfile(productId);
+    if (!product || !product.enabled) return NextResponse.json({ error: "产品不存在或未启用" }, { status: 404 });
+    if (request.method.toUpperCase() === "OPTIONS") return embedCorsPreflight(request, product);
+    if (!isEmbedOriginAllowed(product, request.headers.get("origin"))) {
+      return NextResponse.json({ error: "Origin not allowed" }, { status: 403 });
+    }
+    // Routes validate X-Platform-API-Key / cookie and group membership.
+    return NextResponse.next();
+  }
+
+  // The auth gate exchanges a user API key for a short-lived access token. It
+  // is same-origin iframe traffic, not a cross-site product API.
+  if (isApiRequest && pathname === "/api/embed/auth") {
+    if (!isApiRequestHostAllowed(request)) {
+      return NextResponse.json({ error: "Untrusted API request" }, { status: 403 });
+    }
+    if (!isApiRequestAllowed(request)) {
+      return NextResponse.json({ error: "Untrusted API request" }, { status: 403 });
+    }
+    return NextResponse.next();
+  }
+
+  // Stable project page: authentication is handled by the page's API-key gate.
+  const embedPageProjectId = pathname.startsWith("/embed/p/") ? projectIdFromEmbedPage(pathname) : null;
+  if (embedPageProjectId) {
+    if (!isApiRequestHostAllowed(request)) return new NextResponse("Untrusted request", { status: 403 });
+    const project = getProject(embedPageProjectId);
+    const profile = project?.embed ? getEmbedProfile(project.embed.productId) : undefined;
+    const response = NextResponse.next();
+    if (profile) {
+      for (const [key, value] of Object.entries(embedResponseHeaders(profile))) {
+        response.headers.set(key, value);
+      }
+    }
+    return response;
+  }
+
   const isTrustedRequest = isApiRequest ? isApiRequestAllowed(request) : isApiRequestHostAllowed(request);
 
   if (!isTrustedRequest) {
@@ -27,13 +88,12 @@ export function proxy(request: NextRequest) {
     return NextResponse.json({ error: "Untrusted API request" }, { status: 403 });
   }
 
-  // Embed tokens are bearer credentials scoped to one workspace. API requests
-  // carrying one bypass the cookie/Basic gates but are still default-denied to
-  // the chat-only surface; the routes re-check identity and scope.
+  // Short-lived embed access tokens bypass the cookie/Basic gates but remain
+  // default-denied to the chat/file surface.
   if (isApiRequest) {
     const embed = resolveEmbedRequest(request);
     if (embed.kind === "invalid") {
-      return NextResponse.json({ error: "嵌入链接已失效" }, { status: 401 });
+      return NextResponse.json({ error: "嵌入会话已失效" }, { status: 401 });
     }
     if (embed.kind === "ok") {
       if (!isEmbedApiAllowed(request.method, pathname)) {
@@ -45,21 +105,6 @@ export function proxy(request: NextRequest) {
     }
   }
 
-  // The embed page validates its own token server-side. Proxy only adds the
-  // product's frame-ancestors/Referrer policy so a valid link can be framed by
-  // the approved parent origins; an invalid link renders the not-found page.
-  if (pathname === "/embed" || pathname.startsWith("/embed/")) {
-    const response = NextResponse.next();
-    const token = embedTokenFromPath(pathname);
-    const access = token ? resolveEmbedAccess(token) : null;
-    if (access) {
-      for (const [key, value] of Object.entries(embedResponseHeaders(access.profile))) {
-        response.headers.set(key, value);
-      }
-    }
-    return response;
-  }
-
   // Relay agent downloads are curl-able installers (the pairing modal emits
   // `curl …/install.sh | sh`); they carry no secrets and are a fixed
   // allowlist of prebuilt binaries, so they stay public in both auth modes.
@@ -68,8 +113,7 @@ export function proxy(request: NextRequest) {
   // Share downloads are bearer-token URLs: the 128-bit token in the path is
   // the credential, so an MCP service (or any other device/browser) fetches
   // them WITHOUT a session cookie. Only the token GET is public — the audit
-  // list, creation and revocation stay session-gated. Malformed tokens still
-  // reach the route, which answers 404 instead of a misleading 401.
+  // list, creation and revocation stay session-gated.
   const isPublicShareDownload = request.method === "GET" && /^\/api\/share\/[^/]+\/?$/.test(pathname);
 
   // Batch test API authenticates with X-Platform-API-Key (sk_...), validated
@@ -124,4 +168,4 @@ export function proxy(request: NextRequest) {
   return NextResponse.next();
 }
 
-export const config = { matcher: ["/", "/embed", "/embed/:path*", "/api/:path*"] };
+export const config = { matcher: ["/", "/embed/p/:path*", "/api/:path*"] };

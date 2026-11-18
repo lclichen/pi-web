@@ -134,7 +134,7 @@ export async function GET(req: Request) {
   // (ownership-checked), so a not-yet-materialized session can pick models.
   const projectId = new URL(req.url).searchParams.get("projectId");
   const explicitCwd = new URL(req.url).searchParams.get("cwd");
-  if (embed && projectId && (embed.scope.kind !== "project" || projectId !== embed.scope.projectId)) {
+  if (embed && projectId && projectId !== embed.scope.projectId) {
     return Response.json({ error: "Access denied" }, { status: 403 });
   }
   let cwd: string;

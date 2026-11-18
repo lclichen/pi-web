@@ -33,7 +33,7 @@ export function batchUserMaxConcurrent(): number {
 }
 
 /** Extract the platform API key from the X-Platform-API-Key header. */
-function platformKeyFrom(req: Request): string | null {
+export function platformKeyFrom(req: Request): string | null {
   const direct = req.headers.get("x-platform-api-key");
   if (direct?.startsWith("sk_")) return direct.trim();
   const bearer = req.headers.get("authorization");
@@ -42,7 +42,7 @@ function platformKeyFrom(req: Request): string | null {
 }
 
 /** Validate a platform API key → the owning platform user. */
-async function resolvePlatformUser(key: string): Promise<PlatformUser | null> {
+export async function resolvePlatformUser(key: string): Promise<PlatformUser | null> {
   const cached = keyCache.get(key);
   if (cached && Date.now() - cached.at < KEY_CACHE_TTL_MS) return cached.user;
   try {

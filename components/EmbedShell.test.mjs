@@ -15,12 +15,11 @@ test("mounts a session-only chat shell without project navigation", () => {
   assert.doesNotMatch(source, /\/api\/projects/);
 });
 
-test("scopes the session list and creates sessions through the workspace props", () => {
-  assert.match(source, /fetch\("\/api\/sessions"/);
+test("scopes the session list to the stable project", () => {
+  assert.match(source, /fetch\(`\/api\/sessions\$\{showArchived \? "\?includeArchived=1" : ""\}`/);
   assert.match(source, /newSessionCwd=\{selected \? null : scope\.cwd\}/);
-  assert.match(source, /newSessionProjectId=\{selected \? null : scope\.kind === "project" \? scope\.projectId : null\}/);
+  assert.match(source, /newSessionProjectId=\{selected \? null : scope\.projectId\}/);
   assert.match(source, /onSessionCreated=\{handleSessionCreated\}/);
-  assert.match(source, /onSessionForked=\{handleSessionForked\}/);
 });
 
 test("measures the container and switches density for side rails and bottom bars", () => {
@@ -31,13 +30,22 @@ test("measures the container and switches density for side rails and bottom bars
   assert.match(source, /data-density=\{density\}/);
   assert.match(cssSource, /\.embed-shell\[data-density="compact"\] \.embed-header \{[\s\S]*?height: 36px/);
   assert.match(cssSource, /\.embed-shell\[data-density="mini"\] \.embed-header \{[\s\S]*?height: 30px/);
-  assert.match(cssSource, /\.embed-shell\[data-density="compact"\] \.embed-sessions-popover \{[\s\S]*?left: 6px/);
   assert.match(cssSource, /height: 100%;[\s\S]*?min-height: 0;/);
 });
 
-test("exposes session switching and new chat without a project picker", () => {
-  assert.match(source, /aria-label=\{t\("embed\.sessions"\)\}/);
-  assert.match(source, /aria-label=\{t\("embed\.newChat"\)\}/);
-  assert.match(source, /window\.history\.replaceState/);
-  assert.match(source, /setNewDraftKey\(`embed-\$\{token\.slice\(-8\)\}-new-\$\{Date\.now\(\)\}`\)/);
+test("supports session rename, archive, delete, and account switching", () => {
+  assert.match(source, /method: "PATCH"/);
+  assert.match(source, /method: "DELETE"/);
+  assert.match(source, /archived: !session\.archivedAt/);
+  assert.match(source, /setRenamingId\(session\.id\)/);
+  assert.match(source, /onSwitchAccount/);
+  assert.match(source, /onAuthExpired/);
+  assert.match(source, /includeArchived=1/);
+});
+
+test("offers explicit product config reapply and honours the access-token expiry", () => {
+  assert.match(source, /\/api\/embed\/workspace\/reapply-config/);
+  assert.match(source, /configUpdateAvailable/);
+  assert.match(source, /onAuthExpired\(\)/);
+  assert.match(source, /pi-embed-last:\$\{scope\.projectId\}/);
 });

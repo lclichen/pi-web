@@ -222,7 +222,7 @@ try {
   browser = await chromium.launch(
     process.env.E2E_CHROMIUM_PATH ? { executablePath: process.env.E2E_CHROMIUM_PATH } : {},
   );
-  await checkEmbed({ browser, base, project });
+  await checkEmbed({ browser, base, agentDir });
   console.log("PASS: cross-origin embed side rail, bottom bar, mini, and full layouts");
   for (const viewport of [
     { width: 1280, height: 800 },

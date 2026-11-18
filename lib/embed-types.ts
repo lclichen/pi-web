@@ -1,9 +1,9 @@
 /**
- * Embed session-widget shared types.
+ * Embedded product integration shared types.
  *
- * An embed token binds the caller to ONE workspace (project or host directory)
- * and one product profile. The page and the API fence both read these shapes;
- * they intentionally contain no platform credentials.
+ * Project ids are stable references, not credentials. A product holds the
+ * end-user's platform API key and exchanges it for a short-lived access token;
+ * the page URL only carries that access token in its hash.
  */
 
 export type EmbedMode = "host" | "sandbox" | "local-machine" | "ssh" | "quick";
@@ -11,9 +11,12 @@ export type EmbedMode = "host" | "sandbox" | "local-machine" | "ssh" | "quick";
 /** Container-size mode used by the embed shell / chat composer. */
 export type EmbedDensity = "comfortable" | "compact" | "mini";
 
-export type EmbedScope =
-  | { kind: "project"; projectId: string; cwd: string }
-  | { kind: "host"; cwd: string };
+export type EmbedScope = {
+  kind: "project";
+  projectId: string;
+  /** Server-side project home (SDK cwd). */
+  cwd: string;
+};
 
 export interface EmbedUser {
   id: number;
@@ -28,49 +31,72 @@ export interface EmbedProductProfile {
   name: string;
   /** Command names without the leading slash. `*` allows every command. */
   allowedCommands: string[];
-  /** Parent origins allowed by the page CSP frame-ancestors. Empty = any. */
+  /** Parent origins allowed by iframe/CORS. Empty = any. */
   allowedOrigins: string[];
   enabled: boolean;
+  /** Product user group. Absent = every active user (legacy default). */
+  members?: number[];
+  /** Fixed Agent config bundle applied to new workspaces. */
+  configBundle?: string | null;
+  /** Default mode for product-created projects. */
+  defaultMode?: "local-machine" | "sandbox" | "ssh";
 }
 
-export interface EmbedTokenRecord {
+export interface EmbedProjectBinding {
+  productId: string;
+  clientId: string;
+  externalRef: string;
+  bundleName?: string;
+  bundleVersion?: string;
+  bundleSha256?: string;
+  createdAt: number;
+}
+
+/** Short-lived in-memory credential issued by API-key exchange. */
+export interface EmbedAccessRecord {
   id: string;
-  /** sha256(raw token) — the raw token is only returned at creation. */
   tokenHash: string;
-  ownerId: number;
+  userId: number;
   user: EmbedUser;
+  /** The user's platform API key, held in memory for BFF calls. */
+  apiKey: string;
   productId: string;
   scope: EmbedScope;
-  /** File roots this token may touch (project home or the bound directory). */
   allowedRoots: string[];
   mode: EmbedMode;
   label: string;
-  /** Dedicated platform key minted for this token (empty in auth-off mode). */
-  apiKey: string;
-  apiKeyId: number | string;
   createdAt: number;
   expiresAt: number;
 }
 
-export interface EmbedTokenView {
+export interface EmbedProjectView {
   id: string;
-  ownerId: number;
-  ownerName: string;
-  productId: string;
-  scope: EmbedScope;
-  label: string;
+  name: string;
   mode: EmbedMode;
+  clientId: string;
+  externalRef: string;
+  bundleName: string | null;
+  bundleVersion: string | null;
+  configUpdateAvailable: boolean;
   createdAt: number;
-  expiresAt: number;
 }
 
 export interface EmbedPageContext {
-  token: string;
   product: { id: string; name: string };
+  project: { id: string; name: string; mode: EmbedMode };
   scope: EmbedScope;
   label: string;
-  mode: EmbedMode;
   allowedCommands: string[];
-  expiresAt: number;
+  configUpdateAvailable: boolean;
   initialSessionId?: string;
+}
+
+export interface EmbedAuthResponse {
+  token: string;
+  expiresAt: number;
+  user: { id: number; username: string };
+  product: { id: string; name: string };
+  project: { id: string; name: string; mode: EmbedMode };
+  allowedCommands: string[];
+  configUpdateAvailable: boolean;
 }

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAdminIdentity } from "@/lib/web-session";
 import { hasJsonContentType, isApiRequestAllowed } from "@/lib/request-security";
 import { listEmbedProfiles, saveEmbedProfiles } from "@/lib/embed-profiles";
+import { revokeEmbedAccessForProduct } from "@/lib/embed-access";
 
 export const dynamic = "force-dynamic";
 
@@ -46,10 +47,14 @@ export async function PUT(req: Request) {
       ? (body as { products: unknown }).products
       : body;
   try {
-    return NextResponse.json(
-      { products: saveEmbedProfiles(products) },
-      { headers: { "Cache-Control": "no-store" } },
-    );
+    const before = new Set(listEmbedProfiles().map((product) => product.id));
+    const saved = saveEmbedProfiles(products);
+    // Group/config changes take effect immediately: force embedded pages to
+    // re-exchange with their API key.
+    for (const id of new Set([...before, ...saved.map((product) => product.id)])) {
+      revokeEmbedAccessForProduct(id);
+    }
+    return NextResponse.json({ products: saved }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : String(error) },

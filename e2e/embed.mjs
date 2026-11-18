@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { once } from "node:events";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 
 const CASES = [
   { name: "side rail", width: 320, height: 800 },
@@ -8,6 +10,9 @@ const CASES = [
   { name: "mini", width: 360, height: 220 },
   { name: "full", width: 900, height: 700 },
 ];
+
+const PRODUCT_ID = "e2e";
+const PRODUCT_NAME = "E2E Product";
 
 function parentPage() {
   return `<!doctype html><html><body style="margin:0;background:#d8dde7">
@@ -21,27 +26,103 @@ frame.src = params.get("src") || "";
 </script></body></html>`;
 }
 
+function writeSession(agentDir, id, cwd, name, text) {
+  const header = { type: "session", version: 3, id, timestamp: "2026-11-18T00:00:00.000Z", cwd };
+  const info = {
+    type: "session_info",
+    id: `${id}-name`,
+    parentId: null,
+    timestamp: "2026-11-18T00:00:00.500Z",
+    name,
+  };
+  const message = {
+    type: "message",
+    id: `${id}-m1`,
+    parentId: `${id}-name`,
+    timestamp: "2026-11-18T00:00:01.000Z",
+    message: { role: "user", content: text },
+  };
+  writeFileSync(
+    join(agentDir, "sessions", "e2e", `${id}.jsonl`),
+    [header, info, message].map((entry) => JSON.stringify(entry)).join("\n") + "\n",
+  );
+}
+
+function recordProjectSession(agentDir, id, projectId) {
+  const path = join(agentDir, "data", "session-metas.json");
+  let data = { version: 1, sessions: {} };
+  try {
+    data = JSON.parse(readFileSync(path, "utf8"));
+  } catch {
+    // fresh data dir
+  }
+  data.sessions[id] = { mode: "sandbox", ownerId: 0, projectId, createdAt: Date.now() };
+  writeFileSync(path, JSON.stringify(data, null, 2));
+}
+
 /**
- * Opens the embed page inside a cross-origin parent at four container sizes.
- * This is the layout gate for side rails, bottom bars, mini cards, and full
- * page embeds, and also proves that no pi-web cookie is involved.
+ * Product integration gate: configure a product, create/reuse a stable project
+ * through the product API, open it with a short-lived access token, and exercise
+ * the same session UI at four container sizes.
  */
-export async function checkEmbed({ browser, base, project }) {
-  const created = await fetch(`${base}/api/embed/tokens`, {
+export async function checkEmbed({ browser, base, agentDir }) {
+  const profiles = await fetch(`${base}/api/admin/embed-profiles`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      products: [
+        {
+          id: PRODUCT_ID,
+          name: PRODUCT_NAME,
+          allowedCommands: ["compact", "name", "copy"],
+          allowedOrigins: [],
+          enabled: true,
+          configBundle: null,
+          defaultMode: "sandbox",
+        },
+      ],
+    }),
+  });
+  assert.equal(profiles.status, 200, await profiles.clone().text());
+
+  const preflight = await fetch(`${base}/api/embed/products/${PRODUCT_ID}/projects`, {
+    method: "OPTIONS",
+    headers: { Origin: "https://app.example.com" },
+  });
+  assert.equal(preflight.status, 204, "product API CORS preflight");
+  assert.equal(preflight.headers.get("access-control-allow-origin"), "*");
+
+  const created = await fetch(`${base}/api/embed/products/${PRODUCT_ID}/projects`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ cwd: project, productId: "default", ttlMinutes: 60, label: "E2E Embed" }),
+    body: JSON.stringify({
+      clientId: "e2e-client",
+      externalRef: "default",
+      mode: "sandbox",
+      name: "E2E Embedded Project",
+    }),
   });
   assert.equal(created.status, 201, await created.clone().text());
-  const tokenData = await created.json();
-  const embedUrl = tokenData.url;
-  const rawToken = embedUrl.split("/embed/")[1];
-  assert.match(rawToken, /^emb_/);
+  const project = await created.json();
+  const projectId = project.project.id;
+  const projectHome = join(agentDir, "data", "sandbox-homes", "u0", projectId);
+  mkdirSync(projectHome, { recursive: true });
+  writeSession(agentDir, "embed-session-a", projectHome, "Session A", "hello session-a");
+  writeSession(agentDir, "embed-session-b", projectHome, "Session B", "hello session-b");
+  recordProjectSession(agentDir, "embed-session-a", projectId);
+  recordProjectSession(agentDir, "embed-session-b", projectId);
+  const refreshed = await fetch(`${base}/api/sessions?force=1`);
+  assert.equal(refreshed.status, 200);
 
-  const sessionList = await fetch(`${base}/api/sessions`, {
-    headers: { Authorization: `Bearer ${rawToken}` },
+  const opened = await fetch(`${base}/api/embed/products/${PRODUCT_ID}/projects/${projectId}/open`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({}),
   });
-  assert.equal(sessionList.status, 200, "embed token must authenticate without a cookie");
+  assert.equal(opened.status, 200, await opened.clone().text());
+  const openBody = await opened.json();
+  assert.match(openBody.url, /#token=emba_/);
+  const embedUrl = openBody.url;
 
   const parent = createServer((req, res) => {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
@@ -68,7 +149,6 @@ export async function checkEmbed({ browser, base, project }) {
       const frame = await handle.contentFrame();
       await frame.waitForSelector(".embed-shell", { timeout: 30_000 });
       await frame.getByRole("button", { name: "Sessions", exact: true }).waitFor();
-
       assert.equal(await frame.locator("#session-sidebar").count(), 0, `${testCase.name}: no AppShell sidebar`);
       assert.equal(await frame.getByText("Projects", { exact: true }).count(), 0, `${testCase.name}: no project switch`);
 
@@ -76,10 +156,7 @@ export async function checkEmbed({ browser, base, project }) {
       const popover = frame.locator(".embed-sessions-popover");
       await listButton.click();
       await frame.waitForTimeout(100);
-      if (!(await popover.isVisible().catch(() => false))) {
-        // A frame that is still settling can drop the first click; retry once.
-        await listButton.click();
-      }
+      if (!(await popover.isVisible().catch(() => false))) await listButton.click();
       await popover.waitFor();
       const iframeBox = await iframe.boundingBox();
       const popoverBox = await popover.boundingBox();
@@ -92,13 +169,12 @@ export async function checkEmbed({ browser, base, project }) {
         `${testCase.name}: session popover must stay inside the iframe`,
       );
 
-      await frame.getByRole("button", { name: /E2E message 0000/ }).click();
+      await frame.locator(".embed-session-row", { hasText: "Session A" }).click();
       await popover.waitFor({ state: "detached" });
-      await frame.getByText("E2E message 4999", { exact: true }).waitFor({ timeout: 30_000 });
+      await frame.locator("[data-entry-id]").getByText("hello session-a", { exact: true }).first().waitFor({ timeout: 30_000 });
 
       const metrics = await frame.evaluate(() => ({
         width: window.innerWidth,
-        height: window.innerHeight,
         scrollWidth: document.documentElement.scrollWidth,
         chat: document.querySelector(".chat-content")?.getBoundingClientRect().height ?? 0,
       }));
@@ -125,10 +201,32 @@ export async function checkEmbed({ browser, base, project }) {
       );
       console.log(`PASS: embed ${testCase.name} (${testCase.width}x${testCase.height})`);
     }
+
+    // Exercise session actions once in the full layout.
+    const iframe = page.locator("#embed");
+    const handle = await iframe.elementHandle();
+    const frame = await handle.contentFrame();
+    await frame.getByRole("button", { name: "Sessions", exact: true }).click();
+    const row = frame.locator(".embed-session-row-wrap", { hasText: "Session A" });
+    await row.getByRole("button", { name: "Session actions" }).click();
+    await frame.getByRole("menuitem", { name: "Rename" }).click();
+    const renameInput = frame.getByRole("textbox", { name: "Rename" });
+    await renameInput.fill("Renamed A");
+    await frame.getByRole("button", { name: "Save" }).click();
+    await frame.getByText("Renamed A", { exact: true }).waitFor();
+    const renamedRow = frame.locator(".embed-session-row-wrap", { hasText: "Renamed A" });
+    await renamedRow.getByRole("button", { name: "Session actions" }).click();
+    await frame.getByRole("menuitem", { name: "Archive" }).click();
+    await frame.getByRole("button", { name: "Show archived" }).click();
+    await frame.getByText("Archived", { exact: true }).waitFor();
+    const archivedRow = frame.locator(".embed-session-row-wrap", { hasText: "Renamed A" });
+    await archivedRow.getByRole("button", { name: "Session actions" }).click();
+    await frame.getByRole("menuitem", { name: "Delete" }).click();
+    await frame.getByRole("alertdialog").getByRole("button", { name: "Delete" }).click();
+    await frame.getByText("Renamed A", { exact: true }).waitFor({ state: "detached" });
     assert.deepEqual(errors, [], "embed browser errors");
   } finally {
     await context.close();
     parent.close();
-    await fetch(`${base}/api/embed/tokens/${encodeURIComponent(tokenData.id)}`, { method: "DELETE" }).catch(() => {});
   }
 }

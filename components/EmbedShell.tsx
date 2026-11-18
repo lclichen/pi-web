@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { List, Plus } from "lucide-react";
+import { Archive, ArchiveRestore, List, LogOut, MoreHorizontal, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { ChatWindow } from "./ChatWindow";
+import { useConfirm } from "./use-confirm";
 import { useI18n } from "@/hooks/useI18n";
 import { installEmbedTransport } from "@/lib/embed-client";
 import type { EmbedDensity, EmbedMode, EmbedScope } from "@/lib/embed-types";
@@ -19,6 +20,10 @@ interface Props {
   allowedCommands: string[];
   expiresAt: number;
   initialSessionId?: string;
+  configUpdateAvailable?: boolean;
+  onConfigUpdateAvailableChange?: (available: boolean) => void;
+  onAuthExpired?: () => void;
+  onSwitchAccount?: () => void;
 }
 
 function sessionTitle(session: SessionInfo, fallback: string): string {
@@ -46,8 +51,13 @@ export function EmbedShell({
   allowedCommands,
   expiresAt,
   initialSessionId,
+  configUpdateAvailable = false,
+  onConfigUpdateAvailableChange,
+  onAuthExpired,
+  onSwitchAccount,
 }: Props) {
   const { t } = useI18n();
+  const { confirm, confirmDialog } = useConfirm();
   const rootRef = useRef<HTMLDivElement | null>(null);
   const initialAppliedRef = useRef(false);
   const [size, setSize] = useState({ width: 0, height: 0 });
@@ -60,6 +70,12 @@ export function EmbedShell({
   const [expired, setExpired] = useState(() => Date.now() >= expiresAt);
   const [chatKey, setChatKey] = useState(0);
   const [newDraftKey, setNewDraftKey] = useState(() => `embed-${token.slice(-8)}-new-${Date.now()}`);
+  const [configBusy, setConfigBusy] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
+  const [menuSessionId, setMenuSessionId] = useState<string | null>(null);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [sessionBusy, setSessionBusy] = useState<string | null>(null);
 
   // Install the token transport before ChatWindow's mount effects run. The
   // initializer runs on the client before children render their effects.
@@ -90,17 +106,17 @@ export function EmbedShell({
     let timer: ReturnType<typeof setTimeout> | undefined;
     const check = () => {
       if (Date.now() >= expiresAt) {
-        setExpired(true);
+        if (onAuthExpired) onAuthExpired();
+        else setExpired(true);
         return;
       }
-      // setTimeout caps at ~24.8 days; a 30-day token must re-arm.
       timer = setTimeout(check, Math.min(expiresAt - Date.now(), 2_147_483_647));
     };
     check();
     return () => {
       if (timer) clearTimeout(timer);
     };
-  }, [expiresAt]);
+  }, [expiresAt, onAuthExpired]);
 
   const writeSessionParam = useCallback((sessionId: string | null) => {
     if (typeof window === "undefined") return;
@@ -116,8 +132,13 @@ export function EmbedShell({
       setChatKey((value) => value + 1);
       setListOpen(false);
       writeSessionParam(session.id);
+      try {
+        localStorage.setItem(`pi-embed-last:${scope.projectId}`, session.id);
+      } catch {
+        // storage is best-effort
+      }
     },
-    [writeSessionParam],
+    [scope.projectId, writeSessionParam],
   );
 
   const startNewChat = useCallback(() => {
@@ -130,9 +151,15 @@ export function EmbedShell({
 
   const loadSessions = useCallback(async () => {
     try {
-      const response = await fetch("/api/sessions", { cache: "no-store" });
+      const response = await fetch(`/api/sessions${showArchived ? "?includeArchived=1" : ""}`, {
+        cache: "no-store",
+      });
       if (!response.ok) {
-        setError(response.status === 401 || response.status === 403 ? t("embed.linkExpired") : t("embed.loadFailed"));
+        if (response.status === 401 || response.status === 403) {
+          onAuthExpired?.();
+          return;
+        }
+        setError(t("embed.loadFailed"));
         setLoading(false);
         return;
       }
@@ -152,14 +179,21 @@ export function EmbedShell({
       if (!initialAppliedRef.current) {
         initialAppliedRef.current = true;
         const wanted = initialSessionId ? list.find((session) => session.id === initialSessionId) : undefined;
-        const target = wanted ?? list[0];
+        let last: SessionInfo | undefined;
+        try {
+          const lastId = localStorage.getItem(`pi-embed-last:${scope.projectId}`);
+          last = lastId ? list.find((session) => session.id === lastId) : undefined;
+        } catch {
+          // storage is best-effort
+        }
+        const target = wanted ?? last ?? list[0];
         if (target) selectSession(target);
       }
     } catch {
       setError(t("embed.loadFailed"));
       setLoading(false);
     }
-  }, [initialSessionId, selectSession, t]);
+  }, [initialSessionId, onAuthExpired, scope.projectId, selectSession, showArchived, t]);
 
   useEffect(() => {
     void loadSessions();
@@ -206,7 +240,7 @@ export function EmbedShell({
       const next: SessionInfo = {
         ...session,
         mode: session.mode ?? mode,
-        ...(scope.kind === "project" ? { projectId: scope.projectId } : {}),
+        projectId: scope.projectId,
       };
       setSelected(next);
       setSessions((previous) => (previous.some((item) => item.id === next.id) ? previous : [next, ...previous]));
@@ -241,11 +275,85 @@ export function EmbedShell({
     void loadSessions();
   }, [loadSessions]);
 
+  const reapplyConfig = useCallback(async () => {
+    if (configBusy) return;
+    setConfigBusy(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/embed/workspace/reapply-config", { method: "POST" });
+      const data = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) throw new Error(data.error ?? `HTTP ${response.status}`);
+      onConfigUpdateAvailableChange?.(false);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setConfigBusy(false);
+    }
+  }, [configBusy, onConfigUpdateAvailableChange]);
+
+  const patchSession = useCallback(
+    async (sessionId: string, body: { name?: string; archived?: boolean }) => {
+      setSessionBusy(sessionId);
+      setError(null);
+      try {
+        const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const data = (await response.json().catch(() => ({}))) as { error?: string };
+        if (!response.ok) throw new Error(data.error ?? `HTTP ${response.status}`);
+        setMenuSessionId(null);
+        setRenamingId(null);
+        await loadSessions();
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : String(cause));
+      } finally {
+        setSessionBusy(null);
+      }
+    },
+    [loadSessions],
+  );
+
+  const deleteSession = useCallback(
+    async (session: SessionInfo) => {
+      const ok = await confirm({
+        title: t("embed.deleteSession"),
+        message: t("embed.deleteSessionConfirm", { name: sessionTitle(session, t("embed.untitled")) }),
+        confirmLabel: t("common.delete"),
+        abortLabel: t("common.cancel"),
+        danger: true,
+      });
+      if (!ok) return;
+      setSessionBusy(session.id);
+      setError(null);
+      try {
+        const response = await fetch(`/api/sessions/${encodeURIComponent(session.id)}`, { method: "DELETE" });
+        if (!response.ok) {
+          const data = (await response.json().catch(() => ({}))) as { error?: string };
+          throw new Error(data.error ?? `HTTP ${response.status}`);
+        }
+        if (selected?.id === session.id) {
+          setSelected(null);
+          writeSessionParam(null);
+          setChatKey((value) => value + 1);
+        }
+        setMenuSessionId(null);
+        await loadSessions();
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : String(cause));
+      } finally {
+        setSessionBusy(null);
+      }
+    },
+    [confirm, loadSessions, selected?.id, t, writeSessionParam],
+  );
+
   if (expired) {
     return (
       <div ref={rootRef} className="embed-shell" data-density={density}>
         <div className="embed-state" role="alert">
-          <div>{t("embed.linkExpired")}</div>
+          <div>{t("embed.sessionExpired")}</div>
         </div>
       </div>
     );
@@ -263,6 +371,18 @@ export function EmbedShell({
           </span>
         </div>
         <div className="embed-header-actions">
+          {configUpdateAvailable && (
+            <button
+              type="button"
+              className="embed-header-button"
+              title={t("embed.updateConfig")}
+              aria-label={t("embed.updateConfig")}
+              disabled={configBusy}
+              onClick={() => void reapplyConfig()}
+            >
+              <RefreshCw size={14} aria-hidden="true" />
+            </button>
+          )}
           <button
             type="button"
             className="embed-header-button"
@@ -284,6 +404,17 @@ export function EmbedShell({
             <Plus size={14} aria-hidden="true" />
             {showLabels && <span>{t("embed.newChat")}</span>}
           </button>
+          {onSwitchAccount && (
+            <button
+              type="button"
+              className="embed-header-button"
+              title={t("embed.switchAccount")}
+              aria-label={t("embed.switchAccount")}
+              onClick={onSwitchAccount}
+            >
+              <LogOut size={14} aria-hidden="true" />
+            </button>
+          )}
         </div>
       </header>
 
@@ -296,24 +427,111 @@ export function EmbedShell({
             onClick={() => setListOpen(false)}
           />
           <div className="embed-sessions-popover" role="dialog" aria-label={t("embed.sessions")}>
-            <div className="embed-sessions-heading">{label}</div>
+            <div className="embed-sessions-heading">
+              <span>{label}</span>
+              <button
+                type="button"
+                className="embed-sessions-toggle"
+                onClick={() => setShowArchived((value) => !value)}
+              >
+                {showArchived ? t("embed.hideArchived") : t("embed.showArchived")}
+              </button>
+            </div>
             {sessions.length === 0 ? (
               <div className="embed-sessions-empty">{t("embed.noSessions")}</div>
             ) : (
               sessions.map((session) => (
-                <button
-                  key={session.id}
-                  type="button"
-                  className="embed-session-row"
-                  aria-current={selected?.id === session.id ? "true" : undefined}
-                  onClick={() => selectSession(session)}
-                >
-                  <span className="embed-session-row-title">{sessionTitle(session, t("embed.untitled"))}</span>
-                  <span className="embed-session-row-meta">
-                    {runningIds.has(session.id) && <span className="embed-running-dot" aria-hidden="true" />}
-                    {formatWhen(session.modified)}
-                  </span>
-                </button>
+                <div key={session.id} className="embed-session-row-wrap" data-archived={session.archivedAt ? "true" : undefined}>
+                  {renamingId === session.id ? (
+                    <form
+                      className="embed-session-rename"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        const name = renameValue.trim();
+                        if (name && !sessionBusy) void patchSession(session.id, { name });
+                      }}
+                    >
+                      <input
+                        autoFocus
+                        value={renameValue}
+                        onChange={(event) => setRenameValue(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Escape") setRenamingId(null);
+                        }}
+                        aria-label={t("embed.renameSession")}
+                        maxLength={120}
+                      />
+                      <button type="submit" disabled={Boolean(sessionBusy)} aria-label={t("common.save")}>
+                        ✓
+                      </button>
+                      <button type="button" onClick={() => setRenamingId(null)} aria-label={t("common.cancel")}>
+                        ×
+                      </button>
+                    </form>
+                  ) : (
+                    <button
+                      type="button"
+                      className="embed-session-row"
+                      aria-current={selected?.id === session.id ? "true" : undefined}
+                      onClick={() => selectSession(session)}
+                    >
+                      <span className="embed-session-row-title">
+                        {sessionTitle(session, t("embed.untitled"))}
+                        {session.archivedAt && <span className="embed-session-archived">{t("embed.archived")}</span>}
+                      </span>
+                      <span className="embed-session-row-meta">
+                        {runningIds.has(session.id) && <span className="embed-running-dot" aria-hidden="true" />}
+                        {formatWhen(session.modified)}
+                      </span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="embed-session-row-menu"
+                    title={t("embed.sessionActions")}
+                    aria-label={t("embed.sessionActions")}
+                    aria-expanded={menuSessionId === session.id}
+                    disabled={sessionBusy === session.id}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setMenuSessionId((current) => (current === session.id ? null : session.id));
+                    }}
+                  >
+                    <MoreHorizontal size={14} aria-hidden="true" />
+                  </button>
+                  {menuSessionId === session.id && (
+                    <div className="embed-session-actions" role="menu">
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          setRenameValue(sessionTitle(session, ""));
+                          setRenamingId(session.id);
+                          setMenuSessionId(null);
+                        }}
+                      >
+                        <Pencil size={12} aria-hidden="true" />
+                        {t("embed.renameSession")}
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => void patchSession(session.id, { archived: !session.archivedAt })}
+                      >
+                        {session.archivedAt ? (
+                          <ArchiveRestore size={12} aria-hidden="true" />
+                        ) : (
+                          <Archive size={12} aria-hidden="true" />
+                        )}
+                        {session.archivedAt ? t("embed.unarchiveSession") : t("embed.archiveSession")}
+                      </button>
+                      <button type="button" role="menuitem" className="is-danger" onClick={() => void deleteSession(session)}>
+                        <Trash2 size={12} aria-hidden="true" />
+                        {t("embed.deleteSession")}
+                      </button>
+                    </div>
+                  )}
+                </div>
               ))
             )}
           </div>
@@ -339,7 +557,7 @@ export function EmbedShell({
             sessionRunning={sessionRunning}
             newSessionCwd={selected ? null : scope.cwd}
             newSessionMode={selected ? undefined : mode}
-            newSessionProjectId={selected ? null : scope.kind === "project" ? scope.projectId : null}
+            newSessionProjectId={selected ? null : scope.projectId}
             newSessionDraftKey={selected ? null : newDraftKey}
             embedded
             embeddedDensity={density}
@@ -351,6 +569,7 @@ export function EmbedShell({
           />
         )}
       </main>
+      {confirmDialog}
     </div>
   );
 }

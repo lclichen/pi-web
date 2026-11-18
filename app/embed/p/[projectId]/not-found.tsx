@@ -1,8 +1,8 @@
-export default function EmbedNotFound() {
+export default function EmbedProjectNotFound() {
   return (
     <div className="embed-shell">
       <div className="embed-state" role="alert">
-        This embed link is invalid or expired.
+        This project is not available for embedding.
       </div>
     </div>
   );

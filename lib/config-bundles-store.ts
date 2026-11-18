@@ -18,7 +18,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { dataDir } from "./mode-homes.ts";
 import { importProjectConfigBundle } from "./project-config-bundle.ts";
@@ -38,6 +38,8 @@ export interface BundleMeta {
   kind: "zip" | "apkg";
   /** Content version from the package (manifest v2 / .apkg header). */
   version: string;
+  /** sha256 of the stored bytes (version drift even without a version bump). */
+  sha256: string;
 }
 
 function bundlesDir(): string {
@@ -53,6 +55,7 @@ interface MetaEntry {
   createdAt: number;
   kind?: "zip" | "apkg";
   version?: string;
+  sha256?: string;
 }
 
 function readMeta(): Record<string, MetaEntry> {
@@ -146,6 +149,7 @@ export function listBundles(): BundleMeta[] {
         createdAt: meta[name]?.createdAt ?? st.mtimeMs,
         kind,
         version,
+        sha256: meta[name]?.sha256 ?? "",
       });
     } catch {
       // deleted between readdir and stat — skip
@@ -160,6 +164,27 @@ export function bundleExists(name: string): boolean {
 
 export function readBundle(name: string): Buffer {
   return readFileSync(bundleFilePath(name));
+}
+
+/** Content identity used by product workspaces to detect config updates. */
+export function getBundleInfo(
+  name: string,
+): { name: string; version: string; sha256: string; kind: "zip" | "apkg" } | null {
+  const meta = listBundles().find((bundle) => bundle.name === name);
+  if (!meta) return null;
+  if (!meta.sha256) {
+    try {
+      meta.sha256 = createHash("sha256").update(readFileSync(bundleFilePath(name))).digest("hex");
+      const stored = readMeta();
+      if (stored[name]) {
+        stored[name].sha256 = meta.sha256;
+        writeMeta(stored);
+      }
+    } catch {
+      return null;
+    }
+  }
+  return { name, version: meta.version, sha256: meta.sha256, kind: meta.kind };
 }
 
 export function saveBundle(name: string, description: string, data: Buffer): void {
@@ -186,6 +211,7 @@ export function saveBundle(name: string, description: string, data: Buffer): voi
     createdAt: meta[name]?.createdAt ?? Date.now(),
     kind,
     ...(version ? { version } : {}),
+    sha256: createHash("sha256").update(data).digest("hex"),
   };
   writeMeta(meta);
 }
@@ -223,6 +249,7 @@ export function saveBundleFromFile(name: string, description: string, tempPath: 
     createdAt: meta[name]?.createdAt ?? Date.now(),
     kind,
     ...(version ? { version } : {}),
+    sha256: createHash("sha256").update(readFileSync(target)).digest("hex"),
   };
   writeMeta(meta);
 }

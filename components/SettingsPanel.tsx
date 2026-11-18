@@ -608,7 +608,6 @@ export function SettingsPanel({
     { id: "general", label: t("settings.general"), requiresProject: false, group: "personal" },
     { id: "account", label: t("settings.account"), requiresProject: false, group: "personal" },
     { id: "api-keys", label: t("settings.apiKeys"), requiresProject: false, group: "personal" },
-    { id: "embed", label: t("embed.settingsTitle"), requiresProject: false, group: "personal" },
     { id: "models", label: t("common.models"), requiresProject: false, group: "workspace" },
     { id: "skills", label: t("common.skills"), requiresProject: true, group: "workspace" },
     { id: "agents", label: t("common.agents"), requiresProject: true, group: "workspace" },
@@ -629,6 +628,12 @@ export function SettingsPanel({
           {
             id: "global-config" as const,
             label: t("settings.globalConfig"),
+            requiresProject: false,
+            group: "admin" as const,
+          },
+          {
+            id: "embed" as const,
+            label: t("embed.settingsTitle"),
             requiresProject: false,
             group: "admin" as const,
           },
@@ -676,7 +681,11 @@ export function SettingsPanel({
   // 恢复的上次分区是管理员专属而当前用户不是管理员（同源 localStorage 在
   // 多用户间共享）→ 面板会渲染成空白，重置到通用分区。
   useEffect(() => {
-    if (isAdmin || (section !== "quick-templates" && section !== "bundles" && section !== "global-config")) return;
+    if (
+      isAdmin ||
+      (section !== "quick-templates" && section !== "bundles" && section !== "global-config" && section !== "embed")
+    )
+      return;
     setSection("general");
     setMountedSections((current) => new Set(current).add("general"));
     setLastSettingsSection("general");
@@ -804,7 +813,6 @@ export function SettingsPanel({
           )}
           {sectionHost("account", <AccountSettings />)}
           {sectionHost("api-keys", <ApiKeysConfig />)}
-          {sectionHost("embed", <EmbedConfig isAdmin={isAdmin} />)}
           {sectionHost("models", <ModelsConfig embedded onClose={onClose} />)}
           {cwd && sectionHost("skills", <SkillsConfig embedded key={cwd} cwd={cwd} onClose={onClose} isAdmin={isAdmin} />)}
           {cwd && sectionHost("agents", <SubagentsConfig embedded key={cwd} cwd={cwd} onClose={onClose} isAdmin={isAdmin} />)}
@@ -814,6 +822,7 @@ export function SettingsPanel({
           {isAdmin && sectionHost("quick-templates", <QuickTemplatesConfig embedded />)}
           {isAdmin && sectionHost("bundles", <BundlesConfig embedded />)}
           {isAdmin && sectionHost("global-config", <AdminGlobalConfig />)}
+          {isAdmin && sectionHost("embed", <EmbedConfig isAdmin={isAdmin} />)}
           {cwd &&
             sectionHost(
               "plugins",

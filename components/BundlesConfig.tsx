@@ -391,7 +391,7 @@ export function BundlesConfig({ embedded = false }: { embedded?: boolean }) {
       </div>
 
       {tab === "apkgKeys" ? (
-        <ApkgKeysPanel />
+        <ApkgIdentityPanel />
       ) : (
         <ConfigSplitView>
           {/* Left: Agent 定义列表（与模型页同构：列表 + 左下角上传） */}
@@ -745,51 +745,43 @@ export function BundlesConfig({ embedded = false }: { embedded?: boolean }) {
 }
 
 // ---------------------------------------------------------------------------
-// .apkg 解密密钥（只写不可读）
+// .apkg 接收方身份（v2；只读）
 // ---------------------------------------------------------------------------
 
-interface ApkgKeyInfo {
-  keyId: string;
-  source: "file" | "env";
-  addedAt: string | null;
-  addedBy: string | null;
+interface ApkgIdentityView {
+  configured: boolean;
+  id: string | null;
+  publicKey: string | null;
+  source: "env" | "data" | "package" | null;
+  path: string | null;
+  error?: string;
 }
 
 /**
- * 密钥管理面：GET 只返回元数据（keyId/来源/添加人/时间）+ 解密组件状态；
- * POST 添加或轮换（同一 keyId 重新提交）；DELETE 吊销。KEK 本体只在提交时
- * 单向进入服务端存储，任何响应/页面都不回显。
+ * 身份状态页：私钥随发布包内嵌，前端只显示 id/公钥/来源。发布方拿公钥
+ * 做加密；这里不再有 KEK 输入框，也不存在可轮换的共享密钥。
  */
-function ApkgKeysPanel() {
+function ApkgIdentityPanel() {
   const { t } = useI18n();
-  const { confirm, confirmDialog } = useConfirm();
-  const [keys, setKeys] = useState<ApkgKeyInfo[]>([]);
+  const [identity, setIdentity] = useState<ApkgIdentityView | null>(null);
   const [tool, setTool] = useState<{ path: string | null; configured: boolean } | null>(null);
-  const [loading, setLoading] = useState(true);
-  /** null = 未选；"add" = 添加表单；其他 = 选中 keyId 的详情。 */
-  const [active, setActive] = useState<string | null>(null);
-  const [keyId, setKeyId] = useState("");
-  const [kek, setKek] = useState("");
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch("/api/admin/apkg-keys");
+      const res = await fetch("/api/admin/apkg-identity");
       const data = (await res.json()) as {
-        keys?: ApkgKeyInfo[];
+        identity?: ApkgIdentityView;
         tool?: { path: string | null; configured: boolean };
         error?: string;
       };
       if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
-      setKeys(data.keys ?? []);
+      setIdentity(data.identity ?? null);
       setTool(data.tool ?? null);
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoading(false);
     }
   }, []);
 
@@ -797,69 +789,25 @@ function ApkgKeysPanel() {
     void load();
   }, [load]);
 
-  const startAdd = () => {
-    setActive("add");
-    setKeyId("");
-    setKek("");
-    setError(null);
-    setNotice(null);
-  };
-
-  const submit = async () => {
-    setBusy(true);
-    setError(null);
-    setNotice(null);
+  const copyPublicKey = async () => {
+    if (!identity?.publicKey) return;
     try {
-      const res = await fetch("/api/admin/apkg-keys", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ keyId: keyId.trim(), kek }),
-      });
-      const data = (await res.json()) as { error?: string };
-      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
-      setKek("");
-      setNotice(t("bundles.apkgKeysAdded"));
-      await load();
-      setActive(keyId.trim());
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
+      await navigator.clipboard.writeText(identity.publicKey);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      setError(t("bundles.apkgIdentityCopyFailed"));
     }
   };
 
-  const revoke = async (target: ApkgKeyInfo) => {
-    if (target.source === "env") {
-      setError(t("bundles.apkgKeysEnvNote"));
-      return;
-    }
-    const ok = await confirm({
-      title: t("bundles.apkgKeysRevoke"),
-      message: t("bundles.apkgKeysRevokeConfirm", { keyId: target.keyId }),
-      confirmLabel: t("bundles.apkgKeysRevoke"),
-      abortLabel: t("common.cancel"),
-      danger: true,
-    });
-    if (!ok) return;
-    setBusy(true);
-    setError(null);
-    setNotice(null);
-    try {
-      const res = await fetch(`/api/admin/apkg-keys?keyId=${encodeURIComponent(target.keyId)}`, {
-        method: "DELETE",
-      });
-      const data = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
-      setActive(null);
-      await load();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const selected = keys.find((k) => k.keyId === active) ?? null;
+  const sourceLabel =
+    identity?.source === "env"
+      ? t("bundles.apkgKeysSourceEnv")
+      : identity?.source === "data"
+        ? t("bundles.apkgIdentitySourceData")
+        : identity?.source === "package"
+          ? t("bundles.apkgIdentitySourcePackage")
+          : "—";
   const toolLine = tool?.path ? `${t("bundles.apkgKeysToolOk")} · ${tool.path}` : t("bundles.apkgKeysToolMissing");
 
   return (
@@ -867,128 +815,65 @@ function ApkgKeysPanel() {
       <ConfigSplitView>
         <ConfigSidebar>
           <ConfigSidebarList>
-            {loading ? (
-              <div className="config-sidebar-message">{t("apiKeys.loading")}</div>
-            ) : keys.length === 0 ? (
-              <div className="config-sidebar-message is-empty">{t("bundles.apkgKeysEmpty")}</div>
-            ) : (
-              keys.map((k) => (
-                <ConfigSidebarItem
-                  key={k.keyId}
-                  active={active === k.keyId}
-                  onClick={() => {
-                    setActive(k.keyId);
-                    setError(null);
-                    setNotice(null);
-                  }}
-                >
-                  <ConfigSidebarText className="is-grow">
-                    <span
-                      style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
-                      title={k.keyId}
-                    >
-                      {k.keyId}
-                    </span>
-                    <span style={{ display: "block", fontSize: 10, color: "var(--text-dim)" }}>
-                      {k.source === "env" ? t("bundles.apkgKeysSourceEnv") : t("bundles.apkgKeysSourceFile")}
-                      {k.addedAt ? ` · ${new Date(k.addedAt).toLocaleDateString()}` : ""}
-                    </span>
-                  </ConfigSidebarText>
-                </ConfigSidebarItem>
-              ))
-            )}
+            <ConfigSidebarItem active onClick={() => {}}>
+              <ConfigSidebarText className="is-grow">
+                <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {identity?.id ?? t("bundles.apkgKeysTitle")}
+                </span>
+                <span style={{ display: "block", fontSize: 10, color: "var(--text-dim)" }}>{sourceLabel}</span>
+              </ConfigSidebarText>
+            </ConfigSidebarItem>
           </ConfigSidebarList>
-          <ConfigListAction onClick={startAdd} active={active === "add"}>
-            {t("bundles.apkgKeysAdd")}
-          </ConfigListAction>
         </ConfigSidebar>
 
         <ConfigDetail>
           <ConfigDetailStack className="is-fill">
-            {active === "add" ? (
+            <ConfigDetailHeader>
+              <ConfigDetailHeaderInfo>
+                <ConfigDetailTitle>{t("bundles.apkgKeysTitle")}</ConfigDetailTitle>
+                {identity?.configured && <span className="config-scope-tag">{sourceLabel}</span>}
+              </ConfigDetailHeaderInfo>
+            </ConfigDetailHeader>
+
+            {!identity?.configured ? (
+              <ConfigEmptyState>{identity?.error ?? t("bundles.apkgKeysEmpty")}</ConfigEmptyState>
+            ) : (
               <>
-                <ConfigDetailHeader>
-                  <ConfigDetailHeaderInfo>
-                    <ConfigDetailTitle>{t("bundles.apkgKeysAdd")}</ConfigDetailTitle>
-                  </ConfigDetailHeaderInfo>
-                </ConfigDetailHeader>
-                <ConfigField label={t("bundles.apkgKeysKeyId")}>
-                  <input
-                    className="config-input is-mono"
-                    value={keyId}
-                    onChange={(e) => setKeyId(e.target.value)}
-                    maxLength={64}
-                    placeholder={t("bundles.apkgKeysKeyIdPlaceholder")}
-                  />
-                </ConfigField>
-                <ConfigField label={t("bundles.apkgKeysKek")}>
-                  <input
-                    className="config-input is-mono"
-                    type="password"
-                    value={kek}
-                    onChange={(e) => setKek(e.target.value)}
-                    autoComplete="off"
-                    placeholder={t("bundles.apkgKeysKekPlaceholder")}
-                  />
-                </ConfigField>
-                <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.6 }}>
-                  {t("bundles.apkgKeysNeverReadable")}
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 12 }}>
+                  <div style={{ display: "flex", gap: 10 }}>
+                    <span style={{ width: 70, color: "var(--text-dim)" }}>ID</span>
+                    <span className="config-mono" style={{ color: "var(--text)" }}>{identity.id}</span>
+                  </div>
+                  {identity.path && (
+                    <div style={{ display: "flex", gap: 10 }}>
+                      <span style={{ width: 70, color: "var(--text-dim)" }}>{t("bundles.apkgIdentityPath")}</span>
+                      <span className="config-mono" style={{ color: "var(--text-muted)", wordBreak: "break-all" }}>
+                        {identity.path}
+                      </span>
+                    </div>
+                  )}
+                  <div>
+                    <div style={{ color: "var(--text-dim)", marginBottom: 4 }}>
+                      {t("bundles.apkgIdentityPublicKey")}
+                    </div>
+                    <textarea
+                      readOnly
+                      className="config-input is-mono"
+                      value={identity.publicKey ?? ""}
+                      rows={4}
+                      style={{ width: "100%", resize: "vertical", fontSize: 11 }}
+                    />
+                  </div>
                 </div>
                 <div style={{ display: "flex", gap: 8 }}>
-                  <ConfigButton
-                    variant="primary"
-                    onClick={() => void submit()}
-                    disabled={busy || keyId.trim().length === 0 || kek.trim().length === 0}
-                  >
-                    {busy ? t("bundles.apkgKeysSubmitBusy") : t("bundles.apkgKeysSubmit")}
+                  <ConfigButton onClick={() => void copyPublicKey()}>
+                    {copied ? t("bundles.apkgIdentityCopied") : t("bundles.apkgIdentityCopy")}
                   </ConfigButton>
                 </div>
-              </>
-            ) : selected ? (
-              <>
-                <ConfigDetailHeader>
-                  <ConfigDetailHeaderInfo>
-                    <ConfigDetailTitle>{selected.keyId}</ConfigDetailTitle>
-                    <span className="config-scope-tag">
-                      {selected.source === "env" ? t("bundles.apkgKeysSourceEnv") : t("bundles.apkgKeysSourceFile")}
-                    </span>
-                  </ConfigDetailHeaderInfo>
-                  <ConfigDetailActions>
-                    <ConfigButton
-                      variant="danger"
-                      size="small"
-                      disabled={busy || selected.source === "env"}
-                      onClick={() => void revoke(selected)}
-                    >
-                      {t("bundles.apkgKeysRevoke")}
-                    </ConfigButton>
-                  </ConfigDetailActions>
-                </ConfigDetailHeader>
-                <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12 }}>
-                  {selected.addedAt && (
-                    <div style={{ display: "flex", gap: 10 }}>
-                      <span style={{ width: 80, color: "var(--text-dim)" }}>{t("bundles.apkgKeysAddedAt")}</span>
-                      <span style={{ color: "var(--text)" }}>{new Date(selected.addedAt).toLocaleString()}</span>
-                    </div>
-                  )}
-                  {selected.addedBy && (
-                    <div style={{ display: "flex", gap: 10 }}>
-                      <span style={{ width: 80, color: "var(--text-dim)" }}>{t("bundles.apkgKeysAddedBy")}</span>
-                      <span style={{ color: "var(--text)" }}>{selected.addedBy}</span>
-                    </div>
-                  )}
+                <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.7 }}>
+                  {t("bundles.apkgKeysDesc")}
                 </div>
-                <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.6 }}>
-                  {t("bundles.apkgKeysNeverReadable")}
-                </div>
-                {selected.source === "env" && (
-                  <div style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.6 }}>
-                    {t("bundles.apkgKeysEnvNote")}
-                  </div>
-                )}
               </>
-            ) : (
-              <ConfigEmptyState>{t("bundles.apkgKeysDesc")}</ConfigEmptyState>
             )}
           </ConfigDetailStack>
         </ConfigDetail>
@@ -999,13 +884,11 @@ function ApkgKeysPanel() {
           <>
             <span style={{ color: tool?.path ? "var(--text-dim)" : "var(--danger)" }}>{toolLine}</span>
             {error && <span style={{ color: "var(--danger)" }}>{error}</span>}
-            {notice && <span style={{ color: "var(--accent)" }}>{notice}</span>}
           </>
         }
       >
         <></>
       </ConfigFooter>
-      {confirmDialog}
     </>
   );
 }

@@ -3,11 +3,14 @@
  * binary (Go, format implementation lives there, not in this repo).
  *
  * Contract: the tool performs exactly one transformation —
- *   apkg-publisher open --in <pkg.apkg> --keys <keys.json> --out <plain.zip>
- * ciphertext bytes in, plaintext zip bytes out. Header parsing, fingerprint
- * (sha256 of the whole ciphertext file), license enforcement and locks all
- * stay in pi-web (lib/apkg.ts / project-config-bundle.ts), so the tool never
- * needs to evolve for policy changes.
+ *   apkg-publisher open --in <pkg.apkg> --identity <identity.json> --out -
+ * ciphertext bytes in, plaintext zip bytes out on stdout. No plaintext zip is
+ * written to disk by pi-web; the final config files are still written by the
+ * normal import path (pi's extension/skill loader reads them from disk).
+ *
+ * Header parsing, fingerprint (sha256 of the whole ciphertext), license
+ * enforcement and locks stay in pi-web (lib/apkg.ts / project-config-bundle.ts),
+ * so the tool never needs to evolve for policy changes.
  *
  * Tool resolution order:
  *   1. PI_WEB_APKG_TOOL env (absolute path)
@@ -15,22 +18,21 @@
  *   3. <dataDir>/bin/apkg-publisher[.exe] — data-dir drop survives app updates
  *   4. bare name on PATH
  *
- * Deployments without the tool can still use everything except .apkg imports;
- * those fail with an explicit "component missing" error (plain .zip bundles
- * are unaffected).
+ * The recipient identity is resolved by lib/apkg.ts (PI_WEB_APKG_IDENTITY,
+ * <dataDir>/apkg-identity.json, or the package config path).
  */
 import { spawn } from "node:child_process";
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { loadApkgIdentity } from "./apkg.ts";
 import { dataDir } from "./mode-homes.ts";
 
 const TOOL_BASENAME = "apkg-publisher";
 const OPEN_TIMEOUT_MS = 90_000;
+const MAX_PLAINTEXT_BYTES = 512 * 1024 * 1024;
 
 function exeCandidates(base: string): string[] {
-  // Both spellings are probed on every platform: a Windows checkout with the
-  // linux binary present (or vice versa) resolves the right one anyway.
   return process.platform === "win32" ? [`${base}.exe`, base] : [base, `${base}.exe`];
 }
 
@@ -55,9 +57,6 @@ export function resolveApkgTool(): string | null {
       // unreadable path — keep looking
     }
   }
-  // PATH fallback: the bare name is probed with PATHEXT resolution on
-  // Windows (apkg-publisher → apkg-publisher.exe/.cmd/…) and literally on
-  // POSIX; spawn() resolves PATH itself, so the bare name is returned.
   return existsSyncOnPath(TOOL_BASENAME) ? TOOL_BASENAME : null;
 }
 
@@ -78,42 +77,60 @@ function existsSyncOnPath(name: string): boolean {
 }
 
 /**
- * Decrypt .apkg bytes to the plain zip via the external tool.
- * `keys` maps keyId → KEK (merged server key store, or a test override) and
- * is materialized into a 0600 temp file for the child process.
+ * Decrypt .apkg bytes to the plain zip via the external tool. The plaintext
+ * zip is captured from stdout and never written to a temp file.
  */
-export async function openApkgViaTool(data: Buffer, keys: Record<string, Buffer>): Promise<Buffer> {
+export async function openApkgViaTool(data: Buffer): Promise<Buffer> {
   const tool = resolveApkgTool();
   if (!tool) {
     throw new Error(
       "此部署未配备 .apkg 解密组件（缺少 apkg-publisher 二进制；可通过 PI_WEB_APKG_TOOL 指定路径，或放到 <数据目录>/bin/）",
     );
   }
+  const found = loadApkgIdentity();
+  if (!found) {
+    throw new Error(
+      "此部署未配置 .apkg 接收方身份（缺少 apkg-identity.json；请把发布包内嵌身份放到 <数据目录>/apkg-identity.json，或设置 PI_WEB_APKG_IDENTITY）",
+    );
+  }
 
   const work = mkdtempSync(join(tmpdir(), "apkg-open-"));
   const inFile = join(work, "pkg.apkg");
-  const keysFile = join(work, "keys.json");
-  const outFile = join(work, "plain.zip");
+  const childEnv: NodeJS.ProcessEnv = { ...process.env };
+  for (const key of Object.keys(childEnv)) {
+    if (key.startsWith("PI_WEB_APKG_")) delete childEnv[key];
+  }
   try {
     writeFileSync(inFile, data);
-    const keyJson: Record<string, string> = {};
-    for (const [keyId, kek] of Object.entries(keys)) keyJson[keyId] = kek.toString("base64");
-    writeFileSync(keysFile, JSON.stringify(keyJson), { mode: 0o600 });
-    try {
-      chmodSync(keysFile, 0o600);
-    } catch {
-      /* fs without chmod */
-    }
-
-    await new Promise<void>((resolve, reject) => {
-      const child = spawn(tool, ["open", "--in", inFile, "--keys", keysFile, "--out", outFile], {
-        stdio: ["ignore", "ignore", "pipe"],
-        windowsHide: true,
-      });
+    return await new Promise<Buffer>((resolve, reject) => {
+      const chunks: Buffer[] = [];
+      let total = 0;
+      let failure: Error | null = null;
+      const child = spawn(
+        tool,
+        ["open", "--in", inFile, "--identity", found.path, "--out", "-"],
+        {
+          stdio: ["ignore", "pipe", "pipe"],
+          windowsHide: true,
+          // Do not inherit deployment secrets (e.g. the old PI_WEB_APKG_KEYS).
+          // The child only needs its own binary/PATH; the identity path is a file.
+          env: childEnv,
+        },
+      );
       const timer = setTimeout(() => {
+        failure = new Error("配置包解密超时");
         child.kill();
-        reject(new Error("配置包解密超时"));
       }, OPEN_TIMEOUT_MS);
+      child.stdout?.on("data", (chunk: Buffer) => {
+        if (failure) return;
+        total += chunk.length;
+        if (total > MAX_PLAINTEXT_BYTES) {
+          failure = new Error("配置包解密后的内容过大");
+          child.kill();
+          return;
+        }
+        chunks.push(chunk);
+      });
       let stderr = "";
       child.stderr?.on("data", (chunk: Buffer) => {
         if (stderr.length < 4000) stderr += chunk.toString("utf8");
@@ -128,14 +145,14 @@ export async function openApkgViaTool(data: Buffer, keys: Record<string, Buffer>
       });
       child.on("close", (code) => {
         clearTimeout(timer);
-        if (code === 0) return resolve();
-        // Go CLI errors print as "错误: <message>" — surface the message body.
-        const detail = stderr.replace(/^错误:\s*/m, "").trim();
-        reject(new Error(detail || `解密组件退出码 ${code}`));
+        if (failure) return reject(failure);
+        if (code !== 0) {
+          const detail = stderr.replace(/^错误:\s*/m, "").trim();
+          return reject(new Error(detail || `解密组件退出码 ${code}`));
+        }
+        return resolve(Buffer.concat(chunks));
       });
     });
-
-    return readFileSync(outFile);
   } finally {
     rmSync(work, { recursive: true, force: true });
   }

@@ -7,9 +7,9 @@
  * 会标注"无法回显"。
  *
  * 布局：<dataDir>/api-key-vault.json，按用户分桶：{ version, users: { u<id>:
- * { <平台keyId>: { name, key, createdAt } } } }。0600 + 原子写（与 apkg-keys
- * 同规格）。明文落盘是明确的产品取舍（内网教学部署、文件仅服务端可读、
- * 仅本人会话可读回）；若未来要求更高，可换成用部署密钥加密后存。
+ * { <平台keyId>: { name, key, createdAt } } } }。0600 + 原子写（与
+ * apkg-identity 同规格）。明文落盘是明确的产品取舍（内网部署、文件仅
+ * 服务端可读、仅本人会话可读回）；若未来要求更高，可换成用部署密钥加密后存。
  */
 import { existsSync, readFileSync, mkdirSync } from "fs";
 import { join } from "path";

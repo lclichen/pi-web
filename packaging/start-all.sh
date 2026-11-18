@@ -369,6 +369,16 @@ EOF
     # 首启引导：初始密码文件路径交给 WebUI（登录页在本机浏览器直接显示，
     # 首次用它登录成功后由服务端删除）。源码部署无此 env → 功能静默关闭。
     export PI_WEB_INITIAL_PASSWORD_FILE="$ADMIN_PW_FILE"
+    # .apkg v2 接收方身份：发布包内嵌私钥只播种一次到可写 config 目录；
+    # 升级包不会覆盖已有身份（否则旧 .apkg 将无法解密）。
+    if [ -f "$PKG/config/apkg-identity.json" ] && [ ! -f "$CONFIG_DIR/apkg-identity.json" ]; then
+      cp -a "$PKG/config/apkg-identity.json" "$CONFIG_DIR/apkg-identity.json"
+      chmod 600 "$CONFIG_DIR/apkg-identity.json" 2>/dev/null || true
+      log "已播种 .apkg 接收方身份: $CONFIG_DIR/apkg-identity.json"
+    fi
+    if [ -z "${PI_WEB_APKG_IDENTITY:-}" ] && [ -f "$CONFIG_DIR/apkg-identity.json" ]; then
+      export PI_WEB_APKG_IDENTITY="$CONFIG_DIR/apkg-identity.json"
+    fi
     # 每次启动轮换 Next preview-mode secrets：构建产物里的 previewModeId
     # 一旦被读到，可用 x-prerender-revalidate 头跳过 proxy.ts 的认证门。
     # 只读安装（AppImage/squashfs）轮换会失败，脚本会打印明确警告。

@@ -258,6 +258,20 @@ elif [ "${APKG_PUBLISHER_REQUIRED:-0}" = "1" ]; then
 else
   warn "未注入 apkg 解密组件——该包不支持 .apkg 导入（如需支持：放置 bin/apkg-publisher 或设 APKG_PUBLISHER_BIN）"
 fi
+# 内部接收方身份注入：私钥随 pi-web 发布包分发，发布方保留公钥做加密。
+# APKG_IDENTITY_FILE 指向 `apkg-publisher identity new --out` 生成的私钥 JSON。
+APKG_IDENTITY="${APKG_IDENTITY_FILE:-}"
+if [ -n "$APKG_IDENTITY" ] && [ -f "$APKG_IDENTITY" ]; then
+  mkdir -p "$PKG/config"
+  cp -a "$APKG_IDENTITY" "$PKG/config/apkg-identity.json"
+  chmod 600 "$PKG/config/apkg-identity.json"
+  log "已注入 apkg 接收方身份: $APKG_IDENTITY"
+elif [ "${APKG_PUBLISHER_REQUIRED:-0}" = "1" ]; then
+  log "打包检查失败：要求注入 .apkg 解密组件但未提供 APKG_IDENTITY_FILE"
+  exit 1
+else
+  warn "未注入 apkg 接收方身份——该包无法导入 .apkg（如需支持：APKG_IDENTITY_FILE=/path/to/apkg-identity.json）"
+fi
 cp -a "$SRC/node_modules" "$PKG/app/"
 VERSION="$(node -p "require('$SRC/package.json').version")"
 

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAdminIdentity } from "@/lib/web-session";
 import { isApiRequestAllowed } from "@/lib/request-security";
 import { bundleExists, isValidBundleName, readBundle } from "@/lib/config-bundles-store";
-import { isApkgBytes, getApkgKeys } from "@/lib/apkg";
+import { isApkgBytes } from "@/lib/apkg";
 import { openApkgViaTool } from "@/lib/apkg-open";
 import { inspectBundleZip, looksBinary, readBundleFileFromZip } from "@/lib/bundle-inspect";
 
@@ -28,7 +28,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ name: st
   let zipData = readBundle(name);
   if (isApkgBytes(zipData)) {
     try {
-      zipData = await openApkgViaTool(zipData, getApkgKeys());
+      zipData = await openApkgViaTool(zipData);
     } catch (e) {
       return NextResponse.json(
         { error: `配置包解密失败: ${e instanceof Error ? e.message : String(e)}` },

@@ -1,17 +1,17 @@
 /**
- * Server-side .apkg support — key store, import counters, bundle locks, and
- * the display-only header parse.
+ * Server-side .apkg support — recipient identity, import counters, bundle
+ * locks, and the display-only header parse.
  *
  * This module is deliberately free of envelope cryptography: the decrypt
  * implementation lives in the internal `apkg-publisher` binary, invoked as a
  * subprocess by lib/apkg-open.ts (decryption oracle). What remains here is
- * the plaintext header region (magic + display metadata + keyId) and the
- * policy layer around imports.
+ * the plaintext header region (magic + display metadata + recipient id) and
+ * the policy layer around imports.
  *
- * Key store: <dataDir>/apkg-keys.json maps keyId → base64 KEK (0600). The
- * PI_WEB_APKG_KEYS env var accepts the same JSON and is merged over the file
- * (container deployments prefer env). Removing a keyId revokes every package
- * wrapped with that generation.
+ * Identity: v2 packages are encrypted to the X25519 public key of an identity
+ * whose private key ships inside the pi-web release (config/apkg-identity.json,
+ * <dataDir>/apkg-identity.json, or PI_WEB_APKG_IDENTITY). The admin UI shows
+ * only the id/public key — never the private key. There is no shared KEK file.
  *
  * Import counter: <dataDir>/apkg-imports.json tracks per-fingerprint import
  * counts — the server-side half of `license.maxImports`. Honest boundary
@@ -24,9 +24,9 @@
  * homes (the lock basename is also in the bundle DENIED list, so a plain
  * bundle can never carry or strip it).
  */
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { writePrivateFileAtomicSync } from "./atomic-file.ts";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { dataDir } from "./mode-homes.ts";
 import { projectIdentityKey } from "./project-identity.ts";
 
@@ -36,9 +36,8 @@ export const LOCK_BASENAME = ".bundle-lock.json";
 // Display-only header (plaintext region of the envelope)
 // ---------------------------------------------------------------------------
 
-const APKG_MAGIC = Buffer.concat([Buffer.from("APKG1", "utf8"), Buffer.alloc(11)]);
-const APKG_FORMAT_VERSION = 1;
-const KEY_ID_BYTES = 16;
+const APKG_MAGIC = Buffer.concat([Buffer.from("APKG2", "utf8"), Buffer.alloc(11)]);
+const APKG_FORMAT_VERSION = 2;
 
 /** Display + authorization metadata carried by a package. */
 export interface ApkgPackageMeta {
@@ -61,7 +60,8 @@ export interface ApkgLicense {
 }
 
 export interface ApkgHeader extends ApkgPackageMeta {
-  keyId: string;
+  /** 接收方身份指纹（r_ + 16 hex），由发布方用本机 identity 公钥加密时写入。 */
+  recipient: string;
   license: ApkgLicense;
 }
 
@@ -72,12 +72,12 @@ export function isApkgBytes(data: Buffer): boolean {
 
 /**
  * Parse the plaintext header (display-only, untrusted; throws on malformed
- * files). The authoritative license copy lives inside the encrypted
- * manifest, tamper-proof under publisher key secrecy.
+ * files). v2 header 不含文件清单；authoritative license 仍在加密 manifest。
  */
 export function readApkgHeader(data: Buffer): ApkgHeader {
   if (!isApkgBytes(data)) throw new Error("不是 .apkg 加密配置包");
   let offset = APKG_MAGIC.length;
+  if (data.length < offset + 4) throw new Error("包元信息损坏");
   const formatVersion = data.readUInt16LE(offset);
   if (formatVersion !== APKG_FORMAT_VERSION) {
     throw new Error(`不支持的 .apkg 格式版本: ${formatVersion}`);
@@ -85,192 +85,149 @@ export function readApkgHeader(data: Buffer): ApkgHeader {
   offset += 2;
   const headerLength = data.readUInt16LE(offset);
   offset += 2;
+  if (headerLength <= 0 || headerLength > 4096 || data.length < offset + headerLength) {
+    throw new Error("包元信息损坏");
+  }
   const headerJson = data.subarray(offset, offset + headerLength).toString("utf8");
-  offset += headerLength;
-  const keyIdBuf = data.subarray(offset, offset + KEY_ID_BYTES);
-  const keyId = keyIdBuf.subarray(0, keyIdBuf.indexOf(0)).toString("utf8");
   let header: ApkgHeader;
   try {
     header = JSON.parse(headerJson) as ApkgHeader;
   } catch {
     throw new Error("包元信息损坏");
   }
-  return { ...header, keyId };
+  if (typeof header.name !== "string" || typeof header.title !== "string" || typeof header.recipient !== "string") {
+    throw new Error("包元信息损坏");
+  }
+  return header;
 }
 
 export interface BundleLock {
   apkg: true;
-  keyId: string;
+  recipient: string;
   fingerprint: string;
   importedAt: string;
 }
 
 // ---------------------------------------------------------------------------
-// Key store
-// ---------------------------------------------------------------------------
-
-function keysFilePath(): string {
-  return join(dataDir(), "apkg-keys.json");
-}
-
-/** Load KEKs from the dataDir file plus the PI_WEB_APKG_KEYS env override. */
-export function getApkgKeys(): Record<string, Buffer> {
-  const out: Record<string, Buffer> = {};
-  const sources: string[] = [];
-  if (existsSync(keysFilePath())) {
-    try {
-      sources.push(readFileSync(keysFilePath(), "utf8"));
-    } catch {
-      // unreadable — fall through to env
-    }
-  }
-  if (process.env.PI_WEB_APKG_KEYS) sources.push(process.env.PI_WEB_APKG_KEYS);
-  for (const source of sources) {
-    try {
-      const parsed = JSON.parse(source) as Record<string, string>;
-      for (const [keyId, b64] of Object.entries(parsed)) {
-        if (typeof b64 === "string" && b64.length > 0) {
-          const kek = Buffer.from(b64, "base64");
-          if (kek.length === 32) out[keyId] = kek;
-        }
-      }
-    } catch {
-      // malformed source — skip it entirely
-    }
-  }
-  return out;
-}
-
-// ---------------------------------------------------------------------------
-// Key store administration (write-only secrets)
+// Recipient identity
 // ---------------------------------------------------------------------------
 //
-// The admin UI may ADD and REVOKE KEKs but must never SEE them. Key material
-// stays in apkg-keys.json (0600) and is never serialized to a client; the
-// sidecar apkg-keys.meta.json carries only audit metadata (addedAt/addedBy).
-// PI_WEB_APKG_KEYS remains authoritative: a keyId present there cannot be
-// shadowed or removed from the file store.
+// v2 不再使用共享 KEK：pi-web 发布包里内嵌一份 X25519 私钥
+// （config/apkg-identity.json 或部署注入），发布方用对应公钥加密 .apkg。
+// 私钥永远不会通过 API/UI 回显；管理面只展示 id、公钥和来源。
 
-export interface ApkgKeyInfo {
-  keyId: string;
-  /** "env" = supplied by PI_WEB_APKG_KEYS (deployment-managed). */
-  source: "file" | "env";
-  addedAt: string | null;
-  addedBy: string | null;
+export interface ApkgIdentity {
+  version: number;
+  id: string;
+  publicKey: string;
+  privateKey: string;
 }
 
-interface ApkgKeyMeta {
-  [keyId: string]: { addedAt?: string; addedBy?: string };
+export type ApkgIdentitySource = "env" | "data" | "package";
+
+export interface ApkgIdentityInfo {
+  configured: boolean;
+  id: string | null;
+  /** Public key in base64url; safe to show/copy to the publisher. */
+  publicKey: string | null;
+  source: ApkgIdentitySource | null;
+  path: string | null;
+  error?: string;
 }
 
-const KEY_ID_PATTERN = /^[A-Za-z0-9._-]{1,64}$/;
-
-function keysMetaFilePath(): string {
-  return join(dataDir(), "apkg-keys.meta.json");
-}
-
-function readKeysObject(): Record<string, string> {
-  if (!existsSync(keysFilePath())) return {};
+function decodeIdentityKey(raw: unknown): Buffer | null {
+  if (typeof raw !== "string" || !raw.trim()) return null;
+  const normalized = raw.trim().replace(/-/g, "+").replace(/_/g, "/");
   try {
-    const parsed = JSON.parse(readFileSync(keysFilePath(), "utf8")) as Record<string, unknown>;
-    const out: Record<string, string> = {};
-    for (const [keyId, value] of Object.entries(parsed)) {
-      if (typeof value === "string" && value.length > 0) out[keyId] = value;
+    const buf = Buffer.from(normalized, "base64");
+    return buf.length === 32 ? buf : null;
+  } catch {
+    return null;
+  }
+}
+
+function identityPublicId(publicKey: Buffer): string {
+  return `r_${createHash("sha256").update(publicKey).digest("hex").slice(0, 16)}`;
+}
+
+interface ResolvedIdentityPath {
+  path: string;
+  source: ApkgIdentitySource;
+}
+
+function identityPathCandidates(): ResolvedIdentityPath[] {
+  const out: ResolvedIdentityPath[] = [];
+  const envPath = process.env.PI_WEB_APKG_IDENTITY?.trim();
+  if (envPath) out.push({ path: envPath, source: "env" });
+  try {
+    out.push({ path: join(dataDir(), "apkg-identity.json"), source: "data" });
+  } catch {
+    // dataDir unavailable pre-config; package path still applies
+  }
+  out.push({ path: join(process.cwd(), "config", "apkg-identity.json"), source: "package" });
+  out.push({ path: join(process.cwd(), "..", "config", "apkg-identity.json"), source: "package" });
+  const seen = new Set<string>();
+  return out.filter((candidate) => {
+    if (seen.has(candidate.path)) return false;
+    seen.add(candidate.path);
+    return existsSync(candidate.path);
+  });
+}
+
+/** Absolute path of the embedded recipient identity, or null. */
+export function resolveApkgIdentityPath(): ResolvedIdentityPath | null {
+  return identityPathCandidates()[0] ?? null;
+}
+
+/** Load and validate the private identity. Never expose the private key. */
+export function loadApkgIdentity(): { path: string; source: ApkgIdentitySource; identity: ApkgIdentity } | null {
+  for (const candidate of identityPathCandidates()) {
+    try {
+      const parsed = JSON.parse(readFileSync(candidate.path, "utf8")) as Partial<ApkgIdentity>;
+      const privateKey = decodeIdentityKey(parsed.privateKey);
+      const publicKey = decodeIdentityKey(parsed.publicKey);
+      if (!privateKey || !publicKey) continue;
+      const id = identityPublicId(publicKey);
+      if (typeof parsed.id === "string" && parsed.id && parsed.id !== id) continue;
+      return {
+        path: candidate.path,
+        source: candidate.source,
+        identity: {
+          version: 2,
+          id,
+          publicKey: publicKey.toString("base64url"),
+          privateKey: privateKey.toString("base64url"),
+        },
+      };
+    } catch {
+      // unreadable/malformed candidate — try the next location
     }
-    return out;
-  } catch {
-    return {};
   }
+  return null;
 }
 
-function readKeysMetaObject(): ApkgKeyMeta {
-  if (!existsSync(keysMetaFilePath())) return {};
-  try {
-    return JSON.parse(readFileSync(keysMetaFilePath(), "utf8")) as ApkgKeyMeta;
-  } catch {
-    return {};
+/** Metadata-only identity view for the admin UI (no private key). */
+export function getApkgIdentityInfo(): ApkgIdentityInfo {
+  const found = loadApkgIdentity();
+  if (!found) {
+    return {
+      configured: false,
+      id: null,
+      publicKey: null,
+      source: null,
+      path: null,
+      ...(identityPathCandidates().length === 0
+        ? { error: "未找到 apkg-identity.json；请把发布包内嵌身份放到 <数据目录>/apkg-identity.json" }
+        : { error: "apkg-identity.json 存在但格式无效" }),
+    };
   }
-}
-
-/** Persist the store atomically with 0600 (KEK material). */
-function writeKeysObject(keys: Record<string, string>): void {
-  mkdirSync(dirname(keysFilePath()), { recursive: true });
-  writePrivateFileAtomicSync(keysFilePath(), JSON.stringify(keys, null, 2));
-}
-
-function writeKeysMetaObject(meta: ApkgKeyMeta): void {
-  mkdirSync(dirname(keysMetaFilePath()), { recursive: true });
-  writePrivateFileAtomicSync(keysMetaFilePath(), JSON.stringify(meta, null, 2));
-}
-
-/** keyIds supplied by the env override (deployment-managed, authoritative). */
-function envKeyIds(): Set<string> {
-  const ids = new Set<string>();
-  const raw = process.env.PI_WEB_APKG_KEYS;
-  if (!raw) return ids;
-  try {
-    for (const [keyId, value] of Object.entries(JSON.parse(raw) as Record<string, unknown>)) {
-      if (typeof value === "string" && value.length > 0) ids.add(keyId);
-    }
-  } catch {
-    // malformed env — treated as empty (getApkgKeys behaves the same way)
-  }
-  return ids;
-}
-
-/** Metadata-only view of the key store — never includes KEK material. */
-export function listApkgKeys(): ApkgKeyInfo[] {
-  const fileKeys = readKeysObject();
-  const meta = readKeysMetaObject();
-  const envIds = envKeyIds();
-  const out: ApkgKeyInfo[] = [];
-  for (const keyId of Object.keys(fileKeys)) {
-    out.push({
-      keyId,
-      source: envIds.has(keyId) ? "env" : "file",
-      addedAt: meta[keyId]?.addedAt ?? null,
-      addedBy: meta[keyId]?.addedBy ?? null,
-    });
-  }
-  for (const keyId of envIds) {
-    if (fileKeys[keyId]) continue;
-    out.push({ keyId, source: "env", addedAt: null, addedBy: null });
-  }
-  return out.sort((a, b) => a.keyId.localeCompare(b.keyId));
-}
-
-export type ApkgKeyError = "invalid-key-id" | "invalid-kek" | "env-sourced" | "not-found" | "env-not-removable";
-
-/** Add/rotate one KEK. The caller must have decoded + length-checked nothing:
- *  validation happens here so every entry point shares one rule set. */
-export function addApkgKey(keyId: string, kek: Buffer, addedBy: string): ApkgKeyInfo {
-  if (!KEY_ID_PATTERN.test(keyId)) throw new Error("invalid-key-id" satisfies ApkgKeyError);
-  if (kek.length !== 32) throw new Error("invalid-kek" satisfies ApkgKeyError);
-  if (envKeyIds().has(keyId)) throw new Error("env-sourced" satisfies ApkgKeyError);
-  const keys = readKeysObject();
-  keys[keyId] = kek.toString("base64");
-  writeKeysObject(keys);
-  const meta = readKeysMetaObject();
-  const info = { addedAt: new Date().toISOString(), addedBy };
-  meta[keyId] = info;
-  writeKeysMetaObject(meta);
-  return { keyId, source: "file", addedAt: info.addedAt, addedBy };
-}
-
-/** Revoke one keyId (removes the KEK + metadata). Env-managed keys cannot be
- *  removed here — the deployment env must be edited instead. */
-export function removeApkgKey(keyId: string): void {
-  if (!KEY_ID_PATTERN.test(keyId)) throw new Error("invalid-key-id" satisfies ApkgKeyError);
-  if (envKeyIds().has(keyId)) throw new Error("env-not-removable" satisfies ApkgKeyError);
-  const keys = readKeysObject();
-  if (!(keyId in keys)) throw new Error("not-found" satisfies ApkgKeyError);
-  delete keys[keyId];
-  writeKeysObject(keys);
-  const meta = readKeysMetaObject();
-  if (keyId in meta) {
-    delete meta[keyId];
-    writeKeysMetaObject(meta);
-  }
+  return {
+    configured: true,
+    id: found.identity.id,
+    publicKey: found.identity.publicKey,
+    source: found.source,
+    path: found.path,
+  };
 }
 
 interface ImportState {
@@ -362,7 +319,7 @@ export function writeBundleLock(home: string, lock: BundleLock): void {
 
 interface LockedHomeEntry {
   fingerprint: string;
-  keyId: string;
+  recipient: string;
   importedAt: string;
 }
 

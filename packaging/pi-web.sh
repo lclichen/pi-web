@@ -38,6 +38,11 @@ if [ -x "$DIR/scripts/install-pi-config.sh" ]; then
   "$DIR/scripts/install-pi-config.sh" || true
 fi
 
+# .apkg v2 接收方身份：独立启动（不经 start-all）时直接指向包内身份。
+if [ -z "${PI_WEB_APKG_IDENTITY:-}" ] && [ -f "$DIR/config/apkg-identity.json" ]; then
+  export PI_WEB_APKG_IDENTITY="$DIR/config/apkg-identity.json"
+fi
+
 # 可写数据目录收敛到每用户 $AMEDAC_HOME（v3 起与 start-all / AppImage
 # 一致；显式 PI_WEB_DATA_DIR 优先）。旧独立部署曾回落写到 <包>/app/data
 # （cwd/data），首次启动时一次性迁移（幂等）。

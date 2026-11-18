@@ -10,39 +10,52 @@
 
 ### 格式：`.apkg`（加密配置包）
 
-在现有 zip 明文包外再做信封加密（每包随机 DEK 加密内容，发布方持有的
-KEK 代际包装 DEK，密文含明文展示元信息；导入侧按指纹计数、按代吊销）。
+在现有 zip 明文包外做信封加密（v2：每包随机内容密钥加密 zip，内容密钥用
+「发布方临时密钥 × 接收方公钥」派生的包装密钥保护；明文头部仅含展示元信息
+与接收方指纹，**不列出包内文件**；导入侧按指纹计数）。**不再有共享 KEK /
+`apkg-keys.json`，v1 包不再兼容。**
 
 > **格式细节（字节布局、密码学参数、打包流程）已移至内部项目** `apkg-publisher`（私有）。
-> **解密实现也已外置（2026-10-22）**：公开仓不含任何信封加解密代码，导入时经
-> 子进程调用内部二进制（见"导入侧"第 5 条）；请勿在此补充可指导解密的配方描述。
+> **解密实现也已外置**：公开仓不含任何信封加解密代码，导入时经子进程调用
+> 内部二进制（见"导入侧"第 5 条）；请勿在此补充可指导解密的配方描述。
 
 ### 导入侧（pi-web）
 
-1. `POST /api/bundles`（与 config-import）识别 `.apkg`：解密 DEK → 解密 zip →
-   校验 tag → 走现有导入流程（凭证剥离等不变）。
+1. `POST /api/bundles`（与 config-import）识别 `.apkg`：调用解密组件得到明文
+   zip（仅在内存中）→ 走现有导入流程（凭证剥离等不变）。
 2. 导入成功后在项目 home 写 `.pi/.bundle-lock.json`：
    ```json
-   { "apkg": true, "keyId": "…", "fingerprint": "sha256(包)", "importedAt": … }
+   { "apkg": true, "recipient": "r_…", "fingerprint": "sha256(包)", "importedAt": … }
    ```
 3. **禁止再导出**：`/api/projects/:id/config-export` 与 Host 目录导出检测到
    `.bundle-lock.json` 即 403（响应明确提示「加密配置包不允许再导出」）。
    发布方内部流转用服务端命令行工具解除（不走 Web API）。
 4. 同理 `/api/bundles` 的「预置模板」若由加密包上传，落盘保存密文原件，
-   每次套用时经解密组件解密，不落明文。
+   每次套用时经解密组件解密，不落明文 zip。
 5. **解密组件外置**：`lib/apkg-open.ts` 以子进程调用 `apkg-publisher open
-   --in --keys --out`（纯解密预言机——密文进、明文 zip 出）。头部解析、指纹
+   --in <pkg> --identity <identity.json> --out -`（纯解密预言机——密文进、
+   明文 zip 从 stdout 出，pi-web 不写明文临时文件）。头部解析、指纹
    （sha256）、许可校验、锁全部留在 pi-web 进程内。组件查找顺序：
    `PI_WEB_APKG_TOOL`（显式指定，坏路径报错不回退）→ `<cwd>/bin/apkg-publisher`
    （随包分发）→ `<数据目录>/bin/apkg-publisher`（升级不丢）→ PATH。
    无组件的部署仅 `.apkg` 导入报"未配备解密组件"，其余功能不受影响。
+6. **接收方身份**：私钥随 pi-web 发布包内嵌（`config/apkg-identity.json`），
+   启动时播种到数据目录；解析顺序 `PI_WEB_APKG_IDENTITY` →
+   `<数据目录>/apkg-identity.json` → 包内 config。管理面
+   `/api/admin/apkg-identity` 只回显 id/公钥/来源，**私钥永不出服务端**；
+   旧 `/api/admin/apkg-keys` 全部返回 410。
 
 ### 密钥管理
 
-- KEK 存发布侧（打包机 keychain / 发布服务 env），分代保存；泄露一代不影响其他代。
-- 目标机只需要**公钥级能力**（解密用 KEK 派生的包密钥由服务端在导入 API 内
-  完成——KEK 不出服务器；单机离线导入场景则内嵌一代 KEK 于打包产物，接受
-  「拥有产物即可解密」的降级）。
+- 接收方身份由发布方一次性生成：`apkg-publisher identity new`。私钥嵌入
+  pi-web 发布包（客户服务器）；公钥留在发布方打包机/发布服务，用来加密。
+- 每个 `.apkg` 使用随机内容密钥；发布方每次打包生成临时密钥对完成包装，
+  没有长期共享密钥可供「手填 KEK」。
+- 升级 pi-web 发布包时复用同一身份（或重新发布所有 `.apkg`）；`start-all.sh`
+  只在第一次运行播种身份，不会覆盖客户可写目录中已有的私钥。
+- **边界变化**：私钥在客户服务器上，客户 root/管理员仍可解密。本方案保护的是
+  「只拿到 .apkg 文件的人」，不是「拿到服务器的人」。要防客户读取，必须改为
+  远程执行/在线许可，而不是本地加密。
 
 ### 诚实边界
 
@@ -130,15 +143,16 @@ Electron 需要）。**先上 License**：它是唯一能把「复制整个部�
 - 前端 DRM/防截屏——教学产品内容本就展示给学生。
 - 对拥有 root 的目标机做强对抗（VM 探测/反调试军备竞赛）——成本高且伤正常用户。
 
-## 五、§一 实施状态与使用指南（2026-09-24）
+## 五、§一 实施状态与使用指南（v2：2026-11-18）
 
 ### 已落地
 
 | 能力 | 位置 |
 |---|---|
-| `.apkg` 信封加密格式（AES-256-GCM 双层：DEK 加密内容、KEK 包装 DEK、keyId 分代、明文头部仅展示） | 内部项目 `apkg-publisher`（**公开仓无加解密实现**；`lib/apkg.ts` 仅保留明文展示头解析+策略层，`lib/apkg-open.ts` 负责子进程桥接） |
-| 服务端密钥存储（`<数据目录>/apkg-keys.json`，0600，env `PI_WEB_APKG_KEYS` 可合并覆盖；删 key 即吊销该代全部包） | `lib/apkg.ts` |
-| 导入链路全量接入（项目导入 / Host 导入 / 预置模板套用自动识别 `.apkg`；GCM tag 校验；**授权（过期/导入上限）在写盘前强制**） | `lib/project-config-bundle.ts` |
+| `.apkg` v2 信封（X25519 + HKDF-SHA256 + AES-256-GCM；header 作 AAD；明文头部仅展示元信息/接收方指纹，不含文件清单） | 内部项目 `apkg-publisher`（**公开仓无加解密实现**；`lib/apkg.ts` 仅保留明文展示头解析+策略层，`lib/apkg-open.ts` 负责子进程桥接） |
+| 接收方身份（发布方生成 X25519 对；私钥随发布包内嵌 `config/apkg-identity.json`，公钥交给发布方；不再有 KEK/`apkg-keys.json`） | `lib/apkg.ts` + `app/api/admin/apkg-identity/route.ts` + `packaging/start-all.sh` |
+| 导入链路全量接入（项目导入 / Host 导入 / 预置模板套用自动识别 `.apkg`；**授权（过期/导入上限）在写盘前强制**） | `lib/project-config-bundle.ts` |
+| 内存解密（`open --out -` 明文 zip 从 stdout 返回，不写明文临时文件；旧 `/api/admin/apkg-keys` 返回 410） | `lib/apkg-open.ts` |
 | 导入计数器（`<数据目录>/apkg-imports.json`，按包指纹；**单服务器口径**，见诚实边界） | `lib/apkg.ts` |
 | `.bundle-lock.json` 禁再导出（项目与 Host 两条导出路由 403；锁文件列入双向 DENIED 清单，明文包无法携带/覆盖锁） | `lib/apkg.ts` + 两个导出路由 |
 | 预置模板密文存储（`.apkg` 原件落盘，套用时经外部解密组件解密；列表展示 加密·版本 徽标） | `lib/config-bundles-store.ts` + `BundlesConfig.tsx` |
@@ -150,23 +164,34 @@ Electron 需要）。**先上 License**：它是唯一能把「复制整个部�
 发布侧已抽离为内部项目 `apkg-publisher`（Go，含 CLI 与 Web 工作台）：
 
 ```bash
-# 内部打包机
-apkg-publisher pack --in course-lab-config.zip ${NL}    --name course-lab --title "课程实验包" --version 1.2.0 ${NL}    --buyer cust-acme --key-id cust-acme ${NL}    --expires 2027-09-01 --max-imports 50
+# 1) 一次性生成接收方身份：私钥进发布包，公钥留在发布方
+apkg-publisher identity new \
+  --out release/config/apkg-identity.json \
+  --public-out publisher/recipient.json
 
-# 把密钥仓部署到每台要开包的 pi-web 服务器
-# <数据目录>/apkg-keys.json（tar.gz 部署 = ~/.local/share/amedac）；
-# 容器化部署可用 PI_WEB_APKG_KEYS 环境变量注入同构 JSON。
-#
-# 解密组件部署（三选一，缺省则 .apkg 导入报"未配备解密组件"）：
-#   1) 客户包注入：package-linux.sh 打包时设 APKG_PUBLISHER_BIN=<linux 二进制路径>
-#      （或放构建机 $SRC/bin/apkg-publisher），组件进 app/bin/；
-#   2) 数据目录：cp apkg-publisher <数据目录>/bin/（app 升级不丢）；
-#   3) 环境变量：PI_WEB_APKG_TOOL=<绝对路径>。
+# 2) 打包（包信息优先读 zip 的 manifest.package / .pi/bundle.json）
+apkg-publisher pack --in course-lab-config.zip --recipient publisher/recipient.json \
+  --buyer cust-acme --expires 2027-09-01 --max-imports 50
+
+# 3) 本地工作台（回环监听；客户标识/公钥/输出目录启动时固定）
+apkg-publisher serve --addr 127.0.0.1:8790 \
+  --recipient publisher/recipient.json --customer cust-acme \
+  --out-dir data/apkg-output
+# 每次打包写入 out-dir 并追加 history.jsonl / pack.log；页面可查历史、下载包。
+# 上传 zip 后优先读 manifest.package；缺失时回退 .pi/bundle.json；两者都没有
+# 则生成 .pi/bundle.json 模板（可复制/下载），提醒下次导出前放回项目。
+
+# 4) 发布包与解密组件
+#    package-linux.sh 设 APKG_IDENTITY_FILE=<identity.json> 与
+#    APKG_PUBLISHER_BIN=<linux 二进制>（或放构建机 $SRC/bin/apkg-publisher），
+#    身份进 app/config/、组件进 app/bin/；start-all.sh 首次运行播种身份到
+#    可写 config 目录，之后升级不覆盖。也可用 PI_WEB_APKG_IDENTITY /
+#    PI_WEB_APKG_TOOL 显式指定；组件还可放 <数据目录>/bin/。
 ```
 
 ### 版本管理与配置包说明规范
 
-- **两种版本正交**：`formatVersion`（信封/manifest 结构兼容性，当前 1/2，导入侧向后兼容 v1）与 `package.version`（内容版本，发布方自定，建议 semver）。列表/详情/导入结果统一展示 `package.version`。
+- **两种版本正交**：`formatVersion`（信封/manifest 结构兼容性，**当前 2，v1 不兼容**）与 `package.version`（内容版本，发布方自定，建议 semver）。列表/详情/导入结果统一展示 `package.version`。
 - **说明字段**：`title`（展示名）+ `description`（一句话说明）随包分发；预置模板的描述字段与包内说明独立（前者是平台侧运营文案，后者是包自带的）。
 - **渠道**：`channel`（stable/alpha/beta）仅供发布方管理分发线，导入侧不做限制。
 
@@ -175,4 +200,4 @@ apkg-publisher pack --in course-lab-config.zip ${NL}    --name course-lab --titl
 - 明文必然存在于项目 home（pi 运行时要读）；**agent 可以把 .pi/ 打 tar 包写入项目目录、用户经文件查看器下载**——这绕过一切产品层导出锁，属本方案明示不防的范围（要堵需禁 bash 或输出审查，代价远超收益）。
 - 锁为**双门**：项目内 `.bundle-lock.json` + 服务端 `apkg-locked-homes.json` 登记（数据目录在 agent 写围栏外，删锁文件不再解锁）；但管理员可直接清登记（可接受，admin≈运营方），项目 home 被移动到新路径会脱离登记匹配（"复制为新项目"会连 `.pi/` 锁文件一起拷贝，兜住常见路径）。
 - 导入计数是单服务器口径：包复制到另一台服务器重新计数。多服务器场景靠 `maxImports × 服务器数` 估算发放量，或未来升级为服务端发放计数。
-- KEK 内嵌场景（完全离线单机导入）尚未实现——当前要求目标服务器持有 keys 文件。
+- **私钥在客户服务器上**：客户 root/管理员可以取出 `apkg-identity.json` 并解密任何发给自己的包。v2 解决的是“只拿到 .apkg 文件的人”和“手填 KEK 的部署痛苦”，不是“防客户读取”；后者需要远程执行/在线许可。

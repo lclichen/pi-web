@@ -34,7 +34,6 @@ import JSZip from "jszip";
 import {
   isApkgBytes,
   readApkgHeader,
-  getApkgKeys,
   checkApkgLicense,
   recordApkgImport,
   recordApkgLockedHome,
@@ -347,8 +346,6 @@ export function validateConfigWrites(
 }
 
 export interface ImportOptions {
-  /** KEK override for tests; defaults to the server key store (lib/apkg.ts). */
-  apkgKeys?: Record<string, Buffer>;
   /** 普通用户导入时禁止项目级 stdio MCP（它会在 pi-web 服务器进程执行）。
    *  管理员/服务器端模板保持 true。 */
   allowStdioMcp?: boolean;
@@ -374,7 +371,7 @@ export async function importProjectConfigBundle(
   let apkgFingerprint: string | undefined;
   if (isApkgBytes(data)) {
     apkgHeader = readApkgHeader(data);
-    zipData = await openApkgViaTool(data, options.apkgKeys ?? getApkgKeys());
+    zipData = await openApkgViaTool(data);
     apkgFingerprint = createHash("sha256").update(data).digest("hex");
   }
 
@@ -478,13 +475,13 @@ export async function importProjectConfigBundle(
   if (apkgHeader) {
     writeBundleLock(home, {
       apkg: true,
-      keyId: apkgHeader.keyId,
+      recipient: apkgHeader.recipient,
       fingerprint: apkgFingerprint!,
       importedAt: new Date().toISOString(),
     });
     recordApkgLockedHome(home, {
       fingerprint: apkgFingerprint!,
-      keyId: apkgHeader.keyId,
+      recipient: apkgHeader.recipient,
       importedAt: new Date().toISOString(),
     });
     recordApkgImport(apkgFingerprint!);

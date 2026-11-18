@@ -16,6 +16,8 @@ export async function GET(req: Request) {
   if (!dir.ok) return NextResponse.json({ error: dir.error }, { status: dir.status });
   const cwd = dir.cwd;
   const scope = readScope(searchParams.get("scope"));
+  // auth-off has no user layer; an explicit user-scope read is empty, not 500.
+  if (scope === "user" && dir.userId <= 0) return NextResponse.json({ agents: [] });
   try {
     const agents = scope ? listAgents(cwd, scope, dir.userId) : listAllAgents(cwd, dir.userId);
     return NextResponse.json({ agents });

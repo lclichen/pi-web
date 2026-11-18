@@ -52,6 +52,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ name: st
     return NextResponse.json(builtin);
   }
   const scope = readScope(scopeParam);
+  // auth-off has no user layer; do not let agentsDirFor("user") surface as 500.
+  if (scope === "user" && dir.userId <= 0) {
+    return NextResponse.json({ error: "用户 Agent 需要登录用户" }, { status: 403 });
+  }
   try {
     const detail = getAgentDetail(cwd, scope, name, dir.userId);
     if (!detail) {

@@ -29,7 +29,7 @@ export async function POST(req: Request) {
   // Local brute-force guard: the platform rate-limits by ITS client (this
   // BFF), not per browser IP, so without this the BFF would relay unlimited
   // anonymous guesses. 10 attempts/min per IP and per IP+username.
-  const ip = clientIpOf(req as unknown as Parameters<typeof clientIpOf>[0]);
+  const ip = clientIpOf(req);
   const pre = consumeRateLimit(`login:ip:${ip}`, 10, 60_000);
   if (!pre.allowed) {
     return NextResponse.json(

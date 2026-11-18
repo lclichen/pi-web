@@ -127,7 +127,12 @@ const DEFAULT_AGENT_DESCRIPTIONS: Record<string, string> = {
 };
 
 export function listAllAgents(cwd: string, userId?: number): AgentInfo[] {
-  return [...listAgents(cwd, "project", userId), ...listAgents(cwd, "user", userId), ...listAgents(cwd, "global", userId)];
+  const agents = [...listAgents(cwd, "project", userId)];
+  // auth-off: there is no user layer (userId 0), and agentsDirFor("user")
+  // throws. Listing must still serve project + global instead of 500.
+  if (isUserScopedConfig(userId)) agents.push(...listAgents(cwd, "user", userId));
+  agents.push(...listAgents(cwd, "global", userId));
+  return agents;
 }
 
 export function getAgentDetail(cwd: string, scope: ConfigScope, name: string, userId?: number): AgentDetail | null {

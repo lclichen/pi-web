@@ -161,7 +161,7 @@ async function handleHttp(req: IncomingMessage, res: ServerResponse): Promise<vo
   if (req.method === "POST" && url.pathname === "/pair/exchange") {
     // Pairing codes are 6 chars: rate-limit guesses per IP and globally so a
     // LAN-local (or multi-code) brute force cannot run for the whole 5-min TTL.
-    const ip = clientIpOf(req as unknown as Parameters<typeof clientIpOf>[0]);
+    const ip = clientIpOf(req);
     const perIp = consumeRateLimit(`pair:ip:${ip}`, 10, 60_000);
     const global = consumeRateLimit("pair:global", 60, 5 * 60_000);
     if (!perIp.allowed || !global.allowed) {

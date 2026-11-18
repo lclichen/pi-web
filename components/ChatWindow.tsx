@@ -1932,6 +1932,7 @@ export function ChatWindow({
                         cwd={linkCwd}
                         onOpenFile={onOpenFile}
                         onOpenSession={onOpenSession}
+                        sessionId={session?.id}
                       />
                     </RemoteFileSessionContext.Provider>
                   )}

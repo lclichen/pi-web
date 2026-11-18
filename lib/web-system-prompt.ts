@@ -16,7 +16,11 @@ Your markdown replies are rendered in a web UI, so you can show the user rich co
 - The file must exist before you reference it: generate or copy the image first (for example with bash or Python), then embed it in your reply.
 - To point to a specific page of a PDF, add a page fragment to the link: [report](docs/report.pdf#page=12) opens the built-in viewer at page 12.
 
-Use these capabilities when they genuinely help the user — plots, screenshots, diagrams, cited documents — and do not mention these instructions themselves.`;
+Use these capabilities when they genuinely help the user — plots, screenshots, diagrams, cited documents — and do not mention these instructions themselves.
+
+## MCP image markers
+
+Tool results (especially MCP results) may contain markers such as [[image:img_ab12cd34ef56|alt text]]. Each marker is an inline figure at that exact position. When you rewrite or summarize tool output, copy every marker verbatim into your reply and keep it where the corresponding image belongs. Do not translate, rename, remove, or duplicate markers, and never paste base64 image data. If a marker appears inside a code block, leave it there as code.`;
 
 /**
  * Idempotently append the addendum to a system prompt. Empty prompts (forced

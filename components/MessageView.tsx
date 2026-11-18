@@ -30,6 +30,7 @@ import { TurnWrittenFiles } from "./TurnWrittenFiles";
 import type { WrittenFile } from "@/lib/turn-written-files";
 import { skillExpansionToCommand } from "@/lib/slash-display";
 import { withEmbedToken } from "@/lib/embed-client";
+import { stripMcpImageMarkers } from "@/lib/mcp-image-markers";
 import type { SubagentToolDetails } from "@/lib/subagent-extension";
 import type {
   AgentMessage,
@@ -1308,7 +1309,13 @@ function BlockView({
   if (block.type === "text") {
     return (
       <div data-message-text data-search-target={searchTarget || undefined}>
-        <TextBlock block={block as TextContent} isStreaming={isStreaming} cwd={cwd} onOpenFile={onOpenFile} />
+        <TextBlock
+          block={block as TextContent}
+          isStreaming={isStreaming}
+          cwd={cwd}
+          onOpenFile={onOpenFile}
+          imageSessionId={sessionId}
+        />
       </div>
     );
   }
@@ -1337,14 +1344,16 @@ function TextBlock({
   isStreaming,
   cwd,
   onOpenFile,
+  imageSessionId,
 }: {
   block: TextContent;
   isStreaming?: boolean;
   cwd?: string;
   onOpenFile?: (filePath: string, page?: number) => void;
+  imageSessionId?: string;
 }) {
   return (
-    <SafeMarkdownBody isStreaming={isStreaming} cwd={cwd} onOpenFile={onOpenFile}>
+    <SafeMarkdownBody isStreaming={isStreaming} cwd={cwd} onOpenFile={onOpenFile} imageSessionId={imageSessionId}>
       {block.text}
     </SafeMarkdownBody>
   );
@@ -1517,10 +1526,12 @@ function ToolCallBlock({
 
   // Result display
   const resultText = result
-    ? result.content
-        .filter((b): b is { type: "text"; text: string } => b.type === "text")
-        .map((b) => b.text)
-        .join("\n")
+    ? stripMcpImageMarkers(
+        result.content
+          .filter((b): b is { type: "text"; text: string } => b.type === "text")
+          .map((b) => b.text)
+          .join("\n"),
+      )
     : null;
   const resultImages = getMessageImages(result?.content ?? []);
   const resultIsEmpty = resultText === null ? false : resultText.trim() === "(no output)" || resultText.trim() === "";

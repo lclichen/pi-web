@@ -424,3 +424,19 @@ test("failed provider turn shows the error and a manual retry action", () => {
   assert.match(plain, /provider overloaded/);
   assert.doesNotMatch(plain, /Retry<|>Retry</);
 });
+
+test("resolves MCP image markers in assistant text to session image URLs", () => {
+  const html = renderMessage(
+    {
+      role: "assistant",
+      provider: "test",
+      model: "test",
+      content: [{ type: "text", text: "前 [[image:img_ab12cd34ef56|首页截图]] 后" }],
+    },
+    { sessionId: "sess_1" },
+  );
+
+  assert.match(html, /<img[^>]+src="\/api\/sessions\/sess_1\/images\/img_ab12cd34ef56"/);
+  assert.match(html, /alt="首页截图"/);
+  assert.doesNotMatch(html, /\[\[image:/);
+});

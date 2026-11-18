@@ -5,6 +5,7 @@ import ReactMarkdown, { type Components, type ExtraProps } from "react-markdown"
 import { parsePdfPageFragment, resolveLocalFileHref, shouldOpenLocalFileInApp } from "@/lib/file-links";
 import { encodeFilePathForApi } from "@/lib/file-paths";
 import { withEmbedToken } from "@/lib/embed-client";
+import { rewriteMcpImageMarkers } from "@/lib/mcp-image-markers";
 import {
   markdownRehypePlugins,
   markdownRemarkPlugins,
@@ -32,6 +33,8 @@ interface MarkdownBodyProps {
   isStreaming?: boolean;
   cwd?: string;
   onOpenFile?: (filePath: string, page?: number) => void;
+  /** Resolve `[[image:...]]` MCP markers through the session image store. */
+  imageSessionId?: string;
 }
 
 function MarkdownImage({ src, alt, cwd, ...props }: ComponentProps<"img"> & ExtraProps & { cwd?: string }) {
@@ -60,8 +63,11 @@ function MarkdownImage({ src, alt, cwd, ...props }: ComponentProps<"img"> & Extr
   );
 }
 
-export function MarkdownBody({ children, className, isStreaming, cwd, onOpenFile }: MarkdownBodyProps) {
-  const normalizedMarkdown = useMemo(() => normalizeDisplayMath(children), [children]);
+export function MarkdownBody({ children, className, isStreaming, cwd, onOpenFile, imageSessionId }: MarkdownBodyProps) {
+  const normalizedMarkdown = useMemo(
+    () => rewriteMcpImageMarkers(normalizeDisplayMath(children), imageSessionId),
+    [children, imageSessionId],
+  );
   // Stable renderer identities keep stateful blocks mounted across message hover updates.
   const components = useMemo<Components>(
     () => ({

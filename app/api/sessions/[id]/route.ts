@@ -16,6 +16,7 @@ import { getRpcSession } from "@/lib/rpc-manager";
 import { projectTreeForResponse } from "@/lib/project-tree";
 import { computeSessionTotalActiveMs } from "@/lib/session-timing";
 import { computeSessionStats } from "@/lib/session-stats";
+import { deleteSessionImages } from "@/lib/session-images";
 import type { SessionEntry } from "@/lib/types";
 import { readSubagentRun, readSubagentSessionResources, SUBAGENT_META_TYPE } from "@/lib/subagents";
 import { readSessionToolSelection } from "@/lib/session-tool-selection";
@@ -264,6 +265,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
     }
     invalidateSessionPathCache(id);
     invalidateSessionListForSession(filePath);
+    deleteSessionImages(id);
     return NextResponse.json({ ok: true });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });

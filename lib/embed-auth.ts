@@ -110,6 +110,7 @@ export function isEmbedApiAllowed(method: string, pathname: string): boolean {
   if (get && /^\/api\/sessions\/(?!search$)[^/]+\/entries\/[^/]+\/(?:thinking|tool-result-image)$/.test(path)) {
     return true;
   }
+  if (get && /^\/api\/sessions\/(?!search$)[^/]+\/images\/[^/]+$/.test(path)) return true;
 
   if (post && path === "/api/agent/new") return true;
   if ((get || post) && /^\/api\/agent\/[^/]+$/.test(path)) return true;

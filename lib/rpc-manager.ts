@@ -38,6 +38,7 @@ import { logServerEvent } from "./server-log";
 import { readPreferences } from "./preferences-service";
 import { migrateLegacyMcpTimeoutsForSession, readMcpConfig } from "./mcp-config";
 import { createModeToolClampExtension } from "./extensions/mode-tool-clamp";
+import { copySessionImages, projectToolResultContentForClient, projectToolResultMessageForClient } from "./session-images";
 import { filterActiveToolsForMode, filterToolsForMode, isRemoteMode, mcpExcludedServers, type ToolExclusion } from "./tool-policy";
 import { composeQuickSystemPrompt, createQuickPromptExtension, type QuickTemplateHolder } from "./quick-prompt";
 import { createPromptConsistencyExtension, describePromptDrift, type PromptPin } from "./prompt-consistency";
@@ -584,10 +585,46 @@ export class AgentSessionWrapper {
       }
       if (event.type === "queue_update") this.pruneQueuedImageTexts();
       if (IDLE_RESET_EVENT_TYPES.has(event.type)) this.resetIdleTimer();
-      this.emit(event);
+      this.emit(this.projectClientEventForImages(event));
       if (event.type === "agent_settled") this.notifyAgentRunCompleteIfIdle();
     });
     this.resetIdleTimer();
+  }
+
+  /**
+   * Browser-facing projection: persist tool-result images into the session
+   * store and replace their base64 with same-origin URLs. The SDK/model copy is
+   * untouched; only the event leaving this wrapper is rewritten.
+   */
+  private projectClientEventForImages(event: AgentEvent): AgentEvent {
+    try {
+      if (event.type === "message_end") {
+        const message = (event as { message?: unknown }).message;
+        const projected = projectToolResultMessageForClient(this.inner.sessionId, message);
+        if (projected !== message) return { ...event, message: projected } as AgentEvent;
+      }
+      if (event.type === "tool_execution_end") {
+        const result = (event as { result?: unknown }).result;
+        if (result && typeof result === "object" && !Array.isArray(result)) {
+          const content = (result as { content?: unknown }).content;
+          const details = (result as { details?: unknown }).details;
+          if (Array.isArray(content)) {
+            const projected = projectToolResultContentForClient(this.inner.sessionId, content, details);
+            if (projected.changed) {
+              return { ...event, result: { ...result, content: projected.content } } as AgentEvent;
+            }
+          }
+        }
+      }
+    } catch (error) {
+      // A failed projection must never break the event stream; the original
+      // base64 event still renders in the browser.
+      console.error(
+        "[pi-web] failed to project tool-result images:",
+        error instanceof Error ? error.message : error,
+      );
+    }
+    return event;
   }
 
   /**
@@ -1449,6 +1486,7 @@ export class AgentSessionWrapper {
             const entryId = command.entryId as string;
             const sessionManager = this.inner.sessionManager;
             const currentSessionFile = this.inner.sessionFile;
+            const sourceSessionId = this.inner.sessionId;
 
             if (!sessionManager.isPersisted()) return { cancelled: true };
             if (!currentSessionFile) throw new Error("Persisted session is missing a session file");
@@ -1484,6 +1522,7 @@ export class AgentSessionWrapper {
             }
 
             const newSessionId = forkedManager.getSessionId();
+            copySessionImages(sourceSessionId, newSessionId);
             cacheSessionPath(newSessionId, newSessionFile);
             this.invalidateOwnSessionList();
             await this.shutdownAfterSessionReplacement("fork");
@@ -1508,6 +1547,7 @@ export class AgentSessionWrapper {
           if (!forkedPath) throw new Error("Failed to create forked session");
 
           const newSessionId = openSessionManager(forkedPath, { sessionDir }).getSessionId();
+          copySessionImages(this.inner.sessionId, newSessionId);
           cacheSessionPath(newSessionId, forkedPath);
           this.invalidateOwnSessionList();
           return { cancelled: false, newSessionId };
@@ -1531,11 +1571,13 @@ export class AgentSessionWrapper {
 
           return this.withSessionReplacement("clone", async () => {
             const sessionDir = sessionManager.getSessionDir();
+            const sourceSessionId = this.inner.sessionId;
             const sourceManager = openSessionManager(currentSessionFile, { sessionDir, mutable: true });
             const clonedPath = sourceManager.createBranchedSession(leafId);
             if (!clonedPath || !existsSync(clonedPath)) throw new Error("Failed to clone current session branch");
 
             const newSessionId = openSessionManager(clonedPath, { sessionDir }).getSessionId();
+            copySessionImages(sourceSessionId, newSessionId);
             cacheSessionPath(newSessionId, clonedPath);
             this.invalidateOwnSessionList();
             await this.shutdownAfterSessionReplacement("clone");

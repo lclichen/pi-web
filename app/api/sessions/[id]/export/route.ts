@@ -7,6 +7,7 @@ import { promisify } from "util";
 import { fileURLToPath, pathToFileURL } from "url";
 import { NextResponse } from "next/server";
 import { resolveSessionAccess } from "@/lib/session-access";
+import { inlineMcpImageMarkers } from "@/lib/session-images";
 
 const execFileAsync = promisify(execFile);
 
@@ -253,7 +254,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       await exportSession(filePath, outputPath);
 
       const html = readFileSync(outputPath, "utf8");
-      const patchedHtml = patchExportHtml(html);
+      const patchedHtml = inlineMcpImageMarkers(patchExportHtml(html), id);
       return new Response(patchedHtml, {
         headers: {
           "Content-Type": "text/html; charset=utf-8",

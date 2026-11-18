@@ -46,8 +46,27 @@ async function acquire(client: Client): Promise<() => void> {
   return release;
 }
 
+/**
+ * Translate the SFTP handshake-corruption signature into an actionable error.
+ * The SFTP channel's first 4 bytes must be a version-packet length; when the
+ * server writes anything first (commonly ~/.ssh/rc, /etc/ssh/sshrc, or a
+ * Subsystem sftp wrapper printing a greeting), ssh2 parses those bytes as the
+ * length and reports `Packet length ... exceeds max length of 262144`. It does
+ * not need to be a long banner: even "AMED" is enough. Nothing on our side can
+ * resynchronise that channel — the operator has to remove the output.
+ */
+export function describeSftpError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/Packet length .*exceeds max length|SFTP: Inbound/i.test(message)) {
+    return "远端 SSH 的 SFTP 通道启动时输出了额外内容（常见于 ~/.ssh/rc、/etc/ssh/sshrc 或 Subsystem sftp 包装脚本），SFTP 无法建立；请移除这些启动输出后重试";
+  }
+  return message;
+}
+
 export function openSftp(client: Client): Promise<SFTPWrapper> {
-  return new Promise((resolve, reject) => client.sftp((err, value) => (err ? reject(err) : resolve(value))));
+  return new Promise((resolve, reject) =>
+    client.sftp((err, value) => (err ? reject(new Error(describeSftpError(err))) : resolve(value))),
+  );
 }
 
 /** Run `fn` on a fresh SFTP channel, always closing it and bounding concurrency. */

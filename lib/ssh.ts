@@ -202,13 +202,52 @@ export interface SshListEntry {
   size: number;
 }
 
+const SSH_LIST_BEGIN = "@@PI_SSH_LIST_BEGIN@@";
+const SSH_LIST_PATH = "@@PI_SSH_LIST_PATH@@";
+const SSH_LIST_DIR = "@@PI_SSH_LIST_DIR@@";
+const SSH_LIST_END = "@@PI_SSH_LIST_END@@";
+
+/**
+ * Parse the fenced directory listing produced by `sshListDirectory`.
+ *
+ * The fence is essential: servers whose login shell prints a banner/greeting
+ * (or a terminal-title escape) also emit it into the SFTP subsystem handshake
+ * on some setups, where ssh2 parses the text as an SFTP packet length and fails
+ * with `Packet length ... exceeds max length of 262144`. The wizard therefore
+ * lists over an exec channel and ignores everything outside the markers.
+ * Exported for tests.
+ */
+export function parseSshDirectoryListing(stdout: string): { path: string; entries: SshListEntry[] } | null {
+  const begin = stdout.indexOf(SSH_LIST_BEGIN);
+  if (begin < 0) return null;
+  const end = stdout.indexOf(SSH_LIST_END, begin + SSH_LIST_BEGIN.length);
+  if (end < 0) return null;
+  let resolvedPath = "/";
+  const entries: SshListEntry[] = [];
+  for (const rawLine of stdout.slice(begin + SSH_LIST_BEGIN.length, end).split("\n")) {
+    const line = rawLine.replace(/\r$/, "");
+    if (line.startsWith(SSH_LIST_PATH)) {
+      resolvedPath = line.slice(SSH_LIST_PATH.length).trim() || "/";
+    } else if (line.startsWith(SSH_LIST_DIR)) {
+      const name = line.slice(SSH_LIST_DIR.length);
+      if (name) entries.push({ name, isDir: true, size: 0 });
+    }
+  }
+  entries.sort((a, b) => a.name.localeCompare(b.name));
+  return { path: resolvedPath.replace(/\/+$/, "") || "/", entries };
+}
+
 /**
  * One-shot remote directory listing for the wizard's remote-directory picker.
- * With no path, starts at the account's home (`echo $HOME`). Like
+ * With no path, starts at the account's home (`$HOME`). Like
  * sshTestConnection this is a fresh, unpooled connection with the submitted
  * credentials. Keyed connections are not reused, so the picker costs one
  * connect per browse call — acceptable for a wizard used before the project
  * (and its pooled client) exists.
+ *
+ * Uses exec rather than SFTP on purpose: a server-side shell banner corrupts
+ * the SFTP subsystem's first packet on some deployments (the wizard only needs
+ * directory names, so exec is both sufficient and immune).
  */
 export async function sshListDirectory(
   config: SshConfig,
@@ -216,39 +255,26 @@ export async function sshListDirectory(
 ): Promise<{ path: string; entries: SshListEntry[] }> {
   const client = await connectClient(config);
   try {
-    let target = (path ?? "").trim();
-    if (!target) {
-      target = await new Promise<string>((resolve, reject) => {
-        client.exec("echo $HOME", (err, stream) => {
-          if (err) return reject(err);
-          let out = "";
-          stream.on("data", (d: Buffer) => {
-            out += d.toString();
-          });
-          stream.on("close", () => resolve(out.trim() || "/"));
-        });
-      });
+    const targetExpr = path?.trim() ? shellQuote(path.trim()) : '"$HOME"';
+    const script = [
+      `target=${targetExpr}`,
+      `[ -d "$target" ] || exit 7`,
+      `cd -- "$target" || exit 7`,
+      `printf '%s\\n' '${SSH_LIST_BEGIN}'`,
+      `printf '%s%s\\n' '${SSH_LIST_PATH}' "$(pwd)"`,
+      `for p in * .[!.]* ..?*; do`,
+      `  [ -d "$p" ] || continue`,
+      `  printf '%s%s\\n' '${SSH_LIST_DIR}' "$p"`,
+      `done`,
+      `printf '%s\\n' '${SSH_LIST_END}'`,
+    ].join("\n");
+    const r = await sshExec(client, script, "/");
+    if (r.code !== 0) {
+      throw new Error(r.stderr.trim().slice(0, 300) || `无法读取远程目录（exit ${r.code}）`);
     }
-    const sftp = await new Promise<{
-      readdir(
-        p: string,
-        cb: (
-          e: Error | undefined,
-          l: Array<{ filename: string; attrs: { isDirectory(): boolean; size: number } }> | undefined,
-        ) => void,
-      ): void;
-    }>((resolve, reject) => {
-      client.sftp((e: Error | undefined, s: unknown) => (e ? reject(e) : resolve(s as Parameters<typeof resolve>[0])));
-    });
-    const list = await new Promise<Array<{ filename: string; attrs: { isDirectory(): boolean; size: number } }>>(
-      (resolve, reject) => {
-        sftp.readdir(target, (e, l) => (e ? reject(e) : resolve(l ?? [])));
-      },
-    );
-    const entries = list
-      .map((e) => ({ name: e.filename, isDir: e.attrs.isDirectory(), size: e.attrs.size }))
-      .sort((a, b) => (a.isDir === b.isDir ? a.name.localeCompare(b.name) : a.isDir ? -1 : 1));
-    return { path: target.replace(/\/+$/, "") || "/", entries };
+    const parsed = parseSshDirectoryListing(r.stdout);
+    if (!parsed) throw new Error("远程目录列表解析失败（服务器返回了额外输出）");
+    return parsed;
   } finally {
     try {
       client.end();

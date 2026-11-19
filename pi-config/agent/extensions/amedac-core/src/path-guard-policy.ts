@@ -34,7 +34,7 @@ export interface PathPolicy {
 }
 
 export interface PolicyDecisionEntry {
-  /** 绝对路径（POSIX）。 */
+  /** 绝对路径（POSIX 形态；Windows 盘符/UNC 归一为 C:/…、//host/share/…）。 */
   path: string;
   decision: "allow" | "deny";
   at: number;
@@ -96,6 +96,10 @@ export const DEFAULT_POLICY: PathPolicy = {
 
 export function normalizePolicyPath(path: string): string {
   const raw = path.replace(/\\/g, "/");
+  // UNC 根（\\host\share… / //host/share…）保留双斜杠前缀，与文件层
+  // encodeFilePathForApi / normalizeWorkspaceRoot 的规范形态（//host/share）一致；
+  // 否则 `\\host\share\f` 会被归一成 `/host/share/f`，策略/决策永远匹配不到。
+  const unc = raw.startsWith("//");
   const trailingSlash = /\/\s*$/.test(raw);
   const out: string[] = [];
   for (const seg of raw.split("/")) {
@@ -108,13 +112,15 @@ export function normalizePolicyPath(path: string): string {
     out.push(seg);
   }
   if (out.length === 0) return "/";
-  return (raw.startsWith("/") ? "/" : "") + out.join("/") + (trailingSlash && out.length > 0 ? "" : "");
+  return (unc ? "//" : raw.startsWith("/") ? "/" : "") + out.join("/") + (trailingSlash && out.length > 0 ? "" : "");
 }
 
 function globToRegExp(pattern: string): RegExp {
   const norm = normalizePolicyPath(pattern);
   if (norm === "/") return /^\/.*$/; // 根模式 = 一切绝对路径
   const segments = norm.split("/").filter((s) => s.length > 0);
+  // 首段前缀：UNC 双斜杠（//host），POSIX 绝对单斜杠，相对模式无前缀。
+  const firstPrefix = norm.startsWith("//") ? "//" : norm.startsWith("/") ? "/" : "";
   const parts: string[] = ["^"];
   segments.forEach((seg, i) => {
     if (seg === "**") {
@@ -123,29 +129,68 @@ function globToRegExp(pattern: string): RegExp {
       return;
     }
     const lit = seg.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, "[^/]*");
-    parts.push(i === 0 && !norm.startsWith("/") ? lit : "/" + lit);
+    parts.push(i === 0 ? firstPrefix + lit : "/" + lit);
   });
   parts.push("(?:/[^/]+)*$"); // 模式匹配目录时覆盖其下所有内容
   return new RegExp(parts.join(""));
 }
 
-/** absPath（绝对）是否命中 pattern（工作区相对、绝对 glob，或 ~ 字面量）。
- *  注意先拼后归一："." 的相对语义在归一化中会坍缩成根，不能先 normalize。 */
-/** Windows 盘符绝对路径（C:/ 或 C:\）——决策/策略里常见，必须按绝对模式处理。 */
-function isWindowsDriveAbsolute(value: string): boolean {
+/** Windows 盘符绝对路径（C:/ 或 C:\）——决策/策略里常见，必须按绝对模式处理。
+ *  共享实现（app/api/policy 等经 lib/extensions/path-guard 复用，勿再内联）。 */
+export function isWindowsDriveAbsolute(value: string): boolean {
   if (value.length < 3) return false;
   const code = value.charCodeAt(0);
   const letter = (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
   return letter && value[1] === ":" && (value[2] === "/" || value.charCodeAt(2) === 92);
 }
 
+/** UNC 绝对路径（\\host\share… 或 //host/share…）——Windows 网络共享，
+ *  主机名/共享名大小写不敏感，规范形态统一为 //host/share。 */
+function isUncPath(value: string): boolean {
+  return value.startsWith("\\\\") || value.startsWith("//");
+}
+
+/** 策略空间的绝对路径：POSIX 根 / ~ 字面量 / Windows 盘符 / UNC。 */
+export function isAbsolutePolicyPath(value: string): boolean {
+  return value.startsWith("/") || value.startsWith("~") || isWindowsDriveAbsolute(value) || isUncPath(value);
+}
+
+/** 归一化结果是否 Windows 形态（盘符 / UNC）：这类路径按 Windows 的大小写
+ *  不敏感语义比较；POSIX 两侧保持大小写敏感（见 foldForWindowsCompare）。 */
+function isWindowsForm(norm: string): boolean {
+  return isWindowsDriveAbsolute(norm) || norm.startsWith("//");
+}
+
+/** 任一侧是 Windows 形态即两侧折叠小写（与 lib/path-security.ts 的 case-fold
+ *  约定一致）；POSIX 双侧原样，绝不给 globToRegExp 全局加 i 标志。 */
+function foldForWindowsCompare(norm: string, absolutePat: string): [string, string] {
+  return isWindowsForm(norm) || isWindowsForm(absolutePat)
+    ? [norm.toLowerCase(), absolutePat.toLowerCase()]
+    : [norm, absolutePat];
+}
+
+/** 两条策略路径是否同一条：归一化后精确比较；任一为 Windows 形态再按
+ *  大小写不敏感比较——兼容已落盘的旧大小写决策 key（查找/去重/删除共用，
+ *  避免旧 key 查不到或重复堆积）。POSIX 路径保持精确相等。 */
+export function samePolicyPath(a: string, b: string): boolean {
+  const na = normalizePolicyPath(a);
+  const nb = normalizePolicyPath(b);
+  if (na === nb) return true;
+  if (isWindowsForm(na) || isWindowsForm(nb)) return na.toLowerCase() === nb.toLowerCase();
+  return false;
+}
+
+/** absPath（绝对）是否命中 pattern（工作区相对、绝对 glob，或 ~ 字面量）。
+ *  注意先拼后归一："." 的相对语义在归一化中会坍缩成根，不能先 normalize。 */
 export function matchesPattern(pattern: string, absPath: string, cwd: string): boolean {
   const norm = normalizePolicyPath(absPath);
   const base = normalizePolicyPath(cwd);
   const rawPat = pattern.trim();
-  const isAbsolute = rawPat.startsWith("/") || rawPat.startsWith("~") || isWindowsDriveAbsolute(rawPat);
-  const absolutePat = normalizePolicyPath(isAbsolute ? rawPat : `${base}/${rawPat}`);
-  return globToRegExp(absolutePat).test(norm);
+  const isAbsolute = isAbsolutePolicyPath(rawPat);
+  // base 为 "/"（决策查找）时直接拼 /pat，避免 //pat 被误判成 UNC 前缀。
+  const absolutePat = normalizePolicyPath(isAbsolute ? rawPat : base === "/" ? `/${rawPat}` : `${base}/${rawPat}`);
+  const [cmpPath, cmpPat] = foldForWindowsCompare(norm, absolutePat);
+  return globToRegExp(cmpPat).test(cmpPath);
 }
 
 function matchesAny(patterns: readonly string[], absPath: string, cwd: string): boolean {
@@ -172,14 +217,17 @@ export function parsePathScope(raw: string | null | undefined): PathScope | null
   }
 }
 
-/** 把工具路径映射进策略空间：工作区内 → `<cwd>/<相对>`；工作区外原样保留。 */
+/** 把工具路径映射进策略空间：工作区内 → `<cwd>/<相对>`；工作区外原样保留。
+ *  Windows 形态（盘符/UNC）的远端根大小写不敏感——与 matchesPattern 同一折叠
+ *  规则，否则 `//HOST/share/…` 映射不进 `//host/share` 根。 */
 export function mapToolPathToPolicy(absPath: string, cwd: string, scope?: PathScope | null): string {
   const norm = normalizePolicyPath(absPath);
   if (!scope) return norm;
   const root = normalizePolicyPath(scope.workspaceRoot);
   if (root === "/") return norm;
-  if (norm === root) return normalizePolicyPath(cwd);
-  if (norm.startsWith(root + "/")) return normalizePolicyPath(`${cwd}/${norm.slice(root.length + 1)}`);
+  const [cmpNorm, cmpRoot] = foldForWindowsCompare(norm, root);
+  if (cmpNorm === cmpRoot) return normalizePolicyPath(cwd);
+  if (cmpNorm.startsWith(cmpRoot + "/")) return normalizePolicyPath(`${cwd}/${norm.slice(root.length + 1)}`);
   return norm;
 }
 
@@ -536,8 +584,8 @@ function commandIndex(tokens: string[]): number {
 
 function resolveToken(token: string, base: string): string {
   if (DEVICE_SINKS.test(token)) return token;
-  if (/^[A-Za-z]:[\\/]/.test(token) || token.startsWith("/")) return normalizePolicyPath(token);
-  if (token === "~" || token.startsWith("~/")) return normalizePolicyPath(token); // 主目录字面量：按工作区外处理
+  // 绝对形态（POSIX 根 / ~ / 盘符 / UNC）原样归一；UNC 不再拼到 cwd 下。
+  if (isAbsolutePolicyPath(token)) return normalizePolicyPath(token);
   return normalizePolicyPath(`${base}/${token}`);
 }
 

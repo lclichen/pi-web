@@ -114,6 +114,8 @@ export async function POST(req: Request) {
       body.projectId = embed.scope.projectId;
       body.cwd = embed.scope.cwd;
       delete body.mode;
+      // 嵌入会话的工具档位由服务端产品配置决定，忽略客户端传值（P2-6）。
+      delete body.toolNames;
     }
     const { cwd, ...command } = body;
     commandType = typeof command.type === "string" ? command.type : undefined;

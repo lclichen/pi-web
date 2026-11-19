@@ -9,6 +9,7 @@ import {
   normalizeEmbedCommandName,
   slashCommandNameFromText,
 } from "@/lib/embed-commands";
+import { isEmbedAgentCommandTypeAllowed } from "@/lib/embed-agent-commands";
 
 /** Keep the product's command palette and the actual command surface aligned. */
 function filterEmbedCommandResult(result: unknown, allowedCommands: string[]): unknown {
@@ -76,6 +77,22 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     // 接管（POST /api/sessions/:id/takeover），避免"点进去就改了别人的会话"。
     const identity = requireUserIdentity(req);
     const embed = identity.ok ? identity.session.embed : undefined;
+
+    // 嵌入产品的命令 type 闸门（P2-6）：allowedCommands 只管 slash 命令名，
+    // 这里在会话解析 / set_tools 分支 / send 之前按命令 type 收紧——
+    // set_tools 会放开会话工具集、fork 会分叉出产品管理之外的新会话。
+    // 未知 type 默认拒绝（default-deny）。
+    if (embed && !isEmbedAgentCommandTypeAllowed(commandType ?? "")) {
+      const deniedType = commandType ?? "";
+      return NextResponse.json(
+        {
+          error: deniedType ? `命令 ${deniedType} 未对当前产品开放` : "未知命令，未对当前产品开放",
+          code: "embed_command_denied",
+        },
+        { status: 403 },
+      );
+    }
+
     if (identity.ok) {
       const caller = identity.session.user;
       if (caller.role === "admin" && caller.id !== 0 && !isReadOnlyAgentCommand(commandType ?? "")) {

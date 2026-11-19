@@ -197,9 +197,10 @@ export function normalizeOtelEndpoint(raw: unknown): string | undefined {
   if (typeof raw !== "string") throw new Error("otelEndpoint 必须是字符串");
   const trimmed = raw.trim();
   if (!trimmed) return undefined;
+  const candidate = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(trimmed) ? trimmed : `http://${trimmed}`;
   let parsed: URL;
   try {
-    parsed = new URL(trimmed);
+    parsed = new URL(candidate);
   } catch {
     throw new Error(`OTLP 地址无效: ${raw}`);
   }

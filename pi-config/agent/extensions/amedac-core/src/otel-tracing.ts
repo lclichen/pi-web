@@ -444,6 +444,7 @@ class SessionTracer {
       "gen_ai.conversation.id": this.sessionId,
       "pi.session.id": this.sessionId,
       "pi.session.kind": this.sessionKind,
+      ...(this.parentSessionId ? { "pi.parent.session.id": this.parentSessionId } : {}),
       ...(this.identity ? { "user.id": this.identity.userId } : {}),
       ...(this.identity?.userName ? { "user.name": this.identity.userName } : {}),
     };

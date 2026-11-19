@@ -960,6 +960,7 @@ export class AgentSessionWrapper {
         hostHome: this.projection.hostHome,
         workspace,
         workspaceMeta: this.projection.workspaceMeta,
+        workspaceRecheck: this.projection.workspaceRecheck,
         budgetMs: 5_000,
       });
     } catch (error) {

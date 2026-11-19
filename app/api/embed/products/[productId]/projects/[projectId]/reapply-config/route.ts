@@ -4,6 +4,7 @@ import { requireEmbedProductIdentity } from "@/lib/embed-product-auth";
 import { getBoundEmbedProject, reapplyEmbedConfig } from "@/lib/embed-workspaces";
 import { embedCorsPreflight, isEmbedOriginAllowed, withEmbedCors } from "@/lib/embed-cors";
 import { isApiRequestHostAllowed } from "@/lib/request-security";
+import { ProjectConfigLockBusyError } from "@/lib/project-config-lock";
 
 export const dynamic = "force-dynamic";
 
@@ -38,6 +39,14 @@ export async function POST(req: Request, { params }: Params) {
       NextResponse.json({ project: view }, { headers: { "Cache-Control": "no-store" } }),
     );
   } catch (error) {
+    // 配置包写入共享写锁被其他进程占用 → 409（与项目配置写路由一致）。
+    if (error instanceof ProjectConfigLockBusyError) {
+      return withEmbedCors(
+        req,
+        auth.identity.product,
+        NextResponse.json({ error: error.message, code: "PROJECT_LOCKED" }, { status: 409 }),
+      );
+    }
     const status = (error as { status?: number }).status ?? 500;
     return withEmbedCors(
       req,

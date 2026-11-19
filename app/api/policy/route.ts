@@ -12,10 +12,12 @@ import {
   PATH_SCOPE_FILE,
   evaluateBashCommand,
   evaluatePathAgainstPolicy,
+  isAbsolutePolicyPath,
   normalizePolicyPath,
   parsePathPolicy,
   parsePathScope,
   parsePolicyDecisions,
+  samePolicyPath,
   type PathPolicy,
 } from "@/lib/extensions/path-guard";
 
@@ -143,13 +145,9 @@ export async function DELETE(req: Request) {
   const dir = resolveConfigCwdSync(req, { projectId: searchParams.get("projectId"), cwd: searchParams.get("cwd") });
   if (!dir.ok) return NextResponse.json({ error: dir.error }, { status: dir.status });
   const entryPath = searchParams.get("path") ?? "";
-  // Windows 盘符路径同样是绝对路径（决策文件里存的就是 C:/...）。
-  const isAbsolute =
-    entryPath.startsWith("/") ||
-    (entryPath.length >= 3 &&
-      /[A-Za-z]/.test(entryPath[0]) &&
-      entryPath[1] === ":" &&
-      (entryPath[2] === "/" || entryPath.charCodeAt(2) === 92));
+  // 绝对判定与策略侧共享（POSIX 根 / ~ / Windows 盘符 / UNC——决策文件里存
+  // 的就是 C:/…、//host/…）。不再内联盘符检查。
+  const isAbsolute = isAbsolutePolicyPath(entryPath);
   if (!isAbsolute) {
     return NextResponse.json({ error: "需要绝对路径参数 path" }, { status: 400 });
   }
@@ -157,7 +155,8 @@ export async function DELETE(req: Request) {
   const decisions = parsePolicyDecisions(safeRead(target));
   const norm = normalizePolicyPath(entryPath);
   const before = decisions.entries.length;
-  decisions.entries = decisions.entries.filter((e) => e.path !== norm);
+  // 大小写不同的旧 key（Windows 盘符/UNC 形态）同样命中移除，与查找侧同规则。
+  decisions.entries = decisions.entries.filter((e) => !samePolicyPath(e.path, norm));
   if (decisions.entries.length === before) {
     return NextResponse.json({ error: "决策记录不存在" }, { status: 404 });
   }
@@ -213,9 +212,10 @@ export async function POST(req: Request) {
   }
   if (typeof body.path === "string" && body.path.trim().length > 0) {
     const kind = body.kind === "read" ? "read" : "write";
-    // 与护栏一致：相对路径按会话 cwd 解析（试运行里用户常写 src/a.ts）。
+    // 与护栏一致：相对路径按会话 cwd 解析（试运行里用户常写 src/a.ts）；
+    // 绝对判定与护栏 resolveToolPath 共享（POSIX 根 / ~ / 盘符 / UNC）。
     const raw = body.path.trim();
-    const absPath = /^([A-Za-z]:[\\/]|\/)/.test(raw) ? raw : `${dir.cwd}/${raw}`;
+    const absPath = isAbsolutePolicyPath(raw) ? raw : `${dir.cwd}/${raw}`;
     const verdict = evaluatePathAgainstPolicy(absPath, kind, dir.cwd, policy, decisions, scope);
     return NextResponse.json({
       action: verdict.action,

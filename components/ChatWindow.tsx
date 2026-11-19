@@ -1305,11 +1305,15 @@ export function ChatWindow({
     : null;
 
   // 工具护栏（P2b）：模式钳制移除了工具时，在输入区上方给一条常驻提示。
+  // kind="platform"（宿主平台不适用，如 Linux 上的 powershell）仅运行时钳制，
+  // 不进入"被禁用"提示（规则与 lib/tool-policy.ts 的 isNoticeableToolExclusion
+  // 一致；该模块依赖 node:fs，客户端组件不能直接导入）。
+  const noticeableToolExclusions = toolPolicyExclusions?.excluded.filter((e) => e.kind !== "platform") ?? [];
   const toolPolicyBanner =
-    toolPolicyExclusions && toolPolicyExclusions.excluded.length > 0 ? (
+    toolPolicyExclusions && noticeableToolExclusions.length > 0 ? (
       <div
         role="status"
-        title={toolPolicyExclusions.excluded.map((e) => `${e.name}：${e.reason}`).join(" · ")}
+        title={noticeableToolExclusions.map((e) => `${e.name}：${e.reason}`).join(" · ")}
         style={{
           margin: "0 auto 6px",
           maxWidth: "var(--chat-content-max-width, 820px)",
@@ -1323,9 +1327,9 @@ export function ChatWindow({
         }}
       >
         {t("toolPolicy.excludedNotice", {
-          count: toolPolicyExclusions.excluded.length,
+          count: noticeableToolExclusions.length,
           mode: toolPolicyExclusions.mode,
-          names: toolPolicyExclusions.excluded.map((entry) => entry.name).join(", "),
+          names: noticeableToolExclusions.map((entry) => entry.name).join(", "),
         })}
       </div>
     ) : null;

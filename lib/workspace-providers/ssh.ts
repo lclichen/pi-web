@@ -50,8 +50,10 @@ function sftpReadDir(s: SFTPWrapper, path: string): Promise<SftpEntry[]> {
   );
 }
 
-/** Recursive mkdir; an existing directory is success, other errors stay errors. */
-function sftpMkdir(s: SFTPWrapper, path: string): Promise<void> {
+/** Recursive mkdir; an existing directory is success, other errors stay errors.
+ *  Shared with the SSH agent tools (lib/extensions/ssh-tools.ts) — ssh2's mkdir
+ *  is single-level, so every parent segment must be walked. */
+export function sftpMkdir(s: SFTPWrapper, path: string): Promise<void> {
   // ssh2's mkdir takes SFTP attrs, not fs-style options, so `recursive` was
   // silently ignored and nested `.pi/skills/<name>` writes failed with
   // "No such file". Walk the segments and tolerate existing directories.
@@ -196,7 +198,10 @@ export function createSshWorkspaceOperations(options: SshWorkspaceOptions): Work
           truncated = true;
           break;
         }
-        entries.push({ path: rel, size, mtimeMs: Math.round(seconds * 1000) });
+        // SFTP stat 的 mtimeMs 是 attrs.mtime * 1000（整秒）：manifest 也必须
+        // 截断到整秒，否则 reconcile 的 size+mtime 快路径永远不中，SSH 投影
+        // 每回合退化为全量读。
+        entries.push({ path: rel, size, mtimeMs: Math.floor(seconds) * 1000 });
       }
       return { entries, truncated };
     },

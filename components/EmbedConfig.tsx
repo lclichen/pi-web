@@ -49,6 +49,18 @@ function parseList(value: string): string[] {
 }
 
 /**
+ * 产品行的持久行标识（D1）：与产品 id 解耦——编辑某行的 ID 时行不重挂载
+ * （输入框不丢焦点），删除/重排后其余行的 key 不变。列表从服务端整体
+ * 重载（load/saveProducts）时才整体重新生成。
+ */
+function createRowKey(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `row-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+}
+
+/**
  * Settings → Embed (admin): product user groups, fixed Agent bundle, default
  * project mode, command/origin policy. End users authenticate in the embed
  * page with their API key; there are no token links to manage here.
@@ -57,6 +69,8 @@ export function EmbedConfig({ isAdmin = false }: Props) {
   const { t } = useI18n();
   const { confirm, confirmDialog } = useConfirm();
   const [products, setProducts] = useState<EmbedProductProfile[]>([]);
+  // 与 products 平行的行 key 数组：四个 setProducts 调用点同步维护。
+  const [rowKeys, setRowKeys] = useState<string[]>([]);
   const [bundles, setBundles] = useState<BundleOption[]>([]);
   const [users, setUsers] = useState<UserOption[]>([]);
   const [loading, setLoading] = useState(true);
@@ -86,6 +100,7 @@ export function EmbedConfig({ isAdmin = false }: Props) {
       };
       if (!profileRes.ok) throw new Error(profileData.error ?? `HTTP ${profileRes.status}`);
       setProducts(profileData.products ?? []);
+      setRowKeys((profileData.products ?? []).map(() => createRowKey()));
       if (bundleRes.ok) {
         const data = (await bundleRes.json().catch(() => ({}))) as { bundles?: BundleOption[] };
         setBundles(data.bundles ?? []);
@@ -150,6 +165,7 @@ export function EmbedConfig({ isAdmin = false }: Props) {
       };
       if (!response.ok) throw new Error(data.error ?? `HTTP ${response.status}`);
       setProducts(data.products ?? []);
+      setRowKeys((data.products ?? []).map(() => createRowKey()));
       setNotice(t("embed.saved"));
       await load();
     } catch (cause) {
@@ -173,6 +189,7 @@ export function EmbedConfig({ isAdmin = false }: Props) {
         defaultMode: "local-machine",
       },
     ]);
+    setRowKeys((current) => [...current, createRowKey()]);
   }, []);
 
   const removeProduct = useCallback(
@@ -188,6 +205,8 @@ export function EmbedConfig({ isAdmin = false }: Props) {
       });
       if (!ok) return;
       setProducts((current) => current.filter((_, i) => i !== index));
+      // 按 index 过滤行 key：删除后其余行的 key 保持不变（D1）。
+      setRowKeys((current) => current.filter((_, i) => i !== index));
     },
     [confirm, products, t],
   );
@@ -256,7 +275,7 @@ export function EmbedConfig({ isAdmin = false }: Props) {
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {products.map((product, index) => (
               <div
-                key={index}
+                key={rowKeys[index] ?? `row-${index}`}
                 style={{
                   display: "flex",
                   flexDirection: "column",

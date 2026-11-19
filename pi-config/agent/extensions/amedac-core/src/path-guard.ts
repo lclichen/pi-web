@@ -35,10 +35,12 @@ import {
   PATH_SCOPE_FILE,
   evaluateBashCommand,
   evaluatePathAgainstPolicy,
+  isAbsolutePolicyPath,
   normalizePolicyPath,
   parsePathPolicy,
   parsePathScope,
   parsePolicyDecisions,
+  samePolicyPath,
   type GuardAction,
   type PathPolicy,
   type PathScope,
@@ -86,7 +88,9 @@ function persistDecisions(cwd: string, decisions: PolicyDecisions): void {
 
 function recordDecision(cwd: string, loaded: LoadedPolicy, absPath: string, decision: "allow" | "deny"): void {
   const norm = normalizePolicyPath(absPath);
-  loaded.decisions.entries = loaded.decisions.entries.filter((e) => e.path !== norm);
+  // 去重按 samePolicyPath（Windows 盘符/UNC 大小写不敏感）：已落盘的旧大小写
+  // key 被替换而不是并列堆积；查找侧 matchesPattern 用同一折叠规则。
+  loaded.decisions.entries = loaded.decisions.entries.filter((e) => !samePolicyPath(e.path, norm));
   loaded.decisions.entries.push({ path: norm, decision, at: Date.now() });
   if (loaded.decisions.entries.length > 500) {
     loaded.decisions.entries = loaded.decisions.entries.slice(-500);
@@ -97,9 +101,10 @@ function recordDecision(cwd: string, loaded: LoadedPolicy, absPath: string, deci
 /** resolve a tool-supplied path against the session cwd (POSIX-first). */
 function resolveToolPath(raw: string, cwd: string): string {
   const norm = normalizePolicyPath(raw);
-  if (norm.startsWith("/") || /^[A-Za-z]:\//.test(norm)) return norm; // POSIX 绝对 + Windows 盘符（开发机测试用）
+  // 绝对判定与策略侧同一规则（POSIX 根 / ~ 字面量 / Windows 盘符 / UNC——
+  // UNC 归一为 //host/share，不再拼到 cwd 下）。
+  if (isAbsolutePolicyPath(norm)) return norm;
   const base = normalizePolicyPath(cwd);
-  if (norm.startsWith("~")) return norm; // 主目录字面量：按工作区外评估
   return normalizePolicyPath(`${base}/${norm}`);
 }
 

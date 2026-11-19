@@ -78,8 +78,11 @@ type AgentStateResponse = {
   extensionStatuses?: ExtensionStatusItem[];
   extensionWidgets?: ExtensionWidgetItem[];
   queuedMessages?: { steering?: string[]; followUp?: string[] } | null;
-  /** 工具护栏：当前模式被移除的工具（null = 无剔除）。 */
-  toolPolicy?: { mode: string; excluded: { name: string; reason: string }[] } | null;
+  /**
+   * 工具护栏：当前模式被移除的工具（null = 无剔除）。
+   * kind="platform"（宿主平台不适用）仅运行时钳制，展示层应静默。
+   */
+  toolPolicy?: { mode: string; excluded: { name: string; reason: string; kind?: "mode" | "platform" }[] } | null;
 };
 
 export interface QueuedMessages {

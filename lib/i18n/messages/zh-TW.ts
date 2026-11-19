@@ -1409,6 +1409,7 @@ export const zhTWLocale: LocalePlugin = {
     "settings.otelHeaders": "請求標頭",
     "settings.otelHeadersHint": "MLflow 需要 x-mlflow-experiment-id；只儲存名稱與值皆非空的項目，新會話/新提示詞生效。",
     "settings.otelHint": "將 Agent 追蹤傳送到 OTLP/HTTP 收集器。填寫基礎位址，系統自動附加 /v1/traces（相容 MLflow 3.15）。",
+    "settings.packagesOfflineForced": "維運已強制離線（PI_OFFLINE=1），此開關暫不可用",
     "settings.policy": "策略",
     "settings.projectRequired": "開啟專案後才能設定此項",
     "settings.projectScope": "專案",

@@ -178,6 +178,19 @@ export function isCallerOwnedProjectHome(homePath: string, ownerId: number, isAd
   return false;
 }
 
+/**
+ * 反查：某绝对路径是否为某个项目的 home，是则返回其项目 id（配置类 API
+ * 以 cwd 寻址时用于解析项目配置写锁的 projectId；不做归属校验——调用方
+ * 已通过 isCallerOwnedProjectHome / getOwnedProject 完成授权）。
+ */
+export function projectIdForHome(homePath: string): string | undefined {
+  const target = resolve(homePath).toLowerCase();
+  for (const project of Object.values(store().data.projects)) {
+    if (resolve(projectHome(project)).toLowerCase() === target) return project.id;
+  }
+  return undefined;
+}
+
 export function ensureProjectHome(project: ProjectRecord): string {
   const home = projectHome(project);
   if (!existsSync(home)) mkdirSync(home, { recursive: true });

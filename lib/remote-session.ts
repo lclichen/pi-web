@@ -686,30 +686,66 @@ export async function remoteFind(ctx: RemoteSessionContext, base: string, query:
     const wd = (ctx.workdir ?? "/").replace(/\/+$/, "");
     const q = (t: string) => t.replace(/'/g, "'\\''");
     const r = await new Promise<string>((resolve, reject) => {
+      let out = "";
+      let stderr = "";
+      let settled = false;
+      let exitCode: number | undefined;
+      let channel: { close(): void } | null = null;
+      // 与其他 SSH 调用一致的超时兜底（默认 120s）：挂死的 exec 不能永久
+      // 占住请求——超时释放 channel，按空结果返回并打点标记。
+      const timer = setTimeout(() => {
+        try {
+          channel?.close();
+        } catch {
+          /* already gone */
+        }
+        if (settled) return;
+        settled = true;
+        console.warn("[pi-web] remoteFind：SSH find 超时（120s），返回空结果");
+        resolve("");
+      }, 120_000);
+      const finish = (code: number | undefined) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (typeof code === "number" && code !== 0 && code !== 1) {
+          reject(new Error(`Remote find failed (exit ${code}): ${stderr.trim().slice(0, 200)}`));
+        } else {
+          resolve(out);
+        }
+      };
       client.exec(
         `cd '${q(wd)}' 2>/dev/null || cd /; { find . -type f -not -path '*/node_modules/*' -not -path '*/.git/*' 2>/dev/null | grep -i '${grepPat}' | head -${MAX}; }`,
         (
           err: Error | undefined,
           stream: {
             on(ev: "close", cb: (c: number) => void): void;
+            on(ev: "exit", cb: (code: number | undefined, signal?: string) => void): void;
             on(ev: "data", cb: (d: Buffer) => void): void;
+            close(): void;
+            end?: () => void;
             stderr: { on(ev: "data", cb: (d: Buffer) => void): void };
           },
         ) => {
-          if (err) return reject(err);
-          let out = "";
-          let stderr = "";
+          if (err) {
+            clearTimeout(timer);
+            return reject(err);
+          }
+          channel = stream;
           stream.on("data", (d) => {
             out += d.toString();
           });
           stream.stderr.on("data", (d) => {
             stderr += d.toString();
           });
-          stream.on("close", (code) => {
-            if (code !== 0 && code !== 1)
-              reject(new Error(`Remote find failed (exit ${code}): ${stderr.trim().slice(0, 200)}`));
-            else resolve(out);
+          // 与 sshRun 相同的 exit 结算：只发 exit-status 不关 channel 的服务器
+          // 会让 close-only 等待永久挂起；exit 结算真实 code，close 仅兜底。
+          stream.on("exit", (code) => {
+            if (typeof code === "number") exitCode = code;
+            stream.end?.();
+            setTimeout(() => finish(exitCode), 10);
           });
+          stream.on("close", (code) => finish(code));
         },
       );
     });

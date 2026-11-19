@@ -69,14 +69,32 @@ export function openSftp(client: Client): Promise<SFTPWrapper> {
   );
 }
 
-/** Run `fn` on a fresh SFTP channel, always closing it and bounding concurrency. */
-export async function withSftp<T>(client: Client, fn: (sftp: SFTPWrapper) => Promise<T>): Promise<T> {
+/** Run `fn` on a fresh SFTP channel, always closing it and bounding concurrency.
+ *  A hung SFTP operation holds one of the 4 slots forever; four of them starve
+ *  every SSH file operation on that connection, so `fn` runs under a timeout
+ *  (default 120s, overridable) that releases the slot with an explicit error. */
+export async function withSftp<T>(
+  client: Client,
+  fn: (sftp: SFTPWrapper) => Promise<T>,
+  options?: { timeoutMs?: number },
+): Promise<T> {
+  const timeoutMs = options?.timeoutMs ?? 120_000;
   const release = await acquire(client);
   let sftp: SFTPWrapper | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     sftp = await openSftp(client);
-    return await fn(sftp);
+    return await Promise.race([
+      fn(sftp),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`SFTP 操作超时（${timeoutMs}ms）并已释放通道；远端可能已挂起，请稍后重试`)),
+          timeoutMs,
+        );
+      }),
+    ]);
   } finally {
+    if (timer !== undefined) clearTimeout(timer);
     try {
       sftp?.end();
     } catch {

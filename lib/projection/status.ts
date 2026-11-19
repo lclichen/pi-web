@@ -8,6 +8,8 @@ export interface ProjectionStatus {
   hostDigest: string;
   durationMs: number;
   timedOut: boolean;
+  /** 首尾复校失败：reconcile 期间工作区被换，本轮结果已放弃（manifest 未写）。 */
+  aborted: boolean;
   pushed: string[];
   deleted: string[];
   adopted: string[];
@@ -39,6 +41,7 @@ export function emptyProjectionStatus(hostDigest = ""): ProjectionStatus {
     hostDigest,
     durationMs: 0,
     timedOut: false,
+    aborted: false,
     pushed: [],
     deleted: [],
     adopted: [],

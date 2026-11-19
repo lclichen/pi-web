@@ -1409,6 +1409,7 @@ export const enLocale: LocalePlugin = {
     "settings.otelHeaders": "Request headers",
     "settings.otelHeadersHint": "MLflow requires x-mlflow-experiment-id. Only non-empty pairs are saved; the setting applies to new sessions and prompts.",
     "settings.otelHint": "Send Agent traces to an OTLP/HTTP collector. Enter the base URL; /v1/traces is appended (MLflow 3.15 compatible).",
+    "settings.packagesOfflineForced": "Forced offline by the operator (PI_OFFLINE=1); this toggle is unavailable",
     "settings.policy": "Policy",
     "settings.projectRequired": "Open a project to configure this section",
     "settings.projectScope": "Project",

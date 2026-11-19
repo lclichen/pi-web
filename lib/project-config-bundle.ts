@@ -34,8 +34,7 @@ import JSZip from "jszip";
 import {
   isApkgBytes,
   readApkgHeader,
-  checkApkgLicense,
-  recordApkgImport,
+  runLicensedApkgImport,
   recordApkgLockedHome,
   writeBundleLock,
   LOCK_BASENAME,
@@ -360,6 +359,9 @@ export interface ImportOptions {
  *
  * Decryption itself runs in the external apkg-publisher binary
  * (lib/apkg-open.ts); header parsing and the fingerprint stay in-process.
+ * For .apkg the license check → write → counter increment run under one
+ * per-fingerprint in-process lock (runLicensedApkgImport), so concurrent
+ * imports of the same package cannot both pass maxImports.
  */
 export async function importProjectConfigBundle(
   home: string,
@@ -422,71 +424,77 @@ export async function importProjectConfigBundle(
       channel: apkgHeader.channel ?? "stable",
     };
   }
-  if (apkgHeader) {
-    checkApkgLicense(license, apkgFingerprint!, apkgHeader);
-  }
-
-  // Validate everything first; collect writes for a single pass afterwards.
-  const writes: ConfigWrite[] = [];
-  let totalBytes = 0;
-  const seen = new Set<string>();
-  for (const entry of entries) {
-    const rel = sanitizeConfigEntryPath(entry.name);
-    assertAllowedConfigPath(rel);
-    if (isDeniedConfigPath(rel)) continue; // silently skip denied files (auth.json etc.)
-    if (METADATA_ROOT_FILES.has(rel.toLowerCase())) continue; // archive metadata, never written
-    if (seen.has(rel)) continue;
-    seen.add(rel);
-    const content = await entry.async("nodebuffer");
-    totalBytes += content.length;
-    if (totalBytes > MAX_UNCOMPRESSED_BYTES) {
-      throw new Error("解压后内容过大（>120MB），疑似压缩炸弹");
+  // 后半段（校验 → 落盘 → 锁登记）封装为闭包：.apkg 走原子入口，让 license
+  // 检查、落盘、计数递增位于同一把指纹锁内（G1：并发导入同一指纹不会双双
+  // 通过 maxImports）；普通 zip 不加锁，路径不变。解密/解包已在上面完成，
+  // 留在锁外，避免把与计数器无关的重活串行化。
+  const performImport = async (): Promise<ImportStats> => {
+    // Validate everything first; collect writes for a single pass afterwards.
+    const writes: ConfigWrite[] = [];
+    let totalBytes = 0;
+    const seen = new Set<string>();
+    for (const entry of entries) {
+      const rel = sanitizeConfigEntryPath(entry.name);
+      assertAllowedConfigPath(rel);
+      if (isDeniedConfigPath(rel)) continue; // silently skip denied files (auth.json etc.)
+      if (METADATA_ROOT_FILES.has(rel.toLowerCase())) continue; // archive metadata, never written
+      if (seen.has(rel)) continue;
+      seen.add(rel);
+      const content = await entry.async("nodebuffer");
+      totalBytes += content.length;
+      if (totalBytes > MAX_UNCOMPRESSED_BYTES) {
+        throw new Error("解压后内容过大（>120MB），疑似压缩炸弹");
+      }
+      let existed = false;
+      try {
+        await stat(join(home, rel));
+        existed = true;
+      } catch {
+        existed = false;
+      }
+      writes.push({ rel, content, existed });
     }
-    let existed = false;
-    try {
-      await stat(join(home, rel));
-      existed = true;
-    } catch {
-      existed = false;
+    if (writes.length === 0) throw new Error("包内没有可导入的配置文件（仅支持 .pi/ 与 labs/）");
+
+    // Same schema gate on the way in: nothing is written unless mcp.json /
+    // models.json parse to the shapes pi + pi-mcp-adapter actually consume.
+    validateConfigWrites(writes, options);
+
+    const stats: ImportStats = { added: 0, overwritten: 0, files: [], package: packageMeta, apkg: Boolean(apkgHeader) };
+    for (const write of writes) {
+      const target = join(home, write.rel);
+      await mkdir(dirname(target), { recursive: true });
+      await writeFile(target, write.content);
+      if (write.existed) stats.overwritten += 1;
+      else stats.added += 1;
+      stats.files.push(write.rel);
     }
-    writes.push({ rel, content, existed });
-  }
-  if (writes.length === 0) throw new Error("包内没有可导入的配置文件（仅支持 .pi/ 与 labs/）");
+    stats.files.sort();
 
-  // Same schema gate on the way in: nothing is written unless mcp.json /
-  // models.json parse to the shapes pi + pi-mcp-adapter actually consume.
-  validateConfigWrites(writes, options);
+    // Encrypted imports leave a double lock: the in-home file plus the
+    // server-side registry (dataDir, outside the agent's write fence) —
+    // re-export through the product is refused even if the agent deletes the
+    // in-home lock. 导入计数由原子入口在闭包成功返回后递增。
+    if (apkgHeader) {
+      writeBundleLock(home, {
+        apkg: true,
+        recipient: apkgHeader.recipient,
+        fingerprint: apkgFingerprint!,
+        importedAt: new Date().toISOString(),
+      });
+      recordApkgLockedHome(home, {
+        fingerprint: apkgFingerprint!,
+        recipient: apkgHeader.recipient,
+        importedAt: new Date().toISOString(),
+      });
+    }
+    return stats;
+  };
 
-  const stats: ImportStats = { added: 0, overwritten: 0, files: [], package: packageMeta, apkg: Boolean(apkgHeader) };
-  for (const write of writes) {
-    const target = join(home, write.rel);
-    await mkdir(dirname(target), { recursive: true });
-    await writeFile(target, write.content);
-    if (write.existed) stats.overwritten += 1;
-    else stats.added += 1;
-    stats.files.push(write.rel);
-  }
-  stats.files.sort();
-
-  // Encrypted imports leave a double lock: the in-home file plus the
-  // server-side registry (dataDir, outside the agent's write fence) —
-  // re-export through the product is refused even if the agent deletes the
-  // in-home lock.
   if (apkgHeader) {
-    writeBundleLock(home, {
-      apkg: true,
-      recipient: apkgHeader.recipient,
-      fingerprint: apkgFingerprint!,
-      importedAt: new Date().toISOString(),
-    });
-    recordApkgLockedHome(home, {
-      fingerprint: apkgFingerprint!,
-      recipient: apkgHeader.recipient,
-      importedAt: new Date().toISOString(),
-    });
-    recordApkgImport(apkgFingerprint!);
+    return runLicensedApkgImport(license, apkgFingerprint!, apkgHeader, performImport);
   }
-  return stats;
+  return performImport();
 }
 
 /** Serve bundle bytes as a download response (streamed, attachment header). */

@@ -106,36 +106,69 @@ function connectClient(config: SshConfig): Promise<Client> {
   });
 }
 
+/**
+ * Probe a pooled connection with a throwaway exec before handing it out.
+ * The probe channel must be consumed and closed: an ignored exec stream held
+ * a session channel open on every call, contributing to MaxSessions
+ * exhaustion ("Channel open failure: open failed").
+ *
+ * Settlement follows the SSH exit convention: some servers send the
+ * exit-status but never close the channel, so a close-only probe burned the
+ * full 3s timeout per call and then forced a needless reconnect of a healthy
+ * connection. 'exit' settles alive, 'close' stays as the fallback finalize,
+ * and the timeout branch closes the channel before declaring the connection
+ * dead. Exported for tests.
+ */
+export function probeSshClientAlive(client: Client): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
+    let settled = false;
+    let probe: { close(): void } | null = null;
+    // 声明顺序保证同步回调也安全：timer 先建，finish 后定义，exec 最后调用。
+    const timer = setTimeout(() => {
+      try {
+        probe?.close();
+      } catch {
+        /* already gone */
+      }
+      finish(false);
+    }, 3_000);
+    const finish = (value: boolean) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(value);
+    };
+    try {
+      client.exec("true", (err, stream) => {
+        if (err) return finish(false);
+        probe = stream;
+        stream.on("exit", () => {
+          finish(true);
+          // 只发 exit-status 的服务器不会自己关 channel：主动收尾，避免探测
+          // 通道逐次累积直到 MaxSessions 耗尽。
+          try {
+            stream.close();
+          } catch {
+            /* already closing */
+          }
+        });
+        stream.on("close", () => finish(true));
+        stream.on("error", () => finish(false));
+        stream.resume();
+        stream.stderr.resume();
+      });
+    } catch {
+      finish(false);
+    }
+  });
+}
+
 /** Get (or re-establish) the pooled SSH connection for a project. */
 export async function getSshClient(projectId: string, config: SshConfig): Promise<Client> {
   const entry = pool.get(projectId);
   if (entry?.connecting) return entry.connecting;
   if (entry) {
-    // Consume and close the probe channel: an ignored exec stream held a
-    // session channel open on every call, contributing to MaxSessions
-    // exhaustion ("Channel open failure: open failed").
-    const alive = await new Promise<boolean>((resolve) => {
-      let settled = false;
-      const finish = (value: boolean) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        resolve(value);
-      };
-      const timer = setTimeout(() => finish(false), 3_000);
-      try {
-        entry!.client.exec("true", (err, stream) => {
-          if (err) return finish(false);
-          stream.on("close", () => finish(true));
-          stream.on("error", () => finish(false));
-          stream.resume();
-          stream.stderr.resume();
-        });
-      } catch {
-        finish(false);
-      }
-    });
-    if (alive) return entry.client;
+    if (await probeSshClientAlive(entry.client)) return entry.client;
     pool.delete(projectId);
   }
   const fresh: PoolEntry = { client: new (ssh2().Client)(), connecting: null };
@@ -153,6 +186,11 @@ export async function getSshClient(projectId: string, config: SshConfig): Promis
   fresh.connecting = connecting;
   pool.set(projectId, fresh);
   return connecting;
+}
+
+/** Test seam：向连接池注入现成的 client（仅单测使用，生产代码不得调用）。 */
+export function seedSshPoolForTest(projectId: string, client: Client): void {
+  pool.set(projectId, { client, connecting: null });
 }
 
 /** Drop a project's cached connection (project deletion / config change). */
@@ -371,13 +409,14 @@ export function sshExec(client: Client, command: string, cwd: string, timeoutMs 
       let stdout = "";
       let stderr = "";
       let settled = false;
+      let exitCode: number | undefined;
       const finish = (fallbackCode: number) => {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
         const out = stripSshExecFence(stdout);
         const errOut = stripSshExecFence(stderr);
-        const code = out.code ?? errOut.code ?? fallbackCode;
+        const code = out.code ?? errOut.code ?? exitCode ?? fallbackCode;
         resolve({ code, stdout: out.text, stderr: errOut.text });
       };
       const timer = setTimeout(() => {
@@ -393,6 +432,23 @@ export function sshExec(client: Client, command: string, cwd: string, timeoutMs 
       });
       stream.stderr.on("data", (d: Buffer) => {
         stderr += d.toString();
+      });
+      // 统一 exit 结算：部分服务器只发 exit-status 不关 channel，只等 close
+      // 会白等满超时并把真实退出码误报成 124。exit 记录真实 code 并结算；
+      // close 仅作兜底 finalize（服务器未发 exit-status 时）。exit-status 之后
+      // 仍可能有在途的 trailing stdout/stderr，先冲刷一个 tick 再结算，否则
+      // 输出被截断、围栏 END 解析失败（与 sshRun 的冲刷同理）。
+      stream.on("exit", (code: number | null) => {
+        if (typeof code === "number") exitCode = code;
+        stream.end?.();
+        setTimeout(() => {
+          finish(exitCode ?? 0);
+          try {
+            stream.close();
+          } catch {
+            /* already closing */
+          }
+        }, 10);
       });
       stream.on("close", (code?: number) => finish(code ?? 0));
     });

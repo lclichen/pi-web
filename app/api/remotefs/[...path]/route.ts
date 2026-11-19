@@ -31,6 +31,21 @@ function filePathFromSegments(segments: string[]): string {
   return ("/" + joined).replace(/\/{2,}/g, "/");
 }
 
+/**
+ * 上传文件名清洗：取 basename，拒绝 "."/".."。字符集对齐客户端
+ * sanitizeAttachmentBase（lib/file-upload-client.ts）：Windows 非法字符与
+ * 控制字符替换为空格；`:` 尤其要洗——`file:stream` 构成 NTFS 备用数据流，
+ * 上传落到 Host 附件区时会绕过扩展名规则写出任意流。
+ */
+export function sanitizeUploadName(name: string): string | null {
+  const base = (name.split(/[\\/]/).pop() ?? "")
+    .replace(/[\\/:*?"<>|\u0000-\u001f]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!base || base === "." || base === "..") return null;
+  return base;
+}
+
 export async function GET(req: Request, ctx: { params: Promise<{ path: string[] }> }): Promise<Response> {
   const url = new URL(req.url);
   const sessionId = url.searchParams.get("src");
@@ -149,12 +164,6 @@ export async function POST(req: Request, ctx: { params: Promise<{ path: string[]
   const remote = await resolveRemoteSession(req, sessionId);
   if (!remote.ok) return NextResponse.json({ error: remote.error }, { status: remote.status });
 
-  const sanitizeName = (name: string): string | null => {
-    const base = name.split(/[\\/]/).pop() ?? "";
-    if (!base || base === "." || base === "..") return null;
-    return base;
-  };
-
   try {
     if (type === "upload-check") {
       if (!hasJsonContentType(req)) {
@@ -164,7 +173,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ path: string[]
       if (!Array.isArray(body?.fileNames) || !body.fileNames.every((n) => typeof n === "string")) {
         return NextResponse.json({ error: "fileNames must be an array of strings" }, { status: 400 });
       }
-      const names = (body.fileNames as string[]).map(sanitizeName);
+      const names = (body.fileNames as string[]).map(sanitizeUploadName);
       if (names.some((n) => n === null)) {
         return NextResponse.json({ error: "Invalid file name" }, { status: 400 });
       }
@@ -200,18 +209,18 @@ export async function POST(req: Request, ctx: { params: Promise<{ path: string[]
     if (files.length === 0) {
       return NextResponse.json({ error: "缺少上传文件（字段名 files）" }, { status: 400 });
     }
-    const names = files.map((f) => sanitizeName(f.name));
+    const names = files.map((f) => sanitizeUploadName(f.name));
     if (names.some((n) => n === null)) {
       return NextResponse.json({ error: "Invalid file name" }, { status: 400 });
     }
-    // Chat attachments (hostCache=1) share the composer's 32MB/100MB limit.
+    // Chat attachments (hostCache=1) share the composer's 32MB/64MB limit.
     // File-explorer uploads keep the transport limits (no host cache).
     if (url.searchParams.get("hostCache") === "1") {
       if (files.some((file) => file.size > MAX_CHAT_ATTACHMENT_BYTES)) {
         return NextResponse.json({ error: "每个附件必须不超过 32MB" }, { status: 413 });
       }
       if (files.reduce((sum, file) => sum + file.size, 0) > MAX_CHAT_ATTACHMENT_TOTAL_BYTES) {
-        return NextResponse.json({ error: "单次附件总量必须不超过 100MB" }, { status: 413 });
+        return NextResponse.json({ error: "单次附件总量必须不超过 64MB" }, { status: 413 });
       }
     }
 

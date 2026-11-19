@@ -64,6 +64,8 @@ export interface ServerSettings {
 
 declare global {
   var __piServerSettingsStore: { path: string; data: ServerSettings } | undefined;
+  /** True when pi-web itself put PI_OFFLINE into the process env (not the operator). */
+  var __piNpmOfflineApplied: boolean | undefined;
 }
 
 function settingsPath(): string {
@@ -349,28 +351,29 @@ export function getServerSettings(): ServerSettings {
   return globalThis.__piServerSettingsStore.data;
 }
 
-/** True when pi-web itself put PI_OFFLINE into the process env (not the operator). */
-let npmOfflineAppliedBySettings = false;
-
 /**
  * Project the admin setting onto PI_OFFLINE, the only switch the pi SDK exposes
  * for "do not install missing packages / do not check for updates". Setting it
  * before any package load prevents the SDK's unbounded `npm install` from
  * blocking /api/models on machines without registry access.
+ *
+ * 「是否是我们注入的」标记挂 globalThis（与 __piServerSettingsStore 同理）：
+ * 模块级变量在 dev 热重载后归零，会把运维设置的 PI_OFFLINE 误当成自己的
+ * 注入并在下次应用设置时清掉。
  */
 export function applyPackageNetworkMode(): void {
   const disabled = getServerSettings().disableNpmPackages === true;
   if (disabled) {
     if (process.env.PI_OFFLINE !== "1") {
       process.env.PI_OFFLINE = "1";
-      npmOfflineAppliedBySettings = true;
+      globalThis.__piNpmOfflineApplied = true;
     }
     return;
   }
   // Never clear an operator-provided PI_OFFLINE; only undo our own injection.
-  if (npmOfflineAppliedBySettings) {
+  if (globalThis.__piNpmOfflineApplied) {
     delete process.env.PI_OFFLINE;
-    npmOfflineAppliedBySettings = false;
+    globalThis.__piNpmOfflineApplied = false;
   }
 }
 

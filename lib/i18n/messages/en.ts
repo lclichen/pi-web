@@ -1399,6 +1399,7 @@ export const enLocale: LocalePlugin = {
     "settings.npmRegistryDefault": "Default: npm registry",
     "settings.npmRegistryHint": "Registry used by package installs and new host terminals (NPM_CONFIG_REGISTRY). Leave empty for the npm default. HTTPS recommended; credentials are not accepted in this field.",
     "settings.npmRegistryPlaceholder": "https://registry.npmmirror.com",
+    "settings.packagesOfflineForced": "Forced offline by the operator (PI_OFFLINE=1); this toggle is unavailable",
     "settings.policy": "Policy",
     "settings.projectRequired": "Open a project to configure this section",
     "settings.publicBaseUrl": "Public base URL",

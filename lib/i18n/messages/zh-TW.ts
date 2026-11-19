@@ -1399,6 +1399,7 @@ export const zhTWLocale: LocalePlugin = {
     "settings.npmRegistryDefault": "預設：npm 官方來源",
     "settings.npmRegistryHint": "套件安裝與新建 Host 終端使用的 registry（NPM_CONFIG_REGISTRY）。留空使用 npm 預設來源；建議 HTTPS，此欄位不接受帳號密碼。",
     "settings.npmRegistryPlaceholder": "https://registry.npmmirror.com",
+    "settings.packagesOfflineForced": "維運已強制離線（PI_OFFLINE=1），此開關暫不可用",
     "settings.policy": "策略",
     "settings.projectRequired": "開啟專案後才能設定此項",
     "settings.publicBaseUrl": "對外存取位址",

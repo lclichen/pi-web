@@ -16,6 +16,8 @@ interface GlobalConfigView {
   npmRegistry: string | null;
   pipIndexUrl: string | null;
   disableNpmPackages: boolean;
+  /** 生效态：管理员设置或运维 PI_OFFLINE=1 任一为真。 */
+  packagesOfflineEffective: boolean;
   bundleMaxMb: number | null;
   workspace: PlatformLimits | null;
 }
@@ -105,6 +107,10 @@ export function AdminGlobalConfig() {
   };
 
   const bundleDefault = effective?.bundleMaxMb ?? 2048;
+  // 运维 PI_OFFLINE=1 强制离线：管理员设置无法关闭它（applyPackageNetworkMode
+  // 不清运维注入），开关展示生效态并禁用，旁边说明原因。
+  const npmOfflineForced =
+    view?.packagesOfflineEffective === true && view?.disableNpmPackages !== true;
 
   return (
     <div
@@ -261,14 +267,22 @@ export function AdminGlobalConfig() {
       <section style={cardStyle}>
         <label style={labelStyle}>{t("settings.disableNpmPackages")}</label>
         <div style={hintStyle}>{t("settings.disableNpmPackagesHint")}</div>
-        <label style={{ ...rowStyle, cursor: busy ? "default" : "pointer" }}>
+        <label style={{ ...rowStyle, cursor: busy || npmOfflineForced ? "default" : "pointer" }}>
           <input
             type="checkbox"
-            checked={view?.disableNpmPackages ?? false}
-            disabled={busy !== null}
+            // 生效态优先展示：运维 PI_OFFLINE=1 时勾选实际处于离线，即使
+            // 管理员设置本身是 false；此时开关禁用并提示，避免保存后被
+            // 运维覆盖造成“改了没反应”的错觉。
+            checked={(view?.packagesOfflineEffective ?? view?.disableNpmPackages) ?? false}
+            disabled={busy !== null || npmOfflineForced}
             onChange={(e) => void save("npmPackages", { disableNpmPackages: e.target.checked })}
           />
           <span style={{ fontSize: 12, color: "var(--text)" }}>{t("settings.disableNpmPackagesToggle")}</span>
+          {npmOfflineForced && (
+            <span style={{ fontSize: 11, color: "var(--warning, #f59e0b)" }}>
+              {t("settings.packagesOfflineForced")}
+            </span>
+          )}
         </label>
       </section>
 

@@ -19,7 +19,7 @@
 import { defineTool, type ExtensionAPI, type InlineExtension } from "@earendil-works/pi-coding-agent";
 import { Type } from "@earendil-works/pi-ai";
 import { join, resolve, sep } from "node:path";
-import { readFileSync, statSync } from "node:fs";
+import { lstatSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { createShare, SHARE_MAX_BYTES, ShareLimitError } from "../share-store.ts";
 import { hostAttachmentsDir, remoteReadBinary, type RemoteSessionContext } from "../remote-session.ts";
 import { getPreviewMime } from "../file-types.ts";
@@ -214,6 +214,24 @@ export function makeShareFileExtension(opts: ShareFileExtensionOptions): InlineE
                 };
               }
               try {
+                // 与 cleanAttachments 口径一致：拒绝符号链接。lstat 不跟随链
+                // 接，拦下最终组件是 symlink/目录的情形；词法围栏挡不住路径
+                // 中间组件里的链接（lstat 会跟随解析），再用 realpath 复核真
+                // 实路径仍在附件目录内——附件名被换成指向围栏外的链接时，
+                // readFileSync 会跟着链接读出任意文件。
+                const storeDir = hostAttachmentsDir(opts.remote, sessionId);
+                if (
+                  !lstatSync(hostPath).isFile() ||
+                  !withinRoot(realpathSync(hostPath), realpathSync(storeDir))
+                ) {
+                  return {
+                    content: [
+                      { type: "text", text: `Error: 附件不是普通文件（拒绝符号链接/目录）：${raw}` },
+                    ],
+                    details: {} as ShareDetails,
+                    isError: true,
+                  };
+                }
                 bytes = readFileSync(hostPath);
                 hostFallback = true;
               } catch {

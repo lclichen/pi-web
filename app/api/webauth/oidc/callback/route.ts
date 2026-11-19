@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { platformAnonPost, platformPostBearer } from "@/lib/platform/client";
+import { requestOrigin } from "@/lib/request-origin";
 import { createWebSession, isWebAuthEnabled, sessionCookieHeader } from "@/lib/web-session";
 
 export const dynamic = "force-dynamic";
@@ -26,12 +27,16 @@ interface PlatformApiKeyCreated {
 // handoff code 向平台换取令牌对（服务端对服务端，令牌不进浏览器），
 // 然后走与密码登录完全相同的建会话路径（铸 pi-web API key + cookie）。
 export async function GET(req: Request) {
+  // 与 begin 路由一致：重定向基址用浏览器实际可达的 origin（含
+  // publicBaseUrl / x-forwarded-host），req.url 的 origin 在反代/绑定
+  // 0.0.0.0 时可能是内部地址，会把浏览器带回错误主机。
+  const origin = requestOrigin(req).replace(/\/+$/, "");
   if (!isWebAuthEnabled()) {
-    return NextResponse.redirect(new URL("/login", req.url));
+    return NextResponse.redirect(new URL(`${origin}/login`));
   }
   const { searchParams } = new URL(req.url);
   const code = searchParams.get("code") ?? "";
-  const loginUrl = new URL("/login", req.url);
+  const loginUrl = new URL(`${origin}/login`);
   if (!code) {
     loginUrl.searchParams.set("error", "oidc_missing_code");
     return NextResponse.redirect(loginUrl);
@@ -68,7 +73,7 @@ export async function GET(req: Request) {
   }
 
   const session = createWebSession(user, key.key, key.id);
-  const home = new URL("/", req.url);
+  const home = new URL(`${origin}/`);
   const response = NextResponse.redirect(home);
   response.headers.set("Set-Cookie", sessionCookieHeader(session.sid));
   return response;

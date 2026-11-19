@@ -189,6 +189,14 @@ export function createWebPushNotifier(environment: WebPushEnvironment): WebPushN
       ]);
     },
     removeSubscription(endpoint, userId = 0) {
+      // 退订的是浏览器 endpoint，不是某账号的记录：换账号认领的清理只在
+      // addSubscription 时跑一次，endpoint 仍可能残留在其他用户的桶或
+      // legacy 桶里。与认领路径对称，这里一并清掉（“本浏览器退订”语义）。
+      environment.removeEndpointFromOtherUsers(endpoint, userId);
+      if (userId > 0 && state.subscriptions.some((s) => s.endpoint === endpoint)) {
+        state.subscriptions = state.subscriptions.filter((s) => s.endpoint !== endpoint);
+        saveState();
+      }
       const subscriptions = subscriptionsFor(userId);
       const next = subscriptions.filter((s) => s.endpoint !== endpoint);
       if (next.length !== subscriptions.length) saveSubscriptionsFor(userId, next);

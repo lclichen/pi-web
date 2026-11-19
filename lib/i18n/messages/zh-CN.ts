@@ -1399,6 +1399,7 @@ export const zhCNLocale: LocalePlugin = {
     "settings.npmRegistryDefault": "默认：npm 官方源",
     "settings.npmRegistryHint": "包安装与新建 Host 终端使用的 registry（NPM_CONFIG_REGISTRY）。留空使用 npm 默认源；建议 HTTPS，此字段不接受账号密码。",
     "settings.npmRegistryPlaceholder": "https://registry.npmmirror.com",
+    "settings.packagesOfflineForced": "运维已强制离线（PI_OFFLINE=1），此开关暂不可用",
     "settings.policy": "策略",
     "settings.projectRequired": "打开项目后才能配置此项",
     "settings.publicBaseUrl": "对外访问地址",

@@ -68,6 +68,20 @@ export function platformBrowserUrl(browserOrigin: string): string {
   return `${base.protocol}//${base.host}${basePath}`;
 }
 
+/**
+ * 错误响应体常常不是 JSON（反代 502/504 的 HTML 页等）。解析失败一律按
+ * null 处理：错误路径让 toError 走 `platform HTTP <status>` 兜底而不是把
+ * SyntaxError 抛给调用方；成功路径与空 body 一样按 null 返回。
+ */
+function safeParseJson(text: string): unknown {
+  if (!text) return null;
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return null;
+  }
+}
+
 function toError(status: number, body: unknown): PlatformError {
   const err: PlatformError = new Error(
     body && typeof body === "object" && "message" in body && typeof (body as { message: unknown }).message === "string"
@@ -102,7 +116,7 @@ async function request<T>(
     cache: "no-store",
   });
   const text = await res.text();
-  const parsed = text ? (JSON.parse(text) as unknown) : null;
+  const parsed = safeParseJson(text);
   if (!res.ok) throw toError(res.status, parsed);
   return parsed as T;
 }
@@ -144,7 +158,7 @@ export function platformPostBearer<T>(path: string, bearerToken: string, body?: 
       cache: "no-store",
     });
     const text = await res.text();
-    const parsed = text ? (JSON.parse(text) as unknown) : null;
+    const parsed = safeParseJson(text);
     if (!res.ok) throw toError(res.status, parsed);
     return parsed as T;
   };
@@ -163,7 +177,7 @@ export async function platformAnonPost<T>(
     cache: "no-store",
   });
   const text = await res.text();
-  const parsed = text ? (JSON.parse(text) as unknown) : null;
+  const parsed = safeParseJson(text);
   if (!res.ok) return { ok: false, status: res.status, error: toError(res.status, parsed) };
   return { ok: true, data: parsed as T };
 }
@@ -173,7 +187,7 @@ export async function platformAnonGet<T>(
 ): Promise<{ ok: true; data: T } | { ok: false; status: number; error: PlatformError }> {
   const res = await fetch(platformUrl() + path, { cache: "no-store" });
   const text = await res.text();
-  const parsed = text ? (JSON.parse(text) as unknown) : null;
+  const parsed = safeParseJson(text);
   if (!res.ok) return { ok: false, status: res.status, error: toError(res.status, parsed) };
   return { ok: true, data: parsed as T };
 }

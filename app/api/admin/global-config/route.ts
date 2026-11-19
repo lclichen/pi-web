@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAdminIdentity } from "@/lib/web-session";
 import { isApiRequestAllowed, hasJsonContentType } from "@/lib/request-security";
 import { platformGet, platformPut } from "@/lib/platform/client";
-import { getPublicBaseUrl, getServerSettings, updateServerSettings } from "@/lib/server-settings";
+import { getPublicBaseUrl, getServerSettings, isNpmPackagesDisabled, updateServerSettings } from "@/lib/server-settings";
 
 export const dynamic = "force-dynamic";
 
@@ -35,6 +35,8 @@ interface GlobalConfigView {
   pipIndexUrl: string | null;
   /** Whether npm package auto-install/updates are disabled. */
   disableNpmPackages: boolean;
+  /** 生效态：管理员设置或运维 PI_OFFLINE=1 任一为真（UI 据此展示强制离线）。 */
+  packagesOfflineEffective: boolean;
   /** Config-bundle cap override in MB; null = deployment default. */
   bundleMaxMb: number | null;
   /** Workspace per-file cap from the platform; null when unreachable. */
@@ -58,6 +60,7 @@ async function currentView(apiKey: string): Promise<GlobalConfigView> {
     npmRegistry: settings.npmRegistry ?? null,
     pipIndexUrl: settings.pipIndexUrl ?? null,
     disableNpmPackages: settings.disableNpmPackages,
+    packagesOfflineEffective: isNpmPackagesDisabled(),
     bundleMaxMb: settings.bundleUploadMaxMb ?? null,
     workspace: await readPlatformLimits(apiKey),
   };

@@ -77,8 +77,22 @@ test("PATCH config writes queue behind an in-flight writer (ordered, no half wri
   });
 
   // 第二次写：并发 PATCH。进入锁前不得触碰 models.json。
+  // 先等首次写入真正落盘（全量并发下锁获取可能超过固定睡眠窗口，读到
+  // ENOENT 会假失败），再发 PATCH 并在窗口内确认内容保持 first。
+  const firstWritten = await (async () => {
+    for (let i = 0; i < 100; i += 1) {
+      try {
+        if (readFileSync(modelsPath, "utf8") === '{"step":"first"}') return true;
+      } catch {
+        /* 尚未写入 */
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    return false;
+  })();
+  assert.equal(firstWritten, true, "首次写入应在合理时间内落盘");
   const second = PATCH(patchRequest(project.id, { modelsJson: '{"step":"second"}' }), routeCtx(project.id));
-  await new Promise((resolve) => setTimeout(resolve, 50));
+  await new Promise((resolve) => setTimeout(resolve, 100));
   assert.equal(readFileSync(modelsPath, "utf8"), '{"step":"first"}', "PATCH 在第一次写完成前不得落盘（锁顺序性）");
 
   resumeFirst();

@@ -359,6 +359,8 @@ Host 删除经下行投影传播到 clean 副本。UI 明示“同步不会删�
    每消息合计 64MB；`hostCache=1` 的 remotefs POST 服务端 413，客户端预检提示。
    大文件（200–500MB）按用户决策直接放工作区（文件浏览器/SCP），不走聊天附件。
    relay `ws` 默认 100MiB frame，32MB base64 ≈ 43MB，安全。
+   （历史更正：实现曾误用 100MB 合计上限，2026-11-19 收敛为 64MB，与
+   `PROJECTION_MAX_BYTES` 保持一致。）
 
 ## 6. 选择性收取（P2，原草案遗漏）
 

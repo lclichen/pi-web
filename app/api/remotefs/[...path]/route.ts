@@ -204,14 +204,14 @@ export async function POST(req: Request, ctx: { params: Promise<{ path: string[]
     if (names.some((n) => n === null)) {
       return NextResponse.json({ error: "Invalid file name" }, { status: 400 });
     }
-    // Chat attachments (hostCache=1) share the composer's 32MB/100MB limit.
+    // Chat attachments (hostCache=1) share the composer's 32MB/64MB limit.
     // File-explorer uploads keep the transport limits (no host cache).
     if (url.searchParams.get("hostCache") === "1") {
       if (files.some((file) => file.size > MAX_CHAT_ATTACHMENT_BYTES)) {
         return NextResponse.json({ error: "每个附件必须不超过 32MB" }, { status: 413 });
       }
       if (files.reduce((sum, file) => sum + file.size, 0) > MAX_CHAT_ATTACHMENT_TOTAL_BYTES) {
-        return NextResponse.json({ error: "单次附件总量必须不超过 100MB" }, { status: 413 });
+        return NextResponse.json({ error: "单次附件总量必须不超过 64MB" }, { status: 413 });
       }
     }
 

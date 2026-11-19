@@ -1,8 +1,9 @@
 import { createProjectWorkspaceOperations } from "../project-workspace";
-import { projectHome, type ProjectRecord } from "../projects";
+import { getProject, projectHome, type ProjectRecord } from "../projects";
 import { workspaceDescriptor } from "../workspace-key";
 import { projectionWorkspaceFromDescriptor } from "./reconcile";
 import type { ProjectionSessionConfig } from "./types";
+import type { ProjectionWorkspace } from "./manifest";
 
 /**
  * Build the per-session projection context for a remote project. The workspace
@@ -24,5 +25,17 @@ export function projectionSessionFor(
       if (!result.ok) throw new Error(result.error);
       return result.workspace;
     },
+    workspaceRecheck: () => projectionWorkspaceRecheck(project.id),
   };
+}
+
+/**
+ * 首尾复校（ADR §3.1）：reconcile 结束保存前重新解析项目当前的 descriptor。
+ * 调用时才经 getProject 读取，捕捉 reconcile 进行中的 workdir/machine/container
+ * 修改；项目已不存在时返回 null（同样视为“已变化”）。
+ */
+export function projectionWorkspaceRecheck(projectId: string): ProjectionWorkspace | null {
+  const project = getProject(projectId);
+  if (!project) return null;
+  return projectionWorkspaceFromDescriptor(workspaceDescriptor(project));
 }

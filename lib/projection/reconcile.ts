@@ -28,6 +28,12 @@ import {
 } from "./manifest";
 import { emptyProjectionStatus, readProjectionStatus, writeProjectionStatus, type ProjectionStatus } from "./status";
 
+/** Host 目录读取缝隙：默认 node:fs；测试注入读失败（EACCES/EBUSY）用。 */
+export interface HostWalkFs {
+  readdir: typeof readdir;
+  stat: typeof stat;
+}
+
 export interface ProjectionInput {
   projectId: string;
   /** Host project home; the source of `.pi/skills`, `.pi/agents`, `.pi/attachments`. */
@@ -39,6 +45,15 @@ export interface ProjectionInput {
   forcePaths?: string[];
   /** Force a full-content attachment verification. */
   forceFullVerify?: boolean;
+  /** Host 读取依赖注入（默认 node:fs）；生产路径不传。 */
+  hostFs?: HostWalkFs;
+  /**
+   * 首尾复校（ADR §3.1/§3.4）：保存 manifest/status 前重新解析项目当前的
+   * 工作区身份；root 或 key 变化（reconcile 进行中用户改了
+   * workdir/machine/container）时放弃本轮结果，避免写向已换掉的工作区。
+   * 返回 null 表示项目已不存在，同样放弃；未提供时跳过复校（测试/工具路径）。
+   */
+  workspaceRecheck?: () => ProjectionWorkspace | null;
 }
 
 export interface ProjectionResult {
@@ -122,18 +137,28 @@ interface HostFile {
 interface HostWalkResult {
   files: HostFile[];
   truncated: { reason: string; skipped: number } | null;
+  /** readdir 失败（非 ENOENT）的目录 rel 前缀：整个子树本轮不可信。 */
+  unreadablePrefixes: string[];
+  /** stat 失败（非 ENOENT）的单文件 rel：文件仍在 Host 上，只是本轮读不到。 */
+  unreadableFiles: string[];
 }
 
-async function walkHost(hostHome: string): Promise<HostWalkResult> {
+async function walkHost(hostHome: string, hostFs: HostWalkFs = { readdir, stat }): Promise<HostWalkResult> {
   const files: HostFile[] = [];
+  const unreadablePrefixes: string[] = [];
+  const unreadableFiles: string[] = [];
   let skipped = 0;
   let truncated: HostWalkResult["truncated"] = null;
 
   const walk = async (relDir: string): Promise<void> => {
     let entries;
     try {
-      entries = await readdir(join(hostHome, relDir), { withFileTypes: true });
-    } catch {
+      entries = await hostFs.readdir(join(hostHome, relDir), { withFileTypes: true });
+    } catch (error) {
+      // ENOENT = 目录真的不存在（新 home 还没有 .pi），按空子树处理；
+      // 其他读失败（EACCES/EBUSY/EIO/网络盘抖动）把该前缀记入不可信集合，
+      // 绝不能把“读不到”当成“已删除”向远端传播删除。
+      if (!isNotFound(error)) unreadablePrefixes.push(relDir);
       return;
     }
     for (const entry of entries) {
@@ -149,15 +174,17 @@ async function walkHost(hostHome: string): Promise<HostWalkResult> {
       if (!entry.isFile() || !isProjectedPath(rel)) continue;
       const abs = join(hostHome, rel);
       try {
-        const info = await stat(abs);
+        const info = await hostFs.stat(abs);
         if (info.size > PROJECTION_MAX_FILE_BYTES) {
           skipped += 1;
           truncated = { reason: "max-file-bytes", skipped };
           continue;
         }
         files.push({ rel: normalizeProjectionRel(rel), abs, size: info.size, mtimeMs: info.mtimeMs });
-      } catch {
+      } catch (error) {
         skipped += 1;
+        // 文件在 readdir 里可见、stat 却失败 → 同样不可信，不能视为消失。
+        if (!isNotFound(error)) unreadableFiles.push(normalizeProjectionRel(rel));
       }
     }
   };
@@ -182,7 +209,7 @@ async function walkHost(hostHome: string): Promise<HostWalkResult> {
     kept.push(file);
     totalBytes += file.size;
   }
-  return { files: kept, truncated };
+  return { files: kept, truncated, unreadablePrefixes, unreadableFiles };
 }
 
 async function hashHostFile(file: HostFile): Promise<string> {
@@ -292,6 +319,9 @@ export function reconcileProjection(input: ProjectionInput): Promise<ProjectionR
 async function runReconcile(input: ProjectionInput): Promise<ProjectionResult> {
   const startedAt = Date.now();
   const deadline = startedAt + (input.budgetMs ?? 5_000);
+  // 首尾复校基准：本轮开始的 canonical root 与 key。
+  const startRoot = normalizeProjectionRoot(input.workspaceMeta.root);
+  const startKey = input.workspaceMeta.key;
   const status: ProjectionStatus = emptyProjectionStatus();
   const previousStatus = readProjectionStatus(input.projectId, input.workspaceMeta.key);
   status.lastVerifiedAt = previousStatus?.lastVerifiedAt ?? null;
@@ -310,9 +340,15 @@ async function runReconcile(input: ProjectionInput): Promise<ProjectionResult> {
   const workspace = input.workspace;
   const workspaceIndex = await loadWorkspaceIndex(workspace, deadline);
 
-  const host = await walkHost(input.hostHome);
+  const host = await walkHost(input.hostHome, input.hostFs);
   const hostFiles = new Map<string, { file: HostFile; sha256: string }>();
   const hostFailed = new Set<string>();
+  // Host 读取不完整判定：rel 命中不可信前缀/集合时，它在 hostFiles 里的缺失
+  // 只代表“本轮读不到”，不代表“Host 已删除”（见 walkHost 的读失败记录）。
+  const hostUnreadable = (rel: string): boolean =>
+    host.unreadableFiles.includes(rel) ||
+    host.unreadablePrefixes.some((prefix) => rel === prefix || rel.startsWith(`${prefix}/`));
+  let skippedDeletions = 0;
   for (const file of host.files) {
     try {
       hostFiles.set(file.rel, { file, sha256: await hashHostFile(file) });
@@ -434,6 +470,12 @@ async function runReconcile(input: ProjectionInput): Promise<ProjectionResult> {
     }
 
     // Host no longer has this file.
+    if (hostUnreadable(rel)) {
+      // Host 本轮读不到该文件（可能仍在）：跳过删除传播，manifest 保持原样，
+      // 按“未处理”留给下一轮重试（读失败会置 dirty，下个 prompt 即重跑）。
+      skippedDeletions += 1;
+      continue;
+    }
     if (!stat) {
       delete manifestFiles[rel];
       continue;
@@ -473,6 +515,40 @@ async function runReconcile(input: ProjectionInput): Promise<ProjectionResult> {
     } else {
       status.conflicts.push(rel);
     }
+  }
+
+  if (skippedDeletions > 0) {
+    status.errors.push({
+      rel: "<host-read-incomplete>",
+      error: `Host 读取不完整，${skippedDeletions} 项跳过删除传播`,
+    });
+  }
+
+  // 首尾复校：reconcile 进行中用户改了 workdir/machine/container 时，本轮
+  // 结果属于旧工作区 —— 不写 manifest、不 GC，status 标记 aborted，下一轮
+  // 用新身份重新对账（避免向旧 root 已复用的目录推送/删除）。
+  const recheck = input.workspaceRecheck ? input.workspaceRecheck() : undefined;
+  if (
+    recheck !== undefined &&
+    (recheck === null || recheck.key !== startKey || normalizeProjectionRoot(recheck.root) !== startRoot)
+  ) {
+    status.aborted = true;
+    status.errors.push({
+      rel: "<workspace-changed>",
+      error:
+        recheck === null
+          ? "reconcile 结束时项目已不存在，本轮结果放弃"
+          : "reconcile 期间工作区发生变化（root/key 改变），本轮结果放弃",
+    });
+    status.updatedAt = new Date().toISOString();
+    status.durationMs = Date.now() - startedAt;
+    await writeProjectionStatus(input.projectId, input.workspaceMeta.key, status);
+    // 可重试：下一次 prompt 立即用新工作区重新 reconcile。
+    const state = projectState.get(input.projectId) ?? { lastReconcileAt: 0, dirty: false };
+    state.lastReconcileAt = Date.now();
+    state.dirty = true;
+    projectState.set(input.projectId, state);
+    return { status, dirty: status.dirty, conflicts: status.conflicts, errors: status.errors };
   }
 
   if (verifyAllAttachments) status.lastVerifiedAt = new Date().toISOString();

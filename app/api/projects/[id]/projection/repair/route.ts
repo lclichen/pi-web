@@ -5,6 +5,7 @@ import { isApiRequestAllowed } from "@/lib/request-security";
 import { createProjectWorkspaceOperations } from "@/lib/project-workspace";
 import { workspaceDescriptor } from "@/lib/workspace-key";
 import { projectionWorkspaceFromDescriptor, reconcileProjection } from "@/lib/projection/reconcile";
+import { projectionWorkspaceRecheck } from "@/lib/projection/session-context";
 import { readProjectionStatus } from "@/lib/projection/status";
 
 export const dynamic = "force-dynamic";
@@ -58,6 +59,8 @@ export async function POST(req: Request, ctx: RouteCtx) {
       hostHome: projectHome(project),
       workspace: workspace.workspace,
       workspaceMeta: projectionWorkspaceFromDescriptor(descriptor),
+      // 首尾复校：repair 进行中工作区被切换时放弃本轮结果，不写旧 root。
+      workspaceRecheck: () => projectionWorkspaceRecheck(project.id),
       budgetMs: 15_000,
       ...(forcePaths.length > 0 ? { forcePaths } : {}),
       forceFullVerify: all || requestedPaths.length === 0,

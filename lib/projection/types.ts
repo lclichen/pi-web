@@ -9,4 +9,6 @@ export interface ProjectionSessionConfig {
   workspaceMeta: ProjectionWorkspace;
   /** Lazy provider: sandbox containers/relay agents may be offline at startup. */
   workspace: () => Promise<WorkspaceOperations>;
+  /** 首尾复校：reconcile 结束前重新解析当前工作区身份（见 projectionWorkspaceRecheck）。 */
+  workspaceRecheck: () => ProjectionWorkspace | null;
 }

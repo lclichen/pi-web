@@ -13,7 +13,7 @@ import {
 import { getProjectTrustStatus } from "@/lib/project-trust";
 import { WorkspaceOperationError } from "@/lib/workspace-operations";
 import { withProjectConfigReadLock, withProjectConfigWriteLock, ProjectConfigLockBusyError } from "@/lib/project-config-lock";
-import { consumeSyncPlan, loadSyncPlan, saveSyncPlan } from "@/lib/sync-plan-store";
+import { consumeSyncPlan, deleteSyncPlan, loadSyncPlan, saveSyncPlan } from "@/lib/sync-plan-store";
 import { SyncBaselineConflictError } from "@/lib/sync-backups";
 import { workspaceKeyFor } from "@/lib/workspace-key";
 import { getProjectRuntimeBusy, reloadProjectSessions } from "@/lib/rpc-manager";
@@ -183,6 +183,12 @@ async function applyPlan(
       );
     }
     if (e instanceof SyncBaselineConflictError) {
+      // ADR §4.1：baseline 冲突 → 409 并作废 token（重试也不会成功，必须重新预览）。
+      try {
+        deleteSyncPlan(token);
+      } catch {
+        // 作废尽力而为：即使删除失败，重新提交也只会再次 409，不会误应用。
+      }
       return NextResponse.json({ error: e.message, code: "BASELINE_CONFLICT", changed: e.changed }, { status: 409 });
     }
     if (e instanceof ProjectConfigLockBusyError) {

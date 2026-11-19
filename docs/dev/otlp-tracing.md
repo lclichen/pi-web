@@ -24,7 +24,8 @@ prompt 生效）。
 
 ## 生成的 trace 结构
 
-每个用户提示词一棵 trace：
+每个用户提示词一棵 trace；同一会话的多轮提示词共享 session id，在 MLflow 的
+Sessions 视图中归为一组：
 
 ```
 invoke_agent amedac-pi-web       (AGENT)
@@ -38,13 +39,13 @@ invoke_agent amedac-pi-web       (AGENT)
 | 属性 | 值 |
 |---|---|
 | `gen_ai.operation.name` | `invoke_agent` / `chat` / `execute_tool` |
-| `gen_ai.conversation.id` | pi-web 会话 id（子智能体为子会话 id） |
+| `session.id` / `gen_ai.conversation.id` | pi-web 会话 id（子智能体为子会话 id） |
 | `gen_ai.agent.name` | 主会话 `amedac-pi-web`；子智能体取 `<active_agent>` 名 |
 | `user.id` / `user.name` | 登录用户（pi-web 身份注册表；CLI 无此属性） |
 | `gen_ai.input.messages` | `[{role:"user",parts:[{type:"text",content:...}]}]` |
-| `gen_ai.output.messages` | assistant 文本 + tool_call parts |
-| `gen_ai.provider.name` / `request.model` / `response.model` | 模型与 provider |
-| `gen_ai.usage.*_tokens` | input/output/cache read/write/reasoning |
+| `gen_ai.output.messages` | assistant 文本 + tool_call parts；**根 span 也复制最终输出**，MLflow 的 Response 列与 `trace_info.response_preview` 取根 span outputs |
+| `gen_ai.provider.name` / `request.model` / `response.model` | 模型与 provider（根 span 也带最终模型） |
+| `gen_ai.usage.*_tokens` | input/output/cache read/cache creation/reasoning |
 | `gen_ai.response.finish_reasons` | stop/error/aborted 等 |
 | `gen_ai.tool.name` / `call.id` / `call.arguments` / `call.result` | 工具调用 |
 
@@ -62,9 +63,13 @@ invoke_agent amedac-pi-web       (AGENT)
 ## 验证
 
 - `lib/extensions/otel-tracing.test.mjs`：本地 HTTP stub 接收真实
-  `/v1/traces` 请求，断言 span 树、`gen_ai.conversation.id`、user 属性、
-  MLflow 请求头、prompt/输出/tool args+result。
+  `/v1/traces` 请求，断言 span 树、`session.id`、user 属性、MLflow 请求头、
+  prompt/输出/tool args+result，以及同一会话两次提示词生成两棵 trace 且
+  根 span 输出正确。
 - `lib/server-settings.test.mjs`：endpoint/header 校验与持久化。
+- 已用 MLflow 3.15.0 实机验证：两轮对话生成两棵 trace，均带
+  `mlflow.trace.session`，`response_preview` 分别为两轮的 assistant 输出；
+  `mlflow.search_sessions()` 将两棵 trace 归入同一会话。
 
 MLflow 侧只需启动 tracking server 并开放 OTLP：
 

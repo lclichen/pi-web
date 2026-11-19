@@ -36,7 +36,7 @@ const DEFAULT_SERVICE_NAME = "amedac-pi-web";
 const MAX_ATTR_CHARS = 60 * 1024;
 const MAX_QUEUE = 2048;
 const FLUSH_INTERVAL_MS = 2_000;
-const POST_TIMEOUT_MS = 5_000;
+const POST_TIMEOUT_MS = 15_000;
 const ACTIVE_AGENT_TAG = /^<active_agent name="([^"]+)"\/>$/gmu;
 const IDENTITY_REGISTRY_KEY = "@agegr/pi-web/session-identity/v1";
 
@@ -186,6 +186,8 @@ interface ExporterState {
   queue: SpanRecord[];
   timer?: ReturnType<typeof setInterval>;
   sending: boolean;
+  pending?: boolean;
+  active?: Promise<void>;
   config?: OTelTracingConfig;
 }
 
@@ -254,28 +256,56 @@ function tracePayload(spans: SpanRecord[], config: OTelTracingConfig): Record<st
   };
 }
 
-async function flushOTel(): Promise<void> {
-  const state = exporterState();
-  if (state.sending || !state.config || state.queue.length === 0) return;
-  const batch = state.queue.splice(0, state.queue.length);
-  state.sending = true;
+async function postBatch(spans: SpanRecord[], config: OTelTracingConfig): Promise<void> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), POST_TIMEOUT_MS);
   try {
-    await fetch(otelTracesUrl(state.config.endpoint), {
+    await fetch(otelTracesUrl(config.endpoint), {
       method: "POST",
       headers: {
-        ...state.config.headers,
+        ...config.headers,
         "content-type": "application/json",
+        // MLflow's WSGI bridge can leave gzip/deflate responses dangling for
+        // Node's fetch (the body never settles); identity keeps ingestion fast.
+        "accept-encoding": "identity",
       },
-      body: JSON.stringify(tracePayload(batch, state.config)),
+      body: JSON.stringify(tracePayload(spans, config)),
       signal: controller.signal,
     });
   } catch {
     // Tracing must never affect the agent loop; failed batches are dropped.
   } finally {
     clearTimeout(timer);
+  }
+}
+
+async function flushOTel(): Promise<void> {
+  const state = exporterState();
+  if (state.sending) {
+    // A flush is already in flight; make it drain spans queued after it
+    // started instead of dropping the request (important on shutdown).
+    state.pending = true;
+    await state.active;
+    return;
+  }
+  if (!state.config || state.queue.length === 0) return;
+  state.sending = true;
+  const task = (async () => {
+    do {
+      state.pending = false;
+      while (state.config && state.queue.length > 0) {
+        const config = state.config;
+        const batch = state.queue.splice(0, state.queue.length);
+        await postBatch(batch, config);
+      }
+    } while (state.pending);
+  })();
+  state.active = task;
+  try {
+    await task;
+  } finally {
     state.sending = false;
+    state.active = undefined;
   }
 }
 
@@ -382,7 +412,7 @@ function usageAttributes(usage: unknown, attrs: Attributes): void {
   if (input !== undefined) attrs["gen_ai.usage.input_tokens"] = input + cacheRead + cacheWrite;
   if (output !== undefined) attrs["gen_ai.usage.output_tokens"] = output;
   if (cacheRead) attrs["gen_ai.usage.cache_read.input_tokens"] = cacheRead;
-  if (cacheWrite) attrs["gen_ai.usage.cache_write.input_tokens"] = cacheWrite;
+  if (cacheWrite) attrs["gen_ai.usage.cache_creation.input_tokens"] = cacheWrite;
   const reasoning = num("reasoning");
   if (reasoning !== undefined) attrs["gen_ai.usage.reasoning_tokens"] = reasoning;
 }
@@ -420,6 +450,11 @@ class SessionTracer {
   private prompt = "";
   private agentName = DEFAULT_SERVICE_NAME;
   private hadError = false;
+  private lastOutput = "";
+  private lastAssistantText = "";
+  private lastModel = "";
+  private lastResponseModel = "";
+  private lastProvider = "";
 
   constructor(config: OTelTracingConfig, ctx: ExtensionContext) {
     this.config = config;
@@ -443,6 +478,8 @@ class SessionTracer {
     return {
       "gen_ai.conversation.id": this.sessionId,
       "pi.session.id": this.sessionId,
+      // MLflow's OTLP ingestion checks session.id before gen_ai.conversation.id.
+      "session.id": this.sessionId,
       "pi.session.kind": this.sessionKind,
       ...(this.parentSessionId ? { "pi.parent.session.id": this.parentSessionId } : {}),
       ...(this.identity ? { "user.id": this.identity.userId } : {}),
@@ -480,6 +517,11 @@ class SessionTracer {
     this.traceId = randomHex(16);
     this.prompt = typeof prompt === "string" ? prompt : "";
     this.hadError = false;
+    this.lastOutput = "";
+    this.lastAssistantText = "";
+    this.lastModel = "";
+    this.lastResponseModel = "";
+    this.lastProvider = "";
     this.agentName = detectAgentName(systemPrompt) ?? DEFAULT_SERVICE_NAME;
     const inputMessages = JSON.stringify([
       { role: "user", parts: [{ type: "text", content: this.prompt }] },
@@ -534,13 +576,21 @@ class SessionTracer {
     if (provider) attrs["gen_ai.provider.name"] = provider;
     if (model) attrs["gen_ai.request.model"] = model;
     if (responseModel) attrs["gen_ai.response.model"] = responseModel;
+    if (provider) this.lastProvider = provider;
+    if (model) this.lastModel = model;
+    if (responseModel) this.lastResponseModel = responseModel;
     if (typeof message.responseId === "string") attrs["gen_ai.response.id"] = message.responseId;
     if (typeof message.stopReason === "string") attrs["gen_ai.response.finish_reasons"] = [message.stopReason];
     usageAttributes(message.usage, attrs);
     const parts = messageParts(message.content);
-    attrs["gen_ai.output.messages"] = clamp(JSON.stringify([{ role: "assistant", parts }]));
+    const outputMessages = JSON.stringify([{ role: "assistant", parts }]);
+    this.lastOutput = outputMessages;
+    attrs["gen_ai.output.messages"] = clamp(outputMessages);
     const text = assistantText(message.content);
-    if (text) attrs["pi.assistant_response"] = clamp(text);
+    if (text) {
+      this.lastAssistantText = text;
+      attrs["pi.assistant_response"] = clamp(text);
+    }
 
     const status =
       message.stopReason === "error" || message.stopReason === "aborted"
@@ -596,7 +646,18 @@ class SessionTracer {
     this.turn = undefined;
     for (const span of this.tools.values()) this.finish(span, { code: 1 });
     this.tools.clear();
-    if (this.root) this.finish(this.root, this.hadError ? { code: 2 } : { code: 1 });
+    if (this.root) {
+      // The MLflow traces table's Response column reads the root span outputs.
+      // Mirror the final assistant message onto the agent span as well.
+      if (this.lastOutput) this.root.attributes["gen_ai.output.messages"] = clamp(this.lastOutput);
+      if (this.lastAssistantText) {
+        this.root.attributes["pi.assistant_response"] = clamp(this.lastAssistantText);
+      }
+      if (this.lastModel) this.root.attributes["gen_ai.request.model"] = this.lastModel;
+      if (this.lastResponseModel) this.root.attributes["gen_ai.response.model"] = this.lastResponseModel;
+      if (this.lastProvider) this.root.attributes["gen_ai.provider.name"] = this.lastProvider;
+      this.finish(this.root, this.hadError ? { code: 2 } : { code: 1 });
+    }
     this.root = undefined;
   }
 

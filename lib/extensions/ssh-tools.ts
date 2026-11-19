@@ -14,7 +14,7 @@ import { getSshClient, sshExec, type SshConfig } from "../ssh";
 import { withSftp } from "../ssh-sftp.ts";
 import { matchRuntimeConfigPath } from "../relay/runtime-config-bridge";
 import { registerWorkspaceService } from "./workspace-service";
-import { createSshWorkspaceOperations } from "../workspace-providers/ssh";
+import { createSshWorkspaceOperations, sftpMkdir } from "../workspace-providers/ssh";
 
 interface ToolResult {
   content: Array<{ type: "text"; text: string }>;
@@ -184,13 +184,9 @@ export function makeSshToolsExtension(opts: {
             const target = remotePath(workdir, params.path);
             const dir = target.replace(/\/[^/]*$/, "") || "/";
             await withSftp(c, async (s) => {
-              await new Promise<void>((resolve, reject) => {
-                s.mkdir(dir, { recursive: true } as never, (err) => {
-                  // recursive mkdir fails if parts exist — tolerate and verify
-                  if (err && !s) return reject(err);
-                  resolve();
-                });
-              });
+              // ssh2 的 mkdir 不支持 recursive（第二参是 SFTP attrs）；复用
+              // workspace provider 的逐段 mkdir，失败如实冒泡。
+              await sftpMkdir(s, dir);
               await sftpWrite(s, target, params.content);
             });
             return ok(`Wrote ${params.path} (${params.content.length} bytes)`);

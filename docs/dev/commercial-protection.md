@@ -206,6 +206,9 @@ apkg-publisher seal \
 # 无需 Go 编译器，打包机上只要有完整版 + 运行版 + 客户私钥 JSON。
 ```
 
+本地 dev 想直接用手上的私钥 JSON 验证解密，见
+[apkg-dev-testing.md](apkg-dev-testing.md)（`PI_WEB_APKG_IDENTITY`，仅开发环境）。
+
 ### 版本管理与配置包说明规范
 
 - **两种版本正交**：`formatVersion`（信封/manifest 结构兼容性，**当前 2，v1 不兼容**）与 `package.version`（内容版本，发布方自定，建议 semver）。列表/详情/导入结果统一展示 `package.version`。

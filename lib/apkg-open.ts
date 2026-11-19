@@ -80,6 +80,10 @@ function existsSyncOnPath(name: string): boolean {
 /**
  * Decrypt .apkg bytes to the plain zip via the external tool. The plaintext
  * zip is captured from stdout and never written to a temp file.
+ *
+ * Dev/test only: PI_WEB_APKG_IDENTITY=<identity.json> makes pi-web pass
+ * --identity to the tool, so an unsealed binary can decrypt. Release packages
+ * never set it — they seal the key into the customer binary instead.
  */
 export async function openApkgViaTool(data: Buffer): Promise<Buffer> {
   const tool = resolveApkgTool();
@@ -87,6 +91,10 @@ export async function openApkgViaTool(data: Buffer): Promise<Buffer> {
     throw new Error(
       "此部署未配备 .apkg 解密组件（缺少 apkg-publisher 二进制；可通过 PI_WEB_APKG_TOOL 指定路径，或放到 <数据目录>/bin/）",
     );
+  }
+  const devIdentity = process.env.PI_WEB_APKG_IDENTITY?.trim();
+  if (devIdentity && !existsSync(devIdentity)) {
+    throw new Error(`开发身份文件不存在（PI_WEB_APKG_IDENTITY）: ${devIdentity}`);
   }
 
   const work = mkdtempSync(join(tmpdir(), "apkg-open-"));
@@ -97,13 +105,15 @@ export async function openApkgViaTool(data: Buffer): Promise<Buffer> {
   }
   try {
     writeFileSync(inFile, data);
+    const args = ["open", "--in", inFile, "--out", "-"];
+    if (devIdentity) args.push("--identity", devIdentity);
     return await new Promise<Buffer>((resolve, reject) => {
       const chunks: Buffer[] = [];
       let total = 0;
       let failure: Error | null = null;
       const child = spawn(
         tool,
-        ["open", "--in", inFile, "--out", "-"],
+        args,
         {
           stdio: ["ignore", "pipe", "pipe"],
           windowsHide: true,

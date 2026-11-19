@@ -127,6 +127,8 @@ export interface ApkgIdentityInfo {
   source: ApkgIdentitySource | null;
   /** Public recipient file, not a private identity. */
   path: string | null;
+  /** Dev/test: decryption uses PI_WEB_APKG_IDENTITY directly (not a release). */
+  dev?: boolean;
   error?: string;
 }
 
@@ -198,6 +200,38 @@ export function getApkgIdentityInfo(): ApkgIdentityInfo {
     } catch {
       // unreadable/malformed candidate — try the next location
     }
+  }
+  // Dev/test fallback: PI_WEB_APKG_IDENTITY points at a private identity JSON.
+  // Only the public key is exposed here; release packages seal the key instead.
+  const devPath = process.env.PI_WEB_APKG_IDENTITY?.trim();
+  if (devPath) {
+    try {
+      const parsed = JSON.parse(readFileSync(devPath, "utf8")) as { id?: string; publicKey?: string };
+      const publicKey = decodeIdentityKey(parsed.publicKey);
+      if (publicKey) {
+        const id = identityPublicId(publicKey);
+        if (!parsed.id || parsed.id === id) {
+          return {
+            configured: true,
+            id,
+            publicKey: publicKey.toString("base64url"),
+            source: "env",
+            path: devPath,
+            dev: true,
+          };
+        }
+      }
+    } catch {
+      // fall through to the dev error below
+    }
+    return {
+      configured: false,
+      id: null,
+      publicKey: null,
+      source: null,
+      path: null,
+      error: "PI_WEB_APKG_IDENTITY 存在但格式无效（开发模式）",
+    };
   }
   return {
     configured: false,

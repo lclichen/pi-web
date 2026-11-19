@@ -754,6 +754,8 @@ interface ApkgIdentityView {
   publicKey: string | null;
   source: "env" | "data" | "package" | null;
   path: string | null;
+  /** Dev/test: PI_WEB_APKG_IDENTITY points at a private identity JSON. */
+  dev?: boolean;
   error?: string;
 }
 
@@ -801,13 +803,15 @@ function ApkgIdentityPanel() {
   };
 
   const sourceLabel =
-    identity?.source === "env"
-      ? t("bundles.apkgKeysSourceEnv")
-      : identity?.source === "data"
-        ? t("bundles.apkgIdentitySourceData")
-        : identity?.source === "package"
-          ? t("bundles.apkgIdentitySourcePackage")
-          : "—";
+    identity?.dev
+      ? t("bundles.apkgIdentityDev")
+      : identity?.source === "env"
+        ? t("bundles.apkgKeysSourceEnv")
+        : identity?.source === "data"
+          ? t("bundles.apkgIdentitySourceData")
+          : identity?.source === "package"
+            ? t("bundles.apkgIdentitySourcePackage")
+            : "—";
   const toolLine = tool?.path ? `${t("bundles.apkgKeysToolOk")} · ${tool.path}` : t("bundles.apkgKeysToolMissing");
 
   return (
@@ -846,7 +850,9 @@ function ApkgIdentityPanel() {
                   </div>
                   {identity.path && (
                     <div style={{ display: "flex", gap: 10 }}>
-                      <span style={{ width: 70, color: "var(--text-dim)" }}>{t("bundles.apkgIdentityPath")}</span>
+                      <span style={{ width: 70, color: "var(--text-dim)" }}>
+                        {identity.dev ? t("bundles.apkgIdentityDevPath") : t("bundles.apkgIdentityPath")}
+                      </span>
                       <span className="config-mono" style={{ color: "var(--text-muted)", wordBreak: "break-all" }}>
                         {identity.path}
                       </span>
@@ -873,6 +879,11 @@ function ApkgIdentityPanel() {
                 <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.7 }}>
                   {t("bundles.apkgKeysDesc")}
                 </div>
+                {identity.dev && (
+                  <div style={{ fontSize: 11, color: "var(--warning, var(--danger))", lineHeight: 1.7 }}>
+                    {t("bundles.apkgIdentityDevNote")}
+                  </div>
+                )}
               </>
             )}
           </ConfigDetailStack>

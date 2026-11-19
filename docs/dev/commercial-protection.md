@@ -39,12 +39,14 @@
    `<cwd>/bin/apkg-publisher`（随包分发）→ `<数据目录>/bin/apkg-publisher`
    （升级不丢）→ PATH。无组件的部署仅 `.apkg` 导入报"未配备解密组件"，其余
    功能不受影响。
-6. **接收方身份**：私钥在打包时由 `apkg-publisher seal` 封进解密二进制
+6. **接收方身份**：私钥在打包时由 `apkg-publisher seal` 封进**客户运行版**二进制
    （AES-GCM 封条；密钥由原二进制 sha256 + salt 派生），运行时只在内存解密，
-   **发布包内不再有明文 `apkg-identity.json`，pi-web 进程也拿不到私钥**。
-   pi-web 只读取公钥元信息 `config/apkg-recipient.json`（解析顺序
-   `PI_WEB_APKG_RECIPIENT` → `<数据目录>/apkg-recipient.json` → 包内 config）；
-   管理面 `/api/admin/apkg-identity` 只回显 id/公钥/来源；旧
+   **发布包内不再有明文 `apkg-identity.json`，pi-web 进程也拿不到私钥**。客户
+   运行版只编译 `open` / `identity show`，WebUI、文档、硬化与打包代码都不进入
+   发布包（完整版只在打包机执行 seal）。pi-web 只读取公钥元信息
+   `config/apkg-recipient.json`（解析顺序 `PI_WEB_APKG_RECIPIENT` →
+   `<数据目录>/apkg-recipient.json` → 包内 config）；管理面
+   `/api/admin/apkg-identity` 只回显 id/公钥/来源；旧
    `/api/admin/apkg-keys` 全部返回 410。
 
 ### 密钥管理
@@ -188,17 +190,20 @@ apkg-publisher serve --addr 127.0.0.1:8790 \
 # 上传 zip 后优先读 manifest.package；缺失时回退 .pi/bundle.json；两者都没有
 # 则生成 .pi/bundle.json 模板（可复制/下载），提醒下次导出前放回项目。
 
-# 4) 发布包：把该客户私钥封进解密二进制，随包只放公钥
+# 4) 发布包：把该客户私钥封进“客户运行版”，随包只放公钥
 apkg-publisher seal \
-  --in apkg-publisher \
+  --in apkg-publisher-runtime \
   --identity publisher/keys/cust-acme-identity.json \
   --out app/bin/apkg-publisher \
   --public-out app/config/apkg-recipient.json
 # package-linux.sh 等价做法：
-#   APKG_PUBLISHER_BIN=<通用 apkg-publisher> \
+#   APKG_PUBLISHER_BIN=<完整版 apkg-publisher> \
+#   APKG_PUBLISHER_RUNTIME_BIN=<apkg-publisher-runtime> \
 #   APKG_IDENTITY_FILE=<cust-acme-identity.json> bash scripts/package-linux.sh
-# 脚本调用 seal 生成客户专用组件，并写 config/apkg-recipient.json；
-# 私钥 JSON 不会进入发布包。无需 Go 编译器，打包机上只要有通用二进制。
+# 完整版只用于执行 seal，不随包分发；客户运行版只含 open / identity show，
+# 不编译 WebUI、文档、硬化、打包/history/inspect 代码。脚本写
+# config/apkg-recipient.json（仅公钥），私钥 JSON 不会进入发布包。
+# 无需 Go 编译器，打包机上只要有完整版 + 运行版 + 客户私钥 JSON。
 ```
 
 ### 版本管理与配置包说明规范

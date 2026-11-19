@@ -245,34 +245,58 @@ if [ -e "$SRC/lib/apkg-format.ts" ] \
   exit 1
 fi
 # 内部解密组件注入：
-#   - APKG_PUBLISHER_BIN 指向通用 apkg-publisher 二进制（或构建机 bin/ 放置）；
-#   - APKG_IDENTITY_FILE 指向该客户的私钥 JSON（只在打包机使用，不随包分发）。
-#     设置后调用 `apkg-publisher seal` 把私钥封进客户专用二进制，并生成
+#   - APKG_PUBLISHER_BIN：发布方完整版 apkg-publisher（含 seal/WebUI），只在
+#     打包机执行 seal，不随包分发；
+#   - APKG_PUBLISHER_RUNTIME_BIN：客户运行版（-tags apkg_runtime，仅 open /
+#     identity show，无 WebUI/文档），默认在完整版同目录找 apkg-publisher-runtime；
+#   - APKG_IDENTITY_FILE：该客户的私钥 JSON（只在打包机使用，不随包分发）。
+#     设置后调用 `seal --in <运行版>` 把私钥封进客户专用二进制，并生成
 #     config/apkg-recipient.json（仅公钥）供 pi-web 展示。
 # 纯开源构建可缺省——.apkg 导入会明确报"未配备解密组件"，其余功能不受影响。
 APKG_BIN="${APKG_PUBLISHER_BIN:-"$SRC/bin/apkg-publisher"}"
 APKG_IDENTITY="${APKG_IDENTITY_FILE:-}"
-if [ -n "$APKG_BIN" ] && [ -f "$APKG_BIN" ]; then
+APKG_RUNTIME_BIN="${APKG_PUBLISHER_RUNTIME_BIN:-}"
+if [ -z "$APKG_RUNTIME_BIN" ] && [ -f "$APKG_BIN" ]; then
+  APKG_RUNTIME_BIN="$(dirname "$APKG_BIN")/apkg-publisher-runtime"
+fi
+if [ -n "$APKG_IDENTITY" ] && [ -f "$APKG_IDENTITY" ]; then
+  if [ ! -f "$APKG_BIN" ]; then
+    log "打包检查失败：找不到发布方完整版 apkg-publisher（APKG_PUBLISHER_BIN），无法执行 seal"
+    exit 1
+  fi
+  if [ ! -f "$APKG_RUNTIME_BIN" ]; then
+    log "打包检查失败：找不到客户运行版二进制（APKG_PUBLISHER_RUNTIME_BIN，或用 -tags apkg_runtime 构建 apkg-publisher-runtime）"
+    exit 1
+  fi
   mkdir -p "$PKG/app/bin" "$PKG/config"
   rm -f "$PKG/config/apkg-identity.json" "$PKG/config/apkg-recipient.json"
-  if [ -n "$APKG_IDENTITY" ] && [ -f "$APKG_IDENTITY" ]; then
-    if ! "$APKG_BIN" seal --in "$APKG_BIN" --identity "$APKG_IDENTITY" \
-         --out "$PKG/app/bin/apkg-publisher" \
-         --public-out "$PKG/config/apkg-recipient.json" --force; then
-      log "打包检查失败：apkg 身份封装失败"
-      exit 1
-    fi
-    chmod +x "$PKG/app/bin/apkg-publisher"
-    log "已封装 apkg 接收方身份: $APKG_IDENTITY（公钥: config/apkg-recipient.json）"
-  else
-    cp -a "$APKG_BIN" "$PKG/app/bin/apkg-publisher"
-    chmod +x "$PKG/app/bin/apkg-publisher"
-    if [ "${APKG_PUBLISHER_REQUIRED:-0}" = "1" ]; then
-      log "打包检查失败：要求支持 .apkg 但未提供 APKG_IDENTITY_FILE（无法封装接收方身份）"
-      exit 1
-    fi
-    warn "已注入通用 apkg 组件但未封装身份——该包无法导入 .apkg（如需支持：APKG_IDENTITY_FILE=/path/to/apkg-identity.json）"
+  if ! "$APKG_BIN" seal --in "$APKG_RUNTIME_BIN" --identity "$APKG_IDENTITY" \
+       --out "$PKG/app/bin/apkg-publisher" \
+       --public-out "$PKG/config/apkg-recipient.json" --force; then
+    log "打包检查失败：apkg 身份封装失败"
+    exit 1
   fi
+  chmod +x "$PKG/app/bin/apkg-publisher"
+  log "已封装 apkg 接收方身份: $APKG_IDENTITY（运行版: $APKG_RUNTIME_BIN；公钥: config/apkg-recipient.json）"
+elif [ -f "$APKG_RUNTIME_BIN" ]; then
+  mkdir -p "$PKG/app/bin"
+  cp -a "$APKG_RUNTIME_BIN" "$PKG/app/bin/apkg-publisher"
+  chmod +x "$PKG/app/bin/apkg-publisher"
+  if [ "${APKG_PUBLISHER_REQUIRED:-0}" = "1" ]; then
+    log "打包检查失败：要求支持 .apkg 但未提供 APKG_IDENTITY_FILE（无法封装接收方身份）"
+    exit 1
+  fi
+  warn "已注入客户运行版但未封装身份——该包无法导入 .apkg（如需支持：APKG_IDENTITY_FILE=/path/to/apkg-identity.json）"
+elif [ -f "$APKG_BIN" ]; then
+  # 没有运行版时才回退完整版；它会带发布方 WebUI/文档，仅建议用于内部包。
+  mkdir -p "$PKG/app/bin"
+  cp -a "$APKG_BIN" "$PKG/app/bin/apkg-publisher"
+  chmod +x "$PKG/app/bin/apkg-publisher"
+  if [ "${APKG_PUBLISHER_REQUIRED:-0}" = "1" ]; then
+    log "打包检查失败：要求支持 .apkg 但未提供 APKG_IDENTITY_FILE（无法封装接收方身份）"
+    exit 1
+  fi
+  warn "未找到客户运行版，回退完整版组件（含发布方 WebUI/文档）——正式客户包请用 -tags apkg_runtime 构建运行版"
 elif [ "${APKG_PUBLISHER_REQUIRED:-0}" = "1" ]; then
   log "打包检查失败：要求注入解密组件但未找到（APKG_PUBLISHER_BIN 未设置且 bin/apkg-publisher 缺失）"
   exit 1

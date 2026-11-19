@@ -3,10 +3,12 @@
  * binary (Go, format implementation lives there, not in this repo).
  *
  * Contract: the tool performs exactly one transformation —
- *   apkg-publisher open --in <pkg.apkg> --identity <identity.json> --out -
- * ciphertext bytes in, plaintext zip bytes out on stdout. No plaintext zip is
- * written to disk by pi-web; the final config files are still written by the
- * normal import path (pi's extension/skill loader reads them from disk).
+ *   apkg-publisher open --in <pkg.apkg> --out -
+ * ciphertext bytes in, plaintext zip bytes out on stdout. The recipient private
+ * key is sealed into that binary at packaging time and decrypted only in memory;
+ * pi-web has no private key and writes no plaintext zip to disk. The final
+ * config files are still written by the normal import path (pi's extension/skill
+ * loader reads them from disk).
  *
  * Header parsing, fingerprint (sha256 of the whole ciphertext), license
  * enforcement and locks stay in pi-web (lib/apkg.ts / project-config-bundle.ts),
@@ -18,14 +20,13 @@
  *   3. <dataDir>/bin/apkg-publisher[.exe] — data-dir drop survives app updates
  *   4. bare name on PATH
  *
- * The recipient identity is resolved by lib/apkg.ts (PI_WEB_APKG_IDENTITY,
- * <dataDir>/apkg-identity.json, or the package config path).
+ * The public recipient metadata is read by lib/apkg.ts (PI_WEB_APKG_RECIPIENT,
+ * <dataDir>/apkg-recipient.json, or the package config path).
  */
 import { spawn } from "node:child_process";
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadApkgIdentity } from "./apkg.ts";
 import { dataDir } from "./mode-homes.ts";
 
 const TOOL_BASENAME = "apkg-publisher";
@@ -87,12 +88,6 @@ export async function openApkgViaTool(data: Buffer): Promise<Buffer> {
       "此部署未配备 .apkg 解密组件（缺少 apkg-publisher 二进制；可通过 PI_WEB_APKG_TOOL 指定路径，或放到 <数据目录>/bin/）",
     );
   }
-  const found = loadApkgIdentity();
-  if (!found) {
-    throw new Error(
-      "此部署未配置 .apkg 接收方身份（缺少 apkg-identity.json；请把发布包内嵌身份放到 <数据目录>/apkg-identity.json，或设置 PI_WEB_APKG_IDENTITY）",
-    );
-  }
 
   const work = mkdtempSync(join(tmpdir(), "apkg-open-"));
   const inFile = join(work, "pkg.apkg");
@@ -108,7 +103,7 @@ export async function openApkgViaTool(data: Buffer): Promise<Buffer> {
       let failure: Error | null = null;
       const child = spawn(
         tool,
-        ["open", "--in", inFile, "--identity", found.path, "--out", "-"],
+        ["open", "--in", inFile, "--out", "-"],
         {
           stdio: ["ignore", "pipe", "pipe"],
           windowsHide: true,

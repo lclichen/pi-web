@@ -7,10 +7,10 @@ import { resolveApkgTool } from "@/lib/apkg-open";
 export const dynamic = "force-dynamic";
 
 /**
- * GET /api/admin/apkg-identity — 只读接收方身份状态。
+ * GET /api/admin/apkg-identity — 只读接收方公钥状态。
  *
- * v2 不再有共享 KEK：私钥随 pi-web 发布包内嵌（config/apkg-identity.json），
- * 管理面只显示 id、公钥和来源；公钥可以交给发布方用于 pack。
+ * v2 的私钥在打包时由 apkg-publisher seal 封进解密二进制，运行时只在内存
+ * 解密；pi-web 只读取 config/apkg-recipient.json 的公钥元信息用于展示。
  * 旧 /api/admin/apkg-keys 的写入接口已移除。
  */
 export async function GET(req: Request) {

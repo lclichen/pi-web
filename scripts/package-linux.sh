@@ -244,33 +244,40 @@ if [ -e "$SRC/lib/apkg-format.ts" ] \
   log "打包检查失败：lib/ 内发现 apkg 加解密实现残留（应仅经 bin/apkg-publisher 外部解密）"
   exit 1
 fi
-# 内部解密组件注入：bin/apkg-publisher（构建机放置，或 APKG_PUBLISHER_BIN 指定）。
+# 内部解密组件注入：
+#   - APKG_PUBLISHER_BIN 指向通用 apkg-publisher 二进制（或构建机 bin/ 放置）；
+#   - APKG_IDENTITY_FILE 指向该客户的私钥 JSON（只在打包机使用，不随包分发）。
+#     设置后调用 `apkg-publisher seal` 把私钥封进客户专用二进制，并生成
+#     config/apkg-recipient.json（仅公钥）供 pi-web 展示。
 # 纯开源构建可缺省——.apkg 导入会明确报"未配备解密组件"，其余功能不受影响。
 APKG_BIN="${APKG_PUBLISHER_BIN:-"$SRC/bin/apkg-publisher"}"
+APKG_IDENTITY="${APKG_IDENTITY_FILE:-}"
 if [ -n "$APKG_BIN" ] && [ -f "$APKG_BIN" ]; then
-  mkdir -p "$PKG/app/bin"
-  cp -a "$APKG_BIN" "$PKG/app/bin/apkg-publisher"
-  chmod +x "$PKG/app/bin/apkg-publisher"
-  log "已注入 apkg 解密组件: $APKG_BIN"
+  mkdir -p "$PKG/app/bin" "$PKG/config"
+  rm -f "$PKG/config/apkg-identity.json"
+  if [ -n "$APKG_IDENTITY" ] && [ -f "$APKG_IDENTITY" ]; then
+    if ! "$APKG_BIN" seal --in "$APKG_BIN" --identity "$APKG_IDENTITY" \
+         --out "$PKG/app/bin/apkg-publisher" \
+         --public-out "$PKG/config/apkg-recipient.json" --force; then
+      log "打包检查失败：apkg 身份封装失败"
+      exit 1
+    fi
+    chmod +x "$PKG/app/bin/apkg-publisher"
+    log "已封装 apkg 接收方身份: $APKG_IDENTITY（公钥: config/apkg-recipient.json）"
+  else
+    cp -a "$APKG_BIN" "$PKG/app/bin/apkg-publisher"
+    chmod +x "$PKG/app/bin/apkg-publisher"
+    if [ "${APKG_PUBLISHER_REQUIRED:-0}" = "1" ]; then
+      log "打包检查失败：要求支持 .apkg 但未提供 APKG_IDENTITY_FILE（无法封装接收方身份）"
+      exit 1
+    fi
+    warn "已注入通用 apkg 组件但未封装身份——该包无法导入 .apkg（如需支持：APKG_IDENTITY_FILE=/path/to/apkg-identity.json）"
+  fi
 elif [ "${APKG_PUBLISHER_REQUIRED:-0}" = "1" ]; then
   log "打包检查失败：要求注入解密组件但未找到（APKG_PUBLISHER_BIN 未设置且 bin/apkg-publisher 缺失）"
   exit 1
 else
   warn "未注入 apkg 解密组件——该包不支持 .apkg 导入（如需支持：放置 bin/apkg-publisher 或设 APKG_PUBLISHER_BIN）"
-fi
-# 内部接收方身份注入：私钥随 pi-web 发布包分发，发布方保留公钥做加密。
-# APKG_IDENTITY_FILE 指向 `apkg-publisher identity new --out` 生成的私钥 JSON。
-APKG_IDENTITY="${APKG_IDENTITY_FILE:-}"
-if [ -n "$APKG_IDENTITY" ] && [ -f "$APKG_IDENTITY" ]; then
-  mkdir -p "$PKG/config"
-  cp -a "$APKG_IDENTITY" "$PKG/config/apkg-identity.json"
-  chmod 600 "$PKG/config/apkg-identity.json"
-  log "已注入 apkg 接收方身份: $APKG_IDENTITY"
-elif [ "${APKG_PUBLISHER_REQUIRED:-0}" = "1" ]; then
-  log "打包检查失败：要求注入 .apkg 解密组件但未提供 APKG_IDENTITY_FILE"
-  exit 1
-else
-  warn "未注入 apkg 接收方身份——该包无法导入 .apkg（如需支持：APKG_IDENTITY_FILE=/path/to/apkg-identity.json）"
 fi
 cp -a "$SRC/node_modules" "$PKG/app/"
 VERSION="$(node -p "require('$SRC/package.json').version")"

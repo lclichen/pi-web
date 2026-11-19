@@ -8,10 +8,11 @@
  * the plaintext header region (magic + display metadata + recipient id) and
  * the policy layer around imports.
  *
- * Identity: v2 packages are encrypted to the X25519 public key of an identity
- * whose private key ships inside the pi-web release (config/apkg-identity.json,
- * <dataDir>/apkg-identity.json, or PI_WEB_APKG_IDENTITY). The admin UI shows
- * only the id/public key — never the private key. There is no shared KEK file.
+ * Identity: v2 packages are encrypted to the X25519 public key of a per-customer
+ * identity. The private key is sealed into the decryption binary at packaging
+ * time (apkg-publisher seal) and decrypted only in memory; pi-web never receives
+ * it. Only the public metadata (config/apkg-recipient.json) is read here.
+ * There is no shared KEK file.
  *
  * Import counter: <dataDir>/apkg-imports.json tracks per-fingerprint import
  * counts — the server-side half of `license.maxImports`. Honest boundary
@@ -109,19 +110,12 @@ export interface BundleLock {
 }
 
 // ---------------------------------------------------------------------------
-// Recipient identity
+// Recipient public metadata
 // ---------------------------------------------------------------------------
 //
-// v2 不再使用共享 KEK：pi-web 发布包里内嵌一份 X25519 私钥
-// （config/apkg-identity.json 或部署注入），发布方用对应公钥加密 .apkg。
-// 私钥永远不会通过 API/UI 回显；管理面只展示 id、公钥和来源。
-
-export interface ApkgIdentity {
-  version: number;
-  id: string;
-  publicKey: string;
-  privateKey: string;
-}
+// v2 的接收方私钥不再以明文文件随发布包分发：打包时由 apkg-publisher seal
+// 封进解密二进制，运行时只在内存解密。pi-web 进程只需要公钥元信息
+// （config/apkg-recipient.json）用于管理面展示和发布方加密，永远拿不到私钥。
 
 export type ApkgIdentitySource = "env" | "data" | "package";
 
@@ -131,6 +125,7 @@ export interface ApkgIdentityInfo {
   /** Public key in base64url; safe to show/copy to the publisher. */
   publicKey: string | null;
   source: ApkgIdentitySource | null;
+  /** Public recipient file, not a private identity. */
   path: string | null;
   error?: string;
 }
@@ -150,22 +145,22 @@ function identityPublicId(publicKey: Buffer): string {
   return `r_${createHash("sha256").update(publicKey).digest("hex").slice(0, 16)}`;
 }
 
-interface ResolvedIdentityPath {
+interface ResolvedRecipientPath {
   path: string;
   source: ApkgIdentitySource;
 }
 
-function identityPathCandidates(): ResolvedIdentityPath[] {
-  const out: ResolvedIdentityPath[] = [];
-  const envPath = process.env.PI_WEB_APKG_IDENTITY?.trim();
+function recipientPathCandidates(): ResolvedRecipientPath[] {
+  const out: ResolvedRecipientPath[] = [];
+  const envPath = process.env.PI_WEB_APKG_RECIPIENT?.trim();
   if (envPath) out.push({ path: envPath, source: "env" });
   try {
-    out.push({ path: join(dataDir(), "apkg-identity.json"), source: "data" });
+    out.push({ path: join(dataDir(), "apkg-recipient.json"), source: "data" });
   } catch {
     // dataDir unavailable pre-config; package path still applies
   }
-  out.push({ path: join(process.cwd(), "config", "apkg-identity.json"), source: "package" });
-  out.push({ path: join(process.cwd(), "..", "config", "apkg-identity.json"), source: "package" });
+  out.push({ path: join(process.cwd(), "config", "apkg-recipient.json"), source: "package" });
+  out.push({ path: join(process.cwd(), "..", "config", "apkg-recipient.json"), source: "package" });
   const seen = new Set<string>();
   return out.filter((candidate) => {
     if (seen.has(candidate.path)) return false;
@@ -174,59 +169,48 @@ function identityPathCandidates(): ResolvedIdentityPath[] {
   });
 }
 
-/** Absolute path of the embedded recipient identity, or null. */
-export function resolveApkgIdentityPath(): ResolvedIdentityPath | null {
-  return identityPathCandidates()[0] ?? null;
+/** Absolute path of the public recipient metadata, or null. */
+export function resolveApkgRecipientPath(): ResolvedRecipientPath | null {
+  return recipientPathCandidates()[0] ?? null;
 }
 
-/** Load and validate the private identity. Never expose the private key. */
-export function loadApkgIdentity(): { path: string; source: ApkgIdentitySource; identity: ApkgIdentity } | null {
-  for (const candidate of identityPathCandidates()) {
+/** Public metadata view for the admin UI (there is no private key here). */
+export function getApkgIdentityInfo(): ApkgIdentityInfo {
+  const candidates = recipientPathCandidates();
+  for (const candidate of candidates) {
     try {
-      const parsed = JSON.parse(readFileSync(candidate.path, "utf8")) as Partial<ApkgIdentity>;
-      const privateKey = decodeIdentityKey(parsed.privateKey);
+      const parsed = JSON.parse(readFileSync(candidate.path, "utf8")) as {
+        version?: number;
+        id?: string;
+        publicKey?: string;
+      };
       const publicKey = decodeIdentityKey(parsed.publicKey);
-      if (!privateKey || !publicKey) continue;
+      if (!publicKey) continue;
       const id = identityPublicId(publicKey);
       if (typeof parsed.id === "string" && parsed.id && parsed.id !== id) continue;
       return {
-        path: candidate.path,
+        configured: true,
+        id,
+        publicKey: publicKey.toString("base64url"),
         source: candidate.source,
-        identity: {
-          version: 2,
-          id,
-          publicKey: publicKey.toString("base64url"),
-          privateKey: privateKey.toString("base64url"),
-        },
+        path: candidate.path,
       };
     } catch {
       // unreadable/malformed candidate — try the next location
     }
   }
-  return null;
-}
-
-/** Metadata-only identity view for the admin UI (no private key). */
-export function getApkgIdentityInfo(): ApkgIdentityInfo {
-  const found = loadApkgIdentity();
-  if (!found) {
-    return {
-      configured: false,
-      id: null,
-      publicKey: null,
-      source: null,
-      path: null,
-      ...(identityPathCandidates().length === 0
-        ? { error: "未找到 apkg-identity.json；请把发布包内嵌身份放到 <数据目录>/apkg-identity.json" }
-        : { error: "apkg-identity.json 存在但格式无效" }),
-    };
-  }
   return {
-    configured: true,
-    id: found.identity.id,
-    publicKey: found.identity.publicKey,
-    source: found.source,
-    path: found.path,
+    configured: false,
+    id: null,
+    publicKey: null,
+    source: null,
+    path: null,
+    ...(candidates.length === 0
+      ? {
+          error:
+            "未找到 apkg-recipient.json；请把发布包内的公钥文件放到 <数据目录>/apkg-recipient.json，或设置 PI_WEB_APKG_RECIPIENT",
+        }
+      : { error: "apkg-recipient.json 存在但格式无效" }),
   };
 }
 

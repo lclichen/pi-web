@@ -758,8 +758,8 @@ interface ApkgIdentityView {
 }
 
 /**
- * 身份状态页：私钥随发布包内嵌，前端只显示 id/公钥/来源。发布方拿公钥
- * 做加密；这里不再有 KEK 输入框，也不存在可轮换的共享密钥。
+ * 身份状态页：私钥在打包时封进解密二进制，pi-web 只读取公钥元信息。发布方
+ * 拿公钥做加密；这里没有 KEK 输入框，也不存在可轮换的共享密钥。
  */
 function ApkgIdentityPanel() {
   const { t } = useI18n();

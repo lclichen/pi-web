@@ -254,7 +254,7 @@ APKG_BIN="${APKG_PUBLISHER_BIN:-"$SRC/bin/apkg-publisher"}"
 APKG_IDENTITY="${APKG_IDENTITY_FILE:-}"
 if [ -n "$APKG_BIN" ] && [ -f "$APKG_BIN" ]; then
   mkdir -p "$PKG/app/bin" "$PKG/config"
-  rm -f "$PKG/config/apkg-identity.json"
+  rm -f "$PKG/config/apkg-identity.json" "$PKG/config/apkg-recipient.json"
   if [ -n "$APKG_IDENTITY" ] && [ -f "$APKG_IDENTITY" ]; then
     if ! "$APKG_BIN" seal --in "$APKG_BIN" --identity "$APKG_IDENTITY" \
          --out "$PKG/app/bin/apkg-publisher" \

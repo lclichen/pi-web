@@ -37,6 +37,12 @@ interface GlobalConfigView {
   disableNpmPackages: boolean;
   /** Config-bundle cap override in MB; null = deployment default. */
   bundleMaxMb: number | null;
+  /** OTLP tracing enabled (global). */
+  otelEnabled: boolean;
+  /** OTLP base endpoint; null = default http://localhost:8087. */
+  otelEndpoint: string | null;
+  /** Extra OTLP HTTP headers. */
+  otelHeaders: Record<string, string>;
   /** Workspace per-file cap from the platform; null when unreachable. */
   workspace: PlatformLimits | null;
 }
@@ -59,6 +65,9 @@ async function currentView(apiKey: string): Promise<GlobalConfigView> {
     pipIndexUrl: settings.pipIndexUrl ?? null,
     disableNpmPackages: settings.disableNpmPackages,
     bundleMaxMb: settings.bundleUploadMaxMb ?? null,
+    otelEnabled: settings.otelEnabled === true,
+    otelEndpoint: settings.otelEndpoint ?? null,
+    otelHeaders: settings.otelHeaders ?? {},
     workspace: await readPlatformLimits(apiKey),
   };
 }
@@ -101,6 +110,9 @@ export async function PUT(req: Request) {
     disableNpmPackages?: unknown;
     bundleMaxMb?: unknown;
     workspaceMaxBytes?: unknown;
+    otelEnabled?: unknown;
+    otelEndpoint?: unknown;
+    otelHeaders?: unknown;
   };
   try {
     body = (await req.json()) as typeof body;
@@ -115,6 +127,9 @@ export async function PUT(req: Request) {
     pipIndexUrl?: string;
     disableNpmPackages?: boolean;
     bundleUploadMaxMb?: number | null;
+    otelEnabled?: boolean;
+    otelEndpoint?: string | null;
+    otelHeaders?: Record<string, string> | null;
   } = {};
   if (typeof body.publicBaseUrl === "string") patch.publicBaseUrl = body.publicBaseUrl;
   else if (body.publicBaseUrl === null) patch.publicBaseUrl = "";
@@ -127,6 +142,13 @@ export async function PUT(req: Request) {
   if (typeof body.disableNpmPackages === "boolean") patch.disableNpmPackages = body.disableNpmPackages;
   if (body.bundleMaxMb === null) patch.bundleUploadMaxMb = null;
   else if (body.bundleMaxMb !== undefined) patch.bundleUploadMaxMb = Number(body.bundleMaxMb);
+  if (typeof body.otelEnabled === "boolean") patch.otelEnabled = body.otelEnabled;
+  if (typeof body.otelEndpoint === "string") patch.otelEndpoint = body.otelEndpoint;
+  else if (body.otelEndpoint === null) patch.otelEndpoint = null;
+  if (body.otelHeaders === null) patch.otelHeaders = null;
+  else if (body.otelHeaders !== undefined && typeof body.otelHeaders === "object" && !Array.isArray(body.otelHeaders)) {
+    patch.otelHeaders = body.otelHeaders as Record<string, string>;
+  }
 
   if (Object.keys(patch).length > 0) {
     try {

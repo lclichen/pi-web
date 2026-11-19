@@ -17,7 +17,15 @@ interface GlobalConfigView {
   pipIndexUrl: string | null;
   disableNpmPackages: boolean;
   bundleMaxMb: number | null;
+  otelEnabled: boolean;
+  otelEndpoint: string | null;
+  otelHeaders: Record<string, string>;
   workspace: PlatformLimits | null;
+}
+
+interface OtelHeaderRow {
+  key: string;
+  value: string;
 }
 
 interface EffectiveLimits {
@@ -25,7 +33,15 @@ interface EffectiveLimits {
   bundleConfirmMb: number;
 }
 
-type ConfigKind = "publicBaseUrl" | "skillhubUrl" | "npmRegistry" | "pypiIndex" | "npmPackages" | "bundle" | "workspace";
+type ConfigKind =
+  | "publicBaseUrl"
+  | "skillhubUrl"
+  | "npmRegistry"
+  | "pypiIndex"
+  | "npmPackages"
+  | "bundle"
+  | "workspace"
+  | "otel";
 
 /**
  * 管理员 · 全局配置 — 部署级设置的唯一入口：
@@ -45,6 +61,9 @@ export function AdminGlobalConfig() {
   const [skillhubUrl, setSkillhubUrl] = useState("");
   const [npmRegistry, setNpmRegistry] = useState("");
   const [pipIndexUrl, setPipIndexUrl] = useState("");
+  const [otelEnabled, setOtelEnabled] = useState(false);
+  const [otelEndpoint, setOtelEndpoint] = useState("");
+  const [otelHeaders, setOtelHeaders] = useState<OtelHeaderRow[]>([]);
   const [bundleInput, setBundleInput] = useState("");
   const [workspaceInput, setWorkspaceInput] = useState("");
   const [busy, setBusy] = useState<ConfigKind | null>(null);
@@ -61,6 +80,9 @@ export function AdminGlobalConfig() {
       setSkillhubUrl(admin.skillhubUrl ?? "");
       setNpmRegistry(admin.npmRegistry ?? "");
       setPipIndexUrl(admin.pipIndexUrl ?? "");
+      setOtelEnabled(admin.otelEnabled === true);
+      setOtelEndpoint(admin.otelEndpoint ?? "");
+      setOtelHeaders(Object.entries(admin.otelHeaders ?? {}).map(([key, value]) => ({ key, value })));
       if (effRes.ok) {
         const eff = (await effRes.json()) as EffectiveLimits;
         setEffective(eff);
@@ -105,6 +127,19 @@ export function AdminGlobalConfig() {
   };
 
   const bundleDefault = effective?.bundleMaxMb ?? 2048;
+
+  const saveOtel = () => {
+    const headers = Object.fromEntries(
+      otelHeaders
+        .map((row) => [row.key.trim(), row.value.trim()] as const)
+        .filter(([key, value]) => key && value),
+    );
+    void save("otel", {
+      otelEnabled,
+      otelEndpoint: otelEndpoint.trim(),
+      otelHeaders: headers,
+    });
+  };
 
   return (
     <div
@@ -270,6 +305,70 @@ export function AdminGlobalConfig() {
           />
           <span style={{ fontSize: 12, color: "var(--text)" }}>{t("settings.disableNpmPackagesToggle")}</span>
         </label>
+      </section>
+
+      <section style={cardStyle}>
+        <label style={labelStyle}>{t("settings.otel")}</label>
+        <div style={hintStyle}>{t("settings.otelHint")}</div>
+        <label style={{ ...rowStyle, cursor: busy ? "default" : "pointer", marginBottom: 10 }}>
+          <input
+            type="checkbox"
+            checked={otelEnabled}
+            disabled={busy !== null}
+            onChange={(e) => setOtelEnabled(e.target.checked)}
+          />
+          <span style={{ fontSize: 12, color: "var(--text)" }}>{t("settings.otelEnabled")}</span>
+        </label>
+        <div style={rowStyle}>
+          <input
+            type="url"
+            value={otelEndpoint}
+            placeholder={t("settings.otelEndpointPlaceholder")}
+            onChange={(e) => setOtelEndpoint(e.target.value)}
+            style={{ ...inputStyle, width: 360, maxWidth: "100%" }}
+          />
+          <button type="button" style={primaryBtnStyle} disabled={busy !== null} onClick={saveOtel}>
+            {t("settings.uploadLimitSave")}
+          </button>
+        </div>
+        <div style={{ ...metaStyle, marginTop: 8 }}>{t("settings.otelHeaders")}</div>
+        {otelHeaders.map((row, index) => (
+          <div key={`otel-header-${index}`} style={{ ...rowStyle, marginTop: 6 }}>
+            <input
+              value={row.key}
+              placeholder={t("settings.otelHeaderKey")}
+              onChange={(e) =>
+                setOtelHeaders((rows) => rows.map((item, i) => (i === index ? { ...item, key: e.target.value } : item)))
+              }
+              style={{ ...inputStyle, width: 220 }}
+            />
+            <input
+              value={row.value}
+              placeholder={t("settings.otelHeaderValue")}
+              onChange={(e) =>
+                setOtelHeaders((rows) =>
+                  rows.map((item, i) => (i === index ? { ...item, value: e.target.value } : item)),
+                )
+              }
+              style={{ ...inputStyle, flex: 1, minWidth: 180 }}
+            />
+            <button
+              type="button"
+              style={btnStyle}
+              onClick={() => setOtelHeaders((rows) => rows.filter((_, i) => i !== index))}
+            >
+              ×
+            </button>
+          </div>
+        ))}
+        <button
+          type="button"
+          style={{ ...btnStyle, marginTop: 8 }}
+          onClick={() => setOtelHeaders((rows) => [...rows, { key: "x-mlflow-experiment-id", value: "" }])}
+        >
+          {t("settings.otelAddHeader")}
+        </button>
+        <div style={hintStyle}>{t("settings.otelHeadersHint")}</div>
       </section>
 
       <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", marginTop: 6 }}>

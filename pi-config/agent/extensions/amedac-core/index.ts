@@ -30,12 +30,14 @@ import { makeSessionPlanExtension } from "./src/session-plan.ts";
 import { makeTodoExtension } from "./src/todo.ts";
 import { makeBgShellExtension } from "./src/bg-shell.ts";
 import { makeProviderSessionIdExtension } from "./src/provider-session-id.ts";
+import { makeOtelTracingExtension } from "./src/otel-tracing.ts";
 import { makeSandboxToolsExtension } from "./src/sandbox/index.ts";
 import { sandboxConfigPresent } from "./src/sandbox/config-bridge.ts";
 
 export {
   makeBgShellExtension,
   makeContextStatusExtension,
+  makeOtelTracingExtension,
   makePathGuardExtension,
   makePlanModeExtension,
   makeProviderSessionIdExtension,
@@ -73,6 +75,9 @@ export default function amedacCore(pi: ExtensionAPI): void {
   // 会话亲和元数据：三头全 provider + litellm_session_id 体字段（原为
   // 用户独立插件，现随核心扩展对每个会话生效）。
   makeProviderSessionIdExtension()(pi);
+  // OTLP tracing (MLflow/GenAI semconv). Config comes from pi-web global
+  // settings or OTEL_* env; disabled by default and no-op when unconfigured.
+  makeOtelTracingExtension()(pi);
   // CLI 路径：进程启动目录带沙盒配置才注册（pi-web 的进程 cwd 是仓库
   // 根，永不命中；其沙盒会话经内联工厂注入同一份源码）。
   if (sandboxConfigPresent(process.cwd())) {

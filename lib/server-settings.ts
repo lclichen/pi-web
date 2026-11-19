@@ -52,6 +52,14 @@ export interface ServerSettings {
    * from PI_WEB_PUBLIC_URL; absent = derive from the request Host.
    */
   publicBaseUrl?: string;
+  /** OTLP tracing toggle (global, deployment-wide). */
+  otelEnabled?: boolean;
+  /** OTLP base endpoint (e.g. http://localhost:8087); /v1/traces is appended. */
+  otelEndpoint?: string;
+  /** Extra OTLP HTTP headers (MLflow needs x-mlflow-experiment-id). */
+  otelHeaders?: Record<string, string>;
+  /** OTLP service.name override. */
+  otelServiceName?: string;
 }
 
 declare global {
@@ -107,6 +115,9 @@ function envDefaults(): ServerSettings {
     ...(hub ? { skillhubUrl: hub } : {}),
     ...(seedMb !== undefined ? { bundleUploadMaxMb: seedMb } : {}),
     ...(publicBaseUrl ? { publicBaseUrl } : {}),
+    // Off unless the operator/admin opted in; an endpoint alone must not
+    // start exporting prompts to an arbitrary collector.
+    otelEnabled: truthy(process.env.PI_WEB_OTEL_ENABLED),
   };
 }
 
@@ -180,6 +191,45 @@ export function normalizePublicBaseUrl(raw: unknown): string | undefined {
   return `${parsed.origin}${path}`;
 }
 
+/** Validate the OTLP base endpoint; empty/null clears. `/v1/traces` is appended later. */
+export function normalizeOtelEndpoint(raw: unknown): string | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  if (typeof raw !== "string") throw new Error("otelEndpoint 必须是字符串");
+  const trimmed = raw.trim();
+  if (!trimmed) return undefined;
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    throw new Error(`OTLP 地址无效: ${raw}`);
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error(`OTLP 地址必须是 http(s): ${raw}`);
+  }
+  if (parsed.username || parsed.password) throw new Error("OTLP 地址不能包含账号密码");
+  if (parsed.search || parsed.hash) throw new Error("OTLP 地址不能包含查询串或锚点");
+  return `${parsed.origin}${parsed.pathname.replace(/\/+$/, "")}`;
+}
+
+/** Validate OTLP headers (MLflow needs x-mlflow-experiment-id). Empty clears. */
+export function normalizeOtelHeaders(raw: unknown): Record<string, string> | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  if (typeof raw !== "object" || Array.isArray(raw)) throw new Error("otelHeaders 必须是对象");
+  const out: Record<string, string> = {};
+  for (const [rawKey, rawValue] of Object.entries(raw as Record<string, unknown>)) {
+    const key = rawKey.trim();
+    if (!key || key.length > 128 || !/^[A-Za-z0-9!#$%&'*+.^_`|~-]+$/.test(key)) {
+      throw new Error(`OTLP 请求头名称无效: ${rawKey}`);
+    }
+    if (typeof rawValue !== "string" || /[\r\n]/.test(rawValue) || rawValue.length > 4096) {
+      throw new Error(`OTLP 请求头 ${key} 的值无效`);
+    }
+    out[key] = rawValue;
+    if (Object.keys(out).length > 32) throw new Error("OTLP 请求头最多 32 项");
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
 /**
  * Validate an npm registry / PyPI index URL. Empty/null clears the override;
  * credentials and query/hash are rejected (mirror URLs are meant to be shared
@@ -232,6 +282,10 @@ function parseStored(raw: unknown): Partial<ServerSettings> | undefined {
     skillhubUrl?: unknown;
     bundleUploadMaxMb?: unknown;
     publicBaseUrl?: unknown;
+    otelEnabled?: unknown;
+    otelEndpoint?: unknown;
+    otelHeaders?: unknown;
+    otelServiceName?: unknown;
   };
   const out: Partial<ServerSettings> = {};
   if (typeof parsed.labTraining === "boolean") out.labTraining = parsed.labTraining;
@@ -261,6 +315,22 @@ function parseStored(raw: unknown): Partial<ServerSettings> | undefined {
     if (base !== undefined) out.publicBaseUrl = base;
   } catch {
     // stored garbage — ignore the field, keep the rest
+  }
+  if (typeof parsed.otelEnabled === "boolean") out.otelEnabled = parsed.otelEnabled;
+  try {
+    const endpoint = normalizeOtelEndpoint(parsed.otelEndpoint);
+    if (endpoint) out.otelEndpoint = endpoint;
+  } catch {
+    // stored garbage — ignore the field, keep the rest
+  }
+  try {
+    const headers = normalizeOtelHeaders(parsed.otelHeaders);
+    if (headers) out.otelHeaders = headers;
+  } catch {
+    // stored garbage — ignore the field, keep the rest
+  }
+  if (typeof parsed.otelServiceName === "string" && parsed.otelServiceName.trim()) {
+    out.otelServiceName = parsed.otelServiceName.trim().slice(0, 128);
   }
   return out;
 }
@@ -344,6 +414,10 @@ export function updateServerSettings(patch: {
   skillhubUrl?: string;
   bundleUploadMaxMb?: number | null;
   publicBaseUrl?: string;
+  otelEnabled?: boolean;
+  otelEndpoint?: string | null;
+  otelHeaders?: Record<string, string> | null;
+  otelServiceName?: string;
 }): ServerSettings {
   const next: ServerSettings = { ...getServerSettings() };
   if (typeof patch.labTraining === "boolean") next.labTraining = patch.labTraining;
@@ -374,6 +448,22 @@ export function updateServerSettings(patch: {
     const base = normalizePublicBaseUrl(patch.publicBaseUrl);
     if (base) next.publicBaseUrl = base;
     else delete next.publicBaseUrl;
+  }
+  if (typeof patch.otelEnabled === "boolean") next.otelEnabled = patch.otelEnabled;
+  if (patch.otelEndpoint !== undefined) {
+    const endpoint = normalizeOtelEndpoint(patch.otelEndpoint);
+    if (endpoint) next.otelEndpoint = endpoint;
+    else delete next.otelEndpoint;
+  }
+  if (patch.otelHeaders !== undefined) {
+    const headers = normalizeOtelHeaders(patch.otelHeaders);
+    if (headers) next.otelHeaders = headers;
+    else delete next.otelHeaders;
+  }
+  if (patch.otelServiceName !== undefined) {
+    const serviceName = patch.otelServiceName.trim();
+    if (serviceName) next.otelServiceName = serviceName.slice(0, 128);
+    else delete next.otelServiceName;
   }
   mkdirSync(dataDir(), { recursive: true });
   writeFileSync(settingsPath(), JSON.stringify(next, null, 2), "utf8");

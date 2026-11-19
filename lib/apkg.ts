@@ -28,6 +28,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { writePrivateFileAtomicSync } from "./atomic-file.ts";
 import { dataDir } from "./mode-homes.ts";
 import { projectIdentityKey } from "./project-identity.ts";
 
@@ -235,15 +236,52 @@ function readImportState(): ImportState {
 
 function writeImportState(state: ImportState): void {
   mkdirSync(dataDir(), { recursive: true });
-  writeFileSync(importStatePath(), JSON.stringify(state, null, 2));
+  // 计数器是服务器侧的许可凭证，裸 writeFileSync 崩溃半写会留下损坏 JSON，
+  // 下次读取 fail-open 清零；0600 原子替换（临时文件 + rename）杜绝半写残留。
+  writePrivateFileAtomicSync(importStatePath(), JSON.stringify(state, null, 2));
 }
 
 export function getApkgImportCount(fingerprint: string): number {
   return readImportState()[fingerprint]?.count ?? 0;
 }
 
+// ---------------------------------------------------------------------------
+// 进程内按指纹串行化（G1）：checkApkgLicense 与 recordApkgImport 之间隔着
+// 解包/落盘的 await，并发导入同一指纹会双双通过 maxImports。锁 key 是指纹
+// 本身：同指纹排队是正确性要求，不同指纹并行——导入可能伴随大文件解压，
+// 全局单锁会让无关指纹无谓排队。globalThis 惯例同 __piSessions：Next.js
+// 热重载后锁链不丢。
+// ---------------------------------------------------------------------------
+
+declare global {
+  var __piApkgImportLocks: Map<string, Promise<unknown>> | undefined;
+}
+
+/**
+ * 按指纹串行化 .apkg 导入的 state 读改写。Promise 链锁、不可重入：回调内
+ * 不要再调用会拿同一指纹锁的 checkApkgLicense / recordApkgImport /
+ * runLicensedApkgImport（会排队等自己）。链排空后清理表项，长期驻留的
+ * 只有活跃指纹。
+ */
+export async function withApkgImportLock<T>(fingerprint: string, fn: () => T | Promise<T>): Promise<T> {
+  const locks = (globalThis.__piApkgImportLocks ??= new Map<string, Promise<unknown>>());
+  const prev = locks.get(fingerprint) ?? Promise.resolve();
+  // 先登记占位再等待：同 tick 的后来者才能链到本任务之后；占位在 finally
+  // 里必然 resolve，单个任务失败不会卡死后续排队者。
+  let release!: () => void;
+  const tail = new Promise<void>((resolve) => (release = resolve));
+  locks.set(fingerprint, tail);
+  await prev;
+  try {
+    return await fn();
+  } finally {
+    release();
+    if (locks.get(fingerprint) === tail) locks.delete(fingerprint);
+  }
+}
+
 /** Enforce license terms BEFORE any file is written (throws on violation). */
-export function checkApkgLicense(license: ApkgLicense, fingerprint: string, header: ApkgHeader): void {
+function enforceApkgLicense(license: ApkgLicense, fingerprint: string, header: ApkgHeader): void {
   if (license.expiresAt) {
     const expiry = Date.parse(license.expiresAt);
     if (Number.isFinite(expiry) && Date.now() > expiry) {
@@ -259,7 +297,7 @@ export function checkApkgLicense(license: ApkgLicense, fingerprint: string, head
 }
 
 /** Record a successful import AFTER the files landed. */
-export function recordApkgImport(fingerprint: string): void {
+function bumpApkgImport(fingerprint: string): void {
   const state = readImportState();
   const now = new Date().toISOString();
   const entry = state[fingerprint] ?? { count: 0, firstAt: now, lastAt: now };
@@ -267,6 +305,40 @@ export function recordApkgImport(fingerprint: string): void {
   entry.lastAt = now;
   state[fingerprint] = entry;
   writeImportState(state);
+}
+
+/** 单独调用也拿指纹锁（防新调用方绕过原子入口）；导入流程请改用 runLicensedApkgImport。 */
+export function checkApkgLicense(license: ApkgLicense, fingerprint: string, header: ApkgHeader): Promise<void> {
+  return withApkgImportLock(fingerprint, () => {
+    enforceApkgLicense(license, fingerprint, header);
+  });
+}
+
+/** 单独调用也拿指纹锁；语义为"导入成功后计数 +1"。 */
+export function recordApkgImport(fingerprint: string): Promise<void> {
+  return withApkgImportLock(fingerprint, () => {
+    bumpApkgImport(fingerprint);
+  });
+}
+
+/**
+ * .apkg 导入的原子入口：license 检查 → body（校验并落盘）→ 计数递增在
+ * 同一把指纹锁内依次执行，并发导入同一指纹不再双双通过 maxImports。
+ * body 抛错则不计数（保持"文件落盘成功后才计数"的语义）。解密/解包与
+ * 计数器无关，应在调用本函数之前完成——放进锁内只会放大同指纹的排队。
+ */
+export function runLicensedApkgImport<T>(
+  license: ApkgLicense,
+  fingerprint: string,
+  header: ApkgHeader,
+  body: () => T | Promise<T>,
+): Promise<T> {
+  return withApkgImportLock(fingerprint, async () => {
+    enforceApkgLicense(license, fingerprint, header);
+    const result = await body();
+    bumpApkgImport(fingerprint);
+    return result;
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -327,7 +399,8 @@ export function recordApkgLockedHome(home: string, entry: LockedHomeEntry): void
   const registry = readLockedHomes();
   registry[projectIdentityKey(home)] = entry;
   mkdirSync(dataDir(), { recursive: true });
-  writeFileSync(lockedHomesPath(), JSON.stringify(registry, null, 2));
+  // 注册表写坏即锁失效（fail-open），同样走 0600 原子替换，不留半写 JSON。
+  writePrivateFileAtomicSync(lockedHomesPath(), JSON.stringify(registry, null, 2));
 }
 
 export function isApkgLockedHome(home: string): boolean {

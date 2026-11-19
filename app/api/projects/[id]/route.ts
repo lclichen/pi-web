@@ -12,6 +12,7 @@ import { isApiRequestAllowed, hasJsonContentType } from "@/lib/request-security"
 import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from "fs";
 import { invalidateModelsCache } from "@/lib/models-cache";
 import { validateAgentDirectory } from "@/lib/relay/browse";
+import { withProjectConfigWriteLock, ProjectConfigLockBusyError } from "@/lib/project-config-lock";
 
 export const dynamic = "force-dynamic";
 
@@ -75,20 +76,27 @@ export async function PATCH(req: Request, ctx: RouteCtx) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  // Credential files: JSON-validated, empty string removes (inherit global).
-  let credentialsTouched = false;
+  // 项目 home 配置写入（ADR-0004 §4.2 共享写锁）：models/auth 凭据、
+  // AGENTS.md、sandbox 平台凭据统一在 withProjectConfigWriteLock 内落盘，
+  // 与 sync apply/rollback、bundle apply 互斥，不出现半写。校验全部前置，
+  // 非法输入在任何写之前 400（原实现逐项边验边写，一项失败可能留下半写）。
+  // 凭据文件：JSON 校验，空串 = 删除（回退继承全局）。
+  interface CredentialWrite {
+    path: string;
+    remove: boolean;
+    value: string;
+  }
+  const credentialWrites: CredentialWrite[] = [];
   for (const key of ["modelsJson", "authJson"] as const) {
     if (body[key] === undefined) continue;
     const value = body[key];
     if (typeof value !== "string") return NextResponse.json({ error: `${key} must be a string` }, { status: 400 });
-    const path = `${projectHome(project)}/.pi/${key === "modelsJson" ? "models.json" : "auth.json"}`;
-    credentialsTouched = true;
     if (value.trim() === "") {
-      try {
-        unlinkSync(path);
-      } catch {
-        /* absent is fine */
-      }
+      credentialWrites.push({
+        path: `${projectHome(project)}/.pi/${key === "modelsJson" ? "models.json" : "auth.json"}`,
+        remove: true,
+        value: "",
+      });
       continue;
     }
     try {
@@ -96,35 +104,63 @@ export async function PATCH(req: Request, ctx: RouteCtx) {
     } catch {
       return NextResponse.json({ error: `${key} 不是合法 JSON` }, { status: 400 });
     }
-    mkdirSync(`${projectHome(project)}/.pi`, { recursive: true });
-    writeFileSync(path, value, "utf8");
+    credentialWrites.push({
+      path: `${projectHome(project)}/.pi/${key === "modelsJson" ? "models.json" : "auth.json"}`,
+      remove: false,
+      value,
+    });
   }
-  // The 60s models cache would otherwise serve the previous provider list.
-  if (credentialsTouched) invalidateModelsCache();
-
   // Project instructions (AGENTS.md): written at the home root — the SDK
   // loads it as session instructions from the session cwd (the home), it
   // rides along on project duplication, and agent edits made in the
   // workspace are mirrored back here (sandbox extension / relay tools).
   // Empty string deletes the file.
-  if (typeof body.agentsMd === "string") {
-    const agentsPath = `${projectHome(project)}/AGENTS.md`;
-    mkdirSync(`${projectHome(project)}`, { recursive: true });
-    if (body.agentsMd.trim() === "") {
-      try {
-        unlinkSync(agentsPath);
-      } catch {
-        /* absent is fine */
+  const agentsMd = typeof body.agentsMd === "string" ? body.agentsMd : null;
+  // Sandbox credentials (platform API key) merge into the project config.
+  const sessionApiKey = r.identity!.session.apiKey;
+  const sandboxApiKey = typeof body.apiKey === "string" && body.apiKey && sessionApiKey ? sessionApiKey : null;
+
+  if (credentialWrites.length > 0 || agentsMd !== null || sandboxApiKey !== null) {
+    try {
+      await withProjectConfigWriteLock(project.id, async () => {
+        for (const write of credentialWrites) {
+          if (write.remove) {
+            try {
+              unlinkSync(write.path);
+            } catch {
+              /* absent is fine */
+            }
+            continue;
+          }
+          mkdirSync(`${projectHome(project)}/.pi`, { recursive: true });
+          writeFileSync(write.path, write.value, "utf8");
+        }
+        if (agentsMd !== null) {
+          const agentsPath = `${projectHome(project)}/AGENTS.md`;
+          mkdirSync(`${projectHome(project)}`, { recursive: true });
+          if (agentsMd.trim() === "") {
+            try {
+              unlinkSync(agentsPath);
+            } catch {
+              /* absent is fine */
+            }
+          } else {
+            writeFileSync(agentsPath, agentsMd, "utf8");
+          }
+        }
+        if (sandboxApiKey !== null) {
+          writeSandboxConfig(projectHome(project), { apiKey: sandboxApiKey });
+        }
+      });
+    } catch (e) {
+      if (e instanceof ProjectConfigLockBusyError) {
+        return NextResponse.json({ error: e.message, code: "PROJECT_LOCKED" }, { status: 409 });
       }
-    } else {
-      writeFileSync(agentsPath, body.agentsMd, "utf8");
+      return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 });
     }
   }
-
-  // Sandbox credentials (platform API key) merge into the project config.
-  if (typeof body.apiKey === "string" && body.apiKey && r.identity!.session.apiKey) {
-    writeSandboxConfig(projectHome(project), { apiKey: r.identity!.session.apiKey });
-  }
+  // The 60s models cache would otherwise serve the previous provider list.
+  if (credentialWrites.length > 0) invalidateModelsCache();
 
   // Local-machine workdir: validate on the paired machine before persisting,
   // so a typo cannot point the project at a directory that does not exist.

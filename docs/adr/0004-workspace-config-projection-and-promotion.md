@@ -295,6 +295,23 @@ v1 不依赖新协议。若 skills 树/大二进制导致每回合 hash 过慢�
   **读锁**（进程内 RW lock；apply 持写锁）。否则“项目空闲”检查通过后、apply 写入期间
   刚好新建一个会话，仍可能读到混合版本。写路径的跨进程互斥用 proper-lockfile，
   进程内读写用 RW lock，两者组合。
+- **写路径接入现状（2026-11-19，P2-5 补齐后）**——已接入 `withProjectConfigWriteLock`：
+  sync apply / sync rollback（原有）；bundle apply 一族：`POST /api/projects/:id/apply-bundle`、
+  `POST /api/projects/:id/config-import`（zip 导入，同属 bundle apply 语义）、embed 配置包
+  （`lib/embed-workspaces.ts` 的 `reapplyEmbedConfig` / `applyProductBundle`，覆盖两个
+  reapply-config 路由与产品绑定时对已有项目的应用；新建项目走全新 home，锁保持语义一致）；
+  设置面板：项目 PATCH（`modelsJson`/`authJson`/`AGENTS.md`/sandbox 平台凭据，校验前置、
+  落盘整体进锁，消除单项失败留半写）；MCP：`/api/mcp/servers`（POST/PUT/PATCH/DELETE）与
+  `/api/mcp/settings` 在 scope=project 且目标为项目 home 时加锁（`resolveConfigCwdSync`
+  返回解析出的 `projectId`，raw cwd 反查 `projectIdForHome`；global/user/quick scope 写
+  数据目录不加锁）。跨进程锁竞争统一映射 409 `PROJECT_LOCKED`。
+  明确**不接**（理由）：`/api/plugins` 安装/更新走 npm `DefaultPackageManager`（分钟级
+  外部 IO），包入写锁会长时间阻塞读侧会话启动；`/api/agents`、`/api/skills/import`、
+  `/api/policy`、`/api/preferences` 不在本节枚举的写路径类别内（单文件/单目录逐项写），
+  如后续纳入应连同 plugins 的慢 IO 一起重新设计（如锁内只做 settings 落盘、锁外做包管理）；
+  `app/api/host/*` 写任意 cwd 非 project home，无锁命名空间；项目快照/附件/投影路由写
+  平台侧容器或数据目录/临时附件目录，非项目 home 配置；`agent/new`、restore、batch 的
+  `writeSandboxConfig` 凭据回写是会话启动路径上的单文件幂等写，不在枚举内。
 - **rollback × 投影**：rollback 把 Host 技能回退旧版后，hostDigest 变化，但工作区里
   很可能还留着 Agent 的 dirty 编辑（正是晋升来源），按规则会被保留并标 conflict。
   这不是 bug，但必须在 rollback 返回 `projection: {needsDiscard, dirty}`，UI 明示

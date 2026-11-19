@@ -134,3 +134,16 @@ export async function withProjectConfigWriteLock<T>(projectId: string, operation
     releaseRw();
   }
 }
+
+/**
+ * 条件写锁：解析到项目（projectId 存在）时与 withProjectConfigWriteLock
+ * 等价；写目标不是项目 home（全局/用户/quick 配置或任意 cwd）时直接执行。
+ * 供"同一写函数可能落在项目 home 或数据目录"的路由使用（如 MCP 配置）。
+ */
+export async function withProjectConfigWriteLockFor<T>(
+  projectId: string | undefined,
+  operation: () => Promise<T>,
+): Promise<T> {
+  if (!projectId) return operation();
+  return withProjectConfigWriteLock(projectId, operation);
+}

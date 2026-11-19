@@ -3,6 +3,7 @@ import { requireUserIdentity } from "@/lib/web-session";
 import { getProject } from "@/lib/projects";
 import { getEmbedProfile } from "@/lib/embed-profiles";
 import { reapplyEmbedConfig } from "@/lib/embed-workspaces";
+import { ProjectConfigLockBusyError } from "@/lib/project-config-lock";
 
 export const dynamic = "force-dynamic";
 
@@ -25,6 +26,10 @@ export async function POST(req: Request) {
     const view = await reapplyEmbedConfig(project, product);
     return NextResponse.json({ project: view }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
+    // 配置包写入共享写锁被其他进程占用 → 409（与项目配置写路由一致）。
+    if (error instanceof ProjectConfigLockBusyError) {
+      return NextResponse.json({ error: error.message, code: "PROJECT_LOCKED" }, { status: 409 });
+    }
     const status = (error as { status?: number }).status ?? 500;
     return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status });
   }

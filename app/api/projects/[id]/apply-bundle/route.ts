@@ -3,6 +3,7 @@ import { ensureProjectHome, getOwnedProject } from "@/lib/projects";
 import { requireUserIdentity } from "@/lib/web-session";
 import { isApiRequestAllowed, hasJsonContentType } from "@/lib/request-security";
 import { applyBundleToDirectory, bundleExists, isValidBundleName } from "@/lib/config-bundles-store";
+import { withProjectConfigWriteLock, ProjectConfigLockBusyError } from "@/lib/project-config-lock";
 
 export const dynamic = "force-dynamic";
 
@@ -31,9 +32,16 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
 
   try {
     const home = ensureProjectHome(project);
-    await applyBundleToDirectory(name, home);
+    // 项目 home 配置写入走共享写锁（ADR-0004 §4.2），与 sync apply/rollback、
+    // 项目 PATCH 等互斥，避免并发读到混合版本。
+    await withProjectConfigWriteLock(project.id, async () => {
+      await applyBundleToDirectory(name, home);
+    });
     return NextResponse.json({ ok: true, name });
   } catch (e) {
+    if (e instanceof ProjectConfigLockBusyError) {
+      return NextResponse.json({ error: e.message, code: "PROJECT_LOCKED" }, { status: 409 });
+    }
     return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 400 });
   }
 }

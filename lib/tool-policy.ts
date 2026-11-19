@@ -4,7 +4,8 @@
  *
  * 三层协作（设计见 docs/dev/tool-guardrails-design.md §4）：
  *   · 装配层（初始活动集）：filterToolsForMode 剔除当前模式无执行通道的
- *     声明工具（如远端模式的 powershell）；
+ *     声明工具（如远端模式的 powershell），以及宿主平台不适用的声明工具
+ *     （如 Linux 上的 powershell，kind=platform——运行时剔除、展示层静默）；
  *   · MCP 隔离：mcpServerModePolicy 决定远端模式下哪些服务器被剔除——
  *     HTTP 优先（出网调用不在宿主落地）；stdio/socket 落 pi-web 服务器
  *     本机 = 沙箱逃逸面，默认剔除，管理员可用 piWeb.plane="host" 显式豁免；
@@ -33,11 +34,21 @@ export function isRemoteMode(mode: SessionMode): boolean {
 export interface ToolExclusion {
   name: string;
   reason: string;
+  /**
+   * 剔除维度："mode"（缺省）= 模式无执行通道——护栏语义，进 UI"被禁用"提示；
+   * "platform" = 宿主平台不适用——仅运行时钳制，展示层静默（不产生噪音）。
+   */
+  kind?: "mode" | "platform";
 }
 
 /** 工具在当前宿主平台是否有意义（manifest.platforms 缺省 = 全平台）。 */
 export function isToolPlatformRelevant(entry: { platforms?: readonly string[] }, platform: string = process.platform): boolean {
   return !entry.platforms || entry.platforms.includes(platform);
+}
+
+/** 展示层判定：该剔除是否应进入"被禁用"提示（平台剔除静默，只做运行时钳制）。 */
+export function isNoticeableToolExclusion(exclusion: ToolExclusion): boolean {
+  return exclusion.kind !== "platform";
 }
 
 /**
@@ -57,9 +68,15 @@ export function filterToolsForMode(
       allowed.push(name);
       continue;
     }
-    // 平台无关工具（如 Linux 上的 powershell）不产生“被禁用”噪音：原样通过。
+    // 平台不适用（如 Linux 上的 powershell）：运行时直接剔除——安全钳制
+    // 不依赖 pi SDK 在非 win32 抛错的兜底；但标注 kind=platform，展示层
+    // 据此静默（见 isNoticeableToolExclusion），不产生“被禁用”噪音。
     if (!isToolPlatformRelevant(entry, platform)) {
-      allowed.push(name);
+      excluded.push({
+        name,
+        kind: "platform",
+        reason: `工具 ${name} 不适用于宿主平台 ${platform}（manifest.platforms = ${(entry.platforms ?? []).join("/")}）`,
+      });
       continue;
     }
     if (isToolAllowedInMode(entry, mode)) {

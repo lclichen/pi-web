@@ -11,6 +11,7 @@ import {
   type ProjectRecord,
 } from "./projects.ts";
 import { getBundleInfo, applyBundleToDirectory } from "./config-bundles-store.ts";
+import { withProjectConfigWriteLock } from "./project-config-lock.ts";
 import { markProjectionDirty } from "./projection/reconcile.ts";
 import { validateAgentDirectory } from "./relay/browse.ts";
 import { requireCompatibleAgent } from "./relay/agent-gate.ts";
@@ -117,7 +118,12 @@ async function applyProductBundle(project: ProjectRecord, product: EmbedProductP
   if (!bundleName) return null;
   const info = getBundleInfo(bundleName);
   if (!info) throw new EmbedWorkspaceError(`产品配置包不存在：${bundleName}`, 400);
-  await applyBundleToDirectory(bundleName, ensureProjectHome(project));
+  // 写项目 home 配置，走共享写锁（ADR-0004 §4.2）。绑定已有项目时会与
+  // sync apply/项目 PATCH 并发；新建项目的 home 尚无其他写者，锁保持语义一致。
+  const home = ensureProjectHome(project);
+  await withProjectConfigWriteLock(project.id, async () => {
+    await applyBundleToDirectory(bundleName, home);
+  });
   markProjectionDirty(project.id);
   return {
     productId: product.id,
@@ -297,7 +303,13 @@ export async function reapplyEmbedConfig(
   if (!product.configBundle) throw new EmbedWorkspaceError("产品未绑定配置包");
   const info = getBundleInfo(product.configBundle);
   if (!info) throw new EmbedWorkspaceError(`产品配置包不存在：${product.configBundle}`);
-  await applyBundleToDirectory(product.configBundle, ensureProjectHome(project));
+  // 重应用写已有项目的 home 配置，走共享写锁（ADR-0004 §4.2），与
+  // sync apply/rollback、项目 PATCH、bundle apply 互斥。
+  const bundleName = product.configBundle;
+  const home = ensureProjectHome(project);
+  await withProjectConfigWriteLock(project.id, async () => {
+    await applyBundleToDirectory(bundleName, home);
+  });
   markProjectionDirty(project.id);
   const binding: EmbedProjectBinding = {
     productId: product.id,

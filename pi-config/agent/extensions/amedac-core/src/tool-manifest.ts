@@ -44,7 +44,7 @@ export interface ToolManifestEntry {
   remote?: RemoteSemantics;
   /** 显式模式限制；缺省 = 声明兼容的全部模式（quick 另受封闭世界钳制）。 */
   modes?: readonly SessionModeName[];
-  /** 工具真正有意义的宿主平台（缺省 = 全平台）。平台不匹配时不纳入模式剔除提示。 */
+  /** 工具真正有意义的宿主平台（缺省 = 全平台）。平台不匹配时运行时剔除（kind=platform，不进“被禁用”提示）。 */
   platforms?: readonly string[];
   origin: ToolOrigin;
   /** 引入理由/边界说明（评审留痕）。 */

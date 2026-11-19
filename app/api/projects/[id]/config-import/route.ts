@@ -3,6 +3,7 @@ import { ensureProjectHome, getOwnedProject } from "@/lib/projects";
 import { requireUserIdentity } from "@/lib/web-session";
 import { isApiRequestAllowed } from "@/lib/request-security";
 import { importProjectConfigBundle, MAX_IMPORT_BYTES } from "@/lib/project-config-bundle";
+import { withProjectConfigWriteLock, ProjectConfigLockBusyError } from "@/lib/project-config-lock";
 
 export const dynamic = "force-dynamic";
 
@@ -39,11 +40,18 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   try {
     const data = Buffer.from(await file.arrayBuffer());
     const home = ensureProjectHome(project);
-    const stats = await importProjectConfigBundle(home, data, {
-      allowStdioMcp: identity.session.user.role === "admin",
-    });
+    // 项目 home 配置写入走共享写锁（ADR-0004 §4.2）；上传字节先读入内存，
+    // 锁内只做落盘，不在锁内等待请求体。
+    const stats = await withProjectConfigWriteLock(project.id, async () =>
+      importProjectConfigBundle(home, data, {
+        allowStdioMcp: identity.session.user.role === "admin",
+      }),
+    );
     return NextResponse.json({ ok: true, ...stats });
   } catch (e) {
+    if (e instanceof ProjectConfigLockBusyError) {
+      return NextResponse.json({ error: e.message, code: "PROJECT_LOCKED" }, { status: 409 });
+    }
     return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 400 });
   }
 }

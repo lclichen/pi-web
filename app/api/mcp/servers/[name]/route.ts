@@ -7,6 +7,7 @@ import {
   updateMcpServer,
 } from "@/lib/mcp-config";
 import { guardMcpRequest } from "@/lib/mcp-route-guard";
+import { withProjectConfigWriteLockFor, ProjectConfigLockBusyError } from "@/lib/project-config-lock";
 import type { ConfigScope, ServerEntry } from "@/lib/api-types";
 
 export const dynamic = "force-dynamic";
@@ -46,9 +47,17 @@ export async function PUT(req: Request, { params }: { params: Promise<{ name: st
       );
     }
     try {
-      updateMcpServer(guard.cwd, scope, name, body.entry, guard.userId);
+      // 项目 scope 写 <project home>/.pi/mcp.json → 共享项目写锁（ADR-0004
+      // §4.2）；全局/用户/quick scope 写数据目录，不加锁。
+      const entry = body.entry;
+      await withProjectConfigWriteLockFor(scope === "project" ? guard.projectId : undefined, async () => {
+        updateMcpServer(guard.cwd, scope, name, entry, guard.userId);
+      });
       return NextResponse.json({ success: true });
     } catch (e) {
+      if (e instanceof ProjectConfigLockBusyError) {
+        return NextResponse.json({ error: e.message, code: "PROJECT_LOCKED" }, { status: 409 });
+      }
       return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 404 });
     }
   } catch (e) {
@@ -73,10 +82,16 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ name: 
     const disabled = body.disabled === true;
     try {
       if (target === "scope") {
-        setMcpServerDisabled(guard.cwd, scope, name, disabled, guard.userId);
+        // 直接改 scope 自身的配置：只有 project scope 落在项目 home，加锁。
+        await withProjectConfigWriteLockFor(scope === "project" ? guard.projectId : undefined, async () => {
+          setMcpServerDisabled(guard.cwd, scope, name, disabled, guard.userId);
+        });
         return NextResponse.json({ success: true, disabled, target });
       }
-      setMcpServerDisabledViaProject(guard.cwd, name, disabled);
+      // 工作区覆盖写 <project home>/.pi/mcp.json → 项目写锁。
+      await withProjectConfigWriteLockFor(guard.projectId, async () => {
+        setMcpServerDisabledViaProject(guard.cwd, name, disabled);
+      });
       if (!disabled) {
         // Removing the override can expose a server that is disabled in its
         // own config (global/quick). Say so instead of silently no-oping.
@@ -90,6 +105,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ name: 
       }
       return NextResponse.json({ success: true, disabled, target });
     } catch (e) {
+      if (e instanceof ProjectConfigLockBusyError) {
+        return NextResponse.json({ error: e.message, code: "PROJECT_LOCKED" }, { status: 409 });
+      }
       return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 404 });
     }
   } catch (e) {
@@ -109,9 +127,16 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ name:
   if (!guard.ok) return guard.response;
   const scope = readScope(searchParams.get("scope"));
   try {
-    removeMcpServer(guard.cwd, scope, name, guard.userId);
+    // 项目 scope 写 <project home>/.pi/mcp.json → 共享项目写锁；其余 scope
+    // 写数据目录/用户目录，不加锁。
+    await withProjectConfigWriteLockFor(scope === "project" ? guard.projectId : undefined, async () => {
+      removeMcpServer(guard.cwd, scope, name, guard.userId);
+    });
     return NextResponse.json({ success: true });
   } catch (e) {
+    if (e instanceof ProjectConfigLockBusyError) {
+      return NextResponse.json({ error: e.message, code: "PROJECT_LOCKED" }, { status: 409 });
+    }
     return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 404 });
   }
 }

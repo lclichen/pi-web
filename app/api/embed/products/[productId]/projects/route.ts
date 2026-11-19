@@ -11,6 +11,7 @@ import {
 import { embedCorsPreflight, isEmbedOriginAllowed, withEmbedCors } from "@/lib/embed-cors";
 import { isApiRequestHostAllowed } from "@/lib/request-security";
 import { requestOrigin } from "@/lib/request-origin";
+import { ProjectConfigLockBusyError } from "@/lib/project-config-lock";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +19,11 @@ type Params = { params: Promise<{ productId: string }> };
 
 function errorResponse(req: Request, error: unknown, productId: string): NextResponse {
   const product = getEmbedProfile(productId);
+  // 配置包写入共享写锁被其他进程占用 → 409（与应用中一致）。
+  if (error instanceof ProjectConfigLockBusyError) {
+    const busy = NextResponse.json({ error: error.message, code: "PROJECT_LOCKED" }, { status: 409 });
+    return product ? withEmbedCors(req, product, busy) : busy;
+  }
   const status = error instanceof EmbedWorkspaceError ? error.status : 500;
   const body =
     error instanceof EmbedWorkspaceError

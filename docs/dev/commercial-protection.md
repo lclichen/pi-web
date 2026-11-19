@@ -46,7 +46,7 @@
    发布包（完整版只在打包机执行 seal）。pi-web 只读取公钥元信息
    `config/apkg-recipient.json`（解析顺序 `PI_WEB_APKG_RECIPIENT` →
    `<数据目录>/apkg-recipient.json` → 包内 config）；管理面
-   `/api/admin/apkg-identity` 只回显 id/公钥/来源；旧
+   `/api/admin/apkg-identity` 只回显 id/公钥与启用状态；旧
    `/api/admin/apkg-keys` 全部返回 410。
 
 ### 密钥管理

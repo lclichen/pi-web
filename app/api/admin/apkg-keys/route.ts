@@ -9,13 +9,7 @@ export const dynamic = "force-dynamic";
  * GET /api/admin/apkg-identity（只读）。旧客户端收到 410 后会停止重试。
  */
 function gone() {
-  return NextResponse.json(
-    {
-      error:
-        "v1 共享 KEK 管理已移除：.apkg v2 的私钥封装在解密组件中，请查看「加密身份」页（/api/admin/apkg-identity）",
-    },
-    { status: 410 },
-  );
+  return NextResponse.json({ error: "该接口已停用，请查看「加密身份」页。" }, { status: 410 });
 }
 
 export async function GET() {

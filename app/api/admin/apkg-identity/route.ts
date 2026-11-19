@@ -25,15 +25,11 @@ export async function GET(req: Request) {
     );
   }
   try {
-    const toolPath = resolveApkgTool();
     return NextResponse.json({
       identity: getApkgIdentityInfo(),
-      tool: {
-        path: toolPath,
-        configured: Boolean(toolPath),
-      },
+      tool: { configured: Boolean(resolveApkgTool()) },
     });
-  } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
+  } catch {
+    return NextResponse.json({ error: "读取加密配置包状态失败" }, { status: 500 });
   }
 }

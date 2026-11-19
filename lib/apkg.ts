@@ -117,16 +117,11 @@ export interface BundleLock {
 // 封进解密二进制，运行时只在内存解密。pi-web 进程只需要公钥元信息
 // （config/apkg-recipient.json）用于管理面展示和发布方加密，永远拿不到私钥。
 
-export type ApkgIdentitySource = "env" | "data" | "package";
-
 export interface ApkgIdentityInfo {
   configured: boolean;
   id: string | null;
   /** Public key in base64url; safe to show/copy to the publisher. */
   publicKey: string | null;
-  source: ApkgIdentitySource | null;
-  /** Public recipient file, not a private identity. */
-  path: string | null;
   /** Dev/test: decryption uses PI_WEB_APKG_IDENTITY directly (not a release). */
   dev?: boolean;
   error?: string;
@@ -147,41 +142,28 @@ function identityPublicId(publicKey: Buffer): string {
   return `r_${createHash("sha256").update(publicKey).digest("hex").slice(0, 16)}`;
 }
 
-interface ResolvedRecipientPath {
-  path: string;
-  source: ApkgIdentitySource;
-}
-
-function recipientPathCandidates(): ResolvedRecipientPath[] {
-  const out: ResolvedRecipientPath[] = [];
+function recipientPathCandidates(): string[] {
+  const out: string[] = [];
   const envPath = process.env.PI_WEB_APKG_RECIPIENT?.trim();
-  if (envPath) out.push({ path: envPath, source: "env" });
+  if (envPath) out.push(envPath);
   try {
-    out.push({ path: join(dataDir(), "apkg-recipient.json"), source: "data" });
+    out.push(join(dataDir(), "apkg-recipient.json"));
   } catch {
     // dataDir unavailable pre-config; package path still applies
   }
-  out.push({ path: join(process.cwd(), "config", "apkg-recipient.json"), source: "package" });
-  out.push({ path: join(process.cwd(), "..", "config", "apkg-recipient.json"), source: "package" });
-  const seen = new Set<string>();
-  return out.filter((candidate) => {
-    if (seen.has(candidate.path)) return false;
-    seen.add(candidate.path);
-    return existsSync(candidate.path);
-  });
+  out.push(join(process.cwd(), "config", "apkg-recipient.json"));
+  out.push(join(process.cwd(), "..", "config", "apkg-recipient.json"));
+  return [...new Set(out)].filter((candidate) => existsSync(candidate));
 }
 
-/** Absolute path of the public recipient metadata, or null. */
-export function resolveApkgRecipientPath(): ResolvedRecipientPath | null {
-  return recipientPathCandidates()[0] ?? null;
-}
-
-/** Public metadata view for the admin UI (there is no private key here). */
+/**
+ * Public metadata view for the admin UI. Deliberately returns no file paths or
+ * deployment sources — those are internal and not needed by the page.
+ */
 export function getApkgIdentityInfo(): ApkgIdentityInfo {
-  const candidates = recipientPathCandidates();
-  for (const candidate of candidates) {
+  for (const file of recipientPathCandidates()) {
     try {
-      const parsed = JSON.parse(readFileSync(candidate.path, "utf8")) as {
+      const parsed = JSON.parse(readFileSync(file, "utf8")) as {
         version?: number;
         id?: string;
         publicKey?: string;
@@ -194,15 +176,13 @@ export function getApkgIdentityInfo(): ApkgIdentityInfo {
         configured: true,
         id,
         publicKey: publicKey.toString("base64url"),
-        source: candidate.source,
-        path: candidate.path,
       };
     } catch {
       // unreadable/malformed candidate — try the next location
     }
   }
   // Dev/test fallback: PI_WEB_APKG_IDENTITY points at a private identity JSON.
-  // Only the public key is exposed here; release packages seal the key instead.
+  // Only the public key is exposed; the path is intentionally not returned.
   const devPath = process.env.PI_WEB_APKG_IDENTITY?.trim();
   if (devPath) {
     try {
@@ -215,36 +195,25 @@ export function getApkgIdentityInfo(): ApkgIdentityInfo {
             configured: true,
             id,
             publicKey: publicKey.toString("base64url"),
-            source: "env",
-            path: devPath,
             dev: true,
           };
         }
       }
     } catch {
-      // fall through to the dev error below
+      // fall through to the generic dev error below
     }
     return {
       configured: false,
       id: null,
       publicKey: null,
-      source: null,
-      path: null,
-      error: "PI_WEB_APKG_IDENTITY 存在但格式无效（开发模式）",
+      error: "开发身份配置无效。",
     };
   }
   return {
     configured: false,
     id: null,
     publicKey: null,
-    source: null,
-    path: null,
-    ...(candidates.length === 0
-      ? {
-          error:
-            "未找到 apkg-recipient.json；请把发布包内的公钥文件放到 <数据目录>/apkg-recipient.json，或设置 PI_WEB_APKG_RECIPIENT",
-        }
-      : { error: "apkg-recipient.json 存在但格式无效" }),
+    error: "当前部署未启用加密配置包支持，请联系管理员。",
   };
 }
 

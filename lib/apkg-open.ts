@@ -88,13 +88,11 @@ function existsSyncOnPath(name: string): boolean {
 export async function openApkgViaTool(data: Buffer): Promise<Buffer> {
   const tool = resolveApkgTool();
   if (!tool) {
-    throw new Error(
-      "此部署未配备 .apkg 解密组件（缺少 apkg-publisher 二进制；可通过 PI_WEB_APKG_TOOL 指定路径，或放到 <数据目录>/bin/）",
-    );
+    throw new Error("当前部署未启用加密配置包支持，请联系管理员。");
   }
   const devIdentity = process.env.PI_WEB_APKG_IDENTITY?.trim();
   if (devIdentity && !existsSync(devIdentity)) {
-    throw new Error(`开发身份文件不存在（PI_WEB_APKG_IDENTITY）: ${devIdentity}`);
+    throw new Error("开发身份配置不可用。");
   }
 
   const work = mkdtempSync(join(tmpdir(), "apkg-open-"));
@@ -117,8 +115,7 @@ export async function openApkgViaTool(data: Buffer): Promise<Buffer> {
         {
           stdio: ["ignore", "pipe", "pipe"],
           windowsHide: true,
-          // Do not inherit deployment secrets (e.g. the old PI_WEB_APKG_KEYS).
-          // The child only needs its own binary/PATH; the identity path is a file.
+          // Do not inherit deployment secrets; the child only needs its binary/PATH.
           env: childEnv,
         },
       );
@@ -136,24 +133,21 @@ export async function openApkgViaTool(data: Buffer): Promise<Buffer> {
         }
         chunks.push(chunk);
       });
-      let stderr = "";
-      child.stderr?.on("data", (chunk: Buffer) => {
-        if (stderr.length < 4000) stderr += chunk.toString("utf8");
-      });
+      // Drain stderr without surfacing tool internals or server paths.
+      child.stderr?.resume();
       child.on("error", (err: NodeJS.ErrnoException) => {
         clearTimeout(timer);
         if (err.code === "ENOENT") {
-          reject(new Error(`解密组件不可用（${tool}）：请检查 PI_WEB_APKG_TOOL 路径或重新部署组件`));
+          reject(new Error("当前部署未启用加密配置包支持，请联系管理员。"));
         } else {
-          reject(err);
+          reject(new Error("加密配置包解密失败，请联系管理员。"));
         }
       });
       child.on("close", (code) => {
         clearTimeout(timer);
         if (failure) return reject(failure);
         if (code !== 0) {
-          const detail = stderr.replace(/^错误:\s*/m, "").trim();
-          return reject(new Error(detail || `解密组件退出码 ${code}`));
+          return reject(new Error("配置包无法解密（文件损坏、授权不匹配或当前部署不支持）。"));
         }
         return resolve(Buffer.concat(chunks));
       });

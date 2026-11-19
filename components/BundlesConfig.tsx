@@ -752,21 +752,18 @@ interface ApkgIdentityView {
   configured: boolean;
   id: string | null;
   publicKey: string | null;
-  source: "env" | "data" | "package" | null;
-  path: string | null;
-  /** Dev/test: PI_WEB_APKG_IDENTITY points at a private identity JSON. */
+  /** Dev/test: decryption uses a local identity file. */
   dev?: boolean;
   error?: string;
 }
 
 /**
- * 身份状态页：私钥在打包时封进解密二进制，pi-web 只读取公钥元信息。发布方
- * 拿公钥做加密；这里没有 KEK 输入框，也不存在可轮换的共享密钥。
+ * 身份状态页：只显示接收方公钥与启用状态；不展示私钥、二进制或文件路径。
  */
 function ApkgIdentityPanel() {
   const { t } = useI18n();
   const [identity, setIdentity] = useState<ApkgIdentityView | null>(null);
-  const [tool, setTool] = useState<{ path: string | null; configured: boolean } | null>(null);
+  const [tool, setTool] = useState<{ configured: boolean } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
@@ -775,7 +772,7 @@ function ApkgIdentityPanel() {
       const res = await fetch("/api/admin/apkg-identity");
       const data = (await res.json()) as {
         identity?: ApkgIdentityView;
-        tool?: { path: string | null; configured: boolean };
+        tool?: { configured: boolean };
         error?: string;
       };
       if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
@@ -802,17 +799,9 @@ function ApkgIdentityPanel() {
     }
   };
 
-  const sourceLabel =
-    identity?.dev
-      ? t("bundles.apkgIdentityDev")
-      : identity?.source === "env"
-        ? t("bundles.apkgKeysSourceEnv")
-        : identity?.source === "data"
-          ? t("bundles.apkgIdentitySourceData")
-          : identity?.source === "package"
-            ? t("bundles.apkgIdentitySourcePackage")
-            : "—";
-  const toolLine = tool?.path ? `${t("bundles.apkgKeysToolOk")} · ${tool.path}` : t("bundles.apkgKeysToolMissing");
+  const toolLine = tool?.configured
+    ? t("bundles.apkgKeysToolOk")
+    : t("bundles.apkgKeysToolMissing");
 
   return (
     <>
@@ -824,7 +813,11 @@ function ApkgIdentityPanel() {
                 <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {identity?.id ?? t("bundles.apkgKeysTitle")}
                 </span>
-                <span style={{ display: "block", fontSize: 10, color: "var(--text-dim)" }}>{sourceLabel}</span>
+                {identity?.dev && (
+                  <span style={{ display: "block", fontSize: 10, color: "var(--text-dim)" }}>
+                    {t("bundles.apkgIdentityDev")}
+                  </span>
+                )}
               </ConfigSidebarText>
             </ConfigSidebarItem>
           </ConfigSidebarList>
@@ -835,7 +828,7 @@ function ApkgIdentityPanel() {
             <ConfigDetailHeader>
               <ConfigDetailHeaderInfo>
                 <ConfigDetailTitle>{t("bundles.apkgKeysTitle")}</ConfigDetailTitle>
-                {identity?.configured && <span className="config-scope-tag">{sourceLabel}</span>}
+                {identity?.dev && <span className="config-scope-tag">{t("bundles.apkgIdentityDev")}</span>}
               </ConfigDetailHeaderInfo>
             </ConfigDetailHeader>
 
@@ -848,16 +841,6 @@ function ApkgIdentityPanel() {
                     <span style={{ width: 70, color: "var(--text-dim)" }}>ID</span>
                     <span className="config-mono" style={{ color: "var(--text)" }}>{identity.id}</span>
                   </div>
-                  {identity.path && (
-                    <div style={{ display: "flex", gap: 10 }}>
-                      <span style={{ width: 70, color: "var(--text-dim)" }}>
-                        {identity.dev ? t("bundles.apkgIdentityDevPath") : t("bundles.apkgIdentityPath")}
-                      </span>
-                      <span className="config-mono" style={{ color: "var(--text-muted)", wordBreak: "break-all" }}>
-                        {identity.path}
-                      </span>
-                    </div>
-                  )}
                   <div>
                     <div style={{ color: "var(--text-dim)", marginBottom: 4 }}>
                       {t("bundles.apkgIdentityPublicKey")}
@@ -876,9 +859,6 @@ function ApkgIdentityPanel() {
                     {copied ? t("bundles.apkgIdentityCopied") : t("bundles.apkgIdentityCopy")}
                   </ConfigButton>
                 </div>
-                <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.7 }}>
-                  {t("bundles.apkgKeysDesc")}
-                </div>
                 {identity.dev && (
                   <div style={{ fontSize: 11, color: "var(--warning, var(--danger))", lineHeight: 1.7 }}>
                     {t("bundles.apkgIdentityDevNote")}
@@ -893,7 +873,7 @@ function ApkgIdentityPanel() {
       <ConfigFooter
         status={
           <>
-            <span style={{ color: tool?.path ? "var(--text-dim)" : "var(--danger)" }}>{toolLine}</span>
+            <span style={{ color: tool?.configured ? "var(--text-dim)" : "var(--danger)" }}>{toolLine}</span>
             {error && <span style={{ color: "var(--danger)" }}>{error}</span>}
           </>
         }

@@ -362,7 +362,7 @@ function AddSkillPanel({
       ? "~/.pi/agent/skills/"
       : scope === "user"
         ? t("skills.userSkillsPath")
-        : `${shortenPath(cwd)}/.pi/skills/`;
+        : ".pi/skills/";
 
   return (
     <ConfigDetailStack className="is-full-height">
@@ -696,6 +696,18 @@ export function SkillsConfig({
     void loadSkills();
   }, [cwd]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Trust/config changes can unlock project-scoped skills; reload in place
+  // instead of requiring a full page refresh.
+  useEffect(() => {
+    const refresh = () => {
+      setUpdateStatuses({});
+      setUpdateError(null);
+      void loadSkills();
+    };
+    window.addEventListener("pi-web:config-changed", refresh);
+    return () => window.removeEventListener("pi-web:config-changed", refresh);
+  }, [loadSkills]);
+
   useEffect(() => {
     if (selected) setLastSettingsSelection("skills", selected, cwd);
   }, [cwd, selected]);
@@ -870,7 +882,7 @@ export function SkillsConfig({
     <ConfigPanelShell
       embedded={embedded}
       title={t("common.skills")}
-      subtitle={shortenPath(cwd)}
+      subtitle={t("settings.projectScope")}
       closeLabel={t("i18n.close")}
       onClose={onClose}
     >

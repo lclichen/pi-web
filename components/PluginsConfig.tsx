@@ -65,12 +65,21 @@ function versionSummary(pkg: PluginPackageInfo, t: ReturnType<typeof useI18n>["t
   return parts.length ? parts.join(" · ") : t("i18n.unknown");
 }
 
-function installLocation(scope: PluginScope, cwd: string): string {
+function installLocation(scope: PluginScope): string {
   return scope === "project"
-    ? `${shortenPath(cwd)}/.pi/{npm,git}`
+    ? ".pi/{npm,git}"
     : scope === "user"
       ? "user config / {npm,git}"
       : "~/.pi/agent/{npm,git}";
+}
+
+/** Never render the project's real root; show a relative path for project files. */
+function displayInstalledPath(path: string, cwd: string): string {
+  if (cwd && path.startsWith(cwd)) {
+    const rel = path.slice(cwd.length).replace(/^[/\\]/, "");
+    return rel ? `./${rel}` : ".";
+  }
+  return shortenPath(path);
 }
 
 function findInstalledPackage(
@@ -370,7 +379,7 @@ function AddPluginPanel({
           </a>
         </div>
         <div style={{ fontSize: 12, color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>
-          {installLocation(scope, cwd)}
+          {installLocation(scope)}
         </div>
       </div>
 
@@ -751,11 +760,7 @@ function PackageDetail({
             overflowWrap: "anywhere",
           }}
         >
-          {pkg.installedPath ? shortenPath(pkg.installedPath) : t("i18n.notFound")}
-        </div>
-        <div style={{ color: "var(--text-dim)" }}>{t("i18n.cwd")}</div>
-        <div style={{ color: "var(--text-dim)", fontFamily: "var(--font-mono)", overflowWrap: "anywhere" }}>
-          {shortenPath(cwd)}
+          {pkg.installedPath ? displayInstalledPath(pkg.installedPath, cwd) : t("i18n.notFound")}
         </div>
       </div>
 
@@ -850,7 +855,11 @@ export function PluginsConfig({
       void loadPlugins();
     };
     window.addEventListener("pi-web:server-settings-changed", refresh);
-    return () => window.removeEventListener("pi-web:server-settings-changed", refresh);
+    window.addEventListener("pi-web:config-changed", refresh);
+    return () => {
+      window.removeEventListener("pi-web:server-settings-changed", refresh);
+      window.removeEventListener("pi-web:config-changed", refresh);
+    };
   }, [loadPlugins]);
 
   useEffect(() => {
@@ -1092,7 +1101,7 @@ export function PluginsConfig({
     <ConfigPanelShell
       embedded={embedded}
       title={t("common.plugins")}
-      subtitle={shortenPath(cwd)}
+      subtitle={t("settings.projectScope")}
       closeLabel={t("i18n.close")}
       onClose={onClose}
     >

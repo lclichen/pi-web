@@ -3,13 +3,11 @@
 import { useI18n } from "@/hooks/useI18n";
 
 export function ProjectTrustDialog({
-  cwd,
   busy,
   error,
   onCancel,
   onConfirm,
 }: {
-  cwd: string;
   busy: boolean;
   error: string | null;
   onCancel: () => void;
@@ -71,22 +69,6 @@ export function ProjectTrustDialog({
             <div style={{ marginTop: 7, fontSize: 12, lineHeight: 1.6, color: "var(--text-muted)" }}>
               {t("trust.dialogBody")}
             </div>
-            <code
-              style={{
-                display: "block",
-                marginTop: 10,
-                padding: "8px 10px",
-                border: "1px solid var(--border)",
-                borderRadius: 5,
-                background: "var(--bg)",
-                color: "var(--text)",
-                fontFamily: "var(--font-mono)",
-                fontSize: 11,
-                overflowWrap: "anywhere",
-              }}
-            >
-              {cwd}
-            </code>
             {error && (
               <div role="alert" style={{ marginTop: 10, color: "#ef4444", fontSize: 12, lineHeight: 1.5 }}>
                 {error}

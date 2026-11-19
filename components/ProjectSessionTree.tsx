@@ -227,6 +227,12 @@ export function ProjectSessionTree({
     loadPins();
   }, [loadPins]);
 
+  useEffect(() => {
+    const refresh = () => loadPins();
+    window.addEventListener("pi-web:sidebar-pins-changed", refresh);
+    return () => window.removeEventListener("pi-web:sidebar-pins-changed", refresh);
+  }, [loadPins]);
+
   const applyPin = useCallback(
     async (patch: { projectKey?: string; sessionId?: string; pinned: boolean }) => {
       try {
@@ -1453,7 +1459,9 @@ export function ProjectSessionTree({
                       ? t("sessions.project", { name: owner.name })
                       : s.mode === "quick"
                         ? `⚡ ${t("sessions.quick")}`
-                        : (s.projectRoot ?? t("sessions.ungrouped"))}
+                        : s.mode === "host"
+                          ? "Host"
+                          : t("sessions.ungrouped")}
                   </div>
                   {renderItem(s)}
                 </div>
@@ -1933,7 +1941,6 @@ export function ProjectSessionTree({
                         textOverflow: "ellipsis",
                         whiteSpace: "nowrap",
                       }}
-                      title={root}
                     >
                       {displayName}
                     </span>

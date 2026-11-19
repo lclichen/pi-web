@@ -22,7 +22,13 @@ import { NewProjectDialog } from "./NewProjectDialog";
 import { PairingSteps, useAgentInstallInfo } from "./relay/ConnectLocalMachine";
 import { DirectoryPicker, type DirectorySource } from "./DirectoryPicker";
 
-type Mode = "sandbox" | "local-machine" | "ssh";
+/** The project fields the wizard needs after creation; no paths are returned. */
+interface CreatedProject {
+  id: string;
+  name: string;
+  mode: "sandbox" | "local-machine" | "ssh";
+}
+
 type Step = 1 | 2 | 3 | 4;
 type Method = "sandbox" | "local" | "ssh";
 
@@ -31,8 +37,8 @@ interface Props {
   /** 管理员：① 里追加「打开服务器目录」入口（Host 模式）。 */
   isAdmin?: boolean;
   onOpenServerDirectory?: () => void;
-  /** 项目创建成功（沙盒在③完成创建；本地在④完成创建）后回调，参数为项目名。 */
-  onCreated: (mode: Mode, name: string) => void;
+  /** 项目创建成功后回调（含 id/mode/name；用于置顶并直接进入新会话）。 */
+  onCreated: (project: CreatedProject) => void;
   /** 从环境菜单直接进入某一步（目前用于 SSH：跳过方式选择）。 */
   initialMethod?: Method | null;
 }
@@ -85,7 +91,7 @@ export function RemoteConnectWizard({
   const [pairingLoading, setPairingLoading] = useState(false);
   const [pairingLabel, setPairingLabel] = useState("");
   // 沙盒模式：③ 创建出的项目信息
-  const [sandboxDone, setSandboxDone] = useState<{ name: string } | null>(null);
+  const [sandboxDone, setSandboxDone] = useState<CreatedProject | null>(null);
   // SSH 模式：② 的连接配置 + 远程工作目录（④）
   const [sshForm, setSshForm] = useState({
     host: "",
@@ -214,9 +220,10 @@ export function RemoteConnectWizard({
           ...(input.existingContainerId != null ? { containerId: input.existingContainerId } : {}),
         }),
       });
-      const d = (await res.json().catch(() => ({}))) as { error?: string };
+      const d = (await res.json().catch(() => ({}))) as { project?: CreatedProject; error?: string };
       if (!res.ok) throw new Error(d?.error ?? `HTTP ${res.status}`);
-      setSandboxDone({ name: input.name });
+      if (!d.project) throw new Error(t("projects.createFailed"));
+      setSandboxDone(d.project);
       setStep(4);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -225,7 +232,7 @@ export function RemoteConnectWizard({
       setBusy(false);
       setSandboxBusy(false);
     }
-  }, []);
+  }, [t]);
 
   // SSH：④ 完成 → 创建项目（写入 ssh.json 凭据）
   const finishSsh = useCallback(async () => {
@@ -251,9 +258,10 @@ export function RemoteConnectWizard({
           },
         }),
       });
-      const d = (await res.json().catch(() => ({}))) as { error?: string };
+      const d = (await res.json().catch(() => ({}))) as { project?: CreatedProject; error?: string };
       if (!res.ok) throw new Error(d?.error ?? `HTTP ${res.status}`);
-      onCreated("ssh", sshName.trim());
+      if (!d.project) throw new Error(t("projects.createFailed"));
+      onCreated(d.project);
       onClose();
     } catch (e) {
       // Stay on ④: a bad remote workdir is fixed here (credentials were
@@ -262,7 +270,7 @@ export function RemoteConnectWizard({
     } finally {
       setBusy(false);
     }
-  }, [sshName, localDir, sshForm, presetBundle, onCreated, onClose]);
+  }, [sshName, localDir, sshForm, presetBundle, onCreated, onClose, t]);
   // 测试 SSH 连接（不落盘；成功返回远端 whoami）。② 的手动按钮与 ③ 的
   // 自动测试共用同一份请求体。
   const sshTestPayload = useCallback(
@@ -415,16 +423,17 @@ export function RemoteConnectWizard({
           ...(localMachineId ? { machineId: localMachineId } : {}),
         }),
       });
-      const d = (await res.json().catch(() => ({}))) as { error?: string };
+      const d = (await res.json().catch(() => ({}))) as { project?: CreatedProject; error?: string };
       if (!res.ok) throw new Error(d?.error ?? `HTTP ${res.status}`);
-      onCreated("local-machine", localName.trim());
+      if (!d.project) throw new Error(t("projects.createFailed"));
+      onCreated(d.project);
       onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }
-  }, [localName, localDir, localMachineId, presetBundle, onCreated, onClose]);
+  }, [localName, localDir, localMachineId, presetBundle, onCreated, onClose, t]);
 
   // ③（本地）当前选中的机器与可推进判定：必须选中一台在线且版本兼容
   // 的机器才能进入 ④（④ 的目录浏览走该机器的 relay 通道）。
@@ -1204,7 +1213,7 @@ export function RemoteConnectWizard({
                 <button
                   className="primary"
                   onClick={() => {
-                    onCreated("sandbox", sandboxDone?.name ?? "");
+                    if (sandboxDone) onCreated(sandboxDone);
                     onClose();
                   }}
                 >

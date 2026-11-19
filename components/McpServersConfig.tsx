@@ -56,9 +56,6 @@ const textareaStyle: React.CSSProperties = {
   lineHeight: 1.5,
 };
 
-function shortenPath(p: string): string {
-  return p.replace(/^\/(?:Users|home)\/[^/]+/, "~");
-}
 function parseLines(raw: string): string[] {
   return raw
     .split(/\r?\n/)
@@ -383,6 +380,14 @@ export function McpServersConfig({
     void loadDoc().then(() => void probeAll());
   }, [loadDoc, probeAll]);
 
+  useEffect(() => {
+    const refresh = () => {
+      void loadDoc().then(() => void probeAll());
+    };
+    window.addEventListener("pi-web:config-changed", refresh);
+    return () => window.removeEventListener("pi-web:config-changed", refresh);
+  }, [loadDoc, probeAll]);
+
   // 保存/启停后 reload 会把服务端有效状态带回来：同步当前表单的开关状态
   // （不覆盖其它正在编辑的字段）。尤其是管理员改“全局禁用”保存后。
   useEffect(() => {
@@ -675,7 +680,7 @@ export function McpServersConfig({
     <ConfigPanelShell
       embedded={embedded}
       title={t("mcp.mcpServers")}
-      subtitle={shortenPath(cwd)}
+      subtitle={t("settings.projectScope")}
       closeLabel={t("i18n.close")}
       onClose={onClose}
     >

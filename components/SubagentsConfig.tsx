@@ -43,10 +43,6 @@ const inputStyle: React.CSSProperties = {
   outline: "none",
 };
 
-function shortenPath(p: string): string {
-  return p.replace(/^\/(?:Users|home)\/[^/]+/, "~");
-}
-
 interface ToolDiscovery {
   builtin: string[];
   mcp: McpServerTools[];
@@ -259,6 +255,12 @@ export function SubagentsConfig({
   }, [loadList]);
 
   useEffect(() => {
+    const refresh = () => void loadList();
+    window.addEventListener("pi-web:config-changed", refresh);
+    return () => window.removeEventListener("pi-web:config-changed", refresh);
+  }, [loadList]);
+
+  useEffect(() => {
     fetch(`/api/preferences?cwd=${encodeURIComponent(cwd)}`)
       .then((r) => r.json())
       .then((p: WebPreferences) => setPrefs(p))
@@ -426,7 +428,7 @@ export function SubagentsConfig({
     <ConfigPanelShell
       embedded={embedded}
       title={t("common.agents")}
-      subtitle={shortenPath(cwd)}
+      subtitle={t("settings.projectScope")}
       closeLabel={t("i18n.close")}
       onClose={onClose}
     >

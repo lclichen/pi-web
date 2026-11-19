@@ -318,7 +318,7 @@ export function DebugPanel({
                                 session.sessionId === sessionId ? "var(--bg-selected, rgba(127,127,127,0.12))" : undefined,
                             }}
                           >
-                            <td style={{ padding: "4px 6px", fontFamily: "var(--font-mono)" }} title={session.cwd}>
+                            <td style={{ padding: "4px 6px", fontFamily: "var(--font-mono)" }}>
                               {shortId(session.sessionId)}
                             </td>
                             <td style={{ padding: "4px 6px" }}>#{session.ownerId}</td>
@@ -346,11 +346,14 @@ export function DebugPanel({
                 <>
                   <h3 style={{ fontSize: 12, margin: "16px 0 6px" }}>{t("debug.startingCwds")}</h3>
                   <ul style={{ margin: 0, paddingLeft: 18, fontSize: 11, color: "var(--text-dim)" }}>
-                    {snapshot.startingCwds.map((row) => (
-                      <li key={row.cwd} style={{ fontFamily: "var(--font-mono)" }}>
-                        {row.cwd} × {row.count}
-                      </li>
-                    ))}
+                    {snapshot.startingCwds.map((row) => {
+                      const label = row.cwd.split(/[\\/]/).filter(Boolean).pop() ?? row.cwd;
+                      return (
+                        <li key={row.cwd} style={{ fontFamily: "var(--font-mono)" }}>
+                          {label} × {row.count}
+                        </li>
+                      );
+                    })}
                   </ul>
                 </>
               )}

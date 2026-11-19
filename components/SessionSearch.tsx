@@ -79,9 +79,7 @@ export function SessionSearch({
         >
           <span className="block truncate text-xs font-medium text-text">{session.name || session.firstMessage}</span>
           <span className="mt-1 flex min-w-0 gap-2 text-[10px] text-text-dim">
-            <span className="min-w-0 flex-1 truncate" title={session.cwd}>
-              {session.cwd}
-            </span>
+            <span className="min-w-0 flex-1 truncate">{session.mode ?? "host"}</span>
             <span className="shrink-0">{formatRelativeTime(session.modified, locale)}</span>
           </span>
           <span className="mt-1 block text-xs leading-relaxed wrap-anywhere text-text-muted">

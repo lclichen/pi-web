@@ -53,7 +53,14 @@ interface ProjectState {
   dirty: boolean;
 }
 
-const projectState = new Map<string, ProjectState>();
+declare global {
+  // Route modules / worker chunks can hold separate module instances; the
+  // dirty flag and TTL must be shared or a config import would not be seen by
+  // the rpc-manager instance that decides whether to reconcile.
+  var __piProjectionState: Map<string, ProjectState> | undefined;
+}
+
+const projectState = (globalThis.__piProjectionState ??= new Map<string, ProjectState>());
 const inflight = new Map<string, Promise<ProjectionResult>>();
 const hostHashCache = new Map<string, { size: number; mtimeMs: number; sha256: string }>();
 

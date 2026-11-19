@@ -6,6 +6,7 @@ import {
   updateProject,
   writeSandboxConfig,
   projectHome,
+  publicProject,
 } from "@/lib/projects";
 import { requireUserIdentity } from "@/lib/web-session";
 import { isApiRequestAllowed, hasJsonContentType } from "@/lib/request-security";
@@ -46,7 +47,7 @@ export async function GET(req: Request, ctx: RouteCtx) {
     // absent — inherited from the global layer / SDK defaults
   }
   return NextResponse.json({
-    project: r.project,
+    project: publicProject(r.project!),
     ...(r.project!.mode === "sandbox" ? { sandbox: readProjectSandboxConfig(r.project!) } : {}),
     modelsJson: readOptional("models.json"),
     authJson: readOptional("auth.json"),
@@ -158,7 +159,7 @@ export async function PATCH(req: Request, ctx: RouteCtx) {
     ...(typeof body.unpinSessionId === "string" ? { unpinSessionId: body.unpinSessionId } : {}),
   });
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
-  return NextResponse.json({ project: result.project });
+  return NextResponse.json({ project: publicProject(result.project) });
 }
 
 // DELETE /api/projects/:id — record + home directory.

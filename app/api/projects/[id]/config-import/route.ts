@@ -3,6 +3,7 @@ import { ensureProjectHome, getOwnedProject } from "@/lib/projects";
 import { requireUserIdentity } from "@/lib/web-session";
 import { isApiRequestAllowed } from "@/lib/request-security";
 import { importProjectConfigBundle, MAX_IMPORT_BYTES } from "@/lib/project-config-bundle";
+import { markProjectionDirty } from "@/lib/projection/reconcile";
 
 export const dynamic = "force-dynamic";
 
@@ -42,6 +43,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     const stats = await importProjectConfigBundle(home, data, {
       allowStdioMcp: identity.session.user.role === "admin",
     });
+    // Host home changed: push the new .pi config to the workspace on the next
+    // session/prompt instead of waiting for the projection TTL.
+    markProjectionDirty(project.id);
     return NextResponse.json({ ok: true, ...stats });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 400 });

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { duplicateProject, getOwnedProject } from "@/lib/projects";
+import { duplicateProject, getOwnedProject, publicProject } from "@/lib/projects";
 import { requireUserIdentity } from "@/lib/web-session";
 import { isApiRequestAllowed, hasJsonContentType } from "@/lib/request-security";
 
@@ -29,5 +29,5 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const fallback = `${project.name} 副本`;
   const result = await duplicateProject(id, typeof body.name === "string" && body.name.trim() ? body.name : fallback);
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
-  return NextResponse.json({ project: result.project }, { status: 201 });
+  return NextResponse.json({ project: publicProject(result.project) }, { status: 201 });
 }

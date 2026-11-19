@@ -22,6 +22,7 @@ import { workspaceKeyOf } from "@/lib/workspace-memory";
 import { hostDirLabel } from "@/lib/host-groups";
 import { applyFaviconBadge } from "@/lib/favicon-badge";
 import { badgeCounts, isOwnSession, unreadStorageKey } from "@/lib/session-badge";
+import { projectPinKey } from "@/lib/sidebar-state-shared";
 import { formatRelativeTime } from "@/lib/i18n/format";
 import { useI18n } from "@/hooks/useI18n";
 import { useResizablePanel } from "@/hooks/useResizablePanel";
@@ -1371,7 +1372,22 @@ export function SessionSidebar({
             setShowProjectWizard(false);
             setWizardInitialMethod(null);
           }}
-          onCreated={() => onProjectsChanged?.()}
+          onCreated={(project) => {
+            onProjectsChanged?.();
+            // New projects have no sessions yet and sort to the bottom; pin the
+            // project so it stays visible, then enter a fresh session in it.
+            void fetch("/api/sidebar-state", {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ projectKey: projectPinKey(project.id), pinned: true }),
+            })
+              .catch(() => {})
+              .finally(() => {
+                window.dispatchEvent(new CustomEvent("pi-web:sidebar-pins-changed"));
+              });
+            const tempId = typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now()}`;
+            onNewSession?.(tempId, "/", project.mode, project.id, project.name);
+          }}
           isAdmin={isAdminUser}
           onOpenServerDirectory={() => {
             setRegisterHostDirOnPick(true);
@@ -1633,7 +1649,6 @@ export function SessionSidebar({
           <div ref={dropdownRef} style={{ position: "relative" }}>
             <button
               onClick={() => setDropdownOpen((v) => !v)}
-              title={selectedProject?.root ?? selectedCwd ?? ""}
               style={{
                 width: "100%",
                 display: "flex",
@@ -1724,12 +1739,11 @@ export function SessionSidebar({
                   })()
                 ) : (
                   (() => {
-                    // 项目显示用末级文件夹名（全路径太冗余）；完整路径在 title 里。
+                    // Show the folder name only; never expose the full path.
                     const full = displayCwd(selectedProject?.root ?? selectedCwd, homeDir);
-                    const base = full.split(/[\\/]/).filter(Boolean).pop() ?? full;
+                    const label = full.split(/[\\/]/).filter(Boolean).pop() ?? full;
                     return (
                       <span
-                        title={full}
                         style={{
                           flex: 1,
                           overflow: "hidden",
@@ -1740,7 +1754,7 @@ export function SessionSidebar({
                           color: "var(--text)",
                         }}
                       >
-                        {base}
+                        {label}
                       </span>
                     );
                   })()
@@ -1848,7 +1862,6 @@ export function SessionSidebar({
                       textOverflow: "ellipsis",
                       whiteSpace: "nowrap",
                     }}
-                    title={project.root}
                   >
                     {project.key === selectedProject?.key && (
                       <svg
@@ -3334,7 +3347,6 @@ function SessionItem({
               )}
               {session.isWorktree && session.branch && (
                 <span
-                  title={`Worktree: ${session.cwd}`}
                   style={{
                     display: "flex",
                     alignItems: "center",

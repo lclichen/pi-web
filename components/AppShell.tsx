@@ -1375,6 +1375,7 @@ export function AppShell() {
       setNewSessionDraftId(sessionId);
       setSelectedSession(null);
       setNewSessionCwd(cwd);
+      setNewSessionProjectLabel(projectLabel ?? null);
       if (mode) setNewSessionMode(mode);
       // 未传 mode 的入口（键盘快捷键等）回默认 host——不清理会残留上次草稿的
       // quick，普通新会话会被当快速会话创建。
@@ -1793,6 +1794,9 @@ export function AppShell() {
       setProjectTrustDialogOpen(false);
       setModelsRefreshKey((key) => key + 1);
       setSessionKey((key) => key + 1);
+      // Project resources (skills/agents/MCP/plugins) become loadable now.
+      // Refresh mounted settings panels without a full page reload.
+      window.dispatchEvent(new CustomEvent("pi-web:config-changed"));
     } catch (error) {
       setProjectTrustError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -4643,7 +4647,6 @@ export function AppShell() {
       )}
       {projectTrustDialogOpen && projectTrustCwd && (
         <ProjectTrustDialog
-          cwd={projectTrustCwd}
           busy={projectTrustBusy}
           error={projectTrustError}
           onCancel={() => {

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createProject, deleteProject, listProjects, updateProject, allProjects } from "@/lib/projects";
+import { createProject, deleteProject, listProjects, updateProject, allProjects, publicProject } from "@/lib/projects";
 import { platformGet } from "@/lib/platform/client";
 import { requireUserIdentity } from "@/lib/web-session";
 import { isApiRequestAllowed, hasJsonContentType } from "@/lib/request-security";
@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 export async function GET(req: Request) {
   const identity = requireUserIdentity(req);
   if (!identity.ok) return NextResponse.json({ error: "登录已失效" }, { status: identity.status });
-  return NextResponse.json({ projects: listProjects(identity.session.user.id) });
+  return NextResponse.json({ projects: listProjects(identity.session.user.id).map(publicProject) });
 }
 
 // POST /api/projects { name, mode, containerId?, seedFromProjectId? }
@@ -133,7 +133,7 @@ export async function POST(req: Request) {
       if (taken) throw new Error(`该容器已绑定到项目「${taken.name}」`);
       const updated = updateProject(result.project.id, { containerId: body.containerId });
       if (!updated.ok) throw new Error(updated.error);
-      return NextResponse.json({ project: updated.project }, { status: 201 });
+      return NextResponse.json({ project: publicProject(updated.project) }, { status: 201 });
     } catch (error) {
       deleteProject(result.project.id);
       return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 400 });
@@ -165,12 +165,12 @@ export async function POST(req: Request) {
       });
       const updated = updateProject(result.project.id, { containerId: provisioned.containerId });
       if (!updated.ok) throw new Error(updated.error);
-      return NextResponse.json({ project: updated.project }, { status: 201 });
+      return NextResponse.json({ project: publicProject(updated.project) }, { status: 201 });
     } catch (error) {
       deleteProject(result.project.id);
       return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 400 });
     }
   }
 
-  return NextResponse.json({ project: result.project }, { status: 201 });
+  return NextResponse.json({ project: publicProject(result.project) }, { status: 201 });
 }

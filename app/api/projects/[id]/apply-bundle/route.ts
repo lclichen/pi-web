@@ -3,6 +3,7 @@ import { ensureProjectHome, getOwnedProject } from "@/lib/projects";
 import { requireUserIdentity } from "@/lib/web-session";
 import { isApiRequestAllowed, hasJsonContentType } from "@/lib/request-security";
 import { applyBundleToDirectory, bundleExists, isValidBundleName } from "@/lib/config-bundles-store";
+import { markProjectionDirty } from "@/lib/projection/reconcile";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +33,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   try {
     const home = ensureProjectHome(project);
     await applyBundleToDirectory(name, home);
+    markProjectionDirty(project.id);
     return NextResponse.json({ ok: true, name });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 400 });

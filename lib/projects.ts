@@ -127,6 +127,16 @@ export function listProjects(ownerId: number): ProjectRecord[] {
     .sort((a, b) => a.createdAt - b.createdAt);
 }
 
+/**
+ * Project record for API responses: omit the real workspace path. The client
+ * only needs identity/mode/name; workdir is resolved server-side for tools.
+ */
+export function publicProject(project: ProjectRecord): Omit<ProjectRecord, "workdir"> {
+  const copy: ProjectRecord = { ...project };
+  delete copy.workdir;
+  return copy;
+}
+
 /** All projects across users (container-binding lookups; callers must not
  *  leak cross-user records to clients). */
 export function allProjects(): ProjectRecord[] {
@@ -230,15 +240,11 @@ export async function createProject(input: {
     // per session (agent/new, restore, subagent-bridge) — a surviving link
     // would double-register the container tools.
     removeLegacySandboxExtensionLink(home);
-    // Auto-trust: sandbox project homes are pi-web-managed (not user repos),
-    // so the SDK's project-trust gate must not block the extension.
-    trustProject(home, getAgentDir());
   }
   if (project.mode === "ssh") {
     if (!input.ssh) return { ok: false, error: "SSH 项目需要连接配置（host/username）" };
     // SSH 凭据写入项目 home（0600），会话创建时按项目读取；不进配置包。
     writeSshConfig(home, input.ssh);
-    trustProject(home, getAgentDir());
   }
 
   // 预置配置模板：在 seed 之前应用（seed 的整包复制应优先级更高）。
@@ -283,6 +289,13 @@ export async function createProject(input: {
       }
     }
   }
+
+  // All project homes are pi-web-managed (sandbox/local-machine/ssh sessions
+  // run with cwd=home; the user's real workdir is only a tool target). Once the
+  // preset bundle / seed wrote its .pi resources, record trust so the first
+  // session loads extensions/skills without a manual prompt. Host directories
+  // remain user-controlled and are not auto-trusted here.
+  trustProject(home, getAgentDir());
 
   store().data.projects[project.id] = project;
   persist();

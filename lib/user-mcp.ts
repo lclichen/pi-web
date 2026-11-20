@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { writePrivateFileAtomicSync } from "./atomic-file";
 import { dataDir } from "./mode-homes";
-import { isUserScopedConfig, userMcpConfigPath } from "./user-config";
+import { isUserScopedConfig, legacyUserMcpConfigPath, userMcpConfigPath } from "./user-config";
 
 interface RawMcpFile {
   mcpServers?: Record<string, unknown>;
@@ -45,7 +45,9 @@ function mergeMcp(base: RawMcpFile, override: RawMcpFile): RawMcpFile {
  */
 export function ensureUserMcpRuntime(userId: number): string | null {
   if (!isUserScopedConfig(userId)) return null;
-  const userFile = userMcpConfigPath(userId);
+  const userFile = existsSync(userMcpConfigPath(userId))
+    ? userMcpConfigPath(userId)
+    : legacyUserMcpConfigPath(userId);
   if (!existsSync(userFile)) return null;
 
   const globalFile = join(getAgentDir(), "mcp.json");

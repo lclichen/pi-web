@@ -98,8 +98,8 @@ test("attributes packages from the raw global settings and the user diff", async
     await writeFile(join(dir, "extensions", "index.ts"), "export default () => {};\n");
   }
   await writeFile(join(agentDir, "settings.json"), JSON.stringify({ packages: [globalPkg] }));
-  const userSettings = join(dataDir, "user-config", "u1", "settings.json");
-  await mkdir(join(dataDir, "user-config", "u1"), { recursive: true });
+  const userSettings = join(dataDir, "state", "users", "u1", "pi", "settings.json");
+  await mkdir(join(dataDir, "state", "users", "u1", "pi"), { recursive: true });
   // UserSettingsStorage serialises the full effective array into the diff
   // when a user installs a package; inherited global entries stay in it.
   await writeFile(userSettings, JSON.stringify({ packages: [globalPkg, userPkg] }));

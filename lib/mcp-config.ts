@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { atomicWriteFile } from "./atomic-write";
 import { deploymentQuickMcpPath } from "./quick-mcp";
-import { isUserScopedConfig, userMcpConfigPath } from "./user-config";
+import { isUserScopedConfig, legacyUserMcpConfigPath, userMcpConfigPath } from "./user-config";
 import type {
   ConfigScope,
   McpConfigDiagnostic,
@@ -113,6 +113,13 @@ export interface ReadMcpOptions {
   userId?: number;
 }
 
+function userMcpCandidates(userId: number): string[] {
+  const primary = userMcpConfigPath(userId);
+  const legacy = legacyUserMcpConfigPath(userId);
+  if (existsSync(primary) || !existsSync(legacy)) return [primary];
+  return [legacy];
+}
+
 export function readMcpConfig(cwd: string, options?: ReadMcpOptions): McpConfigDocument {
   const diagnostics: McpConfigDiagnostic[] = [];
   const servers: McpServerInfo[] = [];
@@ -129,7 +136,7 @@ export function readMcpConfig(cwd: string, options?: ReadMcpOptions): McpConfigD
   ];
   const quickCandidates = [mcpConfigPath(cwd, "quick"), join(agentsDir, "mcp-quick.json")];
   const userCandidates = isUserScopedConfig(options?.userId)
-    ? [userMcpConfigPath(options!.userId as number)]
+    ? userMcpCandidates(options!.userId as number)
     : [];
 
   const activeScopes =
@@ -353,8 +360,13 @@ export function setMcpServerDisabled(
   persist(path, cfg);
 }
 
-export function writeMcpSettings(cwd: string, scope: ConfigScope, settings: McpSettings): void {
-  const path = mcpConfigPath(cwd, scope);
+export function writeMcpSettings(
+  cwd: string,
+  scope: ConfigScope,
+  settings: McpSettings,
+  userId?: number,
+): void {
+  const path = mcpConfigPath(cwd, scope, userId);
   const cfg = loadWritable(path);
   // Preserve adapter settings this UI does not know (new versions add
   // fields such as allowInstall / deferWithMissingMetadata / semanticSearch).

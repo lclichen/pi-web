@@ -4,7 +4,7 @@ import lockfile from "proper-lockfile";
 import { getAgentDir, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { atomicWriteFile } from "./atomic-write";
 import { writePrivateFileAtomicSync } from "./atomic-file";
-import { isUserScopedConfig, userSettingsDiffPath } from "./user-config";
+import { isUserScopedConfig, legacyUserSettingsDiffPath, userSettingsDiffPath } from "./user-config";
 
 type Scope = "global" | "project";
 type LockFn = (current: string | undefined) => string | undefined;
@@ -21,6 +21,19 @@ function readJson(path: string): Record<string, unknown> {
   } catch {
     return {};
   }
+}
+
+/** Prefer the new state path; fall back to the read-only legacy diff. */
+function readUserDiff(primary: string, legacy: string): Record<string, unknown> {
+  return existsSync(primary) ? readJson(primary) : readJson(legacy);
+}
+
+function userDiffLockPath(primary: string, legacy: string): string {
+  return existsSync(primary) || !existsSync(legacy) ? primary : legacy;
+}
+
+function ensureParent(path: string): void {
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
 }
 
 function deepMerge(
@@ -97,11 +110,13 @@ function withLock<T>(path: string, fn: () => T): T {
 export class UserSettingsStorage {
   private readonly globalPath: string;
   private readonly userPath: string;
+  private readonly legacyUserPath: string;
   private readonly projectPath: string;
 
   constructor(cwd: string, userId: number, globalAgentDir = getAgentDir()) {
     this.globalPath = join(globalAgentDir, "settings.json");
     this.userPath = userSettingsDiffPath(userId);
+    this.legacyUserPath = legacyUserSettingsDiffPath(userId);
     this.projectPath = join(cwd, ".pi", "settings.json");
   }
 
@@ -129,7 +144,7 @@ export class UserSettingsStorage {
 
     const writeDiff = () => {
       const global = readJson(this.globalPath);
-      const user = readJson(this.userPath);
+      const user = readUserDiff(this.userPath, this.legacyUserPath);
       const merged = deepMerge(global, user);
       const nextRaw = fn(JSON.stringify(merged));
       if (nextRaw === undefined) return;
@@ -141,6 +156,7 @@ export class UserSettingsStorage {
         return;
       }
       const diff = diffFrom(global, next);
+      ensureParent(this.userPath);
       writePrivateFileAtomicSync(this.userPath, `${JSON.stringify(diff ?? {}, null, 2)}\n`);
     };
 
@@ -148,14 +164,17 @@ export class UserSettingsStorage {
     // every session startup. Writes create it under the lock.
     if (!existsSync(this.userPath)) {
       const global = readJson(this.globalPath);
-      const nextRaw = fn(JSON.stringify(global));
+      const current = readUserDiff(this.userPath, this.legacyUserPath);
+      const nextRaw = fn(JSON.stringify(deepMerge(global, current)));
       if (nextRaw === undefined) return;
-      ensureLockTarget(this.userPath);
-      withLock(this.userPath, () => {
+      const lockPath = userDiffLockPath(this.userPath, this.legacyUserPath);
+      ensureLockTarget(lockPath);
+      withLock(lockPath, () => {
         const globalAgain = readJson(this.globalPath);
         const parsed: unknown = JSON.parse(nextRaw);
         const next = isRecord(parsed) ? parsed : {};
         const diff = diffFrom(globalAgain, next);
+        ensureParent(this.userPath);
         writePrivateFileAtomicSync(this.userPath, `${JSON.stringify(diff ?? {}, null, 2)}\n`);
       });
       return;
@@ -172,8 +191,12 @@ export function updateUserAgentSettings(
 ): void {
   if (!isUserScopedConfig(userId)) return;
   const path = userSettingsDiffPath(userId);
-  withLock(path, () => {
-    const next = deepMerge(readJson(path), patch);
+  const legacy = legacyUserSettingsDiffPath(userId);
+  const lockPath = userDiffLockPath(path, legacy);
+  ensureLockTarget(lockPath);
+  withLock(lockPath, () => {
+    const next = deepMerge(readUserDiff(path, legacy), patch);
+    ensureParent(path);
     writePrivateFileAtomicSync(path, `${JSON.stringify(next, null, 2)}\n`);
   });
 }

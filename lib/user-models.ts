@@ -10,10 +10,10 @@
  *     （projectCredentialDir），其次是用户层，最后回全局。
  *
  * 存储：
- *   <dataDir>/user-models/u<id>/models.json   用户模型目录（只存与全局不同的
+ *   <dataDir>/state/users/u<id>/pi/models.json  用户模型目录（只存与全局不同的
  *                                             provider；等于全局的条目会被省略，
  *                                             避免快照化全局配置）
- *   <dataDir>/user-models/u<id>/auth.json     用户 provider 凭据（0600）
+ *   <dataDir>/state/users/u<id>/pi/auth.json    用户 provider 凭据（0600）
  *   <dataDir>/user-runtime/u<id>/{models,auth}.json
  *                                             合并后的运行时副本（0600，派生文件；
  *                                             每次会话启动/配置变更时重算）
@@ -25,6 +25,7 @@ import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { dataDir } from "./mode-homes";
 import { writePrivateFileAtomicSync } from "./atomic-file";
 import { readModelsConfig } from "./models-config-store";
+import { legacyUserConfigDir, userPiDir } from "./user-config";
 
 export interface ModelCredentialPaths {
   modelsPath: string;
@@ -70,7 +71,12 @@ export function globalAuthPath(): string {
 }
 
 export function userModelDir(userId: number): string {
-  return join(dataDir(), "user-models", `u${userId}`);
+  return userPiDir(userId);
+}
+
+/** Legacy source directory, read-only for one release. */
+export function legacyUserModelDir(userId: number): string {
+  return legacyUserConfigDir(userId);
 }
 
 export function userModelsPath(userId: number): string {
@@ -81,21 +87,34 @@ export function userAuthPath(userId: number): string {
   return join(userModelDir(userId), "auth.json");
 }
 
+function legacyUserModelsPath(userId: number): string {
+  return join(legacyUserModelDir(userId), "models.json");
+}
+
+function legacyUserAuthPath(userId: number): string {
+  return join(legacyUserModelDir(userId), "auth.json");
+}
+
 /** 凭据写入位置：管理员=全局；普通用户=自己的 auth.json。 */
 export function credentialAuthPath(userId: number, isAdmin: boolean): string {
   return isAdmin ? globalAuthPath() : userAuthPath(userId);
 }
 
 export function readUserModels(userId: number): Record<string, unknown> | null {
-  return readJson(userModelsPath(userId));
+  return readJson(userModelsPath(userId)) ?? readJson(legacyUserModelsPath(userId));
 }
 
 export function readUserAuth(userId: number): Record<string, unknown> | null {
-  return readJson(userAuthPath(userId));
+  return readJson(userAuthPath(userId)) ?? readJson(legacyUserAuthPath(userId));
 }
 
 export function hasUserModelOverride(userId: number): boolean {
-  return existsSync(userModelsPath(userId)) || existsSync(userAuthPath(userId));
+  return (
+    existsSync(userModelsPath(userId)) ||
+    existsSync(userAuthPath(userId)) ||
+    existsSync(legacyUserModelsPath(userId)) ||
+    existsSync(legacyUserAuthPath(userId))
+  );
 }
 
 /** 合并全局 + 用户（provider 级浅合并：用户没写的字段保留全局值，如 apiKey）。 */
@@ -162,6 +181,8 @@ export function writeUserModels(userId: number, payload: Record<string, unknown>
 export function clearUserModelConfig(userId: number): void {
   rmSync(userModelsPath(userId), { force: true });
   rmSync(userAuthPath(userId), { force: true });
+  rmSync(legacyUserModelsPath(userId), { force: true });
+  rmSync(legacyUserAuthPath(userId), { force: true });
   rmSync(join(dataDir(), "user-runtime", `u${userId}`), { recursive: true, force: true });
 }
 
@@ -170,8 +191,8 @@ export function clearUserModelConfig(userId: number): void {
  * null（调用方继续使用 SDK 默认的全局 agentDir，避免无谓的 ModelRuntime）。
  */
 export function ensureUserModelRuntime(userId: number): ModelCredentialPaths | null {
-  const hasModels = existsSync(userModelsPath(userId));
-  const hasAuth = existsSync(userAuthPath(userId));
+  const hasModels = existsSync(userModelsPath(userId)) || existsSync(legacyUserModelsPath(userId));
+  const hasAuth = existsSync(userAuthPath(userId)) || existsSync(legacyUserAuthPath(userId));
   if (!hasModels && !hasAuth) return null;
   const runtimeDir = join(dataDir(), "user-runtime", `u${userId}`);
   // 用户没覆盖的那一层直接用全局文件——避免把全局密钥复制一份到用户目录。

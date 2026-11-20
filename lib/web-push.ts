@@ -7,7 +7,7 @@ import { enLocale } from "./i18n/messages/en";
 import { zhCNLocale } from "./i18n/messages/zh-CN";
 import { dataDir } from "./mode-homes";
 import { getAgentDir } from "./session-reader";
-import { userPushPath } from "./user-config";
+import { legacyUserPushPath, userPushPath } from "./user-config";
 
 export interface PushSubscriptionRecord {
   endpoint: string;
@@ -50,7 +50,7 @@ function stateFilePath(): string {
 }
 
 function loadUserSubscriptionsFromDisk(userId: number): PushSubscriptionRecord[] {
-  const path = userPushPath(userId);
+  const path = existsSync(userPushPath(userId)) ? userPushPath(userId) : legacyUserPushPath(userId);
   if (!existsSync(path)) return [];
   try {
     const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
@@ -97,17 +97,21 @@ function getDefaultEnvironment(): WebPushEnvironment {
     loadUserSubscriptions: loadUserSubscriptionsFromDisk,
     saveUserSubscriptions: saveUserSubscriptionsToDisk,
     removeEndpointFromOtherUsers(endpoint, keepUserId) {
-      let entries;
-      try {
-        entries = readdirSync(join(dataDir(), "user-config"), { withFileTypes: true });
-      } catch {
-        return;
+      const userIds = new Set<number>();
+      for (const root of [join(dataDir(), "state", "users"), join(dataDir(), "user-config")]) {
+        let entries;
+        try {
+          entries = readdirSync(root, { withFileTypes: true });
+        } catch {
+          continue;
+        }
+        for (const entry of entries) {
+          if (!entry.isDirectory()) continue;
+          const match = /^u(\d+)$/.exec(entry.name);
+          if (match) userIds.add(Number(match[1]));
+        }
       }
-      for (const entry of entries) {
-        if (!entry.isDirectory()) continue;
-        const match = /^u(\d+)$/.exec(entry.name);
-        if (!match) continue;
-        const userId = Number(match[1]);
+      for (const userId of userIds) {
         if (userId === keepUserId) continue;
         const subscriptions = loadUserSubscriptionsFromDisk(userId);
         const next = subscriptions.filter((subscription) => subscription.endpoint !== endpoint);

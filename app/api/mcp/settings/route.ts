@@ -20,13 +20,14 @@ export async function PUT(req: Request) {
     }
     const guard = guardMcpRequest(req, body, { mutating: true });
     if (!guard.ok) return guard.response;
-    const scope: "global" | "project" = body.scope === "global" ? "global" : "project";
+    const scope: "global" | "project" | "user" =
+      body.scope === "global" ? "global" : body.scope === "user" ? "user" : "project";
     try {
       // 项目 scope 写 <project home>/.pi/mcp.json 的 settings 块 → 共享项目
-      // 写锁（ADR-0004 §4.2）；global 写数据目录，不加锁。
+      // 写锁（ADR-0004 §4.2）；global/user 写数据目录，不加项目锁。
       const settings = body.settings;
       await withProjectConfigWriteLockFor(scope === "project" ? guard.projectId : undefined, async () => {
-        writeMcpSettings(guard.cwd, scope, settings);
+        writeMcpSettings(guard.cwd, scope, settings, scope === "user" ? guard.userId : undefined);
       });
       return NextResponse.json({ success: true });
     } catch (e) {

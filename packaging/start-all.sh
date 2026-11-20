@@ -374,7 +374,10 @@ EOF
     # 只读安装（AppImage/squashfs）轮换会失败，脚本会打印明确警告。
     "$NODE_BIN" ./bin/rotate-preview-secrets.js .next --strict \
       || warn "preview-mode secret 轮换失败（只读安装？），本实例仍可能被 x-prerender-revalidate 绕过"
-    setsid nohup "$NODE_BIN" ./node_modules/next/dist/bin/next start -H 0.0.0.0 -p "$WEB_PORT" \
+    SWC_FILTER="$PKG/app/bin/next-silence-swc-warnings.cjs"
+    NEXT_REQUIRE=()
+    [ -f "$SWC_FILTER" ] && NEXT_REQUIRE=(--require "$SWC_FILTER")
+    setsid nohup "$NODE_BIN" "${NEXT_REQUIRE[@]}" ./node_modules/next/dist/bin/next start -H 0.0.0.0 -p "$WEB_PORT" \
       > "$LOG_DIR/web.log" 2>&1 < /dev/null &
     echo $! > "$RUN_DIR/web.pid"
   )

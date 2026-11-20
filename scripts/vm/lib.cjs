@@ -95,7 +95,10 @@ if [ -n "$PID" ]; then
 fi
 cd ${REMOTE_APP}
 node ./bin/rotate-preview-secrets.js .next --strict || true
-setsid nohup node ./node_modules/next/dist/bin/next start -H 0.0.0.0 -p ${PORT} > ${REMOTE_LOG} 2>&1 < /dev/null &
+SWC_FILTER=${REMOTE_APP}/bin/next-silence-swc-warnings.cjs
+REQ=""
+[ -f "$SWC_FILTER" ] && REQ="--require $SWC_FILTER"
+setsid nohup node $REQ ./node_modules/next/dist/bin/next start -H 0.0.0.0 -p ${PORT} > ${REMOTE_LOG} 2>&1 < /dev/null &
 sleep 5
 ss -tlnp | grep :${PORT} | head -1
 curl -s -o /dev/null -w "home: %{http_code}\\n" -m 10 http://127.0.0.1:${PORT}/

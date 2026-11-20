@@ -5,6 +5,10 @@
 >
 > **更新（2026-11-19）**：下表是迁移前的路径盘点；Phase 1 的统一 `state/` 布局
 > 已落地，核心 store 的新路径/信封/迁移策略见第 3 节。
+>
+> **更新（2026-11-20）**：User JSON 配置源（pi settings/MCP/models/auth/push）
+> 已迁入 `state/users/u<id>`；会话/项目形态与删除级联见
+> `docs/dev/session-project-model.md`。
 
 ## 1. 当前状态文件
 

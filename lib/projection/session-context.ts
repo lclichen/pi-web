@@ -15,7 +15,10 @@ export function projectionSessionFor(
   user: { id: number; role: string },
   apiKey: string,
 ): ProjectionSessionConfig {
-  const descriptor = workspaceDescriptor(project);
+  if (project.mode === "host" || project.mode === "quick") {
+    throw new Error("Host/Quick projects do not use workspace projection");
+  }
+  const descriptor = { ...workspaceDescriptor(project), mode: project.mode };
   return {
     projectId: project.id,
     hostHome: projectHome(project),
@@ -36,6 +39,6 @@ export function projectionSessionFor(
  */
 export function projectionWorkspaceRecheck(projectId: string): ProjectionWorkspace | null {
   const project = getProject(projectId);
-  if (!project) return null;
-  return projectionWorkspaceFromDescriptor(workspaceDescriptor(project));
+  if (!project || project.mode === "host" || project.mode === "quick") return null;
+  return projectionWorkspaceFromDescriptor({ ...workspaceDescriptor(project), mode: project.mode });
 }

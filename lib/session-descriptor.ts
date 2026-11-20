@@ -82,16 +82,20 @@ export function descriptorForProject(
   workspaceRoot?: string,
 ): SessionDescriptor {
   const projectMode = project.mode as SessionMode;
-  const execution = executionForMode(projectMode);
-  const workspace: WorkspaceKind = projectMode === "host" ? "external-dir" : "managed-home";
+  const profile = projectMode === "quick" ? "quick" : undefined;
+  const execution = projectMode === "quick" ? "local" : executionForMode(projectMode);
+  const workspace: WorkspaceKind =
+    profile === "quick" ? "scratch" : projectMode === "host" ? "external-dir" : "managed-home";
+  const root = workspaceRoot ?? project.workdir ?? project.workspaceRoot;
   return {
     management: "webui",
     projectId: project.id,
     execution,
     workspace,
+    ...(profile ? { profile } : {}),
     ownerId,
     ...(cwd ? { cwd } : {}),
-    ...(workspaceRoot ?? project.workdir ? { workspaceRoot: workspaceRoot ?? project.workdir } : {}),
+    ...(root ? { workspaceRoot: root } : {}),
   };
 }
 
@@ -143,10 +147,10 @@ export function inferDescriptorFromMeta(meta: SessionMeta): SessionDescriptor | 
   const workspace: WorkspaceKind =
     profile === "quick"
       ? "scratch"
-      : meta.projectId
-        ? "managed-home"
-        : mode === "host"
-          ? "external-dir"
+      : mode === "host"
+        ? "external-dir"
+        : meta.projectId
+          ? "managed-home"
           : "managed-home";
   return {
     management: meta.projectId ? "webui" : mode === "host" ? "cli" : "webui",

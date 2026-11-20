@@ -15,6 +15,7 @@ import {
 import { requireUserIdentity } from "@/lib/web-session";
 import { spaceForRequest } from "@/lib/session-spaces";
 import { getSessionMetas, inferLegacyModeFromCwd } from "@/lib/session-metas";
+import { migrateQuickSessionMetas } from "@/lib/quick-project-migration";
 import { getProject } from "@/lib/projects";
 import { getAgentForUser } from "@/lib/relay/registry";
 import { filterSessionsForEmbedScope } from "@/lib/embed-scope";
@@ -39,7 +40,7 @@ export async function GET(req: Request) {
     // listAllSessions(space, { force }) — dev shards the catalogue per user.
     // Runtime (not-yet-persisted) sessions are merged in per upstream, but
     // filtered to the caller's own live sessions (admins see all).
-    const [persistedSessions, runtimeSessions, metas] = await Promise.all([
+    const [persistedSessions, runtimeSessions, initialMetas] = await Promise.all([
       listAllSessions(space, { force }),
       Promise.resolve(getRpcSessionInfos()).then((infos) =>
         attachSessionProjectInfo(
@@ -51,6 +52,10 @@ export async function GET(req: Request) {
       ),
       Promise.resolve(getSessionMetas()),
     ]);
+    // One-time lazy migration: existing Quick sessions acquire the stable
+    // (owner, template) project id used by the Quick Project model.
+    let metas = initialMetas;
+    if (await migrateQuickSessionMetas(user.id)) metas = getSessionMetas();
     const allSessions = mergeSessionLists(persistedSessions, runtimeSessions).map((s) => {
       const meta = metas[s.id];
       // 无 meta 的遗留沙箱会话按 cwd 兜底推断，避免落进 Host 目录组。

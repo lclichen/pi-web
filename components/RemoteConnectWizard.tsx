@@ -26,11 +26,11 @@ import { DirectoryPicker, type DirectorySource } from "./DirectoryPicker";
 interface CreatedProject {
   id: string;
   name: string;
-  mode: "sandbox" | "local-machine" | "ssh";
+  mode: "sandbox" | "local-machine" | "ssh" | "host";
 }
 
 type Step = 1 | 2 | 3 | 4;
-type Method = "sandbox" | "local" | "ssh";
+type Method = "sandbox" | "local" | "ssh" | "host";
 
 interface Props {
   onClose: () => void;
@@ -83,6 +83,11 @@ export function RemoteConnectWizard({
   // 本地模式：② 的项目名 + ④ 的目录
   const [localName, setLocalName] = useState("");
   const [localDir, setLocalDir] = useState("");
+  // Host 项目：管理员选择服务器现有目录，创建受管 ProjectRecord。
+  const [hostName, setHostName] = useState("");
+  const [hostDir, setHostDir] = useState("");
+  const [hostPickerOpen, setHostPickerOpen] = useState(false);
+  const [hostBusy, setHostBusy] = useState(false);
   /** 本地项目绑定的机器（③ 选择；空 = 默认机器）。 */
   const [localMachineId, setLocalMachineId] = useState("");
   // ③ 的「配对新机器」折叠区与配对码（无任何已配对机器时始终展开）。
@@ -435,6 +440,31 @@ export function RemoteConnectWizard({
     }
   }, [localName, localDir, localMachineId, presetBundle, onCreated, onClose, t]);
 
+  const finishHost = useCallback(async () => {
+    setHostBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: hostName.trim(),
+          mode: "host",
+          workdir: hostDir.trim(),
+        }),
+      });
+      const d = (await res.json().catch(() => ({}))) as { project?: CreatedProject; error?: string };
+      if (!res.ok) throw new Error(d?.error ?? `HTTP ${res.status}`);
+      if (!d.project) throw new Error(t("projects.createFailed"));
+      onCreated(d.project);
+      onClose();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setHostBusy(false);
+    }
+  }, [hostName, hostDir, onCreated, onClose, t]);
+
   // ③（本地）当前选中的机器与可推进判定：必须选中一台在线且版本兼容
   // 的机器才能进入 ④（④ 的目录浏览走该机器的 relay 通道）。
   const localMachineList = relayMachines ?? [];
@@ -646,8 +676,8 @@ export function RemoteConnectWizard({
                       disabled={c.disabled}
                       onClick={() => {
                         if (c.id === "server") {
-                          onOpenServerDirectory?.();
-                          onClose();
+                          setMethod("host");
+                          setStep(2);
                         } else {
                           setMethod(c.id as Method);
                           setStep(2);
@@ -711,6 +741,70 @@ export function RemoteConnectWizard({
                   onCancel={() => setStep(1)}
                   onCreate={handleSandboxCreated}
                 />
+              </div>
+            </>
+          )}
+
+          {step === 2 && method === "host" && (
+            <>
+              <h2 style={{ margin: "0 0 4px", fontSize: 17, color: "var(--text)" }}>
+                {t("remote.openServerDirectory")}
+              </h2>
+              <p style={{ margin: "0 0 14px", fontSize: 12.5, color: "var(--text-dim)" }}>
+                {t("remote.hostModeDir")}
+              </p>
+              <div style={{ display: "flex", flexDirection: "column", gap: 12, maxWidth: 460 }}>
+                <label style={fieldStyle}>
+                  {t("projects.projectName")}
+                  <input
+                    value={hostName}
+                    onChange={(event) => setHostName(event.target.value)}
+                    placeholder="my-host-project"
+                    autoFocus
+                    style={inputStyle}
+                  />
+                </label>
+                <label style={fieldStyle}>
+                  {t("remote.localWorkingDirectoryOptional")}
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <input
+                      value={hostDir}
+                      onChange={(event) => setHostDir(event.target.value)}
+                      placeholder="/srv/projects/demo"
+                      style={{ ...inputStyle, flex: 1 }}
+                    />
+                    <button type="button" onClick={() => setHostPickerOpen(true)} style={{ ...secondaryBtn, flexShrink: 0 }}>
+                      {t("remote.browse")}
+                    </button>
+                  </div>
+                </label>
+                {error && <div className="error-banner">{error}</div>}
+                {onOpenServerDirectory && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onOpenServerDirectory();
+                      onClose();
+                    }}
+                    style={{ ...secondaryBtn, alignSelf: "flex-start" }}
+                  >
+                    {t("remote.openServerDirectory")}
+                  </button>
+                )}
+              </div>
+              <div style={{ flex: 1 }} />
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4 }}>
+                <button onClick={() => setStep(1)} style={secondaryBtn}>
+                  {t("remote.back")}
+                </button>
+                <button
+                  className="primary"
+                  disabled={hostBusy || !hostName.trim() || !hostDir.trim()}
+                  onClick={finishHost}
+                  style={{ ...primaryBtn, opacity: hostBusy || !hostName.trim() || !hostDir.trim() ? 0.5 : 1 }}
+                >
+                  {hostBusy ? t("projects.creating") : t("common.finish")}
+                </button>
               </div>
             </>
           )}
@@ -1223,6 +1317,17 @@ export function RemoteConnectWizard({
             </>
           )}
         </section>
+        {hostPickerOpen && (
+          <DirectoryPicker
+            title={t("remote.openServerDirectory")}
+            initialPath={hostDir.trim() || undefined}
+            onCancel={() => setHostPickerOpen(false)}
+            onSelect={(abs) => {
+              setHostDir(abs);
+              setHostPickerOpen(false);
+            }}
+          />
+        )}
         {localPickerOpen && (
           <DirectoryPicker
             title={t("remote.browseLocalDirectories")}

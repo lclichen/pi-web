@@ -27,6 +27,9 @@ export async function POST(req: Request, ctx: RouteCtx) {
   const { user } = identity.session;
   const project = getOwnedProject(id, user.id, user.role === "admin");
   if (!project) return NextResponse.json({ error: "项目不存在" }, { status: 404 });
+  if (project.mode === "host" || project.mode === "quick") {
+    return NextResponse.json({ error: "Host/Quick 项目不支持工作区投影" }, { status: 400 });
+  }
 
   let body: { paths?: unknown; all?: unknown };
   try {
@@ -39,7 +42,7 @@ export async function POST(req: Request, ctx: RouteCtx) {
     ? body.paths.filter((path): path is string => typeof path === "string")
     : [];
 
-  const descriptor = workspaceDescriptor(project);
+  const descriptor = { ...workspaceDescriptor(project), mode: project.mode };
   const previous = readProjectionStatus(project.id, descriptor.key);
   const forcePaths =
     requestedPaths.length > 0

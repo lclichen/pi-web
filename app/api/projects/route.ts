@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { statSync } from "node:fs";
+import { resolve } from "node:path";
 import { createProject, deleteProject, listProjects, updateProject, allProjects, publicProject } from "@/lib/projects";
 import { platformGet } from "@/lib/platform/client";
 import { requireUserIdentity } from "@/lib/web-session";
@@ -59,6 +61,12 @@ export async function POST(req: Request) {
   }
 
   const mode = typeof body.mode === "string" ? body.mode : "";
+  if (mode === "quick") {
+    return NextResponse.json({ error: "Quick 项目由会话创建，不支持手工新建" }, { status: 400 });
+  }
+  if (mode === "host" && identity.session.user.role !== "admin") {
+    return NextResponse.json({ error: "Host 项目仅管理员可创建" }, { status: 403 });
+  }
   const machineId = typeof body.machineId === "string" && body.machineId ? body.machineId : undefined;
   const sshInput =
     body.ssh && typeof body.ssh === "object"
@@ -77,6 +85,19 @@ export async function POST(req: Request) {
   // creating the record so a typo cannot yield a project that silently runs
   // somewhere else (the bug this validation exists to prevent).
   let workdir = typeof body.workdir === "string" ? body.workdir.trim() : "";
+  if (mode === "host") {
+    if (!workdir) return NextResponse.json({ error: "Host 项目需要服务器目录" }, { status: 400 });
+    const root = resolve(workdir);
+    try {
+      if (!statSync(root).isDirectory()) throw new Error("不是目录");
+    } catch (error) {
+      return NextResponse.json(
+        { error: `服务器目录不可用：${error instanceof Error ? error.message : String(error)}` },
+        { status: 400 },
+      );
+    }
+    workdir = root;
+  }
   if (mode === "local-machine" && workdir) {
     try {
       workdir = await validateAgentDirectory(identity.session.user.id, machineId, workdir);
@@ -108,6 +129,7 @@ export async function POST(req: Request) {
     ...(typeof body.imageId === "number" ? { imageId: body.imageId } : {}),
     ...(typeof body.seedFromProjectId === "string" ? { seedFromProjectId: body.seedFromProjectId } : {}),
     ...(workdir ? { workdir } : {}),
+    ...(mode === "host" && workdir ? { workspaceRoot: workdir } : {}),
     ...(machineId ? { machineId } : {}),
     ...(mode === "ssh" && sshInput ? { ssh: sshInput } : {}),
     ...(typeof body.presetBundle === "string" && body.presetBundle ? { presetBundle: body.presetBundle } : {}),

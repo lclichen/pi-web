@@ -55,6 +55,14 @@ function platformBackendIdentity(): string {
 }
 
 export function resolveWorkspaceIdentity(project: ProjectRecord): WorkspaceIdentity {
+  if (project.mode === "host" || project.mode === "quick") {
+    return {
+      mode: project.mode,
+      root: canonicalRoot(project.workspaceRoot),
+      backend: "host:local",
+      key: "",
+    };
+  }
   if (project.mode === "sandbox") {
     const containerId = Number(readProjectSandboxConfig(project).containerId) || Number(project.containerId) || 0;
     return {

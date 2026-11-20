@@ -7,6 +7,7 @@ import {
   listQuickTemplates,
   updateQuickTemplate,
 } from "@/lib/quick-templates";
+import { markQuickTemplateMissing } from "@/lib/projects";
 
 export const dynamic = "force-dynamic";
 
@@ -65,5 +66,6 @@ export async function DELETE(req: Request) {
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
   const result = deleteQuickTemplate(id);
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
+  markQuickTemplateMissing(id);
   return NextResponse.json({ ok: true });
 }

@@ -6,6 +6,7 @@ import {
   readFileSync,
   readdirSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "fs";
 import { join, relative, resolve } from "path";
@@ -14,6 +15,8 @@ import { dataDir } from "./mode-homes";
 import { JsonStore } from "./state/json-store";
 import { legacyDataPath } from "./state/paths";
 import { cleanupProjectSyncPlans } from "./sync-plan-store";
+import { ensureQuickSessionWorkspace, quickTemplateHash } from "./quick-session";
+import type { QuickTemplate } from "./quick-templates";
 import { dropSshClient, writeSshConfig, type SshConfigInput } from "./ssh";
 import { applyBundleToDirectory, bundleExists, isValidBundleName } from "./config-bundles-store";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
@@ -48,10 +51,17 @@ export interface ProjectRecord {
   name: string;
   ownerId: number;
   ownerName?: string;
-  mode: Extract<SessionMode, "sandbox" | "local-machine" | "ssh">;
+  mode: Extract<SessionMode, "sandbox" | "local-machine" | "ssh" | "host" | "quick">;
   createdAt: number;
   /** Session ids pinned inside this project, in pin order. */
   pinnedSessions: string[];
+  /** Host/Quick projects: the actual workspace root (external dir / quick workspace). */
+  workspaceRoot?: string;
+  /** Quick projects: template identity and current workspace version. */
+  templateId?: string;
+  quickDir?: string;
+  templateHash?: string;
+  templateMissing?: boolean;
   /** Sandbox: pinned container id for this project's sessions. */
   containerId?: number;
   /** Sandbox: image chosen at creation (duplicates carry it; environment identity). */
@@ -75,7 +85,7 @@ interface ProjectData {
   projects: Record<string, ProjectRecord>;
 }
 
-const PROJECT_MODES = new Set(["sandbox", "local-machine", "ssh"]);
+const PROJECT_MODES = new Set(["sandbox", "local-machine", "ssh", "host", "quick"]);
 
 const projectsStore = new JsonStore<ProjectData>({
   name: "projects",
@@ -104,9 +114,10 @@ export function listProjects(ownerId: number): ProjectRecord[] {
  * Project record for API responses: omit the real workspace path. The client
  * only needs identity/mode/name; workdir is resolved server-side for tools.
  */
-export function publicProject(project: ProjectRecord): Omit<ProjectRecord, "workdir"> {
+export function publicProject(project: ProjectRecord): Omit<ProjectRecord, "workdir" | "workspaceRoot"> {
   const copy: ProjectRecord = { ...project };
   delete copy.workdir;
+  delete copy.workspaceRoot;
   return copy;
 }
 
@@ -129,6 +140,10 @@ export function getOwnedProject(projectId: string, ownerId: number, isAdmin = fa
 }
 
 export function projectHome(project: ProjectRecord): string {
+  if (project.mode === "host" || project.mode === "quick") {
+    if (!project.workspaceRoot) throw new Error(`项目 ${project.id} 缺少 workspaceRoot`);
+    return project.workspaceRoot;
+  }
   return join(
     dataDir(),
     `${project.mode === "sandbox" ? "sandbox-homes" : "local-homes"}`,
@@ -166,6 +181,12 @@ export function projectIdForHome(homePath: string): string | undefined {
 
 export function ensureProjectHome(project: ProjectRecord): string {
   const home = projectHome(project);
+  if (project.mode === "host" || project.mode === "quick") {
+    if (!existsSync(home) || !statSync(home).isDirectory()) {
+      throw new Error(`项目工作区不存在：${home}`);
+    }
+    return home;
+  }
   if (!existsSync(home)) mkdirSync(home, { recursive: true });
   return home;
 }
@@ -180,6 +201,11 @@ export async function createProject(input: {
   seedFromProjectId?: string;
   /** Local-machine mode: the project's working directory on the user's machine. */
   workdir?: string;
+  /** Host external-dir / Quick workspace root. */
+  workspaceRoot?: string;
+  templateId?: string;
+  quickDir?: string;
+  templateHash?: string;
   /** Local-machine mode: which paired machine this project runs on. */
   machineId?: string;
   /** SSH mode: connection for the remote host (stored 0600 in the project home). */
@@ -198,6 +224,17 @@ export async function createProject(input: {
     return { ok: false, error: `已存在同名项目「${name}」，请换一个名称` };
   }
 
+  const externalWorkspace = input.mode === "host" || input.mode === "quick";
+  if (externalWorkspace) {
+    const root = typeof input.workspaceRoot === "string" ? resolve(input.workspaceRoot.trim()) : "";
+    if (!root || !existsSync(root) || !statSync(root).isDirectory()) {
+      return { ok: false, error: "项目工作目录不存在或不是目录" };
+    }
+    if (input.presetBundle || input.seedFromProjectId) {
+      return { ok: false, error: "Host/Quick 项目不支持预置模板或从其他项目复制" };
+    }
+  }
+
   const project: ProjectRecord = {
     id: randomUUID(),
     name,
@@ -207,6 +244,14 @@ export async function createProject(input: {
     createdAt: Date.now(),
     pinnedSessions: [],
     ...(input.embed ? { embed: { ...input.embed } } : {}),
+    ...(externalWorkspace ? { workspaceRoot: resolve(input.workspaceRoot!.trim()) } : {}),
+    ...(input.mode === "quick"
+      ? {
+          ...(input.templateId ? { templateId: input.templateId } : {}),
+          ...(input.quickDir ? { quickDir: input.quickDir } : {}),
+          ...(input.templateHash ? { templateHash: input.templateHash } : {}),
+        }
+      : {}),
     ...(input.mode === "sandbox" && input.containerId !== undefined ? { containerId: input.containerId } : {}),
     ...(input.mode === "sandbox" && input.imageId !== undefined ? { imageId: input.imageId } : {}),
     ...((input.mode === "local-machine" || input.mode === "ssh") && input.workdir ? { workdir: input.workdir } : {}),
@@ -277,11 +322,12 @@ export async function createProject(input: {
   }
 
   // All project homes are pi-web-managed (sandbox/local-machine/ssh sessions
-  // run with cwd=home; the user's real workdir is only a tool target). Once the
-  // preset bundle / seed wrote its .pi resources, record trust so the first
-  // session loads extensions/skills without a manual prompt. Host directories
-  // remain user-controlled and are not auto-trusted here.
-  trustProject(home, getAgentDir());
+  // WebUI-managed Host projects are explicitly created by an admin, so the
+  // selected server directory is trusted; Quick workspaces are generated and
+  // deliberately bypass trust. Managed stub homes are trusted as before.
+  if (project.mode !== "quick") {
+    trustProject(home, getAgentDir());
+  }
 
   let added = false;
   projectsStore.update((data) => {
@@ -407,7 +453,10 @@ export function deleteProject(projectId: string): boolean {
     // best-effort
   }
   try {
-    rmSync(projectHome(project), { recursive: true, force: true });
+    // A managed Host project borrows an existing server directory: deleting the
+    // record must never remove the user's files. Quick workspaces are generated
+    // scratch state and may be removed with the project.
+    if (project.mode !== "host") rmSync(projectHome(project), { recursive: true, force: true });
   } catch {
     // home removal is best-effort
   }
@@ -434,12 +483,83 @@ export function deleteProject(projectId: string): boolean {
  * container would overwrite each other's synced /workspace. The copy starts
  * unbound; session-start resolution picks/creates its own container.
  */
+/** One Quick Project per (owner, template), independent of workspace version. */
+export function findQuickProject(ownerId: number, templateId: string): ProjectRecord | undefined {
+  return Object.values(projectData().projects).find(
+    (project) => project.mode === "quick" && project.ownerId === ownerId && project.templateId === templateId,
+  );
+}
+
+/** Mark Quick Projects whose template was deleted; sessions remain readable. */
+export function markQuickTemplateMissing(templateId: string): void {
+  projectsStore.update((data) => {
+    for (const project of Object.values(data.projects)) {
+      if (project.mode === "quick" && project.templateId === templateId) {
+        project.templateMissing = true;
+      }
+    }
+  });
+}
+
+/**
+ * Ensure the stable Quick Project for a template and point it at the current
+ * template-version workspace. Older sessions keep their own quickDir and are
+ * unaffected by a template edit.
+ */
+export async function ensureQuickProject(  ownerId: number,
+  ownerName: string | undefined,
+  template: QuickTemplate,
+): Promise<ProjectRecord> {
+  const workspace = ensureQuickSessionWorkspace(ownerId, template);
+  const templateHash = quickTemplateHash(template);
+  const existing = findQuickProject(ownerId, template.id);
+  if (existing) {
+    let updated: ProjectRecord | undefined;
+    projectsStore.update((data) => {
+      const project = data.projects[existing.id];
+      if (!project) return;
+      project.workspaceRoot = workspace.dir;
+      project.quickDir = workspace.slug;
+      project.templateHash = templateHash;
+      delete project.templateMissing;
+      updated = project;
+    });
+    return updated ?? existing;
+  }
+
+  const baseName = template.name.trim() || `Quick ${template.id}`;
+  let candidate = baseName;
+  let suffix = 2;
+  while (Object.values(projectData().projects).some((p) => p.ownerId === ownerId && p.name === candidate)) {
+    candidate = `${baseName} (${suffix++})`;
+  }
+  const created = await createProject({
+    name: candidate,
+    ownerId,
+    ...(ownerName ? { ownerName } : {}),
+    mode: "quick",
+    workspaceRoot: workspace.dir,
+    templateId: template.id,
+    quickDir: workspace.slug,
+    templateHash,
+  });
+  if (created.ok) return created.project;
+  // A concurrent first-use may have created it while this request was doing
+  // the workspace/materialization work.
+  const raced = findQuickProject(ownerId, template.id);
+  if (raced) return raced;
+  throw new Error(created.error);
+}
+
 export async function duplicateProject(
   projectId: string,
   newName: string,
 ): Promise<{ ok: true; project: ProjectRecord } | { ok: false; error: string }> {
   const source = getProject(projectId);
   if (!source) return { ok: false, error: "项目不存在" };
+  if (source.mode === "host" || source.mode === "quick") {
+    return { ok: false, error: "Host/Quick 项目不支持复制" };
+  }
   // 复制的目标名若已占用，自动加序号后缀（用户的意图是"再来一份"）。
   let candidate = newName;
   let n = 2;

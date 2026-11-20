@@ -2,13 +2,13 @@ import { existsSync } from "fs";
 import { join } from "path";
 import { getAgentDir, type InlineExtension } from "@earendil-works/pi-coding-agent";
 import type { RpcSessionStartOptions } from "./rpc-manager";
-import { getSessionMeta } from "./session-metas";
+import { getSessionMeta, recordSessionMeta } from "./session-metas";
 import {
   descriptorFromMeta,
   descriptorToLegacyMode,
   type SessionDescriptor,
 } from "./session-descriptor";
-import { ensureProjectHome, getOwnedProject, projectHome, writeSandboxConfig } from "./projects";
+import { ensureProjectHome, ensureQuickProject, getOwnedProject, projectHome, writeSandboxConfig } from "./projects";
 import { ensureLocalHome, ensureSandboxHome, ensureQuickHome } from "./mode-homes";
 import { quickSessionDir, readQuickTemplateSnapshot } from "./quick-session";
 import { syncQuickMcpConfig } from "./quick-mcp";
@@ -68,10 +68,9 @@ export async function restoreSessionOptions(req: Request, sessionId: string): Pr
   }
   const mode = descriptor ? descriptorToLegacyMode(descriptor) : "host";
   const ownerId = meta?.ownerId ?? user.id;
-  const project = descriptor?.projectId
+  let project = descriptor?.projectId
     ? getOwnedProject(descriptor.projectId, ownerId, user.role === "admin")
-    : undefined;
-  if (descriptor?.projectId && !project) {
+    : undefined;  if (descriptor?.projectId && !project) {
     throw new SessionRestoreError("会话所属项目不存在或无权访问，已拒绝恢复", 409);
   }
   if (descriptor?.execution === "ssh" && !project) {
@@ -240,6 +239,26 @@ export async function restoreSessionOptions(req: Request, sessionId: string): Pr
     const snapshot = quickSlug ? readQuickTemplateSnapshot(effectiveCwd) : null;
     const { getQuickTemplate } = await import("./quick-templates");
     const template = snapshot ?? (meta?.templateId ? getQuickTemplate(meta.templateId) : undefined);
+    // Legacy quick sessions predate the Quick Project layer. Link them on
+    // restore so the project view and future template versions are coherent.
+    if (template && meta?.templateId && !project) {
+      const quickProject = await ensureQuickProject(ownerId, meta.ownerName ?? user.username, {
+        id: template.id,
+        name: template.name,
+        description: "",
+        systemPrompt: template.systemPrompt,
+        mcpServers: [...(template.mcpServers ?? [])],
+        ...(template.model ? { model: template.model } : {}),
+      });
+      project = quickProject;
+      recordSessionMeta(sessionId, {
+        ...meta,
+        projectId: quickProject.id,
+        ...(descriptor
+          ? { descriptor: { ...descriptor, projectId: quickProject.id } }
+          : {}),
+      });
+    }
     if (template) {
       quickForRestore = {
         ...(template.systemPrompt ? { systemPrompt: template.systemPrompt } : {}),
@@ -307,7 +326,7 @@ export async function restoreSessionOptions(req: Request, sessionId: string): Pr
     ownerName: meta?.ownerName ?? (ownerId === user.id ? user.username : `u${ownerId}`),
     mode,
     ...(project ? { projectId: project.id } : {}),
-    ...(project
+    ...(project && project.mode !== "quick" && project.mode !== "host"
       ? { projection: projectionSessionFor(project, identity.session.user, identity.session.apiKey ?? "") }
       : {}),
     ...(mode === "quick" ? { quick: quickForRestore ?? {} } : {}),

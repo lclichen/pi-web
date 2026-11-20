@@ -34,6 +34,7 @@ import { sessionDirsForProject } from "@/lib/session-context";
 import { makeRemoteVerifyExtension } from "@/lib/extensions/remote-verify";
 import { makeEnvironmentInfoExtension } from "@/lib/extensions/environment-info";
 import {
+  ensureQuickProject,
   ensureProjectHome,
   removeLegacySandboxExtensionLink,
   getOwnedProject,
@@ -149,6 +150,9 @@ export async function POST(req: Request) {
     let effectiveCwd: string | undefined = typeof cwd === "string" ? cwd : undefined;
     let templateIdForMeta: string | undefined;
     let quickSlugForMeta: string | undefined;
+    let quickOptions:
+      | { systemPrompt?: string; model?: { provider: string; modelId: string }; mcpServers?: string[] }
+      | undefined;
     let extensionFactories: InlineExtension[] | undefined;
     // Background-task channel for remote modes (bg_run). Registered under the
     // SDK's real session id inside startRpcSession; without it (and with the
@@ -266,6 +270,31 @@ export async function POST(req: Request) {
           isAdmin: user.role === "admin",
           homePrefix: home,
         };
+      } else if (project.mode === "host") {
+        extensionFactories = [
+          makeEnvironmentInfoExtension({ mode: "host", username: user.username, hostDir: home }),
+          makeHostWorkspaceServiceExtension(home),
+        ];
+      } else if (project.mode === "quick") {
+        const templateId = project.templateId ?? DEFAULT_TEMPLATE_ID;
+        const template = getQuickTemplate(templateId);
+        if (!template) {
+          return NextResponse.json({ error: `快速会话模板不存在：${templateId}` }, { status: 400 });
+        }
+        const quickProject = await ensureQuickProject(user.id, user.username, template);
+        projectRef = quickProject;
+        const quickHome = quickProject.workspaceRoot ?? home;
+        effectiveCwd = quickHome;
+        workspaceDirForEnv = quickHome;
+        descriptor = descriptorForProject(quickProject, user.id, quickHome, quickHome);
+        templateIdForMeta = templateId;
+        quickSlugForMeta = quickProject.quickDir;
+        quickOptions = {
+          systemPrompt: template.systemPrompt,
+          ...(template.model ? { model: template.model } : {}),
+          ...(template.mcpServers && template.mcpServers.length > 0 ? { mcpServers: template.mcpServers } : {}),
+        };
+        extensionFactories = [makeHostWorkspaceServiceExtension(quickHome)];
       } else {
         const gate = requireCompatibleAgent(user.id, project.machineId);
         if (!gate.ok) {
@@ -302,8 +331,10 @@ export async function POST(req: Request) {
       // 远端），只进提示词与工具映射层——此前误用作会话 cwd，SDK 在服务
       // 器上把它 resolve 成 `<repo>/D:\…` 混合路径写进会话头，恢复时模型
       // 路由按 cwd 找目录直接报 Directory does not exist。
-      effectiveCwd = home;
-      descriptor = descriptorForProject(project, user.id, home, project.workdir);
+      if (project.mode !== "quick") {
+        effectiveCwd = home;
+        descriptor = descriptorForProject(project, user.id, home, project.workdir);
+      }
     } else if (mode === "sandbox") {
       if (!process.env.PI_WEB_PLATFORM_URL) {
         return NextResponse.json({ error: "沙箱模式未配置（缺少 PI_WEB_PLATFORM_URL）" }, { status: 400 });
@@ -408,8 +439,6 @@ export async function POST(req: Request) {
     // Quick mode: no workspace — a per-user scratch home is only used for the
     // session file layout and MCP-config fallback. The template pins model /
     // system prompt / MCP allowlist.
-    let quickOptions:
-      { systemPrompt?: string; model?: { provider: string; modelId: string }; mcpServers?: string[] } | undefined;
     if (mode === "quick") {
       const templateId = typeof body.templateId === "string" ? body.templateId : DEFAULT_TEMPLATE_ID;
       const template = getQuickTemplate(templateId);
@@ -419,16 +448,11 @@ export async function POST(req: Request) {
       // 每会话独立工作区（lib/quick-session.ts）：独立目录 + quick MCP 物化
       // + 模板快照——会话间配置互不干涉，模板版本可追溯。
       const ws = ensureQuickSessionWorkspace(user.id, template);
+      const quickProject = await ensureQuickProject(user.id, user.username, template);
+      projectRef = quickProject;
       quickSlugForMeta = ws.slug;
       effectiveCwd = ws.dir;
-      descriptor = descriptorForNewSession({
-        mode: "quick",
-        ownerId: user.id,
-        cwd: ws.dir,
-        templateId,
-        quickDir: ws.slug,
-        management: "webui",
-      });
+      descriptor = descriptorForProject(quickProject, user.id, ws.dir);
       extensionFactories = [makeHostWorkspaceServiceExtension(effectiveCwd)];
       templateIdForMeta = templateId;
       quickOptions = {
@@ -499,7 +523,7 @@ export async function POST(req: Request) {
       ...(coreExtensionPaths ? { additionalExtensionPaths: coreExtensionPaths } : {}),
       ...(projectRef ? { projectCredentialDir: effectiveCwd } : {}),
       ...(projectRef ? { projectId: projectRef.id } : {}),
-      ...(projectRef
+      ...(projectRef && projectRef.mode !== "quick" && projectRef.mode !== "host"
         ? { projection: projectionSessionFor(projectRef, user, identity.session.apiKey ?? "") }
         : {}),
       ...(user.id > 0 ? { userModelConfigUserId: user.id } : {}),

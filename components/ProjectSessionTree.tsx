@@ -912,12 +912,11 @@ export function ProjectSessionTree({
     return map;
   }, [baseSessions]);
 
-  // Quick-space two-level tree: group by template VERSION (quickGroupKey =
-  // "<templateId>@<hash>", derived server-side from the workspace snapshot).
-  // Same template at different content versions = different groups, mirroring
-  // how the workspace directories are laid out. Detached groups (template
-  // deleted, snapshot remains) keep their sessions and refuse new ones.
-  // Sessions predating the snapshot metadata fall into one legacy bucket.
+  // Quick-space tree: one stable group per template (Quick Project), while
+  // individual sessions keep the workspace version they were created with.
+  // Detached groups (template deleted, snapshot remains) keep their sessions
+  // and refuse new ones. Legacy sessions without snapshot metadata fall into
+  // one unassigned bucket.
   const quickGroups = useMemo(() => {
     const groups = new Map<
       string,
@@ -932,7 +931,12 @@ export function ProjectSessionTree({
     >();
     for (const s of groupSessions) {
       if (s.mode !== "quick") continue;
-      const key = s.quickGroupKey ?? "__unassigned";
+      const templateId = s.quickTemplate?.id;
+      const key = templateId
+        ? `template:${templateId}`
+        : s.projectId
+          ? `project:${s.projectId}`
+          : s.quickGroupKey ?? "__unassigned";
       let group = groups.get(key);
       if (!group) {
         const meta = s.quickTemplate;
@@ -994,7 +998,9 @@ export function ProjectSessionTree({
   }, [sessions]);
 
   const orderedProjects = useMemo(() => {
-    const items = projects.map((project) => {
+    const items = projects
+      .filter((project) => project.mode !== "quick")
+      .map((project) => {
       const key = projectPinKey(project.id);
       return {
         key,
@@ -1733,7 +1739,10 @@ export function ProjectSessionTree({
                 </div>
               );
             })}
-          {sessionSpace === "mine" && !unreadOnly && projects.length === 0 && hostGroups.length === 0 && (
+          {sessionSpace === "mine" &&
+            !unreadOnly &&
+            !projects.some((project) => project.mode !== "quick") &&
+            hostGroups.length === 0 && (
             <div style={{ padding: "8px 6px", fontSize: 11, color: "var(--text-dim)" }}>
               {t("sessions.projectsYetUseButtonAbove")}
             </div>
@@ -1807,11 +1816,9 @@ export function ProjectSessionTree({
                           textOverflow: "ellipsis",
                           whiteSpace: "nowrap",
                         }}
-                        title={group.hash ? `${group.name} (${group.hash})` : group.name}
+                        title={group.detached ? t("sessions.quickDetachedHint") : group.name}
                       >
-                        {group.hash
-                          ? `${group.name} (${group.hash})`
-                          : group.name || t("sessions.quickUnassignedGroup")}
+                        {group.name || t("sessions.quickUnassignedGroup")}
                       </span>
                       {group.detached && (
                         <span
@@ -2258,13 +2265,15 @@ export function ProjectSessionTree({
                 setMenu(null);
               }}
             />
-            <MenuItem
-              label={t("sessions.duplicateNewProject")}
-              onClick={() => {
-                void duplicate(menuProject);
-                setMenu(null);
-              }}
-            />
+            {menuProject.mode !== "host" && (
+              <MenuItem
+                label={t("sessions.duplicateNewProject")}
+                onClick={() => {
+                  void duplicate(menuProject);
+                  setMenu(null);
+                }}
+              />
+            )}
             <MenuItem
               label={t("sessions.settingsModelCredentials")}
               onClick={() => {

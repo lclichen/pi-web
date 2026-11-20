@@ -36,6 +36,7 @@ import {
   evaluateBashCommand,
   evaluatePathAgainstPolicy,
   isAbsolutePolicyPath,
+  markPathToolSessionAllowed,
   normalizePolicyPath,
   parsePathPolicy,
   parsePathScope,
@@ -197,14 +198,22 @@ export function makePathGuardExtension(events: PathGuardEvents = {}) {
         const value = input[param];
         if (typeof value !== "string" || value.trim().length === 0) continue;
         const target = resolveToolPath(value, cwd);
-        if (sessionOnceAllows.has(target)) continue;
+        if (sessionOnceAllows.has(target)) {
+          markPathToolSessionAllowed(cwd, event.toolName, value);
+          continue;
+        }
         const readVerdict = evaluatePathAgainstPolicy(target, "read", cwd, loaded.policy, loaded.decisions, loaded.scope);
         const readBlocked = await decide(readVerdict, target);
         if (readBlocked) return readBlocked;
-        if (risk !== "write") continue;
-        const writeVerdict = evaluatePathAgainstPolicy(target, "write", cwd, loaded.policy, loaded.decisions, loaded.scope);
-        const writeBlocked = await decide(writeVerdict, target);
-        if (writeBlocked) return writeBlocked;
+        if (risk === "write") {
+          const writeVerdict = evaluatePathAgainstPolicy(target, "write", cwd, loaded.policy, loaded.decisions, loaded.scope);
+          const writeBlocked = await decide(writeVerdict, target);
+          if (writeBlocked) return writeBlocked;
+        }
+        // Tell the remote tool bridge that this exact (cwd, tool, raw path)
+        // passed the guard. It only widens the relay root for approved
+        // out-of-workspace paths; in-workspace paths already map normally.
+        markPathToolSessionAllowed(cwd, event.toolName, value);
       }
       return undefined;
     });

@@ -161,6 +161,49 @@ export function toRelayPath(path: string, scope: RelayWorkspaceScope, workspaceD
   return raw === "." ? scope.prefix : `${scope.prefix}/${raw}`;
 }
 
+/** Filesystem root containing an absolute path (for an explicit, approved
+ *  outside-workspace relay call). POSIX "/" is always valid; Windows drive
+ *  roots and UNC shares keep their own prefix so the agent's `base` check
+ *  never crosses volumes. */
+function absoluteRootOf(path: string): string {
+  const normalized = path.replace(/\\/g, "/");
+  const drive = /^([A-Za-z]:)\//.exec(normalized);
+  if (drive) return `${drive[1]}/`;
+  if (normalized.startsWith("//")) {
+    const parts = normalized.slice(2).split("/").filter(Boolean);
+    return parts.length >= 2 ? `//${parts[0]}/${parts[1]}` : "/";
+  }
+  return "/";
+}
+
+/**
+ * Map a tool path that the path guard just APPROVED. Identical to
+ * `toRelayPath`, except an absolute path outside the project workspace gets a
+ * relay scope rooted at the containing filesystem root.
+ *
+ * Why: the user can approve an outside-workspace write in pi-web, but the
+ * relay agent still fences the request inside `base` (the project workdir), so
+ * an otherwise-approved `/tmp/mcp.py` failed with "path outside workspace
+ * root". The guard records approvals per (cwd, tool, raw path); callers must
+ * only use this helper when the guard approved that exact call. Legacy agents
+ * (prefix strategy, no per-request base) cannot widen their root and keep the
+ * old fenced behavior.
+ */
+export function toApprovedRelayPath(
+  path: string,
+  scope: RelayWorkspaceScope,
+  workspaceDir?: string | null,
+): { path: string; scope: RelayWorkspaceScope } {
+  const mapped = toRelayPath(path, scope, workspaceDir);
+  if (absolutenessOf(mapped) === "relative") return { path: mapped, scope };
+  const wd = workspaceDir?.trim();
+  if (wd && isPathWithin(mapped, wd)) return { path: mapped, scope };
+  // `prefix` (including the legacy empty-root form) means the agent has no
+  // per-request base and cannot widen its root — keep the historical fence.
+  if (scope.prefix !== undefined) return { path: mapped, scope };
+  return { path: mapped, scope: { ...scope, base: absoluteRootOf(mapped) } };
+}
+
 /**
  * Inverse of `toRelayPath` for display: turn an absolute path under the
  * workspace (or a workspace-relative path) into a workspace-relative path.

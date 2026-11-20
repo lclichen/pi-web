@@ -11,11 +11,13 @@ import { getAgentForUser } from "@/lib/relay/registry";
 import { clientCompatibility } from "@/lib/client-compat";
 import {
   resolveRelayWorkspaceScope,
+  toApprovedRelayPath,
   toRelayPath,
   toWorkspaceRelative,
   type RelayWorkspaceScope,
 } from "@/lib/relay/workspace-base";
 import { matchRuntimeConfigPath } from "@/lib/relay/runtime-config-bridge";
+import { isPathToolSessionAllowed } from "@/lib/extensions/path-guard";
 import { registerWorkspaceService } from "./workspace-service";
 import { createRelayWorkspaceOperations } from "@/lib/workspace-providers/relay";
 import type { ExecResult, FsEntry, FsReadResult, FsStatResult, GrepMatch } from "@/lib/relay/protocol";
@@ -103,6 +105,25 @@ export function makeRelayToolsExtension(userId: number, options: RelayToolsOptio
       { userId, ...(machineId ? { machineId } : {}) },
     ) as Promise<T>;
 
+  /**
+   * Resolve one tool path. The path guard marks the exact (session cwd, tool,
+   * raw path) it approved; only then may an absolute outside-workspace path
+   * widen the agent's per-request root. Without a mark (guard absent, blocked,
+   * or batch sessions) the historical workspace fence stays in force.
+   */
+  const targetFor = (
+    toolName: string,
+    rawPath: string,
+    ctx?: { cwd?: string },
+  ): { error: string } | { path: string; scope: RelayWorkspaceScope } => {
+    const scope = currentScope();
+    if (scope.error) return { error: scope.error };
+    if (ctx?.cwd && isPathToolSessionAllowed(ctx.cwd, toolName, rawPath)) {
+      return toApprovedRelayPath(rawPath, scope, workspaceDir);
+    }
+    return { path: toRelayPath(rawPath, scope, workspaceDir), scope };
+  };
+
   /** Runtime-config bridge (lib/relay/runtime-config-bridge.ts): skills and
    *  subagent definitions live on the server (session homes' .pi/skills +
    *  .pi/agents, server agent dir .pi/agent/skills|agents), never on the
@@ -154,14 +175,10 @@ export function makeRelayToolsExtension(userId: number, options: RelayToolsOptio
           // never on the user's machine — serve them locally instead of relaying.
           const bridged = bridgeRuntimeConfig(params.path, ctx?.cwd);
           if (bridged) return readLocalFile(bridged.path);
-          const scope = currentScope();
-          if (scope.error) return fail(scope.error);
+          const target = targetFor("read", params.path, ctx);
+          if ("error" in target) return fail(target.error);
           try {
-            const r = await call<FsReadResult>(
-              "fs.read",
-              { path: toRelayPath(params.path, scope, workspaceDir) },
-              scope,
-            );
+            const r = await call<FsReadResult>("fs.read", { path: target.path }, target.scope);
             const lines = r.content.split("\n");
             const numbered = lines.map((line, i) => `${i + 1}→${line}`).join("\n");
             return ok(`${numbered}\n\n(${r.path}, ${lines.length} lines)`);
@@ -183,13 +200,13 @@ export function makeRelayToolsExtension(userId: number, options: RelayToolsOptio
           content: Type.String({ description: "Full file content" }),
         }),
         execute: async (_id, params, _signal, _onUpdate, ctx) => {
-          const scope = currentScope();
-          if (scope.error) return fail(scope.error);
+          const target = targetFor("write", params.path, ctx);
+          if ("error" in target) return fail(target.error);
           try {
             await call(
               "fs.write",
-              { path: toRelayPath(params.path, scope, workspaceDir), content: params.content },
-              scope,
+              { path: target.path, content: params.content },
+              target.scope,
             );
             await mirrorInstructionsFile(params.path, params.content, ctx?.cwd, workspaceDir);
             return ok(`Wrote ${params.path}`);
@@ -211,16 +228,15 @@ export function makeRelayToolsExtension(userId: number, options: RelayToolsOptio
           newText: Type.String({ description: "Replacement text" }),
         }),
         execute: async (_id, params, _signal, _onUpdate, ctx) => {
-          const scope = currentScope();
-          if (scope.error) return fail(scope.error);
-          const wirePath = toRelayPath(params.path, scope, workspaceDir);
+          const target = targetFor("edit", params.path, ctx);
+          if ("error" in target) return fail(target.error);
           try {
-            const r = await call<FsReadResult>("fs.read", { path: wirePath }, scope);
+            const r = await call<FsReadResult>("fs.read", { path: target.path }, target.scope);
             const count = r.content.split(params.oldText).length - 1;
             if (count === 0) return fail(`oldText not found in ${params.path}`);
             if (count > 1) return fail(`oldText appears ${count} times in ${params.path}; make it unique`);
             const next = r.content.replace(params.oldText, params.newText);
-            await call("fs.write", { path: wirePath, content: next }, scope);
+            await call("fs.write", { path: target.path, content: next }, target.scope);
             await mirrorInstructionsFile(params.path, next, ctx?.cwd, workspaceDir);
             return ok(`Edited ${params.path}`);
           } catch (err) {
@@ -285,14 +301,10 @@ export function makeRelayToolsExtension(userId: number, options: RelayToolsOptio
         execute: async (_id, params, _signal, _onUpdate, ctx) => {
           const bridged = bridgeRuntimeConfig(params.path ?? "", ctx?.cwd);
           if (bridged) return listLocalDir(bridged.path);
-          const scope = currentScope();
-          if (scope.error) return fail(scope.error);
+          const target = targetFor("ls", params.path ?? ".", ctx);
+          if ("error" in target) return fail(target.error);
           try {
-            const entries = await call<FsEntry[]>(
-              "fs.list",
-              { path: toRelayPath(params.path ?? ".", scope, workspaceDir) },
-              scope,
-            );
+            const entries = await call<FsEntry[]>("fs.list", { path: target.path }, target.scope);
             if (entries.length === 0) return ok("(empty directory)");
             return ok(entries.map((e) => `${e.isDir ? "d" : "-"} ${e.name}`).join("\n"));
           } catch (err) {
@@ -316,15 +328,17 @@ export function makeRelayToolsExtension(userId: number, options: RelayToolsOptio
             Type.Union([Type.Literal("f"), Type.Literal("d")], { description: '"f" files only, "d" dirs only' }),
           ),
         }),
-        execute: async (_id, params) => {
-          const scope = currentScope();
+        execute: async (_id, params, _signal, _onUpdate, ctx) => {
+          const target = params.path ? targetFor("find", params.path, ctx) : undefined;
+          if (target && "error" in target) return fail(target.error);
+          const scope = target?.scope ?? currentScope();
           if (scope.error) return fail(scope.error);
           try {
             const results = await call<string[]>(
               "search.fd",
               {
                 pattern: params.pattern,
-                ...(params.path ? { path: toRelayPath(params.path, scope, workspaceDir) } : {}),
+                ...(target ? { path: target.path } : {}),
                 ...(params.type ? { type: params.type } : {}),
               },
               scope,
@@ -349,15 +363,17 @@ export function makeRelayToolsExtension(userId: number, options: RelayToolsOptio
           ),
           glob: Type.Optional(Type.String({ description: 'File glob filter, e.g. "*.py"' })),
         }),
-        execute: async (_id, params) => {
-          const scope = currentScope();
+        execute: async (_id, params, _signal, _onUpdate, ctx) => {
+          const target = params.path ? targetFor("grep", params.path, ctx) : undefined;
+          if (target && "error" in target) return fail(target.error);
+          const scope = target?.scope ?? currentScope();
           if (scope.error) return fail(scope.error);
           try {
             const matches = await call<GrepMatch[]>(
               "search.grep",
               {
                 pattern: params.pattern,
-                ...(params.path ? { path: toRelayPath(params.path, scope, workspaceDir) } : {}),
+                ...(target ? { path: target.path } : {}),
                 ...(params.glob ? { glob: params.glob } : {}),
               },
               scope,

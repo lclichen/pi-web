@@ -91,6 +91,59 @@ export const DEFAULT_POLICY: PathPolicy = {
   askOnOutsideWrite: true,
 };
 
+/**
+ * Per-session "this path tool call was approved" marks.
+ *
+ * The path guard can only block or allow the pi tool call; it cannot widen the
+ * relay agent's per-request root fence. Local-machine tools (which run on the
+ * paired machine) consult this registry after the guard approved an
+ * out-of-workspace path, then issue that one RPC with a root containing the
+ * target. The registry is process-global because the guard and the inline
+ * relay extension are separate extension instances; the key is (session cwd,
+ * tool name, raw path argument), exactly what both sides see.
+ *
+ * Only the guard writes it, so a relay tool call that never went through the
+ * guard keeps the normal workspace fence.
+ */
+function sessionAllowStore(): Map<string, Set<string>> {
+  const g = globalThis as typeof globalThis & { __piPathToolSessionAllows?: Map<string, Set<string>> };
+  if (!g.__piPathToolSessionAllows) g.__piPathToolSessionAllows = new Map();
+  return g.__piPathToolSessionAllows;
+}
+
+function sessionAllowKey(cwd: string, toolName: string): string {
+  return `${normalizePolicyPath(cwd)}\u0000${toolName}`;
+}
+
+export function markPathToolSessionAllowed(cwd: string, toolName: string, rawPath: string): void {
+  if (!cwd || !toolName || !rawPath) return;
+  const store = sessionAllowStore();
+  const key = sessionAllowKey(cwd, toolName);
+  let paths = store.get(key);
+  if (!paths) {
+    paths = new Set();
+    store.set(key, paths);
+  }
+  paths.add(rawPath);
+  // A session can ask about many files; keep the hot set bounded. Approved
+  // paths are re-marked on every guarded call, so evicting the oldest entry
+  // never blocks a subsequent approved call.
+  if (paths.size > 200) {
+    const first = paths.values().next().value;
+    if (first !== undefined) paths.delete(first);
+  }
+}
+
+export function isPathToolSessionAllowed(cwd: string, toolName: string, rawPath: string): boolean {
+  if (!cwd || !toolName || !rawPath) return false;
+  return sessionAllowStore().get(sessionAllowKey(cwd, toolName))?.has(rawPath) ?? false;
+}
+
+/** Test seam: forget every approval (e.g. between unit tests). */
+export function clearPathToolSessionAllows(): void {
+  sessionAllowStore().clear();
+}
+
 // ---------------------------------------------------------------------------
 // 路径归一化与 glob 匹配（POSIX 优先；** 任意深度，* 段内任意）。
 

@@ -1,6 +1,8 @@
 import { getProject } from "./projects";
 import { JsonStore } from "./state/json-store";
 import { legacyDataPath } from "./state/paths";
+import { descriptorFromMeta, descriptorToLegacyMode } from "./session-descriptor";
+import type { SessionDescriptor } from "./session-descriptor";
 import type { SessionMode } from "./session-modes";
 
 /**
@@ -11,7 +13,10 @@ import type { SessionMode } from "./session-modes";
  */
 
 export interface SessionMeta {
+  /** Legacy execution mode projection; descriptor is authoritative when present. */
   mode: SessionMode;
+  /** Canonical management/execution/workspace description. */
+  descriptor?: SessionDescriptor;
   ownerId: number;
   /** Owning project (project-scoped sessions). */
   projectId?: string;
@@ -49,9 +54,29 @@ const metasStore = new JsonStore<MetaData>({
 });
 
 export function recordSessionMeta(sessionId: string, meta: SessionMeta): void {
+  const mode = meta.descriptor ? descriptorToLegacyMode(meta.descriptor) : meta.mode;
   metasStore.update((data) => {
-    data.sessions[sessionId] = { ...meta, createdAt: meta.createdAt ?? Date.now() };
+    data.sessions[sessionId] = { ...meta, mode, createdAt: meta.createdAt ?? Date.now() };
   });
+}
+
+/**
+ * Branch/fork/clone inherit the source session's execution contract. Without
+ * this, a forked sandbox/quick session loses projectId/quickDir and restores
+ * as a Host-local session.
+ */
+export function copySessionMeta(sourceSessionId: string, targetSessionId: string): boolean {
+  const source = getSessionMeta(sourceSessionId);
+  if (!source) return false;
+  recordSessionMeta(targetSessionId, {
+    ...source,
+    ...(source.descriptor
+      ? { descriptor: { ...source.descriptor, cwd: source.descriptor.cwd } }
+      : {}),
+    createdAt: Date.now(),
+    archivedAt: undefined,
+  });
+  return true;
 }
 
 /** Archive/unarchive a project-bound session (embedded product session list). */
@@ -103,6 +128,11 @@ export function metaVisibleTo(
 export function resolveSessionMode(sessionId: string): SessionMeta | undefined {
   const meta = getSessionMeta(sessionId);
   if (!meta) return undefined;
+  const descriptor = descriptorFromMeta(meta);
+  if (descriptor) {
+    const mode = descriptorToLegacyMode(descriptor);
+    if (mode !== meta.mode) return { ...meta, mode, descriptor };
+  }
   if (meta.projectId) {
     const mode = getProject(meta.projectId)?.mode;
     if (mode && mode !== meta.mode) return { ...meta, mode };

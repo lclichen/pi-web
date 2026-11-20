@@ -2,7 +2,12 @@ import { existsSync } from "fs";
 import { join } from "path";
 import { getAgentDir, type InlineExtension } from "@earendil-works/pi-coding-agent";
 import type { RpcSessionStartOptions } from "./rpc-manager";
-import { resolveSessionMode } from "./session-metas";
+import { getSessionMeta } from "./session-metas";
+import {
+  descriptorFromMeta,
+  descriptorToLegacyMode,
+  type SessionDescriptor,
+} from "./session-descriptor";
 import { ensureProjectHome, getOwnedProject, projectHome, writeSandboxConfig } from "./projects";
 import { ensureLocalHome, ensureSandboxHome, ensureQuickHome } from "./mode-homes";
 import { quickSessionDir, readQuickTemplateSnapshot } from "./quick-session";
@@ -36,6 +41,16 @@ import { requireUserIdentity } from "./web-session";
  * instead of the container, and the session lost its owner/mode registration.
  * This helper derives the same injections from the session's recorded meta.
  */
+export class SessionRestoreError extends Error {
+  constructor(
+    message: string,
+    readonly status: number = 409,
+  ) {
+    super(message);
+    this.name = "SessionRestoreError";
+  }
+}
+
 export async function restoreSessionOptions(req: Request, sessionId: string): Promise<RpcSessionStartOptions> {
   const identity = requireUserIdentity(req);
   // Identity failing here is handled by the caller's access check; fall back
@@ -43,12 +58,25 @@ export async function restoreSessionOptions(req: Request, sessionId: string): Pr
   if (!identity.ok) return {};
   const { user } = identity.session;
 
-  const meta = resolveSessionMode(sessionId);
-  // 项目记录的模式高于过期 sidecar meta（lib/session-metas.ts）。
-  const mode = meta?.mode ?? "host";
-  const project = meta?.projectId
-    ? getOwnedProject(meta.projectId, meta.ownerId ?? user.id, user.role === "admin")
+  const meta = getSessionMeta(sessionId);
+  const descriptor = descriptorFromMeta(meta);
+  // A session with sidecar metadata must never silently restore without its
+  // execution contract. The old fallback here was `mode ?? "host"`, which ran
+  // sandbox/relay/SSH sessions with server-local built-in tools.
+  if (meta && !descriptor) {
+    throw new SessionRestoreError("会话执行模式信息缺失或不安全，已拒绝恢复", 409);
+  }
+  const mode = descriptor ? descriptorToLegacyMode(descriptor) : "host";
+  const ownerId = meta?.ownerId ?? user.id;
+  const project = descriptor?.projectId
+    ? getOwnedProject(descriptor.projectId, ownerId, user.role === "admin")
     : undefined;
+  if (descriptor?.projectId && !project) {
+    throw new SessionRestoreError("会话所属项目不存在或无权访问，已拒绝恢复", 409);
+  }
+  if (descriptor?.execution === "ssh" && !project) {
+    throw new SessionRestoreError("SSH 会话缺少项目绑定，已拒绝恢复", 409);
+  }
 
   let additionalExtensionPaths: string[] | undefined;
   let quickForRestore:
@@ -67,74 +95,78 @@ export async function restoreSessionOptions(req: Request, sessionId: string): Pr
 
   if (mode === "sandbox") {
     const apiKey = identity.session.apiKey;
-    if (process.env.PI_WEB_PLATFORM_URL && apiKey) {
-      if (project && project.mode === "sandbox") {
-        const home = ensureProjectHome(project);
-        // Refresh credentials in the project's sandbox-platform.json exactly
-        // like the new-session path (container binding is already recorded).
-        writeSandboxConfig(home, { apiKey });
-        effectiveCwd = home;
-      } else {
-        // Pre-project sandbox session: refresh the user's stub home config.
-        effectiveCwd = ensureSandboxHome(user.id, {
-          url: process.env.PI_WEB_PLATFORM_URL,
-          apiKey,
-          disableLocalFallback: true,
-        });
-      }
-      // Container tool routing comes from the amedac-core sandbox module,
-      // injected inline (merged from the retired pi-sandbox-extension; the
-      // old PI_WEB_SANDBOX_EXTENSION_PATH wiring is gone).
-      extensionFactories = [
-        makeSandboxToolsExtension(),
-        makeRemoteVerifyExtension("sandbox", meta?.ownerId ?? user.id),
-        makeEnvironmentInfoExtension({
-          mode: "sandbox",
-          username: identity.session.user.username,
-          ...(project ? { projectName: project.name } : {}),
-        }),
-      ];
-      // bg-shell channel: sandbox tasks run INSIDE the container via the
-      // platform tools/bash API. Pre-project sessions have no container yet —
-      // a rejecting stub keeps bg_run from falling back to a server-side
-      // local spawn (wrong host, potential sandbox escape).
-      registerBgChannel(
-        sessionId,
-        project && project.containerId !== undefined
-          ? makeSandboxBgChannel(apiKey, project.containerId)
-          : {
-              label: "sandbox",
-              kind: "remote" as const,
-              run: async () => {
-                throw new Error("容器尚未创建——先发送首条消息启动沙箱会话，再使用后台任务");
-              },
-            },
-      );
-      shareRemote = {
-        mode: "sandbox",
-        userId: meta?.ownerId ?? user.id,
-        apiKey,
-        containerId: project?.containerId ?? 0,
-        isAdmin: user.role === "admin",
-        ...(project && project.mode === "sandbox" ? { homePrefix: ensureProjectHome(project) } : {}),
-      };
+    if (!process.env.PI_WEB_PLATFORM_URL || !apiKey) {
+      throw new SessionRestoreError("沙箱会话缺少平台配置或凭证，已拒绝在 Host 本地恢复", 409);
     }
+    if (project && project.mode === "sandbox") {
+      const home = ensureProjectHome(project);
+      // Refresh credentials in the project's sandbox-platform.json exactly
+      // like the new-session path (container binding is already recorded).
+      writeSandboxConfig(home, { apiKey });
+      effectiveCwd = home;
+    } else {
+      // Pre-project sandbox session: refresh the owner's stub home config.
+      effectiveCwd = ensureSandboxHome(ownerId, {
+        url: process.env.PI_WEB_PLATFORM_URL,
+        apiKey,
+        disableLocalFallback: true,
+      });
+    }
+    // Container tool routing comes from the amedac-core sandbox module,
+    // injected inline (merged from the retired pi-sandbox-extension; the
+    // old PI_WEB_SANDBOX_EXTENSION_PATH wiring is gone).
+    extensionFactories = [
+      makeSandboxToolsExtension(),
+      makeRemoteVerifyExtension("sandbox", ownerId),
+      makeEnvironmentInfoExtension({
+        mode: "sandbox",
+        username: identity.session.user.username,
+        ...(project ? { projectName: project.name } : {}),
+      }),
+    ];
+    // bg-shell channel: sandbox tasks run INSIDE the container via the
+    // platform tools/bash API. Pre-project sessions have no container yet —
+    // a rejecting stub keeps bg_run from falling back to a server-side
+    // local spawn (wrong host, potential sandbox escape).
+    registerBgChannel(
+      sessionId,
+      project && project.containerId !== undefined
+        ? makeSandboxBgChannel(apiKey, project.containerId)
+        : {
+            label: "sandbox",
+            kind: "remote" as const,
+            run: async () => {
+              throw new Error("容器尚未创建——先发送首条消息启动沙箱会话，再使用后台任务");
+            },
+          },
+    );
+    shareRemote = {
+      mode: "sandbox",
+      userId: ownerId,
+      apiKey,
+      containerId: project?.containerId ?? 0,
+      isAdmin: user.role === "admin",
+      ...(project && project.mode === "sandbox" ? { homePrefix: ensureProjectHome(project) } : {}),
+    };
   } else if (mode === "local-machine") {
     // Always inject the relay tool layer — even when the client is offline or
     // outdated. Each tool call then fails with an explicit relay/version error
     // instead of silently falling back to the SERVER's built-in tools.
+    if (descriptor?.projectId && !project) {
+      throw new SessionRestoreError("本机会话缺少项目绑定，已拒绝恢复", 409);
+    }
     if (project && project.mode === "local-machine") {
       effectiveCwd = ensureProjectHome(project);
     } else {
-      effectiveCwd = ensureLocalHome(user.id);
+      effectiveCwd = ensureLocalHome(ownerId);
     }
     extensionFactories = [
-      makeRelayToolsExtension(meta?.ownerId ?? user.id, {
+      makeRelayToolsExtension(ownerId, {
         ...(project ? { projectHome: effectiveCwd } : {}),
         ...(project?.workdir ? { workspaceDir: project.workdir } : {}),
         ...(project?.machineId ? { machineId: project.machineId } : {}),
       }),
-      makeRemoteVerifyExtension("local-machine", meta?.ownerId ?? user.id),
+      makeRemoteVerifyExtension("local-machine", ownerId),
       makeEnvironmentInfoExtension({
         mode: "local-machine",
         username: identity.session.user.username,
@@ -146,11 +178,11 @@ export async function restoreSessionOptions(req: Request, sessionId: string): Pr
     // exec.run (nohup pattern); machine follows the project binding.
     registerBgChannel(
       sessionId,
-      makeRelayBgChannel(meta?.ownerId ?? user.id, project?.machineId ?? undefined, project?.workdir),
+      makeRelayBgChannel(ownerId, project?.machineId ?? undefined, project?.workdir),
     );
     shareRemote = {
       mode: "local-machine",
-      userId: meta?.ownerId ?? user.id,
+      userId: ownerId,
       apiKey: "",
       containerId: 0,
       ...(project?.machineId ? { machineId: project.machineId } : {}),
@@ -162,39 +194,41 @@ export async function restoreSessionOptions(req: Request, sessionId: string): Pr
     // SSH mode: the SDK session runs server-side in the project home; the
     // ssh-tools extension routes the seven coding tools to the remote host.
     // Requires the SSH config the project was created with.
-    if (project && project.mode === "ssh") {
-      effectiveCwd = ensureProjectHome(project);
-      const sshConfig = readSshConfig(effectiveCwd);
-      if (sshConfig) {
-        extensionFactories = [
-          makeSshToolsExtension({
-            projectId: project.id,
-            sshConfig,
-            workdir: project.workdir ?? "/",
-            projectHome: effectiveCwd,
-          }),
-          makeEnvironmentInfoExtension({
-            mode: "ssh",
-            username: identity.session.user.username,
-            ...(project ? { projectName: project.name } : {}),
-          }),
-        ];
-        // bg-shell channel: tasks run on the remote host via the pooled
-        // client (nohup pattern), same connection the ssh-tools use.
-        registerBgChannel(sessionId, makeSshBgChannel(project.id, sshConfig, project.workdir ?? "/"));
-        shareRemote = {
-          mode: "ssh",
-          userId: meta?.ownerId ?? user.id,
-          apiKey: "",
-          containerId: 0,
-          projectId: project.id,
-          sshConfig,
-          workdir: project.workdir ?? "/",
-          isAdmin: user.role === "admin",
-          homePrefix: effectiveCwd,
-        };
-      }
+    if (!project || project.mode !== "ssh") {
+      throw new SessionRestoreError("SSH 会话缺少项目绑定，已拒绝恢复", 409);
     }
+    effectiveCwd = ensureProjectHome(project);
+    const sshConfig = readSshConfig(effectiveCwd);
+    if (!sshConfig) {
+      throw new SessionRestoreError("SSH 会话缺少连接配置（.pi/ssh.json），已拒绝恢复", 409);
+    }
+    extensionFactories = [
+      makeSshToolsExtension({
+        projectId: project.id,
+        sshConfig,
+        workdir: project.workdir ?? "/",
+        projectHome: effectiveCwd,
+      }),
+      makeEnvironmentInfoExtension({
+        mode: "ssh",
+        username: identity.session.user.username,
+        ...(project ? { projectName: project.name } : {}),
+      }),
+    ];
+    // bg-shell channel: tasks run on the remote host via the pooled
+    // client (nohup pattern), same connection the ssh-tools use.
+    registerBgChannel(sessionId, makeSshBgChannel(project.id, sshConfig, project.workdir ?? "/"));
+    shareRemote = {
+      mode: "ssh",
+      userId: ownerId,
+      apiKey: "",
+      containerId: 0,
+      projectId: project.id,
+      sshConfig,
+      workdir: project.workdir ?? "/",
+      isAdmin: user.role === "admin",
+      homePrefix: effectiveCwd,
+    };
   } else if (mode === "quick") {
     // Quick mode on restore: same scratch home, same tool policy. The system
     // prompt rides the session file itself (persisted as a model_change-adjacent
@@ -202,7 +236,7 @@ export async function restoreSessionOptions(req: Request, sessionId: string): Pr
     // 每会话独立工作区（meta.quickDir → lib/quick-session.ts）；旧会话回落
     // 共享 quick home。恢复优先用模板快照（创建时的确切内容），而非活模板。
     const quickSlug = (meta as { quickDir?: string } | undefined)?.quickDir;
-    effectiveCwd = quickSlug ? quickSessionDir(user.id, quickSlug) : ensureQuickHome(user.id);
+    effectiveCwd = quickSlug ? quickSessionDir(ownerId, quickSlug) : ensureQuickHome(ownerId);
     const snapshot = quickSlug ? readQuickTemplateSnapshot(effectiveCwd) : null;
     const { getQuickTemplate } = await import("./quick-templates");
     const template = snapshot ?? (meta?.templateId ? getQuickTemplate(meta.templateId) : undefined);
@@ -214,14 +248,14 @@ export async function restoreSessionOptions(req: Request, sessionId: string): Pr
       };
     }
     // 部署级 quick MCP 变更后，恢复时刷新会话工作区里的物化副本
-    if (quickSlug) syncQuickMcpConfig(user.id, effectiveCwd);
+    if (quickSlug) syncQuickMcpConfig(ownerId, effectiveCwd);
     // 恢复时按 meta.templateId 重建 quick 选项：quickToolSet（MCP 白名单）与
     // 提示词扩展（模板附加）都挂在 quick 选项上——不重建则恢复的快速会话
     // 丢工具策略与模板提示词。
     extensionFactories = [makeHostWorkspaceServiceExtension(effectiveCwd)];
   } else {
-    const ownerForSpace = meta?.ownerId ?? user.id;
-    let hostCwd: string | undefined;
+  const ownerForSpace = ownerId;
+  let hostCwd: string | undefined;
     try {
       const filePath =
         (ownerForSpace > 0 ? await resolveSessionPath(sessionId, { kind: "user", userId: ownerForSpace }) : null) ??
@@ -237,7 +271,6 @@ export async function restoreSessionOptions(req: Request, sessionId: string): Pr
     ];
   }
 
-  const ownerId = meta?.ownerId ?? user.id;
   // 远程会话的路径空间标记（与新建会话同一套逻辑）：护栏据此把远端工具
   // 路径映射回项目 home，deny/allow 规则在恢复后的会话里同样生效。
   if (effectiveCwd) {
@@ -260,7 +293,7 @@ export async function restoreSessionOptions(req: Request, sessionId: string): Pr
       ...(mode !== "quick"
         ? [
             makeShareFileExtension({
-              ownerId: meta?.ownerId ?? user.id,
+              ownerId: ownerId,
               ownerName: identity.session.user.username,
               mode: mode === "host" ? "host" : mode,
               cwd: effectiveCwd ?? "/",

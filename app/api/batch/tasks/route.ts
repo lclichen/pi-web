@@ -58,6 +58,9 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
+  if (mode === "host" && auth.identity.user.role !== "admin") {
+    return NextResponse.json({ error: "Host 批量任务仅管理员可用" }, { status: 403 });
+  }
   if (typeof body.prompt !== "string" || body.prompt.trim().length === 0) {
     return NextResponse.json({ error: "prompt is required" }, { status: 400 });
   }

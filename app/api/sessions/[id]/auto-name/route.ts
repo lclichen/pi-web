@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import { generateSessionTitle } from "@/lib/session-title";
 import { getRpcSession, startRpcSession } from "@/lib/rpc-manager";
-import { restoreSessionOptions } from "@/lib/session-restore-options";
+import { restoreSessionOptions, SessionRestoreError } from "@/lib/session-restore-options";
 import { invalidateSessionListForSession } from "@/lib/session-reader";
 import { resolveSessionAccess } from "@/lib/session-access";
 
@@ -38,6 +38,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     invalidateSessionListForSession(filePath);
     return NextResponse.json({ title: result.title, usage: result.usage ?? null });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : String(error) },
+      { status: error instanceof SessionRestoreError ? error.status : 500 },
+    );
   }
 }

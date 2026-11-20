@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { checkLiveSessionAccess, resolveSessionAccess, sessionOwnerInfo } from "@/lib/session-access";
 import { startRpcSession, getRpcSession, setRpcSessionTools, type AgentSessionWrapper } from "@/lib/rpc-manager";
-import { restoreSessionOptions } from "@/lib/session-restore-options";
+import { restoreSessionOptions, SessionRestoreError } from "@/lib/session-restore-options";
 import { requireUserIdentity } from "@/lib/web-session";
 import { hasAdminTakeover, isReadOnlyAgentCommand } from "@/lib/admin-takeover";
 import {
@@ -131,7 +131,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       if (!existing?.isAlive() && !filePath) {
         return NextResponse.json({ error: "Session not found" }, { status: 404 });
       }
-      const changed = await setRpcSessionTools(id, filePath, toolNames);
+      const restoreOptions = await restoreSessionOptions(req, id);
+      const changed = await setRpcSessionTools(id, filePath, toolNames, restoreOptions);
       return NextResponse.json({
         success: true,
         data: { sessionId: changed.sessionId, recreated: changed.recreated },
@@ -190,7 +191,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         error: error instanceof Error ? error.message : String(error),
         ...(commandType === "prompt" && !promptAccepted ? { code: "prompt_rejected", accepted: false } : {}),
       },
-      { status: 500 },
+      { status: error instanceof SessionRestoreError ? error.status : 500 },
     );
   }
 }

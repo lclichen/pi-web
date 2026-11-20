@@ -24,6 +24,8 @@ import { toClientAgentEvent } from "../agent-event-wire.ts";
 import { writeSandboxConfig, getOwnedProject } from "../projects.ts";
 import { dataDir } from "../mode-homes.ts";
 import { resolveCoreExtensionPaths } from "../session-restore-options.ts";
+import { descriptorForNewSession } from "../session-descriptor.ts";
+import { recordSessionMeta } from "../session-metas.ts";
 import { makeRemoteVerifyExtension } from "../extensions/remote-verify.ts";
 import { makeEnvironmentInfoExtension } from "../extensions/environment-info.ts";
 import { makeBgTasksExtension } from "../extensions/bg-tasks.ts";
@@ -438,6 +440,20 @@ export async function runBatchTask(options: RunTaskOptions): Promise<void> {
     );
     wrapper = session;
     const realSessionId = wrapper.sessionId;
+    recordSessionMeta(realSessionId, {
+      mode: options.mode,
+      descriptor: descriptorForNewSession({
+        mode: options.mode,
+        ownerId: options.ownerId,
+        cwd: sessionCwd,
+        ...(options.projectId !== undefined ? { projectId: String(options.projectId) } : {}),
+        ...(relayWorkspaceDir ? { workspaceRoot: relayWorkspaceDir } : {}),
+        management: "webui",
+      }),
+      ownerId: options.ownerId,
+      ownerName: options.username ?? "batch",
+      ...(options.projectId !== undefined ? { projectId: String(options.projectId) } : {}),
+    });
     // Record the session file immediately (not just at completion) so an
     // interruption at any point leaves a resumable record on disk.
     updateTask(taskId, {

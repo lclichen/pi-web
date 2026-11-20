@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getRpcSession, startRpcSession } from "@/lib/rpc-manager";
-import { restoreSessionOptions } from "@/lib/session-restore-options";
+import { restoreSessionOptions, SessionRestoreError } from "@/lib/session-restore-options";
 import { resolveSessionAccess } from "@/lib/session-access";
 import { generateGitInsight, type GitInsightMode } from "@/lib/git-review";
 import { checkGitAccess, gitRecentSubjects, gitReviewDiff } from "@/lib/git-operations";
@@ -83,6 +83,9 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ text: result.text, usage: result.usage ?? null });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : String(error) },
+      { status: error instanceof SessionRestoreError ? error.status : 500 },
+    );
   }
 }

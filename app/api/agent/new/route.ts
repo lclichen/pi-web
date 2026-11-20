@@ -17,6 +17,11 @@ import { invalidateSessionListForSession } from "@/lib/session-reader";
 import { checkRpcSessionQuota, startRpcSession } from "@/lib/rpc-manager";
 import { requireUserIdentity } from "@/lib/web-session";
 import { isSessionMode, modeAllowedForUser, type SessionMode } from "@/lib/session-modes";
+import {
+  descriptorForNewSession,
+  descriptorForProject,
+  type SessionDescriptor,
+} from "@/lib/session-descriptor";
 import { samePath } from "@/lib/paths";
 import { spaceDir } from "@/lib/session-spaces";
 import { ensureSandboxHome, ensureLocalHome, ensureQuickHome } from "@/lib/mode-homes";
@@ -133,6 +138,13 @@ export async function POST(req: Request) {
     if (!permission.ok) {
       return NextResponse.json({ error: permission.reason }, { status: 403 });
     }
+    // SSH has no standalone form: the old fallthrough silently created a
+    // Host-local session while recording mode=ssh. Fail closed instead.
+    if (effectiveMode === "ssh" && !projectForMode) {
+      return NextResponse.json({ error: "SSH 会话必须绑定 SSH 项目（projectId）" }, { status: 400 });
+    }
+
+    let descriptor: SessionDescriptor | undefined;
 
     let effectiveCwd: string | undefined = typeof cwd === "string" ? cwd : undefined;
     let templateIdForMeta: string | undefined;
@@ -291,6 +303,7 @@ export async function POST(req: Request) {
       // 器上把它 resolve 成 `<repo>/D:\…` 混合路径写进会话头，恢复时模型
       // 路由按 cwd 找目录直接报 Directory does not exist。
       effectiveCwd = home;
+      descriptor = descriptorForProject(project, user.id, home, project.workdir);
     } else if (mode === "sandbox") {
       if (!process.env.PI_WEB_PLATFORM_URL) {
         return NextResponse.json({ error: "沙箱模式未配置（缺少 PI_WEB_PLATFORM_URL）" }, { status: 400 });
@@ -305,6 +318,7 @@ export async function POST(req: Request) {
         apiKey: identity.session.apiKey,
         disableLocalFallback: true,
       });
+      descriptor = descriptorForNewSession({ mode: "sandbox", ownerId: user.id, cwd: effectiveCwd });
       if (user.id !== 0 && !Number(readSandboxHomeConfig(user.id).containerId)) {
         // No user-pinned default: resolve deterministically (same reasoning
         // as the project branch — no interactive picker in RPC mode).
@@ -337,6 +351,7 @@ export async function POST(req: Request) {
         if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
       }
       effectiveCwd = ensureLocalHome(user.id);
+      descriptor = descriptorForNewSession({ mode: "local-machine", ownerId: user.id, cwd: effectiveCwd });
       extensionFactories = [
         makeRelayToolsExtension(user.id),
         makeRemoteVerifyExtension("local-machine", user.id),
@@ -365,6 +380,12 @@ export async function POST(req: Request) {
         makeEnvironmentInfoExtension({ mode: "host", username: user.username, hostDir: effectiveCwd }),
         ...(effectiveCwd ? [makeHostWorkspaceServiceExtension(effectiveCwd)] : []),
       ];
+      descriptor = descriptorForNewSession({
+        mode: "host",
+        ownerId: user.id,
+        cwd: effectiveCwd,
+        management: "webui",
+      });
     }
 
     if (!effectiveCwd && mode !== "quick") {
@@ -400,6 +421,14 @@ export async function POST(req: Request) {
       const ws = ensureQuickSessionWorkspace(user.id, template);
       quickSlugForMeta = ws.slug;
       effectiveCwd = ws.dir;
+      descriptor = descriptorForNewSession({
+        mode: "quick",
+        ownerId: user.id,
+        cwd: ws.dir,
+        templateId,
+        quickDir: ws.slug,
+        management: "webui",
+      });
       extensionFactories = [makeHostWorkspaceServiceExtension(effectiveCwd)];
       templateIdForMeta = templateId;
       quickOptions = {
@@ -478,6 +507,7 @@ export async function POST(req: Request) {
 
     recordSessionMeta(realSessionId, {
       mode: effectiveMode,
+      ...(descriptor ? { descriptor } : {}),
       ownerId: user.id,
       ownerName: user.username,
       ...(projectRef ? { projectId: projectRef.id } : {}),

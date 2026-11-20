@@ -11,7 +11,7 @@ import {
 import { KeybindingsManager as TuiKeybindingsManager, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
 import { randomUUID } from "crypto";
 import { existsSync, realpathSync, writeFileSync } from "fs";
-import { join, resolve } from "path";
+import { basename, join, resolve } from "path";
 import { validateAgentImages } from "./image-attachments";
 import { applyQueueOp, describeQueueOpError, type QueueOp } from "./queue-ops";
 import { installSubagentBridge } from "./subagent-bridge";
@@ -42,7 +42,7 @@ import { copySessionImages, projectToolResultContentForClient, projectToolResult
 import { filterActiveToolsForMode, filterToolsForMode, isRemoteMode, mcpExcludedServers, type ToolExclusion } from "./tool-policy";
 import { composeQuickSystemPrompt, createQuickPromptExtension, type QuickTemplateHolder } from "./quick-prompt";
 import { createPromptConsistencyExtension, describePromptDrift, type PromptPin } from "./prompt-consistency";
-import { getSessionMeta, recordSessionMeta, type SessionMeta } from "./session-metas";
+import { copySessionMeta, getSessionMeta, recordSessionMeta, type SessionMeta } from "./session-metas";
 import { getProjectTrustStatus, projectTrustReloadOptions } from "./project-trust";
 import { createUserSettingsManager } from "./user-settings-storage";
 import { isUserScopedConfig, userConfigDir, userSkillsDir } from "./user-config";
@@ -1523,6 +1523,7 @@ export class AgentSessionWrapper {
             }
 
             const newSessionId = forkedManager.getSessionId();
+            copySessionMeta(sourceSessionId, newSessionId);
             copySessionImages(sourceSessionId, newSessionId);
             cacheSessionPath(newSessionId, newSessionFile);
             this.invalidateOwnSessionList();
@@ -1548,6 +1549,7 @@ export class AgentSessionWrapper {
           if (!forkedPath) throw new Error("Failed to create forked session");
 
           const newSessionId = openSessionManager(forkedPath, { sessionDir }).getSessionId();
+          copySessionMeta(this.inner.sessionId, newSessionId);
           copySessionImages(this.inner.sessionId, newSessionId);
           cacheSessionPath(newSessionId, forkedPath);
           this.invalidateOwnSessionList();
@@ -1578,6 +1580,7 @@ export class AgentSessionWrapper {
             if (!clonedPath || !existsSync(clonedPath)) throw new Error("Failed to clone current session branch");
 
             const newSessionId = openSessionManager(clonedPath, { sessionDir }).getSessionId();
+            copySessionMeta(sourceSessionId, newSessionId);
             copySessionImages(sourceSessionId, newSessionId);
             cacheSessionPath(newSessionId, clonedPath);
             this.invalidateOwnSessionList();
@@ -2746,6 +2749,19 @@ const SUBAGENT_CONTROLLER = createSubagentController({
   },
   reopenSession: async (sessionId, sessionFile) => {
     const meta = getSessionMeta(sessionId);
+    // Subagents are spawned outside the route layer. On reopen, recover the
+    // parent's mode extension bridge so a sandbox/relay/SSH child does not
+    // silently execute with server-local built-in tools.
+    let inheritedExtensions: InlineExtension[] | undefined;
+    try {
+      const parentFile = (
+        openSessionManager(sessionFile).getHeader() as { parentSession?: string } | undefined
+      )?.parentSession;
+      const parentId = parentFile ? basename(parentFile, ".jsonl") : undefined;
+      inheritedExtensions = parentId ? globalThis.__piWebChildExtensions?.(parentId) : undefined;
+    } catch {
+      // Unreadable header falls back to the model/tool selection below.
+    }
     return (
       await startRpcSession(sessionId, sessionFile, undefined, {
         ...(meta
@@ -2755,6 +2771,9 @@ const SUBAGENT_CONTROLLER = createSubagentController({
               ...(meta.ownerName ? { ownerName: meta.ownerName } : {}),
               ...(meta.projectId ? { projectId: meta.projectId } : {}),
             }
+          : {}),
+        ...(inheritedExtensions && inheritedExtensions.length > 0
+          ? { extensionFactories: inheritedExtensions }
           : {}),
       })
     ).session;
@@ -2971,6 +2990,7 @@ export async function setRpcSessionTools(
   sessionId: string,
   sessionFile: string | undefined,
   requestedToolNames: unknown,
+  restoreOptions: RpcSessionStartOptions = {},
 ): Promise<SetRpcSessionToolsResult> {
   const toolNames = validateSessionToolSelection(requestedToolNames);
   const existing = getRpcSession(sessionId);
@@ -2984,16 +3004,9 @@ export async function setRpcSessionTools(
     appendSessionToolSelection(manager, toolNames);
     invalidateSessionManagerCache(sessionFile);
     invalidateSessionListForSession(sessionFile);
-    const meta = getSessionMeta(sessionId);
     const started = await startRpcSession(sessionId, sessionFile, undefined, {
-      ...(meta
-        ? {
-            ownerId: meta.ownerId,
-            mode: meta.mode,
-            ...(meta.ownerName ? { ownerName: meta.ownerName } : {}),
-            ...(meta.projectId ? { projectId: meta.projectId } : {}),
-          }
-        : {}),
+      ...restoreOptions,
+      toolNames,
     });
     return { session: started.session, sessionId: started.realSessionId, recreated: false };
   }
@@ -3019,6 +3032,7 @@ export async function setRpcSessionTools(
   const model = existing.inner.model;
   const currentThinkingLevel = existing.inner.agent.state?.thinkingLevel;
   const preservedOptions = {
+    ...restoreOptions,
     ownerId: existing.ownerId,
     mode: existing.mode,
     ...(existing.projectId ? { projectId: existing.projectId } : {}),
@@ -3026,7 +3040,10 @@ export async function setRpcSessionTools(
   await existing.shutdown();
 
   if (persistedFile) {
-    const started = await startRpcSession(sessionId, persistedFile, undefined, preservedOptions);
+    const started = await startRpcSession(sessionId, persistedFile, undefined, {
+      ...preservedOptions,
+      toolNames,
+    });
     return { session: started.session, sessionId: started.realSessionId, recreated: true };
   }
 

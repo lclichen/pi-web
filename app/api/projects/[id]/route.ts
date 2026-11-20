@@ -207,17 +207,29 @@ export async function DELETE(req: Request, ctx: RouteCtx) {
   const { id } = await ctx.params;
   const r = own(req, id);
   if (r.error) return r.error;
-  const busy = await getProjectRuntimeBusy(id);
-  if (busy.busy) {
-    return NextResponse.json(
-      {
-        error: `项目仍有运行中的会话或批量任务，请先停止后再删除`,
-        sessions: busy.sessions,
-        batchTasks: busy.batchTasks,
-      },
-      { status: 409 },
-    );
+  try {
+    // Serialize the busy check with session/project-config starts: a session
+    // created between the check and the cascade would otherwise be deleted
+    // underneath (TOCTOU). Session startup takes the project read lock.
+    return await withProjectConfigWriteLock(id, async () => {
+      const busy = await getProjectRuntimeBusy(id);
+      if (busy.busy) {
+        return NextResponse.json(
+          {
+            error: `项目仍有运行中的会话或批量任务，请先停止后再删除`,
+            sessions: busy.sessions,
+            batchTasks: busy.batchTasks,
+          },
+          { status: 409 },
+        );
+      }
+      await deleteProjectCascade(r.project!);
+      return NextResponse.json({ success: true });
+    });
+  } catch (e) {
+    if (e instanceof ProjectConfigLockBusyError) {
+      return NextResponse.json({ error: e.message, code: "PROJECT_LOCKED" }, { status: 409 });
+    }
+    return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 });
   }
-  await deleteProjectCascade(r.project!);
-  return NextResponse.json({ success: true });
 }

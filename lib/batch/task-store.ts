@@ -342,6 +342,17 @@ export function listActiveProjectTasks(projectId: string): BatchTask[] {
   );
 }
 
+/** Active tasks owned by a user (account deletion must cancel these before
+ *  removing their homes: a runner that settles later must not recreate a
+ *  record we just deleted). */
+export function listActiveUserTasks(ownerId: number): BatchTask[] {
+  return [...store().values()].filter(
+    (task) =>
+      task.ownerId === ownerId &&
+      (task.state === "queued" || task.state === "running" || task.state === "waiting_input"),
+  );
+}
+
 /** Remove terminal task records for a deleted project; returns removed ids. */
 export function deleteProjectTasks(projectId: string): string[] {
   const id = String(projectId);

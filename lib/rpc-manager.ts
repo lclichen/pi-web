@@ -3184,6 +3184,27 @@ export async function destroyRpcSessionsForCwd(cwd: string): Promise<number> {
   return sessions.length;
 }
 
+/** Shut down every live wrapper bound to a project (running or idle). Project
+ *  deletion calls this after the busy check; idle liveness wrappers still hold
+ *  the project cwd and must not survive into the cascade. */
+export async function shutdownProjectSessions(projectId: string): Promise<string[]> {
+  const sessions = [...getRegistry().values()].filter(
+    (session) => session.projectId === projectId && session.isAlive(),
+  );
+  await Promise.allSettled(sessions.map((session) => session.shutdown()));
+  return sessions.map((session) => session.sessionId);
+}
+
+/** Shut down every live wrapper owned by a user (running or idle). Account
+ *  deletion removes the user's homes/state, so no wrapper may survive it. */
+export async function shutdownUserSessions(ownerId: number): Promise<string[]> {
+  const sessions = [...getRegistry().values()].filter(
+    (session) => session.ownerId === ownerId && session.isAlive(),
+  );
+  await Promise.allSettled(sessions.map((session) => session.shutdown()));
+  return sessions.map((session) => session.sessionId);
+}
+
 export function getRunningRpcSessionIds(): string[] {
   const ids = new Set<string>();
   for (const [sessionId, session] of getRegistry()) {

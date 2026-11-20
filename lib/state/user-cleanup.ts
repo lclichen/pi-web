@@ -10,7 +10,7 @@ import { vaultRemoveAllForUser } from "../api-key-vault";
 import { revokeAllAgentTokens } from "../relay/relay-store";
 import { dropWebSessionsForUser } from "../web-session";
 import { dropSharesForOwner } from "../share-store";
-import { deleteUserTasks } from "../batch/task-store";
+import { deleteUserTasks, listActiveUserTasks, updateTask } from "../batch/task-store";
 import { deleteProjectCascade } from "./lifecycle";
 import { invalidateStatePathsUnder } from "./json-store";
 
@@ -26,16 +26,38 @@ export async function deleteUserLocalState(userId: number): Promise<void> {
   dropSharesForOwner(userId);
   await revokeAllAgentTokens(userId).catch(() => 0);
 
-  // Stop the user's live agent sessions before their homes/session files are
-  // removed; a running wrapper must not keep writing into a deleted user dir.
+  // Stop every live wrapper (running or idle/warm) before their homes and
+  // session files are removed; a surviving wrapper must not keep writing into
+  // a deleted user dir.
+  let rpcManager: typeof import("../rpc-manager") | null = null;
   try {
-    const { getRpcSession, getRunningRpcSessionInfos } = await import("../rpc-manager");
-    for (const info of getRunningRpcSessionInfos()) {
-      if (info.ownerId !== userId) continue;
-      await getRpcSession(info.sessionId)?.shutdown().catch(() => undefined);
-    }
+    rpcManager = await import("../rpc-manager");
+    await rpcManager.shutdownUserSessions(userId);
   } catch {
     // rpc-manager unavailable (tests/trimmed builds)
+  }
+
+  // Cancel active batch tasks before deleting projects/homes. A runner that
+  // settles later must not recreate a record we just removed: move each task
+  // to its terminal cancelled state first, then delete all terminal records.
+  let removeQueued: ((taskId: string) => void) | undefined;
+  try {
+    ({ removeQueuedTask: removeQueued } = await import("../batch/task-runner"));
+  } catch {
+    // queue unavailable — store-level cancellation still stops persistence
+  }
+  for (const task of listActiveUserTasks(userId)) {
+    removeQueued?.(task.taskId);
+    try {
+      await rpcManager?.getRpcSession(task.sessionId)?.shutdown();
+    } catch {
+      // already gone
+    }
+    updateTask(task.taskId, {
+      state: "cancelled",
+      stopReason: "cancelled",
+      endedAt: Date.now(),
+    });
   }
 
   for (const project of listProjects(userId)) {
@@ -48,7 +70,11 @@ export async function deleteUserLocalState(userId: number): Promise<void> {
 
   const tasks = deleteUserTasks(userId);
   for (const taskId of tasks) {
-    rmSync(join(dataDir(), "batch-homes", taskId), { recursive: true, force: true });
+    try {
+      rmSync(join(dataDir(), "batch-homes", taskId), { recursive: true, force: true });
+    } catch {
+      // Windows may hold a handle briefly; one task must not abort cleanup.
+    }
   }
 
   const roots = [

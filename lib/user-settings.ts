@@ -1,10 +1,8 @@
-import { mkdirSync, readFileSync } from "fs";
-import { join } from "path";
-import { dataDir } from "./mode-homes";
-import { writePrivateFileAtomicSync } from "./atomic-file";
+import { JsonStore } from "./state/json-store";
+import { legacyDataPath } from "./state/paths";
 
 /**
- * Per-user settings (data/user-settings/u<id>.json).
+ * Per-user settings (data/state/users/u<id>/user-settings.json).
  *
  * Unlike workspace preferences (.pi/web-preferences.json, shared by everyone
  * in a cwd) or server settings (deployment-wide), these belong to ONE login:
@@ -50,53 +48,40 @@ export function askAutoContinueTimeoutMs(): number {
   return Math.max(MIN_ASK_TIMEOUT_MS, Math.floor(raw));
 }
 
-declare global {
-  var __piUserSettingsStore: Map<string, UserSettings> | undefined;
-}
-
-function storePath(userId: number): string {
-  return join(dataDir(), "user-settings", `u${userId}.json`);
-}
-
-function storeCache(): Map<string, UserSettings> {
-  if (!globalThis.__piUserSettingsStore) {
-    globalThis.__piUserSettingsStore = new Map();
+function parseUserSettings(value: unknown): UserSettings | null {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
+  const raw = value as { askAutoContinue?: unknown; ui?: unknown };
+  const ui: UserSettingsUi = {};
+  if (raw.ui !== null && typeof raw.ui === "object" && !Array.isArray(raw.ui)) {
+    const entry = raw.ui as Record<string, unknown>;
+    if (entry.theme === "light" || entry.theme === "dark" || entry.theme === "auto") ui.theme = entry.theme;
+    if (typeof entry.locale === "string") ui.locale = entry.locale;
+    if (typeof entry.chatWidth === "number" && Number.isFinite(entry.chatWidth)) ui.chatWidth = entry.chatWidth;
+    if (typeof entry.chatFontSize === "number" && Number.isFinite(entry.chatFontSize)) {
+      ui.chatFontSize = entry.chatFontSize;
+    }
+    if (typeof entry.thinkingExpanded === "boolean") ui.thinkingExpanded = entry.thinkingExpanded;
+    if (typeof entry.quoteSelection === "boolean") ui.quoteSelection = entry.quoteSelection;
   }
-  return globalThis.__piUserSettingsStore;
+  return {
+    askAutoContinue: typeof raw.askAutoContinue === "boolean" ? raw.askAutoContinue : false,
+    ui,
+  };
+}
+
+function userSettingsStore(userId: number): JsonStore<UserSettings> {
+  return new JsonStore<UserSettings>({
+    name: "user-settings",
+    scope: { kind: "user", userId },
+    legacyPaths: () => [legacyDataPath("user-settings", `u${userId}.json`)],
+    defaults: () => ({ ...DEFAULT_USER_SETTINGS, ui: {} }),
+    statTtlMs: 250,
+    parse: parseUserSettings,
+  });
 }
 
 export function getUserSettings(userId: number): UserSettings {
-  const path = storePath(userId);
-  const cache = storeCache();
-  const cached = cache.get(path);
-  if (cached) return cached;
-  let data: UserSettings = { ...DEFAULT_USER_SETTINGS, ui: {} };
-  try {
-    const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
-    if (parsed !== null && typeof parsed === "object") {
-      const raw = parsed as { askAutoContinue?: unknown; ui?: unknown };
-      const ui: UserSettingsUi = {};
-      if (raw.ui !== null && typeof raw.ui === "object" && !Array.isArray(raw.ui)) {
-        const value = raw.ui as Record<string, unknown>;
-        if (value.theme === "light" || value.theme === "dark" || value.theme === "auto") ui.theme = value.theme;
-        if (typeof value.locale === "string") ui.locale = value.locale;
-        if (typeof value.chatWidth === "number" && Number.isFinite(value.chatWidth)) ui.chatWidth = value.chatWidth;
-        if (typeof value.chatFontSize === "number" && Number.isFinite(value.chatFontSize)) {
-          ui.chatFontSize = value.chatFontSize;
-        }
-        if (typeof value.thinkingExpanded === "boolean") ui.thinkingExpanded = value.thinkingExpanded;
-        if (typeof value.quoteSelection === "boolean") ui.quoteSelection = value.quoteSelection;
-      }
-      data = {
-        askAutoContinue: typeof raw.askAutoContinue === "boolean" ? raw.askAutoContinue : false,
-        ui,
-      };
-    }
-  } catch {
-    // missing or malformed store — defaults apply
-  }
-  cache.set(path, data);
-  return data;
+  return userSettingsStore(userId).read();
 }
 
 /** Per-user dialog timeout for the rpc-manager UI pipeline: undefined = wait
@@ -110,14 +95,11 @@ export function updateUserSettings(
   userId: number,
   patch: { askAutoContinue?: boolean; ui?: Partial<UserSettingsUi> },
 ): UserSettings {
-  const current = getUserSettings(userId);
-  const next: UserSettings = {
-    ...current,
-    ...(patch.askAutoContinue !== undefined ? { askAutoContinue: patch.askAutoContinue } : {}),
-    ui: patch.ui ? { ...current.ui, ...patch.ui } : current.ui,
-  };
-  mkdirSync(join(dataDir(), "user-settings"), { recursive: true });
-  writePrivateFileAtomicSync(storePath(userId), JSON.stringify(next, null, 2));
-  storeCache().set(storePath(userId), next);
-  return next;
+  return userSettingsStore(userId).update((current) => {
+    return {
+      ...current,
+      ...(patch.askAutoContinue !== undefined ? { askAutoContinue: patch.askAutoContinue } : {}),
+      ui: patch.ui ? { ...current.ui, ...patch.ui } : current.ui,
+    };
+  });
 }

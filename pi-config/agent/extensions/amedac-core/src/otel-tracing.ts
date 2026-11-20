@@ -17,7 +17,8 @@
  * Config precedence:
  *   1. PI_OTEL_DISABLED=1 disables.
  *   2. PI_OTEL_ENABLED=1 + endpoint env forces env config.
- *   3. pi-web's <dataDir>/server-settings.json `otel*` fields (global config UI).
+ *   3. pi-web's <dataDir>/state/global/server-settings.json `otel*` fields
+ *      (flat <dataDir>/server-settings.json is read as a one-release fallback).
  *   4. OTEL_EXPORTER_OTLP_(TRACES_)ENDPOINT / PI_OTEL_ENDPOINT env (CLI).
  *   5. ~/.pi/agent/settings.json `otel` block (CLI).
  *
@@ -158,7 +159,13 @@ export function resolveOTelTracingConfig(): OTelTracingConfig | null {
   // pi-web global config: settings are deployment-wide and read on every new
   // prompt, so an admin toggle applies without a server restart.
   const dataDir = process.env.PI_WEB_DATA_DIR?.trim() || join(process.cwd(), "data");
-  const web = readJson(join(dataDir, "server-settings.json"));
+  // pi-web ≥ state-v1 writes the versioned envelope under state/global; keep
+  // the flat path as a one-release fallback for older deployments.
+  const envelope = readJson(join(dataDir, "state", "global", "server-settings.json"));
+  const web =
+    envelope && envelope.schemaVersion === 1 && envelope.data && typeof envelope.data === "object"
+      ? (envelope.data as Record<string, unknown>)
+      : readJson(join(dataDir, "server-settings.json"));
   if (web && typeof web.otelEnabled === "boolean") {
     if (!truthy(process.env.PI_OTEL_ENABLED) && web.otelEnabled === false) return null;
     const endpoint = normalizeEndpoint(web.otelEndpoint) ?? DEFAULT_ENDPOINT;

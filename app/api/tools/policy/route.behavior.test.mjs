@@ -119,8 +119,9 @@ test("auth-on: users only use their own project homes; admins can read any proje
     join(home, ".pi", "mcp.json"),
     JSON.stringify({ mcpServers: { userstdio: { command: "npx", args: ["-y", "x"] } } }),
   );
-  const projects = JSON.parse(readFileSync(join(DATA_DIR, "projects.json"), "utf8"));
-  projects.projects[projectId] = {
+  const projectsFile = join(DATA_DIR, "state", "global", "projects.json");
+  const projects = JSON.parse(readFileSync(projectsFile, "utf8"));
+  projects.data.projects[projectId] = {
     id: projectId,
     name: "p-u2",
     ownerId: 2,
@@ -128,7 +129,7 @@ test("auth-on: users only use their own project homes; admins can read any proje
     createdAt: 2,
     pinnedSessions: [],
   };
-  writeFileSync(join(DATA_DIR, "projects.json"), JSON.stringify(projects));
+  writeFileSync(projectsFile, JSON.stringify(projects));
 
   const session = (id, role) =>
     createWebSession({ id, username: `u${id}`, email: null, role, status: "active" }, "sk_test", "").sid;

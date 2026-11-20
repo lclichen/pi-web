@@ -200,18 +200,22 @@ test("auth-on: project policy locks for users, host dirs are admin-only, admin c
   const projectId = "policy-proj-u2";
   const home = join(DATA_DIR, "sandbox-homes", "u2", projectId);
   mkdirSync(join(home, ".pi"), { recursive: true });
+  const projectsFile = join(DATA_DIR, "state", "global", "projects.json");
+  mkdirSync(join(DATA_DIR, "state", "global"), { recursive: true });
   writeFileSync(
-    join(DATA_DIR, "projects.json"),
+    projectsFile,
     JSON.stringify({
-      version: 1,
-      projects: {
-        [projectId]: {
-          id: projectId,
-          name: "p2",
-          ownerId: 2,
-          mode: "sandbox",
-          createdAt: 1,
-          pinnedSessions: [],
+      schemaVersion: 1,
+      data: {
+        projects: {
+          [projectId]: {
+            id: projectId,
+            name: "p2",
+            ownerId: 2,
+            mode: "sandbox",
+            createdAt: 1,
+            pinnedSessions: [],
+          },
         },
       },
     }),

@@ -1,9 +1,8 @@
-import { mkdirSync, readFileSync, writeFileSync } from "fs";
-import { join } from "path";
-import { dataDir } from "./mode-homes";
+import { JsonStore } from "./state/json-store";
+import { legacyDataPath } from "./state/paths";
 
 /**
- * Deployment-wide server settings (data/server-settings.json).
+ * Deployment-wide server settings (data/state/global/server-settings.json).
  *
  * Values are seeded from environment variables on first read so the operator
  * picks a default at deploy time, then admins can flip them at runtime without
@@ -63,13 +62,11 @@ export interface ServerSettings {
 }
 
 declare global {
-  var __piServerSettingsStore: { path: string; data: ServerSettings } | undefined;
+  var __piServerSettingsMerged:
+    | { raw: Partial<ServerSettings>; settings: ServerSettings }
+    | undefined;
   /** True when pi-web itself put PI_OFFLINE into the process env (not the operator). */
   var __piNpmOfflineApplied: boolean | undefined;
-}
-
-function settingsPath(): string {
-  return join(dataDir(), "server-settings.json");
 }
 
 function envDefaults(): ServerSettings {
@@ -338,17 +335,22 @@ function parseStored(raw: unknown): Partial<ServerSettings> | undefined {
   return out;
 }
 
+const serverSettingsStore = new JsonStore<Partial<ServerSettings>>({
+  name: "server-settings",
+  scope: { kind: "global" },
+  legacyPaths: () => [legacyDataPath("server-settings.json")],
+  defaults: () => ({}),
+  statTtlMs: 1_000,
+  parse: (value) => parseStored(value) ?? null,
+});
+
 export function getServerSettings(): ServerSettings {
-  if (!globalThis.__piServerSettingsStore || globalThis.__piServerSettingsStore.path !== settingsPath()) {
-    let stored: Partial<ServerSettings> | undefined;
-    try {
-      stored = parseStored(JSON.parse(readFileSync(settingsPath(), "utf8")));
-    } catch {
-      // fresh store — fall through to env defaults
-    }
-    globalThis.__piServerSettingsStore = { path: settingsPath(), data: { ...envDefaults(), ...stored } };
-  }
-  return globalThis.__piServerSettingsStore.data;
+  const raw = serverSettingsStore.read();
+  const cached = globalThis.__piServerSettingsMerged;
+  if (cached && cached.raw === raw) return cached.settings;
+  const settings = { ...envDefaults(), ...raw };
+  globalThis.__piServerSettingsMerged = { raw, settings };
+  return settings;
 }
 
 /**
@@ -357,7 +359,7 @@ export function getServerSettings(): ServerSettings {
  * before any package load prevents the SDK's unbounded `npm install` from
  * blocking /api/models on machines without registry access.
  *
- * 「是否是我们注入的」标记挂 globalThis（与 __piServerSettingsStore 同理）：
+ * 「是否是我们注入的」标记挂 globalThis（与 SDK / 状态缓存同理）：
  * 模块级变量在 dev 热重载后归零，会把运维设置的 PI_OFFLINE 误当成自己的
  * 注入并在下次应用设置时清掉。
  */
@@ -423,55 +425,57 @@ export function updateServerSettings(patch: {
   otelHeaders?: Record<string, string> | null;
   otelServiceName?: string;
 }): ServerSettings {
-  const next: ServerSettings = { ...getServerSettings() };
-  if (typeof patch.labTraining === "boolean") next.labTraining = patch.labTraining;
-  if (typeof patch.disableNpmPackages === "boolean") next.disableNpmPackages = patch.disableNpmPackages;
-  if (patch.npmRegistry !== undefined) {
-    const registry = normalizePackageMirrorUrl(patch.npmRegistry, "npmRegistry");
-    if (registry) next.npmRegistry = registry;
-    else delete next.npmRegistry;
-  }
-  if (patch.pipIndexUrl !== undefined) {
-    const pip = normalizePackageMirrorUrl(patch.pipIndexUrl, "pipIndexUrl");
-    if (pip) next.pipIndexUrl = pip;
-    else delete next.pipIndexUrl;
-  }
-  if (patch.skillhubUrl !== undefined) {
-    // 显式传值：合法 → 覆盖；空串 → 清除（回到 skills.sh 流程）。undefined = 不动。
-    const hub = normalizeSkillhubUrlSetting(patch.skillhubUrl);
-    if (hub) next.skillhubUrl = hub;
-    else delete next.skillhubUrl;
-  }
-  if (patch.bundleUploadMaxMb !== undefined) {
-    // null = 清除覆盖（回到默认）。非法值由 normalizeUploadMaxMb 抛错。
-    if (patch.bundleUploadMaxMb === null) delete next.bundleUploadMaxMb;
-    else next.bundleUploadMaxMb = normalizeUploadMaxMb(patch.bundleUploadMaxMb, "bundleUploadMaxMb");
-  }
-  if (patch.publicBaseUrl !== undefined) {
-    // 空串 = 清除（回到按请求 Host 自动推断）。非法值抛错。
-    const base = normalizePublicBaseUrl(patch.publicBaseUrl);
-    if (base) next.publicBaseUrl = base;
-    else delete next.publicBaseUrl;
-  }
-  if (typeof patch.otelEnabled === "boolean") next.otelEnabled = patch.otelEnabled;
-  if (patch.otelEndpoint !== undefined) {
-    const endpoint = normalizeOtelEndpoint(patch.otelEndpoint);
-    if (endpoint) next.otelEndpoint = endpoint;
-    else delete next.otelEndpoint;
-  }
-  if (patch.otelHeaders !== undefined) {
-    const headers = normalizeOtelHeaders(patch.otelHeaders);
-    if (headers) next.otelHeaders = headers;
-    else delete next.otelHeaders;
-  }
-  if (patch.otelServiceName !== undefined) {
-    const serviceName = patch.otelServiceName.trim();
-    if (serviceName) next.otelServiceName = serviceName.slice(0, 128);
-    else delete next.otelServiceName;
-  }
-  mkdirSync(dataDir(), { recursive: true });
-  writeFileSync(settingsPath(), JSON.stringify(next, null, 2), "utf8");
-  globalThis.__piServerSettingsStore = { path: settingsPath(), data: next };
+  const base = getServerSettings();
+  const next = serverSettingsStore.update((stored) => {
+    const next: ServerSettings = { ...base, ...stored };
+    if (typeof patch.labTraining === "boolean") next.labTraining = patch.labTraining;
+    if (typeof patch.disableNpmPackages === "boolean") next.disableNpmPackages = patch.disableNpmPackages;
+    if (patch.npmRegistry !== undefined) {
+      const registry = normalizePackageMirrorUrl(patch.npmRegistry, "npmRegistry");
+      if (registry) next.npmRegistry = registry;
+      else delete next.npmRegistry;
+    }
+    if (patch.pipIndexUrl !== undefined) {
+      const pip = normalizePackageMirrorUrl(patch.pipIndexUrl, "pipIndexUrl");
+      if (pip) next.pipIndexUrl = pip;
+      else delete next.pipIndexUrl;
+    }
+    if (patch.skillhubUrl !== undefined) {
+      // 显式传值：合法 → 覆盖；空串 → 清除（回到 skills.sh 流程）。undefined = 不动。
+      const hub = normalizeSkillhubUrlSetting(patch.skillhubUrl);
+      if (hub) next.skillhubUrl = hub;
+      else delete next.skillhubUrl;
+    }
+    if (patch.bundleUploadMaxMb !== undefined) {
+      // null = 清除覆盖（回到默认）。非法值由 normalizeUploadMaxMb 抛错。
+      if (patch.bundleUploadMaxMb === null) delete next.bundleUploadMaxMb;
+      else next.bundleUploadMaxMb = normalizeUploadMaxMb(patch.bundleUploadMaxMb, "bundleUploadMaxMb");
+    }
+    if (patch.publicBaseUrl !== undefined) {
+      // 空串 = 清除（回到按请求 Host 自动推断）。非法值抛错。
+      const publicBase = normalizePublicBaseUrl(patch.publicBaseUrl);
+      if (publicBase) next.publicBaseUrl = publicBase;
+      else delete next.publicBaseUrl;
+    }
+    if (typeof patch.otelEnabled === "boolean") next.otelEnabled = patch.otelEnabled;
+    if (patch.otelEndpoint !== undefined) {
+      const endpoint = normalizeOtelEndpoint(patch.otelEndpoint);
+      if (endpoint) next.otelEndpoint = endpoint;
+      else delete next.otelEndpoint;
+    }
+    if (patch.otelHeaders !== undefined) {
+      const headers = normalizeOtelHeaders(patch.otelHeaders);
+      if (headers) next.otelHeaders = headers;
+      else delete next.otelHeaders;
+    }
+    if (patch.otelServiceName !== undefined) {
+      const serviceName = patch.otelServiceName.trim();
+      if (serviceName) next.otelServiceName = serviceName.slice(0, 128);
+      else delete next.otelServiceName;
+    }
+    return next;
+  }) as ServerSettings;
+  globalThis.__piServerSettingsMerged = { raw: next, settings: next };
   applyPackageNetworkMode();
   applyPackageRegistryEnv();
   return next;

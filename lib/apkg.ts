@@ -14,7 +14,7 @@
  * it. Only the public metadata (config/apkg-recipient.json) is read here.
  * There is no shared KEK file.
  *
- * Import counter: <dataDir>/apkg-imports.json tracks per-fingerprint import
+ * Import counter: <dataDir>/state/global/apkg-imports.json tracks per-fingerprint import
  * counts — the server-side half of `license.maxImports`. Honest boundary
  * (commercial-protection.md): the counter binds one pi-web server; a file
  * copied to another server starts a fresh counter. It raises the bar against
@@ -28,9 +28,10 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { writePrivateFileAtomicSync } from "./atomic-file.ts";
 import { dataDir } from "./mode-homes.ts";
 import { projectIdentityKey } from "./project-identity.ts";
+import { JsonStore } from "./state/json-store.ts";
+import { legacyDataPath } from "./state/paths.ts";
 
 export const LOCK_BASENAME = ".bundle-lock.json";
 
@@ -222,27 +223,21 @@ interface ImportState {
   [fingerprint: string]: { count: number; firstAt: string; lastAt: string };
 }
 
-function importStatePath(): string {
-  return join(dataDir(), "apkg-imports.json");
+function parseImportState(value: unknown): ImportState | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as ImportState;
 }
 
-function readImportState(): ImportState {
-  try {
-    return JSON.parse(readFileSync(importStatePath(), "utf8")) as ImportState;
-  } catch {
-    return {};
-  }
-}
-
-function writeImportState(state: ImportState): void {
-  mkdirSync(dataDir(), { recursive: true });
-  // 计数器是服务器侧的许可凭证，裸 writeFileSync 崩溃半写会留下损坏 JSON，
-  // 下次读取 fail-open 清零；0600 原子替换（临时文件 + rename）杜绝半写残留。
-  writePrivateFileAtomicSync(importStatePath(), JSON.stringify(state, null, 2));
-}
+const importStateStore = new JsonStore<ImportState>({
+  name: "apkg-imports",
+  scope: { kind: "global" },
+  legacyPaths: () => [legacyDataPath("apkg-imports.json")],
+  defaults: () => ({}),
+  parse: parseImportState,
+});
 
 export function getApkgImportCount(fingerprint: string): number {
-  return readImportState()[fingerprint]?.count ?? 0;
+  return importStateStore.read()[fingerprint]?.count ?? 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -298,13 +293,13 @@ function enforceApkgLicense(license: ApkgLicense, fingerprint: string, header: A
 
 /** Record a successful import AFTER the files landed. */
 function bumpApkgImport(fingerprint: string): void {
-  const state = readImportState();
-  const now = new Date().toISOString();
-  const entry = state[fingerprint] ?? { count: 0, firstAt: now, lastAt: now };
-  entry.count += 1;
-  entry.lastAt = now;
-  state[fingerprint] = entry;
-  writeImportState(state);
+  importStateStore.update((state) => {
+    const now = new Date().toISOString();
+    const entry = state[fingerprint] ?? { count: 0, firstAt: now, lastAt: now };
+    entry.count += 1;
+    entry.lastAt = now;
+    state[fingerprint] = entry;
+  });
 }
 
 /** 单独调用也拿指纹锁（防新调用方绕过原子入口）；导入流程请改用 runLicensedApkgImport。 */
@@ -382,29 +377,32 @@ interface LockedHomeEntry {
   importedAt: string;
 }
 
-function lockedHomesPath(): string {
-  return join(dataDir(), "apkg-locked-homes.json");
+interface LockedHomes {
+  [identityKey: string]: LockedHomeEntry;
 }
 
-function readLockedHomes(): Record<string, LockedHomeEntry> {
-  try {
-    return JSON.parse(readFileSync(lockedHomesPath(), "utf8")) as Record<string, LockedHomeEntry>;
-  } catch {
-    return {};
-  }
+function parseLockedHomes(value: unknown): LockedHomes | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as LockedHomes;
 }
+
+const lockedHomesStore = new JsonStore<LockedHomes>({
+  name: "apkg-locked-homes",
+  scope: { kind: "global" },
+  legacyPaths: () => [legacyDataPath("apkg-locked-homes.json")],
+  defaults: () => ({}),
+  parse: parseLockedHomes,
+});
 
 /** Server-side half of the no-re-export lock; survives agent-side tampering. */
 export function recordApkgLockedHome(home: string, entry: LockedHomeEntry): void {
-  const registry = readLockedHomes();
-  registry[projectIdentityKey(home)] = entry;
-  mkdirSync(dataDir(), { recursive: true });
-  // 注册表写坏即锁失效（fail-open），同样走 0600 原子替换，不留半写 JSON。
-  writePrivateFileAtomicSync(lockedHomesPath(), JSON.stringify(registry, null, 2));
+  lockedHomesStore.update((registry) => {
+    registry[projectIdentityKey(home)] = entry;
+  });
 }
 
 export function isApkgLockedHome(home: string): boolean {
-  return readLockedHomes()[projectIdentityKey(home)] !== undefined;
+  return lockedHomesStore.read()[projectIdentityKey(home)] !== undefined;
 }
 
 /** Export gate: the in-home lock file OR the server-side registry. */

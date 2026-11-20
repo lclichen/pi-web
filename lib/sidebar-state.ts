@@ -11,10 +11,8 @@
  * cleared there on unpin.
  */
 
-import { mkdirSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { writePrivateFileAtomicSync } from "./atomic-file";
-import { dataDir } from "./mode-homes";
+import { JsonStore } from "./state/json-store";
+import { legacyDataPath } from "./state/paths";
 import type { SidebarPinState } from "./sidebar-state-shared";
 
 const MAX_PINNED_PROJECTS = 500;
@@ -22,14 +20,19 @@ const MAX_PINNED_SESSIONS = 2000;
 const MAX_KEY_LENGTH = 4096;
 const MAX_SESSION_ID_LENGTH = 256;
 
-interface SidebarStateFile {
-  version: 1;
+interface SidebarStateData {
   pinnedProjects: string[];
   pinnedSessions: string[];
 }
 
-function statePath(userId: number): string {
-  return join(dataDir(), "sidebar-state", `u${userId}.json`);
+function sidebarStore(userId: number): JsonStore<SidebarStateData> {
+  return new JsonStore<SidebarStateData>({
+    name: "sidebar-state",
+    scope: { kind: "user", userId },
+    legacyPaths: () => [legacyDataPath("sidebar-state", `u${userId}.json`)],
+    defaults: () => ({ pinnedProjects: [], pinnedSessions: [] }),
+    parse: (value) => sanitize(value),
+  });
 }
 
 function cleanList(value: unknown, maxItems: number, maxLength: number): string[] {
@@ -47,50 +50,43 @@ function cleanList(value: unknown, maxItems: number, maxLength: number): string[
   return out;
 }
 
-function sanitize(value: unknown): SidebarStateFile {
+function sanitize(value: unknown): SidebarStateData {
   const record = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
   return {
-    version: 1,
     pinnedProjects: cleanList(record.pinnedProjects, MAX_PINNED_PROJECTS, MAX_KEY_LENGTH),
     pinnedSessions: cleanList(record.pinnedSessions, MAX_PINNED_SESSIONS, MAX_SESSION_ID_LENGTH),
   };
 }
 
-function readState(userId: number): SidebarStateFile {
-  try {
-    return sanitize(JSON.parse(readFileSync(statePath(userId), "utf8")));
-  } catch {
-    return { version: 1, pinnedProjects: [], pinnedSessions: [] };
-  }
-}
-
-function writeState(userId: number, state: SidebarStateFile): SidebarPinState {
-  const next = sanitize(state);
-  const path = statePath(userId);
-  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-  writePrivateFileAtomicSync(path, `${JSON.stringify(next, null, 2)}\n`);
-  return { pinnedProjects: next.pinnedProjects, pinnedSessions: next.pinnedSessions };
-}
-
 export function readSidebarPins(userId: number): SidebarPinState {
-  const state = readState(userId);
+  const state = sidebarStore(userId).read();
   return { pinnedProjects: state.pinnedProjects, pinnedSessions: state.pinnedSessions };
 }
 
 /** Pin/unpin a project group. A newly pinned key goes to the front. */
 export function setPinnedProject(userId: number, key: string, pinned: boolean): SidebarPinState {
-  const state = readState(userId);
-  state.pinnedProjects = pinned
-    ? [key, ...state.pinnedProjects.filter((entry) => entry !== key)].slice(0, MAX_PINNED_PROJECTS)
-    : state.pinnedProjects.filter((entry) => entry !== key);
-  return writeState(userId, state);
+  const store = sidebarStore(userId);
+  const state = store.update((data) => {
+    const projects = Array.isArray(data.pinnedProjects) ? data.pinnedProjects : [];
+    data.pinnedProjects = cleanList(
+      pinned ? [key, ...projects.filter((entry) => entry !== key)] : projects.filter((entry) => entry !== key),
+      MAX_PINNED_PROJECTS,
+      MAX_KEY_LENGTH,
+    );
+  });
+  return { pinnedProjects: state.pinnedProjects, pinnedSessions: state.pinnedSessions };
 }
 
 /** Pin/unpin a session. A newly pinned id goes to the front. */
 export function setPinnedSession(userId: number, sessionId: string, pinned: boolean): SidebarPinState {
-  const state = readState(userId);
-  state.pinnedSessions = pinned
-    ? [sessionId, ...state.pinnedSessions.filter((entry) => entry !== sessionId)].slice(0, MAX_PINNED_SESSIONS)
-    : state.pinnedSessions.filter((entry) => entry !== sessionId);
-  return writeState(userId, state);
+  const store = sidebarStore(userId);
+  const state = store.update((data) => {
+    const sessions = Array.isArray(data.pinnedSessions) ? data.pinnedSessions : [];
+    data.pinnedSessions = cleanList(
+      pinned ? [sessionId, ...sessions.filter((entry) => entry !== sessionId)] : sessions.filter((entry) => entry !== sessionId),
+      MAX_PINNED_SESSIONS,
+      MAX_SESSION_ID_LENGTH,
+    );
+  });
+  return { pinnedProjects: state.pinnedProjects, pinnedSessions: state.pinnedSessions };
 }

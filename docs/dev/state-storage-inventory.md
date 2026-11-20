@@ -2,6 +2,9 @@
 
 > 现状盘点（2026-11-19）。目标：减少“一坨 JSON 文件”带来的并发/一致性/迁移问题，
 > 同时不破坏离线部署与现有备份方式。
+>
+> **更新（2026-11-19）**：下表是迁移前的路径盘点；Phase 1 的统一 `state/` 布局
+> 已落地，核心 store 的新路径/信封/迁移策略见第 3 节。
 
 ## 1. 当前状态文件
 
@@ -46,57 +49,57 @@
 7. **真实路径扩散**：`projects.json`/Host 注册表/会话元数据包含服务器或远端路径，
    前端/API 需要额外脱敏（本次已清理主要展示面，但数据结构仍保留）。
 
-## 3. 建议路线
+## 3. Phase 1：统一 JSON store（已落地 2026-11-19）
 
-### Phase 1：先规范化 JSON（低风险，建议先做）
+核心实现在 `lib/state/`：
 
-- 新增 `lib/state/`：
-  - `json-store.ts`：统一的 `{ schemaVersion, data }` 信封、原子写（temp+rename）、
-    备份（`*.bak`）、读取校验、按 scope（global/user:<id>/project:<id>）定位。
-  - 每个 store 一个模块，导出 typed repository（不直接读写路径）。
-- 统一目录（可兼容旧路径读取）：
+- `paths.ts`：`global` / `user:<id>` / `project:<id>` scope 到目录的映射。
+- `json-store.ts`：统一信封、原子写、`*.bak`、0600/0700、`proper-lockfile`
+  跨进程写锁、mtime 缓存、旧文件懒迁移。
+- 新文件格式：
+
+  ```json
+  { "schemaVersion": 1, "data": { } }
+  ```
+
+- 新目录：
+
   ```
   <dataDir>/state/global/*.json
   <dataDir>/state/users/u<id>/*.json
   <dataDir>/state/projects/<projectId>/*.json
   ```
-  大文件/目录（sessions JSONL、images、attachments、bundle 原件、workspace homes）
-  继续留在文件系统。
-- 暴露一个 `GET /api/admin/state/export`（admin）生成 zip 快照；
-  升级脚本先备份再迁移。
-- 迁移策略：启动时检测旧文件 → 读取 → 写新结构 → 保留旧文件只读一个版本 →
-  下个版本删除。避免一次性破坏回滚。
 
-### Phase 2：SQLite 承载小型元数据（可选）
+- 首批迁移：`projects`、`session-metas`、`host-dirs`、`server-settings`、
+  `quick-templates`、`api-key-vault`、`apkg-imports`、`apkg-locked-homes`、
+  `config-bundles` metadata、`sidebar-state`、`user-settings`。
+- 旧路径只读保留一个版本：首次读取时迁移到 `state/`，之后只写新路径；
+  旧文件保留用于回滚/对照，下个版本删除。
+- 写入前保留上一版 `<file>.bak`；目标损坏时依次回退 `.bak`、旧文件、默认值。
+- 大文件/目录（sessions JSONL、images、attachments、bundle 原件、workspace
+  homes、projection/sync-plan 目录）不进入 `state/`。
 
-Node 22 自带 `node:sqlite`（当前为 experimental，无 native 依赖），适合：
-- `projects`、`session_metas`、`sidebar_pins`、`shares`、`host_dirs`、
-  `quick_templates`、`server_settings`、`user_settings`、`apkg_imports`、
-  `apkg_locked_homes`、`config_bundles` 元数据、`projection` 状态。
+### Phase 2：复用平台后端（后续，不引入本地 SQLite）
 
-不建议进 DB：
-- 会话 JSONL（append-only，已有成熟文件格式与工具）
-- 图片/附件/工作区文件（大对象、需要直接文件访问）
-- 配置包原件（zip/apkg 密文，保留文件便于下载/备份）
+pi-web 不再计划维护独立数据库。后续若要关系化/查询化，通过 `lib/state`
+的 repository 适配层对接平台后端服务（平台 API 或平台直接管理的数据库），
+而不是在 WebUI 侧新建第二个事实源。用户/认证仍以平台为准。
 
 设计要点：
-- 单文件 `state.sqlite` + WAL；每张表只存 id/owner/project/时间 + `data JSON`
-  或少量高频列，先不追求完整关系模型。
-- 一个 `Repository` 接口，JSON 与 SQLite 两套实现可切换（迁移期双读）。
-- 事务覆盖“删除项目”这类跨表操作；置顶/未读用 `(user_id, key, rank)` 表。
-- **用户/认证不要迁入**：用户系统在平台侧，pi-web 只做会话代理；
-  离线单用户模式也没有多用户表需求。把 auth 复制进 pi-web DB 会制造第二事实源。
+- 保留 `JsonStore` 作为默认实现；将来增加平台后端 adapter 时，业务代码只依赖
+  `read/update` 接口。
+- 平台侧只暴露必要的小型元数据（projects、session-metas、sidebar、settings 等），
+  大对象和 append-only 会话正文继续留在文件系统。
+- 不在 pi-web 内复制用户表或维护独立 auth 库。
 
 ### 选型注意
 
-- `node:sqlite` 目前有 experimental 警告，且 Next 服务端打包需确认 external；
-  若要求长期稳定，`better-sqlite3` 更成熟但引入 native 模块，离线安装/多平台
-  发布成本更高。
-- 无论哪种，先做 Phase 1 的 repository 抽象；这样 Phase 2 只换实现，不动业务。
+- 若将来确实需要本地缓存/离线兜底，再评估 `node:sqlite`；当前不引入。
+- 无论适配哪种后端，先保持 Phase 1 的 repository 边界，业务层不动。
 
-## 4. 建议顺序
+## 4. 后续顺序
 
-1. 本次先修项目信任/路径脱敏/信任刷新/新建项目置顶/投影 dirty（已做）。
-2. Phase 1 统一 JSON store + state 导出/备份。
-3. 观察一个版本后，再决定是否上 SQLite；优先迁 `projects`、`sidebar`、
-   `session-metas`、`shares`、`settings` 这几类高频小数据。
+1. 观察一个版本：确认 `state/` 迁移、锁、备份在真实部署无回归。
+2. 下个版本删除旧 JSON 文件及旧读取回退。
+3. 再评估平台后端 adapter；优先迁 `projects`、`sidebar`、`session-metas`、
+   `shares`、`settings` 这类高频小数据。

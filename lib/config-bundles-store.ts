@@ -21,6 +21,8 @@ import {
 import { createHash, randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { dataDir } from "./mode-homes.ts";
+import { JsonStore } from "./state/json-store.ts";
+import { legacyDataPath } from "./state/paths.ts";
 import { importProjectConfigBundle } from "./project-config-bundle.ts";
 import { isApkgBytes, readApkgHeader } from "./apkg.ts";
 import {
@@ -46,10 +48,6 @@ function bundlesDir(): string {
   return join(dataDir(), "config-bundles");
 }
 
-function metaPath(): string {
-  return join(bundlesDir(), "meta.json");
-}
-
 interface MetaEntry {
   description: string;
   createdAt: number;
@@ -58,16 +56,23 @@ interface MetaEntry {
   sha256?: string;
 }
 
-function readMeta(): Record<string, MetaEntry> {
-  try {
-    return JSON.parse(readFileSync(metaPath(), "utf8"));
-  } catch {
-    return {};
-  }
+interface BundleMetaData {
+  [name: string]: MetaEntry;
 }
 
-function writeMeta(meta: Record<string, MetaEntry>): void {
-  writeFileSync(metaPath(), JSON.stringify(meta, null, 2));
+const bundleMetaStore = new JsonStore<BundleMetaData>({
+  name: "config-bundles",
+  scope: { kind: "global" },
+  legacyPaths: () => [legacyDataPath("config-bundles", "meta.json")],
+  defaults: () => ({}),
+  parse: (value) => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+    return value as BundleMetaData;
+  },
+});
+
+function readMeta(): BundleMetaData {
+  return bundleMetaStore.read();
 }
 
 /** Extension-agnostic path lookup: .apkg first, then the legacy .zip. */
@@ -112,12 +117,12 @@ export async function ensureBuiltinBundles(): Promise<void> {
     bytes,
   );
   // 明文 zip 的版本不在 .apkg 头里——补写 meta 让列表/详情显示版本。
-  const meta = readMeta();
-  meta[BUILTIN_AGENT_BUILDER_NAME] = {
-    ...meta[BUILTIN_AGENT_BUILDER_NAME],
-    version: BUILTIN_AGENT_BUILDER_VERSION,
-  };
-  writeMeta(meta);
+  bundleMetaStore.update((meta) => {
+    meta[BUILTIN_AGENT_BUILDER_NAME] = {
+      ...meta[BUILTIN_AGENT_BUILDER_NAME],
+      version: BUILTIN_AGENT_BUILDER_VERSION,
+    };
+  });
 }
 
 export function listBundles(): BundleMeta[] {
@@ -175,11 +180,9 @@ export function getBundleInfo(
   if (!meta.sha256) {
     try {
       meta.sha256 = createHash("sha256").update(readFileSync(bundleFilePath(name))).digest("hex");
-      const stored = readMeta();
-      if (stored[name]) {
-        stored[name].sha256 = meta.sha256;
-        writeMeta(stored);
-      }
+      bundleMetaStore.update((stored) => {
+        if (stored[name]) stored[name].sha256 = meta.sha256;
+      });
     } catch {
       return null;
     }
@@ -205,15 +208,15 @@ export function saveBundle(name: string, description: string, data: Buffer): voi
       version = "";
     }
   }
-  const meta = readMeta();
-  meta[name] = {
-    description,
-    createdAt: meta[name]?.createdAt ?? Date.now(),
-    kind,
-    ...(version ? { version } : {}),
-    sha256: createHash("sha256").update(data).digest("hex"),
-  };
-  writeMeta(meta);
+  bundleMetaStore.update((meta) => {
+    meta[name] = {
+      description,
+      createdAt: meta[name]?.createdAt ?? Date.now(),
+      kind,
+      ...(version ? { version } : {}),
+      sha256: createHash("sha256").update(data).digest("hex"),
+    };
+  });
 }
 
 /** Temp path for a streaming upload — same directory as the store, so the
@@ -243,15 +246,15 @@ export function saveBundleFromFile(name: string, description: string, tempPath: 
       version = "";
     }
   }
-  const meta = readMeta();
-  meta[name] = {
-    description,
-    createdAt: meta[name]?.createdAt ?? Date.now(),
-    kind,
-    ...(version ? { version } : {}),
-    sha256: createHash("sha256").update(readFileSync(target)).digest("hex"),
-  };
-  writeMeta(meta);
+  bundleMetaStore.update((meta) => {
+    meta[name] = {
+      description,
+      createdAt: meta[name]?.createdAt ?? Date.now(),
+      kind,
+      ...(version ? { version } : {}),
+      sha256: createHash("sha256").update(readFileSync(target)).digest("hex"),
+    };
+  });
 }
 
 export function deleteBundle(name: string): boolean {
@@ -259,9 +262,9 @@ export function deleteBundle(name: string): boolean {
   const target = bundleFilePath(name);
   if (!existsSync(target)) return false;
   unlinkSync(target);
-  const meta = readMeta();
-  delete meta[name];
-  writeMeta(meta);
+  bundleMetaStore.update((meta) => {
+    delete meta[name];
+  });
   return true;
 }
 

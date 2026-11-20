@@ -6,12 +6,13 @@ import {
   readFileSync,
   readdirSync,
   rmSync,
-  statSync,
   writeFileSync,
 } from "fs";
 import { join, relative, resolve } from "path";
 import { randomUUID } from "crypto";
 import { dataDir } from "./mode-homes";
+import { JsonStore } from "./state/json-store";
+import { legacyDataPath } from "./state/paths";
 import { cleanupProjectSyncPlans } from "./sync-plan-store";
 import { dropSshClient, writeSshConfig, type SshConfigInput } from "./ssh";
 import { applyBundleToDirectory, bundleExists, isValidBundleName } from "./config-bundles-store";
@@ -70,59 +71,31 @@ export interface ProjectRecord {
   snapshotSlots?: Array<{ id: number; name: string; createdAt: number }>;
 }
 
-interface ProjectFile {
-  version: 1;
+interface ProjectData {
   projects: Record<string, ProjectRecord>;
-}
-
-declare global {
-  var __piProjectsStore: { path: string; data: ProjectFile; mtime: number } | undefined;
 }
 
 const PROJECT_MODES = new Set(["sandbox", "local-machine", "ssh"]);
 
-function storePath(): string {
-  return join(dataDir(), "projects.json");
-}
+const projectsStore = new JsonStore<ProjectData>({
+  name: "projects",
+  scope: { kind: "global" },
+  legacyPaths: () => [legacyDataPath("projects.json")],
+  defaults: () => ({ projects: {} }),
+  parse: (value) => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+    const projects = (value as { projects?: unknown }).projects;
+    if (!projects || typeof projects !== "object" || Array.isArray(projects)) return null;
+    return { projects: projects as Record<string, ProjectRecord> };
+  },
+});
 
-// Reloads when the file's mtime moves — route modules can hold separate
-// module instances, so a write through one instance must be visible to
-// reads through another (same pattern as lib/session-metas.ts).
-function store(): { path: string; data: ProjectFile } {
-  const path = storePath();
-  let mtime = 0;
-  try {
-    mtime = statSync(path).mtimeMs;
-  } catch {
-    // missing file → mtime 0
-  }
-  const cached = globalThis.__piProjectsStore;
-  if (!cached || cached.path !== path || cached.mtime !== mtime) {
-    let data: ProjectFile = { version: 1, projects: {} };
-    try {
-      const parsed = JSON.parse(readFileSync(path, "utf8")) as ProjectFile;
-      if (parsed && parsed.projects) data = parsed;
-    } catch {
-      // fresh store
-    }
-    const next = { path, data, mtime };
-    globalThis.__piProjectsStore = next;
-    return next;
-  }
-  return cached;
-}
-
-function persist(): void {
-  const s = store();
-  try {
-    writeFileSync(s.path, JSON.stringify(s.data, null, 2), "utf8");
-  } catch {
-    // best-effort sidecar
-  }
+function projectData(): ProjectData {
+  return projectsStore.read();
 }
 
 export function listProjects(ownerId: number): ProjectRecord[] {
-  return Object.values(store().data.projects)
+  return Object.values(projectData().projects)
     .filter((p) => p.ownerId === ownerId)
     .sort((a, b) => a.createdAt - b.createdAt);
 }
@@ -140,11 +113,11 @@ export function publicProject(project: ProjectRecord): Omit<ProjectRecord, "work
 /** All projects across users (container-binding lookups; callers must not
  *  leak cross-user records to clients). */
 export function allProjects(): ProjectRecord[] {
-  return Object.values(store().data.projects);
+  return Object.values(projectData().projects);
 }
 
 export function getProject(projectId: string): ProjectRecord | undefined {
-  return store().data.projects[projectId];
+  return projectData().projects[projectId];
 }
 
 /** Ownership-checked fetch; cross-user access reads as "not found". */
@@ -171,7 +144,7 @@ export function projectHome(project: ProjectRecord): string {
  */
 export function isCallerOwnedProjectHome(homePath: string, ownerId: number, isAdmin = false): boolean {
   const target = resolve(homePath).toLowerCase();
-  for (const project of Object.values(store().data.projects)) {
+  for (const project of Object.values(projectData().projects)) {
     if (project.ownerId !== ownerId && !isAdmin && ownerId !== 0) continue;
     if (resolve(projectHome(project)).toLowerCase() === target) return true;
   }
@@ -185,7 +158,7 @@ export function isCallerOwnedProjectHome(homePath: string, ownerId: number, isAd
  */
 export function projectIdForHome(homePath: string): string | undefined {
   const target = resolve(homePath).toLowerCase();
-  for (const project of Object.values(store().data.projects)) {
+  for (const project of Object.values(projectData().projects)) {
     if (resolve(projectHome(project)).toLowerCase() === target) return project.id;
   }
   return undefined;
@@ -220,7 +193,7 @@ export async function createProject(input: {
   if (!name || name.length > 64) return { ok: false, error: "项目名不能为空且不超过 64 字符" };
   if (!PROJECT_MODES.has(input.mode)) return { ok: false, error: `不支持的模式：${input.mode}` };
   // 同一用户下项目名唯一：重名会让侧栏分组与复制/导入的目标辨识混乱。
-  const duplicate = Object.values(store().data.projects).find((p) => p.ownerId === input.ownerId && p.name === name);
+  const duplicate = Object.values(projectData().projects).find((p) => p.ownerId === input.ownerId && p.name === name);
   if (duplicate) {
     return { ok: false, error: `已存在同名项目「${name}」，请换一个名称` };
   }
@@ -310,8 +283,15 @@ export async function createProject(input: {
   // remain user-controlled and are not auto-trusted here.
   trustProject(home, getAgentDir());
 
-  store().data.projects[project.id] = project;
-  persist();
+  let added = false;
+  projectsStore.update((data) => {
+    // Re-check under the store lock: a concurrent create may have taken the
+    // name while the home/preset work above was running.
+    if (Object.values(data.projects).some((p) => p.ownerId === project.ownerId && p.name === project.name)) return;
+    data.projects[project.id] = project;
+    added = true;
+  });
+  if (!added) return { ok: false, error: `已存在同名项目「${name}」，请换一个名称` };
   return { ok: true, project };
 }
 
@@ -327,47 +307,58 @@ export function updateProject(
     snapshotSlots?: Array<{ id: number; name: string; createdAt: number }>;
   },
 ): { ok: true; project: ProjectRecord } | { ok: false; error: string } {
-  const project = store().data.projects[projectId];
-  if (!project) return { ok: false, error: "项目不存在" };
-  if (patch.name !== undefined) {
-    const name = patch.name.trim();
-    if (!name || name.length > 64) return { ok: false, error: "项目名不能为空且不超过 64 字符" };
-    project.name = name;
-  }
-  if (patch.workdir !== undefined && project.mode === "local-machine") {
-    const dir = patch.workdir.trim();
-    if (dir) project.workdir = dir;
-    else delete project.workdir;
-  }
-  if (patch.machineId !== undefined && project.mode === "local-machine") {
-    // null/empty clears the binding → the user's default machine.
-    if (patch.machineId && /^[A-Za-z0-9_-]{1,64}$/.test(patch.machineId)) project.machineId = patch.machineId;
-    else delete project.machineId;
-  }
-  if (patch.containerId !== undefined && project.mode === "sandbox") {
-    if (patch.containerId === null) delete project.containerId;
-    else project.containerId = patch.containerId;
-    writeSandboxConfig(projectHome(project), {
-      url: safePlatformUrl() ?? "",
-      apiKey: "",
-      ...(project.containerId !== undefined ? { containerId: project.containerId } : {}),
-      disableLocalFallback: true,
-    });
-  }
-  if (patch.pinSessionId) {
-    project.pinnedSessions = [
-      patch.pinSessionId,
-      ...project.pinnedSessions.filter((id) => id !== patch.pinSessionId),
-    ].slice(0, 20);
-  }
-  if (patch.snapshotSlots !== undefined) {
-    project.snapshotSlots = patch.snapshotSlots;
-  }
-  if (patch.unpinSessionId) {
-    project.pinnedSessions = project.pinnedSessions.filter((id) => id !== patch.unpinSessionId);
-  }
-  persist();
-  return { ok: true, project };
+  let updated: ProjectRecord | undefined;
+  let error: string | undefined;
+  projectsStore.update((data) => {
+    const project = data.projects[projectId];
+    if (!project) {
+      error = "项目不存在";
+      return;
+    }
+    if (patch.name !== undefined) {
+      const name = patch.name.trim();
+      if (!name || name.length > 64) {
+        error = "项目名不能为空且不超过 64 字符";
+        return;
+      }
+      project.name = name;
+    }
+    if (patch.workdir !== undefined && project.mode === "local-machine") {
+      const dir = patch.workdir.trim();
+      if (dir) project.workdir = dir;
+      else delete project.workdir;
+    }
+    if (patch.machineId !== undefined && project.mode === "local-machine") {
+      // null/empty clears the binding → the user's default machine.
+      if (patch.machineId && /^[A-Za-z0-9_-]{1,64}$/.test(patch.machineId)) project.machineId = patch.machineId;
+      else delete project.machineId;
+    }
+    if (patch.containerId !== undefined && project.mode === "sandbox") {
+      if (patch.containerId === null) delete project.containerId;
+      else project.containerId = patch.containerId;
+      writeSandboxConfig(projectHome(project), {
+        url: safePlatformUrl() ?? "",
+        apiKey: "",
+        ...(project.containerId !== undefined ? { containerId: project.containerId } : {}),
+        disableLocalFallback: true,
+      });
+    }
+    if (patch.pinSessionId) {
+      project.pinnedSessions = [
+        patch.pinSessionId,
+        ...(project.pinnedSessions ?? []).filter((id) => id !== patch.pinSessionId),
+      ].slice(0, 20);
+    }
+    if (patch.snapshotSlots !== undefined) {
+      project.snapshotSlots = patch.snapshotSlots;
+    }
+    if (patch.unpinSessionId) {
+      project.pinnedSessions = (project.pinnedSessions ?? []).filter((id) => id !== patch.unpinSessionId);
+    }
+    updated = project;
+  });
+  if (error || !updated) return { ok: false, error: error ?? "项目不存在" };
+  return { ok: true, project: updated };
 }
 
 /** Find a product-bound project for a stable product/user/client/slot key. */
@@ -377,7 +368,7 @@ export function findEmbedProject(
   clientId: string,
   externalRef: string,
 ): ProjectRecord | undefined {
-  return Object.values(store().data.projects).find(
+  return Object.values(projectData().projects).find(
     (project) =>
       project.ownerId === ownerId &&
       project.embed?.productId === productId &&
@@ -391,19 +382,23 @@ export function setProjectEmbed(
   projectId: string,
   embed: EmbedProjectBinding | null,
 ): ProjectRecord | undefined {
-  const project = store().data.projects[projectId];
-  if (!project) return undefined;
-  if (embed) project.embed = { ...embed };
-  else delete project.embed;
-  persist();
-  return project;
+  let updated: ProjectRecord | undefined;
+  projectsStore.update((data) => {
+    const project = data.projects[projectId];
+    if (!project) return;
+    if (embed) project.embed = { ...embed };
+    else delete project.embed;
+    updated = project;
+  });
+  return updated;
 }
 
 export function deleteProject(projectId: string): boolean {
-  const project = store().data.projects[projectId];
+  const project = projectData().projects[projectId];
   if (!project) return false;
-  delete store().data.projects[projectId];
-  persist();
+  projectsStore.update((data) => {
+    delete data.projects[projectId];
+  });
   // Drop the pooled SSH connection (one per project, shared by every session):
   // a deleted project must not leave a live client behind.
   try {
@@ -448,7 +443,7 @@ export async function duplicateProject(
   // 复制的目标名若已占用，自动加序号后缀（用户的意图是"再来一份"）。
   let candidate = newName;
   let n = 2;
-  while (Object.values(store().data.projects).some((p) => p.ownerId === source.ownerId && p.name === candidate)) {
+  while (Object.values(projectData().projects).some((p) => p.ownerId === source.ownerId && p.name === candidate)) {
     candidate = `${newName} (${n++})`;
   }
   return await createProject({

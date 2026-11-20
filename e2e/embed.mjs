@@ -49,14 +49,21 @@ function writeSession(agentDir, id, cwd, name, text) {
 }
 
 function recordProjectSession(agentDir, id, projectId) {
-  const path = join(agentDir, "data", "session-metas.json");
-  let data = { version: 1, sessions: {} };
+  const path = join(agentDir, "data", "state", "global", "session-metas.json");
+  let data = { schemaVersion: 1, data: { sessions: {} } };
   try {
     data = JSON.parse(readFileSync(path, "utf8"));
   } catch {
-    // fresh data dir
+    // fresh data dir — fall back to the legacy sidecar once
+    try {
+      const legacy = JSON.parse(readFileSync(join(agentDir, "data", "session-metas.json"), "utf8"));
+      data = { schemaVersion: 1, data: { sessions: legacy.sessions ?? {} } };
+    } catch {
+      // no prior store
+    }
   }
-  data.sessions[id] = { mode: "sandbox", ownerId: 0, projectId, createdAt: Date.now() };
+  data.data.sessions[id] = { mode: "sandbox", ownerId: 0, projectId, createdAt: Date.now() };
+  mkdirSync(join(agentDir, "data", "state", "global"), { recursive: true });
   writeFileSync(path, JSON.stringify(data, null, 2));
 }
 

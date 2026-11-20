@@ -5,16 +5,13 @@
  * a quick session starts with. One built-in template (id "default") is seeded
  * on first use: editable, never deletable — the one-click entry point.
  *
- * Storage: <dataDir>/quick-templates.json (server-side, atomic writes)——跟随
+ * Storage: <dataDir>/state/global/quick-templates.json (server-side, atomic writes)——跟随
  * 部署数据目录（PI_WEB_DATA_DIR / AMEDAC 布局，lib/mode-homes.ts）。
  */
-import { existsSync, readFileSync, copyFileSync } from "fs";
-import { dirname, join } from "path";
+import { join } from "path";
 import { randomUUID } from "crypto";
-import { writePrivateFileAtomicSync } from "./atomic-file";
-import { mkdirSync } from "fs";
-import { atomicWriteFile } from "./atomic-write";
-import { dataDir } from "./mode-homes";
+import { JsonStore } from "./state/json-store";
+import { legacyDataPath } from "./state/paths";
 
 export interface QuickTemplate {
   id: string;
@@ -31,8 +28,7 @@ export interface QuickTemplate {
   builtin?: boolean;
 }
 
-interface TemplateStore {
-  version: 1;
+interface TemplateData {
   templates: QuickTemplate[];
 }
 
@@ -55,49 +51,35 @@ function defaultTemplate(): QuickTemplate {
   };
 }
 
-function storePath(): string {
-  // 跟随部署数据目录（lib/mode-homes.ts dataDir：PI_WEB_DATA_DIR 优先，
-  // dev 无 env 时回落 <cwd>/data 与旧行为一致）。此前硬编码 process.cwd()/data，
-  // 打包部署里落进包内目录——多用户共享同一份只读包时互相冲突。
-  return join(dataDir(), "quick-templates.json");
-}
-
-/** 旧位置（进程 cwd 相对）。仅用于一次性迁移：打包部署此前误写进包目录的
- *  模板数据归位到 dataDir；dev 两路径相同自然跳过。 */
-function legacyStorePath(): string {
-  return join(process.cwd(), "data", "quick-templates.json");
-}
-
-function readStore(): TemplateStore {
-  const path = storePath();
-  if (path !== legacyStorePath() && !existsSync(path) && existsSync(legacyStorePath())) {
-    try {
-      mkdirSync(dirname(path), { recursive: true });
-      copyFileSync(legacyStorePath(), path);
-    } catch {
-      // 迁移失败按全新存储处理（default 模板重新播种，不阻断）
-    }
+function parseTemplates(value: unknown): TemplateData | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const raw = (value as { templates?: unknown }).templates;
+  const templates = Array.isArray(raw) ? (raw as QuickTemplate[]) : [];
+  if (!templates.some((template) => template.id === DEFAULT_TEMPLATE_ID)) {
+    templates.unshift(defaultTemplate());
   }
-  try {
-    const raw = readFileSync(storePath(), "utf8");
-    const parsed = JSON.parse(raw) as Partial<TemplateStore>;
-    const templates = Array.isArray(parsed.templates) ? parsed.templates : [];
-    if (!templates.some((t) => t.id === DEFAULT_TEMPLATE_ID)) {
-      templates.unshift(defaultTemplate());
-    }
-    return {
-      version: 1,
-      templates: templates.filter((t) => t && typeof t.id === "string" && typeof t.name === "string"),
-    };
-  } catch {
-    return { version: 1, templates: [defaultTemplate()] };
-  }
+  return {
+    templates: templates.filter(
+      (template) => template && typeof template.id === "string" && typeof template.name === "string",
+    ),
+  };
 }
 
-function writeStore(store: TemplateStore): void {
-  const target = storePath();
-  mkdirSync(dirname(target), { recursive: true });
-  writePrivateFileAtomicSync(target, JSON.stringify(store, null, 2));
+const quickTemplatesStore = new JsonStore<TemplateData>({
+  name: "quick-templates",
+  scope: { kind: "global" },
+  legacyPaths: () => [
+    legacyDataPath("quick-templates.json"),
+    // Packaged deployments used to write into the (possibly read-only) app
+    // directory; keep the one-time migration path.
+    join(process.cwd(), "data", "quick-templates.json"),
+  ],
+  defaults: () => ({ templates: [defaultTemplate()] }),
+  parse: parseTemplates,
+});
+
+function readStore(): TemplateData {
+  return quickTemplatesStore.read();
 }
 
 export function listQuickTemplates(): QuickTemplate[] {
@@ -154,9 +136,9 @@ export function createQuickTemplate(input: Partial<QuickTemplate>): {
     ...(input.model ? { model: input.model } : {}),
     ...(Array.isArray(input.mcpServers) ? { mcpServers: input.mcpServers.map((s) => s.trim()).filter(Boolean) } : {}),
   };
-  const store = readStore();
-  store.templates.push(template);
-  writeStore(store);
+  quickTemplatesStore.update((data) => {
+    data.templates.push(template);
+  });
   return { template };
 }
 
@@ -165,28 +147,39 @@ export function updateQuickTemplate(
   id: string,
   input: Partial<QuickTemplate>,
 ): { template?: QuickTemplate; errors?: TemplateValidationError[] } {
-  const store = readStore();
-  const existing = store.templates.find((t) => t.id === id);
-  if (!existing) return { errors: [{ field: "id", reason: "模板不存在" }] };
-  const merged: Partial<QuickTemplate> = {
-    ...existing,
-    ...input,
-    id: existing.id, // id is immutable
-    builtin: existing.builtin,
-  };
-  const errors = validate(merged);
-  if (errors.length > 0) return { errors };
-  Object.assign(existing, {
-    name: merged.name!.trim(),
-    description: typeof merged.description === "string" ? merged.description.trim().slice(0, 300) : "",
-    systemPrompt: merged.systemPrompt!,
-    ...(merged.model ? { model: merged.model } : { model: undefined }),
-    ...(Array.isArray(merged.mcpServers)
-      ? { mcpServers: merged.mcpServers.map((s) => s.trim()).filter(Boolean) }
-      : { mcpServers: undefined }),
+  let result: QuickTemplate | undefined;
+  let errors: TemplateValidationError[] | undefined;
+  quickTemplatesStore.update((data) => {
+    const existing = data.templates.find((t) => t.id === id);
+    if (!existing) {
+      errors = [{ field: "id", reason: "模板不存在" }];
+      return;
+    }
+    const merged: Partial<QuickTemplate> = {
+      ...existing,
+      ...input,
+      id: existing.id, // id is immutable
+      builtin: existing.builtin,
+    };
+    const validation = validate(merged);
+    if (validation.length > 0) {
+      errors = validation;
+      return;
+    }
+    Object.assign(existing, {
+      name: merged.name!.trim(),
+      description: typeof merged.description === "string" ? merged.description.trim().slice(0, 300) : "",
+      systemPrompt: merged.systemPrompt!,
+      ...(merged.model ? { model: merged.model } : { model: undefined }),
+      ...(Array.isArray(merged.mcpServers)
+        ? { mcpServers: merged.mcpServers.map((s) => s.trim()).filter(Boolean) }
+        : { mcpServers: undefined }),
+    });
+    result = { ...existing };
   });
-  writeStore(store);
-  return { template: { ...existing } };
+  if (errors) return { errors };
+  if (!result) return { errors: [{ field: "id", reason: "模板不存在" }] };
+  return { template: result };
 }
 
 /** Admin: delete — the built-in default is refused. */
@@ -194,10 +187,12 @@ export function deleteQuickTemplate(id: string): { ok: boolean; error?: string }
   if (id === DEFAULT_TEMPLATE_ID) {
     return { ok: false, error: "默认模板不可删除（可编辑）" };
   }
-  const store = readStore();
-  const next = store.templates.filter((t) => t.id !== id);
-  if (next.length === store.templates.length) return { ok: false, error: "模板不存在" };
-  store.templates = next;
-  writeStore(store);
-  return { ok: true };
+  let ok = false;
+  quickTemplatesStore.update((data) => {
+    const next = data.templates.filter((t) => t.id !== id);
+    if (next.length === data.templates.length) return;
+    data.templates = next;
+    ok = true;
+  });
+  return ok ? { ok: true } : { ok: false, error: "模板不存在" };
 }

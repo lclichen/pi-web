@@ -84,9 +84,14 @@ if (!loopbackHostnames.has(hostname)) {
 const nextArgs = ["start", "-p", port];
 nextArgs.push("-H", hostname);
 
+// Next logs harmless native-SWC fallback warnings on glibc 2.28 even when the
+// wasm fallback succeeds. Keep fatal SWC errors visible while filtering only
+// those known fallback lines.
+const swcWarningFilter = path.join(__dirname, "next-silence-swc-warnings.cjs");
+
 // Always run next's JS entry with node directly — avoids .bin symlink issues
 // and path-with-spaces problems on Windows when shell: true is used.
-const child = spawn(process.execPath, [nextBin, ...nextArgs], {
+const child = spawn(process.execPath, ["--require", swcWarningFilter, nextBin, ...nextArgs], {
   cwd: pkgDir,
   stdio: ["inherit", "pipe", "inherit"],
   env: { ...process.env, PI_WEB_HOSTNAME: hostname },

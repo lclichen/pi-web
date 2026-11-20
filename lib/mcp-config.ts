@@ -225,6 +225,41 @@ function persist(path: string, cfg: RawMcpConfig): void {
   writePrivateFileAtomicSync(path, `${JSON.stringify(cfg, null, 2)}\n`);
 }
 
+/**
+ * Load the user MCP file for editing, migrating a legacy
+ * `user-config/u<id>/mcp.json` to the primary `state/users/u<id>/pi/mcp.json`
+ * on first write.
+ *
+ * Reads already fall back to the legacy file, but writes used to create the
+ * primary file empty. That made the legacy servers disappear from both the
+ * settings list and the runtime immediately after the first unrelated edit,
+ * and operations on them fail with "not found". Copying the legacy document
+ * before the first write preserves every server and settings entry; once the
+ * primary exists it is the sole writable source of truth.
+ */
+function loadWritableMcpConfig(
+  cwd: string,
+  scope: ConfigScope,
+  userId?: number,
+): { path: string; cfg: RawMcpConfig } {
+  const path = mcpConfigPath(cwd, scope, userId);
+  if (scope === "user" && isUserScopedConfig(userId) && !existsSync(path)) {
+    const legacy = legacyUserMcpConfigPath(userId as number);
+    if (existsSync(legacy)) {
+      const { config, error } = readRaw(legacy);
+      if (error) {
+        throw new Error(
+          `旧用户 MCP 配置包含无效 JSON（${error}）。请先修复或删除该文件，再保存当前修改。`,
+        );
+      }
+      // Keep the legacy file untouched as a read-only backup; reads switch to
+      // the primary path because it now exists.
+      persist(path, config ?? { mcpServers: {}, imports: [], settings: {} });
+    }
+  }
+  return { path, cfg: loadWritable(path) };
+}
+
 /** pi-mcp-adapter renamed the per-server tool timeout to requestTimeoutMs;
  *  toolTimeoutMs is ignored by 2.31+. Migrate old configs once so long-running
  *  MCP tools do not silently fall back to the SDK's 60s default. */
@@ -276,8 +311,7 @@ export function createMcpServer(
   entry: ServerEntry,
   userId?: number,
 ): void {
-  const path = mcpConfigPath(cwd, scope, userId);
-  const cfg = loadWritable(path);
+  const { path, cfg } = loadWritableMcpConfig(cwd, scope, userId);
   if (cfg.mcpServers?.[name]) {
     throw new Error(`Server "${name}" already exists in ${scope} scope`);
   }
@@ -293,8 +327,7 @@ export function updateMcpServer(
   entry: ServerEntry,
   userId?: number,
 ): void {
-  const path = mcpConfigPath(cwd, scope, userId);
-  const cfg = loadWritable(path);
+  const { path, cfg } = loadWritableMcpConfig(cwd, scope, userId);
   if (!cfg.mcpServers?.[name]) {
     throw new Error(`Server "${name}" not found in ${scope} scope`);
   }
@@ -303,8 +336,7 @@ export function updateMcpServer(
 }
 
 export function removeMcpServer(cwd: string, scope: ConfigScope, name: string, userId?: number): void {
-  const path = mcpConfigPath(cwd, scope, userId);
-  const cfg = loadWritable(path);
+  const { path, cfg } = loadWritableMcpConfig(cwd, scope, userId);
   if (!cfg.mcpServers?.[name]) {
     throw new Error(`Server "${name}" not found in ${scope} scope`);
   }
@@ -347,8 +379,7 @@ export function setMcpServerDisabled(
   disabled: boolean,
   userId?: number,
 ): void {
-  const path = mcpConfigPath(cwd, scope, userId);
-  const cfg = loadWritable(path);
+  const { path, cfg } = loadWritableMcpConfig(cwd, scope, userId);
   if (!cfg.mcpServers?.[name]) {
     throw new Error(`Server "${name}" not found in ${scope} scope`);
   }
@@ -367,8 +398,7 @@ export function writeMcpSettings(
   settings: McpSettings,
   userId?: number,
 ): void {
-  const path = mcpConfigPath(cwd, scope, userId);
-  const cfg = loadWritable(path);
+  const { path, cfg } = loadWritableMcpConfig(cwd, scope, userId);
   // Preserve adapter settings this UI does not know (new versions add
   // fields such as allowInstall / deferWithMissingMetadata / semanticSearch).
   const next = { ...(cfg.settings ?? {}) } as Record<string, unknown>;

@@ -1389,10 +1389,6 @@ export function SessionSidebar({
             onNewSession?.(tempId, "/", project.mode, project.id, project.name);
           }}
           isAdmin={isAdminUser}
-          onOpenServerDirectory={() => {
-            setRegisterHostDirOnPick(true);
-            setCustomPathOpen(true);
-          }}
         />
       )}
 

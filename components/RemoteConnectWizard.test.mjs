@@ -53,3 +53,16 @@ test("pairing UI stays shared instead of duplicated", () => {
   assert.match(relaySource, /export function useAgentInstallInfo/);
   assert.match(source, /import \{ PairingSteps, useAgentInstallInfo \} from "\.\/relay\/ConnectLocalMachine"/);
 });
+
+test("host step 2 creates a named project in a chosen directory", () => {
+  const hostStep = source.slice(
+    source.indexOf('step === 2 && method === "host"'),
+    source.indexOf('step === 2 && method === "ssh"'),
+  );
+  assert.match(hostStep, /remote\.hostProjectTitle/);
+  assert.match(hostStep, /remote\.hostProjectHint/, "the working-directory semantics are explained");
+  assert.match(hostStep, /remote\.hostWorkingDirectory/);
+  assert.match(hostStep, /setHostPickerOpen\(true\)/, "Browse is the only directory picker");
+  assert.doesNotMatch(hostStep, /onOpenServerDirectory/, "no duplicate open-directory action");
+  assert.match(hostStep, /disabled=\{hostBusy \|\| !hostName\.trim\(\) \|\| !hostDir\.trim\(\)\}/);
+});

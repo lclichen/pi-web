@@ -34,9 +34,8 @@ type Method = "sandbox" | "local" | "ssh" | "host";
 
 interface Props {
   onClose: () => void;
-  /** 管理员：① 里追加「打开服务器目录」入口（Host 模式）。 */
+  /** 管理员：① 里追加「服务器目录项目」入口（Host 模式）。 */
   isAdmin?: boolean;
-  onOpenServerDirectory?: () => void;
   /** 项目创建成功后回调（含 id/mode/name；用于置顶并直接进入新会话）。 */
   onCreated: (project: CreatedProject) => void;
   /** 从环境菜单直接进入某一步（目前用于 SSH：跳过方式选择）。 */
@@ -68,7 +67,6 @@ export function RemoteConnectWizard({
   onClose,
   onCreated,
   isAdmin,
-  onOpenServerDirectory,
   initialMethod = null,
 }: Props) {
   const { t } = useI18n();
@@ -523,7 +521,7 @@ export function RemoteConnectWizard({
     },
     {
       id: "server",
-      title: t("remote.openServerDirectory"),
+      title: t("remote.hostProject"),
       sub: t("remote.hostModeDir"),
       icon: (
         <svg
@@ -748,10 +746,10 @@ export function RemoteConnectWizard({
           {step === 2 && method === "host" && (
             <>
               <h2 style={{ margin: "0 0 4px", fontSize: 17, color: "var(--text)" }}>
-                {t("remote.openServerDirectory")}
+                {t("remote.hostProjectTitle")}
               </h2>
               <p style={{ margin: "0 0 14px", fontSize: 12.5, color: "var(--text-dim)" }}>
-                {t("remote.hostModeDir")}
+                {t("remote.hostProjectHint")}
               </p>
               <div style={{ display: "flex", flexDirection: "column", gap: 12, maxWidth: 460 }}>
                 <label style={fieldStyle}>
@@ -765,7 +763,7 @@ export function RemoteConnectWizard({
                   />
                 </label>
                 <label style={fieldStyle}>
-                  {t("remote.localWorkingDirectoryOptional")}
+                  {t("remote.hostWorkingDirectory")}
                   <div style={{ display: "flex", gap: 8 }}>
                     <input
                       value={hostDir}
@@ -779,18 +777,6 @@ export function RemoteConnectWizard({
                   </div>
                 </label>
                 {error && <div className="error-banner">{error}</div>}
-                {onOpenServerDirectory && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onOpenServerDirectory();
-                      onClose();
-                    }}
-                    style={{ ...secondaryBtn, alignSelf: "flex-start" }}
-                  >
-                    {t("remote.openServerDirectory")}
-                  </button>
-                )}
               </div>
               <div style={{ flex: 1 }} />
               <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4 }}>
@@ -801,6 +787,7 @@ export function RemoteConnectWizard({
                   className="primary"
                   disabled={hostBusy || !hostName.trim() || !hostDir.trim()}
                   onClick={finishHost}
+                  title={!hostName.trim() ? t("remote.enterProjectNameFirst") : undefined}
                   style={{ ...primaryBtn, opacity: hostBusy || !hostName.trim() || !hostDir.trim() ? 0.5 : 1 }}
                 >
                   {hostBusy ? t("projects.creating") : t("common.finish")}
@@ -1319,7 +1306,7 @@ export function RemoteConnectWizard({
         </section>
         {hostPickerOpen && (
           <DirectoryPicker
-            title={t("remote.openServerDirectory")}
+            title={t("remote.hostWorkingDirectory")}
             initialPath={hostDir.trim() || undefined}
             onCancel={() => setHostPickerOpen(false)}
             onSelect={(abs) => {

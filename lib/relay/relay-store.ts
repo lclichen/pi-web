@@ -255,6 +255,21 @@ export async function revokeAgentMachine(userId: number, machineId: string): Pro
   return revoked;
 }
 
+/** User deletion: revoke every paired machine token owned by the user. */
+export async function revokeAllAgentTokens(userId: number): Promise<number> {
+  const path = relayFilePath();
+  const data = readRelay(path);
+  if (!data.tokens) return 0;
+  let revoked = 0;
+  for (const token of Object.keys(data.tokens)) {
+    if (data.tokens[token]?.userId !== userId) continue;
+    delete data.tokens[token];
+    revoked += 1;
+  }
+  if (revoked > 0) await writeRelay(path, data);
+  return revoked;
+}
+
 /** Constant-time-ish comparison against the legacy single token (auth-off
  *  single-machine era). Per-machine tokens use exact-record lookup above. */
 export function isKnownToken(token: string): boolean {

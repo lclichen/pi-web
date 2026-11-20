@@ -1,8 +1,8 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import { atomicWriteFile } from "./atomic-write";
+import { writePrivateFileAtomicSync } from "./atomic-file";
 import { deploymentQuickMcpPath } from "./quick-mcp";
 import { isUserScopedConfig, legacyUserMcpConfigPath, userMcpConfigPath } from "./user-config";
 import type {
@@ -221,7 +221,8 @@ function loadWritable(path: string): RawMcpConfig {
 }
 
 function persist(path: string, cfg: RawMcpConfig): void {
-  atomicWriteFile(path, `${JSON.stringify(cfg, null, 2)}\n`);
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+  writePrivateFileAtomicSync(path, `${JSON.stringify(cfg, null, 2)}\n`);
 }
 
 /** pi-mcp-adapter renamed the per-server tool timeout to requestTimeoutMs;

@@ -69,6 +69,13 @@ export function vaultRemoveApiKey(userId: number, keyId: number | string): void 
   });
 }
 
+/** User deletion: drop every plaintext key the user asked this server to keep. */
+export function vaultRemoveAllForUser(userId: number): void {
+  vaultStore.update((data) => {
+    delete data.users[`u${userId}`];
+  });
+}
+
 /** 供测试确认文件存在（非空校验）。 */
 export function vaultExists(): boolean {
   return existsSync(vaultStore.path) || existsSync(legacyDataPath("api-key-vault.json"));

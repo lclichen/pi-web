@@ -11,6 +11,9 @@
  * cleared there on unpin.
  */
 
+import { readdirSync } from "node:fs";
+import { join } from "node:path";
+import { dataDir } from "./mode-homes";
 import { JsonStore } from "./state/json-store";
 import { legacyDataPath } from "./state/paths";
 import type { SidebarPinState } from "./sidebar-state-shared";
@@ -89,4 +92,26 @@ export function setPinnedSession(userId: number, sessionId: string, pinned: bool
     );
   });
   return { pinnedProjects: state.pinnedProjects, pinnedSessions: state.pinnedSessions };
+}
+
+/** Project deletion: remove the project pin from every user's sidebar state. */
+export function removeProjectPinsEverywhere(projectId: string): number {
+  const key = `project:${projectId}`;
+  let removed = 0;
+  let entries;
+  try {
+    entries = readdirSync(join(dataDir(), "state", "users"), { withFileTypes: true });
+  } catch {
+    return 0;
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const match = /^u(\d+)$/.exec(entry.name);
+    if (!match) continue;
+    const userId = Number(match[1]);
+    if (!readSidebarPins(userId).pinnedProjects.includes(key)) continue;
+    setPinnedProject(userId, key, false);
+    removed += 1;
+  }
+  return removed;
 }

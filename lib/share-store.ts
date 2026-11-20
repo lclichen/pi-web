@@ -337,6 +337,34 @@ export function dropShareByHash(tokenHash: string): void {
   persist(s);
 }
 
+/** Session deletion: revoke shares created by or sourced from that session. */
+export function dropSharesForSession(sessionId: string): number {
+  const s = store();
+  let removed = 0;
+  for (const [hash, entry] of [...s.entries]) {
+    if (entry.sessionId !== sessionId && entry.srcSession !== sessionId) continue;
+    s.entries.delete(hash);
+    if (entry.kind === "snapshot") rmSync(snapshotPath(hash), { force: true });
+    removed += 1;
+  }
+  if (removed > 0) persist(s);
+  return removed;
+}
+
+/** User deletion: revoke every share owned by the user. */
+export function dropSharesForOwner(ownerId: number): number {
+  const s = store();
+  let removed = 0;
+  for (const [hash, entry] of [...s.entries]) {
+    if (entry.ownerId !== ownerId) continue;
+    s.entries.delete(hash);
+    if (entry.kind === "snapshot") rmSync(snapshotPath(hash), { force: true });
+    removed += 1;
+  }
+  if (removed > 0) persist(s);
+  return removed;
+}
+
 /** Audit view. Admin sees everything; users see their own. */
 export function listShares(actor: { ownerId: number; isAdmin: boolean }): ShareEntry[] {
   const s = store();

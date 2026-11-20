@@ -256,6 +256,20 @@ export function dropWebSession(request: Request): void {
   persist(store());
 }
 
+/** Admin disable/delete: invalidate every local login of a platform user. */
+export function dropWebSessionsForUser(userId: number, revokeKeys = true): number {
+  const sessions = store();
+  let removed = 0;
+  for (const [sid, session] of [...sessions]) {
+    if (session.user.id !== userId) continue;
+    sessions.delete(sid);
+    if (revokeKeys) revokeSessionKey(session);
+    removed += 1;
+  }
+  if (removed > 0) persist(sessions);
+  return removed;
+}
+
 export function sessionCookieHeader(sid: string, maxAgeSeconds = SESSION_IDLE_TTL_MS / 1000): string {
   const parts = [
     `${WEB_SESSION_COOKIE}=${sid}`,

@@ -7,10 +7,10 @@ import {
   readdirSync,
   rmSync,
   statSync,
-  writeFileSync,
 } from "fs";
 import { join, relative, resolve } from "path";
 import { randomUUID } from "crypto";
+import { writePrivateFileAtomicSync } from "./atomic-file";
 import { dataDir } from "./mode-homes";
 import { JsonStore } from "./state/json-store";
 import { legacyDataPath } from "./state/paths";
@@ -613,7 +613,7 @@ export function writeSandboxConfig(home: string, patch: Partial<ProjectSandboxCo
   } catch {
     // fresh
   }
-  writeFileSync(path, JSON.stringify({ ...current, ...patch, disableLocalFallback: true }, null, 2), "utf8");
+  writePrivateFileAtomicSync(path, JSON.stringify({ ...current, ...patch, disableLocalFallback: true }, null, 2));
 }
 
 function safePlatformUrl(): string | undefined {

@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { requireAdminIdentity } from "@/lib/web-session";
+import { dropWebSessionsForUser, requireAdminIdentity } from "@/lib/web-session";
 import { isApiRequestAllowed, hasJsonContentType } from "@/lib/request-security";
 import { platformDelete, platformPatch } from "@/lib/platform/client";
+import { deleteUserLocalState } from "@/lib/state/user-cleanup";
 
 export const dynamic = "force-dynamic";
 
@@ -35,6 +36,11 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
   try {
     const user = await platformPatch<unknown>(`/api/v1/admin/users/${id}`, identity.session.apiKey, body);
+    // A disabled/renamed/role-changed/re-passworded user must re-authenticate;
+    // otherwise the cached local web session keeps the old identity/role.
+    if ("status" in body || "role" in body || "password" in body) {
+      dropWebSessionsForUser(Number(id));
+    }
     return NextResponse.json(user);
   } catch (e) {
     const status = (e as { status?: number }).status;
@@ -62,6 +68,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
   }
   try {
     await platformDelete<void>(`/api/v1/admin/users/${id}`, identity.session.apiKey);
+    await deleteUserLocalState(Number(id));
     return new NextResponse(null, { status: 204 });
   } catch (e) {
     const status = (e as { status?: number }).status;

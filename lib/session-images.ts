@@ -89,7 +89,7 @@ export function storeSessionImage(
   const bytes = Buffer.from(normalized, "base64").length;
   if (!existsSync(path)) {
     const temp = join(dir, `.${id}.${process.pid}.${Date.now()}.tmp`);
-    writeFileSync(temp, Buffer.from(normalized, "base64"));
+    writeFileSync(temp, Buffer.from(normalized, "base64"), { mode: 0o600 });
     renameSync(temp, path);
   }
   const meta: SessionImageMeta = {
@@ -100,7 +100,7 @@ export function storeSessionImage(
     createdAt: new Date().toISOString(),
   };
   const tempMeta = join(dir, `.${id}.${process.pid}.${Date.now()}.json.tmp`);
-  writeFileSync(tempMeta, JSON.stringify(meta));
+  writeFileSync(tempMeta, JSON.stringify(meta), { mode: 0o600 });
   renameSync(tempMeta, metaPath(dir, id));
   return meta;
 }

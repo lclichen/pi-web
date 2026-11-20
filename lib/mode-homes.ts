@@ -1,5 +1,6 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync } from "fs";
 import { isAbsolute, join, relative, resolve } from "path";
+import { writePrivateFileAtomicSync } from "./atomic-file.ts";
 import { platformUrl } from "./platform/client.ts";
 import type { SessionMode } from "./session-modes.ts";
 
@@ -20,7 +21,7 @@ import type { SessionMode } from "./session-modes.ts";
 
 export function dataDir(): string {
   const dir = process.env.PI_WEB_DATA_DIR ? process.env.PI_WEB_DATA_DIR : join(process.cwd(), "data");
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true, mode: 0o700 });
   return dir;
 }
 
@@ -67,7 +68,7 @@ export function ensureSandboxHome(userId: number, config: SandboxHomeConfig): st
   if (!existsSync(piDir)) mkdirSync(piDir, { recursive: true });
   const current = readSandboxHomeConfig(userId);
   const next: SandboxHomeConfig = { ...current, ...config, url: config.url || current.url, disableLocalFallback: true };
-  writeFileSync(join(piDir, "sandbox-platform.json"), JSON.stringify(next, null, 2), "utf8");
+  writePrivateFileAtomicSync(join(piDir, "sandbox-platform.json"), JSON.stringify(next, null, 2));
   return home;
 }
 

@@ -23,6 +23,7 @@ import { readSessionToolSelection } from "@/lib/session-tool-selection";
 import { invalidateSessionManagerCache, openSessionManager, openSessionManagerAsync } from "@/lib/session-open";
 import { jsonResponse } from "@/lib/json-response";
 import { setSessionArchived } from "@/lib/session-metas";
+import { deleteSessionCascade } from "@/lib/state/lifecycle";
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -278,6 +279,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
     invalidateSessionPathCache(id);
     invalidateSessionListForSession(filePath);
     deleteSessionImages(id);
+    deleteSessionCascade(id);
     return NextResponse.json({ ok: true });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });

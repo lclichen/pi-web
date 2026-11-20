@@ -103,6 +103,54 @@ export function getSessionMeta(sessionId: string): SessionMeta | undefined {
   return metasStore.read().sessions[sessionId];
 }
 
+export function deleteSessionMeta(sessionId: string): boolean {
+  let removed = false;
+  metasStore.update((data) => {
+    if (!data.sessions[sessionId]) return;
+    delete data.sessions[sessionId];
+    removed = true;
+  });
+  return removed;
+}
+
+export function deleteSessionMetasForProject(projectId: string): string[] {
+  const removed: string[] = [];
+  metasStore.update((data) => {
+    for (const [sessionId, meta] of Object.entries(data.sessions)) {
+      if (meta.projectId !== projectId) continue;
+      delete data.sessions[sessionId];
+      removed.push(sessionId);
+    }
+  });
+  return removed;
+}
+
+/** User deletion: drop orphan session sidecars not covered by a project cascade. */
+export function deleteSessionMetasForOwner(ownerId: number): string[] {
+  const removed: string[] = [];
+  metasStore.update((data) => {
+    for (const [sessionId, meta] of Object.entries(data.sessions)) {
+      if (meta.ownerId !== ownerId) continue;
+      delete data.sessions[sessionId];
+      removed.push(sessionId);
+    }
+  });
+  return removed;
+}
+
+/** Other sessions sharing a Quick workspace version (don't delete it under them). */
+export function sessionIdsUsingQuickDir(ownerId: number, quickDir: string, except?: string): string[] {
+  return Object.entries(metasStore.read().sessions)
+    .filter(
+      ([sessionId, meta]) =>
+        sessionId !== except &&
+        meta.ownerId === ownerId &&
+        meta.mode === "quick" &&
+        meta.quickDir === quickDir,
+    )
+    .map(([sessionId]) => sessionId);
+}
+
 /** Sessions a user may see in listings: their own plus (admin) host-space ones. */
 export function metaVisibleTo(
   meta: SessionMeta | undefined,

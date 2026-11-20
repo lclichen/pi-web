@@ -28,6 +28,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import lockfile from "proper-lockfile";
 import { dataDir } from "./mode-homes.ts";
 import { projectIdentityKey } from "./project-identity.ts";
 import { JsonStore } from "./state/json-store.ts";
@@ -328,12 +329,34 @@ export function runLicensedApkgImport<T>(
   header: ApkgHeader,
   body: () => T | Promise<T>,
 ): Promise<T> {
-  return withApkgImportLock(fingerprint, async () => {
-    enforceApkgLicense(license, fingerprint, header);
-    const result = await body();
-    bumpApkgImport(fingerprint);
-    return result;
+  return withApkgImportLock(fingerprint, () =>
+    withApkgFileLock(fingerprint, async () => {
+      enforceApkgLicense(license, fingerprint, header);
+      const result = await body();
+      bumpApkgImport(fingerprint);
+      return result;
+    }),
+  );
+}
+
+/**
+ * Cross-process half of the license counter: check + body + increment must be
+ * one critical section when two pi-web processes share the data dir.
+ */
+async function withApkgFileLock<T>(fingerprint: string, fn: () => Promise<T>): Promise<T> {
+  const dir = join(dataDir(), "locks", "apkg");
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const target = join(dir, createHash("sha256").update(fingerprint).digest("hex").slice(0, 32));
+  const release = await lockfile.lock(target, {
+    realpath: false,
+    stale: 60_000,
+    retries: { retries: 10, factor: 2, minTimeout: 50, maxTimeout: 500 },
   });
+  try {
+    return await fn();
+  } finally {
+    await release();
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -403,6 +426,18 @@ export function recordApkgLockedHome(home: string, entry: LockedHomeEntry): void
 
 export function isApkgLockedHome(home: string): boolean {
   return lockedHomesStore.read()[projectIdentityKey(home)] !== undefined;
+}
+
+/** Project deletion: remove the server-side no-reexport entry for its home. */
+export function removeApkgLockedHome(home: string): boolean {
+  let removed = false;
+  lockedHomesStore.update((registry) => {
+    const key = projectIdentityKey(home);
+    if (registry[key] === undefined) return;
+    delete registry[key];
+    removed = true;
+  });
+  return removed;
 }
 
 /** Export gate: the in-home lock file OR the server-side registry. */

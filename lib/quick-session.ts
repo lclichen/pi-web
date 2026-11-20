@@ -1,6 +1,7 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
+import { writePrivateFileAtomicSync } from "./atomic-file";
 import { quickHomeDir } from "./mode-homes";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { deploymentQuickMcpPath } from "./quick-mcp";
@@ -103,7 +104,7 @@ export function readQuickTemplateSnapshot(dir: string): QuickTemplateSnapshot | 
 
 export function writeQuickTemplateSnapshot(dir: string, snapshot: QuickTemplateSnapshot): void {
   mkdirSync(join(dir, ".pi"), { recursive: true });
-  writeFileSync(snapshotPath(dir), JSON.stringify(snapshot, null, 2), "utf8");
+  writePrivateFileAtomicSync(snapshotPath(dir), JSON.stringify(snapshot, null, 2));
 }
 
 /**
@@ -156,7 +157,7 @@ function writeWorkspaceMcp(userId: number, dir: string, allowlist: string[] | un
   // settings.disableProxyTool：quick 封闭世界只经直接工具（<server>_ 前缀）
   // 暴露白名单服务器；网关元工具 mcp/mcpScript 不该出现——adapter 的
   // syncProxyTool 每回合可能把它加回活动集，配置层先让它自我抑制。
-  writeFileSync(
+  writePrivateFileAtomicSync(
     target,
     JSON.stringify(
       {
@@ -166,7 +167,6 @@ function writeWorkspaceMcp(userId: number, dir: string, allowlist: string[] | un
       null,
       2,
     ),
-    "utf8",
   );
 }
 /**

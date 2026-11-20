@@ -1,5 +1,6 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { writePrivateFileAtomicSync } from "./atomic-file";
 import { dataDir, quickHomeDir } from "./mode-homes";
 
 /**
@@ -60,5 +61,5 @@ export function syncQuickMcpConfig(userId: number, targetDir?: string): void {
   if (JSON.stringify(doc.mcpServers ?? {}) === JSON.stringify(merged)) return;
 
   mkdirSync(piDir, { recursive: true });
-  writeFileSync(target, JSON.stringify({ ...doc, mcpServers: merged }, null, 2), "utf8");
+  writePrivateFileAtomicSync(target, JSON.stringify({ ...doc, mcpServers: merged }, null, 2));
 }

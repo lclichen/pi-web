@@ -19,9 +19,9 @@
  * on overflow the oldest events are dropped and the channel is flagged
  * truncated so reconnecting clients know the replay is partial.
  */
-import { existsSync, mkdirSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
-import { atomicWriteFile } from "../atomic-write.ts";
+import { writePrivateFileAtomicSync } from "../atomic-file.ts";
 import { dataDir } from "../mode-homes.ts";
 import { getBatchVersionInfo } from "./version-info.ts";
 
@@ -208,8 +208,8 @@ function loadPersistedTasks(into: Map<string, BatchTask>): void {
 function persistTask(task: BatchTask): void {
   try {
     const dir = persistDir();
-    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-    atomicWriteFile(join(dir, `${task.taskId}.json`), JSON.stringify(task, null, 2));
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true, mode: 0o700 });
+    writePrivateFileAtomicSync(join(dir, `${task.taskId}.json`), JSON.stringify(task, null, 2));
   } catch (e) {
     console.error("[batch] task persist failed:", e);
   }
@@ -340,6 +340,42 @@ export function listActiveProjectTasks(projectId: string): BatchTask[] {
       String(task.projectId ?? "") === id &&
       (task.state === "queued" || task.state === "running" || task.state === "waiting_input"),
   );
+}
+
+/** Remove terminal task records for a deleted project; returns removed ids. */
+export function deleteProjectTasks(projectId: string): string[] {
+  const id = String(projectId);
+  const removed: string[] = [];
+  for (const task of [...store().values()]) {
+    if (String(task.projectId ?? "") !== id) continue;
+    if (!isTerminal(task.state)) continue;
+    store().delete(task.taskId);
+    channels().delete(task.taskId);
+    try {
+      unlinkSync(join(persistDir(), `${task.taskId}.json`));
+    } catch {
+      // already gone — fine
+    }
+    removed.push(task.taskId);
+  }
+  return removed;
+}
+
+/** User deletion: remove terminal task records owned by the user. */
+export function deleteUserTasks(ownerId: number): string[] {
+  const removed: string[] = [];
+  for (const task of [...store().values()]) {
+    if (task.ownerId !== ownerId || !isTerminal(task.state)) continue;
+    store().delete(task.taskId);
+    channels().delete(task.taskId);
+    try {
+      unlinkSync(join(persistDir(), `${task.taskId}.json`));
+    } catch {
+      // already gone — fine
+    }
+    removed.push(task.taskId);
+  }
+  return removed;
 }
 
 /** Per-user concurrency: queued + running + waiting_input tasks of one owner.

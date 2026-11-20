@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import {
-  deleteProject,
   getOwnedProject,
   readProjectSandboxConfig,
   updateProject,
@@ -8,6 +7,8 @@ import {
   projectHome,
   publicProject,
 } from "@/lib/projects";
+import { getProjectRuntimeBusy } from "@/lib/rpc-manager";
+import { deleteProjectCascade } from "@/lib/state/lifecycle";
 import { requireUserIdentity } from "@/lib/web-session";
 import { isApiRequestAllowed, hasJsonContentType } from "@/lib/request-security";
 import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from "fs";
@@ -206,6 +207,17 @@ export async function DELETE(req: Request, ctx: RouteCtx) {
   const { id } = await ctx.params;
   const r = own(req, id);
   if (r.error) return r.error;
-  if (!deleteProject(id)) return NextResponse.json({ error: "项目不存在" }, { status: 404 });
+  const busy = await getProjectRuntimeBusy(id);
+  if (busy.busy) {
+    return NextResponse.json(
+      {
+        error: `项目仍有运行中的会话或批量任务，请先停止后再删除`,
+        sessions: busy.sessions,
+        batchTasks: busy.batchTasks,
+      },
+      { status: 409 },
+    );
+  }
+  await deleteProjectCascade(r.project!);
   return NextResponse.json({ success: true });
 }

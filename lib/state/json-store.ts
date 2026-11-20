@@ -268,3 +268,13 @@ export class JsonStore<T> {
 export function resetStateStoresForTests(): void {
   cache().clear();
 }
+
+/** Drop cached stores under a removed directory (user/project deletion). */
+export function invalidateStatePathsUnder(prefix: string): void {
+  const store = cache();
+  for (const path of [...store.keys()]) {
+    if (path === prefix || path.startsWith(`${prefix}/`) || path.startsWith(`${prefix}\\`)) {
+      store.delete(path);
+    }
+  }
+}

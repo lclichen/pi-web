@@ -7,6 +7,7 @@ import {
   updateMcpServer,
 } from "@/lib/mcp-config";
 import { getOwnedProject } from "@/lib/projects";
+import { relayWorkspaceEntryProblem } from "@/lib/relay-mcp-policy";
 import { guardMcpRequest } from "@/lib/mcp-route-guard";
 import { withProjectConfigWriteLockFor, ProjectConfigLockBusyError } from "@/lib/project-config-lock";
 import type { ConfigScope, ServerEntry } from "@/lib/api-types";
@@ -54,6 +55,10 @@ export async function PUT(req: Request, { params }: { params: Promise<{ name: st
         },
         { status: 403 },
       );
+    }
+    if (relayWorkspaceStdio) {
+      const problem = relayWorkspaceEntryProblem(body.entry);
+      if (problem) return NextResponse.json({ error: `workspace MCP 配置不安全：${problem}` }, { status: 400 });
     }
     try {
       // 项目 scope 写 <project home>/.pi/mcp.json → 共享项目写锁（ADR-0004

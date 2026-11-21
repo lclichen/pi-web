@@ -48,6 +48,8 @@ pi-web 的 MCP 客户端是 pi-mcp-adapter；配置写在项目的 `.pi/mcp.json
       "args": [".pi/mcp/cli.js"],
       "env": { "MY_MCP_MODE": "workspace" },
       "requestTimeoutMs": 120000,
+      "lifecycle": "lazy",
+      "directTools": false,
       "includeTools": ["read_note", "write_note"],
       "piWeb": { "plane": "workspace", "risk": "write" }
     }
@@ -64,6 +66,12 @@ pi-web 的 MCP 客户端是 pi-mcp-adapter；配置写在项目的 `.pi/mcp.json
 - 工具调用通过 `mcp.callTool` 走 relay，`_meta` 带 `amedac/session_id`、
   `amedac/user_id`、`amedac/user_name`；
 - 会话结束发送 `mcp.close`，进程退出；`requestTimeoutMs` 是该工具的调用超时。
+
+**必须同时写 `"lifecycle": "lazy"`（或 `lazy-keep-alive`）和
+`"directTools": false`。** 否则 pi-mcp-adapter 会在会话启动时为了
+keep-alive/eager 或 direct-tools 元数据而尝试在 **pi-web 服务器** 上连接它；
+pi-web 会拒绝启动这类会话。relay host 自己会把列出的工具全部直接注册，
+不依赖 adapter 的 `directTools`。
 
 要求 **Agent ≥ 0.8.0**（feature `mcp-relay-v1`）。旧 Agent 不会注册这些
 工具，也不会在服务器上偷偷启动它们。

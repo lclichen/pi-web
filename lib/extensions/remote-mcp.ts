@@ -14,6 +14,7 @@ import {
 } from "@/lib/relay/workspace-base";
 import { readMcpConfig } from "@/lib/mcp-config";
 import { readPreferences } from "@/lib/preferences-service";
+import { isRelayWorkspaceStdio, relayWorkspaceEntryProblem } from "@/lib/relay-mcp-policy";
 import type { McpRelayCallResult, McpRelayTool, McpRelayToolList } from "@/lib/relay/protocol";
 import type { ServerEntry } from "@/lib/api-types";
 
@@ -63,9 +64,20 @@ const MAX_TOOLS_PER_SERVER = 200;
 /** Only project-scope stdio servers that explicitly opt into workspace
  *  execution are hosted on the paired machine. */
 export function isRelayWorkspaceServer(entry: ServerEntry): boolean {
-  if (entry.disabled === true) return false;
-  if (!entry.command || entry.url || entry.socket) return false;
-  return entry.piWeb?.plane === "workspace";
+  return isRelayWorkspaceStdio(entry);
+}
+
+/**
+ * Session-start guard: refuse to boot a local-machine session whose relay MCP
+ * config could make pi-mcp-adapter connect/spawn it on the server before this
+ * extension takes over. Callers turn the thrown error into their own 4xx.
+ */
+export function assertRelayWorkspaceMcpSafe(projectHome: string, userId?: number): void {
+  const doc = readMcpConfig(projectHome, { scopes: ["project"], userId });
+  for (const server of doc.servers) {
+    const problem = relayWorkspaceEntryProblem(server.entry);
+    if (problem) throw new Error(`workspace MCP「${server.name}」配置不安全：${problem}`);
+  }
 }
 
 export function relayMcpToolName(serverName: string, toolName: string): string {
@@ -197,7 +209,9 @@ export function makeRemoteMcpToolsExtension(options: RelayMcpOptions): InlineExt
     } catch {
       return;
     }
-    const servers = doc.servers.filter((server) => isRelayWorkspaceServer(server.entry));
+    const servers = doc.servers.filter(
+      (server) => isRelayWorkspaceServer(server.entry) && !relayWorkspaceEntryProblem(server.entry),
+    );
     if (servers.length === 0 || !agentReady()) return;
 
     pi.on("session_shutdown", async () => {

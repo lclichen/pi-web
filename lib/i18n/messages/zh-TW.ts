@@ -925,7 +925,7 @@ export const zhTWLocale: LocalePlugin = {
     "mcp.enabledTag": "已啟用",
     "mcp.executionPlane": "執行面（piWeb.plane）",
     "mcp.executionPlaneDefault": "預設（pi-web 伺服器）",
-    "mcp.executionPlaneHint": "workspace：本機模式專案在配對機器上執行此 stdio 伺服器（需要 Agent ≥ 0.8.0）；host 僅管理員可選。",
+    "mcp.executionPlaneHint": "workspace：本機模式專案在配對機器上執行此 stdio 伺服器（需要 Agent ≥ 0.8.0）；儲存時自動設為 lifecycle=lazy、directTools=false。host 僅管理員可選。",
     "mcp.executionPlaneHost": "pi-web 宿主（管理員）",
     "mcp.executionPlaneWorkspace": "工作階段工作區（配對機器）",
     "mcp.expand": "展開",

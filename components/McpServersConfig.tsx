@@ -238,6 +238,12 @@ function formToEntry(form: ServerForm): ServerEntry {
   // Project entries store their own disabled flag; global/quick entries must
   // not absorb the workspace-override switch state (form.disabled).
   if (form.scope === "project" ? form.disabled : form.scopeDisabled) entry.disabled = true;
+  // Relay-hosted stdio must never be connected by the adapter on startup.
+  // Force the safe pair even if the form kept its keep-alive/all defaults.
+  if (form.plane === "workspace") {
+    entry.lifecycle = "lazy";
+    entry.directTools = false;
+  }
   return entry;
 }
 

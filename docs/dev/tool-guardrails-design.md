@@ -252,7 +252,10 @@ stdio、`piWeb.plane="workspace"` 的条目，在会话启动时列出工具并�
 `mcp_<server>_<tool>`；调用经 relay 到用户配对机器，`_meta` 带
 `amedac/*` 身份。adapter 仍按远端模式剔除同一条目，避免控制面 spawn。
 普通用户的项目 stdio 创建/导入/工作区同步闸门在 local-machine + workspace
-plane 下放行；HTTP 直连与 sandbox/SSH 远端 MCP 仍走后续批次。
+plane 下放行；HTTP 直连与 sandbox/SSH 远端 MCP 仍走后续批次。workspace
+条目必须 `lifecycle=lazy`（或 lazy-keep-alive）且 `directTools=false`：
+否则 adapter 会在启动阶段为了 keep-alive/eager 或 direct-tool 元数据在控制面
+连接它；创建/更新/导入/同步会拒绝，会话启动也会二次校验。
 
 ## 6. 拦截层增强
 

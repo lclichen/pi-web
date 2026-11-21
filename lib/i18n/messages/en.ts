@@ -925,7 +925,7 @@ export const enLocale: LocalePlugin = {
     "mcp.enabledTag": "enabled",
     "mcp.executionPlane": "Execution plane (piWeb.plane)",
     "mcp.executionPlaneDefault": "Default (pi-web server)",
-    "mcp.executionPlaneHint": "Workspace runs this stdio server on the paired machine in local-machine projects (agent ≥ 0.8.0). Host is admin-only.",
+    "mcp.executionPlaneHint": "Workspace runs this stdio server on the paired machine in local-machine projects (agent ≥ 0.8.0); saving forces lifecycle=lazy and directTools=false. Host is admin-only.",
     "mcp.executionPlaneHost": "pi-web host (admin)",
     "mcp.executionPlaneWorkspace": "Session workspace (paired machine)",
     "mcp.expand": "Expand",

@@ -33,7 +33,7 @@ import { registerBgChannel } from "../extensions/bg-shell.ts";
 import { makeSandboxBgChannel, makeRelayBgChannel } from "../extensions/bg-channels.ts";
 import { requireCompatibleAgent } from "../relay/agent-gate.ts";
 import { makeRelayToolsExtension } from "../extensions/relay-tools.ts";
-import { makeRemoteMcpToolsExtension } from "../extensions/remote-mcp.ts";
+import { assertRelayWorkspaceMcpSafe, makeRemoteMcpToolsExtension } from "../extensions/remote-mcp.ts";
 import { makeSandboxToolsExtension } from "../extensions/sandbox-tools.ts";
 import { makeHostWorkspaceServiceExtension } from "../extensions/host-workspace.ts";
 import { projectionSessionFor } from "../projection/session-context.ts";
@@ -323,6 +323,9 @@ export async function runBatchTask(options: RunTaskOptions): Promise<void> {
       typeof options.projectId === "string" && options.mode !== "host"
         ? getOwnedProject(options.projectId, options.ownerId, true)
         : undefined;
+    if (options.mode === "local-machine" && projectionProject) {
+      assertRelayWorkspaceMcpSafe(projectHome(projectionProject), options.ownerId);
+    }
 
     // 1. Resolve the session cwd and per-mode wiring.
     //    - host: prepare a fresh workDir (suffix-if-exists) + materialize files

@@ -43,6 +43,8 @@ import {
 import { openApkgViaTool } from "./apkg-open.ts";
 import { formatConfigProblems, validateBundleConfigText, type ConfigFileProblem } from "./bundle-config-schema.ts";
 import { stripJsonc } from "./jsonc.ts";
+import { relayWorkspaceEntryProblem } from "./relay-mcp-policy.ts";
+import type { ServerEntry } from "./api-types";
 
 export const BUNDLE_FORMAT = "amedac-project-config";
 export const BUNDLE_VERSION = 2;
@@ -325,7 +327,14 @@ export function validateConfigWrites(
               if (typeof record.command !== "string" || record.command.trim().length === 0) return false;
               // local-machine 项目显式声明 plane=workspace 的 stdio 由 relay
               // MCP host 在用户配对机器执行，不落控制面。
-              return !(options.allowWorkspaceStdioMcp === true && record.piWeb?.plane === "workspace");
+              if (options.allowWorkspaceStdioMcp === true && record.piWeb?.plane === "workspace") {
+                const problem = relayWorkspaceEntryProblem(record as ServerEntry);
+                if (problem) {
+                  problems.push({ path: write.rel, problem: `workspace MCP 配置不安全（${record.command}）：${problem}` });
+                }
+                return false;
+              }
+              return true;
             })
             .map(([name]) => name);
           if (stdio.length > 0) {

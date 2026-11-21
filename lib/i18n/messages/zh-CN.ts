@@ -925,7 +925,7 @@ export const zhCNLocale: LocalePlugin = {
     "mcp.enabledTag": "已启用",
     "mcp.executionPlane": "执行面（piWeb.plane）",
     "mcp.executionPlaneDefault": "默认（pi-web 服务器）",
-    "mcp.executionPlaneHint": "workspace：本地模式项目在配对机器上运行该 stdio 服务器（需要 Agent ≥ 0.8.0）；host 仅管理员可选。",
+    "mcp.executionPlaneHint": "workspace：本地模式项目在配对机器上运行该 stdio 服务器（需要 Agent ≥ 0.8.0）；保存时自动设为 lifecycle=lazy、directTools=false。host 仅管理员可选。",
     "mcp.executionPlaneHost": "pi-web 宿主（管理员）",
     "mcp.executionPlaneWorkspace": "会话工作区（配对机器）",
     "mcp.expand": "展开",

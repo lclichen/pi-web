@@ -30,7 +30,7 @@ import { pathScopeForSession, writePathScope } from "@/lib/path-scope";
 import { projectionSessionFor } from "@/lib/projection/session-context";
 import { recordSessionMeta } from "@/lib/session-metas";
 import { makeRelayToolsExtension } from "@/lib/extensions/relay-tools";
-import { makeRemoteMcpToolsExtension } from "@/lib/extensions/remote-mcp";
+import { assertRelayWorkspaceMcpSafe, makeRemoteMcpToolsExtension } from "@/lib/extensions/remote-mcp";
 import { sessionDirsForProject } from "@/lib/session-context";
 import { makeRemoteVerifyExtension } from "@/lib/extensions/remote-verify";
 import { makeEnvironmentInfoExtension } from "@/lib/extensions/environment-info";
@@ -300,6 +300,14 @@ export async function POST(req: Request) {
         const gate = requireCompatibleAgent(user.id, project.machineId);
         if (!gate.ok) {
           return NextResponse.json({ error: gate.error }, { status: gate.status });
+        }
+        try {
+          assertRelayWorkspaceMcpSafe(home, user.id);
+        } catch (error) {
+          return NextResponse.json(
+            { error: error instanceof Error ? error.message : String(error) },
+            { status: 409 },
+          );
         }
         extensionFactories = [
           makeRelayToolsExtension(user.id, {

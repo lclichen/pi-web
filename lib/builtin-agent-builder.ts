@@ -182,7 +182,9 @@ AGENTS.md                 # 项目指令（Agent 的系统提示载体之一）
 - 默认 stdio 在 pi-web 服务器执行；普通用户不能创建 project/user stdio。
 - 要在用户自己的机器（local-machine 项目工作区）运行：
   \`"piWeb": {"plane": "workspace"}\`，project scope，且目标 Agent ≥ 0.8.0；
-  工具会注册为 \`mcp_<server>_<tool>\`。
+  必须同时写 \`"lifecycle": "lazy"\` 与 \`"directTools": false\`，否则 adapter
+  会在服务器上尝试连接（pi-web 会拒绝启动会话）。工具注册为
+  \`mcp_<server>_<tool>\`。
 - 管理员显式允许宿主执行：\`"piWeb": {"plane": "host"}\`（可信代码）。
 - \`piWeb.risk\` / \`pathParams\` / \`commandParams\` 是声明字段；当前只记录，
   MCP 内部文件操作尚未被 path-guard 自动拦截。

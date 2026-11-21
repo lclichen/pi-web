@@ -29,6 +29,8 @@ export const RELAY_BINARY_READ_FEATURE = "binary-read";
 export const RELAY_BINARY_WRITE_FEATURE = "binary-write";
 /** fs.manifest returns a batched stat listing (projection fast path). Agent >= 0.7.0. */
 export const RELAY_PROJECTION_MANIFEST_FEATURE = "projection-v1";
+/** Agent hosts stdio MCP servers on the user's machine (mcp.* RPCs). >= 0.8.0. */
+export const RELAY_MCP_FEATURE = "mcp-relay-v1";
 
 export interface RelayWorkspaceScope {
   /** Absolute base directory for agents with per-request roots. */
@@ -90,6 +92,10 @@ export function agentSupportsBinaryWrite(info: AgentInfo | null | undefined): bo
 
 export function agentSupportsProjectionManifest(info: AgentInfo | null | undefined): boolean {
   return Boolean(info?.features?.includes(RELAY_PROJECTION_MANIFEST_FEATURE));
+}
+
+export function agentSupportsMcpRelay(info: AgentInfo | null | undefined): boolean {
+  return Boolean(info?.features?.includes(RELAY_MCP_FEATURE));
 }
 
 /**

@@ -6,6 +6,7 @@ import {
   setMcpServerDisabledViaProject,
   updateMcpServer,
 } from "@/lib/mcp-config";
+import { getOwnedProject } from "@/lib/projects";
 import { guardMcpRequest } from "@/lib/mcp-route-guard";
 import { withProjectConfigWriteLockFor, ProjectConfigLockBusyError } from "@/lib/project-config-lock";
 import type { ConfigScope, ServerEntry } from "@/lib/api-types";
@@ -37,11 +38,19 @@ export async function PUT(req: Request, { params }: { params: Promise<{ name: st
     const guard = guardMcpRequest(req, body, { mutating: true });
     if (!guard.ok) return guard.response;
     const scope = readScope(body.scope);
-    if ((scope === "project" || scope === "user") && !guard.isAdmin && body.entry.command) {
+    const project =
+      scope === "project" && guard.projectId
+        ? getOwnedProject(guard.projectId, guard.userId)
+        : undefined;
+    const relayWorkspaceStdio =
+      scope === "project" &&
+      project?.mode === "local-machine" &&
+      body.entry.piWeb?.plane === "workspace";
+    if ((scope === "project" || scope === "user") && !guard.isAdmin && body.entry.command && !relayWorkspaceStdio) {
       return NextResponse.json(
         {
           error:
-            "项目级 stdio MCP 会在 pi-web 服务器进程内启动，普通用户不可用。请改用 http MCP，或联系管理员在全局配置中添加。",
+            "项目级 stdio MCP 默认会在 pi-web 服务器进程内启动，普通用户不可用。本机模式项目可改用 http MCP，或在条目的 piWeb.plane 声明 \"workspace\" 让它在你的配对机器上运行。",
         },
         { status: 403 },
       );

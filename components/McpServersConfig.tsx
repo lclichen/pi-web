@@ -88,6 +88,8 @@ interface ServerForm {
   args: string;
   env: string;
   cwd: string;
+  /** piWeb.plane: "" = adapter default, workspace = session execution plane. */
+  plane: "" | "host" | "workspace";
   url: string;
   headers: string;
   auth: "none" | "oauth" | "bearer";
@@ -121,6 +123,7 @@ function emptyServerForm(scope: ConfigScope = "project"): ServerForm {
     args: "",
     env: "",
     cwd: "",
+    plane: "",
     url: "",
     headers: "",
     auth: "none",
@@ -158,6 +161,7 @@ function entryToForm(name: string, scope: ConfigScope, entry: ServerEntry): Serv
     args: entry.args?.join("\n") ?? "",
     env: kvToString(entry.env, "="),
     cwd: entry.cwd ?? "",
+    plane: entry.piWeb?.plane ?? "",
     url: entry.url ?? "",
     headers: kvToString(entry.headers, ": "),
     auth: entry.auth === "oauth" ? "oauth" : entry.auth === "bearer" ? "bearer" : "none",
@@ -190,6 +194,7 @@ function formToEntry(form: ServerForm): ServerEntry {
     const env = parseKv(form.env, /=/);
     if (Object.keys(env).length) entry.env = env;
     if (form.cwd.trim()) entry.cwd = form.cwd.trim();
+    if (form.plane) entry.piWeb = { plane: form.plane };
   } else {
     if (form.url.trim()) entry.url = form.url.trim();
     const headers = parseKv(form.headers, /:\s*/);
@@ -268,7 +273,14 @@ function mergeServerEntry(base: ServerEntry | null, form: ServerForm): ServerEnt
   if (!base) return managed;
   const preserved = { ...base } as Record<string, unknown>;
   for (const key of MANAGED_ENTRY_KEYS) delete preserved[key];
-  return { ...preserved, ...managed } as ServerEntry;
+  const merged: Record<string, unknown> = { ...preserved, ...managed };
+  // The form owns only piWeb.plane; keep risk/pathParams/commandParams that
+  // an agent or skilled author may have declared.
+  const piWeb = { ...(base.piWeb ?? {}), ...(managed.piWeb ?? {}) } as Record<string, unknown>;
+  if (!form.plane) delete piWeb.plane;
+  if (Object.keys(piWeb).length > 0) merged.piWeb = piWeb;
+  else delete merged.piWeb;
+  return merged as ServerEntry;
 }
 
 export function McpServersConfig({
@@ -1225,6 +1237,22 @@ export function McpServersConfig({
                     <ConfigField label="Working directory">
                       <input style={inputStyle} value={form.cwd} onChange={(e) => set("cwd", e.target.value)} />
                     </ConfigField>
+                    {form.scope === "project" && (
+                      <ConfigField label={t("mcp.executionPlane")}>
+                        <select
+                          style={inputStyle}
+                          value={form.plane}
+                          onChange={(e) => set("plane", e.target.value as ServerForm["plane"])}
+                        >
+                          <option value="">{t("mcp.executionPlaneDefault")}</option>
+                          <option value="workspace">{t("mcp.executionPlaneWorkspace")}</option>
+                          {isAdmin && <option value="host">{t("mcp.executionPlaneHost")}</option>}
+                        </select>
+                        <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 4 }}>
+                          {t("mcp.executionPlaneHint")}
+                        </div>
+                      </ConfigField>
+                    )}
                   </>
                 ) : (
                   <>

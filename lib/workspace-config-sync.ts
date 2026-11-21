@@ -269,8 +269,14 @@ export function validateMcpForMode(files: WorkspaceConfigFile[], mode: SessionMo
     for (const server of mcpServersFromText(file.content.toString("utf8"))) {
       if (server.disabled) continue;
       const transport = detectTransport(server.entry);
+      // local-machine + plane=workspace 的 stdio 由 relay MCP host 在用户
+      // 配对机器执行；adapter 侧仍按远端剔除，但同步不应拒绝这条配置。
+      const relayHosted =
+        mode === "local-machine" &&
+        transport === "stdio" &&
+        server.entry.piWeb?.plane === "workspace";
       const policy = mcpServerModePolicy(server.entry, transport, mode);
-      if (policy.excluded) {
+      if (policy.excluded && !relayHosted) {
         problems.push(`${file.rel}: MCP 服务器「${server.name}」在 ${mode} 模式不可用 —— ${policy.reason}`);
       }
     }
@@ -301,7 +307,11 @@ export async function planWorkspaceConfigSync(
   // still part of the config that will run after a later edit.
   validateConfigWrites(
     collected.files.map((f) => ({ rel: f.rel, content: f.content })),
-    { allowStdioMcp: options.allowStdioMcp, action: "同步" },
+    {
+      allowStdioMcp: options.allowStdioMcp,
+      allowWorkspaceStdioMcp: options.mode === "local-machine",
+      action: "同步",
+    },
   );
   validateMcpForMode(collected.files, options.mode);
 

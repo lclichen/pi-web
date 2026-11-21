@@ -70,7 +70,10 @@ export type RpcMethod =
   | "pty.create"
   | "pty.input"
   | "pty.resize"
-  | "pty.close";
+  | "pty.close"
+  | "mcp.listTools"
+  | "mcp.callTool"
+  | "mcp.close";
 
 /** Static metadata describing the connected machine + its workspace. */
 export interface AgentInfo {
@@ -84,9 +87,9 @@ export interface AgentInfo {
   machineId?: string;
   /** User-facing label, persisted server-side and echoed in hello. */
   label?: string;
-  /** Optional agent capabilities. "workspace-base": fs / search / exec /
-   *  pty.create accept an absolute `base` param scoping that request to a
-   *  project workspace (agent >= 0.2.0). Older agents omit it. */
+  /** Optional agent capabilities: "workspace-base" (per-request base),
+   *  "binary-read", "binary-write", "projection-v1", and "mcp-relay-v1"
+   *  (agent hosts stdio MCP servers). Older agents omit newer values. */
   features?: string[];
 }
 
@@ -146,6 +149,28 @@ export interface GrepMatch {
   file: string;
   line: number;
   text: string;
+}
+
+/** One tool advertised by tools/list from a relay-hosted MCP server. */
+export interface McpRelayTool {
+  name: string;
+  title?: string;
+  description?: string;
+  inputSchema?: unknown;
+}
+
+/** Raw tools/list result (agent mcp.listTools). */
+export interface McpRelayToolList {
+  serverKey: string;
+  tools: McpRelayTool[];
+}
+
+/** Raw tools/call result (agent mcp.callTool). */
+export interface McpRelayCallResult {
+  content?: unknown[];
+  isError?: boolean;
+  structuredContent?: unknown;
+  [key: string]: unknown;
 }
 
 /** Public-facing snapshot returned by /api/agent-relay/status. */

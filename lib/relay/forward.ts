@@ -20,6 +20,9 @@ export interface ForwardOpts {
   userId?: number;
   /** Specific paired machine (multi-machine); omit for the user's default. */
   machineId?: string;
+  /** Per-request timeout; defaults to RPC_TIMEOUT_MS (30s). MCP tool calls
+   *  commonly exceed it, so the caller passes the configured request timeout. */
+  timeoutMs?: number;
 }
 
 /** One-shot request → resolves with `result`, rejects on error/timeout/offline. */
@@ -30,11 +33,12 @@ export function relayRpc(method: RpcMethod, params?: Record<string, unknown>, op
       reject(agentUnavailable(opts));
       return;
     }
+    const timeoutMs = opts?.timeoutMs && opts.timeoutMs > 0 ? opts.timeoutMs : RPC_TIMEOUT_MS;
     const id = agent.nextId++;
     const timer = setTimeout(() => {
       agent.pending.delete(id);
-      reject(new Error(`agent rpc timed out after ${RPC_TIMEOUT_MS}ms: ${method}`));
-    }, RPC_TIMEOUT_MS);
+      reject(new Error(`agent rpc timed out after ${timeoutMs}ms: ${method}`));
+    }, timeoutMs);
     agent.pending.set(id, {
       resolve: resolve as (value: unknown) => void,
       reject,

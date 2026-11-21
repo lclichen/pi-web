@@ -14,6 +14,7 @@ import { quickSessionDir, readQuickTemplateSnapshot } from "./quick-session";
 import { syncQuickMcpConfig } from "./quick-mcp";
 import { spaceDir } from "./session-spaces";
 import { makeRelayToolsExtension } from "./extensions/relay-tools";
+import { makeRemoteMcpToolsExtension } from "./extensions/remote-mcp";
 import { makeRemoteVerifyExtension } from "./extensions/remote-verify";
 import { makeEnvironmentInfoExtension } from "./extensions/environment-info";
 import { makeSshToolsExtension } from "./extensions/ssh-tools";
@@ -165,6 +166,17 @@ export async function restoreSessionOptions(req: Request, sessionId: string): Pr
         ...(project?.workdir ? { workspaceDir: project.workdir } : {}),
         ...(project?.machineId ? { machineId: project.machineId } : {}),
       }),
+      ...(project
+        ? [
+            makeRemoteMcpToolsExtension({
+              userId: ownerId,
+              userName: identity.session.user.username,
+              projectHome: effectiveCwd,
+              ...(project.workdir ? { workspaceDir: project.workdir } : {}),
+              ...(project.machineId ? { machineId: project.machineId } : {}),
+            }),
+          ]
+        : []),
       makeRemoteVerifyExtension("local-machine", ownerId),
       makeEnvironmentInfoExtension({
         mode: "local-machine",

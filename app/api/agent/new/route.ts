@@ -30,6 +30,7 @@ import { pathScopeForSession, writePathScope } from "@/lib/path-scope";
 import { projectionSessionFor } from "@/lib/projection/session-context";
 import { recordSessionMeta } from "@/lib/session-metas";
 import { makeRelayToolsExtension } from "@/lib/extensions/relay-tools";
+import { makeRemoteMcpToolsExtension } from "@/lib/extensions/remote-mcp";
 import { sessionDirsForProject } from "@/lib/session-context";
 import { makeRemoteVerifyExtension } from "@/lib/extensions/remote-verify";
 import { makeEnvironmentInfoExtension } from "@/lib/extensions/environment-info";
@@ -302,6 +303,13 @@ export async function POST(req: Request) {
         }
         extensionFactories = [
           makeRelayToolsExtension(user.id, {
+            projectHome: home,
+            ...(project.workdir ? { workspaceDir: project.workdir } : {}),
+            ...(project.machineId ? { machineId: project.machineId } : {}),
+          }),
+          makeRemoteMcpToolsExtension({
+            userId: user.id,
+            userName: user.username,
             projectHome: home,
             ...(project.workdir ? { workspaceDir: project.workdir } : {}),
             ...(project.machineId ? { machineId: project.machineId } : {}),

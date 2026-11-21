@@ -104,7 +104,9 @@ export interface McpModePolicy {
  *   · stdio / socket：必须在发起方同机 spawn，而适配器在 pi-web 服务器进程
  *     内 → 子进程在宿主执行（沙盒逃逸面）→ 远端模式剔除。
  * 管理员显式声明 `"piWeb": {"plane": "host"}` 可豁免（知情承认风险）；
- * 声明 `plane: "workspace"`（带工作区语义的 MCP）在 P3 前远端不可用。
+ * `plane: "workspace"` 的 stdio 条目在 local-machine 项目由 relay MCP host
+ * 在用户机器执行，但 adapter 自身仍剔除（避免控制面 spawn）；sandbox/SSH
+ * 的远端执行通道尚未落地。
  */
 export function mcpServerModePolicy(entry: ServerEntry, transport: McpTransport, mode: SessionMode): McpModePolicy {
   if (!isRemoteMode(mode)) return { excluded: false };
@@ -113,7 +115,8 @@ export function mcpServerModePolicy(entry: ServerEntry, transport: McpTransport,
   if (decl?.plane === "workspace") {
     return {
       excluded: true,
-      reason: "MCP 服务器声明为 workspace（操作工作区内容）；远端执行通道（P3）未支持前在远端模式不可用",
+      reason:
+        "MCP 服务器声明为 workspace（操作工作区内容）；adapter 不在控制面执行它。local-machine 可由 relay MCP host 承载；sandbox/SSH 远端通道尚未支持",
     };
   }
   if (transport === "stdio") {

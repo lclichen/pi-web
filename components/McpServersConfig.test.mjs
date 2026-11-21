@@ -40,3 +40,11 @@ test("saving a global/quick entry never absorbs the workspace-override state", (
 test("settings panel passes the admin flag to the MCP section", () => {
   assert.match(panelSource, /<McpServersConfig[^>]*isAdmin=\{isAdmin\}/);
 });
+
+test("the project form can declare piWeb.plane without dropping other piWeb fields", () => {
+  assert.match(source, /plane: "" \| "host" \| "workspace"/);
+  assert.match(source, /if \(form\.plane\) entry\.piWeb = \{ plane: form\.plane \}/);
+  assert.match(source, /mcp\.executionPlaneWorkspace/);
+  assert.match(source, /const piWeb = \{ \.\.\.\(base\.piWeb \?\? \{\}\), \.\.\.\(managed\.piWeb \?\? \{\}\) \}/);
+  assert.match(source, /if \(!form\.plane\) delete piWeb\.plane/);
+});

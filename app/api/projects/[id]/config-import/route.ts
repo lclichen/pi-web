@@ -46,6 +46,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     const stats = await withProjectConfigWriteLock(project.id, async () =>
       importProjectConfigBundle(home, data, {
         allowStdioMcp: identity.session.user.role === "admin",
+        allowWorkspaceStdioMcp: project.mode === "local-machine",
       }),
     );
     // Host home changed: push the new .pi config to the workspace on the next

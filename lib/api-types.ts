@@ -260,8 +260,10 @@ export interface ServerEntry {
   /**
    * pi-web 私有：工具护栏声明块（pi-mcp-adapter 忽略未知字段）。
    * 远端模式（sandbox/ssh/local-machine）默认剔除 stdio 服务器（宿主
-   * 子进程 = 沙盒逃逸面）；plane:"host" 显式豁免，plane:"workspace"
-   * 在远端执行通道（P3）落地前不可用。见 lib/tool-policy.ts。
+   * 子进程 = 沙盒逃逸面）；plane:"host" 显式豁免。plane:"workspace"
+   * 的 stdio 条目在 local-machine 项目由 relay MCP host 在用户配对机器
+   * 执行（agent >= 0.8.0）；sandbox/SSH 仍待远端通道。见 lib/tool-policy.ts
+   * 与 lib/extensions/remote-mcp.ts。
    */
   piWeb?: McpWebDeclaration;
 }

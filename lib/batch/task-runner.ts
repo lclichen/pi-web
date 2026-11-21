@@ -21,7 +21,7 @@ import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { startRpcSession, type AgentSessionWrapper } from "../rpc-manager.ts";
 import { trustProject } from "../project-trust.ts";
 import { toClientAgentEvent } from "../agent-event-wire.ts";
-import { writeSandboxConfig, getOwnedProject } from "../projects.ts";
+import { writeSandboxConfig, getOwnedProject, projectHome } from "../projects.ts";
 import { dataDir } from "../mode-homes.ts";
 import { resolveCoreExtensionPaths } from "../session-restore-options.ts";
 import { descriptorForNewSession } from "../session-descriptor.ts";
@@ -33,6 +33,7 @@ import { registerBgChannel } from "../extensions/bg-shell.ts";
 import { makeSandboxBgChannel, makeRelayBgChannel } from "../extensions/bg-channels.ts";
 import { requireCompatibleAgent } from "../relay/agent-gate.ts";
 import { makeRelayToolsExtension } from "../extensions/relay-tools.ts";
+import { makeRemoteMcpToolsExtension } from "../extensions/remote-mcp.ts";
 import { makeSandboxToolsExtension } from "../extensions/sandbox-tools.ts";
 import { makeHostWorkspaceServiceExtension } from "../extensions/host-workspace.ts";
 import { projectionSessionFor } from "../projection/session-context.ts";
@@ -421,6 +422,21 @@ export async function runBatchTask(options: RunTaskOptions): Promise<void> {
                   ...(relayWorkspaceDir ? { workspaceDir: relayWorkspaceDir } : {}),
                   ...(relayMachineId ? { machineId: relayMachineId } : {}),
                 }),
+                ...(projectionProject
+                  ? [
+                      makeRemoteMcpToolsExtension({
+                        userId: options.ownerId,
+                        userName: options.username ?? "batch",
+                        projectHome: projectHome(projectionProject),
+                        ...(relayWorkspaceDir ?? projectionProject.workdir
+                          ? { workspaceDir: relayWorkspaceDir ?? projectionProject.workdir }
+                          : {}),
+                        ...(relayMachineId ?? projectionProject.machineId
+                          ? { machineId: relayMachineId ?? projectionProject.machineId }
+                          : {}),
+                      }),
+                    ]
+                  : []),
                 makeRemoteVerifyExtension("local-machine", options.ownerId),
                 makeEnvironmentInfoExtension({
                   mode: "local-machine",

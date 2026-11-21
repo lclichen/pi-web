@@ -244,6 +244,16 @@ HTTP 优先策略落地后，本步骤的需求面收窄为"**必须与工作区
 `unsupported` 改为对应通道值即可，声明格式不变。纯工具型（搜索/查询类）
 不需要此步骤——它们应该走 HTTP。
 
+**2026-11-21 local-machine v1 已落地**：agent 0.8.0 增加
+`mcp-relay-v1` feature 与 `mcp.listTools` / `mcp.callTool` / `mcp.close`
+（`agent/internal/mcp`：进程常驻、按行 JSON-RPC、stdio 环境白名单、会话
+结束关闭）。pi-web 侧 `lib/extensions/remote-mcp.ts` 只认 project scope、
+stdio、`piWeb.plane="workspace"` 的条目，在会话启动时列出工具并注册为
+`mcp_<server>_<tool>`；调用经 relay 到用户配对机器，`_meta` 带
+`amedac/*` 身份。adapter 仍按远端模式剔除同一条目，避免控制面 spawn。
+普通用户的项目 stdio 创建/导入/工作区同步闸门在 local-machine + workspace
+plane 下放行；HTTP 直连与 sandbox/SSH 远端 MCP 仍走后续批次。
+
 ## 6. 拦截层增强
 
 ### 6.1 path-guard 泛化（P0）

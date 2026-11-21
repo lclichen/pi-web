@@ -305,7 +305,7 @@ export interface ConfigWrite {
  */
 export function validateConfigWrites(
   writes: ConfigWrite[],
-  options: { allowStdioMcp?: boolean; action?: string } = {},
+  options: { allowStdioMcp?: boolean; allowWorkspaceStdioMcp?: boolean; action?: string } = {},
 ): void {
   const problems: ConfigFileProblem[] = [];
   for (const write of writes) {
@@ -321,14 +321,17 @@ export function validateConfigWrites(
           const stdio = Object.entries(servers as Record<string, unknown>)
             .filter(([, entry]) => {
               if (!entry || typeof entry !== "object" || Array.isArray(entry)) return false;
-              const command = (entry as { command?: unknown }).command;
-              return typeof command === "string" && command.trim().length > 0;
+              const record = entry as { command?: unknown; piWeb?: { plane?: unknown } };
+              if (typeof record.command !== "string" || record.command.trim().length === 0) return false;
+              // local-machine 项目显式声明 plane=workspace 的 stdio 由 relay
+              // MCP host 在用户配对机器执行，不落控制面。
+              return !(options.allowWorkspaceStdioMcp === true && record.piWeb?.plane === "workspace");
             })
             .map(([name]) => name);
           if (stdio.length > 0) {
             problems.push({
               path: write.rel,
-              problem: `项目级 stdio MCP（${stdio.join(", ")}）会在 pi-web 服务器进程执行，普通用户不可导入；请改用 http MCP，或让管理员在全局配置中添加`,
+              problem: `项目级 stdio MCP（${stdio.join(", ")}）会在 pi-web 服务器进程执行，普通用户不可导入；请改用 http MCP、在 local-machine 项目声明 piWeb.plane="workspace"，或让管理员在全局配置中添加`,
             });
           }
         }
@@ -348,6 +351,9 @@ export interface ImportOptions {
   /** 普通用户导入时禁止项目级 stdio MCP（它会在 pi-web 服务器进程执行）。
    *  管理员/服务器端模板保持 true。 */
   allowStdioMcp?: boolean;
+  /** local-machine 项目：允许显式 piWeb.plane="workspace" 的 stdio 条目
+   *  （由 relay MCP host 在用户机器执行）。 */
+  allowWorkspaceStdioMcp?: boolean;
 }
 
 /**

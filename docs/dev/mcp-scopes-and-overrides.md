@@ -11,6 +11,17 @@
 同名服务器按上表优先级去重；高优先级条目遮蔽低优先级条目
 （pi-mcp-adapter 链）。
 
+## local-machine 的 relay MCP host
+
+project scope 的 stdio 条目如果声明 `"piWeb": {"plane": "workspace"}`，且项目
+是 local-machine 模式，pi-web 不会让 adapter 在服务器上 spawn 它，而是由
+`lib/extensions/remote-mcp.ts` 在会话启动时通过 Go agent（≥ 0.8.0，
+`mcp-relay-v1`）在用户配对机器上启动。工具名是 `mcp_<server>_<tool>`，
+调用走 `mcp.callTool`，`_meta` 带 `amedac/*` 身份；会话结束发 `mcp.close`。
+普通用户创建/导入/同步这类条目时，控制面闸门只在上述组合下放行。用户
+scope 没有机器绑定，仍不允许 stdio。HTTP 服务器不需要 `plane`，继续按
+普通 MCP HTTP 配置使用。
+
 ## 工作区级禁用 = 墓碑覆盖
 
 全局/快速服务器要在**当前项目**单独关闭时，不修改原始配置，而是在

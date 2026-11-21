@@ -34,13 +34,16 @@
  *
  * 1.1.9：补充 adapter 2.38 在 Pi 0.85–0.87 旧路径下的兼容要点
  * （protocolVersion/tasks/directTools=search/工具名/审批语义变化）。
+ *
+ * 1.2.0：MCP 技能补全 piWeb 执行面声明；local-machine 项目的 stdio MCP
+ * 可用 plane="workspace" 在用户配对机器运行（agent >= 0.8.0）。
  */
 import JSZip from "jszip";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 export const BUILTIN_AGENT_BUILDER_NAME = "agent-builder";
-export const BUILTIN_AGENT_BUILDER_VERSION = "1.1.9";
+export const BUILTIN_AGENT_BUILDER_VERSION = "1.2.0";
 
 /** Developer skills shipped inside the builder bundle (source of truth:
  *  <repo>/builder-skills/, copied verbatim into .pi/skills/ of the zip).
@@ -61,8 +64,9 @@ const AGENTS_MD = `# Agent Builder
 
 1. **整理配置方案**（写进对话，先让用户确认再动手）：
    - 目标 Agent 的定位与系统提示词（写入 .pi/agents/<name>.md 或项目 AGENTS.md）
-   - MCP 服务器（.pi/mcp.json，格式见下文 agent-packaging 技能：mcpServers.<name>
-     必须有 command 或 url；导出/导入会做 schema 校验）
+   - MCP 服务器（.pi/mcp.json，格式见 mcp-server-integration 技能：mcpServers.<name>
+     必须有 command 或 url；先确认目标项目模式，再决定 http / plane=workspace /
+     plane=host。导出/导入会做 schema 校验）
    - 技能（.pi/skills/<name>/SKILL.md）、子代理（.pi/subagents.json / .pi/agents/）
    - 需要内置 nodejs 代码的扩展（.pi/extensions/<name>/，package.json + index.js）
    - 环境依赖（如 node>=20、ripgrep、python>=3.11）
@@ -83,8 +87,9 @@ const AGENTS_MD = `# Agent Builder
   词、渐进披露（references/）、脚本效率检查（scripts/skill-efficiency-check.py）。
 - **subagent-creator**——设计子代理：角色边界、工具权限最小化、多代理
   协作与交接（examples/ 有可参考定义）。
-- **mcp-server-integration**——接入 MCP 服务器：.pi/mcp.json 结构、
-  pi-mcp-adapter 参数与超时/生命周期，以及 pi-web 注入的
+- **mcp-server-integration**——编写/接入 MCP 服务器：传输方式、
+  piWeb.plane 执行面（host / workspace / local-machine 配对机器）、
+  .pi/mcp.json 结构、adapter 参数与超时/生命周期，以及 pi-web 注入的
   x-amedac-* headers 与 amedac/* _meta 会话/用户标识。
 
 ## 目录纪律（硬约束）
@@ -172,9 +177,21 @@ AGENTS.md                 # 项目指令（Agent 的系统提示载体之一）
 - \`idleTimeout\`（分钟）/ \`requestTimeoutMs\`（毫秒）：数字。旧字段
   \`toolTimeoutMs\` 已被 pi-mcp-adapter 2.31 忽略，pi-web 会在会话启动时自动迁移。
 
+字段约束补充（先看 \`mcp-server-integration\` 技能的执行面表）：
+
+- 默认 stdio 在 pi-web 服务器执行；普通用户不能创建 project/user stdio。
+- 要在用户自己的机器（local-machine 项目工作区）运行：
+  \`"piWeb": {"plane": "workspace"}\`，project scope，且目标 Agent ≥ 0.8.0；
+  工具会注册为 \`mcp_<server>_<tool>\`。
+- 管理员显式允许宿主执行：\`"piWeb": {"plane": "host"}\`（可信代码）。
+- \`piWeb.risk\` / \`pathParams\` / \`commandParams\` 是声明字段；当前只记录，
+  MCP 内部文件操作尚未被 path-guard 自动拦截。
+- HTTP 服务器不要写 \`plane\`；直接给 \`url\`，并保证 pi-web 服务器能访问。
+
 常见错误：把 \`args\` 写成空格分隔的字符串、\`env\` 写成数组、服务器条目只有
 \`disabled\` 而没有 command/url——这些都会在**导出时直接报错**（导入同样拦），
-不会等到套用后才发现连不上。
+不会等到套用后才发现连不上。普通用户导出 workspace-plane stdio 到非
+local-machine 项目会被导入闸门拒绝。
 
 ## 模型配置不入包（硬规则）
 
@@ -215,9 +232,10 @@ const README_MD = `# Agent Builder（内置 Agent 定义）
 开发新的 Agent 定义（提示词/扩展代码/技能/子代理/模型/MCP），自检后
 经「导出配置包」交付，由管理员上传到 设置 → Agents 管理。
 
-随包附带三份开发技能（.pi/skills/）：pi-extension-dev（扩展开发）、
-skill-creator（技能编写）、subagent-creator（子代理设计），按需查阅，
-也可作为自己定义里的技能直接复用。
+随包附带四份开发技能（.pi/skills/）：pi-extension-dev（扩展开发）、
+skill-creator（技能编写）、subagent-creator（子代理设计）、
+mcp-server-integration（MCP 编写与执行面），按需查阅，也可作为自己
+定义里的技能直接复用。
 
 - 依赖：node>=20（扩展代码的运行时）
 - 版本：${BUILTIN_AGENT_BUILDER_VERSION}

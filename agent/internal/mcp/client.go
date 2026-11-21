@@ -159,6 +159,10 @@ func (m *Manager) CallTool(
 
 // Close terminates one session's MCP process. Missing keys are a no-op.
 func (m *Manager) Close(serverKey string) bool {
+	// Wait for an in-flight start so a shutdown cannot miss a process that is
+	// still initializing and gets inserted into the map a moment later.
+	m.startMu.Lock()
+	defer m.startMu.Unlock()
 	m.mu.Lock()
 	s := m.servers[serverKey]
 	delete(m.servers, serverKey)
@@ -172,6 +176,8 @@ func (m *Manager) Close(serverKey string) bool {
 
 // CloseAll terminates every hosted process (agent shutdown / tests).
 func (m *Manager) CloseAll() {
+	m.startMu.Lock()
+	defer m.startMu.Unlock()
 	m.mu.Lock()
 	servers := make([]*session, 0, len(m.servers))
 	for key, s := range m.servers {

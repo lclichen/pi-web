@@ -181,6 +181,13 @@ exists.
   `node_modules/.cache` are skipped. Advertised as `features: ["projection-v1"]`
   (alongside `workspace-base`, `binary-read`, `binary-write`); pi-web falls back
   to per-file stats for older agents.
+- **MCP host (0.8.0+)**: `mcp.listTools` / `mcp.callTool` / `mcp.close` host a
+  project's stdio MCP server on the user's machine. The process runs with the
+  project workspace as cwd and a sanitized environment (PATH/HOME plus the
+  entry's explicit `env`; relay tokens and `PI_*` are never inherited).
+  Advertised as `features: ["mcp-relay-v1"]`; older agents simply do not expose
+  relay-hosted MCP tools, and pi-web never falls back to spawning them on the
+  server.
 - **No shell**: `exec.run` takes an `argv` array and spawns directly — there is
   no shell-injection surface.
 - **Token**: the pairing code is single-use + 5-min TTL; it is exchanged for a

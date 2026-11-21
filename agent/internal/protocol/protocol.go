@@ -32,6 +32,10 @@ const (
 	// several roots, so workspace projection avoids one stat round trip per
 	// file. Agent >= 0.7.0.
 	FeatureProjectionManifest = "projection-v1"
+	// FeatureMcpRelay: mcp.listTools / mcp.callTool / mcp.close host a stdio
+	// MCP server on the user's machine and bridge its JSON-RPC over the relay.
+	// Agent >= 0.8.0.
+	FeatureMcpRelay = "mcp-relay-v1"
 )
 
 // Hello is the first frame the agent sends after the WebSocket opens, carrying

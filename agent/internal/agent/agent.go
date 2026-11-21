@@ -21,6 +21,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	"piagent/internal/config"
+	"piagent/internal/mcp"
 	"piagent/internal/protocol"
 	"piagent/internal/pty"
 	"piagent/internal/workspace"
@@ -216,6 +217,7 @@ func buildInfo(version, root string, entry *config.ServerConfig) protocol.AgentI
 			protocol.FeatureBinaryRead,
 			protocol.FeatureBinaryWrite,
 			protocol.FeatureProjectionManifest,
+			protocol.FeatureMcpRelay,
 		},
 	}
 }
@@ -548,7 +550,101 @@ func callMethod(method string, params map[string]interface{}, ws *workspace.Work
 		return view.Fd(params)
 	case "exec.run":
 		return view.Exec(params)
+	case "mcp.listTools":
+		cfg, timeout, err := mcpConfigFromParams(view, params)
+		if err != nil {
+			return nil, err
+		}
+		tools, err := mcp.Default.ListTools(cfg, timeout)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]interface{}{"serverKey": cfg.ServerKey, "tools": tools}, nil
+	case "mcp.callTool":
+		cfg, timeout, err := mcpConfigFromParams(view, params)
+		if err != nil {
+			return nil, err
+		}
+		name := paramString(params, "name", "")
+		if strings.TrimSpace(name) == "" {
+			return nil, fmt.Errorf("name required")
+		}
+		args, _ := params["arguments"].(map[string]interface{})
+		meta, _ := params["_meta"].(map[string]interface{})
+		result, err := mcp.Default.CallTool(cfg, name, args, meta, timeout)
+		if err != nil {
+			return nil, err
+		}
+		return result, nil
+	case "mcp.close":
+		serverKey := paramString(params, "serverKey", "")
+		if strings.TrimSpace(serverKey) == "" {
+			return nil, fmt.Errorf("serverKey required")
+		}
+		return map[string]interface{}{"closed": mcp.Default.Close(serverKey)}, nil
 	default:
 		return nil, fmt.Errorf("unknown method: %s", method)
 	}
+}
+
+func mcpConfigFromParams(
+	view *workspace.Workspace,
+	params map[string]interface{},
+) (mcp.Config, time.Duration, error) {
+	serverKey := paramString(params, "serverKey", "")
+	command := paramString(params, "command", "")
+	if strings.TrimSpace(serverKey) == "" {
+		return mcp.Config{}, 0, fmt.Errorf("serverKey required")
+	}
+	if strings.TrimSpace(command) == "" {
+		return mcp.Config{}, 0, fmt.Errorf("command required")
+	}
+	dir, err := view.Resolve(paramString(params, "cwd", "."))
+	if err != nil {
+		return mcp.Config{}, 0, err
+	}
+	timeoutMs := paramInt(params, "timeoutMs", 60000)
+	if timeoutMs < 1000 {
+		timeoutMs = 60000
+	}
+	if timeoutMs > 30*60*1000 {
+		timeoutMs = 30 * 60 * 1000
+	}
+	return mcp.Config{
+		ServerKey:     serverKey,
+		Command:       command,
+		Args:          paramStringArray(params["args"]),
+		Env:           paramStringMap(params["env"]),
+		Dir:           dir,
+		ClientName:    paramString(params, "clientName", "pi-web-relay"),
+		ClientVersion: paramString(params, "clientVersion", "1.0.0"),
+	}, time.Duration(timeoutMs) * time.Millisecond, nil
+}
+
+func paramStringArray(value interface{}) []string {
+	raw, ok := value.([]interface{})
+	if !ok {
+		return nil
+	}
+	out := make([]string, 0, len(raw))
+	for _, item := range raw {
+		if text, ok := item.(string); ok {
+			out = append(out, text)
+		}
+	}
+	return out
+}
+
+func paramStringMap(value interface{}) map[string]string {
+	raw, ok := value.(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	out := make(map[string]string, len(raw))
+	for key, item := range raw {
+		if text, ok := item.(string); ok {
+			out[key] = text
+		}
+	}
+	return out
 }

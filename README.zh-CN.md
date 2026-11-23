@@ -4,6 +4,12 @@
 
 [pi 编程智能体](https://github.com/earendil-works/pi)的本地浏览器界面。Pi Web 与 pi 共用本机配置和会话文件，可在浏览器中查找和继续对话、运行智能体、配置模型与资源，并查看项目文件。
 
+## Amedac 平台（本 fork）
+
+本仓库是 **Amedac 中心化多用户 Agent 平台**的控制面：平台账号登录/BFF、用户项目与会话空间、五种执行模式（沙盒 / 本机 relay / SSH / 管理员 Host / Quick）、配置分层与投影、MCP、批量 API、嵌入页和可观测性。
+
+框架文档入口：[docs/dev/README.md](./docs/dev/README.md)。平台总览见 [PLATFORM.md](./docs/dev/PLATFORM.md)，执行模式见 [multi-user-and-modes-design.md](./docs/dev/multi-user-and-modes-design.md)。
+
 中文微信群：请查看 [GitHub Discussions 帖子](https://github.com/agegr/pi-web/discussions/271)。
 
 ![Pi Web 展示包含结构化 Markdown、工具调用和项目导航的 pi 会话](https://raw.githubusercontent.com/agegr/pi-web/main/docs/screenshot2.png)

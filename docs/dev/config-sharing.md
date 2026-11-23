@@ -1,108 +1,79 @@
-# 配置分享功能：使用介绍与现状盘点
+# 配置包、预置模板与配置同步
 
-本文覆盖三套互相配合的机制：**项目配置包**（点对点分享）、**预置配置模板**
-（管理员统一分发）、**Host 目录配置包**（服务器目录版）。最后是已知不足清单。
+> 状态：现行（2026-11-23）。覆盖项目配置包、管理员预置模板、Host 目录包、
+> 工作区 `.pi` 同步与快速会话模板。配置层语义见 [configuration.md](./configuration.md)。
 
-## 一、项目配置包（导出 / 导入）— 已实现
+## 1. 项目配置包（导出/导入）
 
-**是什么**：把一个项目的 `.pi/` 配置（agents/skills/extensions/models.json/
-AGENTS.md）与 `labs/` 打成一个 zip，在项目之间、机器之间转移。
+- 来源：项目 `.pi/**`、项目根 `AGENTS.md`、旧 `labs/**`（兼容保留）。
+- 导出：项目菜单/目录菜单 → 下载 zip/apkg；凭证与运行态被剥离。
+- 导入：目标项目上传 zip/apkg；先完整校验，再原子写入；叠加覆盖。
+- 包内可含 `node_modules`（离线扩展依赖）；`.pi/.bundle-lock.json` 阻止重复导出。
 
-**怎么用**：
-1. 项目右键（或 ⋮ 菜单）→「导出配置包…」→ 下载 `<项目名>-config.zip`；
-2. 目标项目 ⋮ 菜单 →「导入项目配置…」→ 拖入或选择 zip → 平台报告
-   新增/覆盖 文件数与清单；
-3. Host 目录（admin）同样支持：目录组 ⋮ 菜单有相同两项。
+安全闸门：
 
-**安全边界（重要）**：
-- 凭证永不进包：`auth.json`、`ssh.json`、`sandbox-platform.json` 在导出时
-  被剥离（DENIED_BASENAMES），导入端遇到也静默剥离；
-- 路径穿越（`../`）与超 200MB 的包直接拒绝，原配置不受影响；
-- `.pi/plans/`、`sessions/` 等运行时状态不进包（DENIED_SEGMENTS）；
-- 包内可以携带 `node_modules`（离线部署场景，extensions 依赖随包恢复）。
+| 检查 | 行为 |
+|---|---|
+| 路径 | 只允许 `.pi/`、`labs/`；拒绝 `../`、绝对路径、symlink 逃逸 |
+| 大小 | 总包 ≤200MB（可配），单文件限额 |
+| schema | `mcp.json`/`models.json` 等按 adapter/SDK 结构严格校验 |
+| 凭据 | `auth.json`、`ssh.json`、`sandbox-platform.json` 等永不进包 |
+| stdio MCP | 普通用户禁止控制面 stdio；local-machine + plane=workspace 例外 |
+| 工具模式 | 导入后当前模式不可用的 MCP 会被拒绝 |
+| 信任 | 未信任项目的扩展/技能/MCP 先走项目信任 |
 
-## 二、预置配置模板（presetBundle）— 全链路可用
+## 2. 预置配置模板（presetBundle）
 
-**是什么**：管理员把一组标准配置（.pi/ + labs/）作为 zip 上传到平台
-（`data/config-bundles/<name>.zip`），普通用户新建项目时从下拉框选择，
-项目 home 创建时自动套用（`createProject` 的 `presetBundle` 路径）。
+管理员上传 zip 到 `data/config-bundles/<name>.zip`，普通用户新建项目时选择模板，
+项目 home 创建时自动套用（seed 优先级最高）。
 
-**现状**：
-- ✅ 存储 + 校验（`lib/config-bundles-store.ts`：命名规则、zip 完整性、
-  meta.json 索引）；
-- ✅ API：`GET /api/bundles`（登录用户可列出——向导需要）、
-  `POST /api/bundles`（admin 上传，multipart file/name/description）；
-- ✅ 向导接入：`RemoteConnectWizard`（新建项目向导）有模板下拉框，
-  创建请求带 `presetBundle`；
-- ✅ 项目创建端：`createProject` 在 seed 之前 `applyBundleToDirectory`
-  （整包 seed 优先级更高——"复制项目"语义）。
-- ✅ 管理 UI：设置 → 配置模板（admin）— 列出/上传（multipart zip）/删除；
-- ✅ DELETE 端点：`DELETE /api/bundles?name=`（admin，名字校验 + meta 同步清理）；
-- ✅ 项目创建后套用：项目 ⋮ 菜单「套用配置模板…」→
-  `POST /api/projects/:id/apply-bundle { name }`（叠加语义，同名覆盖）。
+API/UI：
 
-**管理员当前操作方式（curl）**：
+- `GET /api/bundles`：登录用户可列出（向导需要）。
+- `POST /api/bundles`：管理员上传（multipart file/name/description）。
+- `DELETE /api/bundles?name=…`：管理员删除（meta 同步清理）。
+- 设置 → 配置模板：上传/列表/删除。
+- 项目创建后：项目 ⋮ →“套用配置模板…”（叠加覆盖）。
 
-```bash
-# 上传模板（name 会成为下拉框里的模板名）
-curl -X POST http://<host>:30141/api/bundles \
-  -H "Cookie: pi_web_sid=<admin会话>" \
-  -F "file=@my-standard-config.zip" -F "name=standard-lab" \
-  -F "description=标准实验环境配置"
+## 3. Host 目录包
 
-# 列出（登录用户均可）
-curl http://<host>:30141/api/bundles -H "Cookie: pi_web_sid=<sid>"
-```
+- Host 目录（管理员）有相同的导出/导入/套用模板菜单。
+- Host 套用要求目标目录无 `.pi/`（避免覆盖现有配置，409）。
+- 删除 Host 项目不删目录；配置包只操作 `.pi`。
 
-删除需要直接删文件（`data/config-bundles/<name>.zip` + meta.json 条目），
-等 DELETE 端点补上后走 API。
+## 4. 工作区 ↔ 项目配置同步
 
-## 三、与"快速会话模板"的关系
+远端会话的 SDK 读取服务器项目 home 的 `.pi`；远端工作区里的 `.pi` 只是投影副本。
+用户可在项目菜单执行“工作区 → 项目”同步：
 
-快速会话模板（`data/quick-templates.json`，设置 → 快速会话模板）面向
-**无工作区的问答会话**，管的是模型/系统提示词/MCP 白名单；配置模板
-（config-bundles）面向**有工作区的项目**，管的是 .pi/ 目录与 labs。
-两套模板互不冲突：前者是轻量 JSON 记录，后者是完整 zip。
+1. 通过 WorkspaceOperations 收集 `.pi/**`（大小/深度/文件数上限）；
+2. dry-run 展示新增/覆盖/跳过与 diff；
+3. 校验 schema、凭证剥离、stdio/工具模式；
+4. 备份后原子写入；失败回滚；
+5. 标记 projection dirty，下一会话/提示词重投影。
 
-## 四、已知不足与建议（按优先级）
+反向（项目 → 工作区）由 projection 单向完成，不做后台双向合并。
 
-### P1 — 两种启动模式下配置包能力不对齐
+## 5. 快速会话模板
 
-| 能力 | Host 目录项目 | 沙盒/本机/SSH 项目 |
+Quick 模板（`data/quick-templates.json`）是轻量 JSON：系统提示词、模型、MCP 白名单。
+它不参与项目配置包，也不落文件到用户工作区；Quick 项目按 `(owner,template)` 稳定。
+
+## 6. 权限矩阵
+
+| 操作 | 普通用户 | 管理员 |
 |---|---|---|
-| 导出配置包 | ✅（目录组菜单） | ✅（项目菜单） |
-| 导入项目配置 | ✅ | ✅ |
-| 创建时选模板 | ❌（Host 目录无向导） | ✅（向导下拉框） |
-| 创建后套用模板 | ✅（「套用配置模板…」菜单，`POST /api/projects/:id/apply-bundle`） | ✅（「套用配置模板…」） |
+| 导出/导入自己的项目 | ✅ | ✅ |
+| 导出/导入 Host 目录 | ❌ | ✅ |
+| 上传/删除预置模板 | ❌ | ✅ |
+| 列出预置模板 | ✅ | ✅ |
+| 套用模板到自己的项目 | ✅ | ✅ |
+| 工作区配置同步 | ✅（自己的项目） | ✅ |
 
-~~建议：给项目 ⋮ 菜单加「套用配置模板…」~~（已完成：ApplyBundleDialog + apply-bundle 端点）。
+## 7. 已知边界
 
-### ~~P1 — 模板管理无 UI + 无删除 API~~（已完成：设置分区 + DELETE 端点）
-
-### P2 — 权限矩阵说明（现状即设计）
-
-- 导出/导入**项目**配置：项目属主（+admin）；
-- 导出/导入 **Host 目录**配置：仅 admin（Host 目录本身就是 admin-only）；
-- 上传/删除**预置模板**：仅 admin；**列出**：所有登录用户（向导需要）；
-- 导入的配置落在项目 home 内，受项目隔离保护；但注意导入包里的
-  extensions 会在该项目下次会话启动时执行（受项目信任门控——未信任
-  的项目会先弹信任提示）。
-
-### P2 — 包内容审计提示
-
-导入端只剥离已知凭证文件名。如果 zip 里带恶意 extension 脚本，隔离
-依赖项目信任机制（用户必须先信任才执行）。分享来路不明的包时应先解包
-检查 `.pi/extensions/`。
-
-### P3 — 无版本/签名
-
-配置包没有版本号与签名，无法判断新旧、无法防篡改。离线内网场景可接受；
-若未来跨信任域分发，需要加 manifest 签名。
-
-## 五、与快速会话模式的权限关系
-
-快速会话（quick 模式）没有工作区，因此**不参与**配置包体系——它的
-"模板"是 quick-templates.json（admin 管理），套用即改系统提示词/模型/
-MCP 白名单，不落任何文件到用户侧。这也是刻意设计：快速会话的可定制面
-收敛到模板三要素，避免把文件系统语义（.pi/ 发现、项目信任）带进一个
-本应"零工作区"的模式。
+- 配置包无签名/版本校验，跨信任域分发需额外审计；apkg 有封条但边界见商业化文档。
+- 包内 extension/MCP 仍会在项目会话执行；只信任来源明确的包。
+- Host 目录无创建向导，创建时不能选模板（只能创建后套用）。
+- 同步是显式动作；远端工作区不会自动改服务器配置。
+- projection 的截断/失败回退、附件大文件分块、Apptainer bind 等边界见 ADR 0004。

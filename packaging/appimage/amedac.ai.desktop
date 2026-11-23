@@ -1,11 +1,11 @@
 [Desktop Entry]
 Type=Application
 Name=amedac.ai
-GenericName=沙盒教学平台
+GenericName=沙盒 Agent 平台
 Comment=一键启动 pi WebUI 与沙盒容器平台
 Exec=amedac --web --open %u
 Icon=amedac
 Terminal=false
 Categories=Development;
-Keywords=pi;agent;sandbox;lab;教学;
+Keywords=pi;agent;sandbox;llm;mcp;
 StartupWMClass=amedac.ai

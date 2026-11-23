@@ -4,6 +4,23 @@
 
 Local browser UI for the [pi coding agent](https://github.com/earendil-works/pi). Pi Web uses the same local configuration and session files as pi, so you can browse and resume conversations, run agent turns, configure models and resources, and inspect project files from a browser.
 
+## Amedac platform (this fork)
+
+This repository is the control plane of the **Amedac centralized multi-user Agent platform**:
+platform-account login/BFF, per-user projects and session spaces, five execution modes
+(sandbox, local-machine relay, SSH, admin Host, Quick), configuration layers/projection,
+MCP, batch API, embed widget, and observability.
+
+Framework documentation starts at [docs/dev/README.md](./docs/dev/README.md). In particular:
+
+- [Architecture overview](./docs/dev/PLATFORM.md)
+- [Multi-user and execution modes](./docs/dev/multi-user-and-modes-design.md)
+- [Session/project model](./docs/dev/session-project-model.md)
+- [Deployment](./docs/dev/DEPLOYMENT.md) and [packaging](./docs/dev/packaging.md)
+- [Agent Client](./docs/dev/CONNECT_LOCAL_MACHINE.md) and [Sandbox Platform](./docs/dev/sandbox-platform.md)
+
+The upstream single-user quick start below still applies when `PI_WEB_AUTH=off`.
+
 ![Pi Web displaying a pi session with structured Markdown, tool calls, and project navigation](https://raw.githubusercontent.com/agegr/pi-web/main/docs/screenshot2.png)
 
 ## Features

@@ -1,146 +1,196 @@
-# 连接本地机器（Connect Local Machine）
+# Agent Client 与本机模式
 
-让 pi-web 在浏览器里直接操作用户本地机器（如 **CentOS 7**）的文件系统与命令行：
-读/写/列目录/搜索/执行命令，并能跑交互式终端（Phase 2）。
+> 状态：现行（2026-11-23，Agent Client 0.8.0）。本文是 Agent Client 的框架级文档；
+> 源码/构建细节在 `agent/`，GUI 在 `agent/gui/`，本机模式会话模型见
+> [multi-user-and-modes-design.md](./multi-user-and-modes-design.md)。
 
-采用 **本地 Agent + 服务端 Relay** 架构（类 VS Code Remote Tunnel）。Agent 是一个
-**Go 静态二进制**，零运行时依赖，`chmod +x` 即可在 CentOS 7（glibc 2.17）上运行。
+## 1. 定位
 
-## 架构
+Agent Client 是运行在用户机器上的 Go 静态二进制，通过外连 WebSocket 把用户本机能力
+提供给 pi-web：
 
+- 文件：list/read/write/stat/mkdir/delete/rename/manifest
+- 搜索：grep/fd
+- 命令：exec.run / exec.stream（argv，无 shell 注入面）
+- 终端：PTY create/input/resize/close
+- MCP：托管 local-machine 项目的 workspace stdio server（0.8.0+）
+
+Agent 只主动外连，不需要公网入口/端口映射；pi-web 不保存用户工作区副本。
+
+## 2. 架构
+
+```mermaid
+flowchart LR
+  Browser -->|"HTTP + SSE :30141"| Web["pi-web"]
+  Web <-->|"WebSocket :30142 /ws"| Agent["agent-client"]
+  Agent -->|"fs/exec/pty"| FS["用户机器"]
+  Agent -->|"stdio JSON-RPC"| MCP["项目 MCP server"]
+  Web -->|"relay RPC"| Agent
 ```
-┌───────────┐  HTTP+SSE (30141)  ┌─────────────────────────────┐  WS (30142)   ┌──────────────┐
-│  浏览器    │ ─────────────────► │ pi-web 服务端 (Node/Next)    │ ◄───────────► │ Local Agent  │
-│ (任意浏览器)│ ◄───────────────── │ /api/agent-relay/**  │ Relay │ :30142        │ (Go 静态二进制)│
-└───────────┘ pair/status/rpc     │ + instrumentation 起 WS     │ token 鉴权    │ fs/exec/pty   │
-                                   └─────────────────────────────┘               └──────────────┘
-                                                  共享 globalThis.__piRelayRegistry
-```
 
-- **浏览器 ↔ pi-web**：现有 HTTP + SSE（端口 30141），浏览器完全不碰本机 localhost。
-- **Agent ↔ pi-web**：WebSocket（端口 30142，由 `instrumentation.ts` 拉起的独立
-  `http.Server` 承载），Agent 主动外连，token 鉴权。
-- 两个端口共享同一进程的 `globalThis.__piRelayRegistry`（配对码池 + 在线 Agent 连接）。
+- 浏览器完全不直连 Agent。
+- WebSocket 由 pi-web 的 `instrumentation.ts` 启动的独立 HTTP server 承载（默认 30142）。
+- 同一进程的 `globalThis.__piRelayRegistry` 保存配对码、Agent 连接、用户/机器映射。
+- 一个用户可配对多台机器；项目绑定 `machineId`，会话按项目选择 Agent。
 
-## 组件
+## 3. 配对与连接
 
-| 组件 | 位置 | 说明 |
+1. 浏览器 `POST /api/agent-relay/pair` 得到一次性配对码（5 分钟）。
+2. 页面展示安装/配对命令：
+   `agent-client pair --code <CODE> --server <URL>`。
+3. Agent 调 `POST /pair/exchange` 换 32 字节 token，写
+   `~/.agent-client/config.json`（0600；旧 `~/.pi-agent` 兼容）。
+4. Agent 连 `ws://<server>:30142/ws?token=...`，发 `hello`：
+   `hostname/os/arch/workspaceRoot/agentVersion/machineId/label/features`。
+5. 服务端要求最低客户端版本（`lib/client-compat.ts`）；过低在配对/运行时报错。
+6. 同一 `machineId` 已有活连接时返回 `409`；`--replace` 可显式替换。
+   Agent 0.5+ 支持多服务端 profiles（`run --server`）。
+
+配对码绑定发起用户；token 服务端记录归属，重连自动归位。
+
+## 4. 多机器
+
+- `machines` 列表按 `(userId, machineId)` 多活；项目保存 `machineId`。
+- 未指定机器的旧项目/旧会话使用该用户最近连接/默认机器。
+- 前端机器选择器只在多机器时显示；单机器仍可显式选择。
+- Agent 断线期间会话保留 descriptor；恢复时给出明确的离线/升级错误，不静默换机器。
+
+## 5. 工作区围栏
+
+Agent 启动时确定共享根（优先级）：
+
+1. `--root PATH`
+2. 启动目录（若是项目目录）
+3. 保存的 root
+4. 用户 home
+
+每个 RPC 可带绝对 `base`（feature `workspace-base`）：
+
+- 相对路径按 `base` 解析；
+- `..`、绝对逃逸、symlink 逃逸都拒绝；
+- 旧 Agent 只能访问共享根内目录，服务端自动使用根相对前缀；根外目录报错并提示升级。
+
+`fs.manifest`（`projection-v1`）一次返回多根目录的 stat 清单，用于工作区投影快路径；
+截断/失败时调用方回退逐文件 stat，绝不依据不完整清单删除。
+
+## 6. MCP host（0.8.0+）
+
+feature `mcp-relay-v1`；RPC：
+
+| 方法 | 作用 |
+|---|---|
+| `mcp.listTools` | 启动/复用 MCP 进程，initialize + tools/list（支持 cursor 分页） |
+| `mcp.callTool` | 发送 tools/call，按 JSON-RPC id 关联结果 |
+| `mcp.close` | 终止该 `serverKey` 的进程 |
+
+进程管理：
+
+- 每个 `serverKey` 一个常驻 stdio 进程；按行 JSON-RPC；
+- initialize/notifications/initialized；忽略通知，不支持服务端反向请求；
+- stderr 环形缓冲（16KiB）；会话结束由 pi-web 发 close；
+- 环境变量白名单：PATH/HOME/LANG/LC_* 等 + 条目 `env`；不透传 `PI_*`/relay token；
+- cwd 通过 workspace base 解析，限制在项目工作区。
+
+配置侧要求：project scope、stdio、`piWeb.plane="workspace"`、
+`lifecycle=lazy`（或 lazy-keep-alive）、`directTools=false`。详见 [mcp.md](./mcp.md)。
+
+## 7. 协议
+
+### 7.1 消息
+
+- 请求：`{id, method, params}`
+- 响应：`{id, ok, result?, error?}`
+- 流：`{id, type:"chunk", data}` → `{id, type:"end", ok, result?, error?}`
+- hello：`{type:"hello", info}`
+
+### 7.2 RPC 方法
+
+| 类别 | 方法 |
+|---|---|
+| workspace | `workspace.info` |
+| fs | `fs.list` `fs.manifest` `fs.read` `fs.write` `fs.stat` `fs.mkdir` `fs.delete` `fs.rename` |
+| search | `search.grep` `search.fd` |
+| exec | `exec.run` `exec.stream` |
+| pty | `pty.create` `pty.input` `pty.resize` `pty.close` |
+| mcp | `mcp.listTools` `mcp.callTool` `mcp.close` |
+
+`fs.read` 支持 `encoding:"base64"`；`fs.write` 支持 `contentBase64`（binary-read/write）。
+PTY 输出以 event 帧推送；Windows build 的 PTY 目前是桩，终端不可用。
+
+## 8. features 与版本
+
+| feature | 版本 | 作用 |
 |---|---|---|
-| Relay 核心 | `lib/relay/*.ts` | registry / pairing / relay-store / ws-server / forward / protocol |
-| 浏览器侧路由 | `app/api/agent-relay/**` | pair、status、status/events(SSE)、rpc、rpc/stream(SSE)、download |
-| WS 服务入口 | `instrumentation.ts` | `register()` 内启动 Relay http.Server（仅 server 阶段） |
-| 前端 | `components/relay/*`、`hooks/useRelayAgent.ts`、`lib/relay-client.ts` | 顶栏按钮 + 配对模态 + 文件/命令面板 |
-| Local Agent | `agent/**`（Go） | `pair` / `run` 子命令；静态二进制 |
+| `workspace-base` | 0.2.0 | 每请求绝对 base |
+| `binary-read` | 0.2.x | base64 读 |
+| `binary-write` | 0.6.0 | base64 写 |
+| `projection-v1` | 0.7.0 | `fs.manifest` |
+| `mcp-relay-v1` | 0.8.0 | MCP host |
 
-## 配对流程（device code）
+服务端最低版本由 `lib/client-compat.ts` 控制；新功能按 feature 协商，旧 Agent 缺失时
+显式降级/报错，不静默回落到服务器本地执行。
 
-1. 浏览器点「连接本地机器」→ `POST /api/agent-relay/pair` 得到 6 位配对码（5 分钟有效）。
-2. 模态展示下载命令 + `agent-client pair --code <CODE> --server <RELAY_URL>`。
-3. 用户在本地机器执行 → Client `POST <RELAY>:30142/pair/exchange {code, clientVersion}`
-   换 token（写 `~/.agent-client/config.json`；旧版 `~/.pi-agent/config.json` 自动兼容）。
-   客户端版本低于 WebUI 要求时返回 HTTP 426，配对直接失败。
-4. Client 连 `ws://<RELAY>:30142/ws?token=...`，发 `hello`（机器元信息 + 版本 +
-   `features`）→ 注册为在线；WebUI 对过期版本显示升级提示并阻止建项目。
-5. 浏览器经 SSE `/status/events` 感知在线 → 自动切换到「已连接」视图。
-
-## 多用户（PI_WEB_AUTH=on）
-
-- Relay 支持多槽位：每个平台用户可配对自己的一台机器（`agentsByUser` 映射），会话的
-  relay-tools 扩展按 ownerId 路由到**自己的** Agent，用户之间互不可见。
-- 配对码签发时即绑定发起用户的 userId；换到的 token 在服务端记录归属
-  （`relay.json` 的 `tokens` 映射），Agent 重连后自动归位到原用户槽位。
-- 本机模式会话的 cwd 是该用户在 pi-web 服务器上的项目 home（`data/local-homes/u<uid>/<projectId>/`），
-  其 `.pi/` 承载项目级配置（两层合并同沙箱模式）；**文件操作则全部转发到用户机器**。
-  工具/文件面板/终端以项目的 `workdir` 为工作区根：Agent ≥ 0.2.0 通过每次 RPC 的
-  `base` 参数支持任意绝对目录（项目之间互不影响）；旧 Agent 只能访问其共享根内的目录，
-  服务端会自动改用共享根相对路径，根外目录会给出可操作的升级/改根提示。
-  服务器不留文件副本。
-
-## 配对命令里的主机名（优先级）
-
-`agent-client pair --server …` 与安装命令里的下载地址，按以下顺序取主机：
-
-1. `PI_RELAY_ADVERTISE_URL`——显式的 relay 对外地址（反向代理/路径前缀场景）；
-2. 管理员「全局配置 → 对外访问地址」（`publicBaseUrl`，`PI_WEB_PUBLIC_URL` 播种）
-   的**主机名 + relay 端口**（分享链接也用同一个地址）；
-3. 浏览器当前地址（`window.location`）+ relay 端口。
-
-这样管理员用 `localhost` 打开 WebUI 时，复制给用户的配对命令仍指向内网/公网
-可达地址。注意：relay 是独立端口（默认 30142）；若反向代理只暴露 443 并用路径
-转发 relay，请显式设置 `PI_RELAY_ADVERTISE_URL`（否则命令会是
-`https://host:30142`）。
-
-## 配置（环境变量）
-
-| 变量 | 默认 | 说明 |
-|---|---|---|
-| `PI_RELAY_PORT` | `30142` | Agent 连接的 WS 端口 |
-| `PI_RELAY_HOST` | `0.0.0.0` | WS 绑定地址（LAN/容器可达） |
-| `PI_RELAY_ADVERTISE_URL` | _空_ | 反向代理场景下，对外可达的 Relay URL，浏览器据此拼 `--server` |
-| `PI_RELAY_DISABLE` | _空_ | 设为 `1` 完全关闭 Relay（不影响 pi-web 其余功能） |
-
-服务端 token 持久化在 `~/.pi/relay.json`（0600），重启 pi-web 后已配对的 Agent
-无需重新配对即可重连。
-
-## 部署注意
-
-- **本地/LAN**：pi-web 默认监听 30141（`-H 127.0.0.1`，可用 `dev:lan`/`start:lan` 改
-  `0.0.0.0`），Relay 监听 `0.0.0.0:30142`。Agent 用 `http://<pi-web 主机>:30142` 即可。
-- **反向代理 / TLS**：若 pi-web 在 Nginx/Caddy 之后，需同时转发 30141 与 30142（后者要
-  支持 WebSocket Upgrade）。建议在代理上做 TLS 终止，并设置
-  `PI_RELAY_ADVERTISE_URL=https://ide.example.com/relay` 之类，浏览器据此生成正确命令。
-- **Agent 与浏览器不同机**：浏览器用 `localhost` 访问 pi-web 时，生成的 `--server` 会是
-  `localhost:30142`，远程 Agent 无法连接。请用 pi-web 服务器的实际地址访问，或设
-  `PI_RELAY_ADVERTISE_URL`。
-
-## 构建 Client 二进制
+## 9. 构建与发布
 
 ```bash
-cd pi-web/agent
-export GOPROXY=https://goproxy.cn,direct   # 国内网络
-./scripts/build.sh                          # 产出 dist/agent-client-{linux,darwin}-{amd64,arm64} + windows-amd64.exe
+cd agent
+export GOPROXY=https://goproxy.cn,direct
+./scripts/build.sh
 ```
 
-`download` 路由会从 `pi-web/agent/dist/` 下发二进制与 `install.sh`，供
-`curl …/install.sh | sh` 一键安装；旧 `pi-agent-*` URL 作为兼容别名继续下发同一文件。
+产物：
 
-## 端到端验收（已在 Windows 主机用 windows 版 Client 验证）
-
-```bash
-# 1) 浏览器侧
-curl http://127.0.0.1:30141/api/agent-relay/status        # {"online":false,...}
-CODE=$(curl -sX POST .../api/agent-relay/pair)             # 取 code
-
-# 2) Client 侧
-agent-client pair --code <CODE> --server http://<host>:30142
-agent-client run --root /path/to/share
-
-# 3) RPC（经 pi-web 转发到 Client）
-curl -X POST .../api/agent-relay/rpc -d '{"method":"fs.list","params":{"path":"."}}'
-curl -X POST .../api/agent-relay/rpc -d '{"method":"exec.run","params":{"argv":["uname","-a"]}}'
-# 路径穿越被拒：fs.list {"path":"../../"} -> error "path outside workspace root"
+```
+dist/agent-client-linux-amd64
+dist/agent-client-linux-arm64
+dist/agent-client-darwin-amd64
+dist/agent-client-darwin-arm64
+dist/agent-client-windows-amd64.exe
 ```
 
-## 安全
+CGO 关闭，Linux 静态链接可在 CentOS 7（glibc 2.17）运行。下载路由从
+`agent/dist/` 下发，`install.sh` 负责 chmod/安装；旧 `pi-agent-*` URL 作为别名。
 
-- 配对码：单次使用、5 分钟 TTL；换发 32 字节 token，服务端 0600 存储。
-- WS 建连校验 token；非法立即关闭。
-- Agent 侧 workspace root 强约束（含 `..`/符号链接穿越防护）；`exec.run` 仅 argv、无 shell。
-- 浏览器侧路由复用 pi-web 现有 `proxy.ts`（可信主机 + 可选 Basic Auth）。
-- MVP 单 Agent 槽位（多设备见 Phase 3）。
+Agent GUI（MyGo）在 `agent/gui/`，包名 `agent-client-gui`，独立打包 tar.gz/deb；
+不使用 pi 品牌/logo。
 
-## 路线图
+## 10. 部署
 
-- **Phase 1（已完成）**：Relay + Agent + 配对 + 在线状态 + fs(list/read/write/stat/mkdir)
-  + exec.run + 前端按钮/模态/面板。
-- **Phase 2a（已完成）**：search.grep / search.fd（Go 原生遍历，不依赖 rg/grep/fd/find，
-  行为跨平台一致）+ fs.delete / fs.rename；面板内置搜索框与重命名/删除。
-- **Phase 2b（已完成）**：exec.stream 流式命令输出（SSE 分块，面板实时滚动）。
-- **Phase 2c（已完成，待 CentOS 实测）**：PTY Web 终端。Agent 用 creack/pty（Linux/mac，
-  静态二进制保持）开 PTY，输出以 event 帧推到 Relay；浏览器用 xterm.js 交互（create →
-  SSE 输出 → POST 输入/resize/close）。链路已在 Windows 验证（create/events 路由、event
-  路由、SSE），真实 PTY 输出需在 CentOS 7 上验证。
-- **Phase 2（进行中）**：fs.watch；2d——把 pi-coding-agent 内置工具（read/bash/edit/
-  write/grep/find/ls）经各工具的 `*Operations` 接口重定向到本 Agent（参照
-  `pi-sandbox-extension`，写一个 pi 扩展即可，零核心改动）。
-- **Phase 3**：多 Agent/多设备、命令白名单/审计、端到端加密、Agent 自更新、本机托盘状态。
+- **LAN**：pi-web `:30141`，relay `:30142`；Agent 用 `http://<host>:30142` 配对。
+- **反向代理/TLS**：需同时转发 WebUI 与 relay（WebSocket Upgrade）；设置
+  `PI_RELAY_ADVERTISE_URL=https://ide.example.com/relay` 生成正确配对命令。
+- **主机名优先级**：`PI_RELAY_ADVERTISE_URL` > 管理员「全局配置 → 对外访问地址」的
+  主机名 + relay 端口 > 浏览器当前地址 + relay 端口。
+- **systemd**：`ExecStart=/path/agent-client run`，`Restart=on-failure`；
+  `run` 在 TTY 下进入交互菜单，非 TTY 使用保存的连接。
+- Agent 与 OS 架构不匹配会直接报错；Windows 终端功能受限。
+
+## 11. 安全
+
+- 配对码单次、5 分钟；token 0600；服务端撤销/解绑立即生效。
+- WS 建连校验 token；非法关闭。
+- 工作区 root/base 围栏（含 symlink）；`exec.run` 仅 argv。
+- MCP host 使用环境变量白名单；MCP 进程仍是用户代码，用户必须信任项目配置。
+- 浏览器不接触 Agent token；所有 relay 路由通过 WebUI 身份/会话归属校验。
+- Agent 以用户权限运行，用户机器上的 OS 权限是最终边界。
+
+## 12. 故障排查
+
+| 症状 | 检查 |
+|---|---|
+| 配对失败/426 | 客户端版本、下载地址、`--server` 是否指向 relay 端口 |
+| 连接 409 | 同 machineId 已有活进程；`--replace` 或停止旧进程 |
+| 项目工作区不可用 | 项目 workdir 是否在 Agent 共享根；旧 Agent 升级到 0.2+ |
+| 终端黑屏 | Linux/macOS PTY；Windows 为桩；检查 relay/平台 PTY |
+| 文件 stat 双拼 | 旧版本路径映射；升级 Agent/服务端 |
+| MCP 工具缺失 | Agent ≥0.8、feature `mcp-relay-v1`、project scope、plane/lazy/directTools |
+| 本机写入被拒 | 路径护栏是否批准；Agent base 是否包含目标；旧 Agent 不支持放宽 |
+
+## 13. 相关源码
+
+- `agent/main.go`、`agent/internal/agent/`
+- `agent/internal/workspace/`（fs/exec/search）
+- `agent/internal/mcp/`（0.8+ MCP host）
+- `lib/relay/`（registry/forward/ws-server）
+- `lib/extensions/relay-tools.ts`、`lib/extensions/remote-mcp.ts`
+- `app/api/agent-relay/**`

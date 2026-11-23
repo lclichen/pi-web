@@ -1,5 +1,9 @@
 # pi-web Agent 框架技术检视（PPT 资料底稿）
 
+> **历史文档（时点快照）**：记录 2026-11-03 的代码状态，部分 P0/差距已在后续提交修复。
+> 当前架构见 [PLATFORM.md](./PLATFORM.md)、[security.md](./security.md) 和
+> [multi-user-and-modes-design.md](./multi-user-and-modes-design.md)。
+>
 > 2026-11-03 · 范围：`pi-web-0851`（dev-0.85.1，提交 `01315ee4`）＋ `sandbox-platform`
 > ＋ `agent/`（Go relay）。方法：代码事实 + `docs/dev/*` 设计文档 + `harness-research/*`
 > 既有评估；只做检视与建议，不改代码。
@@ -53,7 +57,7 @@
 
 ```
 ┌───────────────────────────── 浏览器（Next.js 前端）─────────────────────────────┐
-│ 会话树 / ChatWindow / 文件面板 / 终端 / Plan / Agents / 设置 / 教学             │
+│ 会话树 / ChatWindow / 文件面板 / 终端 / Plan / Agents / 设置                   │
 └───────────────┬───────────────────────────────────────────────┬─────────────────┘
                 │ HTTP + SSE（cookie 会话，BFF 边界）             │
 ┌───────────────▼───────────────────────────────────────────────▼─────────────────┐
@@ -225,7 +229,7 @@ agentDir（或仓库兜底路径）加载同一份：
 
 - `environment-info`：每回合 `before_agent_start` 注入"你在哪、工作区在哪、配置在
   服务器侧"；local/ssh 还会把系统提示词的 `Current working directory` 改写成工作区。
-- `remote-verify`：把实验室验证的文件/命令操作桥到容器/relay（`globalThis.__piWebRemoteVerify`）。
+- `remote-verify`：把远端验证的文件/命令操作桥到容器/relay（`globalThis.__piWebRemoteVerify`）。
 - `share_file`：host 活引用 / 远程快照；模型拿到 bearer URL 交给 MCP，而不是把文件
   内容塞进自己的输出（`docs/dev/mcp-file-sharing.md`）。
 - `bg-tasks`：把浏览器 `stop_subagent` 转发到 tintinweb 的会话内事件总线。
@@ -617,7 +621,7 @@ JSONL 恢复。因此"对话结束后一直占用事件循环"不成立——但
 
 | 现状 | 差距 | 建议 | 优先级/工作量 |
 | --- | --- | --- | --- |
-| 三语 i18n、设置页、聚光灯教学、移动工具栏 | 仍有硬编码中文（模式徽标/沙盒组标签等）；移动端功能缺口；无协作 | 清理硬编码键；移动端文件/终端补齐；协作只读分享 | P2 / 3-5 |
+| 三语 i18n、设置页、聚光灯引导、移动工具栏 | 仍有硬编码中文（模式徽标/沙盒组标签等）；移动端功能缺口；无协作 | 清理硬编码键；移动端文件/终端补齐；协作只读分享 | P2 / 3-5 |
 
 ---
 

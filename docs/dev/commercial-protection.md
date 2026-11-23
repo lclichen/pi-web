@@ -179,7 +179,7 @@ apkg-publisher identity new \
   --public-out publisher/keys/cust-acme-recipient.json
 
 # 2) 打包（包信息优先读 zip 的 manifest.package / .pi/bundle.json）
-apkg-publisher pack --in course-lab-config.zip --recipient publisher/keys/cust-acme-recipient.json \
+apkg-publisher pack --in standard-config.zip --recipient publisher/keys/cust-acme-recipient.json \
   --buyer cust-acme --expires 2027-09-01 --max-imports 50
 
 # 3) 本地工作台（回环监听；客户标识/公钥/输出目录启动时固定）

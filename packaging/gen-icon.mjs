@@ -5,7 +5,7 @@
  * 输出 PNG 到 stdout 或指定路径；在打包脚本里调用：
  *   node packaging/gen-icon.mjs <size> <output.png>
  *
- * 图案：深蓝圆角方块 + 白色学士帽（平台的教学属性），像素级合成后
+ * 图案：深蓝圆角方块 + 白色几何标识，像素级合成后
  * 用 zlib 压缩写成合法 PNG（无色彩配置块，兼容各桌面环境）。
  */
 import { deflateSync } from "node:zlib";

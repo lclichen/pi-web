@@ -1,320 +1,195 @@
-# 平台总体设计（架构 · 关系 · 管线 · 流程）
+# 平台总体设计（架构 · 执行面 · 数据流）
 
-> 面向介绍/展示的单一入口文档。所有图为 Mermaid，可在 GitHub / Typora / VS Code 直接渲染。
-> 配套运维文档：[DEPLOYMENT.md](./DEPLOYMENT.md)。
+> 状态：现行（2026-11-23）。本文是框架级单一入口；细节分别见
+> [执行模式](./multi-user-and-modes-design.md)、[会话/项目模型](./session-project-model.md)、
+> [配置层](./configuration.md)、[安全模型](./security.md)、[部署](./DEPLOYMENT.md)。
 
-平台由三个仓库协作，构成一个多用户的"AI 编程实验教学"环境：学生在 Web 里建项目、开会话，
-Agent 在**沙箱容器内**（或学生自己的电脑上）读写文件、执行命令；教师/管理员通过镜像、配额、
-教学面板控制环境。
+## 1. 产品与组件
 
-| 仓库 | 角色 | 技术栈 |
-| --- | --- | --- |
-| `pi-web` | WebUI + BFF（会话编排、项目管理、文件/终端代理） | Next.js 16, pi SDK 0.83 |
-| `sandbox-platform` | 沙箱容器管理 API（容器生命周期/配额/快照/云盘/PTY） | Node 22（TS 类型剥离直跑）+ Express + SQLite |
-| `pi-sandbox-extension` | pi 的工具桥接扩展（bash/read/write 路由进容器） | TypeScript（pi 扩展协议） |
+pi-web 是**中心化、多用户的 Agent 智能体平台**：用户在浏览器里创建项目和会话，
+Agent 进程由平台托管，工具按项目/会话的执行模式落到沙盒容器、用户自己的机器、
+SSH 主机或 pi-web 服务器本地。平台同时提供配置分层、工作区投影、MCP、Agent Builder、
+批量 API、嵌入页和可观测性。
 
----
+| 组件 | 角色 | 技术/位置 |
+|---|---|---|
+| **pi-web** | WebUI + BFF + 会话控制面 | Next.js 16，本仓库 |
+| **Agent runtime** | 每个会话一个 `AgentSession`，pi SDK 在 pi-web 进程内 | `lib/rpc-manager.ts` |
+| **Sandbox Platform** | 用户/API key、配额、容器、workspace、快照、PTY、容器工具 API | 独立仓库 `AgentSandbox/sandbox-platform` |
+| **Agent Client** | 用户机器上的 Go relay，执行 fs/exec/pty/MCP host | 本仓库 `agent/`，0.8.0 |
+| **配置投影/同步** | 项目 `.pi` 与远端工作区之间的单向投影、手动同步 | `lib/projection/`、`lib/workspace-config-sync.ts` |
+| **MCP host** | HTTP MCP 由 adapter 连接；local-machine 的 workspace stdio 由 Agent 托管 | `lib/extensions/remote-mcp.ts`、`agent/internal/mcp` |
 
-## 1. 总体架构
+关系：
 
 ```mermaid
-flowchart TB
-    subgraph Client[" 🖥️ 学生浏览器 "]
-        UI["Next.js 前端<br/>会话 / 文件 / 终端 / Git / 计划"]
-    end
+flowchart LR
+  Browser["Browser"] -->|"HTTP + SSE :30141"| Web["pi-web / BFF"]
+  Web -->|"AgentSession (in-process)"| Runtime["pi SDK runtime"]
+  Web -->|"login / BFF / tools API"| Platform["sandbox-platform :3000"]
+  Platform --> Containers["Apptainer containers"]
+  Web <-->|"WebSocket :30142"| Agent["Agent Client (user machine)"]
+  Web -->|"SSH/SFTP"| SSH["SSH host"]
+  Runtime -->|"sandbox tool extension"| Platform
+  Runtime -->|"relay tools + MCP host"| Agent
+  Runtime -->|"ssh tools"| SSH
+  Runtime -->|"Host tools"| Web
+```
 
-    subgraph PIWEB[" pi-web (BFF) :30141 "]
-        direction TB
-        AUTH["多用户认证<br/>PI_WEB_AUTH=on"]
-        RPCM["RPC 会话管理器<br/>AgentSessionWrapper 注册表"]
-        AGENT["Agent 引擎会话<br/>pi SDK createAgentSessionServices"]
-        RT["remote-terminal / remotefs<br/>终端与文件反向代理"]
-        PROJ["projects / homes 管理<br/>.pi 配置层写入"]
-    end
+三个独立边界：
 
-    subgraph EXT[" 项目 home 的 .pi/extensions/ "]
-        SBX["pi-sandbox-extension<br/>bash/read/write → 容器 API"]
-    end
+1. **浏览器 ↔ pi-web**：浏览器只拿 WebUI 会话 cookie，不接触平台令牌或 Agent token。
+2. **pi-web ↔ 执行面**：sandbox 走平台 API；local-machine 走 relay；SSH 走 ssh2；
+   Host 直接在服务器执行。
+3. **pi-web ↔ 配置/状态**：`.pi` 是项目配置，SessionDescriptor/ProjectRecord/state
+   是平台元数据，会话 JSONL 是不可变历史。
 
-    subgraph PLAT[" sandbox-platform :3000 "]
-        APIv1["REST /api/v1/*<br/>containers·images·snapshots·workspaces·quota"]
-        PTY["PTY WebSocket 桥<br/>GET /containers/:id/pty"]
-        QS["配额服务<br/>resource_quotas + images.max_per_user"]
-        DB[("SQLite<br/>users/containers/<br/>snapshots/workspaces…")]
-    end
+## 2. 端口与数据布局
 
-    subgraph HOSTL["宿主机（Apptainer）"]
-        C1["容器 sb-xxxx<br/>/workspace 数据层"]
-        C2["容器 …每个项目一个"]
-    end
+| 端口 | 服务 |
+|---|---|
+| `30141` | pi-web WebUI + API + SSE |
+| `30142` | Agent relay WebSocket（`PI_RELAY_PORT`） |
+| `3000` | sandbox-platform REST/PTY（可由反向代理隐藏） |
 
-    RELAY["本机 Agent（Go relay）<br/>学生自己电脑 :30142"]
+数据分三类：
 
-    UI -->|"cookie 会话"| AUTH
-    UI -->|"REST/WebSocket"| RT
-    AUTH --> RPCM --> AGENT
-    AGENT -. "扩展自动发现<br/><cwd>/.pi/extensions/" .-> SBX
-    PROJ -->|"写配置层"| SBX
-    SBX -->|"工具调用<br/>(sk_ API key)"| APIv1
-    RT -->|"admin WebSocket"| PTY
-    AUTH -->|"登录代理 + 铸造 sk_"| APIv1
-    APIv1 --> QS --> DB
-    APIv1 --> DB
-    PTY --> C1
-    APIv1 --> C1 & C2
-    UI -.->|"本机模式（可选）"| RELAY
-    RELAY -.-> RPCM
+- **会话正文**：pi agent 目录下的 JSONL（用户分片或 Host 空间），append-only。
+- **平台元数据**：`<dataDir>/state/global|users|projects/*.json`，统一
+  `{schemaVersion,data}` 信封、原子写、`.bak`、`proper-lockfile`。
+- **大对象/工作区**：项目 home、容器 `/workspace`、附件、图片、bundle/apkg、
+  workspace homes；不进入 JSON 状态库。
+
+项目 home 中的 `.pi/` 是 SDK/adapter 直接读取的项目配置；用户 JSON 配置在
+`state/users/u<id>/`（详见 [configuration.md](./configuration.md)）。
+
+## 3. 会话与项目的两条正交轴
+
+`SessionDescriptor` 把旧 `mode` 拆成四个轴（`lib/session-descriptor.ts`）：
+
+| 轴 | 取值 | 含义 |
+|---|---|---|
+| management | `webui` / `cli` | 会话是否由 WebUI 创建 |
+| execution | `local` / `sandbox` / `relay` / `ssh` | 工具实际在哪执行 |
+| workspace | `managed-home` / `external-dir` / `scratch` | 工作区归属 |
+| profile | `quick` | 快速会话（无用户工作区） |
+
+项目形态：
+
+| 形态 | ProjectRecord | execution | workspace | 说明 |
+|---|---|---|---|---|
+| 沙盒项目 | 有 | `sandbox` | `managed-home` | 工具进平台容器 |
+| 本机项目 | 有 | `relay` | `managed-home` | 工具到配对机器 |
+| SSH 项目 | 有 | `ssh` | `managed-home` | 工具到 SSH 主机 |
+| WebUI Host 项目 | 有 | `local` | `external-dir` | 管理员选服务器已有目录 |
+| CLI Host 会话 | 无 | `local` | `external-dir` | 只出现在 Host(CLI) |
+| Quick 项目 | 有 | `local` | `scratch` | 每 `(owner,template)` 一个稳定项目 |
+
+非 Host 会话缺项目/凭据/描述符时**失败关闭**，禁止回落到服务器本地工具。
+
+## 4. 一次会话的数据流
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor U as 用户
+  participant FE as WebUI
+  participant BFF as pi-web BFF
+  participant S as AgentSession
+  participant T as 工具执行面
+  participant Store as state / JSONL
+
+  U->>FE: 发消息
+  FE->>BFF: POST /api/agent/:id
+  BFF->>S: session.send(prompt)
+  S->>T: read/write/bash/MCP tool
+  T-->>S: tool result
+  S-->>FE: SSE 事件（增量文本/工具卡片）
+  S->>Store: session JSONL + meta/state
 ```
 
 要点：
 
-- **浏览器只跟 pi-web 说话**。平台凭证（JWT/sk_ key）从不进入前端——经典的 BFF 边界。
-- **沙盒扩展是"数据面"**：模型发出 bash/read/write 后，扩展直接拿项目凭证打容器 API；
-  pi-web 是"控制面"（创建/绑定容器、开户、配额）。
-- 三条互相独立的可信边界：WebUI 账号（= 平台账号的代理）、平台资源所有权、pi 会话归属。
+- 会话注册表（运行时）优先，`session-metas`（持久 sidecar）补齐重启后的归属；
+  跨用户访问统一 404。
+- 工具层按 descriptor 装配：sandbox 注入容器工具；local 注入 relay 工具 +
+  remote MCP；SSH 注入 ssh 工具；Host 使用本地工具。
+- 文件面板/终端/Plan 与工具使用同一执行模式，不通过浏览器直连平台或 Agent。
+- 会话 fork/branch/clone 复制 descriptor；恢复、子智能体、批量任务走同一
+  fail-closed 恢复路径。
 
-## 2. 身份与多租户模型
+## 5. 执行面
 
-```mermaid
-flowchart LR
-    subgraph Platform["sandbox-platform 用户域"]
-        PUser["users 表<br/>id=1 admin…"]
-        PKey["api_keys<br/>长寿命 sk_ 凭证"]
-        Quota["resource_quotas<br/>max_containers/cpu/mem/disk…<br/>allowed_image_ids 白名单"]
-        PUser -->|"quota_id"| Quota
-    end
+### 5.1 沙盒
 
-    subgraph Piweb["pi-web 会话域"]
-        Cookie["HttpOnly cookie<br/>(登录时铸造 sk_)"]
-        Reg["运行时注册表<br/>(sessionId → ownerId+mode)"]
-        Meta["session-metas.json<br/>(持久侧车: mode/owner/projectId)"]
-        Proj["projects.json<br/>ownerId → 项目 → containerId"]
-    end
+- 项目 home 保存 `.pi/sandbox-platform.json`（url/apiKey/containerId）。
+- 会话注入 amedac-core 的 sandbox tools（原 `pi-sandbox-extension` 已合并）；
+  bash/read/write/edit/grep/find/ls 经平台 `/tools/*` 进入容器 `/workspace`。
+- 平台负责容器生命周期、配额、镜像白名单、workspace/快照、PTY、审计。
+- 远端终端由平台 PTY WebSocket 承载；WebUI 只做 SSE 代理。
 
-    Browser["浏览器"] -->|"login 代理到 /auth/login"| PUser
-    Browser -.-> Cookie
-    Cookie --> Reg
-    Cookie --> Meta
-    Cookie --> Proj
-    PUser --- PKey --- Cookie
-```
+### 5.2 本机（local-machine / relay）
 
-- **登录即代理**：`POST /api/webauth/login` 把用户名密码转交平台 `/auth/login`，成功后为该用户
-  铸造一枚长寿命 `sk_` API key 存入 WebUI 会话——之后所有 BFF→平台调用都用它。
-- **会话三重账本**：运行时注册表（最权威，重启即空）＞ session-metas.json（进程间共享，mtime 失效重载）
-  ＞ URL 参数。`resolveRemoteSession` 按 owner→meta 顺序解析模式与归属，拒绝跨用户访问。
-- **两层权限检查**：任何 `remotefs/remoteterminal/remotetools` 请求都要过
-  `requireUserIdentity`（谁）＋ `resolveRemoteSession`（这个会话是不是你的、什么模式、用哪个容器）。
+- 用户在设置里配对 Agent；同一用户可有多台机器，项目绑定 `machineId`。
+- Agent 主动外连 `:30142`，工具请求带项目 workspace `base`；Agent 0.2+ 支持任意
+  绝对工作区，旧 Agent 回落到共享根前缀。
+- 平台不保存用户工作区副本；文件和命令在用户机器执行。
+- 0.8.0 起 Agent 可托管项目 `.pi/mcp.json` 中声明
+  `piWeb.plane="workspace"` 的 stdio MCP，详见 [mcp.md](./mcp.md)。
 
-## 3. 数据布局：两套文件系统
+### 5.3 SSH
 
-平台刻意区分「**配置层**」和「**数据层**」，这是理解一切 I/O 行为的钥匙：
+- 项目 `.pi/ssh.json` 保存凭据（0600，不进配置包）。
+- 会话工具走 ssh2：SFTP 文件、exec 命令、PTY 终端；工作区根是项目 `workdir`。
+- 会话 cwd 仍是服务器项目 home；远端路径只进工具/提示词映射。
 
-```mermaid
-flowchart TB
-    subgraph ServerFs["🖥️ pi-web 服务器文件系统（配置层）"]
-        HOME["项目 home<br/>data/homes/sandbox/u&lt;uid&gt;/&lt;projectId&gt;/"]
-        subgraph DotPi[".pi/ （唯一真实存在的东西）"]
-          SETT["settings.json 会话配置"]
-          EXTL["extensions/pi-sandbox-extension<br/>→ 软链接到扩展安装处"]
-          SBCFG["sandbox-platform.json<br/>url / apiKey / containerId"]
-        end
-        HOME --- DotPi
-    end
+### 5.4 Host / Quick
 
-    subgraph ContainerFs["📦 容器文件系统（数据层）"]
-      WS["/workspace<br/>代码、数据、学生成果"]
-    end
+- **WebUI Host 项目**：管理员选择服务器已有目录；会话工具在服务器执行；删除项目
+  不删外部目录。
+- **CLI Host 会话**：CLI 创建、无 ProjectRecord，归 Host(CLI) 页面。
+- **Quick**：无用户工作区，使用 per-session scratch；模板固定系统提示词/模型/MCP
+  白名单，不参与项目配置包。
 
-    subgraph Sidecars["📄 中心化侧车文件（data/ 下）"]
-      PJ["projects.json 项目↔容器绑定"]
-      SM["session-metas.json 会话归属"]
-    end
+## 6. 配置、投影与 MCP
 
-    AgentOut["🤖 模型产生的 bash/read/write"] -->|"扩展拦截后全部路由到容器"| WS
-    EXTL -.->|"SDK 自动发现，任何 cwd=home 的会话都带上桥"| AgentOut
-    StudentFiles["👨‍🎓 学生的作品"] <--> WS
-```
+- 配置三层：Global（管理员默认）< User（用户 diff）< Project（`.pi`）。
+- 项目 `.pi` 是 SDK/adapter 的直接输入；远端工作区通过 projection 单向获得副本，
+  用户也可显式执行“工作区 → 项目”配置同步（带 schema/工具模式/信任闸门）。
+- MCP 四种作用域：project / quick / user / global；项目级同名条目优先。
+- 普通用户的项目 stdio MCP 默认禁止在控制面执行；local-machine +
+  `plane="workspace"` 由 Agent 托管。HTTP MCP 始终由 pi-web 发起请求。
+- 模型配置/凭据按 Global→User→Project 合并；项目可覆盖模型运行时。
 
-设计含义：
+## 7. 安全与信任
 
-| 事件 | 结果 |
-| --- | --- |
-| 新建沙盒项目 | 创建 home（含 `.pi/`），软链扩展，绑定容器 id 写入 `.pi/sandbox-platform.json` 与 projects.json |
-| 新会话（cwd=home） | SDK 自动发现 `.pi/extensions/` ⇒ 无需注入即获得沙盒桥；**恢复/子智能体/分支会话同样生效** |
-| 模型 `pwd` | `/workspace`（exec 带 `--pwd`，openPty 同样落在 /workspace） |
-| 删容器但留快照 | 快照表带 user_id/image_id 冗余列，`ON DELETE SET NULL` —— 存档比实例活得久 |
+| 边界 | 机制 |
+|---|---|
+| Web 登录 | 平台账号代理登录，HttpOnly cookie；BFF 持平台 token |
+| 会话归属 | 运行时 registry + 空间路径围栏 + owner 检查；404 不泄露存在性 |
+| 路径 | path-guard（read/write/bash）+ 项目 `.pi/` 决策文件；MCP 内部路径由服务端负责 |
+| 本机 | Agent workspace base + `..`/symlink 围栏；path-guard 批准可单次放宽 |
+| 沙盒/SSH | 容器/SSH 权限边界；项目工作区根 |
+| 宿主执行 | Host 仅管理员；普通用户 stdio MCP 禁止；MCP plane 显式声明 |
+| 配置包 | 凭证剥离、路径白名单、项目信任、stdio 闸门 |
+| MCP | 远端模式默认剔除未声明 stdio；relay host 强制 lazy/directTools=false |
 
-## 4. 管线一：项目创建
+详见 [security.md](./security.md)。
 
-```mermaid
-sequenceDiagram
-    autonumber
-    actor U as 学生
-    participant W as pi-web BFF
-    participant P as sandbox-platform
-    participant D as SQLite
+## 8. 可观测性与交付
 
-    U->>W: POST /api/projects {name, mode, imageId?, containerId?}
-    W->>W: 鉴权 + 同名检查 → createProject()
-    W->>W: 建 home + .pi/（settings、扩展 symlink）
+- OTLP/HTTP 追踪：GenAI span、prompt/output/tool、session/user 标识；默认
+  `localhost:8087`，支持任意 headers（MLflow `x-mlflow-experiment-id`）。
+- 批量任务 API：host/sandbox/local-machine 三模式，SSE、归属隔离、每用户并发限流。
+- 嵌入页：固定项目 + 用户 API Key 换短期 token。
+- 发布：离线 tar.gz / AppImage，内置 Node 运行时；Agent dist 五平台；
+  `packaging.md` 给出构建/瘦身/检查清单。
 
-    alt 显式传了 containerId（复用已有容器）
-        W->>P: GET /containers?filter=all（按凭证只看得见自己的）
-        W->>W: 归属校验 + 排他校验（未被其他项目绑定）
-        W->>W: updateProject(containerId)
-    else 未指定 → 自动供给 provisionContainerForProject
-        W->>P: 找空闲 running/stopped 容器？
-        W->>P: 否则 POST /containers（imageId, workspaceId seed?）
-        P->>P: 配额检查①镜像白名单②assertCanCreate③max_per_user
-        P-->>W: {containerId}
-    end
+## 9. 已知边界
 
-    W->>U: 201 {project}
-    Note over W,P: 供给失败⇒删项目回滚，错误立即暴露给学生
-```
-
-复用已有容器（`containerId` 直传）是"环境复用"入口；配额中的 max_containers/max_per_user
-只约束**新建**，不约束绑定既有容器（绑定时的排他性由项目层保证：一个容器只属于一个项目）。
-
-## 5. 管线二：会话与工具执行（核心数据面）
-
-```mermaid
-sequenceDiagram
-    autonumber
-    actor U as 学生
-    participant FE as 前端 ChatWindow
-    participant BFF as pi-web BFF
-    participant SES as AgentSession(RPC)<br/>cwd = 项目 home
-    participant EXT as sandbox-extension<br/>(.pi/extensions/)
-    participant P as 平台容器 API
-    participant C as 容器 /workspace
-
-    U->>FE: 发消息
-    FE->>BFF: POST /api/agent/:id {type:"prompt",…}
-    BFF->>SES: session.send(prompt)
-    Note over SES: /api/agent/new 时已确定：<br/>mode=sandbox、ownerId、projectId<br/>（注册表 + metas 双记账）
-
-    SES-->>EXT: 模型请求 bash("pytest")
-    EXT->>EXT: 读 .pi/sandbox-platform.json<br/>url/apiKey/containerId
-    EXT->>P: POST /containers/:id/tools/bash
-    P->>C: apptainer exec --pwd /workspace instance://… bash -c pytest
-    C-->>P: stdout/stderr
-    P-->>EXT: JSON 结果
-    EXT-->>SES: tool result
-    SES-->>FE: SSE 事件流（增量文本/工具卡片）
-```
-
-强调三点：
-
-1. **工具流量不过 BFF**——扩展持项目级凭证直连平台，pi-web 宕掉不影响已在跑的会话产物；
-2. **会话注册以项目 mode 为准**（不是客户端随手传的字段），这杜绝了"刚建的沙盒会话被当成
-   host 模式"整类事故；
-3. 所有远端面板（remotefs 文件浏览、PlanPanel 计划读取、终端）都以
-   `remoteSessionCtx = {sessionId,label}` 为单一事实来源决定走 `/api/files` 还是 `/api/remotefs`。
-
-## 6. 管线三：交互式终端（PTY）
-
-```mermaid
-flowchart LR
-    X[xterm.js] -->|input POST| SSElib["remote-terminal 库<br/>(pi-web 进程内注册表)"]
-    SSElib -->|"input 帧\nJSON"| WS["WebSocket<br/>node ws"]
-    WS -->|"宿主真 PTY<br/>node-pty spawn"| AP["apptainer exec<br/>--pwd /workspace<br/>instance://X bash"]
-    AP -->|"输出流"| WS
-    WS -->|"output/exit 帧"| SSElib
-    SSElib -->|"SSE data 帧 + 心跳"| X
-
-    PLATPTY["平台 PTY 服务<br/>WS upgrade + 计数"] --- WS
-
-    subgraph 治理规则
-      R1["PTY_MAX_PER_CONTAINER=3<br/>超出→HTTP 429"]
-      R2["最后订阅者离开 60s 后回收<br/>(防页面刷新泄漏名额)"]
-      R3["30min idle 清扫 + 30s ping"]
-    end
-```
-
-黑屏教训沉淀成的两条不变量：**必须真 PTY**（管道模式下 bash 无提示符无回显）；**泄漏的
-PTY 占用的是全容器的并发名额**，所以订阅者清零后有 60 秒宽限强制回收。
-
-## 7. 管线四：快照（游戏存档）与云盘工作区
-
-```mermaid
-flowchart TB
-    subgraph Snapshot["快照 = 整个 /workspace 的 tar.gz"]
-        S1["保存 save"] -->|"cp -a overlay → 快照"| SNAP[("snapshots 表 + 文件<br/>FIFO 最多 2 份/容器")]
-        S2["恢复 restore 到原容器"] -->|"换 overlay 重启"| RUN["running 容器"]
-        S3["恢复 restore 到新容器"] -->|"走 create()（受所有配额约束）"| NEW["新容器 + 旧环境"]
-    end
-
-    subgraph Workspace["云盘工作区（用户级）"]
-        UP["上传 upload"] --> WSDB[("workspaces 表")]
-        SEED["单向 seed：建新容器时<br/>把云盘文件拷入 /workspace（一次性）"]
-        EXP["导出 export：容器 /workspace → tar.gz 入云盘"]
-        WSDB --- SEED
-        WSDB --- EXP
-    end
-```
-
-两个方向都是**显式动作**而非持续同步——保证容器内部状态对学生可预期（不会出现"后台悄悄覆盖了
-我的改动"）。游戏存档制（save/restore/delete，容量 FIFO）是快照的学生视角包装。
-
-## 8. 配额体系
-
-```mermaid
-flowchart LR
-    REQ["POST /containers 请求"] --> CHK1{"镜像白名单<br/>quota.allowed_image_ids"}
-    CHK1 -->|不在名单| REJ1["IMAGE_NOT_ALLOWED"]
-    CHK1 --> CHK2["档位 assertCanCreate<br/>max_containers / cpu / mem / disk"]
-    CHK2 -->|超限| REJ2["422 QUOTA_EXCEEDED"]
-    CHK2 --> CHK3["images.max_per_user<br/>每用户×每镜像实例数"]
-    CHK3 -->|超过 N| REJ3["422 QUOTA_EXCEEDED<br/>『每用户最多 N 个实例』"]
-    CHK3 --> OK201["201 Created"]
-
-    style REJ1 fill:#fee,stroke:#c00
-    style REJ2 fill:#fee,stroke:#c00
-    style REJ3 fill:#fee,stroke:#c00
-```
-
-- `resource_quotas` 是**用户档位**（总量型：能开几个容器、多大规格）；`images.max_per_user`
-  是**模板政策**（形状型：这种镜像每人最多几个实例）。两者正交，创建前依序检查。
-- 这是后续「一键启动项目模板」的地基：
-
-| 未来模板 | 组合方式 |
-| --- | --- |
-| DocQA（超小容器+MCP 子智能体问答，记忆存在实例里） | 该镜像 `max_per_user=1` + 小盘默认资源 |
-| CodeHelper（可运行环境×3） | `max_per_user=3` + 中等资源 |
-| TemplateDevBox（开发模板用，Host 模式） | 不进沙盒域，Host 会话天然不受容器配额影响 |
-
-落地 administration：管理员 `PATCH /api/v1/admin/images/:id {"max_per_user":1}` 即刻生效；
-pi-web 建项目对话框会在镜像名上显示"（每人限 N 个实例）"，超限时平台返回的中文错误直接透出。
-
-## 9. 部署形态
-
-```mermaid
-flowchart TB
-    subgraph BuildMachine["构建机"]
-        PKG["scripts/package-linux.sh<br/>探测兄弟目录三仓 → 自包含目录 + tar.gz<br/>冒烟：CLI 存活 / WebUI HTTP / 平台 /health(mock)"]
-        AI["scripts/package-appimage.sh<br/>→ amedac.ai-x64.AppImage (≈215MB)"]
-        PKG --> AI
-    end
-    subgraph Target["目标机"]
-        TARL["tar 解压目录版"]
-        APPIMG["AppImage 单文件"]
-        START["scripts/start-all.sh（幂等）"]
-        TARL --> START
-        APPIMG -->|"首启展开到 ~/.local/share/amedac/app<br/>升级保留 data/ 与 *.env"| START
-        START --> SVC1["sandbox-platform :3000<br/>sqlite 自动迁移"]
-        START --> SVC2["pi-web :30141<br/>next start"]
-        SVC1 --> APT["需要 Apptainer(≥1.x)"]
-    end
-```
-
-## 10. 已知取舍与风险清单
-
-| 取舍 | 原因 | 影响 |
-| --- | --- | ---|
-| 配置层/数据层分离，不做双向同步 | 可预期性优先 | 云盘↔容器仅显式 seed/export |
-| Agent 工具流量直达平台（不经 BFF） | 解耦、pi-web 故障不影响已建会话 | 平台端要独立审计（有 sessions/audit 表） |
-| AppImage 首启展开 ~1GB 到用户目录 | 只读挂载内的数据无法持久 | 磁盘紧张机器建议用 tar.gz 版 |
-| 运行时注册表在重启后丢失 | 内存态性能最好 | 靠 metas 侧车补账（mtime 失效重载） |
-| 一个容器绑一个项目 | 两项目共用会互相踩 /workspace | 需要"同环境多项目"时先复制项目再绑同一镜像新容器 |
+- Agent 会话仍由单个 pi-web Node 进程托管；大规模需要拆执行面/worker。
+- `web-sessions`、`shares`、`batch-tasks`、projection/status 等仍有部分文件存储
+  未统一锁/GC（见 state-storage-inventory 的 Batch 5）。
+- sandbox/SSH 的 workspace-plane MCP 尚无远端执行通道；local-machine 已支持 stdio。
+- MCP 工具内部路径操作尚未自动接入 path-guard；依赖服务端鉴权与路径边界。
+- 路径护栏是行为护栏而非强安全边界；强隔离依赖容器/Agent 围栏/SSH 权限。

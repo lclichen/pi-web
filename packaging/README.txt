@@ -1,6 +1,9 @@
 =====================================================================
-  pi + pi-web  Linux 离线分发包
+  pi + pi-web / Amedac Agent Platform  Linux 离线分发包
 =====================================================================
+  构建、瘦身、版本与发布检查见源码仓库文档：
+  docs/dev/packaging.md；部署/升级见 docs/dev/DEPLOYMENT.md。
+  （这两个文件在源码仓库，不随发行包复制。）
 
 【这是什么】
   本目录包含 pi 编程智能体的完整离线运行环境，无需安装 Node.js、
@@ -10,7 +13,7 @@
     * runtime/ —— 内置的 Node.js 运行时
 
 【快速开始】
-  本包若含沙盒教学平台组件（存在 sandbox/ 目录）:
+  本包若含沙盒及多用户平台组件（存在 sandbox/ 目录）:
     ./scripts/start-all.sh   —— 一键启动 沙盒平台 + WebUI（首次运行自动生成配置）
     ./scripts/status-all.sh  —— 服务状态与日志位置
     ./scripts/stop-all.sh    —— 停止全部

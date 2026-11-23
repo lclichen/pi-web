@@ -1,242 +1,191 @@
-# 部署指南：沙盒教学平台 + WebUI 一键打包与部署
+# 部署与运维
 
-本文描述完整的 **沙盒教学平台（sandbox-platform）+ WebUI（pi-web）+ 沙盒桥接扩展（pi-sandbox-extension）** 打包、分发、部署流程。目标机为一个自包含目录，不需要联网、不需要系统级 Node.js。
+> 状态：现行（2026-11-23）。构建/打包变量见 [packaging.md](./packaging.md)；
+> 架构见 [PLATFORM.md](./PLATFORM.md)；平台服务见 [sandbox-platform.md](./sandbox-platform.md)。
 
-```
-┌────────────────────────── 目标 Linux 机器 ──────────────────────────┐
-│                                                                      │
-│  浏览器 ──► WebUI (pi-web)            :30141  ← app/ + runtime/     │
-│                 │ PI_WEB_PLATFORM_URL                                │
-│                 ▼                                                    │
-│            sandbox-platform           :3000  ← sandbox/platform/    │
-│                 │ apptainer exec / openPty                           │
-│                 ▼                                                    │
-│            Apptainer 容器（每项目一个实例，/workspace）              │
-└──────────────────────────────────────────────────────────────────────┘
-```
-
-三个组件的分工：
+## 1. 组件
 
 | 组件 | 角色 | 包内位置 |
-| --- | --- | --- |
-| pi-web | 多用户 WebUI：会话/项目管理、文件浏览、终端、Agent 对话 | `app/` |
-| sandbox-platform | 容器管理 API：容器生命周期/快照/云盘；sqlite 存储，启动自动迁移 | `sandbox/platform/` |
-| pi-sandbox-extension | pi 的工具桥接扩展：bash/read/write 在容器内执行 | `sandbox/extension/` |
+|---|---|---|
+| pi-web | 多用户 WebUI / BFF / Agent runtime | `app/` |
+| sandbox-platform | 平台账号、容器、workspace、配额、PTY、工具 API | `sandbox/platform/`（可选） |
+| Agent Client | 用户机器上的 relay（下载分发，不随服务启动） | `agent/dist/` |
+| Node runtime | 内置 Node.js，无需系统 Node | `runtime/` |
 
----
+沙盒工具桥接已合并进 amedac-core / pi-config，不再需要独立
+`pi-sandbox-extension`。没有沙盒组件时仍可运行 Host/本机/SSH 模式。
 
-## 一、构建离线包（构建机）
+## 2. 产物形态
 
-前置要求：Linux（或 WSL）、bash、tar、curl/wget、Node.js ≥ 22（只用于构建）。三份源码需在同一父目录下（或用环境变量显式指定路径）：
-
-```
-somewhere/
-├── pi-web/                  # 本仓库
-├── sandbox-platform/        # 容器管理平台
-└── pi-sandbox-extension/    # 桥接扩展
-```
+### tar.gz 目录版
 
 ```bash
-cd pi-web
-bash scripts/package-linux.sh
+tar -xzf amedac.ai-pi-linux-x64-<version>.tar.gz
+cd amedac.ai-pi-linux-x64
+./scripts/start-all.sh
 ```
 
-产物：
-
-```
-dist/amedac.ai-pi-linux-x64-<版本>.tar.gz   # 分发包（附 SHA256SUMS）
-build/package-linux/amedac.ai-pi-linux-x64/ # 未压缩目录
-```
-
-脚本行为要点：
-
-- 自动探测兄弟目录中的 `sandbox-platform` / `pi-sandbox-extension` 并打入包内（探测不到则跳过沙盒组件，只出纯 pi/pi-web 包）。可用 `WITH_SANDBOX=1|0` 强制开关，路径不同用 `SANDBOX_PLATFORM_DIR=` / `SANDBOX_EXTENSION_DIR=` 指定。
-- 打入内置 Node.js 运行时（默认 v22.23.0，可换 `NODE_VERSION` / `NODE_RUNTIME_LOCAL`）。
-- 冒烟测试（可用 `SMOKE_TEST=0` 跳过）：CLI 存活、WebUI HTTP 应答、**沙盒平台以 mock 执行器启动且 `/health` 应答**。
-
-常用变量（全部可选）见 `scripts/package-linux.sh` 头部注释；最常用的几个：
+### AppImage
 
 ```bash
-# 指定本地 node 运行时（完全离线的构建机）
-NODE_RUNTIME_LOCAL=/data/node-v22.23.0-linux-x64.tar.gz bash scripts/package-linux.sh
-
-# 本地编译的 pi-coding-agent SDK 替换 registry 版本
-PI_CODING_AGENT_LOCAL=/data/pi-coding-agent-0.83.x.tgz bash scripts/package-linux.sh
-
-# 附带 fd/rg 等 CLI 工具进包（目标机 PATH 自动生效）
-PI_BINARIES="/data/fd /data/rg" bash scripts/package-linux.sh
-
-# 离线构建机：手动补原生绑定（bcrypt 预编译）与管理控制台静态页
-BCRYPT_BINDING_LOCAL=/data/bcrypt_lib.node \
-PLATFORM_WEB_DIST=/data/web-dist \
-bash scripts/package-linux.sh
+./amedac.ai-x64.AppImage --web
+./amedac.ai-x64.AppImage status
+./amedac.ai-x64.AppImage stop
 ```
 
-两个离线机常见坑：
+- 代码/运行时在只读挂载内执行，不整包释放；
+- 数据在 `${XDG_DATA_HOME:-~/.local/share}/amedac/`（`AMEDAC_HOME` 可改）；
+- 无 FUSE 时加 `--appimage-extract-and-run`。
 
-- **bcrypt .node 绑定缺失**（运行时报 `Cannot find module .../napi-v3/bcrypt_lib.node`）：
-  离线 npm 拿不到 node-pre-gyp 预编译（`ignore-scripts=true` 时甚至不会尝试）。手动把对应
-  平台的 `bcrypt_lib.node` 拷到构建机后用 `BCRYPT_BINDING_LOCAL` 指给脚本；其他原生模块同理走
-  `NATIVE_BINDING_FIX="包内相对路径=来源文件 …"`。
-- **管理控制台**：管理员在 WebUI 顶栏点「沙盒平台管理台」新标签页打开平台 SPA（镜像/用户/
-  配额/LLM 控制台）。打包时默认嵌入源码仓的 `web/dist`；构建机上没有就绪产物时用
-  `PLATFORM_WEB_DIST` 指定，否则该页 404（其余功能不受影响）。
-
-## 二、目标机一键部署
-
-### 方式 A：AppImage（桌面双击 / 单文件分发）
-
-```bash
-bash scripts/package-appimage.sh       # 构建机；复用 package-linux.sh 产物再打镜像
-# → dist/amedac.ai-x64.AppImage (约 215MB)
-```
-
-代码与运行时**留在只读挂载内就地执行**（标准 AppImage 方式，不再整包释放到家目录）；
-可写内容收敛到 `${XDG_DATA_HOME:-~/.local/share}/amedac/`（可用 `AMEDAC_HOME` 指到任意
-外部数据目录，如 NAS 数据盘）：
+两种形态共用：
 
 ```
 amedac/
-├── config/   platform.env、piweb.env（首启生成，可手改；含 admin-password.txt）
-├── data/     平台 sqlite、容器 overlay、WebUI 数据
-├── run/      pid 与 ports.env（自动选中的端口）
-└── logs/     服务日志
+  config/   platform.env / piweb.env / admin-password.txt
+  data/     平台 sqlite/overlay/workspace、piweb state/homes
+  run/      pid/ports
+  logs/     web.log / platform.log
 ```
 
-命令面（无 FUSE 的机器整体加 `--appimage-extract-and-run` 后缀，行为一致）：
+升级只替换程序本体，`config/`、`data/`、`run/`、`logs/` 保留。
 
-```bash
-./amedac.ai-x64.AppImage              # 启动 pi CLI（参数透传给 pi；不拉起后台服务）
-./amedac.ai-x64.AppImage --web        # 启动平台+WebUI（自动端口）并打开浏览器
-./amedac.ai-x64.AppImage status       # 服务状态
-./amedac.ai-x64.AppImage stop         # 停止全部
-```
+## 3. 首次启动
 
-端口全自动：默认从 3000/30141 起，被占用就向上探测空闲端口，结果记忆在
-`run/ports.env`（下次优先复用）。要固定端口，在 `config/platform.env` 加 `PORT=xxxx`
-或 `config/piweb.env` 加 `PI_WEB_PLATFORM_URL=http://…`，显式配置优先于自动探测；
-WebUI 的平台地址默认跟随探测到的平台端口。桌面双击图标 = `--web`（起服务 + 开浏览器）。
-旧版（v1，曾整包展开约 1GB 到家目录）首次运行 v2 时自动迁移配置并清理旧目录，数据不丢。
+1. 生成 `config/platform.env`：sqlite、JWT secret、种子管理员；
+2. 启动 sandbox-platform，等待 `/health`；
+3. 生成 `config/piweb.env`：`PI_WEB_AUTH=on`、平台地址、数据目录；
+4. 启动 pi-web `:30141`；
+5. 浏览器访问 `http://<host>:30141`，用 `admin` + 初始密码登录。
 
-### 方式 B：tar.gz 目录部署
+初始密码：`amedac-admin`（可用 `ADMIN_PASSWORD` 覆盖），写在
+`config/admin-password.txt`（0600），首次成功登录后删除。首次登录后建议改密。
 
-要求：Linux x64/arm64、bash；如需真实沙箱容器还要安装 [Apptainer](https://apptainer.org/docs/admin/latest/installation.html)（未装也能跑 WebUI 与本机模式，只是无法建容器——`start-all.sh` 会检测并提示）。
+没有 Apptainer 时：平台/WebUI/本机模式仍可用，但容器创建失败；`start-all.sh` 会检测提示。
 
-```bash
-tar -xzf amedac.ai-pi-linux-x64-<版本>.tar.gz
-cd amedac.ai-pi-linux-x64
-./scripts/start-all.sh
-```
+## 4. 配置面
 
-首次运行会自动完成：
-
-1. 生成 `config/platform.env`（sqlite 数据库落在 `data/platform/`、64 位随机 JWT 密钥、统一初始密码 `amedac-admin` 的种子管理员——可用 `ADMIN_PASSWORD` 覆盖；初始密码写入 `config/admin-password.txt`，仅属主可读）；
-2. 启动沙盒平台（端口 `3000`，`/health` 就绪才继续）；
-3. 生成 `config/piweb.env`（指向平台、开启登录、数据落 `data/piweb/`、扩展指到包内 `sandbox/extension/`）；
-4. 启动 WebUI（端口 `30141`）。
-
-浏览器访问 `http://<主机IP>:30141/`，用 **admin** 和统一初始密码 **`amedac-admin`**（或 `config/admin-password.txt` 中的值；WebUI 与沙盒平台共用同一套账号）登录。建议登录后在 设置 → 账户 修改密码；内网部署可不改。首次用初始密码登录成功后该文件会自动删除。
-
-其他命令：
-
-```bash
-./scripts/status-all.sh   # 状态 / 日志位置 / apptainer 检测
-tail -f logs/web.log      # 跟踪 WebUI 日志
-tail -f logs/platform.log # 跟踪平台日志
-./scripts/stop-all.sh     # 停止全部
-./scripts/start-all.sh --no-web   # 只起沙盒平台（调试用）
-```
-
-端口自定义：`PLATFORM_PORT=3000 WEB_PORT=8080 ./scripts/start-all.sh`。
-
-## 三、配置参考
-
-`start-all.sh` 生成的两个 env 即完整配置面，改完重启对应服务即可：
-
-**config/platform.env**
+### platform.env
 
 | 变量 | 说明 |
-| --- | --- |
-| `PORT` / `HOST` | 监听地址（默认仅本机回环，WebUI 反向代理访问） |
-| `DB_DIALECT` / `SQLITE_PATH` | sqlite 零依赖；大规模可换 `postgresql` + `DATABASE_URL` |
-| `JWT_SECRET` | 登录令牌签名密钥（首次自动随机生成） |
-| `SEED_ADMIN_USERNAME` / `SEED_ADMIN_PASSWORD` | 种子管理员（仅空库首次启动时创建；生产模式拒绝默认弱密码） |
-| `EXECUTOR_KIND` | `apptainer-cli`（同机 Apptainer）/ `ssh`（远程节点）/ `mock` |
-| `REGISTER_MODE` | 注册开关：`off` / `open` / `approval` |
-| `RATE_LIMIT_*` | 登录/注册等接口限流阈值（生产默认开启） |
+|---|---|
+| `PORT` / `HOST` | 平台监听（默认 3000/127.0.0.1） |
+| `DB_DIALECT` / `SQLITE_PATH` / `DATABASE_URL` | sqlite 或 postgresql |
+| `JWT_SECRET` | 登录令牌密钥（首启随机） |
+| `SEED_ADMIN_USERNAME` / `SEED_ADMIN_PASSWORD` | 种子管理员（空库首启） |
+| `EXECUTOR_KIND` | `apptainer-cli` / `ssh` / `mock` / `auto`；生产 mock 拒绝，auto 失败关闭 |
+| `REGISTER_MODE` | `off` / `open` / `approval` |
+| `RATE_LIMIT_*` | 登录/注册/PTY/LLM reveal 限流 |
+| `TRUST_PROXY` | 反代后按真实客户端 IP 限流 |
 
-**piweb.env**
+### piweb.env
 
 | 变量 | 说明 |
-| --- | --- |
-| `PI_WEB_AUTH` | `on` = 多用户账号体系（WebUI 自己的用户库） |
-| `PI_WEB_PLATFORM_URL` | 沙盒平台地址；学生用户的平台凭证在 WebUI 内绑定（服务端调用用） |
-| `PI_WEB_PLATFORM_PUBLIC_URL` | 平台对外地址（可选）。OIDC 等需要浏览器跳转平台时使用；留空时若平台地址是 127.0.0.1/localhost，会自动改用浏览器访问 WebUI 的主机名 + 平台端口。**注意**：该自动改写假设平台端口与 WebUI 在同一主机可达——反向代理只暴露 WebUI、平台端口未对浏览器侧主机开放时，必须显式配置本变量，否则 OIDC 跳转会指向浏览器不可达的地址 |
-| `PI_WEB_DATA_DIR` | 会话元数据 / 项目数据目录 |
-| `PI_WEB_SANDBOX_EXTENSION_PATH` | 沙盒桥接扩展路径（会话以 `.pi/extensions/` 发现加载） |
-| `PI_WEB_LAB_TRAINING` | 教学面板功能开关 |
-| `PI_WEB_DISABLE_NPM_PACKAGES` | **默认禁用**（离线优先）。设为 `0` 显式允许 SDK 为缺失包执行 npm install、包更新检查与工具下载；设为 `1` 等价 `PI_OFFLINE=1`。管理员也可在「全局配置」页切换（默认勾选，取消即启用） |
-| `PI_WEB_NPM_REGISTRY` | npm 镜像源（包安装与新建 Host 终端生效）；留空用 npm 默认源 |
-| `PI_WEB_PIP_INDEX_URL` | PyPI 镜像 simple 地址（新建终端中的 pip 生效）；留空用 PyPI 默认源 |
+|---|---|
+| `PI_WEB_AUTH` | `on` 启用平台账号登录；`off` 单用户兼容 |
+| `PI_WEB_PLATFORM_URL` | 平台 API 地址（服务端） |
+| `PI_WEB_PLATFORM_PUBLIC_URL` | 浏览器跳转平台的对外地址（OIDC 等） |
+| `PI_WEB_DATA_DIR` | WebUI 状态/项目/会话 home |
+| `PI_WEB_SESSION_IDLE_DAYS` / `PI_WEB_SESSION_ABSOLUTE_DAYS` | 登录态窗口 |
+| `PI_WEB_DISABLE_NPM_PACKAGES` | 离线优先；`0` 允许 npm 安装/更新 |
+| `PI_WEB_NPM_REGISTRY` / `PI_WEB_PIP_INDEX_URL` | 包安装/终端镜像源 |
+| `PI_RELAY_PORT` / `PI_RELAY_HOST` / `PI_RELAY_ADVERTISE_URL` | Agent relay |
+| `PI_WEB_PUBLIC_URL` | 分享链接/配对命令的对外地址 |
 
-## 四、升级
+`PI_WEB_SANDBOX_EXTENSION_PATH` 已废弃；旧配置残留无害。
 
-用户配置（`config/*.env`）、数据库与所有学生数据都存放在包目录的 `config/` 与 `data/`
-下，所有升级路径都把这两处排除在覆盖范围之外；老版本（配置曾放在 `sandbox/`）首次用新版
-`start-all.sh` 启动时会自动搬迁到 `config/`（原件留 `*.v1-backup`）。
+## 5. 反向代理与 TLS
 
-**AppImage**：下发新版本文件，直接重新运行即可。代码在只读挂载内就地执行，
-`AMEDAC_HOME` 下的 config/data 与新版本无关，天然不被触碰（数据库迁移幂等）。
+- 建议 nginx/caddy 终止 TLS，只暴露 WebUI；平台保持 127.0.0.1。
+- relay 默认 30142，需要 WebSocket Upgrade。若只暴露 443/路径前缀，设置
+  `PI_RELAY_ADVERTISE_URL=https://host/relay`。
+- 设置 `PI_WEB_ALLOWED_HOSTS` 添加反代 hostname。
+- `TRUST_PROXY` 配成反代跳数，限流才按真实 IP。
 
-**tar.gz 目录部署（推荐用安全升级脚本）**：
+## 6. 进程守护
+
+```ini
+[Unit]
+Description=Amedac Agent Platform
+After=network.target
+
+[Service]
+Type=forking
+WorkingDirectory=/opt/amedac
+ExecStart=/opt/amedac/scripts/start-all.sh
+ExecStop=/opt/amedac/scripts/stop-all.sh
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+```
+
+`start-all.sh` 幂等，可重复调用；建议由 systemd 统一管理。
+
+## 7. 升级
+
+### AppImage
+
+替换文件并重新运行；`AMEDAC_HOME` 下配置/数据不受影响，数据库迁移幂等。
+
+### tar.gz
 
 ```bash
 cd amedac.ai-pi-linux-x64
-./scripts/upgrade-bundle.sh /path/to/amedac.ai-pi-linux-x64-<新版本>.tar.gz
+./scripts/upgrade-bundle.sh /path/to/amedac.ai-pi-linux-x64-<new>.tar.gz
 ```
 
-脚本自动完成：停服 → 备份 config/data 到 `.upgrade-backup-<时间戳>/` → 解压新包
-（排除 config/ data/ run/ logs/）→ 旧布局配置搬迁 → 重启。
+自动：停服 → 备份 config/data → 解压排除 config/data/run/logs → 迁移旧布局 → 重启。
+手动等价命令必须排除 `config`、`data`、`run`、`logs`。
 
-手动等价操作（不脚本化时）：
+升级后：
+- 平台 schema 幂等迁移；
+- Agent Client 需用户重新下载/升级（下载路由指向新 dist）；
+- 旧 `~/.pi/agent` 软链会在下次启动清理/重指。
 
-```bash
-cd amedac.ai-pi-linux-x64
-./scripts/stop-all.sh
-tar -xzf ../amedac.ai-pi-linux-x64-<新版本>.tar.gz --strip-components=1 -C . \
-    --exclude='config' --exclude='data' --exclude='run' --exclude='logs' \
-    --exclude='sandbox/platform.env' --exclude='sandbox/piweb.env' --exclude='sandbox/admin-password.txt'
-./scripts/start-all.sh
-```
+## 8. 备份
 
-- 平台数据库 schema 由启动时的幂等迁移自动升级；
-- 平台/WebUI 配置在 `config/`，数据库在 `data/`，均不在覆盖范围（手动 tar 时务必带上排除参数）；
-- 学生容器的 overlay（Apptainer 数据目录，见下）与包目录无关，升级不动它们。
+- 平台 DB（sqlite 文件或 postgres dump）；
+- `data/piweb`（项目/会话元数据、home、附件、bundle）；
+- Apptainer 数据目录（容器实例 + overlay）；
+- `config/`（env、admin password 文件、证书）。
 
-## 五、生产加固建议
+建议平台自带 `npm run backup` 做可移植 JSON 归档；容器 overlay 另做一致性快照
+（先 stop 再拷）。
 
-1. **反向代理**：把 WebUI 放 nginx/caddy 后面配 TLS，再让用户走域名；此时平台保持只监听 127.0.0.1。
-2. **进程守护**：`start-all.sh` 是裸 nohup 方案；长期运行建议包一层 systemd 单元，`ExecStart` 直接调 `./scripts/start-all.sh`（脚本幂等，重复调用安全），`Restart=on-failure`。
-3. **限流**：平台生产模式默认开 IP 限流；若置于反代之后设 `TRUST_PROXY=<跳数>` 使按真实客户端 IP 计数。
-4. **备份**：定期备份 `data/`（含平台 sqlite）与学生容器所在 Apptainer 数据目录（实例 + overlay，路径由平台 env 中 executor 配置决定）。
-5. **凭证**：学生平台密码、“沙箱绑定”的 API key 都存于 pi-web 用户库里（`data/piweb/`），迁移机器时随 `data/` 一起搬。
+## 9. 观测与故障排查
 
-## 六、故障排查速查
+日志：
 
-| 症状 | 检查点 |
-| --- | --- |
-| 平台 `/health` 不通 | `logs/platform.log`；端口占用（`status-all.sh`）；DB 路径权限 |
-| WebUI 能登但建不了容器 | 目标机没装 Apptainer 或平台 `EXECUTOR_KIND` 不符；`logs/platform.log` |
-| 终端黑屏只有 ready | 平台 <1.0 无 PTY 版本症状，升级到含 node-pty 的版本（≥ `18bd49f`） |
-| 远程文件/终端报「该会话是 Host 模式」 | pi-web < `68d7e55` 的已知 bug，升级即可 |
-| 新建终端偶发 429 | 平台限制每容器并发 3 个 PTY；旧泄漏连接约 1 分钟内自动回收 |
+- 包启动：`logs/web.log`、`logs/platform.log`
+- pi-web 应用 warn/error/event：`<data>/logs/server-YYYYMMDD.log`
+- Agent relay：`web.log` 中 `[relay]`
 
-### 已知限制（0.0.4-alpha）
+| 症状 | 检查 |
+|---|---|
+| 平台 `/health` 不通 | `platform.log`、端口、DB 权限、executor 启动 |
+| 登录 500 | `PI_WEB_PLATFORM_URL` 是否可达、平台账号 |
+| WebUI 能登但建不了容器 | Apptainer/SSH executor、镜像白名单、配额 |
+| 终端黑屏 | PTY/node-pty 绑定、平台版本、容器运行状态 |
+| 本机模式不可用 | Agent 版本/在线、配对命令主机名、relay 30142 |
+| 本机 MCP 不出现 | Agent ≥0.8、feature、plane/lazy/directTools |
+| 文件面板 403 | 会话所属空间、项目归属、路径围栏 |
+| 升级后配置丢 | 是否误覆盖 `config/`/`data/` |
 
-- **远程终端的镜像环境是创建时快照**：管理员修改 npm/PyPI 镜像或离线开关后，已经打开的远程
-  终端（沙箱 / SSH / 本机 relay）仍保留旧环境；关闭并重新打开终端即可生效。Host 本机终端
-  同样只在新建时继承进程环境。
-- **Windows relay 终端不注入镜像环境**：`NPM_CONFIG_REGISTRY` / `PIP_INDEX_URL` 的 `export`
-  前缀只发给 POSIX shell；Windows 本机 Agent 的 PTY 目前仍是桩实现，本地终端不可用。
-- 其余投影/同步侧的已知边界（选择性收取、大附件分块、Apptainer bind、单活动工作区）见
-  `docs/adr/0004-workspace-config-projection-and-promotion.md` 的 P2/P3 列表。
+## 10. 生产加固
+
+1. 反向代理 + TLS；平台不直接暴露。
+2. 强 `JWT_SECRET`、强管理员密码、关闭开放注册或审批。
+3. 配置 `TRUST_PROXY` 与限流；限制每用户并发会话/批量任务。
+4. 定期备份 DB/workspace/overlay；验证恢复。
+5. 只给可信项目 `plane:"host"`/Host 模式；普通用户使用 sandbox/local-machine/SSH。
+6. 监控 `/metrics`、磁盘、内存、relay 在线数、批量队列。
+7. 离线环境保持 `PI_WEB_DISABLE_NPM_PACKAGES=1`；镜像源按内网配置。
+
+## 11. 当前已知限制
+
+- 单 pi-web Node 进程托管 Agent 会话；大量并发需拆执行面。
+- 远程终端镜像环境是创建时快照；改镜像/离线开关后需重开终端。
+- Windows Agent PTY 为桩，终端不可用。
+- AppImage 依赖 FUSE；无 FUSE 用 extract-and-run。
+- 平台账号外部删除/禁用不会实时推送；需管理端操作或 401 复查。
+- 工作区投影/配置同步的剩余边界见 ADR 0004 与 state-storage-inventory。

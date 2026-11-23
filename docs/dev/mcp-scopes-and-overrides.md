@@ -1,12 +1,15 @@
 # MCP 作用域与工作区级启停
 
-## 三个 scope
+> 状态：现行（2026-11-23）。总览见 [mcp.md](./mcp.md)。
+
+## 四个 scope
 
 | scope | 文件 | 优先级 | 谁能改 |
 |---|---|---|---|
-| project | `<cwd>/.pi/mcp.json` | 最高 | 项目成员（含普通用户） |
-| quick | `<dataDir>/mcp-quick.json`（快速会话工作区由模板物化） | 中 | 管理员 |
-| global | `~/.pi/agent/mcp.json`（及 `~/.agents/mcp.json` 发现路径） | 最低 | 管理员 |
+| project | `<projectHome>/.pi/mcp.json` | 最高 | 项目属主（受信任/写锁） |
+| quick | `<dataDir>/mcp-quick.json` | 中 | 管理员 |
+| user | `<dataDir>/state/users/u<id>/pi/mcp.json` | 中 | 用户自己 |
+| global | `<agentDir>/mcp.json`（及 `~/.agents/mcp.json` 发现路径） | 最低 | 管理员 |
 
 同名服务器按上表优先级去重；高优先级条目遮蔽低优先级条目
 （pi-mcp-adapter 链）。
@@ -21,6 +24,11 @@ project scope 的 stdio 条目如果声明 `"piWeb": {"plane": "workspace"}`，�
 普通用户创建/导入/同步这类条目时，控制面闸门只在上述组合下放行。用户
 scope 没有机器绑定，仍不允许 stdio。HTTP 服务器不需要 `plane`，继续按
 普通 MCP HTTP 配置使用。
+
+该条目必须同时写 `lifecycle: "lazy"`（或 `lazy-keep-alive`）与
+`directTools: false`；否则 adapter 会在启动时为 keep-alive/eager/direct-tools
+元数据连接它，可能在 pi-web 控制面执行。创建/更新、配置包导入、工作区同步、
+会话启动都会校验；设置页选择 workspace 保存时自动写入安全值。
 
 ## 工作区级禁用 = 墓碑覆盖
 

@@ -1,109 +1,105 @@
-# pi-web 运行状态存储盘点与规范化建议
+# 运行状态存储盘点
 
-> 现状盘点（2026-11-19）。目标：减少“一坨 JSON 文件”带来的并发/一致性/迁移问题，
-> 同时不破坏离线部署与现有备份方式。
->
-> **更新（2026-11-19）**：下表是迁移前的路径盘点；Phase 1 的统一 `state/` 布局
-> 已落地，核心 store 的新路径/信封/迁移策略见第 3 节。
->
-> **更新（2026-11-20）**：User JSON 配置源（pi settings/MCP/models/auth/push）
-> 已迁入 `state/users/u<id>`；会话/项目形态与删除级联见
-> `docs/dev/session-project-model.md`。
+> 状态：现行（2026-11-23）。描述 JSON state、不可变文件与大对象的边界、迁移与待办。
+> 配置层语义见 [configuration.md](./configuration.md)，会话/项目模型见
+> [session-project-model.md](./session-project-model.md)。
 
-## 1. 当前状态文件
+## 1. 存储原则
 
-| 文件/目录（`<dataDir>` 下） | 内容 | 作用域 | 备注 |
-|---|---|---|---|
-| `projects.json` | 项目记录（id/name/mode/owner/workdir/pins） | 全局单文件 | 全量重写；含远端真实 workdir |
-| `session-metas.json` | 会话元数据（项目归属、标题、归档等） | 全局单文件 | 与 session JSONL 分离 |
-| `sidebar-state/u<id>.json` | 项目/Host/会话置顶、未读 | 每用户 | 客户端偏好 |
-| `host-dirs.json` | Host 目录注册表（root/name） | 全局 | 含服务器真实目录 |
-| `quick-templates.json` | 快速会话模板 | 全局 | 管理员维护 |
-| `server-settings.json` | 全局配置（公开地址/上传限制/镜像等） | 全局 | 含敏感配置 |
-| `user-settings/u<id>.json` | 用户设置 diff | 每用户 | 默认模型/思考/工具等 |
-| `user-config/u<id>/` | 用户级 skills/agents/mcp 等 | 每用户目录 | 文件即配置 |
-| `user-models/u<id>/` | 用户级模型配置 | 每用户 | |
-| `api-key-vault.json` | 平台 API key 明文保管 | 全局单文件 | 0600；产品取舍 |
-| `web-sessions.json` | pi-web 登录会话 | 全局单文件 | 7 天滑动/90 天强制 |
-| `mcp-quick.json` | 快速会话 MCP 覆盖 | 全局 | |
-| `apkg-imports.json` | .apkg 导入计数 | 全局单文件 | 指纹 → count |
-| `apkg-locked-homes.json` | 禁止再导出登记 | 全局单文件 | 项目 home → 指纹 |
-| `apkg-recipient.json` | 接收方公钥元信息 | 全局 | 非私钥 |
-| `config-bundles/` | 配置模板 zip/apkg + meta | 目录 | 含加密原件 |
-| `projection/<projectId>/*.json` | 投影 manifest/status | 每项目 | |
-| `session-images/` | MCP 图片资产 | 全局目录 | 无 TTL |
-| `attachments/` | 聊天附件 | 每用户/会话 | 文件 |
-| `batch-tasks/`、`batch-homes/` | 批量任务与临时 home | 目录 | |
-| `locks/`、`logs/` | 锁与日志 | 目录 | |
+| 类别 | 位置 | 写入方式 |
+|---|---|---|
+| JSON 元数据 | `<dataDir>/state/` | JsonStore：信封、原子写、`.bak`、0600/0700、跨进程锁 |
+| 会话正文 | pi agent sessions（用户分片/Host） | append-only JSONL |
+| 项目配置 | `<projectHome>/.pi` | SDK/adapter 直接读取；项目写锁 |
+| 大对象 | images/attachments/bundles/homes | 文件系统，不进 JSON state |
 
-会话正文仍是 Agent 目录下的 JSONL（不在 `dataDir`），图片/附件/工作区文件也是文件系统，
-不应迁入数据库。
+不引入本地 SQLite；未来若需要关系化查询，通过 repository 适配平台后端。
 
-## 2. 主要问题
+## 2. JSON state 布局
 
-1. **无统一 schema/version**：每个 store 自己决定结构，升级靠零散迁移逻辑。
-2. **路径与命名不统一**：`projects.json`、`session-metas.json` 是平铺文件，
-   `sidebar-state/`、`user-settings/` 是按用户文件，`config-bundles/` 是目录。
-3. **全量重写 + 多实例 mtime 缓存**：项目/会话元数据增长后每次写入成本上升，
-   且多个 route 模块各持缓存，靠 mtime 对齐。
-4. **无跨 store 事务**：删除项目要同时清 session-metas、pins、projection、home；
-   中途失败会留下孤儿。
-5. **无查询能力**：按 owner/project/时间过滤靠全量读入内存。
-6. **备份/迁移各自为政**：升级包、回滚、导出没有统一的 state 快照。
-7. **真实路径扩散**：`projects.json`/Host 注册表/会话元数据包含服务器或远端路径，
-   前端/API 需要额外脱敏（本次已清理主要展示面，但数据结构仍保留）。
+```
+<dataDir>/state/
+  global/
+    projects.json
+    session-metas.json
+    host-dirs.json
+    server-settings.json
+    quick-templates.json
+    api-key-vault.json
+    apkg-imports.json
+    apkg-locked-homes.json
+    config-bundles.json
+    ...
+  users/u<id>/
+    user-settings.json
+    sidebar-state.json
+    push.json
+    pi/settings.json
+    pi/mcp.json
+    pi/models.json
+    pi/auth.json
+  projects/<projectId>/        # 预留/项目级小状态
+```
 
-## 3. Phase 1：统一 JSON store（已落地 2026-11-19）
+统一信封：
 
-核心实现在 `lib/state/`：
+```json
+{ "schemaVersion": 1, "data": { } }
+```
 
-- `paths.ts`：`global` / `user:<id>` / `project:<id>` scope 到目录的映射。
-- `json-store.ts`：统一信封、原子写、`*.bak`、0600/0700、`proper-lockfile`
-  跨进程写锁、mtime 缓存、旧文件懒迁移。
-- 新文件格式：
+## 3. 核心实现
 
-  ```json
-  { "schemaVersion": 1, "data": { } }
-  ```
+- `lib/state/paths.ts`：global/user/project scope → 路径；name/id 校验。
+- `lib/state/json-store.ts`：读取缓存（mtime）、原子写、`.bak`、旧路径懒迁移、
+  `proper-lockfile` 写锁、按路径失效。
+- 旧文件只读保留一个版本；首次读取/写入迁移到 `state/`。
+- 损坏文件回退顺序：`.bak` → 旧路径 → defaults。
+- 删除后调用 `invalidateStatePathsUnder`，避免缓存读到旧值。
 
-- 新目录：
+## 4. 仍未统一到 state 的 store
 
-  ```
-  <dataDir>/state/global/*.json
-  <dataDir>/state/users/u<id>/*.json
-  <dataDir>/state/projects/<projectId>/*.json
-  ```
+这些仍有独立文件/目录与缓存，属于 Batch 5：
 
-- 首批迁移：`projects`、`session-metas`、`host-dirs`、`server-settings`、
-  `quick-templates`、`api-key-vault`、`apkg-imports`、`apkg-locked-homes`、
-  `config-bundles` metadata、`sidebar-state`、`user-settings`。
-- 旧路径只读保留一个版本：首次读取时迁移到 `state/`，之后只写新路径；
-  旧文件保留用于回滚/对照，下个版本删除。
-- 写入前保留上一版 `<file>.bak`；目标损坏时依次回退 `.bak`、旧文件、默认值。
-- 大文件/目录（sessions JSONL、images、attachments、bundle 原件、workspace
-  homes、projection/sync-plan 目录）不进入 `state/`。
+| store | 现状 |
+|---|---|
+| `web-sessions` | 登录会话 JSON，滑动/绝对过期 |
+| `shares` | `shares.json` + `share-files/` 快照 |
+| `batch-tasks` | 每任务 JSON + 内存 registry/SSE buffer |
+| `projection` | 每项目 manifest/status 目录 |
+| `sync-plans` | 项目配置同步计划 |
+| `embed-profiles` | 嵌入产品配置 |
+| `mcp-quick` | 快速会话 MCP 覆盖 |
+| `session-images` | 图片资产目录（无 TTL） |
 
-### Phase 2：复用平台后端（后续，不引入本地 SQLite）
+后续目标：统一锁/原子写/跨进程可见性；明确 retention/GC；config-bundles 的元数据
+与资产事务；平台身份外部删除的周期复查。
 
-pi-web 不再计划维护独立数据库。后续若要关系化/查询化，通过 `lib/state`
-的 repository 适配层对接平台后端服务（平台 API 或平台直接管理的数据库），
-而不是在 WebUI 侧新建第二个事实源。用户/认证仍以平台为准。
+## 5. 会话与大对象
 
-设计要点：
-- 保留 `JsonStore` 作为默认实现；将来增加平台后端 adapter 时，业务代码只依赖
-  `read/update` 接口。
-- 平台侧只暴露必要的小型元数据（projects、session-metas、sidebar、settings 等），
-  大对象和 append-only 会话正文继续留在文件系统。
-- 不在 pi-web 内复制用户表或维护独立 auth 库。
+- 会话 JSONL 在 agent sessions root：用户分片 `users/u<id>/` 或 Host 空间。
+- 图片/附件/分享快照/bundle/apkg/workspace homes 不进 state；删除级联需同时清理
+  引用和文件。
+- 工作区投影 manifest 只用于快速比较；截断/失败必须回退逐文件 stat，不能据此删除。
 
-### 选型注意
+## 6. 并发与删除
 
-- 若将来确实需要本地缓存/离线兜底，再评估 `node:sqlite`；当前不引入。
-- 无论适配哪种后端，先保持 Phase 1 的 repository 边界，业务层不动。
+- 项目配置写入/删除/会话启动使用项目读写锁；删除项目先检查运行中 RPC/批量任务。
+- 项目级联：session JSONL、metas、pins、images、shares、projection、sync plans、
+  apkg lock、batch、home（外部 Host 目录除外）。
+- 用户删除：停 live wrapper、取消 active batch、级联项目、清 state/user-config/homes/
+  attachments/session 空间、吊销 web/vault/relay。
+- 所有删除幂等、best-effort；单个 rm 失败不阻断其余清理（Windows EPERM）。
 
-## 4. 后续顺序
+## 7. 备份与迁移
 
-1. 观察一个版本：确认 `state/` 迁移、锁、备份在真实部署无回归。
-2. 下个版本删除旧 JSON 文件及旧读取回退。
-3. 再评估平台后端 adapter；优先迁 `projects`、`sidebar`、`session-metas`、
-   `shares`、`settings` 这类高频小数据。
+- 包升级保留 `config/`、`data/`；`AMEDAC_HOME` 可整体搬迁。
+- 平台 DB 与 pi-web state 分开备份；容器 overlay 另做一致性快照。
+- 旧布局（user-config/user-settings/user-models、包内 data）懒迁移，旧文件保留可回滚。
+- 会话 JSONL 与 state 的备份应保持同一时间点，避免 owner/project 元数据与正文不一致。
+
+## 8. 后续顺序
+
+1. 完成 Batch 5 的锁/GC/事务；
+2. 观察一个版本后删除旧 JSON 兼容读取；
+3. 再评估平台后端 repository adapter（projects/sidebar/session-metas/shares/settings）；
+4. 不引入第二套本地数据库。

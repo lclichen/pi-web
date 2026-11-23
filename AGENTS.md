@@ -1,5 +1,11 @@
 # Pi Web - Development Notes
 
+> Current framework documentation lives in [docs/dev/README.md](./docs/dev/README.md).
+> Read `PLATFORM.md`, `multi-user-and-modes-design.md`, `session-project-model.md`,
+> `configuration.md`, and `security.md` before changing architecture, storage, execution
+> modes, MCP, or deployment. The file map below is a partial developer aid and may lag
+> the current code; the docs hub is authoritative.
+
 ## Quick Start
 
 ```bash

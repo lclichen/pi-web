@@ -1,5 +1,8 @@
 # QwenPaw 行为护栏安全策略参照分析
 
+> **参考素材**：外部项目分析，不是本项目状态；现行护栏见
+> [security.md](./security.md) 与 [tool-guardrails-design.md](./tool-guardrails-design.md)。
+>
 > 分析对象：`HarnessReference/QwenPaw`（阿里 AgentScope 出品的个人 AI 助手，Python，
 > 安全相关代码约 2.3 万行，分布于 `src/qwenpaw/{security,sandbox,governance}/`）。
 > 本文是 2026-11-05 的代码级调研结论，用于 pi-web 工具护栏设计参照

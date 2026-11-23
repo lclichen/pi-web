@@ -24,7 +24,7 @@
    里连"匿名只读"的概念都没有。
 
 唯一例外：`PI_WEB_AUTH=off` 的单用户部署里 `requireUserIdentity` 返回隐式
-host 身份，链接无需 Cookie 即可访问——但多用户教学模式不适用。
+host 身份，链接无需 Cookie 即可访问——多用户共享部署不适用。
 
 另：即使解决了认证，`type=read` 对**文本**文件返回的是 JSON 包裹
 （`{content, language, size}`），外部消费方应使用 `type=download` 拿原始字节。

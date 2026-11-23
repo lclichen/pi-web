@@ -1733,6 +1733,11 @@ export class AgentSessionWrapper {
         }
 
         case "get_tools": {
+          // Quick: adapter direct tools can finish registering AFTER the
+          // startup clamp (keep-alive initialize/tools-list is async). Re-clamp
+          // before reporting active flags so the tool panel never shows tools
+          // outside the template allowlist as active before the first turn.
+          if (this.quickPrompt) this.enforceQuickTools();
           const all: ToolInfo[] = this.inner.getAllTools();
           const active = new Set<string>(this.inner.getActiveToolNames());
           return all.map((t) => ({

@@ -1,0 +1,92 @@
+Amedac Agent Platform
+=====================
+
+Copyright (c) 2026 Amedac project contributors.
+
+This distribution contains a modified version of pi-web and a set of
+third-party extensions and libraries. The original copyright notices and
+license texts are retained in the corresponding LICENSE files and in this
+directory.
+
+Primary components
+------------------
+
+- pi-web — MIT
+  Upstream: https://github.com/agegr/pi-web
+  Copyright (c) 2026 agegr
+  Fork/source: https://github.com/lclichen/pi-web
+  This distribution contains substantial modifications by the Amedac project:
+  multi-user platform/BFF, execution modes (sandbox/local-machine/SSH/Host/Quick),
+  session/project descriptors, configuration layers/projection, MCP relay host,
+  Agent Builder, batch API, embed widget, observability and packaging changes.
+  See LICENSES/components/pi-web-LICENSE.txt.
+
+- @tintinweb/pi-subagents — MIT
+  Upstream: https://github.com/tintinweb/pi-subagents
+  Copyright (c) 2026 tintinweb
+  Fork/source: https://github.com/lclichen/tintinweb-pi-subagents
+  The fork contains pi-web integration changes (session identity/space alignment,
+  child-extension bridge, right-panel viewer support). See
+  LICENSES/components/pi-subagents-LICENSE.txt.
+
+- pi-mcp-adapter — MIT
+  Upstream: https://github.com/nicobailon/pi-mcp-adapter
+  Copyright (c) 2026 Nico Bailon
+  Fork/source: https://github.com/lclichen/pi-mcp-adapter
+  The fork contains pi-web integration changes (session/user identity headers and
+  _meta, inline image normalization). See
+  LICENSES/components/pi-mcp-adapter-LICENSE.txt.
+
+- @juicesharp/rpiv-ask-user-question — MIT
+  Upstream: https://github.com/juicesharp/rpiv-mono
+  Copyright (c) 2026 juicesharp
+  Vendored at version 2.15.0 with local pi-web RPC patches documented in
+  pi-config/agent/extensions/rpiv-ask-user-question/VENDORED.md.
+  See LICENSES/components/rpiv-ask-user-question-LICENSE.txt.
+
+- pi-codex-goal — MIT
+  Upstream: https://github.com/fitchmultz/pi-codex-goal
+  Copyright (c) 2026 Mitch Fultz
+  See LICENSES/components/pi-codex-goal-LICENSE.txt.
+
+- pi-smart-compact — MIT (optional)
+  Upstream: https://github.com/alpertarhan/pi-smart-compact
+  Copyright (c) 2026 Semantic Compact Contributors; includes the upstream
+  pi-toolkit/pi-provider-kimi-code/@mcowger notices in its LICENSE.
+  This extension is not required by the core platform and is not bundled unless
+  the distributor includes it in a configuration bundle or extension set.
+  See LICENSES/components/pi-smart-compact-LICENSE.txt.
+
+- sandbox-platform — MIT
+  Copyright (c) 2026 离离
+  Source: https://github.com/lclichen/sandbox-platform
+  See LICENSES/components/sandbox-platform-LICENSE.txt.
+
+- Agent Client (agent/) — part of pi-web; Go dependencies:
+  - github.com/gorilla/websocket (BSD-3-Clause)
+  - github.com/creack/pty (MIT)
+
+Third-party inventory
+---------------------
+
+A generated inventory of production dependencies (package, version, license,
+source) is in THIRD_PARTY_NOTICES.md. License texts are shipped in each
+installed package directory and, for special licenses, in LICENSES/.
+
+Special compliance notes
+------------------------
+
+- libvips (packaged as @img/sharp-libvips-linux-*) is LGPL-3.0-or-later and is
+  dynamically loaded by sharp. Keep the LGPL/GPL texts, do not obstruct
+  replacement/relinking of the library, and provide the corresponding libvips
+  source or a written offer as required by LGPL-3.0. Upstream:
+  https://github.com/lovell/sharp-libvips
+- web-push is MPL-2.0. If you modify MPL-covered files, publish the modified
+  source as required by the MPL.
+- caniuse-lite is CC-BY-4.0; attribution and the license text are included.
+- Dual-licensed packages in this distribution are used under the permissive
+  branch: jszip (MIT), expand-template (MIT), dompurify (Apache-2.0).
+
+This NOTICE is an attribution/compliance aid, not legal advice. Distributors
+should have their own counsel review the final package and the LGPL/MPL source
+offer before commercial redistribution.

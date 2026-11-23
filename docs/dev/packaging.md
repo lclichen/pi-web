@@ -20,9 +20,15 @@ runtime/    内置 Node.js
 config/     可选的 pi 配置模板（扩展/技能/npm）
 agent/      Agent Client dist + install.sh
 sandbox/    可选 sandbox-platform（平台 API）
+LICENSES/   组件/特殊第三方许可证全文
+NOTICE / THIRD_PARTY_NOTICES.md
 scripts/    start-all/stop-all/status-all/upgrade/update/install-pi-config
 pi, pi-web.sh, README.txt
 ```
+
+`LICENSE`、`NOTICE`、`THIRD_PARTY_NOTICES.md`、`LICENSES/` 由 `package-linux.sh`
+复制到包根；`slim-package.sh` 不得删除它们。分发许可检查见
+[licensing.md](./licensing.md)。
 
 ## 2. 构建机要求
 
@@ -126,6 +132,7 @@ cd agent && bash scripts/build.sh
 3. `agent/dist` 已 rebuild 并包含新 feature（`strings | grep` 或 hello）；
 4. `slim-package.sh` 自检通过；
 5. 目标机/VM：BUILD-OK、`:30141` 可达、`/api/webauth/config` 200、登录；
+5a. 包根含 `LICENSE`/`NOTICE`/`THIRD_PARTY_NOTICES.md`/`LICENSES/`，LGPL/MPL/CC-BY 文本齐全；
 6. 下载路由返回正确二进制大小；本机模式能配对/连接；
 7. 沙盒模式：平台 `/health`、容器创建、工具/PTY；
 8. 升级：`upgrade-bundle.sh` 保留 config/data，回滚可用。

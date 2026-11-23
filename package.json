@@ -25,7 +25,10 @@
     "!.next/**/*.js.map",
     "public",
     "next.config.ts",
-    "package.json"
+    "package.json",
+    "NOTICE",
+    "THIRD_PARTY_NOTICES.md",
+    "LICENSES"
   ],
   "scripts": {
     "dev": "next dev -H 127.0.0.1 -p 30141",

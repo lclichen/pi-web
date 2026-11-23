@@ -4,6 +4,8 @@
   构建、瘦身、版本与发布检查见源码仓库文档：
   docs/dev/packaging.md；部署/升级见 docs/dev/DEPLOYMENT.md。
   （这两个文件在源码仓库，不随发行包复制。）
+  许可与第三方归属见包根 LICENSE / NOTICE / THIRD_PARTY_NOTICES.md /
+  LICENSES/；分发或再打包时必须保留，不得被瘦身脚本删除。
 
 【这是什么】
   本目录包含 pi 编程智能体的完整离线运行环境，无需安装 Node.js、

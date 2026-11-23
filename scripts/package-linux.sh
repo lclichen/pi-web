@@ -319,6 +319,11 @@ for f in "$ROOT"/packaging/*; do
     *)            cp -a "$f" "$PKG/scripts/" ;;
   esac
 done
+# 许可与归属：随包根分发，不得被瘦身脚本删除。
+for f in LICENSE NOTICE THIRD_PARTY_NOTICES.md; do
+  [ -f "$SRC/$f" ] && cp -a "$SRC/$f" "$PKG/$f"
+done
+[ -d "$SRC/LICENSES" ] && cp -a "$SRC/LICENSES" "$PKG/LICENSES"
 # 自有版本体系：version.json（更新器对账的事实源）随包分发——包根与 app/ 各一份
 # （运行时 WebUI 的 cwd 是 app/，两处都放确保读得到）；pkg-kind 标记部署形态。
 # 缺失时用 npm version 生成等价物（channel 按预发布后缀推导），正式发布前应提交 version.json。

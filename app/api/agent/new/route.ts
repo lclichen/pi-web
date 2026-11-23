@@ -152,7 +152,12 @@ export async function POST(req: Request) {
     let templateIdForMeta: string | undefined;
     let quickSlugForMeta: string | undefined;
     let quickOptions:
-      | { systemPrompt?: string; model?: { provider: string; modelId: string }; mcpServers?: string[] }
+      | {
+          systemPrompt?: string;
+          model?: { provider: string; modelId: string };
+          mcpServers?: string[];
+          mcpTools?: string[];
+        }
       | undefined;
     let extensionFactories: InlineExtension[] | undefined;
     // Background-task channel for remote modes (bg_run). Registered under the
@@ -294,6 +299,7 @@ export async function POST(req: Request) {
           systemPrompt: template.systemPrompt,
           ...(template.model ? { model: template.model } : {}),
           ...(template.mcpServers && template.mcpServers.length > 0 ? { mcpServers: template.mcpServers } : {}),
+          ...(template.mcpTools && template.mcpTools.length > 0 ? { mcpTools: template.mcpTools } : {}),
         };
         extensionFactories = [makeHostWorkspaceServiceExtension(quickHome)];
       } else {
@@ -475,6 +481,7 @@ export async function POST(req: Request) {
         systemPrompt: template.systemPrompt,
         ...(template.model ? { model: template.model } : {}),
         ...(template.mcpServers && template.mcpServers.length > 0 ? { mcpServers: template.mcpServers } : {}),
+        ...(template.mcpTools && template.mcpTools.length > 0 ? { mcpTools: template.mcpTools } : {}),
       };
     }
 

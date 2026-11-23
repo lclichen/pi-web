@@ -41,6 +41,7 @@ import { createModeToolClampExtension } from "./extensions/mode-tool-clamp";
 import { copySessionImages, projectToolResultContentForClient, projectToolResultMessageForClient } from "./session-images";
 import { filterActiveToolsForMode, filterToolsForMode, isRemoteMode, mcpExcludedServers, type ToolExclusion } from "./tool-policy";
 import { composeQuickSystemPrompt, createQuickPromptExtension, type QuickTemplateHolder } from "./quick-prompt";
+import { quickToolAllowlist, quickToolNames, type QuickToolAllowlist } from "./quick-tools";
 import { createPromptConsistencyExtension, describePromptDrift, type PromptPin } from "./prompt-consistency";
 import { copySessionMeta, getSessionMeta, recordSessionMeta, type SessionMeta } from "./session-metas";
 import { getProjectTrustStatus, projectTrustReloadOptions } from "./project-trust";
@@ -259,8 +260,14 @@ export interface RpcSessionStartOptions {
   projectId?: string;
   /** Downlink projection context (remote project sessions). */
   projection?: ProjectionSessionConfig;
-  /** Quick mode: template-pinned system prompt / model / MCP allowlist. */
-  quick?: { systemPrompt?: string; model?: { provider: string; modelId: string }; mcpServers?: string[] };
+  /** Quick mode: template-pinned system prompt / model / MCP allowlist
+   *  (whole servers via mcpServers + exact tools via mcpTools). */
+  quick?: {
+    systemPrompt?: string;
+    model?: { provider: string; modelId: string };
+    mcpServers?: string[];
+    mcpTools?: string[];
+  };
   /** Extra extension entry-point directories injected for this session only. */
   additionalExtensionPaths?: string[];
   /** Inline extension factories injected for this session only. */
@@ -378,34 +385,26 @@ function withExtensionTools(session: AgentSessionLike, toolNames: string[]): str
 }
 
 /**
- * Quick-mode active tool set: the harmless session extensions (todo, plan_save)
- * plus MCP tools. Coding built-ins, the subagent Agent tool, and every other
- * extension tool stay off — a quick session has no workspace to operate on, and
- * todo/plan stay off too (quick is MCP-only).
- * An optional server-name allowlist narrows which MCP servers contribute.
+ * Quick-mode active tool set: MCP tools only (quick is a closed world — coding
+ * built-ins, todo/plan, the subagent Agent tool and every other extension
+ * tool stay off). An optional allowlist narrows which MCP servers/tools
+ * contribute; empty/absent = no tools.
  */
-function quickToolSet(session: AgentSessionLike, mcpAllowlist?: string[]): string[] {
-  // 封闭世界（2026-10-14 定策，2026-10-16 修正前缀匹配）：模板白名单是
-  // 唯一放行面。
+function quickToolSet(session: AgentSessionLike, allowlist?: QuickToolAllowlist): string[] {
+  // 封闭世界（2026-10-14 定策，2026-10-16 修正前缀匹配，2026-11-23 工具级）：
   // - 未配置白名单 → 纯聊天（一个 MCP 工具都不放行——白名单语义，
   //   与 chat-only 一致，而非默认允许全部）；
-  // - 配置了 → 只放行名单内服务器的直接工具。前缀必须整段匹配
-  //   <server>_：服务器名可含下划线（mcd_tool_1 的工具是
-  //   mcd_tool_1_now-time-info），截到第一个下划线会错切成 "mcd"，
-  //   带下划线的服务器名全部失配。
+  // - servers（整服务器，旧 mcpServers）：放行 `<server>_` 前缀工具；
+  // - tools（工具级，mcpTools）：精确放行 `<server>_<tool>`。
+  // 前缀必须整段匹配 `<server>_`：服务器名可含下划线（mcd_tool_1 的工具是
+  // mcd_tool_1_now-time-info），截到第一个下划线会错切成 "mcd"，带下划线的
+  // 服务器名全部失配。
   // 网关元工具（mcp/mcpScript，无 <server>_ 前缀）、todo/plan、编码/
   // 子智能体工具一律不放行（quick 无工作区）。
-  if (!mcpAllowlist || mcpAllowlist.length === 0) return [];
-  const out: string[] = [];
-  for (const tool of session.getAllTools()) {
-    for (const server of mcpAllowlist) {
-      if (tool.name.startsWith(server + "_")) {
-        out.push(tool.name);
-        break;
-      }
-    }
-  }
-  return out;
+  return quickToolNames(
+    session.getAllTools().map((tool) => tool.name),
+    allowlist,
+  );
 }
 
 // ============================================================================
@@ -439,8 +438,8 @@ export class AgentSessionWrapper {
   private exactSystemPrompt?: () => string;
   private readonly webUiPrompt: boolean;
   private readonly quickPrompt?: QuickTemplateHolder;
-  /** Quick sessions: MCP server allowlist — applied after MCP tools register. */
-  private quickToolAllowlist?: string[];
+  /** Quick sessions: MCP tool allowlist (whole servers + exact tools). */
+  private quickToolAllowlist?: QuickToolAllowlist;
   /** 远程模式 MCP 剔除集合缓存（key = cwd|ownerId|mode；apply_preferences 失效）。 */
   private mcpExclusionCache: { key: string; map: Map<string, string> } | null = null;
   /** 模式钳制剔除报告（get_state 暴露给 UI 提示；逐回合由 enforceModeTools 刷新）。 */
@@ -982,10 +981,11 @@ export class AgentSessionWrapper {
    *    adapter 的会话级初始化（ctx.cwd）——direct tools 注册走 adapter 的
    *    earlyConfig（loadMcpConfig 未传 cwd → 服务器进程 cwd，无 shadow），
    *    全局服务器的直接工具照样注册，配置层拦不住（2026-10-16 实测泄漏）；
-   * 3. 白名单语义必须在工具层兜底：空名单 → 零工具；非空 → 仅名单内
-   *    服务器的前缀工具（quickToolSet）。编码工具由 CODING_TOOL_NAMES 双保险。
+   * 3. 白名单语义必须在工具层兜底：空名单 → 零工具；非空 → 整服务器
+   *    授权（`<server>_` 前缀）+ 工具级精确授权（mcpTools）的并集
+   *    （quickToolSet）。编码工具由 CODING_TOOL_NAMES 双保险。
    */
-  setQuickToolAllowlist(allowlist: string[] | undefined): void {
+  setQuickToolAllowlist(allowlist: QuickToolAllowlist | undefined): void {
     this.quickToolAllowlist = allowlist;
     const apply = () => {
       this.enforceQuickTools();
@@ -1788,9 +1788,10 @@ export class AgentSessionWrapper {
           // 提示词经 before_agent_start 扩展改写（holder 热更新）——不再走
           // setExactSystemPrompt（全量替换会丢工具列表/准则）。
           this.updateQuickTemplate(template.systemPrompt);
-          // 工具面跟随新模板白名单（空名单=纯聊天；前缀匹配见 quickToolSet）。
-          // noTools/配置级 shadow 都兜不住 adapter 的 direct-tools 注册路径。
-          this.setQuickToolAllowlist(template.mcpServers);
+          // 工具面跟随新模板白名单（空名单=纯聊天；整服务器 + 工具级精确
+          // 匹配见 quickToolSet）。noTools/配置级 shadow 都兜不住 adapter
+          // 的 direct-tools 注册路径。
+          this.setQuickToolAllowlist(quickToolAllowlist(template));
           if (template.model) {
             await this.send({ type: "set_model", provider: template.model.provider, modelId: template.model.modelId });
           }
@@ -3632,7 +3633,7 @@ export async function startRpcSession(
       // 返回钳制后实时重建的 base——事件的 systemPrompt 是发射前快照，
       // 恢复后首回合的快照可能带着 adapter 重激活的污染（哈希实测 6051→10253）。
       quickTurnClampRef.current = () => wrapper.quickTurnBase();
-      wrapper.setQuickToolAllowlist(quick?.mcpServers);
+      wrapper.setQuickToolAllowlist(quickToolAllowlist(quick));
     }
     // 提示词一致性钉住：quick/非 quick 两臂的末位扩展每回合上报。
     promptPinRef.current = (hash, len, tools) => wrapper.observePrompt(hash, len, tools);

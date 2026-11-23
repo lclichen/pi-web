@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { registerSettingsDirty } from "@/lib/settings-dirty";
+import { serversForQuickTools } from "@/lib/quick-tools";
 import { useConfirm } from "./use-confirm";
 import {
   ConfigButton,
@@ -36,7 +37,10 @@ interface QuickTemplate {
   description: string;
   systemPrompt: string;
   model?: { provider: string; modelId: string };
+  /** Whole-server grants (legacy); union with mcpTools. */
   mcpServers?: string[];
+  /** Tool-level grants: exact `<server>_<tool>` names. */
+  mcpTools?: string[];
   builtin?: boolean;
 }
 
@@ -46,6 +50,19 @@ interface ModelOption {
   provider: string;
 }
 
+interface McpToolInfo {
+  name: string;
+  description?: string;
+}
+
+/** /api/tools/discover response row (probe=true). */
+interface McpDiscoveryServer {
+  server: string;
+  scope?: "project" | "user" | "global" | "quick";
+  tools: McpToolInfo[];
+  error?: string;
+}
+
 interface Draft {
   name: string;
   description: string;
@@ -53,11 +70,16 @@ interface Draft {
   modelProvider: string;
   modelId: string;
   mcpServers: string[];
+  mcpTools: string[];
 }
 
 // 选项值用 JSON 编码 [provider, modelId]——两者都可能含 "/"，不能用拼接分隔。
 function modelOptionValue(provider: string, modelId: string): string {
   return JSON.stringify([provider, modelId]);
+}
+
+function sameList(a: string[], b: string[]): boolean {
+  return [...a].sort().join("\n") === [...b].sort().join("\n");
 }
 
 const emptyDraft: Draft = {
@@ -67,6 +89,7 @@ const emptyDraft: Draft = {
   modelProvider: "",
   modelId: "",
   mcpServers: [],
+  mcpTools: [],
 };
 
 function toDraft(t: QuickTemplate): Draft {
@@ -77,6 +100,7 @@ function toDraft(t: QuickTemplate): Draft {
     modelProvider: t.model?.provider ?? "",
     modelId: t.model?.modelId ?? "",
     mcpServers: [...(t.mcpServers ?? [])],
+    mcpTools: [...(t.mcpTools ?? [])],
   };
 }
 
@@ -89,7 +113,8 @@ function isDraftDirty(creating: boolean, draft: Draft, selected: QuickTemplate |
       draft.systemPrompt !== "" ||
       draft.modelProvider !== "" ||
       draft.modelId !== "" ||
-      draft.mcpServers.length > 0
+      draft.mcpServers.length > 0 ||
+      draft.mcpTools.length > 0
     );
   }
   if (!selected) return false;
@@ -100,7 +125,8 @@ function isDraftDirty(creating: boolean, draft: Draft, selected: QuickTemplate |
     draft.systemPrompt !== base.systemPrompt ||
     draft.modelProvider !== base.modelProvider ||
     draft.modelId !== base.modelId ||
-    draft.mcpServers.join("\n") !== base.mcpServers.join("\n")
+    !sameList(draft.mcpServers, base.mcpServers) ||
+    !sameList(draft.mcpTools, base.mcpTools)
   );
 }
 
@@ -113,6 +139,11 @@ export function QuickTemplatesConfig({ embedded = false }: { embedded?: boolean 
   // 仅快速会话可见的服务器（dataDir/mcp-quick.json 物化到 quick home）——
   // 模板白名单同样可以引用它们，chip 上加 ⚡ 标记区分。
   const [quickScopedServers, setQuickScopedServers] = useState<Set<string>>(new Set());
+  // 工具级选择的数据源：按需探测（与子智能体配置同一交互）。null = 尚未探测；
+  // 探测失败也是 []（此时仍可按整服务器授权，已选工具保留可见）。
+  const [mcpDiscovery, setMcpDiscovery] = useState<McpDiscoveryServer[] | null>(null);
+  const [mcpDiscovering, setMcpDiscovering] = useState(false);
+  const [mcpDiscoveryError, setMcpDiscoveryError] = useState<string | null>(null);
   const [templates, setTemplates] = useState<QuickTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -202,6 +233,38 @@ export function QuickTemplatesConfig({ embedded = false }: { embedded?: boolean 
     };
   }, []);
 
+  // 按需探测 quick 作用域里每个 MCP 服务器的真实工具列表（与子智能体页
+  // 同一交互）。探测失败不清空已选工具：工具级条目仍可保留/手动移除。
+  const loadMcpDiscovery = useCallback(async () => {
+    setMcpDiscovering(true);
+    setMcpDiscoveryError(null);
+    try {
+      const res = await fetch("/api/tools/discover?quick=1&probe=true", { cache: "no-store" });
+      const data = (await res.json()) as { mcp?: McpDiscoveryServer[]; error?: string };
+      if (!res.ok || data.error) throw new Error(data.error ?? `HTTP ${res.status}`);
+      const rows = Array.isArray(data.mcp)
+        ? data.mcp.filter((row): row is McpDiscoveryServer => Boolean(row && typeof row.server === "string"))
+        : [];
+      setMcpDiscovery(rows);
+      // 探测同时补全服务器名：部署级 quick 条目可能还没物化进快速 home。
+      setMcpServerNames((prev) => {
+        const names = new Set(prev ?? []);
+        for (const row of rows) names.add(row.server);
+        return [...names];
+      });
+      setQuickScopedServers((prev) => {
+        const next = new Set(prev);
+        for (const row of rows) if (row.scope === "quick") next.add(row.server);
+        return next;
+      });
+    } catch (e) {
+      setMcpDiscovery([]);
+      setMcpDiscoveryError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setMcpDiscovering(false);
+    }
+  }, []);
+
   // 切换/新建前，若有未保存草稿先请求放弃确认（此前是无声丢弃）。
   const confirmDiscardIfNeeded = async (): Promise<boolean> => {
     if (!isDraftDirty(creating, draft, selected)) return true;
@@ -254,10 +317,14 @@ export function QuickTemplatesConfig({ embedded = false }: { embedded?: boolean 
         name: draft.name,
         description: draft.description,
         systemPrompt: draft.systemPrompt,
-        ...(draft.modelProvider.trim() && draft.modelId.trim()
-          ? { model: { provider: draft.modelProvider.trim(), modelId: draft.modelId.trim() } }
-          : {}),
-        ...(draft.mcpServers.length > 0 ? { mcpServers: draft.mcpServers } : {}),
+        // null = 显式清除（省略字段在 PATCH 合并语义下等于"保持原值"）。
+        model:
+          draft.modelProvider.trim() && draft.modelId.trim()
+            ? { provider: draft.modelProvider.trim(), modelId: draft.modelId.trim() }
+            : null,
+        // 始终发送数组：空数组才能清空旧白名单。
+        mcpServers: draft.mcpServers,
+        mcpTools: draft.mcpTools,
       };
       const res = creating
         ? await fetch("/api/quick-templates", {
@@ -316,6 +383,41 @@ export function QuickTemplatesConfig({ embedded = false }: { embedded?: boolean 
       setError(e instanceof Error ? e.message : String(e));
     }
   };
+
+  const toggleWholeServer = (server: string, on: boolean) => {
+    setDraft({
+      ...draft,
+      mcpServers: on
+        ? [...new Set([...draft.mcpServers, server])]
+        : draft.mcpServers.filter((s) => s !== server),
+    });
+  };
+
+  const toggleMcpTool = (tool: string, on: boolean) => {
+    setDraft({
+      ...draft,
+      mcpTools: on ? [...new Set([...draft.mcpTools, tool])] : draft.mcpTools.filter((t) => t !== tool),
+    });
+  };
+
+  // 服务器分组：配置列表 + 探测结果并集；探测按需触发（null=未探测）。
+  const discoveryByServer = new Map((mcpDiscovery ?? []).map((row) => [row.server, row]));
+  const mcpGroups = [
+    ...new Set([...(mcpServerNames ?? []), ...(mcpDiscovery ?? []).map((row) => row.server)]),
+  ].map((server) => ({
+    server,
+    tools: discoveryByServer.get(server)?.tools ?? [],
+    error: discoveryByServer.get(server)?.error,
+    probed: discoveryByServer.has(server),
+  }));
+  const knownMcpServers = mcpGroups.map((group) => group.server);
+  // 已选但当前配置/探测里不存在的条目：保留可见、可取消，绝不静默丢弃。
+  const staleMcpServers = draft.mcpServers.filter((server) => !knownMcpServers.includes(server));
+  const staleMcpTools = draft.mcpTools.filter(
+    (tool) =>
+      serversForQuickTools([tool], knownMcpServers).length === 0 &&
+      !staleMcpServers.some((server) => tool.startsWith(server + "_")),
+  );
 
   return (
     <ConfigPanelShell
@@ -464,52 +566,214 @@ export function QuickTemplatesConfig({ embedded = false }: { embedded?: boolean 
                 )}
                 <ConfigField label={t("quickTemplates.mcpAllowlistPick")}>
                   {mcpServerNames !== null ? (
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                      {mcpServerNames.map((server: string) => {
-                        const checked = draft.mcpServers.includes(server);
-                        return (
-                          <label key={server} className="quick-mcp-chip" data-checked={checked}>
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={() => {
-                                setDraft({
-                                  ...draft,
-                                  mcpServers: checked
-                                    ? draft.mcpServers.filter((s) => s !== server)
-                                    : [...draft.mcpServers, server],
-                                });
-                              }}
-                            />
-                            {server}
-                            {quickScopedServers.has(server) ? " ⚡" : ""}
-                          </label>
-                        );
-                      })}
-                      {mcpServerNames.length === 0 && (
-                        <span style={{ alignSelf: "center", fontSize: 11, color: "var(--text-dim)" }}>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                        <ConfigButton
+                          size="small"
+                          onClick={() => void loadMcpDiscovery()}
+                          disabled={mcpDiscovering}
+                        >
+                          {mcpDiscovering
+                            ? t("quickTemplates.mcpDiscovering")
+                            : mcpDiscovery
+                              ? t("quickTemplates.mcpRediscover")
+                              : t("quickTemplates.mcpDiscover")}
+                        </ConfigButton>
+                        <span style={{ fontSize: 11, color: "var(--text-dim)" }}>
+                          {t("quickTemplates.mcpSelectionSummary", {
+                            servers: draft.mcpServers.length,
+                            tools: draft.mcpTools.length,
+                          })}
+                        </span>
+                      </div>
+                      <span style={{ fontSize: 11, color: "var(--text-dim)" }}>
+                        {t("quickTemplates.mcpAllowlistEmptyMeansAll")}
+                      </span>
+                      {mcpDiscoveryError && (
+                        <span style={{ fontSize: 11, color: "var(--danger)" }}>
+                          {t("quickTemplates.mcpDiscoverFailed", { error: mcpDiscoveryError })}
+                        </span>
+                      )}
+                      {mcpGroups.length === 0 && staleMcpServers.length === 0 && staleMcpTools.length === 0 && (
+                        <span style={{ fontSize: 11, color: "var(--text-dim)" }}>
                           {t("quickTemplates.mcpNoServers")}
                         </span>
                       )}
-                      <span style={{ alignSelf: "center", fontSize: 11, color: "var(--text-dim)" }}>
-                        {t("quickTemplates.mcpAllowlistEmptyMeansAll")}
-                      </span>
+                      {mcpGroups.map((group) => {
+                        const whole = draft.mcpServers.includes(group.server);
+                        const selectedForServer = draft.mcpTools.filter(
+                          (tool) => serversForQuickTools([tool], knownMcpServers)[0] === group.server,
+                        );
+                        const discoveredNames = new Set(group.tools.map((tool) => `${group.server}_${tool.name}`));
+                        const notDiscovered = selectedForServer.filter((tool) => !discoveredNames.has(tool));
+                        return (
+                          <div
+                            key={group.server}
+                            style={{
+                              display: "flex",
+                              flexDirection: "column",
+                              gap: 6,
+                              border: "1px solid var(--border)",
+                              borderRadius: 8,
+                              padding: "8px 10px",
+                            }}
+                          >
+                            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                              <label className="quick-mcp-chip" data-checked={whole}>
+                                <input
+                                  type="checkbox"
+                                  checked={whole}
+                                  onChange={() => toggleWholeServer(group.server, !whole)}
+                                />
+                                {group.server}
+                                {quickScopedServers.has(group.server) ? " ⚡" : ""}
+                                <span style={{ color: whole ? "var(--accent)" : "var(--text-dim)", fontSize: 10 }}>
+                                  {t("quickTemplates.mcpWholeServer")}
+                                </span>
+                              </label>
+                              {group.probed && group.tools.length > 0 && (
+                                <span style={{ fontSize: 10, color: "var(--text-dim)" }}>
+                                  {t("quickTemplates.mcpToolCount", { count: group.tools.length })}
+                                </span>
+                              )}
+                              {group.probed && group.error && (
+                                <span style={{ fontSize: 10, color: "var(--warning, #f59e0b)" }}>{group.error}</span>
+                              )}
+                            </div>
+                            {!whole &&
+                              (group.tools.length > 0 ? (
+                                <div
+                                  style={{
+                                    display: "grid",
+                                    gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))",
+                                    gap: 6,
+                                  }}
+                                >
+                                  {group.tools.map((tool) => {
+                                    const prefixed = `${group.server}_${tool.name}`;
+                                    const checked = draft.mcpTools.includes(prefixed);
+                                    return (
+                                      <label
+                                        key={prefixed}
+                                        className="quick-mcp-chip"
+                                        data-checked={checked}
+                                        title={tool.description}
+                                      >
+                                        <input
+                                          type="checkbox"
+                                          checked={checked}
+                                          onChange={() => toggleMcpTool(prefixed, !checked)}
+                                        />
+                                        <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{prefixed}</span>
+                                      </label>
+                                    );
+                                  })}
+                                  {notDiscovered.map((tool) => (
+                                    <label key={tool} className="quick-mcp-chip" data-checked title={tool}>
+                                      <input
+                                        type="checkbox"
+                                        checked
+                                        onChange={() => toggleMcpTool(tool, false)}
+                                      />
+                                      <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{tool}</span>
+                                      <span style={{ fontSize: 10, color: "var(--text-dim)" }}>
+                                        {t("quickTemplates.mcpNotDiscovered")}
+                                      </span>
+                                    </label>
+                                  ))}
+                                </div>
+                              ) : (
+                                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                                  <span style={{ fontSize: 11, color: "var(--text-dim)" }}>
+                                    {group.probed
+                                      ? group.error
+                                        ? t("quickTemplates.mcpProbeBlocked")
+                                        : t("quickTemplates.mcpNoTools")
+                                      : t("quickTemplates.mcpDiscoverHint")}
+                                  </span>
+                                  {notDiscovered.map((tool) => (
+                                    <label key={tool} className="quick-mcp-chip" data-checked title={tool}>
+                                      <input
+                                        type="checkbox"
+                                        checked
+                                        onChange={() => toggleMcpTool(tool, false)}
+                                      />
+                                      <span>{tool}</span>
+                                      <span style={{ fontSize: 10, color: "var(--text-dim)" }}>
+                                        {group.probed
+                                          ? t("quickTemplates.mcpNotDiscovered")
+                                          : t("quickTemplates.mcpNotProbed")}
+                                      </span>
+                                    </label>
+                                  ))}
+                                </div>
+                              ))}
+                          </div>
+                        );
+                      })}
+                      {(staleMcpServers.length > 0 || staleMcpTools.length > 0) && (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                          <span style={{ fontSize: 10, color: "var(--text-dim)", textTransform: "uppercase" }}>
+                            {t("quickTemplates.mcpStaleEntries")}
+                          </span>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                            {staleMcpServers.map((server) => (
+                              <label key={`server:${server}`} className="quick-mcp-chip" data-checked>
+                                <input
+                                  type="checkbox"
+                                  checked
+                                  onChange={() => toggleWholeServer(server, false)}
+                                />
+                                <span>{server}</span>
+                                <span style={{ fontSize: 10, color: "var(--text-dim)" }}>
+                                  {t("quickTemplates.mcpWholeServer")}
+                                </span>
+                              </label>
+                            ))}
+                            {staleMcpTools.map((tool) => (
+                              <label key={`tool:${tool}`} className="quick-mcp-chip" data-checked>
+                                <input type="checkbox" checked onChange={() => toggleMcpTool(tool, false)} />
+                                <span>{tool}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ) : (
-                    <input
-                      className="config-input is-mono"
-                      value={draft.mcpServers.join(", ")}
-                      onChange={(e) =>
-                        setDraft({
-                          ...draft,
-                          mcpServers: e.target.value
-                            .split(",")
-                            .map((s) => s.trim())
-                            .filter(Boolean),
-                        })
-                      }
-                      placeholder="weather, db-query"
-                    />
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      <input
+                        className="config-input is-mono"
+                        value={draft.mcpServers.join(", ")}
+                        onChange={(e) =>
+                          setDraft({
+                            ...draft,
+                            mcpServers: e.target.value
+                              .split(",")
+                              .map((s) => s.trim())
+                              .filter(Boolean),
+                          })
+                        }
+                        placeholder={t("quickTemplates.mcpServersManual")}
+                      />
+                      <input
+                        className="config-input is-mono"
+                        value={draft.mcpTools.join(", ")}
+                        onChange={(e) =>
+                          setDraft({
+                            ...draft,
+                            mcpTools: e.target.value
+                              .split(",")
+                              .map((s) => s.trim())
+                              .filter(Boolean),
+                          })
+                        }
+                        placeholder={t("quickTemplates.mcpToolsManual")}
+                      />
+                      <span style={{ fontSize: 11, color: "var(--text-dim)" }}>
+                        {t("quickTemplates.mcpAllowlistHint")}
+                      </span>
+                    </div>
                   )}
                 </ConfigField>
               </>

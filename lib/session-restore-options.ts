@@ -80,7 +80,13 @@ export async function restoreSessionOptions(req: Request, sessionId: string): Pr
 
   let additionalExtensionPaths: string[] | undefined;
   let quickForRestore:
-    { systemPrompt?: string; model?: { provider: string; modelId: string }; mcpServers?: string[] } | undefined;
+    | {
+        systemPrompt?: string;
+        model?: { provider: string; modelId: string };
+        mcpServers?: string[];
+        mcpTools?: string[];
+      }
+    | undefined;
   let extensionFactories: InlineExtension[] | undefined;
   let effectiveCwd: string | undefined;
   // share_file 工具的远程读取上下文（三种远程模式各分支赋值；host 留空）。
@@ -265,6 +271,7 @@ export async function restoreSessionOptions(req: Request, sessionId: string): Pr
         description: "",
         systemPrompt: template.systemPrompt,
         mcpServers: [...(template.mcpServers ?? [])],
+        mcpTools: [...(template.mcpTools ?? [])],
         ...(template.model ? { model: template.model } : {}),
       });
       project = quickProject;
@@ -281,6 +288,7 @@ export async function restoreSessionOptions(req: Request, sessionId: string): Pr
         ...(template.systemPrompt ? { systemPrompt: template.systemPrompt } : {}),
         ...(template.model ? { model: template.model } : {}),
         ...(template.mcpServers && template.mcpServers.length > 0 ? { mcpServers: template.mcpServers } : {}),
+        ...(template.mcpTools && template.mcpTools.length > 0 ? { mcpTools: template.mcpTools } : {}),
       };
     }
     // 部署级 quick MCP 变更后，恢复时刷新会话工作区里的物化副本

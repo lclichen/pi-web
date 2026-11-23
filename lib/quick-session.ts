@@ -5,6 +5,7 @@ import { writePrivateFileAtomicSync } from "./atomic-file";
 import { quickHomeDir } from "./mode-homes";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { deploymentQuickMcpPath } from "./quick-mcp";
+import { serversForQuickTools } from "./quick-tools";
 
 import type { QuickTemplate } from "./quick-templates";
 
@@ -29,10 +30,12 @@ import type { QuickTemplate } from "./quick-templates";
 export interface QuickTemplateSnapshot {
   id: string;
   name: string;
-  /** 内容哈希（8 hex）：systemPrompt+mcpServers+model(+tools) 的指纹。 */
+  /** 内容哈希（8 hex）：systemPrompt+mcpServers+mcpTools+model(+tools) 的指纹。 */
   hash: string;
   systemPrompt: string;
   mcpServers: string[];
+  /** Tool-level entries (`<server>_<tool>`), see QuickTemplate.mcpTools. */
+  mcpTools: string[];
   model?: { provider: string; modelId: string };
   capturedAt: string;
 }
@@ -40,13 +43,18 @@ export interface QuickTemplateSnapshot {
 export function quickTemplateHash(template: {
   systemPrompt: string;
   mcpServers?: string[];
+  mcpTools?: string[];
   model?: { provider: string; modelId: string };
 }): string {
+  const mcpTools = [...(template.mcpTools ?? [])].sort();
   return createHash("sha256")
     .update(
       JSON.stringify({
         systemPrompt: template.systemPrompt,
         mcpServers: [...(template.mcpServers ?? [])].sort(),
+        // 只在有工具级条目时参与哈希：旧模板（仅 mcpServers）的 hash 保持
+        // 不变，既有 quick 工作区目录不会被无谓地重建。
+        ...(mcpTools.length > 0 ? { mcpTools } : {}),
         model: template.model ?? null,
       }),
     )
@@ -61,6 +69,7 @@ export function snapshotTemplate(template: QuickTemplate): QuickTemplateSnapshot
     hash: quickTemplateHash(template),
     systemPrompt: template.systemPrompt,
     mcpServers: [...(template.mcpServers ?? [])],
+    mcpTools: [...(template.mcpTools ?? [])],
     ...(template.model ? { model: template.model } : {}),
     capturedAt: new Date().toISOString(),
   };
@@ -92,6 +101,7 @@ export function readQuickTemplateSnapshot(dir: string): QuickTemplateSnapshot | 
       hash: s.hash,
       systemPrompt: typeof s.systemPrompt === "string" ? s.systemPrompt : "",
       mcpServers: Array.isArray(s.mcpServers) ? s.mcpServers.filter((x): x is string => typeof x === "string") : [],
+      mcpTools: Array.isArray(s.mcpTools) ? s.mcpTools.filter((x): x is string => typeof x === "string") : [],
       ...(s.model && typeof s.model.provider === "string" && typeof s.model.modelId === "string"
         ? { model: s.model as { provider: string; modelId: string } }
         : {}),
@@ -111,12 +121,16 @@ export function writeQuickTemplateSnapshot(dir: string, snapshot: QuickTemplateS
  * 配置级 MCP 过滤：工作区 .pi/mcp.json 只写模板白名单内的服务器。
  * 从全局 mcp.json 拉取白名单内的服务器定义（模板可引用全局 MCP）。
  *
+ * 工具级白名单（mcpTools）只能"启用服务器 + 在工具层精确裁剪"：适配器没有
+ * 按工具过滤的配置字段，因此这里先把被选中工具所属的服务器整台启用；
+ * 真正放行哪些工具由 rpc-manager 的 quickToolSet 精确钳制（每回合重钳）。
+ *
  * 注意：这只约束 adapter 的会话级初始化（ctx.cwd）——direct tools 走
  * adapter 的 earlyConfig（进程 cwd，无 shadow）仍会注册，所以工具层
  * 的 quickToolSet 封闭世界过滤不可省（lib/rpc-manager.ts，
  * 2026-10-16 实测：只靠配置级过滤时全局 MCP 工具泄漏进快速会话）。
  */
-function writeWorkspaceMcp(userId: number, dir: string, allowlist: string[] | undefined): void {
+function writeWorkspaceMcp(dir: string, template: QuickTemplate): void {
   const readMcpFromFile = (path: string): Record<string, unknown> => {
     try {
       const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
@@ -137,13 +151,19 @@ function writeWorkspaceMcp(userId: number, dir: string, allowlist: string[] | un
   const globalServers = readMcpFromFile(join(getAgentDir(), "mcp.json"));
   const pool = { ...globalServers, ...quickServers };
 
+  // 白名单 = 整服务器授权 ∪ 工具级条目所属服务器（按已知服务器名反查，
+  // 避免服务器名含下划线时切错）。
+  const allow = new Set(template.mcpServers ?? []);
+  for (const server of serversForQuickTools(template.mcpTools ?? [], Object.keys(pool))) {
+    allow.add(server);
+  }
+
   // 写入工作区 .pi/mcp.json（最高优先级层）：
   // - 白名单内 → 完整配置（启用）
   // - 白名单外但池中存在 → { disabled: true } 遮蔽全局（pi-mcp-adapter 的
   //   优先级链：.pi/mcp.json 最高，同名条目覆盖所有低层来源）
   // - 池中无此名 → 不写（不存在的服务器无遮蔽意义）
   const filtered: Record<string, unknown> = {};
-  const allow = new Set(allowlist ?? []);
   for (const [name, config] of Object.entries(pool)) {
     if (allow.has(name)) {
       filtered[name] = config;
@@ -187,8 +207,9 @@ export function ensureQuickSessionWorkspace(
     mkdirSync(join(dir, ".pi"), { recursive: true });
   }
   // 配置级 MCP 过滤（2026-10-14：替代 syncQuickMcpConfig 的全量物化）：
-  // 只写模板白名单内的服务器——MCP 适配器只连白名单，工具列表自然正确。
-  writeWorkspaceMcp(userId, dir, template.mcpServers);
+  // 只写模板白名单内的服务器——MCP 适配器只连白名单；工具级条目由工具层
+  // 精确裁剪（rpc-manager quickToolSet）。
+  writeWorkspaceMcp(dir, template);
   if (!readQuickTemplateSnapshot(dir)) {
     writeQuickTemplateSnapshot(dir, snapshotTemplate(template));
   }

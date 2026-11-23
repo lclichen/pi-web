@@ -65,7 +65,7 @@ agentDir。
 | local-machine | `<dataDir>/local-homes/u<owner>/<projectId>/` |
 | ssh | `<dataDir>/local-homes/u<owner>/<projectId>/`（会话 cwd 仍在服务器） |
 | host | 管理员选择的外部目录（`workspaceRoot`） |
-| quick | `<dataDir>/quick-homes/u<owner>/<vN>/`（版本化 scratch） |
+| quick | `<dataDir>/quick-homes/u<owner>/q-<templateId>-<hash>/`（按模板版本共享的 scratch 工作区） |
 
 项目 `.pi/` 可包含：
 
@@ -77,6 +77,13 @@ agentDir。
 - `.pi/attachments/`（聊天附件的主存）
 
 项目配置写入经过项目写锁；模型/凭据、AGENTS.md、sandbox 凭据等一次性验证后再落盘。
+
+Quick 模板是全局管理员配置，运行时按 `(owner, templateId)` 生成稳定项目，内容哈希
+变化时切到新的 `q-<templateId>-<hash>` 工作区（旧会话保留旧目录）。工具面是封闭
+世界：`mcpServers` 为整服务器授权，`mcpTools` 为工具级授权（精确 `<server>_<tool>`，
+与子智能体 `ext:pi-mcp-adapter/<server>_<tool>` 同一标识）；两者并集，均为空 =
+没有 MCP 工具。工作区 `.pi/mcp.json` 只启用相关服务器，活动工具集每回合再由
+`quickToolSet` 精确钳制。
 
 ## 5. 资源类型与作用域
 

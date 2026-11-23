@@ -21,9 +21,14 @@ export interface QuickTemplate {
   systemPrompt: string;
   /** Optional provider/modelId override; absent = user's default model. */
   model?: { provider: string; modelId: string };
-  /** MCP server-name allowlist. Empty/absent = every server configured in the
-   *  USER scope (~/.pi/agent/mcp.json) is available. */
+  /** Whole-server MCP grants (legacy). Every `<server>_<tool>` tool from the
+   *  named servers is available. Union with mcpTools; empty/absent contributes
+   *  nothing (quick is a closed world — no MCP tools by default). */
   mcpServers?: string[];
+  /** Tool-level MCP allowlist: exact adapter tool names `<server>_<tool>`
+   *  (same identifiers as a subagent's `ext:pi-mcp-adapter/<server>_<tool>`).
+   *  Union with mcpServers; empty/absent contributes nothing. */
+  mcpTools?: string[];
   /** Built-ins cannot be deleted (the default template). */
   builtin?: boolean;
 }
@@ -107,7 +112,7 @@ function validate(template: Partial<QuickTemplate>): TemplateValidationError[] {
   } else if (template.systemPrompt.length > 20_000) {
     errors.push({ field: "systemPrompt", reason: "系统提示词过长（≤20000 字符）" });
   }
-  if (template.model !== undefined) {
+  if (template.model !== undefined && template.model !== null) {
     const m = template.model;
     if (!m || typeof m.provider !== "string" || typeof m.modelId !== "string" || !m.provider || !m.modelId) {
       errors.push({ field: "model", reason: "模型需要同时提供 provider 与 modelId" });
@@ -118,7 +123,17 @@ function validate(template: Partial<QuickTemplate>): TemplateValidationError[] {
       errors.push({ field: "mcpServers", reason: "MCP 服务器允许列表必须是字符串数组" });
     }
   }
+  if (template.mcpTools !== undefined) {
+    if (!Array.isArray(template.mcpTools) || template.mcpTools.some((s) => typeof s !== "string")) {
+      errors.push({ field: "mcpTools", reason: "MCP 工具允许列表必须是字符串数组" });
+    }
+  }
   return errors;
+}
+
+function normalizeList(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  return [...new Set(value.map((s) => (typeof s === "string" ? s.trim() : "")).filter(Boolean))];
 }
 
 /** Admin: create a new template. Returns the stored record. */
@@ -128,13 +143,16 @@ export function createQuickTemplate(input: Partial<QuickTemplate>): {
 } {
   const errors = validate(input);
   if (errors.length > 0) return { errors };
+  const mcpServers = normalizeList(input.mcpServers);
+  const mcpTools = normalizeList(input.mcpTools);
   const template: QuickTemplate = {
     id: randomUUID(),
     name: input.name!.trim(),
     description: typeof input.description === "string" ? input.description.trim().slice(0, 300) : "",
     systemPrompt: input.systemPrompt!,
     ...(input.model ? { model: input.model } : {}),
-    ...(Array.isArray(input.mcpServers) ? { mcpServers: input.mcpServers.map((s) => s.trim()).filter(Boolean) } : {}),
+    ...(mcpServers ? { mcpServers } : {}),
+    ...(mcpTools ? { mcpTools } : {}),
   };
   quickTemplatesStore.update((data) => {
     data.templates.push(template);
@@ -172,8 +190,11 @@ export function updateQuickTemplate(
       systemPrompt: merged.systemPrompt!,
       ...(merged.model ? { model: merged.model } : { model: undefined }),
       ...(Array.isArray(merged.mcpServers)
-        ? { mcpServers: merged.mcpServers.map((s) => s.trim()).filter(Boolean) }
+        ? { mcpServers: normalizeList(merged.mcpServers) }
         : { mcpServers: undefined }),
+      ...(Array.isArray(merged.mcpTools)
+        ? { mcpTools: normalizeList(merged.mcpTools) }
+        : { mcpTools: undefined }),
     });
     result = { ...existing };
   });

@@ -57,7 +57,17 @@ export function syncQuickMcpConfig(userId: number, targetDir?: string): void {
     // 新建（或既有文件损坏——部署级内容照常写入）
   }
 
-  const merged = { ...(doc.mcpServers ?? {}), ...deployment };
+  // 工作区过滤墓碑（{disabled:true}，quick-session 写出的非白名单服务器）
+  // 必须保留；否则恢复会话时会把模板白名单之外的部署级服务器重新启用，
+  // adapter 也会去连它们。其余同名条目仍由部署级覆盖（管理员更新生效）。
+  const merged = { ...(doc.mcpServers ?? {}) };
+  for (const [name, entry] of Object.entries(deployment)) {
+    const existing = merged[name];
+    if (existing && typeof existing === "object" && (existing as { disabled?: unknown }).disabled === true) {
+      continue;
+    }
+    merged[name] = entry;
+  }
   if (JSON.stringify(doc.mcpServers ?? {}) === JSON.stringify(merged)) return;
 
   mkdirSync(piDir, { recursive: true });

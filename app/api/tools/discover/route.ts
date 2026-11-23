@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { readMcpConfig } from "@/lib/mcp-config";
 import { requireUserIdentity } from "@/lib/web-session";
 import { probeServer } from "@/lib/mcp-probe";
+import { quickHomeDir } from "@/lib/mode-homes";
 import type { McpTool } from "@/lib/api-types";
 
 export const dynamic = "force-dynamic";
@@ -18,16 +19,22 @@ export interface McpServerTools {
 }
 
 // GET /api/tools/discover?cwd=&probe=true
+// GET /api/tools/discover?quick=1&probe=true  — quick-session scope (no cwd)
 // probe=false (default) returns builtin + config metadata only (instant)
 // probe=true probes each MCP server for real tool lists (slower)
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
-  const cwd = searchParams.get("cwd");
-  if (!cwd) return NextResponse.json({ error: "cwd required" }, { status: 400 });
+  const quick = searchParams.get("quick") === "1";
+  const cwdParam = searchParams.get("cwd");
+  if (!quick && !cwdParam) return NextResponse.json({ error: "cwd required" }, { status: 400 });
   const shouldProbe = searchParams.get("probe") === "true";
 
   const identity = requireUserIdentity(req);
   if (!identity.ok) return NextResponse.json({ error: "登录已失效" }, { status: identity.status });
+  // Quick tool discovery reads the caller's quick home: project scope
+  // (materialized quick servers + user additions) + deployment quick scope +
+  // global. The quick template editor is admin-only and uses the same pool.
+  const cwd = quick ? quickHomeDir(identity.session.user.id) : cwdParam!;
 
   try {
     const doc = readMcpConfig(cwd, { userId: identity.session.user.id });

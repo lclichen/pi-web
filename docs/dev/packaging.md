@@ -55,6 +55,12 @@ bash scripts/package-linux.sh
 6. `slim-package.sh` 默认瘦身（`SLIM_PACKAGE=0` 跳过）；
 7. 冒烟测试（`SMOKE_TEST=0` 跳过）：CLI 存活、WebUI HTTP、平台 `/health`（mock）。
 
+`slim-package.sh` 在检测到 `next.config.ts` 的 `images.unoptimized=true` 时，会移除
+Next 的可选 `sharp` / `@img/sharp-*` / `@img/colour` 依赖（包括 LGPL libvips），
+避免无用的图片优化器和 LGPL 合规负担。若以后启用 Next 图片优化、使用
+`SLIM_PACKAGE=0` 跳过瘦身，或自行安装 sharp，必须保留它们并恢复 `LICENSES/`
+中的 LGPL 材料。
+
 ## 4. 常用变量
 
 | 变量 | 说明 |
@@ -133,6 +139,7 @@ cd agent && bash scripts/build.sh
 4. `slim-package.sh` 自检通过；
 5. 目标机/VM：BUILD-OK、`:30141` 可达、`/api/webauth/config` 200、登录；
 5a. 包根含 `LICENSE`/`NOTICE`/`THIRD_PARTY_NOTICES.md`/`LICENSES/`，LGPL/MPL/CC-BY 文本齐全；
+5b. `images.unoptimized=true` 的包不含 `sharp`/`@img/sharp-*`；若启用图片优化，则必须恢复 sharp 并保留 LGPL 材料；
 6. 下载路由返回正确二进制大小；本机模式能配对/连接；
 7. 沙盒模式：平台 `/health`、容器创建、工具/PTY；
 8. 升级：`upgrade-bundle.sh` 保留 config/data，回滚可用。

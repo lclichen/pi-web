@@ -24,6 +24,9 @@
 #                       前端经 loader.config({paths:{vs:"/monaco/vs"}}) 加载
 #                       public/monaco 自托管 AMD 资源；npm 包只被构建机的
 #                       prebuild 脚本 copy-monaco.mjs 读取，运行时不引用
+#   3b. sharp/libvips   Next 的可选图片优化后端；next.config.ts 已设置
+#                       images.unoptimized=true，默认删除 sharp、@img/sharp-*、
+#                       @img/colour（同时移除 LGPL libvips）
 #   4. recheck 可选后端 config/pi 扩展依赖树里的 recheck-jar（Java JAR，23M）
 #                       与非 Linux 平台 recheck-{macos,windows}-* 原生二进制。
 #                       **保留 recheck-linux-*（目标机是 Linux）；删除 Linux 原生
@@ -39,8 +42,10 @@
 # wasm，两者缺一不可）:
 #   - app/node_modules/next/wasm              （glibc < 2.29 的 SWC 回退）
 #   - app/node_modules/@next/swc-linux-x64-gnu（新平台原生绑定）
-#   - runtime/lib（npm/corepack，离线 npx 需要）、@img/sharp*（next/image）、
-#     bin/（fd/rg）、app/agent/、config/pi/npm/、pi-coding-agent vendor 等
+#   - runtime/lib（npm/corepack，离线 npx 需要）、bin/（fd/rg）、
+#     app/agent/、config/pi/npm/、pi-coding-agent vendor 等
+#   - sharp/@img/sharp-* 仅在 next.config.ts 启用图片优化时保留；当前
+#     images.unoptimized=true，默认移除（见第 3b 步）
 #
 # 结束时的完整性自检会确认上述保留项仍在位，并输出前后体积对比。
 set -euo pipefail
@@ -155,6 +160,38 @@ if [ -d "$MONACO_DIR" ]; then
 fi
 
 # ---------------------------------------------------------------------------
+# 3b. sharp/libvips：Next 的图片优化器可选后端。
+#     next.config.ts 已设置 images.unoptimized=true（前端只用静态 logo），
+#     sharp 只保留在 Next 的 optional dependency 里，运行时不加载。
+#     移除 sharp + @img/sharp-* + @img/colour 可避免随包分发 LGPL 的
+#     libvips（@img/sharp-libvips-*）以及 sharp 的攻击面。
+#     如果以后启用 Next 图片优化，必须保留这些包并重新做 LGPL 合规。
+# ---------------------------------------------------------------------------
+NEXT_CONFIG="$PKG/app/next.config.ts"
+SHARP_BYTES=0
+if [ -f "$NEXT_CONFIG" ] && grep -Eq 'unoptimized:[[:space:]]*true' "$NEXT_CONFIG"; then
+  SHARP_TARGETS=("$PKG/app/node_modules/sharp")
+  if [ -d "$PKG/app/node_modules/@img" ]; then
+    while IFS= read -r t; do
+      [ -n "$t" ] && SHARP_TARGETS+=("$t")
+    done < <(find "$PKG/app/node_modules/@img" -maxdepth 1 -type d \
+      \( -name 'sharp-*' -o -name 'colour' \) -print 2>/dev/null)
+  fi
+  for t in "${SHARP_TARGETS[@]}"; do
+    [ -e "$t" ] || continue
+    b="$(size_of "$t")"
+    SHARP_BYTES=$((SHARP_BYTES + b))
+    [ "$DRY_RUN" = "1" ] || rm -rf "$t"
+  done
+  [ "$SHARP_BYTES" -gt 0 ] && record "sharp/libvips (images.unoptimized)" "$SHARP_BYTES"
+  if [ "$DRY_RUN" != "1" ]; then
+    rmdir "$PKG/app/node_modules/@img" 2>/dev/null || true
+  fi
+else
+  warn "未检测到 next.config.ts 的 images.unoptimized=true，保留 sharp/libvips（需 LGPL 合规）"
+fi
+
+# ---------------------------------------------------------------------------
 # 4. recheck 可选后端：默认只删 Java JAR + 非 Linux 原生包；Linux 原生包
 #    留到 --aggressive（需实际 checkSync 冒烟）。
 # ---------------------------------------------------------------------------
@@ -260,7 +297,16 @@ else
     FAIL=1
   fi
   check "@next/swc-linux-x64-gnu 保留"       test -d "$PKG/app/node_modules/@next/swc-linux-x64-gnu"
-  check "sharp 绑定保留 (next/image)"        test -d "$PKG/app/node_modules/@img/sharp-linux-x64"
+  if [ -f "$NEXT_CONFIG" ] && grep -Eq 'unoptimized:[[:space:]]*true' "$NEXT_CONFIG"; then
+    if [ -e "$PKG/app/node_modules/sharp" ] || [ -e "$PKG/app/node_modules/@img/sharp-linux-x64" ]; then
+      printf '   \033[1;31mFAIL\033[0m %s\n' "sharp 未移除（images.unoptimized=true）"
+      FAIL=1
+    else
+      printf '   \033[1;32mOK\033[0m   %s\n' "sharp/libvips 已移除 (images.unoptimized)"
+    fi
+  else
+    check "sharp 绑定保留 (next/image)"      test -d "$PKG/app/node_modules/@img/sharp-linux-x64"
+  fi
   check "pi-coding-agent 保留"               test -d "$PKG/app/node_modules/@earendil-works/pi-coding-agent"
   check "pi-coding-agent vendor 保留"        test -d "$PKG/app/node_modules/@earendil-works/pi-coding-agent/vendor"
   [ -d "$PKG/config/pi" ] && check "config/pi 保留" test -d "$PKG/config/pi"

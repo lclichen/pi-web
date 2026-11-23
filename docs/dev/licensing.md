@@ -23,8 +23,8 @@
 
 | 依赖 | 版本 | 许可证 | 义务 |
 |---|---|---|---|
-| `@img/sharp-libvips-linux-x64`（及 musl） | 1.3.3 | LGPL-3.0-or-later | 随包附带 LGPL/GPL 文本、libvips 源码或书面要约；允许替换/重链接；不要移除 `.so` 及版本元数据 |
-| `@img/sharp-linux-x64` / sharp | 0.35.4 | Apache-2.0 | 附 Apache-2.0 文本，保留上游 NOTICE |
+| `@img/sharp-libvips-linux-x64`（及 musl） | 1.3.3 | LGPL-3.0-or-later | **标准 Linux 包已默认移除**（`images.unoptimized=true`）；若启用 Next 图片优化或自行安装 sharp，则需随包附 LGPL/GPL 文本、libvips 源码或书面要约，并允许替换/重链接 |
+| `@img/sharp-linux-x64` / sharp | 0.35.4 | Apache-2.0 | 同上；启用图片优化时附 Apache-2.0 文本并保留上游 NOTICE |
 | `web-push` | 3.6.7 | MPL-2.0 | 附 MPL 文本；修改 MPL 文件需公开修改源码 |
 | `caniuse-lite` | 1.0.30001809 | CC-BY-4.0 | 保留署名与 CC-BY 文本；通常为构建期依赖，若打包则仍需归属 |
 | `dompurify` | 3.4.15 | MPL-2.0 OR Apache-2.0 | 本分发按 Apache-2.0 分支使用；附 Apache 文本 |
@@ -39,7 +39,11 @@
 
 说明：
 
-- `@img/sharp-libvips` 的 npm 包本身不带 LICENSE 文件，所以仓库根 `LICENSES/` 必须随包分发，不能只依赖 `node_modules`。
+- 当前标准 Linux 包在 `slim-package.sh` 中检测到 `images.unoptimized=true`，会移除
+  `sharp`/`@img/sharp-*`/`@img/colour`，因此**不实际分发 libvips**；`LICENSES/` 中的
+  LGPL 材料仍保留给启用图片优化、`SLIM_PACKAGE=0` 构建或自行安装 sharp 的变体。
+- `@img/sharp-libvips` 的 npm 包本身不带 LICENSE 文件；如果分发，仓库根 `LICENSES/`
+  必须随包分发，不能只依赖 `node_modules`。
 - libvips 是动态加载的共享库；LGPL 合规的关键是保留替换能力、提供对应源码/要约，而不是把整个 pi-web 改成 LGPL。
 - `sharp` 本身是 Apache-2.0；`sharp-libvips` 是 LGPL-3.0-or-later，两者不要混淆。
 - `sharp-win32-x64` 等非 Linux 平台包未随 Linux 发布包分发；如果制作 Windows 包，需要单独复核。

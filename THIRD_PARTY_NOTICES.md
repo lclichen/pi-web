@@ -4,8 +4,10 @@
 > This file is an attribution inventory, not legal advice. Package license files are retained
 > in each installed package directory; special-license texts are in `LICENSES/`.
 > Not every listed component is present in every distribution variant: `pi-smart-compact`
-> and `pi-codex-goal` are optional, and extension packages depend on the configured
-> `~/.pi/agent` / config-bundle set.
+> and `pi-codex-goal` are optional, extension packages depend on the configured
+> `~/.pi/agent` / config-bundle set, and the standard Linux package removes the
+> optional Next `sharp`/`@img/sharp-*` stack because `images.unoptimized=true`.
+> The libvips/LGPL entries are retained for variants that enable image optimization.
 
 ## Components
 
@@ -22,7 +24,7 @@
 ## Special obligations
 
 - **@img/sharp-libvips-linux-x64 / -linuxmusl-x64 (LGPL-3.0-or-later)** — distributed as a separate shared library loaded by sharp. Keep the LGPL/GPL texts in `LICENSES/`, do not remove the `.so` license/source metadata, and provide the corresponding libvips source (or a written offer) per LGPL-3.0. Source: https://github.com/lovell/sharp-libvips.
-- **sharp / @img/sharp-linux-* (Apache-2.0)** — include the Apache-2.0 text; preserve any upstream NOTICE. Source: https://github.com/lovell/sharp.
+- **sharp / @img/sharp-linux-* (Apache-2.0)** — the standard Linux package removes these when `images.unoptimized=true`; if image optimization is enabled, include the Apache-2.0 text and preserve any upstream NOTICE. Source: https://github.com/lovell/sharp.
 - **web-push (MPL-2.0)** — include the MPL-2.0 text; if you modify MPL-covered files, publish the modified source. Source: https://github.com/web-push-libs/web-push.
 - **caniuse-lite (CC-BY-4.0)** — include attribution and the CC-BY-4.0 text. Source: https://github.com/browserslist/caniuse-lite.
 - **dompurify (MPL-2.0 OR Apache-2.0)** — this distribution relies on the Apache-2.0 branch; include the Apache-2.0 text. Source: https://github.com/cure53/DOMPurify.

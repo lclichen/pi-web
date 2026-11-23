@@ -76,10 +76,13 @@ installed package directory and, for special licenses, in LICENSES/.
 Special compliance notes
 ------------------------
 
-- libvips (packaged as @img/sharp-libvips-linux-*) is LGPL-3.0-or-later and is
-  dynamically loaded by sharp. Keep the LGPL/GPL texts, do not obstruct
-  replacement/relinking of the library, and provide the corresponding libvips
-  source or a written offer as required by LGPL-3.0. Upstream:
+- The standard Linux package removes the optional Next `sharp` stack
+  (`sharp`, `@img/sharp-*`, `@img/colour`) because `images.unoptimized=true`.
+  The LGPL/GPL texts and source offer are retained for variants that enable
+  Next image optimization or otherwise install sharp. If libvips
+  (@img/sharp-libvips-linux-*) is shipped, keep the LGPL/GPL texts, do not
+  obstruct replacement/relinking, and provide the corresponding libvips source
+  or a written offer as required by LGPL-3.0. Upstream:
   https://github.com/lovell/sharp-libvips
 - web-push is MPL-2.0. If you modify MPL-covered files, publish the modified
   source as required by the MPL.

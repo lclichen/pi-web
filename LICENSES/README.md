@@ -39,7 +39,12 @@ For other MIT/BSD/ISC packages, the exact license and copyright notice is
 shipped in each package's `node_modules/<package>/LICENSE*` file. The complete
 package/license/source inventory is in `../THIRD_PARTY_NOTICES.md`.
 
-## libvips / LGPL
+## libvips / LGPL (conditionally distributed)
+
+The standard Linux package removes Next's optional `sharp`/`@img/sharp-*`
+dependencies because `next.config.ts` sets `images.unoptimized=true`. These
+texts remain for variants that enable Next image optimization or otherwise
+install sharp.
 
 `@img/sharp-libvips-linux-x64` (and the musl variant when used) contains
 `libvips-cpp.so`, loaded dynamically by sharp. The npm package does not carry a
@@ -60,6 +65,9 @@ metadata:
 
 - Do not strip `LICENSE*`, `NOTICE*`, `COPYING*`, or this directory from the
   release package.
+- `slim-package.sh` removes sharp/libvips when `images.unoptimized=true`; do not
+  re-add LGPL obligations by installing sharp unless image optimization is
+  actually enabled.
 - If a slimming step removes a package's license file, copy it into
   `LICENSES/third-party/<package>/` before shipping.
 - If you add an extension, add its component license and regenerate

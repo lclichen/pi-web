@@ -88,7 +88,7 @@
 #   SKIP_RUNTIME_DOWNLOAD 设为 "1" 复用包内已有的 runtime/，不再下载 Node
 #                         （构建机完全离线时使用；NODE_RUNTIME_LOCAL 优先级更高）
 #
-# 沙盒教学平台（可选组件）:
+# 沙盒及多用户平台（可选组件）:
 #   WITH_SANDBOX          "1"=打包沙盒平台全家桶，"0"=不打包；
 #                         默认自动：找得到 sandbox-platform 源码就打包。
 #                         打包内容（包内 sandbox/ 目录 + 一键脚本）:
@@ -423,7 +423,7 @@ if [ -n "${PI_UPDATE_BASE_URL:-}" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# 7d. 沙盒教学平台组件（可选）：sandbox-platform + pi-sandbox-extension
+# 7d. 沙盒及多用户平台组件（可选）：sandbox-platform
 #     打进 sandbox/，配套 scripts/start-all.sh 一键启动平台+WebUI。
 # ---------------------------------------------------------------------------
 find_repo_dir() { # <说明> <默认候选...> -> 打印第一个存在的目录
@@ -457,7 +457,7 @@ else
 fi
 
 if [ "$WITH_SANDBOX" = "1" ]; then
-  log "沙盒教学平台组件: 打包"
+  log "沙盒及多用户平台组件: 打包"
   SBX="$PKG/sandbox"
 
   # 平台：整树拷贝（.ts 直接以 Node 类型剥离运行，无构建步骤），装生产依赖
@@ -507,7 +507,7 @@ if [ "$WITH_SANDBOX" = "1" ]; then
   # 扩展已合并进 amedac-core（config/pi/extensions 随 pi-config 模板分发），
   # 包内不再携带独立的 sandbox/extension。
   cat > "$SBX/README.txt" <<'EOF'
-沙盒教学平台组件
+沙盒及多用户平台组件
 ================
 sandbox/platform/   容器管理 API —— sqlite 存储、启动自动迁移、默认
                     监听 127.0.0.1:3000。
@@ -536,7 +536,7 @@ sandbox/platform/   容器管理 API —— sqlite 存储、启动自动迁移�
 EOF
   log "已写入 sandbox/README.txt"
 else
-  log "沙盒教学平台组件: 不打包（WITH_SANDBOX=$WITH_SANDBOX）"
+  log "沙盒及多用户平台组件: 不打包（WITH_SANDBOX=$WITH_SANDBOX）"
 fi
 
 # 7e. 附带agent-relay 本地桥接二进制(/api/agent-relay/download 用)
@@ -831,7 +831,7 @@ printf '  %10s  %s（未压缩目录）\n' "$(du -sh "$PKG" | cut -f1)" "$PKG"
 echo
 echo "  将 $PKG_NAME/ 拷到目标 Linux 机器后："
 if [ "$WITH_SANDBOX" = "1" ]; then
-  echo "  【沙盒教学平台（一键部署）】"
+  echo "  【沙盒及多用户平台（一键部署）】"
   echo "    ./scripts/start-all.sh   启动沙盒平台 + WebUI（首次运行自动生成配置，"
   echo "                             数据落 data/；需目标机装有 Apptainer）"
   echo "    ./scripts/status-all.sh  服务状态与日志位置"

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# start-all.sh — 一键启动沙盒教学平台全套服务：
+# start-all.sh — 一键启动平台全套服务：
 #
 #   1. sandbox-platform （容器管理 API，默认 127.0.0.1:3000）
 #   2. pi-web           （WebUI，默认 0.0.0.0:30141）

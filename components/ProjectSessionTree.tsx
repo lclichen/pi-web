@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ListChevronsDownUp, ListChevronsUpDown, ListFilter, Pin } from "lucide-react";
 import { useI18n } from "@/hooks/useI18n";
 import type { SessionInfo } from "@/lib/types";
@@ -382,6 +382,27 @@ export function ProjectSessionTree({
     };
     window.addEventListener("mousedown", close);
     return () => window.removeEventListener("mousedown", close);
+  }, [menu]);
+
+  // 项目/目录菜单贴近视口底部时向上翻：先按锚点渲染，再在绘制前量实际高度，
+  // 超出视口就整体上移并限高（内容多时可滚动）。菜单高亮状态变化会重渲染，
+  // 因此每次都从锚点 y 重新量，避免多次上移叠加。
+  useLayoutEffect(() => {
+    const el = menuRef.current;
+    if (!menu || !el) return;
+    const anchorY = menu.y;
+    const margin = 8;
+    const place = () => {
+      el.style.maxHeight = `${Math.max(0, window.innerHeight - margin * 2)}px`;
+      el.style.overflowY = "auto";
+      el.style.top = `${anchorY}px`;
+      const rect = el.getBoundingClientRect();
+      const overflow = rect.bottom - (window.innerHeight - margin);
+      if (overflow > 0) el.style.top = `${Math.max(margin, anchorY - overflow)}px`;
+    };
+    place();
+    window.addEventListener("resize", place);
+    return () => window.removeEventListener("resize", place);
   }, [menu]);
 
   const toggleCollapsed = (id: string) => {

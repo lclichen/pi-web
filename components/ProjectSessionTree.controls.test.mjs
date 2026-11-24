@@ -33,6 +33,13 @@ test("pins projects from both the project and Host directory menus", () => {
   assert.match(source, /projectPinKey/);
 });
 
+test("flips project and Host directory menus upward near the viewport bottom", () => {
+  assert.match(source, /useLayoutEffect\(\(\) => \{[\s\S]{0,500}?const overflow = rect\.bottom - \(window\.innerHeight - margin\)/);
+  assert.match(source, /anchorY - overflow/);
+  assert.match(source, /el\.style\.maxHeight/);
+  assert.match(source, /window\.addEventListener\("resize", place\)/);
+});
+
 test("Host directory groups share the project sort order", () => {
   assert.match(source, /sortSidebarGroups\(entries, sortMode\)/);
   assert.match(source, /order: groupRenderOrder\.get\(project\.id\)/);

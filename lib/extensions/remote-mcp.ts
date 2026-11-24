@@ -249,9 +249,14 @@ export function makeRemoteMcpToolsExtension(options: RelayMcpOptions): InlineExt
           LIST_TIMEOUT_MS + 5_000,
         );
         tools = Array.isArray(listed?.tools) ? listed.tools : [];
-      } catch {
+      } catch (error) {
         // Server failed to start/list: leave the session usable. The next
         // session retries; we do not spawn anything on the server host.
+        // Log once per server so "no tools" is diagnosable instead of silent.
+        const message = error instanceof Error ? error.message : String(error);
+        console.warn(
+          `[pi-web] relay MCP "${server.name}" failed to list tools${machineId ? ` on machine ${machineId}` : ""}: ${message}`,
+        );
         continue;
       }
 

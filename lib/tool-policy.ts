@@ -116,7 +116,9 @@ export function mcpServerModePolicy(entry: ServerEntry, transport: McpTransport,
     return {
       excluded: true,
       reason:
-        "MCP 服务器声明为 workspace（操作工作区内容）；adapter 不在控制面执行它。local-machine 可由 relay MCP host 承载；sandbox/SSH 远端通道尚未支持",
+        mode === "local-machine"
+          ? "adapter 不在控制面执行；local-machine 由 relay MCP host 注册 mcp_<server>_<tool>。若工具未出现，检查配对机器上的 command/args 能否启动、MCP 是否在 project scope"
+          : "MCP 服务器声明为 workspace（操作工作区内容）；adapter 不在控制面执行它。local-machine 可由 relay MCP host 承载；sandbox/SSH 远端通道尚未支持",
     };
   }
   if (transport === "stdio") {

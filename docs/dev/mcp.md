@@ -79,6 +79,28 @@ Quick 会话的工具面由管理员模板决定（设置 → 快速会话模板
 限制：stdio only，project scope only，local-machine only；sandbox/SSH 尚未支持；
 MCP 内部路径操作未自动接 path-guard；采样/elicitation/进度通知未支持。
 
+### 工具策略里的“workspace 服务器被剔除”
+
+local-machine 会话里，adapter 会把 `plane:"workspace"` 的 stdio 服务器标记为
+“本模式剔除”，并连带停用 `mcp` / `mcpScript` 网关工具——这是**预期行为**：
+adapter 不能在控制面 spawn 它。真正可用的是 relay host 注册的
+`mcp_<server>_<tool>` 工具；如果这些工具也没出现，通常是：
+
+- MCP 条目不在 **project scope**（relay host 只读项目 `.pi/mcp.json`）；
+- 缺少 `piWeb.plane="workspace"` / `lifecycle:"lazy"` / `directTools:false`；
+- 配对机器上的 `command`/`args` 启动失败（`npx`/Node/浏览器环境、路径）；
+- 项目不是 local-machine，或 Agent 低于 0.8.0 / 离线。
+
+relay host 的 tools/list 失败会写入服务端日志：
+`[pi-web] relay MCP "<name>" failed to list tools ...`。
+
+### 配置投影
+
+项目 `.pi/mcp.json` 是服务端执行配置，**不会投影到远端工作区**；工作区的
+`.pi/mcp.json` 是另一份独立文件。projection 只同步 `.pi/skills`、
+`.pi/agents`、`.pi/attachments`；MCP 配置不自动双向同步。workspace stdio 的
+可执行脚本需要自己放到配对机器的工作区，配置本身仍留在服务端项目 home。
+
 ## 4. 身份注入
 
 HTTP/SSE：

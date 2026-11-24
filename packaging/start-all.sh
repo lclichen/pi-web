@@ -360,6 +360,10 @@ EOF
     export PORT="$WEB_PORT"
     # 平台地址跟随本次探测结果（env 文件里显式写了则以文件为准）
     export PI_WEB_PLATFORM_URL="${PI_WEB_PLATFORM_URL:-http://127.0.0.1:$PLATFORM_PORT}"
+    # 包内 Python 入口薄壳用它解密 APKPY1 bundle；进程环境会被 host 会话继承。
+    if [ -x "$PKG/app/bin/apkg-publisher" ]; then
+      export APKG_PUBLISHER="${APKG_PUBLISHER:-$PKG/app/bin/apkg-publisher}"
+    fi
     # （旧版在此注入 PI_WEB_SANDBOX_EXTENSION_PATH；容器工具桥接已合并进
     #  amedac-core，无需扩展路径注入。）
     # 自有版本体系：暴露应用根与部署形态给更新器。pkg-kind 文件缺失的旧包按

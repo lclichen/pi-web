@@ -1,0 +1,8 @@
+{
+  "name": "@amedac/sharp-stub",
+  "version": "0.35.4",
+  "private": true,
+  "description": "Intentional placeholder for Next's optional sharp dependency; pi-web disables image optimization.",
+  "main": "index.js",
+  "license": "MIT"
+}

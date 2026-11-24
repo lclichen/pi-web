@@ -57,12 +57,14 @@ Primary components
   the distributor includes it in a configuration bundle or extension set.
   See LICENSES/components/pi-smart-compact-LICENSE.txt.
 
-- sandbox-platform — MIT
-  Copyright (c) 2026 离离
-  Source: https://github.com/lclichen/sandbox-platform
-  See LICENSES/components/sandbox-platform-LICENSE.txt.
+- sandbox-platform — MIT; Copyright (c) 2026 离离. Original component of this
+  product, covered by the top-level LICENSE. It is also published as a separate
+  project at https://github.com/lclichen/sandbox-platform; its own repository
+  retains its standalone LICENSE for that distribution.
+  Its third-party dependencies are included in THIRD_PARTY_NOTICES.md.
 
-- Agent Client (agent/) — part of pi-web; Go dependencies:
+- Agent Client (agent/) — part of pi-web, covered by the top-level LICENSE;
+  Go dependencies:
   - github.com/gorilla/websocket (BSD-3-Clause)
   - github.com/creack/pty (MIT)
 
@@ -76,14 +78,10 @@ installed package directory and, for special licenses, in LICENSES/.
 Special compliance notes
 ------------------------
 
-- The standard Linux package removes the optional Next `sharp` stack
-  (`sharp`, `@img/sharp-*`, `@img/colour`) because `images.unoptimized=true`.
-  The LGPL/GPL texts and source offer are retained for variants that enable
-  Next image optimization or otherwise install sharp. If libvips
-  (@img/sharp-libvips-linux-*) is shipped, keep the LGPL/GPL texts, do not
-  obstruct replacement/relinking, and provide the corresponding libvips source
-  or a written offer as required by LGPL-3.0. Upstream:
-  https://github.com/lovell/sharp-libvips
+- Next's optional `sharp` image optimizer is replaced by the local no-op
+  package in `vendor/sharp-stub` because `images.unoptimized=true`; the real
+  native image package is not installed or distributed. Do not re-enable image
+  optimization without a new license review.
 - web-push is MPL-2.0. If you modify MPL-covered files, publish the modified
   source as required by the MPL.
 - caniuse-lite is CC-BY-4.0; attribution and the license text are included.
@@ -91,5 +89,5 @@ Special compliance notes
   branch: jszip (MIT), expand-template (MIT), dompurify (Apache-2.0).
 
 This NOTICE is an attribution/compliance aid, not legal advice. Distributors
-should have their own counsel review the final package and the LGPL/MPL source
-offer before commercial redistribution.
+should have their own counsel review the final package and the applicable
+license obligations before commercial redistribution.

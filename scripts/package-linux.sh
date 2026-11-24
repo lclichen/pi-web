@@ -304,6 +304,10 @@ else
   warn "未注入 apkg 解密组件——该包不支持 .apkg 导入（如需支持：放置 bin/apkg-publisher 或设 APKG_PUBLISHER_BIN）"
 fi
 cp -a "$SRC/node_modules" "$PKG/app/"
+# Next's optional sharp is a local no-op stub (images.unoptimized=true). Do not
+# ship the symlink (it points at the build tree) or any stale native bindings.
+rm -f "$PKG/app/node_modules/sharp"
+rm -rf "$PKG/app/node_modules/@img/sharp-"*
 VERSION="$(node -p "require('$SRC/package.json').version")"
 
 # 根目录只保留 pi / pi-web.sh 两个启动器；其余脚本与文档统一收进 scripts/

@@ -15,16 +15,16 @@
 | @juicesharp/rpiv-ask-user-question | 2.15.0 | MIT | vendored 于 `pi-config` | 本地 RPC 补丁见 `VENDORED.md` |
 | pi-codex-goal | 0.7.10 | MIT | 可选扩展 | 上游未修改；不随核心包默认携带 |
 | pi-smart-compact | 10.8.1 | MIT | 可选扩展 | 上游未修改；当前 pi-web 无运行时引用，可不分发 |
-| sandbox-platform | 0.2.0 | MIT | 可选沙盒组件 | 平台 API/容器管理 |
+| sandbox-platform | 0.2.0 | MIT | 可选沙盒组件 | 自有组件，随产品顶层 LICENSE；不单独放 components LICENSE，独立仓库保留自己的 LICENSE |
 
-上游/许可证全文在 `LICENSES/components/`。
+上游/许可证全文在 `LICENSES/components/`。`sandbox-platform` 与 Agent Client 是
+本产品自有组件，由仓库顶层 `LICENSE` 覆盖，不需要在分发包内重复放置组件
+LICENSE；它们的第三方依赖仍完整列入 `THIRD_PARTY_NOTICES.md`。
 
 ## 2. 特殊许可证依赖
 
 | 依赖 | 版本 | 许可证 | 义务 |
 |---|---|---|---|
-| `@img/sharp-libvips-linux-x64`（及 musl） | 1.3.3 | LGPL-3.0-or-later | **标准 Linux 包已默认移除**（`images.unoptimized=true`）；若启用 Next 图片优化或自行安装 sharp，则需随包附 LGPL/GPL 文本、libvips 源码或书面要约，并允许替换/重链接 |
-| `@img/sharp-linux-x64` / sharp | 0.35.4 | Apache-2.0 | 同上；启用图片优化时附 Apache-2.0 文本并保留上游 NOTICE |
 | `web-push` | 3.6.7 | MPL-2.0 | 附 MPL 文本；修改 MPL 文件需公开修改源码 |
 | `caniuse-lite` | 1.0.30001809 | CC-BY-4.0 | 保留署名与 CC-BY 文本；通常为构建期依赖，若打包则仍需归属 |
 | `dompurify` | 3.4.15 | MPL-2.0 OR Apache-2.0 | 本分发按 Apache-2.0 分支使用；附 Apache 文本 |
@@ -39,14 +39,11 @@
 
 说明：
 
-- 当前标准 Linux 包在 `slim-package.sh` 中检测到 `images.unoptimized=true`，会移除
-  `sharp`/`@img/sharp-*`/`@img/colour`，因此**不实际分发 libvips**；`LICENSES/` 中的
-  LGPL 材料仍保留给启用图片优化、`SLIM_PACKAGE=0` 构建或自行安装 sharp 的变体。
-- `@img/sharp-libvips` 的 npm 包本身不带 LICENSE 文件；如果分发，仓库根 `LICENSES/`
-  必须随包分发，不能只依赖 `node_modules`。
-- libvips 是动态加载的共享库；LGPL 合规的关键是保留替换能力、提供对应源码/要约，而不是把整个 pi-web 改成 LGPL。
-- `sharp` 本身是 Apache-2.0；`sharp-libvips` 是 LGPL-3.0-or-later，两者不要混淆。
-- `sharp-win32-x64` 等非 Linux 平台包未随 Linux 发布包分发；如果制作 Windows 包，需要单独复核。
+- `next.config.ts` 设置 `images.unoptimized=true`，Next 的可选 `sharp` 在
+  `package.json` 中被 override 为本地空实现 `vendor/sharp-stub`；依赖树与发布包
+  **不安装、不分发真实 sharp 或任何图片优化原生库**。
+- 如果以后启用 Next 图片优化，必须移除该 override、重新引入 sharp，并重新做
+  许可证合规评估；不要只改 `next.config.ts`。
 
 ## 3. 扩展的当前取舍
 
@@ -77,8 +74,6 @@ THIRD_PARTY_NOTICES.md
 LICENSES/
   README.md
   Apache-2.0.txt
-  LGPL-3.0-or-later.txt
-  GPL-3.0-only.txt
   MPL-2.0.txt
   CC-BY-4.0.txt
   ...
@@ -92,18 +87,17 @@ LICENSES/
 
 1. 生成/更新 `THIRD_PARTY_NOTICES.md`（从实际生产依赖树，而不是只看 package.json）；
 2. 确认 `LICENSES/` 与 `NOTICE` 已进包；
-3. Linux 包包含 `@img/sharp-libvips-linux-x64` 的 LGPL 文本/source offer；
-4. 若分发 `pi-smart-compact`，补 `@resvg/resvg-js` MPL 文本；不分发则从配置模板移除；
-5. 若修改 `web-push` 等 MPL 文件，公开修改源码；
-6. 保留 `caniuse-lite` 的 CC-BY 署名；
-7. 更新组件版本/修改说明（本文件 + `NOTICE`）；
-8. 商业发布前让法务复核 LGPL source offer 与最终包实际内容。
+3. 若分发 `pi-smart-compact`，补 `@resvg/resvg-js` MPL 文本；不分发则从配置模板移除；
+4. 若修改 `web-push` 等 MPL 文件，公开修改源码；
+5. 保留 `caniuse-lite` 的 CC-BY 署名；
+6. 更新组件版本/修改说明（本文件 + `NOTICE`）；
+7. 商业发布前让法务复核最终包实际内容与适用许可证义务。
 
 ## 6. 生成方式
 
 `THIRD_PARTY_NOTICES.md` 由 `license-checker` 对以下生产树生成：
 
-- pi-web（390 个生产包）
+- pi-web（387 个第三方生产包；不含本地 `vendor/sharp-stub`）
 - @tintinweb/pi-subagents（161）
 - pi-mcp-adapter（206）
 - @juicesharp/rpiv-ask-user-question（2）
@@ -112,4 +106,5 @@ LICENSES/
 `pi-codex-goal` 与 `pi-smart-compact` 没有随包运行时依赖，单独列在组件表；
 `@resvg/resvg-js` 等可选 peer 在特殊义务表中说明。
 
-重新生成时不要手工删减条目；若依赖树变化，重新跑 license-checker 并复核特殊许可证。
+重新生成时排除本地 `file:` 依赖（`vendor/sharp-stub`），不要把本地 stub 当作
+第三方包；其余依赖树变化后重新跑 license-checker 并复核特殊许可证。

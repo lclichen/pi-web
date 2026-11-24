@@ -1,13 +1,13 @@
 # Third-Party Notices
 
-> Generated 2026-11-23 from the production dependency trees of the distributed components.
+> Generated 2026-11-23, updated 2026-11-24 (Next image optimizer stub).
 > This file is an attribution inventory, not legal advice. Package license files are retained
 > in each installed package directory; special-license texts are in `LICENSES/`.
 > Not every listed component is present in every distribution variant: `pi-smart-compact`
 > and `pi-codex-goal` are optional, extension packages depend on the configured
-> `~/.pi/agent` / config-bundle set, and the standard Linux package removes the
-> optional Next `sharp`/`@img/sharp-*` stack because `images.unoptimized=true`.
-> The libvips/LGPL entries are retained for variants that enable image optimization.
+> `~/.pi/agent` / config-bundle set, and Next's optional image optimizer is replaced
+> by a local no-op stub because `images.unoptimized=true` (the real sharp package
+> is not installed or distributed).
 
 ## Components
 
@@ -19,12 +19,15 @@
 | pi-codex-goal | 0.7.10 | MIT | https://github.com/fitchmultz/pi-codex-goal |
 | pi-smart-compact (optional) | 10.8.1 | MIT | https://github.com/alpertarhan/pi-smart-compact |
 | @juicesharp/rpiv-ask-user-question | 2.15.0 (vendored) | MIT | https://github.com/juicesharp/rpiv-mono |
-| sandbox-platform | 0.2.0 | MIT | https://github.com/lclichen/sandbox-platform |
+| sandbox-platform (original component) | 0.2.0 | MIT (top-level LICENSE) | https://github.com/lclichen/sandbox-platform |
+
+`sandbox-platform` and the Agent Client are original components of this
+product and are covered by the top-level `LICENSE`; no separate component
+license is required inside this distribution. Their third-party dependencies
+remain in the package inventory below.
 
 ## Special obligations
 
-- **@img/sharp-libvips-linux-x64 / -linuxmusl-x64 (LGPL-3.0-or-later)** — distributed as a separate shared library loaded by sharp. Keep the LGPL/GPL texts in `LICENSES/`, do not remove the `.so` license/source metadata, and provide the corresponding libvips source (or a written offer) per LGPL-3.0. Source: https://github.com/lovell/sharp-libvips.
-- **sharp / @img/sharp-linux-* (Apache-2.0)** — the standard Linux package removes these when `images.unoptimized=true`; if image optimization is enabled, include the Apache-2.0 text and preserve any upstream NOTICE. Source: https://github.com/lovell/sharp.
 - **web-push (MPL-2.0)** — include the MPL-2.0 text; if you modify MPL-covered files, publish the modified source. Source: https://github.com/web-push-libs/web-push.
 - **caniuse-lite (CC-BY-4.0)** — include attribution and the CC-BY-4.0 text. Source: https://github.com/browserslist/caniuse-lite.
 - **dompurify (MPL-2.0 OR Apache-2.0)** — this distribution relies on the Apache-2.0 branch; include the Apache-2.0 text. Source: https://github.com/cure53/DOMPurify.
@@ -34,20 +37,11 @@
 - **@resvg/resvg-js (MPL-2.0)** — optional peer of pi-smart-compact; only required if that extension is distributed with its optional peer installed.
 - **@oh-my-pi/pi-mnemopi (MIT)** — optional peer of pi-smart-compact.
 
-## Linux-only sharp runtime
-
-| Package | Version | License | Source |
-|---|---|---|---|
-| `@img/sharp-linux-x64` | 0.35.4 | Apache-2.0 | https://github.com/lovell/sharp |
-| `@img/sharp-libvips-linux-x64` | 1.3.3 | LGPL-3.0-or-later | https://github.com/lovell/sharp-libvips |
-
-See `LICENSES/LGPL-SOURCE-OFFER.md` for the libvips source offer.
-
 ## Package inventory
 
 ### pi-web
 
-_390 installed production packages._
+_387 installed production packages._
 
 | Package | Version | License | Source |
 |---|---|---|---|
@@ -108,8 +102,6 @@ _390 installed production packages._
 | `@google/genai` | 1.52.0 | Apache-2.0 | https://github.com/googleapis/js-genai |
 | `@homebridge/node-pty-prebuilt-multiarch` | 0.14.1 | MIT | https://github.com/homebridge/node-pty-prebuilt-multiarch |
 | `@hono/node-server` | 2.1.1 | MIT | https://github.com/honojs/node-server |
-| `@img/colour` | 1.1.0 | MIT | https://github.com/lovell/colour |
-| `@img/sharp-win32-x64` | 0.35.4 | Apache-2.0 AND LGPL-3.0-or-later | https://github.com/lovell/sharp |
 | `@mariozechner/clipboard` | 0.3.9 | MIT | https://github.com/badlogic/clipboard |
 | `@mariozechner/clipboard-win32-x64-msvc` | 0.3.9 | MIT | https://github.com/badlogic/clipboard |
 | `@modelcontextprotocol/sdk` | 1.30.0 | MIT | https://github.com/modelcontextprotocol/typescript-sdk |
@@ -386,7 +378,6 @@ _390 installed production packages._
 | `serve-static` | 2.2.1 | MIT | https://github.com/expressjs/serve-static |
 | `setimmediate` | 1.0.5 | MIT | https://github.com/YuzuJS/setImmediate |
 | `setprototypeof` | 1.2.0 | ISC | https://github.com/wesleytodd/setprototypeof |
-| `sharp` | 0.35.4 | Apache-2.0 | https://github.com/lovell/sharp |
 | `shebang-command` | 2.0.0 | MIT | https://github.com/kevva/shebang-command |
 | `shebang-regex` | 3.0.0 | MIT | https://github.com/sindresorhus/shebang-regex |
 | `side-channel` | 1.1.1 | MIT | https://github.com/ljharb/side-channel |
@@ -974,7 +965,7 @@ _167 installed production packages._
 | `safe-regex2` | 5.1.2 | MIT | https://github.com/fastify/safe-regex2 |
 | `safe-stable-stringify` | 2.5.0 | MIT | https://github.com/BridgeAR/safe-stable-stringify |
 | `safer-buffer` | 2.1.2 | MIT | https://github.com/ChALkeR/safer-buffer |
-| `sandbox-platform` | 0.2.0 | UNLICENSED |  |
+| `sandbox-platform` | 0.2.0 | MIT (top-level LICENSE) | https://github.com/lclichen/sandbox-platform |
 | `sb-promise-queue` | 2.1.1 | MIT | https://github.com/steelbrain/promise-queue |
 | `sb-scandir` | 3.1.1 | MIT | https://github.com/steelbrain/scandir |
 | `secure-json-parse` | 4.1.1 | BSD-3-Clause | https://github.com/fastify/secure-json-parse |

@@ -28,7 +28,8 @@
     "package.json",
     "NOTICE",
     "THIRD_PARTY_NOTICES.md",
-    "LICENSES"
+    "LICENSES",
+    "vendor"
   ],
   "scripts": {
     "dev": "next dev -H 127.0.0.1 -p 30141",
@@ -74,6 +75,7 @@
     "react-dom": "^19.2.4",
     "remark-frontmatter": "^5.0.0",
     "semver": "7.8.0",
+    "sharp": "file:vendor/sharp-stub",
     "ssh2": "^1.17.0",
     "undici": "8.10.0",
     "web-push": "^3.6.7",
@@ -108,5 +110,8 @@
     "remark-math": "^6.0.0",
     "tailwindcss": "^4.2.2",
     "typescript": "^5"
+  },
+  "overrides": {
+    "sharp": "$sharp"
   }
 }

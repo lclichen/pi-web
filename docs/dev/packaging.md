@@ -55,11 +55,11 @@ bash scripts/package-linux.sh
 6. `slim-package.sh` 默认瘦身（`SLIM_PACKAGE=0` 跳过）；
 7. 冒烟测试（`SMOKE_TEST=0` 跳过）：CLI 存活、WebUI HTTP、平台 `/health`（mock）。
 
-`slim-package.sh` 在检测到 `next.config.ts` 的 `images.unoptimized=true` 时，会移除
-Next 的可选 `sharp` / `@img/sharp-*` / `@img/colour` 依赖（包括 LGPL libvips），
-避免无用的图片优化器和 LGPL 合规负担。若以后启用 Next 图片优化、使用
-`SLIM_PACKAGE=0` 跳过瘦身，或自行安装 sharp，必须保留它们并恢复 `LICENSES/`
-中的 LGPL 材料。
+`package.json` 通过 override 把 Next 的可选 `sharp` 指向本地空实现
+`vendor/sharp-stub`（`images.unoptimized=true`），因此依赖树不会安装真实图片
+优化原生库。`slim-package.sh` 仍会删除构建产物中的陈旧 `sharp` / `@img/sharp-*`
+并自检，防止旧 `node_modules` 混入。若以后启用 Next 图片优化，必须先移除该
+override、重新引入 sharp，并重新做许可证评估。
 
 ## 4. 常用变量
 
@@ -108,7 +108,7 @@ Next 的可选 `sharp` / `@img/sharp-*` / `@img/colour` 依赖（包括 LGPL lib
   recheck 原生包（必须冒烟）。
 
 完整性自检会拒绝缺失：Node 可执行、`.next/server`、public monaco、Next wasm、
-Linux SWC、sharp、pi-coding-agent + vendor。
+Linux SWC、pi-coding-agent + vendor；也会拒绝真实 `sharp`/`@img/sharp-*` 残留。
 
 ## 7. AppImage
 
@@ -138,8 +138,8 @@ cd agent && bash scripts/build.sh
 3. `agent/dist` 已 rebuild 并包含新 feature（`strings | grep` 或 hello）；
 4. `slim-package.sh` 自检通过；
 5. 目标机/VM：BUILD-OK、`:30141` 可达、`/api/webauth/config` 200、登录；
-5a. 包根含 `LICENSE`/`NOTICE`/`THIRD_PARTY_NOTICES.md`/`LICENSES/`，LGPL/MPL/CC-BY 文本齐全；
-5b. `images.unoptimized=true` 的包不含 `sharp`/`@img/sharp-*`；若启用图片优化，则必须恢复 sharp 并保留 LGPL 材料；
+5a. 包根含 `LICENSE`/`NOTICE`/`THIRD_PARTY_NOTICES.md`/`LICENSES/`，MPL/CC-BY 等文本齐全；
+5b. 包内不含真实 `sharp`/`@img/sharp-*`（Next override 到本地 stub）；
 6. 下载路由返回正确二进制大小；本机模式能配对/连接；
 7. 沙盒模式：平台 `/health`、容器创建、工具/PTY；
 8. 升级：`upgrade-bundle.sh` 保留 config/data，回滚可用。

@@ -21,7 +21,7 @@
 | 全局/用户/项目配置层 | [configuration.md](./configuration.md) |
 | 安全边界、信任模型、已知限制 | [security.md](./security.md) |
 | 部署、升级、打包、离线分发 | [DEPLOYMENT.md](./DEPLOYMENT.md)、[packaging.md](./packaging.md) |
-| 分发许可、第三方归属、LGPL/MPL | [licensing.md](./licensing.md)、[THIRD_PARTY_NOTICES.md](../../THIRD_PARTY_NOTICES.md)、[LICENSES](../../LICENSES/README.md) |
+| 分发许可、第三方归属、特殊许可证 | [licensing.md](./licensing.md)、[THIRD_PARTY_NOTICES.md](../../THIRD_PARTY_NOTICES.md)、[LICENSES](../../LICENSES/README.md) |
 | Agent Client / 本机模式 | [CONNECT_LOCAL_MACHINE.md](./CONNECT_LOCAL_MACHINE.md) |
 | Sandbox Platform 集成 | [sandbox-platform.md](./sandbox-platform.md) |
 | MCP（作用域/执行面/图片/分享） | [mcp.md](./mcp.md) |
@@ -50,7 +50,7 @@
 | [sandbox-platform.md](./sandbox-platform.md) | 现行 | 平台服务职责、认证/容器/工具/PTY/配额、与 pi-web 的契约 |
 | [apkg-dev-testing.md](./apkg-dev-testing.md) | 参考 | 加密配置包开发测试 |
 | [commercial-protection.md](./commercial-protection.md) | 参考 | apkg 客户身份、封条、许可与边界 |
-| [licensing.md](./licensing.md) | 现行 | 分发组件、修改归属、LGPL/MPL/CC-BY 等特殊许可证与发布检查 |
+| [licensing.md](./licensing.md) | 现行 | 分发组件、修改归属、MPL/CC-BY 等特殊许可证与发布检查 |
 | [sca.md](./sca.md) | 参考 | 依赖/供应链扫描流程 |
 
 ## 4. 功能与集成

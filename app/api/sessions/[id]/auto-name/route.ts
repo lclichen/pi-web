@@ -3,8 +3,35 @@ import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import { generateSessionTitle } from "@/lib/session-title";
 import { getRpcSession, startRpcSession } from "@/lib/rpc-manager";
 import { restoreSessionOptions, SessionRestoreError } from "@/lib/session-restore-options";
-import { invalidateSessionListForSession } from "@/lib/session-reader";
+import { getSessionEntries, invalidateSessionListForSession, readSessionHeader } from "@/lib/session-reader";
 import { resolveSessionAccess } from "@/lib/session-access";
+import { readSubagentRun } from "@/lib/subagents";
+
+/**
+ * Subagent sessions rely on their `<Profile>#<agentId8>` name as the fallback
+ * relation marker (the tintinweb runtime does not write pi-web's subagent
+ * meta), so renaming one detaches it from its parent in the sidebar.
+ */
+function isSubagentSession(filePath: string, sessionId: string): boolean {
+  const header = readSessionHeader(filePath);
+  if (!header?.parentSession) return false;
+  let entries: ReturnType<typeof getSessionEntries>;
+  try {
+    entries = getSessionEntries(filePath);
+  } catch {
+    return false;
+  }
+  if (readSubagentRun(entries, sessionId, filePath)) return true;
+  let name: string | undefined;
+  for (let i = entries.length - 1; i >= 0; i -= 1) {
+    const entry = entries[i];
+    if (entry.type === "session_info") {
+      name = entry.name?.trim() || undefined;
+      break;
+    }
+  }
+  return Boolean(name && /^.+#.{8}$/.test(name));
+}
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -17,6 +44,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     const filePath = access.path;
     if (!filePath) {
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
+    }
+    if (isSubagentSession(filePath, id)) {
+      return NextResponse.json({ error: "子智能体会话不支持生成标题" }, { status: 409 });
     }
 
     const existing = getRpcSession(id);

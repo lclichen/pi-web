@@ -1549,6 +1549,10 @@ export function AppShell() {
   const handleAutoName = useCallback(async () => {
     const sessionId = selectedSession?.id;
     if (!sessionId || autoNameStatus.kind === "naming") return;
+    // Subagent session names encode the profile/agent id and are the fallback
+    // relation marker for tintinweb sessions; renaming one detaches it from
+    // its parent in the sidebar.
+    if (selectedSession?.relation?.kind === "subagent") return;
     if (autoNameTimerRef.current) clearTimeout(autoNameTimerRef.current);
     setActiveTopPanel(null);
     setAutoNameStatus({ kind: "naming" });
@@ -1575,7 +1579,7 @@ export function AppShell() {
       setAutoNameStatus({ kind: "error", message });
       autoNameTimerRef.current = setTimeout(() => setAutoNameStatus({ kind: "idle" }), 5000);
     }
-  }, [autoNameStatus.kind, selectedSession?.id]);
+  }, [autoNameStatus.kind, selectedSession?.id, selectedSession?.relation?.kind]);
 
   useEffect(() => {
     if (autoNameTimerRef.current) clearTimeout(autoNameTimerRef.current);
@@ -2399,7 +2403,11 @@ export function AppShell() {
             selectedSession && ((sessionStats?.userMessages ?? 0) > 0 || selectedSession.messageCount > 0),
           );
           const disabled =
-            !selectedSession || selectedSession.transient || !hasMessages || autoNameStatus.kind === "naming";
+            !selectedSession ||
+            selectedSession.transient ||
+            !hasMessages ||
+            selectedSession.relation?.kind === "subagent" ||
+            autoNameStatus.kind === "naming";
           const isSuccess = autoNameStatus.kind === "success";
           const isError = autoNameStatus.kind === "error";
           const label =
@@ -2413,11 +2421,13 @@ export function AppShell() {
           const title =
             !selectedSession || selectedSession.transient
               ? translate("title.unsaved")
-              : !hasMessages
-                ? translate("title.noMessages")
-                : isError
-                  ? autoNameStatus.message
-                  : translate("title.generateSession");
+              : selectedSession.relation?.kind === "subagent"
+                ? translate("title.subagentUnavailable")
+                : !hasMessages
+                  ? translate("title.noMessages")
+                  : isError
+                    ? autoNameStatus.message
+                    : translate("title.generateSession");
 
           return (
             <button

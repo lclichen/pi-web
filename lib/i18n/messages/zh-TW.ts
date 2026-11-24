@@ -1580,6 +1580,7 @@ export const zhTWLocale: LocalePlugin = {
     "title.generateSession": "產生工作階段標題",
     "title.generating": "正在產生...",
     "title.noMessages": "請先傳送訊息，再為工作階段命名",
+    "title.subagentUnavailable": "子智慧體工作階段的名稱用於識別工作階段層級，不能產生標題",
     "title.unsaved": "工作階段儲存後才能產生標題",
     "title.updated": "標題已更新",
     "toolPolicy.excludedNotice": "工具護欄：{mode} 模式已移除 {count} 個工具（{names}）。詳見 設定 → 策略。",

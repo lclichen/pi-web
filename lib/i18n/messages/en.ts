@@ -1580,6 +1580,7 @@ export const enLocale: LocalePlugin = {
     "title.generateSession": "Generate a session title",
     "title.generating": "Generating...",
     "title.noMessages": "Send a message before naming this session",
+    "title.subagentUnavailable": "Subagent names identify their hierarchy; titles cannot be generated here",
     "title.unsaved": "Title generation is available after the session is saved",
     "title.updated": "Title updated",
     "toolPolicy.excludedNotice": "Tool guardrail: {count} tool(s) removed in {mode} mode ({names}). See Settings → Policy for details.",

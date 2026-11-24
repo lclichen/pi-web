@@ -15,6 +15,12 @@ test("尚未落盘的会话不会触发依赖 JSONL 的自动命名", () => {
   );
 });
 
+test("子智能体会话不生成标题（名称是层级识别的回退标记）", () => {
+  assert.match(source, /if \(selectedSession\?\.relation\?\.kind === "subagent"\) return;/);
+  assert.match(source, /selectedSession\.relation\?\.kind === "subagent" \|\|/);
+  assert.match(source, /title\.subagentUnavailable/);
+});
+
 test("会话落盘后会用服务端记录清除临时状态", () => {
   assert.match(source, /\{ \.\.\.prev, \.\.\.full, transient: full\.transient \?\? false \}/);
   assert.match(source, /if \(selectedSession\) hydrateSelectedSession\(selectedSession\.id\)/);

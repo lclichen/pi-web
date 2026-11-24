@@ -1580,6 +1580,7 @@ export const zhCNLocale: LocalePlugin = {
     "title.generateSession": "生成会话标题",
     "title.generating": "正在生成...",
     "title.noMessages": "请先发送消息，再为会话命名",
+    "title.subagentUnavailable": "子智能体会话的名称用于识别会话层级，不能生成标题",
     "title.unsaved": "会话保存后才能生成标题",
     "title.updated": "标题已更新",
     "toolPolicy.excludedNotice": "工具护栏：{mode} 模式已移除 {count} 个工具（{names}）。详见 设置 → 策略。",

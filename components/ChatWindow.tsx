@@ -108,6 +108,8 @@ interface Props {
   quickMode?: boolean;
   /** Admin support view: read-only until an explicit takeover. */
   readOnly?: boolean;
+  /** Project trust gate banner shown directly above the composer. */
+  projectTrustBanner?: ReactNode;
   onNewSessionTemplateChange?: (templateId: string) => void;
   onToggleTerminalPanel?: () => void;
   terminalPanelActive?: boolean;
@@ -394,6 +396,7 @@ export function ChatWindow({
   planPanelActive,
   quickMode = false,
   readOnly = false,
+  projectTrustBanner,
   onNewSessionTemplateChange,
   onToggleTerminalPanel,
   terminalPanelActive,
@@ -1336,6 +1339,7 @@ export function ChatWindow({
 
   const chatInputElement = (
     <>
+      {projectTrustBanner}
       {toolPolicyBanner}
       <ChatInput
         ref={chatInputRef}

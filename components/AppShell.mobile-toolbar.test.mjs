@@ -4,6 +4,7 @@ import test from "node:test";
 
 const source = await readFile(new URL("./AppShell.tsx", import.meta.url), "utf8");
 const mobileHookSource = await readFile(new URL("../hooks/useIsMobile.ts", import.meta.url), "utf8");
+const chatWindowSource = await readFile(new URL("./ChatWindow.tsx", import.meta.url), "utf8");
 
 test("keeps action icons inline in medium mobile sidebars", () => {
   assert.match(mobileHookSource, /NARROW_MOBILE_QUERY = "\(max-width: 480px\)"/);
@@ -97,9 +98,18 @@ test("prioritizes context and cost when the mobile statistics area narrows", () 
   assert.match(source, /mobileContextText = percent !== null \? `\$\{percent\.toFixed\(0\)\}%` : null/);
 });
 
-test("places trust warnings below the mobile toolbar and the file toggle in toolbar flow", () => {
-  assert.match(source, /\{isMobile && renderProjectTrustWarning\(true\)\}/);
-  assert.match(source, /data-mobile-trust-banner=\{mobileBanner \? "true" : undefined\}/);
+test("places the project trust prompt directly above the composer", () => {
+  assert.match(source, /projectTrustBanner=\{renderProjectTrustBanner\(\)\}/);
+  assert.match(source, /data-project-trust-banner="true"/);
+  assert.match(source, /trust\.bannerTitle/);
+  assert.match(source, /trust\.trustProject/);
+  assert.doesNotMatch(source, /renderProjectTrustWarning/);
+  assert.doesNotMatch(source, /data-mobile-trust-banner/);
+  assert.match(
+    chatWindowSource,
+    /\{projectTrustBanner\}\s*\{toolPolicyBanner\}\s*<ChatInput/,
+    "ChatWindow renders the trust banner directly above the input (and above tool-policy notices)",
+  );
   assert.doesNotMatch(source, /File panel toggle — always visible at top-right/);
   assert.doesNotMatch(source, /position: "fixed", top: "env\(safe-area-inset-top\)"/);
 });

@@ -2257,48 +2257,38 @@ export function AppShell() {
     }
   };
 
-  const renderProjectTrustWarning = (mobileBanner: boolean) => {
+  // 输入框上方的信任提示：受限项目在加载/新建会话后需要一眼可见的入口。
+  // 常驻非阻塞（不每次强制弹窗），点击按钮打开统一的 ProjectTrustDialog。
+  const renderProjectTrustBanner = () => {
     if (!showChat || !projectTrust?.requiresTrust || projectTrust.trusted) return null;
     const detail = projectTrust.reasons?.length
       ? translate("trust.reasons", { reasons: projectTrust.reasons.join(", ") })
-      : translate("trust.resourcesNotLoaded");
+      : translate("trust.bannerHint");
     return (
-      <button
-        type="button"
-        onClick={() => {
-          setProjectTrustError(null);
-          setProjectTrustDialogOpen(true);
-        }}
-        title={detail}
-        aria-label={detail}
+      <div
+        role="alert"
+        data-project-trust-banner="true"
         style={{
           display: "flex",
           alignItems: "center",
-          justifyContent: mobileBanner ? "flex-start" : "center",
-          gap: 6,
-          width: mobileBanner ? "100%" : undefined,
-          minHeight: mobileBanner ? 32 : undefined,
-          height: mobileBanner ? undefined : "100%",
-          padding: mobileBanner ? "6px 12px" : "0 12px",
-          background: mobileBanner ? "color-mix(in srgb, #d97706 8%, var(--bg-panel))" : "none",
-          border: "none",
-          borderRight: mobileBanner ? "none" : "1px solid var(--border)",
-          borderBottom: mobileBanner ? "1px solid var(--border)" : "none",
-          color: "#d97706",
-          cursor: "pointer",
-          flexShrink: 0,
-          fontSize: 11,
-          lineHeight: 1.35,
-          textAlign: "left",
+          gap: 10,
+          margin: "0 auto 8px",
+          maxWidth: "var(--chat-content-max-width, 820px)",
+          padding: "8px 10px",
+          borderRadius: 8,
+          border: "1px solid color-mix(in srgb, var(--warning) 35%, transparent)",
+          background: "color-mix(in srgb, var(--warning) 8%, transparent)",
+          color: "var(--text)",
+          fontSize: 11.5,
+          lineHeight: 1.5,
         }}
-        data-mobile-trust-banner={mobileBanner ? "true" : undefined}
       >
         <svg
-          width="13"
-          height="13"
+          width="16"
+          height="16"
           viewBox="0 0 24 24"
           fill="none"
-          stroke="currentColor"
+          stroke="var(--warning)"
           strokeWidth="2"
           strokeLinecap="round"
           strokeLinejoin="round"
@@ -2309,8 +2299,32 @@ export function AppShell() {
           <path d="M12 8v4" />
           <path d="M12 16h.01" />
         </svg>
-        <span>{translate("trust.resourcesNotLoaded")}</span>
-      </button>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontWeight: 600, fontSize: 12 }}>{translate("trust.bannerTitle")}</div>
+          <div style={{ color: "var(--text-muted)", fontSize: 11.5 }}>{detail}</div>
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            setProjectTrustError(null);
+            setProjectTrustDialogOpen(true);
+          }}
+          style={{
+            flexShrink: 0,
+            padding: "5px 12px",
+            borderRadius: 6,
+            border: "1px solid color-mix(in srgb, var(--warning) 55%, transparent)",
+            background: "color-mix(in srgb, var(--warning) 14%, var(--bg-panel))",
+            color: "var(--warning)",
+            cursor: "pointer",
+            fontSize: 11.5,
+            fontWeight: 600,
+            whiteSpace: "nowrap",
+          }}
+        >
+          {translate("trust.trustProject")}
+        </button>
+      </div>
     );
   };
 
@@ -3308,8 +3322,8 @@ export function AppShell() {
                   <span>{translate("app.platformAdmin")}</span>
                 </button>
               )}
-              {/* 「受限模式」提示只保留右侧 renderProjectTrustWarning 一处——
-              这里曾并列渲染过第二枚同义按钮，顶部出现两条重复提示。 */}
+              {/* 信任提示统一在输入框上方（renderProjectTrustBanner →
+              ChatWindow projectTrustBanner），顶部不再重复。 */}
               {isMobile && (
                 <div
                   ref={mobileToolbarRef}
@@ -3405,7 +3419,6 @@ export function AppShell() {
                 <>
                   {renderThemeButton(false)}
                   {renderLanguageButton(false)}
-                  {renderProjectTrustWarning(false)}
                   {renderChatToolbarActions(false)}
                   {renderSessionStatsButton(false)}
                   {/* Platform controls: WebUI 操作教学 + logout。教学面板显隐已改为启动参数
@@ -3932,7 +3945,6 @@ export function AppShell() {
                 </div>
               )}
             </div>
-            {isMobile && renderProjectTrustWarning(true)}
           </div>
 
           {/* Chat content + terminal bottom drawer */}
@@ -4002,6 +4014,7 @@ export function AppShell() {
                   key={sessionKey}
                   session={selectedSession}
                   readOnly={isSupportReadOnly && !takeoverActive}
+                  projectTrustBanner={renderProjectTrustBanner()}
                   searchTarget={searchTarget?.sessionId === selectedSession?.id ? searchTarget : null}
                   onSearchTargetHandled={handleSearchTargetHandled}
                   initialScrollPosition={

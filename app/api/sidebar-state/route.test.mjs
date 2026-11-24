@@ -87,3 +87,21 @@ test("rejects malformed pin keys and bodies", async () => {
   response = await PATCH(request("PATCH", { sessionId: "s", pinned: "yes" }));
   assert.equal(response.status, 400);
 });
+
+test("persists drag order and moves new projects to the front without pinning", async () => {
+  let response = await PATCH(request("PATCH", { projectOrder: ["project:b", "project:a", "bad-key"] }));
+  assert.equal(response.status, 200);
+  let body = await response.json();
+  assert.deepEqual(body.projectOrder, ["project:b", "project:a"]);
+
+  response = await PATCH(request("PATCH", { projectKey: "project:a", moveToFront: true }));
+  assert.equal(response.status, 200);
+  body = await response.json();
+  assert.deepEqual(body.projectOrder, ["project:a", "project:b"]);
+  assert.equal(body.pinnedProjects.includes("project:a"), false);
+
+  response = await PATCH(request("PATCH", { moveToFront: true }));
+  assert.equal(response.status, 400);
+  response = await PATCH(request("PATCH", { projectOrder: "project:a" }));
+  assert.equal(response.status, 400);
+});

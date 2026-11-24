@@ -1374,12 +1374,13 @@ export function SessionSidebar({
           }}
           onCreated={(project) => {
             onProjectsChanged?.();
-            // New projects have no sessions yet and sort to the bottom; pin the
-            // project so it stays visible, then enter a fresh session in it.
+            // Default view is project-first (created-at order). Put the new
+            // project at the front of the user's drag order without pinning it,
+            // then enter a fresh session in it.
             void fetch("/api/sidebar-state", {
               method: "PATCH",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ projectKey: projectPinKey(project.id), pinned: true }),
+              body: JSON.stringify({ projectKey: projectPinKey(project.id), moveToFront: true }),
             })
               .catch(() => {})
               .finally(() => {

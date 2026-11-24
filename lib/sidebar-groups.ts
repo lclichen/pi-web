@@ -3,7 +3,9 @@
  *
  * Pinned groups always come first (in pin order). The rest follow the view
  * menu's sort mode:
- *   - project:    newest session first, connection type ignored.
+ *   - project: user order (drag/drop) first, then newest project creation
+ *              (new projects appear at the top); sessions do not affect order.
+ *   - session: newest session first, connection type ignored.
  *   - connection: connection types ordered by their newest session, then the
  *                 projects inside each type by their newest session.
  */
@@ -17,6 +19,10 @@ export interface SortableSidebarGroup {
   mode: string;
   /** ISO timestamp of the group's newest session ("" when it has none). */
   latest: string;
+  /** Creation time (ms) for real projects/directories. */
+  createdAt?: number;
+  /** Index in the user's projectOrder; undefined = not ordered yet. */
+  orderIndex?: number;
   pinned: boolean;
   /** Index in the server's pinnedProjects array; -1 when not pinned. */
   pinRank: number;
@@ -32,6 +38,22 @@ function compareActivity(a: SortableSidebarGroup, b: SortableSidebarGroup): numb
   const right = timeOf(b.latest);
   if (left === right) return a.name.localeCompare(b.name);
   return left > right ? -1 : 1;
+}
+
+function compareCreated(a: SortableSidebarGroup, b: SortableSidebarGroup): number {
+  const left = a.createdAt ?? Number.NEGATIVE_INFINITY;
+  const right = b.createdAt ?? Number.NEGATIVE_INFINITY;
+  if (left === right) return a.name.localeCompare(b.name);
+  return left > right ? -1 : 1;
+}
+
+function compareProjectOrder(a: SortableSidebarGroup, b: SortableSidebarGroup): number {
+  if (a.orderIndex === b.orderIndex) return 0;
+  // Explicitly ordered groups keep their drag position; groups created after
+  // the last drag fall back to creation time below them.
+  if (a.orderIndex === undefined) return 1;
+  if (b.orderIndex === undefined) return -1;
+  return a.orderIndex - b.orderIndex;
 }
 
 /** Sort groups for the sidebar view menu. Never mutates the input. */
@@ -59,6 +81,11 @@ export function sortSidebarGroups<T extends SortableSidebarGroup>(
       const rightRank = b.pinRank < 0 ? Number.MAX_SAFE_INTEGER : b.pinRank;
       if (leftRank !== rightRank) return leftRank - rightRank;
       return compareActivity(a, b);
+    }
+    if (sortMode === "project") {
+      const ordered = compareProjectOrder(a, b);
+      if (ordered !== 0) return ordered;
+      return compareCreated(a, b);
     }
     if (sortMode === "connection") {
       const leftMode = modeOrder.get(a.mode) ?? Number.MAX_SAFE_INTEGER;

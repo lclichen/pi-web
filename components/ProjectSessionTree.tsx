@@ -29,7 +29,8 @@ import { ApplyBundleDialog } from "./ApplyBundleDialog";
 function loadSortMode(): SidebarSortMode {
   if (typeof window === "undefined") return "project";
   try {
-    return window.localStorage.getItem(SIDEBAR_SORT_STORAGE_KEY) === "connection" ? "connection" : "project";
+    const value = window.localStorage.getItem(SIDEBAR_SORT_STORAGE_KEY);
+    return value === "session" || value === "connection" ? value : "project";
   } catch {
     return "project";
   }
@@ -175,7 +176,11 @@ export function ProjectSessionTree({
   const [query, setQuery] = useState("");
   // Host 目录组不是持久化的 ProjectRecord，菜单按 directory 分发。
   const [menu, setMenu] = useState<{ project?: ProjectRecord; directory?: string; x: number; y: number } | null>(null);
-  const [pins, setPins] = useState<SidebarPinState>({ pinnedProjects: [], pinnedSessions: [] });
+  const [pins, setPins] = useState<SidebarPinState>({
+    pinnedProjects: [],
+    pinnedSessions: [],
+    projectOrder: [],
+  });
   const [sortMode, setSortMode] = useState<SidebarSortMode>(loadSortMode);
   const [unreadOnly, setUnreadOnly] = useState(loadUnreadOnly);
   const [viewMenuOpen, setViewMenuOpen] = useState(false);
@@ -183,6 +188,8 @@ export function ProjectSessionTree({
   const [importId, setImportId] = useState<string | null>(null);
   const [applyBundleId, setApplyBundleId] = useState<string | null>(null);
   const [hostImportDir, setHostImportDir] = useState<string | null>(null);
+  const [draggedProjectId, setDraggedProjectId] = useState<string | null>(null);
+  const [dragOverProjectId, setDragOverProjectId] = useState<string | null>(null);
   /** Host 目录套用配置模板（仅未初始化目录；服务端 .pi 预检 409）。 */
   const [applyHostDir, setApplyHostDir] = useState<string | null>(null);
   // 配置同步：预览 modal（token）、应用状态、回滚历史。
@@ -210,6 +217,10 @@ export function ProjectSessionTree({
     () => new Map(pins.pinnedProjects.map((key, index) => [key, index])),
     [pins.pinnedProjects],
   );
+  const projectOrderRank = useMemo(
+    () => new Map(pins.projectOrder.map((key, index) => [key, index])),
+    [pins.projectOrder],
+  );
 
   const loadPins = useCallback(() => {
     fetch("/api/sidebar-state")
@@ -219,6 +230,7 @@ export function ProjectSessionTree({
         setPins({
           pinnedProjects: Array.isArray(d.pinnedProjects) ? d.pinnedProjects : [],
           pinnedSessions: Array.isArray(d.pinnedSessions) ? d.pinnedSessions : [],
+          projectOrder: Array.isArray(d.projectOrder) ? d.projectOrder : [],
         });
       })
       .catch(() => {});
@@ -246,6 +258,7 @@ export function ProjectSessionTree({
         setPins({
           pinnedProjects: Array.isArray(data.pinnedProjects) ? data.pinnedProjects : [],
           pinnedSessions: Array.isArray(data.pinnedSessions) ? data.pinnedSessions : [],
+          projectOrder: Array.isArray(data.projectOrder) ? data.projectOrder : [],
         });
         return true;
       } catch {
@@ -263,6 +276,25 @@ export function ProjectSessionTree({
     (sessionId: string, pinned: boolean) => void applyPin({ sessionId, pinned }),
     [applyPin],
   );
+
+  const applyProjectOrder = useCallback(async (order: string[]) => {
+    try {
+      const res = await fetch("/api/sidebar-state", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectOrder: order }),
+      });
+      const data = (await res.json().catch(() => null)) as SidebarPinState | null;
+      if (!res.ok || !data) return;
+      setPins({
+        pinnedProjects: Array.isArray(data.pinnedProjects) ? data.pinnedProjects : [],
+        pinnedSessions: Array.isArray(data.pinnedSessions) ? data.pinnedSessions : [],
+        projectOrder: Array.isArray(data.projectOrder) ? data.projectOrder : [],
+      });
+    } catch {
+      // Keep the previous order; the next loadPins reconciles.
+    }
+  }, []);
 
   useEffect(() => {
     try {
@@ -1028,13 +1060,33 @@ export function ProjectSessionTree({
         name: project.name,
         mode: project.mode,
         latest: latestByProject.get(project.id) ?? "",
+        createdAt: project.createdAt,
+        orderIndex: projectOrderRank.get(key),
         pinned: pinnedProjectKeys.has(key),
         pinRank: pinRankByProjectKey.get(key) ?? -1,
         project,
       };
     });
     return sortSidebarGroups(items, sortMode).map((item) => item.project);
-  }, [latestByProject, pinRankByProjectKey, pinnedProjectKeys, projects, sortMode]);
+  }, [latestByProject, pinRankByProjectKey, pinnedProjectKeys, projectOrderRank, projects, sortMode]);
+
+  const reorderProject = useCallback(
+    (draggedId: string, targetId: string) => {
+      if (sortMode !== "project" || draggedId === targetId) return;
+      const draggedKey = projectPinKey(draggedId);
+      const targetKey = projectPinKey(targetId);
+      if (pinnedProjectKeys.has(draggedKey) || pinnedProjectKeys.has(targetKey)) return;
+      const current = orderedProjects
+        .filter((project) => !pinnedProjectKeys.has(projectPinKey(project.id)))
+        .map((project) => projectPinKey(project.id));
+      const without = current.filter((key) => key !== draggedKey);
+      const targetIndex = without.indexOf(targetKey);
+      if (targetIndex < 0) return;
+      without.splice(targetIndex, 0, draggedKey);
+      void applyProjectOrder(without);
+    },
+    [applyProjectOrder, orderedProjects, pinnedProjectKeys, sortMode],
+  );
 
   const orderedHostGroups = useMemo(() => {
     const items = hostGroups.map(([root, list]) => {
@@ -1044,6 +1096,9 @@ export function ProjectSessionTree({
         name: hostDirByRoot.get(root)?.name?.trim() || hostDirLabel(root),
         mode: "host",
         latest: latestByHostRoot.get(root) ?? "",
+        createdAt:
+          hostDirByRoot.get(root)?.createdAt ??
+          (latestByHostRoot.get(root) ? Date.parse(latestByHostRoot.get(root)!) : undefined),
         pinned: pinnedProjectKeys.has(key),
         pinRank: pinRankByProjectKey.get(key) ?? -1,
         root,
@@ -1081,6 +1136,8 @@ export function ProjectSessionTree({
           name: project.name,
           mode: project.mode,
           latest: latestByProject.get(project.id) ?? "",
+          createdAt: project.createdAt,
+          orderIndex: projectOrderRank.get(projectPinKey(project.id)),
           pinned: pinnedProjectKeys.has(projectPinKey(project.id)),
           pinRank: pinRankByProjectKey.get(projectPinKey(project.id)) ?? -1,
           kind: "project",
@@ -1095,6 +1152,9 @@ export function ProjectSessionTree({
           name: hostDirByRoot.get(root)?.name?.trim() || hostDirLabel(root),
           mode: "host",
           latest: latestByHostRoot.get(root) ?? "",
+          createdAt:
+            hostDirByRoot.get(root)?.createdAt ??
+            (latestByHostRoot.get(root) ? Date.parse(latestByHostRoot.get(root)!) : undefined),
           pinned: pinnedProjectKeys.has(key),
           pinRank: pinRankByProjectKey.get(key) ?? -1,
           kind: "host",
@@ -1106,6 +1166,7 @@ export function ProjectSessionTree({
           name: mode,
           mode,
           latest: list[0]?.modified ?? "",
+          createdAt: list[0]?.modified ? Date.parse(list[0].modified) : undefined,
           pinned: false,
           pinRank: -1,
           kind: "unbound",
@@ -1120,6 +1181,7 @@ export function ProjectSessionTree({
     latestByProject,
     pinRankByProjectKey,
     pinnedProjectKeys,
+    projectOrderRank,
     projects,
     sessionSpace,
     sortMode,
@@ -1386,14 +1448,27 @@ export function ProjectSessionTree({
               <div style={{ padding: "4px 8px 2px", fontSize: 10, color: "var(--text-dim)" }}>
                 {t("sessions.sortLabel")}
               </div>
-              {(["project", "connection"] as SidebarSortMode[]).map((mode) => {
+              {(["project", "session", "connection"] as SidebarSortMode[]).map((mode) => {
                 const active = sortMode === mode;
+                const label =
+                  mode === "project"
+                    ? t("sessions.sortProjectFirst")
+                    : mode === "session"
+                      ? t("sessions.sortSessionFirst")
+                      : t("sessions.sortConnectionFirst");
+                const hint =
+                  mode === "project"
+                    ? t("sessions.sortProjectFirstHint")
+                    : mode === "session"
+                      ? t("sessions.sortSessionFirstHint")
+                      : t("sessions.sortConnectionFirstHint");
                 return (
                   <button
                     key={mode}
                     type="button"
                     role="menuitemradio"
                     aria-checked={active}
+                    title={hint}
                     onClick={() => {
                       setSortMode(mode);
                       setViewMenuOpen(false);
@@ -1413,11 +1488,7 @@ export function ProjectSessionTree({
                     }}
                   >
                     <span style={{ width: 12, flexShrink: 0, color: "var(--accent)" }}>{active ? "✓" : ""}</span>
-                    <span>
-                      {mode === "project"
-                        ? t("sessions.sortProjectFirst")
-                        : t("sessions.sortConnectionFirst")}
-                    </span>
+                    <span>{label}</span>
                   </button>
                 );
               })}
@@ -1541,8 +1612,36 @@ export function ProjectSessionTree({
               const projectHoldsFocus = Boolean(
                 selectedSessionId && byProject.map.get(project.id)?.some((s) => s.id === selectedSessionId),
               );
-              const modeColor = project.mode === "sandbox" ? "#38bdf8" : project.mode === "ssh" ? "#34d399" : "#a78bfa";
-              // 容器状态点（沙箱项目绑定容器的前台可见性）。
+              const modeBadge =
+                project.mode === "sandbox"
+                  ? {
+                      label: t("sessions.sandbox"),
+                      color: "#38bdf8",
+                      bg: "rgba(56,189,248,0.12)",
+                      hint: t("sessions.modeSandboxHint"),
+                    }
+                  : project.mode === "ssh"
+                    ? {
+                        label: t("SSH"),
+                        color: "#34d399",
+                        bg: "rgba(52,211,153,0.14)",
+                        hint: t("sessions.modeSshHint"),
+                      }
+                    : project.mode === "host"
+                      ? {
+                          label: "Host",
+                          color: "#f59e0b",
+                          bg: "rgba(245,158,11,0.14)",
+                          hint: t("sessions.modeHostHint"),
+                        }
+                      : {
+                          label: t("sessions.local"),
+                          color: "#a78bfa",
+                          bg: "rgba(167,139,250,0.12)",
+                          hint: t("sessions.modeLocalHint"),
+                        };
+              const modeColor = modeBadge.color;
+              // 容器状态并进沙盒模式徽标，避免"模式前的小绿点"被误读成另一种模式。
               const bound =
                 project.containerId != null ? containers.find((c) => c.id === project.containerId) : undefined;
               const containerState =
@@ -1553,6 +1652,14 @@ export function ProjectSessionTree({
                     : bound
                       ? { color: "#f59e0b", label: bound.status }
                       : { color: "#ef4444", label: t("sessions.container2") };
+              const modeBadgeTitle =
+                project.mode === "sandbox"
+                  ? `${modeBadge.hint} · ${t("sessions.container", {
+                      info: bound
+                        ? `#${bound.id} ${bound.name} · ${containerState.label}${bound.imageName ? ` · ${bound.imageName}` : ""} · /workspace`
+                        : containerState.label,
+                    })}`
+                  : modeBadge.hint;
               const badge = projectionBadges[project.id];
               const badgeCount = badge ? badge.dirty + badge.conflicts + badge.errors : 0;
               const badgeParts: string[] = [];
@@ -1581,18 +1688,54 @@ export function ProjectSessionTree({
                 <div key={project.id} style={{ marginBottom: 2, order: groupRenderOrder.get(project.id) ?? 0 }}>
                   <div
                     onClick={() => toggleCollapsed(project.id)}
+                    draggable={sortMode === "project" && !projectPinned}
+                    title={sortMode === "project" && !projectPinned ? t("sessions.dragToReorder") : undefined}
+                    onDragStart={(e) => {
+                      if (sortMode !== "project" || projectPinned) return;
+                      setDraggedProjectId(project.id);
+                      e.dataTransfer.effectAllowed = "move";
+                      e.dataTransfer.setData("text/plain", project.id);
+                    }}
+                    onDragOver={(e) => {
+                      if (
+                        !draggedProjectId ||
+                        draggedProjectId === project.id ||
+                        projectPinned ||
+                        pinnedProjectKeys.has(projectPinKey(draggedProjectId))
+                      ) {
+                        return;
+                      }
+                      e.preventDefault();
+                      e.dataTransfer.dropEffect = "move";
+                      setDragOverProjectId(project.id);
+                    }}
+                    onDragLeave={() => {
+                      if (dragOverProjectId === project.id) setDragOverProjectId(null);
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      if (draggedProjectId) reorderProject(draggedProjectId, project.id);
+                      setDraggedProjectId(null);
+                      setDragOverProjectId(null);
+                    }}
+                    onDragEnd={() => {
+                      setDraggedProjectId(null);
+                      setDragOverProjectId(null);
+                    }}
                     style={{
                       display: "flex",
                       alignItems: "center",
                       gap: 6,
                       padding: "5px 6px",
                       borderRadius: 6,
-                      cursor: "pointer",
+                      cursor: sortMode === "project" && !projectPinned ? "grab" : "pointer",
                       fontSize: 12,
                       fontWeight: 600,
                       color: "var(--text)",
                       background: projectHoldsFocus ? "var(--bg-selected)" : "var(--bg-panel)",
                       boxShadow: projectHoldsFocus ? `inset 2px 0 0 ${modeColor}` : "none",
+                      outline: dragOverProjectId === project.id ? "1px dashed var(--accent)" : "none",
+                      opacity: draggedProjectId === project.id ? 0.55 : 1,
                     }}
                     onMouseEnter={(e) => {
                       if (!projectHoldsFocus) e.currentTarget.style.background = "var(--bg-selected)";
@@ -1602,49 +1745,47 @@ export function ProjectSessionTree({
                     }}
                   >
                     <span style={{ fontSize: 9, color: "var(--text-dim)", width: 10 }}>{isCollapsed ? "▸" : "▾"}</span>
-                    {project.mode === "sandbox" ? (
-                      <span
-                        title={t("sessions.container", {
-                          info: bound
-                            ? `#${bound.id} ${bound.name} · ${containerState.label}${bound.imageName ? ` · ${bound.imageName}` : ""}`
-                            : containerState.label,
-                        })}
-                        style={{
-                          width: 8,
-                          height: 8,
-                          borderRadius: "50%",
-                          background: containerState.color,
-                          flexShrink: 0,
-                          boxShadow: containerState.label === "运行中" ? `0 0 5px ${containerState.color}` : "none",
-                        }}
-                      />
-                    ) : (
-                      <span style={{ width: 8, height: 8, flexShrink: 0 }} />
-                    )}
                     <span
+                      title={modeBadgeTitle}
                       style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 4,
                         flexShrink: 0,
                         padding: "0 5px",
                         borderRadius: 3,
                         fontSize: 9,
                         fontWeight: 700,
-                        color: modeColor,
-                        background:
-                          project.mode === "sandbox"
-                            ? "rgba(56,189,248,0.12)"
-                            : project.mode === "ssh"
-                              ? "rgba(52,211,153,0.14)"
-                              : "rgba(167,139,250,0.12)",
+                        color: modeBadge.color,
+                        background: modeBadge.bg,
                       }}
                     >
-                      {project.mode === "sandbox"
-                        ? t("sessions.sandbox")
-                        : project.mode === "ssh"
-                          ? t("SSH")
-                          : t("sessions.local")}
+                      {project.mode === "sandbox" && (
+                        <span
+                          aria-hidden="true"
+                          style={{
+                            width: 5,
+                            height: 5,
+                            borderRadius: "50%",
+                            background: containerState.color,
+                            flexShrink: 0,
+                            boxShadow:
+                              bound?.status === "running"
+                                ? `0 0 4px ${containerState.color}`
+                                : "none",
+                          }}
+                        />
+                      )}
+                      {modeBadge.label}
                     </span>
                     {projectPinned && (
-                      <Pin size={11} fill="currentColor" style={{ color: "#f59e0b", flexShrink: 0 }} aria-hidden="true" />
+                      <span
+                        title={t("sessions.projectPinnedHint")}
+                        aria-label={t("sessions.projectPinnedHint")}
+                        style={{ display: "inline-flex", flexShrink: 0 }}
+                      >
+                        <Pin size={11} fill="currentColor" style={{ color: "#f59e0b" }} aria-hidden="true" />
+                      </span>
                     )}
                     <span
                       style={{
@@ -1689,7 +1830,13 @@ export function ProjectSessionTree({
                         /workspace
                       </span>
                     )}
-                    <span style={{ fontSize: 10, color: "var(--text-dim)" }}>{total}</span>
+                    <span
+                      title={t("sessions.sessionCountHint", { count: total })}
+                      aria-label={t("sessions.sessionCountHint", { count: total })}
+                      style={{ fontSize: 10, color: "var(--text-dim)" }}
+                    >
+                      {total}
+                    </span>
                     <button
                       type="button"
                       title={t("sessions.newSession")}
@@ -1945,20 +2092,27 @@ export function ProjectSessionTree({
                   >
                     <span style={{ fontSize: 9, color: "var(--text-dim)", width: 10 }}>{isCollapsed ? "▸" : "▾"}</span>
                     <span
+                      title={t("sessions.hostDirModeHint")}
                       style={{
                         flexShrink: 0,
                         padding: "0 5px",
                         borderRadius: 3,
                         fontSize: 9,
                         fontWeight: 700,
-                        color: "var(--text-muted)",
-                        background: "rgba(128,128,128,0.14)",
+                        color: "#f59e0b",
+                        background: "rgba(245,158,11,0.14)",
                       }}
                     >
                       Host
                     </span>
                     {hostPinned && (
-                      <Pin size={11} fill="currentColor" style={{ color: "#f59e0b", flexShrink: 0 }} aria-hidden="true" />
+                      <span
+                        title={t("sessions.projectPinnedHint")}
+                        aria-label={t("sessions.projectPinnedHint")}
+                        style={{ display: "inline-flex", flexShrink: 0 }}
+                      >
+                        <Pin size={11} fill="currentColor" style={{ color: "#f59e0b" }} aria-hidden="true" />
+                      </span>
                     )}
                     {/* 显示末级文件夹名（完整路径进 tooltip）——全路径太冗余 */}
                     <span
@@ -1972,7 +2126,13 @@ export function ProjectSessionTree({
                     >
                       {displayName}
                     </span>
-                    <span style={{ fontSize: 10, color: "var(--text-dim)" }}>{list.length}</span>
+                    <span
+                      title={t("sessions.sessionCountHint", { count: list.length })}
+                      aria-label={t("sessions.sessionCountHint", { count: list.length })}
+                      style={{ fontSize: 10, color: "var(--text-dim)" }}
+                    >
+                      {list.length}
+                    </span>
                     {onNewSessionInDirectory && (
                       <button
                         type="button"
@@ -2051,10 +2211,25 @@ export function ProjectSessionTree({
               const isCollapsed = collapsed.has(key);
               const badge =
                 mode === "sandbox"
-                  ? { label: t("sessions.sandbox"), color: "#38bdf8", bg: "rgba(56,189,248,0.12)" }
+                  ? {
+                      label: t("sessions.sandbox"),
+                      color: "#38bdf8",
+                      bg: "rgba(56,189,248,0.12)",
+                      hint: t("sessions.modeSandboxHint"),
+                    }
                   : mode === "ssh"
-                    ? { label: t("SSH"), color: "#34d399", bg: "rgba(52,211,153,0.14)" }
-                    : { label: t("sessions.local"), color: "#a78bfa", bg: "rgba(167,139,250,0.12)" };
+                    ? {
+                        label: t("SSH"),
+                        color: "#34d399",
+                        bg: "rgba(52,211,153,0.14)",
+                        hint: t("sessions.modeSshHint"),
+                      }
+                    : {
+                        label: t("sessions.local"),
+                        color: "#a78bfa",
+                        bg: "rgba(167,139,250,0.12)",
+                        hint: t("sessions.modeLocalHint"),
+                      };
               const visible = isCollapsed ? [] : list;
               return (
                 <div key={key} style={{ marginBottom: 2, order: groupRenderOrder.get(key) ?? 0 }}>
@@ -2075,6 +2250,7 @@ export function ProjectSessionTree({
                   >
                     <span style={{ fontSize: 9, color: "var(--text-dim)", width: 10 }}>{isCollapsed ? "▸" : "▾"}</span>
                     <span
+                      title={badge.hint}
                       style={{
                         flexShrink: 0,
                         padding: "0 5px",
@@ -2098,7 +2274,13 @@ export function ProjectSessionTree({
                     >
                       {t("sessions.unboundSuffix")}
                     </span>
-                    <span style={{ fontSize: 10, color: "var(--text-dim)" }}>{list.length}</span>
+                    <span
+                      title={t("sessions.sessionCountHint", { count: list.length })}
+                      aria-label={t("sessions.sessionCountHint", { count: list.length })}
+                      style={{ fontSize: 10, color: "var(--text-dim)" }}
+                    >
+                      {list.length}
+                    </span>
                   </div>
                   {visible.map((s) => renderItem(s))}
                 </div>
@@ -2114,11 +2296,12 @@ export function ProjectSessionTree({
           style={{
             position: "fixed",
             top: menu.y,
-            left: Math.max(8, menu.x - 160),
+            left: Math.max(8, menu.x - 220),
             zIndex: 1200,
             display: "flex",
             flexDirection: "column",
-            minWidth: 160,
+            minWidth: 230,
+            maxWidth: 300,
             background: "var(--bg-panel)",
             border: "1px solid var(--border)",
             borderRadius: 8,
@@ -2139,6 +2322,7 @@ export function ProjectSessionTree({
               setMenu(null);
             }}
           />
+          <MenuSection label={t("sessions.menuGroupProject")} />
           <MenuItem
             label={t("sessions.newSession")}
             onClick={() => {
@@ -2146,8 +2330,35 @@ export function ProjectSessionTree({
               setMenu(null);
             }}
           />
+          {/* Host 目录可能只是动态聚合出来的（没有 host-dirs 记录）：
+              重命名时按需注册，空目录同样有稳定名称。 */}
+          <MenuItem
+            label={t("sessions.renameHostDir")}
+            onClick={() => {
+              const root = menu.directory!;
+              const record = hostDirByRoot.get(root);
+              const current = record?.name?.trim() || hostDirLabel(root);
+              const name = window.prompt(t("sessions.newProjectName"), current);
+              setMenu(null);
+              if (name === null) return;
+              const request = record
+                ? fetch("/api/host/dirs", {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ id: record.id, name }),
+                  })
+                : fetch("/api/host/dirs", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ cwd: root, name }),
+                  });
+              void request.then(() => loadHostDirs()).catch(() => {});
+            }}
+          />
+          <MenuSection label={t("sessions.menuGroupConfig")} />
           <MenuItem
             label={t("sessions.importProjectConfig")}
+            hint={t("sessions.hintImportProjectConfig")}
             onClick={() => {
               setHostImportDir(menu.directory!);
               setMenu(null);
@@ -2155,6 +2366,7 @@ export function ProjectSessionTree({
           />
           <MenuItem
             label={t("bundles.applyMenu")}
+            hint={t("sessions.hintApplyBundle")}
             onClick={() => {
               setApplyHostDir(menu.directory!);
               setMenu(null);
@@ -2162,20 +2374,21 @@ export function ProjectSessionTree({
           />
           <MenuItem
             label={t("sessions.exportConfigBundle")}
+            hint={t("sessions.hintExportConfigBundle")}
             onClick={() => {
               void exportHostConfig(menu.directory!);
               setMenu(null);
             }}
           />
-          <div style={{ borderTop: "1px solid var(--border)" }} />
+          <MenuSection label={t("sessions.menuGroupMaintenance")} />
           <MenuItem
             label={t("sessions.cleanAttachments")}
+            hint={t("sessions.hintCleanAttachments")}
             onClick={() => {
               void cleanHostAttachments(menu.directory!);
               setMenu(null);
             }}
           />
-          <div style={{ borderTop: "1px solid var(--border)" }} />
           <MenuItem
             label={t("sessions.copyPath")}
             onClick={() => {
@@ -2183,50 +2396,25 @@ export function ProjectSessionTree({
               setMenu(null);
             }}
           />
-          <MenuItem
-            label={t("sessions.browseFilePanel")}
-            onClick={() => {
-              // 与项目会话同一套文件面板：把该目录设为当前工作目录并建一个会话。
-              onNewSessionInDirectory(menu.directory!);
-              setMenu(null);
-            }}
-          />
-          {/* 注册表占位管理：重命名 / 从列表移除。移除仅删占位记录，
-              不碰真实目录；有会话时隐藏移除项（避免"点了没变化"）。 */}
           {(() => {
             const record = hostDirByRoot.get(menu.directory!);
             if (!record) return null;
             const count = hostGroups.find(([root]) => root === menu.directory)?.[1].length ?? 0;
+            if (count !== 0) return null;
             return (
               <>
                 <div style={{ borderTop: "1px solid var(--border)" }} />
                 <MenuItem
-                  label={t("sessions.renameHostDir")}
+                  label={t("sessions.removeHostDir")}
+                  danger
+                  hint={t("sessions.hintRemoveHostDir")}
                   onClick={() => {
-                    const name = window.prompt(t("sessions.newProjectName"), record.name ?? "");
                     setMenu(null);
-                    if (name === null) return;
-                    void fetch("/api/host/dirs", {
-                      method: "PATCH",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ id: record.id, name }),
-                    })
+                    void fetch(`/api/host/dirs?id=${encodeURIComponent(record.id)}`, { method: "DELETE" })
                       .then(() => loadHostDirs())
                       .catch(() => {});
                   }}
                 />
-                {count === 0 && (
-                  <MenuItem
-                    label={t("sessions.removeHostDir")}
-                    danger
-                    onClick={() => {
-                      setMenu(null);
-                      void fetch(`/api/host/dirs?id=${encodeURIComponent(record.id)}`, { method: "DELETE" })
-                        .then(() => loadHostDirs())
-                        .catch(() => {});
-                    }}
-                  />
-                )}
               </>
             );
           })()}
@@ -2245,11 +2433,12 @@ export function ProjectSessionTree({
             style={{
               position: "fixed",
               top: menu.y,
-              left: Math.max(8, menu.x - 160),
+              left: Math.max(8, menu.x - 220),
               zIndex: 1200,
               display: "flex",
               flexDirection: "column",
-              minWidth: 160,
+              minWidth: 230,
+              maxWidth: 300,
               background: "var(--bg-panel)",
               border: "1px solid var(--border)",
               borderRadius: 8,
@@ -2265,6 +2454,7 @@ export function ProjectSessionTree({
                 setMenu(null);
               }}
             />
+            <MenuSection label={t("sessions.menuGroupProject")} />
             <MenuItem
               label={t("sessions.newSession")}
               onClick={() => {
@@ -2289,14 +2479,17 @@ export function ProjectSessionTree({
             {menuProject.mode !== "host" && (
               <MenuItem
                 label={t("sessions.duplicateNewProject")}
+                hint={t("sessions.hintDuplicateProject")}
                 onClick={() => {
                   void duplicate(menuProject);
                   setMenu(null);
                 }}
               />
             )}
+            <MenuSection label={t("sessions.menuGroupConfig")} />
             <MenuItem
               label={t("sessions.settingsModelCredentials")}
+              hint={t("sessions.hintProjectSettings")}
               onClick={() => {
                 setSettingsId(menuProject.id);
                 setMenu(null);
@@ -2304,34 +2497,15 @@ export function ProjectSessionTree({
             />
             <MenuItem
               label={t("sessions.importProjectConfig")}
+              hint={t("sessions.hintImportProjectConfig")}
               onClick={() => {
                 setImportId(menuProject.id);
                 setMenu(null);
               }}
             />
             <MenuItem
-              label={t("sessions.workspaceSyncConfig")}
-              onClick={() => {
-                void syncWorkspaceConfig(menuProject);
-                setMenu(null);
-              }}
-            />
-            <MenuItem
-              label={t("sessions.rollbackMenu")}
-              onClick={() => {
-                void openRollback(menuProject);
-                setMenu(null);
-              }}
-            />
-            <MenuItem
-              label={t("sessions.projectionMenu")}
-              onClick={() => {
-                void openProjection(menuProject);
-                setMenu(null);
-              }}
-            />
-            <MenuItem
               label={t("bundles.applyMenu")}
+              hint={t("sessions.hintApplyBundle")}
               onClick={() => {
                 setApplyBundleId(menuProject.id);
                 setMenu(null);
@@ -2339,11 +2513,37 @@ export function ProjectSessionTree({
             />
             <MenuItem
               label={t("sessions.exportConfigBundle")}
+              hint={t("sessions.hintExportConfigBundle")}
               onClick={() => {
                 void exportConfig(menuProject);
                 setMenu(null);
               }}
             />
+            <MenuItem
+              label={t("sessions.workspaceSyncConfig")}
+              hint={t("sessions.hintWorkspaceSyncConfig")}
+              onClick={() => {
+                void syncWorkspaceConfig(menuProject);
+                setMenu(null);
+              }}
+            />
+            <MenuItem
+              label={t("sessions.projectionMenu")}
+              hint={t("sessions.hintProjectionMenu")}
+              onClick={() => {
+                void openProjection(menuProject);
+                setMenu(null);
+              }}
+            />
+            <MenuItem
+              label={t("sessions.rollbackMenu")}
+              hint={t("sessions.hintRollbackMenu")}
+              onClick={() => {
+                void openRollback(menuProject);
+                setMenu(null);
+              }}
+            />
+            {menuProject.mode === "sandbox" && <MenuSection label={t("sessions.menuGroupSandbox")} />}
             {menuProject.mode === "sandbox" &&
               (() => {
                 // 绑定信息：项目 → 容器 → 镜像 三位一体（debug 友好）。
@@ -2354,7 +2554,6 @@ export function ProjectSessionTree({
                 return (
                   <div
                     style={{
-                      borderTop: "1px solid var(--border)",
                       padding: "6px 10px",
                       color: "var(--text-dim)",
                       fontSize: 10.5,
@@ -2364,25 +2563,14 @@ export function ProjectSessionTree({
                     {t("sessions.container", {
                       info: boundInfo
                         ? `#${boundInfo.id} · ${boundInfo.status === "running" ? t("projects.running") : boundInfo.status}`
-                        : "未绑定",
+                        : t("sessions.containerUnbound"),
                     })}
                     {boundInfo?.imageName ? ` · ${boundInfo.imageName}` : ""}
                     {t("sessions.saves2MostRecent2", { n: menuProject.snapshotSlots?.length ?? 0 })}
                   </div>
                 );
               })()}
-            {menuProject.mode === "sandbox" && (
-              <div
-                style={{
-                  borderTop: "1px solid var(--border)",
-                  padding: "4px 10px",
-                  color: "var(--text-dim)",
-                  fontSize: 10,
-                }}
-              >
-                存档（含环境与文件）
-              </div>
-            )}
+            {menuProject.mode === "sandbox" && <MenuSection label={t("sessions.sandboxSavesSection")} />}
             {menuProject.mode === "sandbox" && (
               <MenuItem
                 label={t("sessions.saveStateSnapshot")}
@@ -2403,18 +2591,7 @@ export function ProjectSessionTree({
                   }}
                 />
               ))}
-            {menuProject.mode === "sandbox" && (
-              <div
-                style={{
-                  borderTop: "1px solid var(--border)",
-                  padding: "4px 10px",
-                  color: "var(--text-dim)",
-                  fontSize: 10,
-                }}
-              >
-                文件留存（仅文件）
-              </div>
-            )}
+            {menuProject.mode === "sandbox" && <MenuSection label={t("sessions.sandboxFilesSection")} />}
             {menuProject.mode === "sandbox" && (
               <MenuItem
                 label={t("sessions.exportMyWorkspaceTarGz")}
@@ -2424,18 +2601,7 @@ export function ProjectSessionTree({
                 }}
               />
             )}
-            {menuProject.mode === "sandbox" && (
-              <div
-                style={{
-                  borderTop: "1px solid var(--border)",
-                  padding: "4px 10px",
-                  color: "var(--text-dim)",
-                  fontSize: 10,
-                }}
-              >
-                沙箱容器
-              </div>
-            )}
+            {menuProject.mode === "sandbox" && <MenuSection label={t("sessions.sandboxContainersSection")} />}
             {menuProject.mode === "sandbox" &&
               containers.map((c) => (
                 <MenuItem
@@ -2459,18 +2625,10 @@ export function ProjectSessionTree({
                 }}
               />
             )}
-            <div style={{ borderTop: "1px solid var(--border)" }} />
-            <div
-              style={{
-                padding: "4px 10px",
-                color: "var(--text-dim)",
-                fontSize: 10,
-              }}
-            >
-              {t("sessions.tempFiles")}
-            </div>
+            <MenuSection label={t("sessions.menuGroupMaintenance")} />
             <MenuItem
               label={t("sessions.cleanAttachments")}
+              hint={t("sessions.hintCleanAttachments")}
               onClick={() => {
                 void cleanAttachments(menuProject);
                 setMenu(null);
@@ -3044,17 +3202,50 @@ function ProjectionStatusDialog({
   );
 }
 
-function MenuItem({ label, onClick, danger }: { label: string; onClick: () => void; danger?: boolean }) {
+function MenuSection({ label }: { label: string }) {
+  return (
+    <div
+      style={{
+        borderTop: "1px solid var(--border)",
+        padding: "6px 12px 2px",
+        color: "var(--text-dim)",
+        fontSize: 9.5,
+        fontWeight: 700,
+        letterSpacing: "0.04em",
+        textTransform: "uppercase",
+      }}
+    >
+      {label}
+    </div>
+  );
+}
+
+function MenuItem({
+  label,
+  onClick,
+  danger,
+  hint,
+}: {
+  label: string;
+  onClick: () => void;
+  danger?: boolean;
+  hint?: string;
+}) {
   return (
     <button
       type="button"
       onClick={onClick}
+      title={hint}
       style={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "flex-start",
+        gap: 1,
         background: "transparent",
         border: "none",
         cursor: "pointer",
         textAlign: "left",
-        padding: "7px 12px",
+        padding: hint ? "6px 12px" : "7px 12px",
         fontSize: 12,
         color: danger ? "#f87171" : "var(--text)",
       }}
@@ -3065,7 +3256,10 @@ function MenuItem({ label, onClick, danger }: { label: string; onClick: () => vo
         e.currentTarget.style.background = "transparent";
       }}
     >
-      {label}
+      <span>{label}</span>
+      {hint && (
+        <span style={{ fontSize: 10, lineHeight: 1.35, color: danger ? "#fca5a5" : "var(--text-dim)" }}>{hint}</span>
+      )}
     </button>
   );
 }

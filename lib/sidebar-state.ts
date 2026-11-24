@@ -17,15 +17,18 @@ import { dataDir } from "./mode-homes";
 import { JsonStore } from "./state/json-store";
 import { legacyDataPath } from "./state/paths";
 import type { SidebarPinState } from "./sidebar-state-shared";
+import { isSidebarProjectKey } from "./sidebar-state-shared";
 
 const MAX_PINNED_PROJECTS = 500;
 const MAX_PINNED_SESSIONS = 2000;
+const MAX_PROJECT_ORDER = 500;
 const MAX_KEY_LENGTH = 4096;
 const MAX_SESSION_ID_LENGTH = 256;
 
 interface SidebarStateData {
   pinnedProjects: string[];
   pinnedSessions: string[];
+  projectOrder: string[];
 }
 
 function sidebarStore(userId: number): JsonStore<SidebarStateData> {
@@ -33,7 +36,7 @@ function sidebarStore(userId: number): JsonStore<SidebarStateData> {
     name: "sidebar-state",
     scope: { kind: "user", userId },
     legacyPaths: () => [legacyDataPath("sidebar-state", `u${userId}.json`)],
-    defaults: () => ({ pinnedProjects: [], pinnedSessions: [] }),
+    defaults: () => ({ pinnedProjects: [], pinnedSessions: [], projectOrder: [] }),
     parse: (value) => sanitize(value),
   });
 }
@@ -53,17 +56,29 @@ function cleanList(value: unknown, maxItems: number, maxLength: number): string[
   return out;
 }
 
+function cleanProjectKeys(value: unknown): string[] {
+  return cleanList(value, MAX_PROJECT_ORDER, MAX_KEY_LENGTH).filter(isSidebarProjectKey);
+}
+
 function sanitize(value: unknown): SidebarStateData {
   const record = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
   return {
-    pinnedProjects: cleanList(record.pinnedProjects, MAX_PINNED_PROJECTS, MAX_KEY_LENGTH),
+    pinnedProjects: cleanProjectKeys(record.pinnedProjects),
     pinnedSessions: cleanList(record.pinnedSessions, MAX_PINNED_SESSIONS, MAX_SESSION_ID_LENGTH),
+    projectOrder: cleanProjectKeys(record.projectOrder),
+  };
+}
+
+function stateOf(state: SidebarStateData): SidebarPinState {
+  return {
+    pinnedProjects: state.pinnedProjects,
+    pinnedSessions: state.pinnedSessions,
+    projectOrder: state.projectOrder,
   };
 }
 
 export function readSidebarPins(userId: number): SidebarPinState {
-  const state = sidebarStore(userId).read();
-  return { pinnedProjects: state.pinnedProjects, pinnedSessions: state.pinnedSessions };
+  return stateOf(sidebarStore(userId).read());
 }
 
 /** Pin/unpin a project group. A newly pinned key goes to the front. */
@@ -77,7 +92,7 @@ export function setPinnedProject(userId: number, key: string, pinned: boolean): 
       MAX_KEY_LENGTH,
     );
   });
-  return { pinnedProjects: state.pinnedProjects, pinnedSessions: state.pinnedSessions };
+  return stateOf(state);
 }
 
 /** Pin/unpin a session. A newly pinned id goes to the front. */
@@ -91,10 +106,32 @@ export function setPinnedSession(userId: number, sessionId: string, pinned: bool
       MAX_SESSION_ID_LENGTH,
     );
   });
-  return { pinnedProjects: state.pinnedProjects, pinnedSessions: state.pinnedSessions };
+  return stateOf(state);
 }
 
-/** Project deletion: remove the project pin from every user's sidebar state. */
+/** Persist the user's drag order for "project first" (keys are stored verbatim). */
+export function setProjectOrder(userId: number, order: readonly string[]): SidebarPinState {
+  const store = sidebarStore(userId);
+  const state = store.update((data) => {
+    data.projectOrder = cleanProjectKeys(order);
+  });
+  return stateOf(state);
+}
+
+/** New project creation: put its group at the front without pinning it. */
+export function moveProjectToFront(userId: number, key: string): SidebarPinState {
+  const store = sidebarStore(userId);
+  const state = store.update((data) => {
+    const order = cleanProjectKeys(data.projectOrder).filter((entry) => entry !== key);
+    data.projectOrder = [key, ...order].slice(0, MAX_PROJECT_ORDER);
+  });
+  return stateOf(state);
+}
+
+/**
+ * Project deletion: remove the project from every user's pin and drag order.
+ * Returns how many users had either entry.
+ */
 export function removeProjectPinsEverywhere(projectId: string): number {
   const key = `project:${projectId}`;
   let removed = 0;
@@ -109,8 +146,16 @@ export function removeProjectPinsEverywhere(projectId: string): number {
     const match = /^u(\d+)$/.exec(entry.name);
     if (!match) continue;
     const userId = Number(match[1]);
-    if (!readSidebarPins(userId).pinnedProjects.includes(key)) continue;
-    setPinnedProject(userId, key, false);
+    const pins = readSidebarPins(userId);
+    const had = pins.pinnedProjects.includes(key) || pins.projectOrder.includes(key);
+    if (!had) continue;
+    if (pins.pinnedProjects.includes(key)) setPinnedProject(userId, key, false);
+    if (pins.projectOrder.includes(key)) {
+      setProjectOrder(
+        userId,
+        pins.projectOrder.filter((entry) => entry !== key),
+      );
+    }
     removed += 1;
   }
   return removed;

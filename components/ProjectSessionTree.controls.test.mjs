@@ -44,7 +44,9 @@ test("project-first supports three sort modes and drag ordering", () => {
   assert.match(source, /sortSessionFirst/);
   assert.match(source, /projectOrder/);
   assert.match(source, /draggable=\{sortMode === "project" && !projectPinned\}/);
-  assert.match(source, /reorderProject\(draggedProjectId, project\.id\)/);
+  assert.match(source, /draggable=\{sortMode === "project" && !hostPinned\}/);
+  assert.match(source, /reorderGroup\(draggedGroupKey, projectPinKey\(project\.id\)\)/);
+  assert.match(source, /reorderGroup\(draggedGroupKey, key\)/);
 });
 
 test("project menu groups actions and exposes hints; Host dirs can always be renamed", () => {

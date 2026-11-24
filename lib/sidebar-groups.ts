@@ -96,8 +96,44 @@ export function sortSidebarGroups<T extends SortableSidebarGroup>(
   });
 }
 
-/** True when at least one expandable group is currently open. */
-export function anySidebarGroupExpanded(groupKeys: readonly string[], collapsed: ReadonlySet<string>): boolean {
+/**
+ * Merge the user's explicit drag order with groups that appeared later.
+ * Missing groups (new Host directories, or platform projects saved by the old
+ * drag implementation) are inserted by creation time instead of being pushed
+ * to the bottom of the list.
+ */
+export function mergeProjectOrder(
+  visible: ReadonlyArray<{ key: string; name?: string; createdAt?: number }>,
+  explicit: readonly string[],
+): string[] {
+  const byKey = new Map(visible.map((group) => [group.key, group]));
+  const seen = new Set<string>();
+  const order: string[] = [];
+  for (const key of explicit) {
+    if (!byKey.has(key) || seen.has(key)) continue;
+    seen.add(key);
+    order.push(key);
+  }
+  const missing = visible
+    .filter((group) => !seen.has(group.key))
+    .sort((a, b) => {
+      const left = a.createdAt ?? Number.NEGATIVE_INFINITY;
+      const right = b.createdAt ?? Number.NEGATIVE_INFINITY;
+      if (left !== right) return right - left;
+      return (a.name ?? a.key).localeCompare(b.name ?? b.key);
+    });
+  for (const group of missing) {
+    const created = group.createdAt ?? Number.NEGATIVE_INFINITY;
+    const index = order.findIndex(
+      (key) => (byKey.get(key)?.createdAt ?? Number.NEGATIVE_INFINITY) < created,
+    );
+    if (index < 0) order.push(group.key);
+    else order.splice(index, 0, group.key);
+  }
+  return order;
+}
+
+/** True when at least one expandable group is currently open. */export function anySidebarGroupExpanded(groupKeys: readonly string[], collapsed: ReadonlySet<string>): boolean {
   return groupKeys.some((key) => !collapsed.has(key));
 }
 

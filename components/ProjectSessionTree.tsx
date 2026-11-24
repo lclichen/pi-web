@@ -9,6 +9,7 @@ import type { HostDirRecord } from "@/lib/host-dirs";
 import { buildHostGroups, hostDirLabel } from "@/lib/host-groups";
 import {
   anySidebarGroupExpanded,
+  mergeProjectOrder,
   setAllSidebarGroups,
   sortSidebarGroups,
   type SortableSidebarGroup,
@@ -188,8 +189,8 @@ export function ProjectSessionTree({
   const [importId, setImportId] = useState<string | null>(null);
   const [applyBundleId, setApplyBundleId] = useState<string | null>(null);
   const [hostImportDir, setHostImportDir] = useState<string | null>(null);
-  const [draggedProjectId, setDraggedProjectId] = useState<string | null>(null);
-  const [dragOverProjectId, setDragOverProjectId] = useState<string | null>(null);
+  const [draggedGroupKey, setDraggedGroupKey] = useState<string | null>(null);
+  const [dragOverGroupKey, setDragOverGroupKey] = useState<string | null>(null);
   /** Host 目录套用配置模板（仅未初始化目录；服务端 .pi 预检 409）。 */
   const [applyHostDir, setApplyHostDir] = useState<string | null>(null);
   // 配置同步：预览 modal（token）、应用状态、回滚历史。
@@ -216,10 +217,6 @@ export function ProjectSessionTree({
   const pinRankByProjectKey = useMemo(
     () => new Map(pins.pinnedProjects.map((key, index) => [key, index])),
     [pins.pinnedProjects],
-  );
-  const projectOrderRank = useMemo(
-    () => new Map(pins.projectOrder.map((key, index) => [key, index])),
-    [pins.projectOrder],
   );
 
   const loadPins = useCallback(() => {
@@ -1050,6 +1047,34 @@ export function ProjectSessionTree({
     return latest;
   }, [sessions]);
 
+  // Effective project-first order. Explicit drag positions win; groups that
+  // appeared after the last drag (new projects/Host directories, or entries
+  // written by the old drag implementation that only stored platform projects)
+  // are inserted by creation time instead of being dumped at the bottom.
+  const projectOrderRank = useMemo(() => {
+    const visible: Array<{ key: string; name: string; createdAt: number }> = [];
+    for (const project of projects) {
+      if (project.mode === "quick") continue;
+      const key = projectPinKey(project.id);
+      if (pinnedProjectKeys.has(key)) continue;
+      visible.push({ key, name: project.name, createdAt: project.createdAt });
+    }
+    for (const [root] of hostGroups) {
+      const key = hostPinKey(root);
+      if (pinnedProjectKeys.has(key)) continue;
+      const latest = latestByHostRoot.get(root);
+      visible.push({
+        key,
+        name: hostDirByRoot.get(root)?.name?.trim() || hostDirLabel(root),
+        createdAt:
+          hostDirByRoot.get(root)?.createdAt ??
+          (latest ? Date.parse(latest) : Number.NEGATIVE_INFINITY),
+      });
+    }
+    const order = mergeProjectOrder(visible, pins.projectOrder);
+    return new Map(order.map((key, index) => [key, index]));
+  }, [hostDirByRoot, hostGroups, latestByHostRoot, pinnedProjectKeys, pins.projectOrder, projects]);
+
   const orderedProjects = useMemo(() => {
     const items = projects
       .filter((project) => project.mode !== "quick")
@@ -1070,24 +1095,6 @@ export function ProjectSessionTree({
     return sortSidebarGroups(items, sortMode).map((item) => item.project);
   }, [latestByProject, pinRankByProjectKey, pinnedProjectKeys, projectOrderRank, projects, sortMode]);
 
-  const reorderProject = useCallback(
-    (draggedId: string, targetId: string) => {
-      if (sortMode !== "project" || draggedId === targetId) return;
-      const draggedKey = projectPinKey(draggedId);
-      const targetKey = projectPinKey(targetId);
-      if (pinnedProjectKeys.has(draggedKey) || pinnedProjectKeys.has(targetKey)) return;
-      const current = orderedProjects
-        .filter((project) => !pinnedProjectKeys.has(projectPinKey(project.id)))
-        .map((project) => projectPinKey(project.id));
-      const without = current.filter((key) => key !== draggedKey);
-      const targetIndex = without.indexOf(targetKey);
-      if (targetIndex < 0) return;
-      without.splice(targetIndex, 0, draggedKey);
-      void applyProjectOrder(without);
-    },
-    [applyProjectOrder, orderedProjects, pinnedProjectKeys, sortMode],
-  );
-
   const orderedHostGroups = useMemo(() => {
     const items = hostGroups.map(([root, list]) => {
       const key = hostPinKey(root);
@@ -1099,6 +1106,7 @@ export function ProjectSessionTree({
         createdAt:
           hostDirByRoot.get(root)?.createdAt ??
           (latestByHostRoot.get(root) ? Date.parse(latestByHostRoot.get(root)!) : undefined),
+        orderIndex: projectOrderRank.get(key),
         pinned: pinnedProjectKeys.has(key),
         pinRank: pinRankByProjectKey.get(key) ?? -1,
         root,
@@ -1106,7 +1114,7 @@ export function ProjectSessionTree({
       };
     });
     return sortSidebarGroups(items, sortMode).map((item) => [item.root, item.list] as [string, SessionInfo[]]);
-  }, [hostDirByRoot, hostGroups, latestByHostRoot, pinRankByProjectKey, pinnedProjectKeys, sortMode]);
+  }, [hostDirByRoot, hostGroups, latestByHostRoot, pinRankByProjectKey, pinnedProjectKeys, projectOrderRank, sortMode]);
 
   // 未绑定项目的非宿主模式会话，按 mode 聚成一组（沙箱/本机/SSH 各一组）。
   const unboundModeGroups = useMemo(() => {
@@ -1155,6 +1163,7 @@ export function ProjectSessionTree({
           createdAt:
             hostDirByRoot.get(root)?.createdAt ??
             (latestByHostRoot.get(root) ? Date.parse(latestByHostRoot.get(root)!) : undefined),
+          orderIndex: projectOrderRank.get(key),
           pinned: pinnedProjectKeys.has(key),
           pinRank: pinRankByProjectKey.get(key) ?? -1,
           kind: "host",
@@ -1187,6 +1196,34 @@ export function ProjectSessionTree({
     sortMode,
     unboundModeGroups,
   ]);
+
+  // Drag/drop applies to project records and Host directory groups alike;
+  // both live in the same user order. Pinned groups keep pin-order and are
+  // not draggable targets.
+  const reorderGroup = useCallback(
+    (draggedKey: string, targetKey: string) => {
+      if (sortMode !== "project" || draggedKey === targetKey) return;
+      if (pinnedProjectKeys.has(draggedKey) || pinnedProjectKeys.has(targetKey)) return;
+      const visible: Array<{ key: string; rank: number }> = [];
+      for (const project of orderedProjects) {
+        const key = projectPinKey(project.id);
+        if (pinnedProjectKeys.has(key)) continue;
+        visible.push({ key, rank: groupRenderOrder.get(project.id) ?? Number.MAX_SAFE_INTEGER });
+      }
+      for (const [root] of orderedHostGroups) {
+        const key = hostPinKey(root);
+        if (pinnedProjectKeys.has(key)) continue;
+        visible.push({ key, rank: groupRenderOrder.get(key) ?? Number.MAX_SAFE_INTEGER });
+      }
+      visible.sort((a, b) => a.rank - b.rank);
+      const without = visible.map((item) => item.key).filter((key) => key !== draggedKey);
+      const targetIndex = without.indexOf(targetKey);
+      if (targetIndex < 0) return;
+      without.splice(targetIndex, 0, draggedKey);
+      void applyProjectOrder(without);
+    },
+    [applyProjectOrder, groupRenderOrder, orderedHostGroups, orderedProjects, pinnedProjectKeys, sortMode],
+  );
 
   const renderItem = (s: SessionInfo) => {
     const selected = s.id === selectedSessionId;
@@ -1692,35 +1729,37 @@ export function ProjectSessionTree({
                     title={sortMode === "project" && !projectPinned ? t("sessions.dragToReorder") : undefined}
                     onDragStart={(e) => {
                       if (sortMode !== "project" || projectPinned) return;
-                      setDraggedProjectId(project.id);
+                      const key = projectPinKey(project.id);
+                      setDraggedGroupKey(key);
                       e.dataTransfer.effectAllowed = "move";
-                      e.dataTransfer.setData("text/plain", project.id);
+                      e.dataTransfer.setData("text/plain", key);
                     }}
                     onDragOver={(e) => {
+                      const targetKey = projectPinKey(project.id);
                       if (
-                        !draggedProjectId ||
-                        draggedProjectId === project.id ||
+                        !draggedGroupKey ||
+                        draggedGroupKey === targetKey ||
                         projectPinned ||
-                        pinnedProjectKeys.has(projectPinKey(draggedProjectId))
+                        pinnedProjectKeys.has(draggedGroupKey)
                       ) {
                         return;
                       }
                       e.preventDefault();
                       e.dataTransfer.dropEffect = "move";
-                      setDragOverProjectId(project.id);
+                      setDragOverGroupKey(targetKey);
                     }}
                     onDragLeave={() => {
-                      if (dragOverProjectId === project.id) setDragOverProjectId(null);
+                      if (dragOverGroupKey === projectPinKey(project.id)) setDragOverGroupKey(null);
                     }}
                     onDrop={(e) => {
                       e.preventDefault();
-                      if (draggedProjectId) reorderProject(draggedProjectId, project.id);
-                      setDraggedProjectId(null);
-                      setDragOverProjectId(null);
+                      if (draggedGroupKey) reorderGroup(draggedGroupKey, projectPinKey(project.id));
+                      setDraggedGroupKey(null);
+                      setDragOverGroupKey(null);
                     }}
                     onDragEnd={() => {
-                      setDraggedProjectId(null);
-                      setDragOverProjectId(null);
+                      setDraggedGroupKey(null);
+                      setDragOverGroupKey(null);
                     }}
                     style={{
                       display: "flex",
@@ -1734,8 +1773,9 @@ export function ProjectSessionTree({
                       color: "var(--text)",
                       background: projectHoldsFocus ? "var(--bg-selected)" : "var(--bg-panel)",
                       boxShadow: projectHoldsFocus ? `inset 2px 0 0 ${modeColor}` : "none",
-                      outline: dragOverProjectId === project.id ? "1px dashed var(--accent)" : "none",
-                      opacity: draggedProjectId === project.id ? 0.55 : 1,
+                      outline:
+                        dragOverGroupKey === projectPinKey(project.id) ? "1px dashed var(--accent)" : "none",
+                      opacity: draggedGroupKey === projectPinKey(project.id) ? 0.55 : 1,
                     }}
                     onMouseEnter={(e) => {
                       if (!projectHoldsFocus) e.currentTarget.style.background = "var(--bg-selected)";
@@ -2077,17 +2117,53 @@ export function ProjectSessionTree({
                 <div key={key} style={{ marginBottom: 2, order: groupRenderOrder.get(key) ?? 0 }}>
                   <div
                     onClick={() => toggleCollapsed(key)}
+                    draggable={sortMode === "project" && !hostPinned}
+                    title={sortMode === "project" && !hostPinned ? t("sessions.dragToReorder") : undefined}
+                    onDragStart={(e) => {
+                      if (sortMode !== "project" || hostPinned) return;
+                      setDraggedGroupKey(key);
+                      e.dataTransfer.effectAllowed = "move";
+                      e.dataTransfer.setData("text/plain", key);
+                    }}
+                    onDragOver={(e) => {
+                      if (
+                        !draggedGroupKey ||
+                        draggedGroupKey === key ||
+                        hostPinned ||
+                        pinnedProjectKeys.has(draggedGroupKey)
+                      ) {
+                        return;
+                      }
+                      e.preventDefault();
+                      e.dataTransfer.dropEffect = "move";
+                      setDragOverGroupKey(key);
+                    }}
+                    onDragLeave={() => {
+                      if (dragOverGroupKey === key) setDragOverGroupKey(null);
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      if (draggedGroupKey) reorderGroup(draggedGroupKey, key);
+                      setDraggedGroupKey(null);
+                      setDragOverGroupKey(null);
+                    }}
+                    onDragEnd={() => {
+                      setDraggedGroupKey(null);
+                      setDragOverGroupKey(null);
+                    }}
                     style={{
                       display: "flex",
                       alignItems: "center",
                       gap: 6,
                       padding: "5px 6px",
                       borderRadius: 6,
-                      cursor: "pointer",
+                      cursor: sortMode === "project" && !hostPinned ? "grab" : "pointer",
                       fontSize: 12,
                       fontWeight: 600,
                       color: "var(--text-muted)",
                       background: "transparent",
+                      outline: dragOverGroupKey === key ? "1px dashed var(--accent)" : "none",
+                      opacity: draggedGroupKey === key ? 0.55 : 1,
                     }}
                   >
                     <span style={{ fontSize: 9, color: "var(--text-dim)", width: 10 }}>{isCollapsed ? "▸" : "▾"}</span>

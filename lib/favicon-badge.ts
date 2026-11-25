@@ -126,3 +126,11 @@ export function syncFaviconBadge(counts: FaviconBadgeCounts): void {
   }
   void drawBadgedIcon(badge, key);
 }
+
+/** Fork compatibility: the sidebar's unread/running counts drive the tab badge. */
+export function applyFaviconBadge(
+  counts: { unread: number; running: number },
+  _doc?: Document,
+): void {
+  syncFaviconBadge({ awaiting: 0, unread: Math.max(0, counts.unread + counts.running) });
+}

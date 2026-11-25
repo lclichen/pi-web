@@ -59,6 +59,10 @@ interface Props {
   initialState?: FileViewerState;
   onStateChange?: (state: FileViewerState) => void;
   watchEnabled?: boolean;
+  /** Remote session scoping (sandbox/local-machine/ssh). */
+  remote?: { sessionId: string; label: string } | null;
+  /** Fork compatibility: reports unsaved edits to the shell. */
+  onDirtyChange?: (dirty: boolean) => void;
 }
 
 interface FileData {

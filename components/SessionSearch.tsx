@@ -9,16 +9,17 @@ import type { SessionInfo } from "@/lib/types";
 import { workspaceKeyOf } from "@/lib/workspace-memory";
 import type { SessionSearchResponse } from "@/lib/session-search";
 
-export function SessionSearch({ open, query, children, selectedSessionId, onSelectSession, onSelectSideChat, sessions, archivedSessionIds, projectNames }: {
+export function SessionSearch({ open, query, children, selectedSessionId, onSelectSession, onSelectSideChat = () => {}, sessions = [], archivedSessionIds, projectNames, refreshKey: _refreshKey }: {
   open: boolean;
   query: string;
   children: ReactNode;
   selectedSessionId: string | null;
   onSelectSession: (session: SessionInfo, entryId?: string, blockIndex?: number) => void;
+  refreshKey?: number | null;
   /** Picking a side chat's hit: its parent's chat opens, then the side chat's tab. */
-  onSelectSideChat: (session: SessionInfo) => void;
+  onSelectSideChat?: (session: SessionInfo) => void;
   /** Every listed session: a side chat's hit names the parent it belongs to. */
-  sessions: readonly SessionInfo[];
+  sessions?: readonly SessionInfo[];
   /** Ids of every session in an archived family: their results are tagged, not hidden. */
   archivedSessionIds?: ReadonlySet<string>;
   /** The sidebar's project display names, by project key: a hit names its project like the tree's groups do. */

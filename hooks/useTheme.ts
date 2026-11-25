@@ -160,10 +160,15 @@ export function useTheme() {
       });
   }, []);
 
+  const toggleTheme = useCallback((origin?: ToggleOrigin) => {
+    setThemePreference(isDarkTheme(ensureState().theme) ? "light" : "dark", origin);
+  }, [setThemePreference]);
+
   return {
     theme: snapshot.theme,
     preference: snapshot.preference,
     setThemePreference,
+    toggleTheme,
     isDark: isDarkTheme(snapshot.theme),
   };
 }

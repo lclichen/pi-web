@@ -16,13 +16,13 @@ interface Props {
   runningSessionIds: ReadonlySet<string>;
   onSelectSession: (session: SessionInfo) => void;
   /** Subagents with a viewer tab in the open right panel. */
-  openSubagentTabIds: ReadonlySet<string>;
+  openSubagentTabIds?: ReadonlySet<string>;
   /** Opens a subagent's read-only viewer tab in the right panel (the `Agent` card's button), or closes it when open. */
-  onToggleSubagentTab: (sessionId: string, label: string, side?: boolean) => void;
+  onToggleSubagentTab?: (sessionId: string, label: string, side?: boolean) => void;
   /** Forks the main agent into a side chat and opens its tab; answers the refusal to show, or null. */
-  onNewSideChat: () => Promise<string | null>;
+  onNewSideChat?: () => Promise<string | null>;
   /** Deletes one side chat and its tab; answers the failure to show, or null. */
-  onDeleteSideChat: (sessionId: string) => Promise<string | null>;
+  onDeleteSideChat?: (sessionId: string) => Promise<string | null>;
 }
 
 const STATS_POLL_MS = 3000;
@@ -429,7 +429,13 @@ function RowSideButton({ title, pressed, danger, disabled, onClick, children }: 
   );
 }
 
-export function AgentSessionPanel({ rootSession, subagents, selectedSessionId, runningSessionIds, onSelectSession, openSubagentTabIds, onToggleSubagentTab, onNewSideChat, onDeleteSideChat }: Props) {
+export function AgentSessionPanel({
+  rootSession, subagents, selectedSessionId, runningSessionIds, onSelectSession,
+  openSubagentTabIds = new Set<string>(),
+  onToggleSubagentTab = () => {},
+  onNewSideChat = async () => null,
+  onDeleteSideChat = async () => null,
+}: Props) {
   const { t } = useI18n();
   const [query, setQuery] = useState("");
   const [newSideChatPending, setNewSideChatPending] = useState(false);

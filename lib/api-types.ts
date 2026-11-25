@@ -146,6 +146,8 @@ export interface ProjectTrustStatus {
    * requires trust reports the failure as an error instead.
    */
   decisionError?: string;
+  /** Why trust is required (skills/agents/mcp/...); absent when not reported. */
+  reasons?: string[];
 }
 
 /**

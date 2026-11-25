@@ -57,6 +57,27 @@ interface Props {
   initialScrollPosition?: ChatScrollPosition | null;
   onScrollPositionChange?: (sessionId: string, position: ChatScrollPosition) => void;
   sessionRunning?: boolean;
+  /** Admin support view: the session is shown read-only until taken over. */
+  readOnly?: boolean;
+  /** Trust/project notice rendered by the shell above the composer. */
+  projectTrustBanner?: ReactNode;
+  /** Quick template selection carried by the shell. */
+  newSessionTemplateId?: string | null;
+  onNewSessionTemplateChange?: (id: string) => void;
+  plan?: unknown;
+  planPanelActive?: boolean;
+  quickMode?: boolean;
+  remoteSession?: unknown;
+  terminalPanelActive?: boolean;
+  sendCommandRef?: React.RefObject<unknown>;
+  onLabStateChange?: (widget: { metadata?: unknown } | null, has: boolean) => void;
+  onOpenAgentsPanel?: () => void;
+  onOpenPlanPanel?: () => void;
+  onAskInNewChat?: (prompt: string, sourceSessionId: string, sourceEntryId: string) => unknown;
+  onOpenSession?: (sessionId: string) => unknown;
+  onPlanActivity?: () => void;
+  onSubagentCallsChange?: (calls: import("@/hooks/useAgentSession").SubagentCall[]) => void;
+  onToggleTerminalPanel?: () => void;
   newSessionCwd: string | null;
   newSessionDraftKey: string | null;
   /** Embed/product: execution mode and project for a fresh session. */
@@ -268,7 +289,7 @@ function ProcessDetailsGroup({ messageCount, toolCallCount, durationMs, cost, ca
   );
 }
 
-export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initialScrollPosition, onScrollPositionChange, sessionRunning, newSessionCwd, newSessionDraftKey, newSessionMode, newSessionProjectId, embedded, embeddedDensity, embeddedShort, commandAllowlist, newSessionContextBar, initialNewSessionChoices, onNewSessionChoicesChange, onAgentEnd, onSessionEnded, onToolEnd, onAttentionNeeded, onSessionCreated, onSessionForked, panel = false, onSideSession, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onDebugSnapshotReaderChange, onSessionStatsChange, onSessionStatsPanelOpen, onOpenSettings, onContextUsageChange, onOpenFile, onFilesUploaded, onOpenSubagent, quoteSelectionEnabled = false, initialPrompt, onInitialPromptConsumed, soundEnabled = true, onSoundToggle, playDoneSound = () => {}, unlockAudio, holdAudio }: Props) {
+export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initialScrollPosition, onScrollPositionChange, sessionRunning, readOnly = false, projectTrustBanner, newSessionTemplateId: _newSessionTemplateId, onNewSessionTemplateChange: _onNewSessionTemplateChange, plan: _plan, planPanelActive: _planPanelActive, quickMode: _quickMode, remoteSession: _remoteSession, terminalPanelActive: _terminalPanelActive, sendCommandRef: _sendCommandRef, onLabStateChange: _onLabStateChange, onOpenAgentsPanel: _onOpenAgentsPanel, onOpenPlanPanel: _onOpenPlanPanel, onAskInNewChat: _onAskInNewChat, onOpenSession: _onOpenSession, onPlanActivity: _onPlanActivity, onSubagentCallsChange: _onSubagentCallsChange, onToggleTerminalPanel: _onToggleTerminalPanel, newSessionCwd, newSessionDraftKey, newSessionMode, newSessionProjectId, embedded, embeddedDensity, embeddedShort, commandAllowlist, newSessionContextBar, initialNewSessionChoices, onNewSessionChoicesChange, onAgentEnd, onSessionEnded, onToolEnd, onAttentionNeeded, onSessionCreated, onSessionForked, panel = false, onSideSession, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onDebugSnapshotReaderChange, onSessionStatsChange, onSessionStatsPanelOpen, onOpenSettings, onContextUsageChange, onOpenFile, onFilesUploaded, onOpenSubagent, quoteSelectionEnabled = false, initialPrompt, onInitialPromptConsumed, soundEnabled = true, onSoundToggle, playDoneSound = () => {}, unlockAudio, holdAudio }: Props) {
   const { t } = useI18n();
   const isMobile = useIsMobile();
   const completionNotificationsEnabled = !isHiddenRelation(session?.relation);
@@ -1402,6 +1423,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
           </div>
         )}
         <div className="relative shrink-0">
+          {projectTrustBanner}
           {chatInputElement}
           <ExtensionStatusBar
             statuses={extensionStatuses}

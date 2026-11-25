@@ -44,3 +44,8 @@ export function getProjectActivity(
   }
   return counts;
 }
+
+/** Sessions belonging to one project key (sidebar grouping). */
+export function sessionsForProject(sessions: readonly SessionInfo[], projectKey: string): SessionInfo[] {
+  return sessions.filter((session) => workspaceKeyOf(session) === projectKey);
+}

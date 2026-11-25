@@ -2,196 +2,22 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const panelSource = await readFile(new URL("./SettingsPanel.tsx", import.meta.url), "utf8");
 const cssSource = await readFile(new URL("../app/settings.css", import.meta.url), "utf8");
-const shellSource = await readFile(new URL("./AppShell.tsx", import.meta.url), "utf8");
-const sidebarSource = await readFile(new URL("./SessionSidebar.tsx", import.meta.url), "utf8");
-const themeSource = await readFile(new URL("../hooks/useTheme.ts", import.meta.url), "utf8");
-const enSource = await readFile(new URL("../lib/i18n/messages/en.ts", import.meta.url), "utf8");
-const zhSource = await readFile(new URL("../lib/i18n/messages/zh-CN.ts", import.meta.url), "utf8");
+const loginSource = await readFile(new URL("../app/login/page.tsx", import.meta.url), "utf8");
 
-test("opens one settings panel from direct sidebar shortcuts", () => {
-  assert.match(shellSource, /<SettingsPanel/);
-  assert.match(shellSource, /setSettingsSection\(section\)/);
-  assert.match(shellSource, /initialSection=\{settingsSection\}/);
-  assert.match(shellSource, /translate\("common\.settings"\)/);
-  assert.match(
-    shellSource,
-    /<SettingsSectionIcon section=\{section\} size=\{14\} strokeWidth=\{2\} \/>\s*<span>\{label\}<\/span>/,
-  );
-  assert.match(shellSource, /<SettingsSectionIcon section="general" size=\{14\} strokeWidth=\{2\} \/>/);
-  assert.doesNotMatch(shellSource, /\["plugins", translate\("common\.plugins"\)\]/);
-  // This fork keeps a dedicated Agents dialog for the tintinweb subagents
-  // extension, so setAgentsConfigOpen remains; the models/skills/plugins
-  // dialogs are gone in favour of the settings sections.
-  assert.doesNotMatch(shellSource, /setModelsConfigOpen|setSkillsConfigOpen|setPluginsConfigOpen/);
+test("the trust dialog Settings › MCP opens stacks above Settings", () => {
+  const zIndex = (selector) => Number(cssSource.match(new RegExp(`\\${selector} \\{[^}]*z-index: (\\d+);`))?.[1]);
+  assert.ok(zIndex(".project-trust-backdrop") > zIndex(".settings-dialog-backdrop"));
 });
 
-test("keeps enabled configuration surfaces inside the settings panel", () => {
-  for (const section of ["general", "models", "skills", "agents", "mcp", "plugins", "embed"]) {
-    assert.match(panelSource, new RegExp(`id: "${section}"`));
-  }
-  for (const component of ["ModelsConfig", "SkillsConfig", "SubagentsConfig", "PluginsConfig"]) {
-    assert.match(panelSource, new RegExp(`<${component}\\s+embedded`));
-  }
-  assert.match(panelSource, /<EmbedConfig isAdmin=\{isAdmin\} \/>/);
-  // This fork surfaces the tintinweb subagents config and the MCP servers
-  // config as settings sections (upstream's built-in AgentsConfig stays out).
-  assert.match(panelSource, /<SubagentsConfig\s+embedded/);
-  assert.match(panelSource, /<McpServersConfig\s+embedded/);
-  assert.doesNotMatch(panelSource, /<AgentsConfig embedded/);
-});
-
-test("restores the settings section and each list detail selection", async () => {
-  assert.match(shellSource, /getLastSettingsSection\(projectTrustCwd\)/);
-  assert.match(panelSource, /setLastSettingsSection\(initialSection\)/);
-  assert.match(panelSource, /setLastSettingsSection\(nextSection\)/);
-  for (const name of ["ModelsConfig", "SkillsConfig", "SubagentsConfig", "PluginsConfig"]) {
-    assert.match(await readFile(new URL(`./${name}.tsx`, import.meta.url), "utf8"), /getLastSettingsSelection/);
-  }
-});
-
-test("keeps visited settings sections mounted and contains nested Escape handling", async () => {
-  const modelsSource = await readFile(new URL("./ModelsConfig.tsx", import.meta.url), "utf8");
-  assert.match(panelSource, /mountedSections\.has\(id\)/);
-  assert.match(panelSource, /hidden=\{section !== id\}/);
-  assert.match(panelSource, /event\.defaultPrevented/);
-  assert.match(modelsSource, /e\.preventDefault\(\);\s*e\.stopPropagation\(\);\s*onClose\(\);/);
-});
-
-test("offers direct light, dark, and system theme selection", () => {
-  for (const preference of ["light", "dark", "auto"]) {
-    assert.match(panelSource, new RegExp(`id: "${preference}"`));
-  }
-  assert.match(panelSource, /setThemePreference\(option\.id\)/);
-  assert.match(themeSource, /const setThemePreference = useCallback/);
-});
-
-test("groups chat display controls together without row backgrounds", () => {
-  const appearanceSection = panelSource.slice(
-    panelSource.indexOf('{t("settings.appearance")}'),
-    panelSource.indexOf('{t("settings.chat")}'),
-  );
-  const chatSection = panelSource.slice(
-    panelSource.indexOf('{t("settings.chat")}'),
-    panelSource.indexOf("{shellSettings?.isWindows"),
-  );
-
-  assert.doesNotMatch(appearanceSection, /settings-chat-content/);
-  assert.match(chatSection, /className="settings-chat-options"/);
-  assert.equal((chatSection.match(/className="settings-chat-option(?: |")/g) ?? []).length, 4);
-  assert.equal((chatSection.match(/<ConfigSwitch/g) ?? []).length, 2);
-  for (const key of ["thinkingExpandedDefault", "chatContentWidth", "chatContentFontSize", "quoteSelection"]) {
-    assert.match(chatSection, new RegExp(`t\\("settings\\.${key}"\\)`));
-  }
-  assert.doesNotMatch(panelSource, /ThinkingIcon|settings-thinking-/);
-  const chatOptionStyles = cssSource.match(/\.settings-chat-option \{[\s\S]*?\}/)?.[0] ?? "";
-  assert.match(chatOptionStyles, /font-size: 12px/);
-  assert.doesNotMatch(chatOptionStyles, /background/);
-});
-
-test("standalone feature toggles use the capped card row", () => {
-  // Shell 工具与提问自动继续都是"独立功能开关"节：行样式必须同款
-  // （settings-shell-option，420px 封顶卡片），不混用裸 switch 行。
-  const askSection = panelSource.slice(
-    panelSource.indexOf('{t("settings.askAutoContinue")}'),
-    panelSource.indexOf('{t("common.language")}'),
-  );
-  assert.match(askSection, /className="settings-shell-option"/);
-  assert.doesNotMatch(askSection, /settings-chat-switch-option/);
-  const shellOptionStyles = cssSource.match(/\.settings-shell-option \{[\s\S]*?\}/)?.[0] ?? "";
-  assert.match(shellOptionStyles, /max-width: 420px/);
-  assert.match(shellOptionStyles, /background: var\(--bg-panel\)/);
-});
-
-test("keeps General free of divider rows", () => {
-  assert.match(panelSource, /className="settings-dialog-header"/);
-  assert.match(
-    cssSource,
-    /\.settings-dialog-header \{[\s\S]*?display: flex[\s\S]*?align-items: center[\s\S]*?min-height: 50px/,
-  );
-  assert.doesNotMatch(panelSource, /sections\.find\(\(item\) => item\.id === section\)/);
-  assert.doesNotMatch(panelSource, /<section style=\{\{[^}]*borderBottom/);
-  assert.doesNotMatch(panelSource, /borderLeft: index > 0/);
-});
-
-test("uses top navigation on desktop and one compact section picker on mobile", () => {
-  assert.match(panelSource, /className="settings-mobile-section-picker"/);
-  assert.match(panelSource, /aria-label=\{t\("settings\.sectionPicker"\)\}/);
-  assert.match(panelSource, /className="settings-section-tabs"/);
-  assert.match(panelSource, /className="settings-section-tab"/);
-  // Tabs size to their label (labels like "Quick session templates" must not
-  // clip) and the strip fades its edges when it can scroll.
-  assert.match(cssSource, /\.settings-section-tab \{[\s\S]*?flex: 0 0 auto[\s\S]*?white-space: nowrap/);
-  assert.doesNotMatch(cssSource, /flex: 0 0 96px/);
-  assert.match(panelSource, /settings-tabs-scrollbox/);
-  assert.match(cssSource, /\.settings-tabs-scrollbox\.can-scroll-right::after/);
-  assert.match(cssSource, /\.settings-section-divider/);
-  assert.match(panelSource, /settings-section-divider/);
-  // When the labeled strip cannot fit, tabs collapse to icons only (admin
-  // locales/several tabs) instead of silently cutting off trailing sections.
-  assert.match(panelSource, /is-compact/);
-  assert.match(cssSource, /\.settings-section-tabs\.is-compact \.settings-section-tab > span \{[\s\S]*?display: none/);
-  // Icon-only tabs keep their accessible name.
-  assert.match(panelSource, /aria-label=\{item\.label\}/);
-  assert.match(cssSource, /\.settings-section-icon \{[\s\S]*?flex-shrink: 0/);
-  assert.match(cssSource, /\.settings-section-tab::after \{[\s\S]*?width: 24px/);
-  assert.match(cssSource, /\.settings-section-tab\[aria-current="page"\]::after/);
-  assert.match(cssSource, /\.settings-section-tab:focus-visible:not\(\[aria-current="page"\]\)/);
-  assert.match(cssSource, /\.settings-section-tab:focus-visible\[aria-current="page"\][\s\S]*?outline: none/);
-  assert.match(
-    cssSource,
-    /@media \(max-width: 640px\)[\s\S]*?\.settings-section-tabs,\s*\.settings-tabs-scrollbox \{[\s\S]*?display: none/,
-  );
-  assert.match(
-    cssSource,
-    /@media \(max-width: 640px\)[\s\S]*?\.settings-mobile-section-picker \{[\s\S]*?display: block/,
-  );
-  assert.doesNotMatch(panelSource, /width: isMobile \? "100%" : 188/);
-  assert.match(panelSource, /<main className="settings-dialog-main">/);
-  assert.doesNotMatch(panelSource, /<style>/);
-  assert.doesNotMatch(panelSource, /style=\{\{/);
-});
-
-test("keeps tabs labeled on desktop and only folds to icons on severe overflow", () => {
-  // 管理员 12 个分区在 1200px 面板内一行放得下；轻微溢出（英文长标签）
-  // 保留文字 + 横向滚动，只有严重放不下才切图标。
-  assert.match(cssSource, /\.settings-dialog-surface \{[\s\S]*?width: 1200px/);
-  assert.match(panelSource, /COMPACT_OVERFLOW_PX = 160/);
-  assert.match(panelSource, /overflow > COMPACT_OVERFLOW_PX/);
-  assert.match(panelSource, /id: "global-config"/);
-  assert.match(panelSource, /<AdminGlobalConfig/);
-});
-
-test("guards closing against unsaved section drafts", () => {
-  assert.match(panelSource, /isAnySettingsDirty\(\)/);
-  assert.match(panelSource, /isConfirmDialogOpen\(\)/);
-  assert.match(panelSource, /requestClose/);
-  // All three close paths (Escape / backdrop / header ×) go through the guard.
-  assert.match(panelSource, /event\.key !== "Escape"[\s\S]*?requestClose\(\)/);
-  assert.match(panelSource, /event\.target === event\.currentTarget\) requestClose\(\)/);
-  assert.match(panelSource, /onClick=\{requestClose\}[^>]*className="config-close-button settings-dialog-close"/);
-});
-
-test("labels agent profiles as sub-agents", () => {
-  assert.match(enSource, /"common\.agents": "Sub-agents"/);
-  assert.match(enSource, /"agents\.new": "New sub-agent"/);
-  assert.match(zhSource, /"common\.agents": "子智能体"/);
-  assert.match(zhSource, /"agents\.new": "新建子智能体"/);
-});
-
-test("uses the child-session robot glyph for the sub-agents tab", () => {
-  const robotGlyph =
-    /<rect x="5" y="7" width="14" height="11" rx="2" \/>\s*<path d="M9 11h\.01M15 11h\.01M9 15h6M12 7V4M10 4h4" \/>/;
-  assert.match(panelSource, robotGlyph);
-  assert.match(sidebarSource, robotGlyph);
-  assert.match(panelSource, /section === "agents"[\s\S]*?className="settings-section-icon is-agent"/);
-  assert.match(cssSource, /\.settings-section-icon\.is-agent \{[\s\S]*?transform: scale\(1\.25\)/);
-});
-
-test("uses the compact controls glyph for General", () => {
+test("signing out removes the stored drafts once the server signed out", async () => {
+  const panelSource = await readFile(new URL("./SettingsPanel.tsx", import.meta.url), "utf8");
   assert.match(
     panelSource,
-    /section === "general"[\s\S]*?<path d="M20 7h-9M14 17H5" \/>[\s\S]*?<circle cx="7" cy="7" r="3" \/>[\s\S]*?<circle cx="17" cy="17" r="3" \/>/,
+    /if \(!response\.ok\) throw new Error\([^\n]*\);\n(?:\s*\/\/[^\n]*\n)*\s*clearStoredDrafts\(\);\n\s*window\.location\.replace\("\/login"\);/,
   );
+});
+
+test("the login page returns only to a destination safeLoginDestination() accepts", () => {
+  assert.match(loginSource, /safeLoginDestination\(destination, window\.location\.origin\)/);
 });

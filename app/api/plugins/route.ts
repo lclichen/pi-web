@@ -1,9 +1,6 @@
 import { NextResponse } from "next/server";
-import { resolveConfigCwdSync } from "@/lib/config-cwd";
-import { createUserSettingsManager } from "@/lib/user-settings-storage";
-import { isUserScopedConfig, userSettingsDiffPath } from "@/lib/user-config";
-import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "fs";
-import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "path";
+import { existsSync, readFileSync, statSync } from "fs";
+import { basename, dirname, extname, join, relative, sep } from "node:path";
 import {
   DefaultPackageManager,
   getAgentDir,
@@ -12,10 +9,11 @@ import {
   type ResolvedPaths,
   type ResolvedResource,
 } from "@earendil-works/pi-coding-agent";
+import { cwdAccessRefusal, getAllowedFileRoots, isExistingFilePathAllowed } from "@/lib/file-access";
 import { hasJsonContentType, isApiRequestAllowed } from "@/lib/request-security";
 import { getProjectTrustStatus } from "@/lib/project-trust";
 import { isPluginSourceCheckable } from "@/lib/plugin-updates";
-import { isNpmPackagesDisabled } from "@/lib/server-settings";
+import { invalidateModelRuntimeWithExtensions } from "@/lib/model-runtime";
 import type {
   PluginDiagnostic,
   PluginPackageInfo,
@@ -23,28 +21,22 @@ import type {
   PluginResourceInfo,
   PluginResourceKind,
   PluginScope,
+  PluginStandaloneExtensionInfo,
+  PluginsBulkResponse,
   PluginsResponse,
+  PluginToggleResult,
 } from "@/lib/api-types";
 
 export const dynamic = "force-dynamic";
 
 type PluginAction = "install" | "remove" | "update" | "disable" | "enable";
 
-/** Starter file for the "新建扩展目录" action — registers a no-op extension. */
-const EXTENSION_TEMPLATE = `import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-
-export default function (pi: ExtensionAPI) {
-  // Register tools, commands, and lifecycle handlers here.
-  // Docs: https://github.com/badlogic/pi-mono packages/plugin-api
-}
-`;
-
 function emptyCounts(): PluginResourceCounts {
   return { extensions: 0, skills: 0, prompts: 0, themes: 0 };
 }
 
 function toPluginScope(scope: string): PluginScope {
-  return scope === "project" ? "project" : scope === "user" ? "user" : "global";
+  return scope === "project" ? "project" : "global";
 }
 
 function keyFor(source: string, scope: PluginScope): string {
@@ -55,79 +47,20 @@ function getPackageSource(entry: PackageSource): string {
   return typeof entry === "string" ? entry : entry.source;
 }
 
-/** Sources configured in the RAW global settings file vs. in one user's
- *  settings diff. The SDK reports every `globalSettings` entry as scope
- *  "user" (upstream has no per-user layer), so the web API re-attributes
- *  them: inherited global entries stay global, entries only present in the
- *  user diff are user scope. */
-type RawScopeSets = { global: Set<string>; user: Set<string> };
-
-function readSettingsObject(path: string): unknown {
-  try {
-    return JSON.parse(readFileSync(path, "utf8"));
-  } catch {
-    return undefined;
-  }
-}
-
-function collectConfiguredSources(settings: unknown, target: Set<string>): void {
-  if (!settings || typeof settings !== "object" || Array.isArray(settings)) return;
-  const record = settings as Record<string, unknown>;
-  for (const key of ["extensions", "skills", "prompts", "themes"] as const) {
-    const entries = record[key];
-    if (!Array.isArray(entries)) continue;
-    for (const entry of entries) {
-      if (typeof entry === "string" && entry.trim()) target.add(normalizeForMatch(entry));
-    }
-  }
-  const packages = record.packages;
-  if (!Array.isArray(packages)) return;
-  for (const entry of packages) {
-    if (typeof entry === "string" && entry.trim()) {
-      target.add(normalizeForMatch(entry));
-    } else if (entry && typeof entry === "object") {
-      const source = (entry as { source?: unknown }).source;
-      if (typeof source === "string" && source.trim()) target.add(normalizeForMatch(source));
-    }
-  }
-}
-
-function readScopeSets(userId: number, agentDir: string): RawScopeSets {
-  const sets: RawScopeSets = { global: new Set(), user: new Set() };
-  collectConfiguredSources(readSettingsObject(join(agentDir, "settings.json")), sets.global);
-  if (isUserScopedConfig(userId)) {
-    collectConfiguredSources(readSettingsObject(userSettingsDiffPath(userId)), sets.user);
-  }
-  return sets;
-}
-
-/** A source that only appears in the user diff is user scope; anything
- *  inherited from the raw global settings file (also when the user diff
- *  re-serialises it) stays global. */
-function scopeForSource(source: string, sets: RawScopeSets): PluginScope {
-  const key = normalizeForMatch(source);
-  return sets.user.has(key) && !sets.global.has(key) ? "user" : "global";
-}
-
 function isDisabledPackage(entry: PackageSource): boolean {
   if (typeof entry === "string") return false;
   return (
-    Array.isArray(entry.extensions) &&
-    entry.extensions.length === 0 &&
-    Array.isArray(entry.skills) &&
-    entry.skills.length === 0 &&
-    Array.isArray(entry.prompts) &&
-    entry.prompts.length === 0 &&
-    Array.isArray(entry.themes) &&
-    entry.themes.length === 0
+    Array.isArray(entry.extensions) && entry.extensions.length === 0 &&
+    Array.isArray(entry.skills) && entry.skills.length === 0 &&
+    Array.isArray(entry.prompts) && entry.prompts.length === 0 &&
+    Array.isArray(entry.themes) && entry.themes.length === 0
   );
 }
 
-function getDisabledPackages(settingsManager: SettingsManager, scopeSets: RawScopeSets): Map<string, boolean> {
+function getDisabledPackages(settingsManager: SettingsManager): Map<string, boolean> {
   const disabled = new Map<string, boolean>();
   for (const entry of settingsManager.getGlobalSettings().packages ?? []) {
-    const source = getPackageSource(entry);
-    disabled.set(keyFor(source, scopeForSource(source, scopeSets)), isDisabledPackage(entry));
+    disabled.set(keyFor(getPackageSource(entry), "global"), isDisabledPackage(entry));
   }
   for (const entry of settingsManager.getProjectSettings().packages ?? []) {
     disabled.set(keyFor(getPackageSource(entry), "project"), isDisabledPackage(entry));
@@ -135,19 +68,50 @@ function getDisabledPackages(settingsManager: SettingsManager, scopeSets: RawSco
   return disabled;
 }
 
-function setPackageDisabled(
+/**
+ * An enabled entry that is an object: it filters the package's resources, or
+ * sets `autoload`. Disabling replaces its resource lists, and Pi Web keeps no
+ * copy, so enabling it again cannot bring the filters back.
+ */
+function hasEntrySettings(entry: PackageSource): boolean {
+  return typeof entry === "object" && !isDisabledPackage(entry);
+}
+
+const FILTERED_PACKAGE_ERROR =
+  "Has resource filters, which disabling would remove; use the package's own switch";
+
+/**
+ * Disables or re-enables the given packages of one scope with a single
+ * settings write. Returns the sources that scope does not configure, and with
+ * `keepEntrySettings` the ones left enabled because disabling would drop
+ * their filters.
+ *
+ * An entry already in the requested state is left exactly as it is, and
+ * enabling keeps every key except the emptied resource lists (`autoload` on a
+ * project entry, say), so neither drops what the entry configures.
+ */
+function setPackagesDisabled(
   settingsManager: SettingsManager,
-  source: string,
+  sources: readonly string[],
   scope: PluginScope,
   disabled: boolean,
-): boolean {
-  const current =
-    scope === "project"
-      ? (settingsManager.getProjectSettings().packages ?? [])
-      : (settingsManager.getGlobalSettings().packages ?? []);
+  { keepEntrySettings = false }: { keepEntrySettings?: boolean } = {},
+): { missing: Set<string>; kept: Set<string> } {
+  const current = scope === "project"
+    ? settingsManager.getProjectSettings().packages ?? []
+    : settingsManager.getGlobalSettings().packages ?? [];
+  const missing = new Set(sources);
+  const kept = new Set<string>();
   let changed = false;
   const next = current.map((entry): PackageSource => {
-    if (getPackageSource(entry) !== source) return entry;
+    const source = getPackageSource(entry);
+    if (!sources.includes(source)) return entry;
+    missing.delete(source);
+    if (isDisabledPackage(entry) === disabled) return entry;
+    if (disabled && keepEntrySettings && hasEntrySettings(entry)) {
+      kept.add(source);
+      return entry;
+    }
     changed = true;
     if (disabled) {
       return {
@@ -158,12 +122,78 @@ function setPackageDisabled(
         themes: [],
       };
     }
-    return getPackageSource(entry);
+    if (typeof entry === "string") return source;
+    const rest = { ...entry };
+    delete rest.extensions;
+    delete rest.skills;
+    delete rest.prompts;
+    delete rest.themes;
+    return Object.keys(rest).length > 1 ? rest : source;
   });
-  if (!changed) return false;
-  if (scope === "project") settingsManager.setProjectPackages(next);
-  else settingsManager.setPackages(next);
-  return true;
+  if (changed) {
+    if (scope === "project") settingsManager.setProjectPackages(next);
+    else settingsManager.setPackages(next);
+  }
+  return { missing, kept };
+}
+
+/**
+ * The bulk form of enable/disable behind the panel's "Enable all" /
+ * "Disable all". Each package gets its own result, so one the route refuses
+ * (an untrusted project, a package removed since the panel loaded, a filtered
+ * package it would have to strip to disable) does not stop the rest.
+ *
+ * SettingsManager never throws a failed load or write: it skips the write,
+ * records the error, and `flush()` still resolves. Those errors are read back
+ * and charged to their scope, or an unreadable settings.json would be reported
+ * as a successful toggle.
+ */
+async function setPackageListDisabled(
+  settingsManager: SettingsManager,
+  packages: readonly { source: string; scope: PluginScope }[],
+  disabled: boolean,
+  projectTrusted: boolean,
+): Promise<PluginToggleResult[]> {
+  const errors = new Map<string, string>();
+  for (const scope of ["global", "project"] as const) {
+    const sources = packages.filter((pkg) => pkg.scope === scope).map((pkg) => pkg.source);
+    if (sources.length === 0) continue;
+    if (scope === "project" && !projectTrusted) {
+      for (const source of sources) {
+        errors.set(keyFor(source, scope), "Project resources must be trusted before modifying project plugins");
+      }
+      continue;
+    }
+    // "Disable all" must not wipe filters the operator set up by hand.
+    const { missing, kept } = setPackagesDisabled(settingsManager, sources, scope, disabled, {
+      keepEntrySettings: true,
+    });
+    for (const source of missing) errors.set(keyFor(source, scope), "Package is not configured");
+    for (const source of kept) errors.set(keyFor(source, scope), FILTERED_PACKAGE_ERROR);
+  }
+  await settingsManager.flush();
+  const settingsErrors = new Map<string, string>();
+  for (const { scope, path, error } of settingsManager.drainErrors()) {
+    if (!settingsErrors.has(scope)) settingsErrors.set(scope, path ? `${path}: ${error.message}` : error.message);
+  }
+  return packages.map((pkg) => {
+    // A settings file that failed to load also reads as "not configured", so
+    // its error wins. An untrusted project is never loaded and records none.
+    const error = settingsErrors.get(pkg.scope) ?? errors.get(keyFor(pkg.source, pkg.scope));
+    return error ? { ...pkg, error } : { ...pkg };
+  });
+}
+
+function readPackageList(value: unknown): { source: string; scope: PluginScope }[] | null {
+  if (!Array.isArray(value)) return null;
+  const packages = new Map<string, { source: string; scope: PluginScope }>();
+  for (const item of value) {
+    const source = typeof item?.source === "string" ? item.source.trim() : "";
+    if (!source) return null;
+    const scope = readScope(item.scope);
+    packages.set(keyFor(source, scope), { source, scope });
+  }
+  return [...packages.values()];
 }
 
 function addCount(counts: PluginResourceCounts, kind: keyof PluginResourceCounts): void {
@@ -188,6 +218,15 @@ function getRelativePath(resource: ResolvedResource): string {
   // Normalize to forward slashes so API output is stable across platforms
   // (Node's path.relative returns backslashes on Windows).
   return rel && !rel.startsWith("..") ? rel.split(sep).join("/") : resource.path;
+}
+
+function toResourceInfo(resource: ResolvedResource, kind: PluginResourceKind): PluginResourceInfo {
+  return {
+    kind,
+    name: getResourceName(resource.path, kind),
+    path: resource.path,
+    relativePath: getRelativePath(resource),
+  };
 }
 
 function getConfiguredVersion(source: string): string | undefined {
@@ -231,242 +270,62 @@ function readPackageMetadata(installedPath?: string): { packageName?: string; ve
   }
 }
 
-type ClassifiedTopLevel = {
-  origin: "settings" | "directory";
-  source: string;
-  sourceLabel: string;
-  installedPath?: string;
-  scope: PluginScope;
-};
-
 function collectResource(
   resource: ResolvedResource,
   kind: keyof PluginResourceCounts,
   countsByPackage: Map<string, PluginResourceCounts>,
   resourcesByPackage: Map<string, PluginResourceInfo[]>,
   totals: PluginResourceCounts,
-  topLevel: Map<string, PluginPackageInfo>,
-  packageScopes: Map<string, PluginScope>,
-  classify: (resource: ResolvedResource) => ClassifiedTopLevel | null,
 ): void {
-  if (!resource.enabled) return;
-  const resourceKind =
-    kind === "extensions" ? "extension" : kind === "skills" ? "skill" : kind === "prompts" ? "prompt" : "theme";
-  const info: PluginResourceInfo = {
-    kind: resourceKind,
-    name: getResourceName(resource.path, resourceKind),
-    path: resource.path,
-    relativePath: getRelativePath(resource),
-  };
-
-  if (resource.metadata.origin !== "package") {
-    // Settings-array entries and auto-discovered directories: group into
-    // synthetic top-level entries instead of dropping them.
-    const classified = classify(resource);
-    if (!classified) return;
-    const scope = classified.scope;
-    const key = `top\0${classified.origin}\0${scope}\0${normalizeForMatch(classified.source)}`;
-    let entry = topLevel.get(key);
-    if (!entry) {
-      entry = {
-        source: classified.source,
-        scope,
-        filtered: false,
-        disabled: false,
-        canCheckForUpdates: isPluginSourceCheckable(classified.source),
-        ...(classified.installedPath ? { installedPath: classified.installedPath } : {}),
-        counts: emptyCounts(),
-        resources: [],
-        status: "loaded",
-        origin: classified.origin,
-        sourceLabel: classified.sourceLabel,
-      };
-      topLevel.set(key, entry);
-    }
-    if (!entry) return;
-    entry.counts[kind] += 1;
-    entry.resources.push(info);
-    addCount(totals, kind);
-    return;
-  }
-
+  if (!resource.enabled || resource.metadata.origin !== "package") return;
   const source = resource.metadata.source;
-  // The SDK labels merged global-settings resources as "user"; the package
-  // scope map built from the raw settings files is authoritative here.
-  const scope = packageScopes.get(normalizeForMatch(source)) ?? toPluginScope(resource.metadata.scope);
+  const scope = toPluginScope(resource.metadata.scope);
   const key = keyFor(source, scope);
   const counts = countsByPackage.get(key) ?? emptyCounts();
   addCount(counts, kind);
   addCount(totals, kind);
   countsByPackage.set(key, counts);
   const resources = resourcesByPackage.get(key) ?? [];
-  resources.push(info);
+  const resourceKind = kind === "extensions"
+    ? "extension"
+    : kind === "skills"
+      ? "skill"
+      : kind === "prompts"
+        ? "prompt"
+        : "theme";
+  resources.push(toResourceInfo(resource, resourceKind));
   resourcesByPackage.set(key, resources);
 }
 
-function collectResources(
-  paths: ResolvedPaths,
-  packageScopes: Map<string, PluginScope>,
-  classify: (resource: ResolvedResource) => ClassifiedTopLevel | null,
-): {
+function collectResources(paths: ResolvedPaths): {
   countsByPackage: Map<string, PluginResourceCounts>;
   resourcesByPackage: Map<string, PluginResourceInfo[]>;
+  standaloneExtensions: PluginStandaloneExtensionInfo[];
   totals: PluginResourceCounts;
-  topLevel: Map<string, PluginPackageInfo>;
 } {
   const countsByPackage = new Map<string, PluginResourceCounts>();
   const resourcesByPackage = new Map<string, PluginResourceInfo[]>();
   const totals = emptyCounts();
-  const topLevel = new Map<string, PluginPackageInfo>();
-  for (const resource of paths.extensions)
-    collectResource(
-      resource,
-      "extensions",
-      countsByPackage,
-      resourcesByPackage,
-      totals,
-      topLevel,
-      packageScopes,
-      classify,
-    );
-  for (const resource of paths.skills)
-    collectResource(
-      resource,
-      "skills",
-      countsByPackage,
-      resourcesByPackage,
-      totals,
-      topLevel,
-      packageScopes,
-      classify,
-    );
-  for (const resource of paths.prompts)
-    collectResource(
-      resource,
-      "prompts",
-      countsByPackage,
-      resourcesByPackage,
-      totals,
-      topLevel,
-      packageScopes,
-      classify,
-    );
-  for (const resource of paths.themes)
-    collectResource(
-      resource,
-      "themes",
-      countsByPackage,
-      resourcesByPackage,
-      totals,
-      topLevel,
-      packageScopes,
-      classify,
-    );
-  return { countsByPackage, resourcesByPackage, totals, topLevel };
+  for (const resource of paths.extensions) collectResource(resource, "extensions", countsByPackage, resourcesByPackage, totals);
+  for (const resource of paths.skills) collectResource(resource, "skills", countsByPackage, resourcesByPackage, totals);
+  for (const resource of paths.prompts) collectResource(resource, "prompts", countsByPackage, resourcesByPackage, totals);
+  for (const resource of paths.themes) collectResource(resource, "themes", countsByPackage, resourcesByPackage, totals);
+  const standaloneExtensions = paths.extensions
+    .filter((resource) => resource.metadata.origin === "top-level")
+    .map((resource): PluginStandaloneExtensionInfo => ({
+      ...toResourceInfo(resource, "extension"),
+      kind: "extension",
+      scope: toPluginScope(resource.metadata.scope),
+      enabled: resource.enabled,
+    }));
+  totals.extensions += standaloneExtensions.filter((extension) => extension.enabled).length;
+  return { countsByPackage, resourcesByPackage, standaloneExtensions, totals };
 }
 
-function normalizeForMatch(p: string): string {
-  return p.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
-}
-
-/**
- * Classify a non-package (top-level) resource into a synthetic entry:
- * settings-array origin when its path belongs to one of the configured
- * extensions/skills/prompts/themes arrays, directory origin when it lives
- * under an auto-discovered resource directory (e.g. .pi/extensions/<name>).
- */
-function makeClassifier(
-  settingsManager: SettingsManager,
-  cwd: string,
-  agentDir: string,
-  scopeSets: RawScopeSets,
-): (resource: ResolvedResource) => ClassifiedTopLevel | null {
-  const configured: Array<{ source: string; scope: PluginScope }> = [];
-  const globalSettings = settingsManager.getGlobalSettings();
-  const projectSettings = settingsManager.getProjectSettings();
-  // Project entries first: when the same path is configured at both layers,
-  // the project copy is the one the resource loader resolves.
-  for (const settings of [projectSettings, globalSettings]) {
-    const scope: PluginScope = settings === projectSettings ? "project" : "global";
-    for (const key of ["extensions", "skills", "prompts", "themes"] as const) {
-      for (const entry of settings[key] ?? []) {
-        if (typeof entry !== "string" || !entry) continue;
-        configured.push({
-          source: entry,
-          scope: scope === "project" ? "project" : scopeForSource(entry, scopeSets),
-        });
-      }
-    }
-  }
-  const autoRootEntries: Array<{ root: string; scope: PluginScope }> = [
-    { root: join(cwd, ".pi", "extensions"), scope: "project" },
-    { root: join(cwd, ".pi", "skills"), scope: "project" },
-    { root: join(cwd, ".pi", "prompts"), scope: "project" },
-    { root: join(cwd, ".pi", "themes"), scope: "project" },
-    { root: join(agentDir, "extensions"), scope: "global" },
-    { root: join(agentDir, "skills"), scope: "global" },
-    { root: join(agentDir, "prompts"), scope: "global" },
-    { root: join(agentDir, "themes"), scope: "global" },
-  ];
-  const autoRoots = autoRootEntries.map((entry) => ({ ...entry, norm: normalizeForMatch(entry.root) }));
-
-  const statPath = (p: string): string | undefined => {
-    try {
-      return statSync(p).isDirectory() ? p : dirname(p);
-    } catch {
-      return undefined;
-    }
-  };
-
-  return (resource) => {
-    const norm = normalizeForMatch(resource.path);
-    for (const c of configured) {
-      const cNorm = normalizeForMatch(c.source);
-      if (norm === cNorm || norm.startsWith(cNorm + "/")) {
-        return {
-          origin: "settings",
-          source: c.source,
-          sourceLabel: "settings.json",
-          installedPath: statPath(c.source),
-          scope: c.scope,
-        };
-      }
-    }
-    for (const { root, norm: rootNorm, scope } of autoRoots) {
-      if (norm === rootNorm || !norm.startsWith(rootNorm + "/")) continue;
-      const rel = norm.slice(rootNorm.length + 1);
-      const firstSeg = rel.split("/")[0];
-      if (!firstSeg) continue;
-      // Entry = the directory directly under the discovered root.
-      const entryDir = join(root, firstSeg);
-      if (normalizeForMatch(entryDir) === norm) continue; // file directly in root: fall through
-      const labelBase = normalizeForMatch(root).startsWith(normalizeForMatch(cwd)) ? cwd : agentDir;
-      const label = relative(labelBase, entryDir).replace(/\\/g, "/");
-      return {
-        origin: "directory",
-        source: entryDir,
-        sourceLabel: label,
-        installedPath: entryDir,
-        scope,
-      };
-    }
-    // Unmatched top-level resource (e.g. a file placed directly in an auto
-    // root): group per file so it still shows up.
-    return {
-      origin: "directory",
-      source: resource.path,
-      sourceLabel: normalizeForMatch(resource.path),
-      installedPath: statPath(resource.path),
-      scope: resource.metadata.scope === "project" ? "project" : "global",
-    };
-  };
-}
-
-async function readPlugins(cwd: string, userId: number): Promise<PluginsResponse> {
+async function readPlugins(cwd: string): Promise<PluginsResponse> {
   const agentDir = getAgentDir();
   const projectTrust = getProjectTrustStatus(cwd, agentDir);
-  const scopeSets = readScopeSets(userId, agentDir);
-  const settingsManager = createUserSettingsManager(cwd, userId, {
+  const settingsManager = SettingsManager.create(cwd, agentDir, {
     projectTrusted: projectTrust.trusted,
   });
   const packageManager = new DefaultPackageManager({
@@ -478,22 +337,9 @@ async function readPlugins(cwd: string, userId: number): Promise<PluginsResponse
   const diagnostics: PluginDiagnostic[] = [];
   let countsByPackage = new Map<string, PluginResourceCounts>();
   let resourcesByPackage = new Map<string, PluginResourceInfo[]>();
+  let standaloneExtensions: PluginStandaloneExtensionInfo[] = [];
   let totals = emptyCounts();
-  let topLevel = new Map<string, PluginPackageInfo>();
-  const disabledByPackage = getDisabledPackages(settingsManager, scopeSets);
-  const configuredPackages = packageManager.listConfiguredPackages();
-  // Project packages win over a same-source global package. Build the source
-  // -> scope map before resource collection so counts land under the same key
-  // the package list will use.
-  const projectSources = new Set(
-    configuredPackages.filter((pkg) => pkg.scope === "project").map((pkg) => normalizeForMatch(pkg.source)),
-  );
-  const packageScopes = new Map<string, PluginScope>();
-  for (const pkg of configuredPackages) {
-    const norm = normalizeForMatch(pkg.source);
-    const scope = pkg.scope === "project" ? "project" : scopeForSource(pkg.source, scopeSets);
-    if (scope === "project" || !packageScopes.has(norm)) packageScopes.set(norm, scope);
-  }
+  const disabledByPackage = getDisabledPackages(settingsManager);
 
   try {
     const resolved = await packageManager.resolve(async (source) => {
@@ -504,11 +350,7 @@ async function readPlugins(cwd: string, userId: number): Promise<PluginsResponse
       });
       return "skip";
     });
-    ({ countsByPackage, resourcesByPackage, totals, topLevel } = collectResources(
-      resolved,
-      packageScopes,
-      makeClassifier(settingsManager, cwd, agentDir, scopeSets),
-    ));
+    ({ countsByPackage, resourcesByPackage, standaloneExtensions, totals } = collectResources(resolved));
   } catch (error) {
     diagnostics.push({
       type: "error",
@@ -516,76 +358,67 @@ async function readPlugins(cwd: string, userId: number): Promise<PluginsResponse
     });
   }
 
-  const packages: PluginPackageInfo[] = configuredPackages
-    .filter((pkg) => pkg.scope === "project" || !projectSources.has(normalizeForMatch(pkg.source)))
-    .map((pkg) => {
-      const scope = packageScopes.get(normalizeForMatch(pkg.source)) ?? toPluginScope(pkg.scope);
-      const key = keyFor(pkg.source, scope);
-      const disabled = disabledByPackage.get(key) ?? false;
-      const counts = countsByPackage.get(key) ?? emptyCounts();
-      const resources = resourcesByPackage.get(key) ?? [];
-      const resourceCount = counts.extensions + counts.skills + counts.prompts + counts.themes;
-      const packageMetadata = readPackageMetadata(pkg.installedPath);
-      if (!pkg.installedPath) {
-        diagnostics.push({
-          type: "warning",
-          source: pkg.source,
-          message: "Configured package path was not found.",
-        });
-      }
-      return {
+  const packages = packageManager.listConfiguredPackages().map((pkg) => {
+    const scope = toPluginScope(pkg.scope);
+    const key = keyFor(pkg.source, scope);
+    const disabled = disabledByPackage.get(key) ?? false;
+    const counts = countsByPackage.get(key) ?? emptyCounts();
+    const resources = resourcesByPackage.get(key) ?? [];
+    const resourceCount = counts.extensions + counts.skills + counts.prompts + counts.themes;
+    const packageMetadata = readPackageMetadata(pkg.installedPath);
+    if (!pkg.installedPath) {
+      diagnostics.push({
+        type: "warning",
         source: pkg.source,
-        scope,
-        canCheckForUpdates: isPluginSourceCheckable(pkg.source),
-        filtered: pkg.filtered,
-        disabled,
-        installedPath: pkg.installedPath,
-        packageName: packageMetadata.packageName,
-        version: packageMetadata.version,
-        configuredVersion: getConfiguredVersion(pkg.source),
-        description: packageMetadata.description,
-        counts,
-        resources,
-        status: disabled ? "disabled" : resourceCount > 0 ? "loaded" : pkg.installedPath ? "installed" : "missing",
-        origin: "package",
-        sourceLabel: "packages",
-      } satisfies PluginPackageInfo;
-    });
-
-  // Settings-array and discovered-directory entries ride along after the
-  // managed packages; the UI groups them into the same project/user/global lists.
-  for (const entry of topLevel.values()) {
-    packages.push(entry);
-  }
+        message: "Configured package path was not found.",
+      });
+    }
+    return {
+      source: pkg.source,
+      scope,
+      canCheckForUpdates: isPluginSourceCheckable(pkg.source),
+      filtered: pkg.filtered,
+      disabled,
+      installedPath: pkg.installedPath,
+      packageName: packageMetadata.packageName,
+      version: packageMetadata.version,
+      configuredVersion: getConfiguredVersion(pkg.source),
+      description: packageMetadata.description,
+      counts,
+      resources,
+      status: disabled ? "disabled" : resourceCount > 0 ? "loaded" : pkg.installedPath ? "installed" : "missing",
+    } satisfies PluginPackageInfo;
+  });
 
   return {
     packages,
+    standaloneExtensions,
     totals,
     diagnostics,
     projectResourcesLoaded: projectTrust.trusted,
-    packagesOffline: isNpmPackagesDisabled(),
   };
 }
 
 function readScope(scope: unknown): PluginScope {
-  return scope === "project" ? "project" : scope === "user" ? "user" : "global";
+  return scope === "project" ? "project" : "global";
 }
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
-  const dir = resolveConfigCwdSync(req, { projectId: searchParams.get("projectId"), cwd: searchParams.get("cwd") });
-  if (!dir.ok) return NextResponse.json({ error: dir.error }, { status: dir.status });
-  const cwd = dir.cwd;
+  const cwd = searchParams.get("cwd") ?? "";
 
   try {
-    // Access is enforced by resolveConfigCwdSync (project ownership or admin).
-    return NextResponse.json(await readPlugins(cwd, dir.userId));
+    const refused = await cwdAccessRefusal(cwd);
+    if (refused) return refused;
+    return NextResponse.json(await readPlugins(cwd));
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
   }
 }
 
 // POST /api/plugins body: { action, source?, scope?, cwd }
+// enable/disable also take { packages: [{ source, scope }] } in place of
+// source/scope and add per-package `results` to the response.
 export async function POST(req: Request) {
   if (!isApiRequestAllowed(req)) {
     return NextResponse.json({ error: "Untrusted API request" }, { status: 403 });
@@ -595,41 +428,44 @@ export async function POST(req: Request) {
   }
 
   try {
-    const rawBody = (await req.json()) as {
+    const body = await req.json() as {
       action?: PluginAction;
       source?: string;
       scope?: PluginScope;
+      packages?: unknown;
       cwd?: string;
-      origin?: "package" | "settings" | "directory";
-      kind?: "extension-path" | "directory";
-      name?: string;
-      projectId?: string;
     };
-    const body = rawBody;
-    const configDir = resolveConfigCwdSync(req, {
-      projectId: typeof body.projectId === "string" ? body.projectId : null,
-      cwd: typeof body.cwd === "string" ? body.cwd : null,
-    });
-    if (!configDir.ok) return NextResponse.json({ error: configDir.error }, { status: configDir.status });
-    body.cwd = configDir.cwd;
-    const scope = readScope(body.scope);
-    // 全局层（admin 管理）：scope=global 的任何写操作（含 origin=package 的
-    // install/remove/update/disable/enable）仅 admin/隐式 host 可执行。
-    if (scope === "global" && !configDir.isAdmin) {
-      return NextResponse.json({ error: "全局插件配置仅管理员可修改" }, { status: 403 });
-    }
-    if (scope === "user" && !isUserScopedConfig(configDir.userId)) {
-      return NextResponse.json({ error: "用户插件配置需要登录用户" }, { status: 403 });
-    }
     if (!body.cwd) return NextResponse.json({ error: "cwd required" }, { status: 400 });
     if (!body.action) return NextResponse.json({ error: "action required" }, { status: 400 });
+    const allowedRoots = await getAllowedFileRoots();
+    if (!isExistingFilePathAllowed(body.cwd, allowedRoots)) {
+      return NextResponse.json({ error: "Access denied" }, { status: 403 });
+    }
 
     const agentDir = getAgentDir();
     const projectTrust = getProjectTrustStatus(body.cwd, agentDir);
-    const settingsManager =
-      scope === "user"
-        ? createUserSettingsManager(body.cwd, configDir.userId, { projectTrusted: projectTrust.trusted })
-        : SettingsManager.create(body.cwd, agentDir, { projectTrusted: projectTrust.trusted });
+    const settingsManager = SettingsManager.create(body.cwd, agentDir, {
+      projectTrusted: projectTrust.trusted,
+    });
+
+    if (body.packages !== undefined) {
+      if (body.action !== "enable" && body.action !== "disable") {
+        return NextResponse.json({ error: "packages is only supported by enable and disable" }, { status: 400 });
+      }
+      const packages = readPackageList(body.packages);
+      if (!packages) {
+        return NextResponse.json({ error: "packages must be a list of { source, scope }" }, { status: 400 });
+      }
+      const results = await setPackageListDisabled(
+        settingsManager,
+        packages,
+        body.action === "disable",
+        projectTrust.trusted,
+      );
+      return NextResponse.json({ ...(await readPlugins(body.cwd)), results } satisfies PluginsBulkResponse);
+    }
+
+    const scope = readScope(body.scope);
     if (scope === "project" && !projectTrust.trusted) {
       return NextResponse.json(
         { error: "Project resources must be trusted before modifying project plugins" },
@@ -643,93 +479,6 @@ export async function POST(req: Request) {
     });
     const source = body.source?.trim();
     const local = scope === "project";
-    const bodyKind = body.kind;
-    const bodyOrigin = body.origin;
-
-    // ---- Top-level (non-package) sources: settings arrays + discovered dirs ----
-    if (bodyOrigin === "settings" || bodyKind === "extension-path") {
-      if (body.action === "install" && bodyKind === "extension-path") {
-        if (!source || !isAbsolute(resolve(source))) {
-          return NextResponse.json({ error: "source must be an absolute file path" }, { status: 400 });
-        }
-        if (!existsSync(source) || !statSync(source).isFile()) {
-          return NextResponse.json({ error: `扩展文件不存在：${source}` }, { status: 400 });
-        }
-        const current =
-          (local ? settingsManager.getProjectSettings().extensions : settingsManager.getGlobalSettings().extensions) ??
-          [];
-        if (!current.includes(source)) {
-          if (local) settingsManager.setProjectExtensionPaths([...current, source]);
-          else settingsManager.setExtensionPaths([...current, source]);
-          await settingsManager.flush();
-        }
-        return NextResponse.json(await readPlugins(body.cwd, configDir.userId));
-      }
-      if (body.action === "remove" && bodyOrigin === "settings") {
-        if (!source) return NextResponse.json({ error: "source required" }, { status: 400 });
-        const strip = (paths: string[]): string[] => paths.filter((p) => p !== source);
-        if (local) {
-          settingsManager.setProjectExtensionPaths(strip(settingsManager.getProjectSettings().extensions ?? []));
-        } else {
-          settingsManager.setExtensionPaths(strip(settingsManager.getGlobalSettings().extensions ?? []));
-        }
-        await settingsManager.flush();
-        return NextResponse.json(await readPlugins(body.cwd, configDir.userId));
-      }
-      return NextResponse.json({ error: `Unsupported action for origin=settings: ${body.action}` }, { status: 400 });
-    }
-
-    if (bodyOrigin === "directory" || bodyKind === "directory") {
-      const projectExtensionsRoot = resolve(body.cwd, ".pi", "extensions");
-      const globalExtensionsRoot = resolve(agentDir, "extensions");
-      const isManagedDir = (dir: string): boolean => {
-        const r = resolve(dir);
-        for (const root of [projectExtensionsRoot, globalExtensionsRoot]) {
-          if (!r.startsWith(root + sep)) continue;
-          const rest = r.slice(root.length + sep.length);
-          return rest.length > 0 && !rest.includes(sep); // exactly one level deep
-        }
-        return false;
-      };
-      if (body.action === "remove") {
-        if (!source) return NextResponse.json({ error: "source required" }, { status: 400 });
-        if (!isManagedDir(source)) {
-          return NextResponse.json(
-            { error: "只能删除 .pi/extensions 或全局 extensions 目录下的扩展目录" },
-            { status: 400 },
-          );
-        }
-        rmSync(resolve(source), { recursive: true, force: true });
-        return NextResponse.json(await readPlugins(body.cwd, configDir.userId));
-      }
-      if (body.action === "install") {
-        const name = (body.name ?? "").trim();
-        if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name)) {
-          return NextResponse.json({ error: "name must be a safe directory name" }, { status: 400 });
-        }
-        const dir = join(projectExtensionsRoot, name);
-        if (existsSync(dir)) {
-          return NextResponse.json({ error: `目录已存在：${dir}` }, { status: 400 });
-        }
-        mkdirSync(dir, { recursive: true });
-        writeFileSync(join(dir, "index.ts"), EXTENSION_TEMPLATE, "utf8");
-        return NextResponse.json(await readPlugins(body.cwd, configDir.userId));
-      }
-      return NextResponse.json({ error: `Unsupported action for origin=directory: ${body.action}` }, { status: 400 });
-    }
-
-    if (body.action === "install" || body.action === "update") {
-      const localInstall =
-        body.action === "install" &&
-        !!source &&
-        (isAbsolute(source) || source.startsWith("./") || source.startsWith("../") || source === "." || source === "..");
-      if (isNpmPackagesDisabled() && !localInstall) {
-        return NextResponse.json(
-          { error: "当前已禁止 npm 包自动安装/更新（离线模式）；本地扩展仍可通过路径安装。" },
-          { status: 409 },
-        );
-      }
-    }
 
     if (body.action === "install") {
       if (!source) return NextResponse.json({ error: "source required" }, { status: 400 });
@@ -738,11 +487,7 @@ export async function POST(req: Request) {
       if (!source) return NextResponse.json({ error: "source required" }, { status: 400 });
       await packageManager.removeAndPersist(source, { local });
     } else if (body.action === "update") {
-      if (
-        !source &&
-        !projectTrust.trusted &&
-        packageManager.listConfiguredPackages().some((pkg) => pkg.scope === "project")
-      ) {
+      if (!source && !projectTrust.trusted && packageManager.listConfiguredPackages().some((pkg) => pkg.scope === "project")) {
         return NextResponse.json(
           { error: "Project resources must be trusted before updating project plugins" },
           { status: 403 },
@@ -751,18 +496,26 @@ export async function POST(req: Request) {
       await packageManager.update(source);
     } else if (body.action === "disable") {
       if (!source) return NextResponse.json({ error: "source required" }, { status: 400 });
-      setPackageDisabled(settingsManager, source, scope, true);
+      setPackagesDisabled(settingsManager, [source], scope, true);
       await settingsManager.flush();
     } else if (body.action === "enable") {
       if (!source) return NextResponse.json({ error: "source required" }, { status: 400 });
-      setPackageDisabled(settingsManager, source, scope, false);
+      setPackagesDisabled(settingsManager, [source], scope, false);
       await settingsManager.flush();
     } else {
       return NextResponse.json({ error: `Unsupported action: ${body.action}` }, { status: 400 });
     }
 
-    return NextResponse.json(await readPlugins(body.cwd, configDir.userId));
+    return NextResponse.json(await readPlugins(body.cwd));
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
+  } finally {
+    // The provider lists share one extension-loaded runtime, and a package can
+    // add or drop a provider; an update that failed halfway may have, too. An
+    // in-place update keeps the package's path, so its new code shows after
+    // /reload, or once a session start in a project has moved the SDK's
+    // extension factory cache, when the runtime is next built (at the latest
+    // when it expires).
+    invalidateModelRuntimeWithExtensions();
   }
 }

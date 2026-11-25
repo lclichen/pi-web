@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Agent, AgentMessage, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import {
   getSupportedThinkingLevels,
+  normalizeContext,
   type Api,
   type AssistantMessage,
   type Context,
@@ -31,7 +32,8 @@ const TRANSCRIPT_CHARS = 6000;
 // budget on the newest turns can title a session after its last chore.
 const TRANSCRIPT_HEAD_CHARS = Math.round(TRANSCRIPT_CHARS * 0.4);
 
-const TITLE_SYSTEM_PROMPT = "You name chat sessions from a transcript. Reply with the title only.";
+const TITLE_SYSTEM_PROMPT =
+  "You name chat sessions from a transcript. Reply with the title only.";
 
 const ELISION = "[…]";
 const IMAGE_PLACEHOLDER = "[image]";
@@ -90,13 +92,11 @@ export function buildTitleRequest(source: Agent, transcript: string): TitleReque
     model,
     context: {
       systemPrompt: TITLE_SYSTEM_PROMPT,
-      messages: [
-        {
-          role: "user",
-          content: [{ type: "text", text: `${transcript}\n\n${TITLE_PROMPT}` }],
-          timestamp: Date.now(),
-        },
-      ],
+      messages: [{
+        role: "user",
+        content: [{ type: "text", text: `${transcript}\n\n${TITLE_PROMPT}` }],
+        timestamp: Date.now(),
+      }],
     },
     options: {
       maxTokens: TITLE_MAX_TOKENS,
@@ -266,17 +266,15 @@ function titleFromAssistant(message: AssistantMessage): GeneratedSessionTitle {
   if (!text) throw new Error("The model did not return a session title");
   return {
     title: parseGeneratedSessionTitle(text),
-    ...(message.usage
-      ? {
-          usage: {
-            input: message.usage.input,
-            output: message.usage.output,
-            cacheRead: message.usage.cacheRead,
-            cacheWrite: message.usage.cacheWrite,
-            total: message.usage.totalTokens,
-          },
-        }
-      : {}),
+    ...(message.usage ? {
+      usage: {
+        input: message.usage.input,
+        output: message.usage.output,
+        cacheRead: message.usage.cacheRead,
+        cacheWrite: message.usage.cacheWrite,
+        total: message.usage.totalTokens,
+      },
+    } : {}),
   };
 }
 
@@ -302,7 +300,8 @@ export async function generateSessionTitle(source: AgentSession): Promise<Genera
   const timeout = setTimeout(() => controller.abort(), TITLE_TIMEOUT_MS);
 
   try {
-    const stream = await sourceAgent.streamFunction(model, context, requestOptions);
+    // Providers read the prompt from the transcript's leading system message.
+    const stream = await sourceAgent.streamFunction(model, normalizeContext(context), requestOptions);
     return titleFromAssistant(await stream.result());
   } catch (error) {
     if (controller.signal.aborted) {

@@ -1,96 +1,30 @@
-import { getHeapStatistics } from "node:v8";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import type { McpServerInfo } from "./api-types.ts";
-import { listAgentEventStreams, type AgentEventStreamInfo } from "./agent-event-stream.ts";
-import { readMcpConfig } from "./mcp-config.ts";
+import { AGENT_EVENT_HEARTBEAT_MS } from "./agent-event-wire";
+import { countAgentEventStreams, listAgentEventStreams } from "./agent-event-stream";
+import type {
+  DebugEventStream,
+  DebugParentNotification,
+  DebugServerGlobal,
+  DebugServerPage,
+  DebugSessionDetail,
+  DebugSessionSummary,
+  DebugSnapshotResponse,
+  DebugSubagentRun,
+} from "./debug-types";
+import { countFileWatches } from "./file-watch-registry";
+import { listPageStreams } from "./page-stream-registry";
 import {
-  perfStatsSnapshot,
-  readEventLoopDelayAndReset,
-  type EventLoopDelaySnapshot,
-  type PerfStatsSnapshot,
-} from "./perf-stats.ts";
-import { sessionParseQueueDepth } from "./session-open.ts";
-import { getProjectTrustStatus } from "./project-trust.ts";
-import {
-  getMemoryGuardState,
   getRpcSessionDebugSnapshots,
-  getRpcStartingSessionCwds,
-  type RpcSessionDebugSnapshot,
-} from "./rpc-manager.ts";
+  getRpcSessionLifecycle,
+  getRpcStartingSessionIds,
+  SESSION_IDLE_TIMEOUT_MS,
+  type RpcSessionDebugEntry,
+} from "./rpc-manager";
+import { listRegisteredSessionLivenessProviders, listSessionLivenessProviders } from "./session-liveness";
+import { hasUnsettledSubagentRun, subagentDebugSnapshot } from "./subagent-runtime";
+import { getTerminalStats } from "./terminal-manager";
 
-export interface DebugSessionRow extends RpcSessionDebugSnapshot {
-  streams: number;
-}
-
-export interface DebugMcpServer {
-  name: string;
-  scope: string;
-  transport: string;
-  directToolsOn: boolean;
-  disabled: boolean;
-}
-
-export interface DebugProcessInfo {
-  rssBytes: number;
-  heapUsedBytes: number;
-  heapTotalBytes: number;
-  externalBytes: number;
-  arrayBuffersBytes: number;
-  heapLimitBytes: number;
-  /** Event-loop delay since the previous debug read (ms); null when the
-   * monitor is not running. Reading resets the histogram — poll cadence
-   * defines the window (DebugPanel: 2s). */
-  eventLoopDelayMs: EventLoopDelaySnapshot | null;
-  perf: PerfStatsSnapshot;
-  /** Worker parse pool state (large session restores). */
-  parseQueue: { queued: number; active: number };
-  /** Heap-pressure eviction guard (dev 批次4). */
-  memoryGuard: { limitBytes: number; heapUsedBytes: number; lastSweepAt: number | null; lastSweepEvicted: number };
-}
-
-export interface DebugSnapshot {
-  now: number;
-  uptimeMs: number;
-  process: DebugProcessInfo;
-  totals: {
-    wrappers: number;
-    alive: number;
-    running: number;
-    streams: number;
-    startingCwds: number;
-  };
-  sessions: DebugSessionRow[];
-  startingCwds: Array<{ cwd: string; count: number }>;
-  streams: AgentEventStreamInfo[];
-  selected: {
-    sessionId: string;
-    trust: { requiresTrust: boolean; trusted: boolean; reasons: string[] };
-    mcpServers: DebugMcpServer[];
-  } | null;
-}
-
-function readProcessInfo(): DebugProcessInfo {
-  const memory = process.memoryUsage();
-  let heapLimitBytes = 0;
-  try {
-    heapLimitBytes = getHeapStatistics().heap_size_limit;
-  } catch {
-    heapLimitBytes = 0;
-  }
-  return {
-    rssBytes: memory.rss,
-    heapUsedBytes: memory.heapUsed,
-    heapTotalBytes: memory.heapTotal,
-    externalBytes: memory.external,
-    arrayBuffersBytes: memory.arrayBuffers,
-    heapLimitBytes,
-    eventLoopDelayMs: readEventLoopDelayAndReset(),
-    perf: perfStatsSnapshot(),
-    parseQueue: sessionParseQueueDepth(),
-    memoryGuard: getMemoryGuardState(),
-  };
-}
-
+// Each source on its own: one that throws reads as empty, so the panel always gets a well-formed
+// answer. Not logged: the panel polls every two seconds.
 function read<T>(source: () => T, fallback: T): T {
   try {
     return source();
@@ -99,78 +33,144 @@ function read<T>(source: () => T, fallback: T): T {
   }
 }
 
+const NO_TERMINALS: DebugServerGlobal["terminals"] = { count: 0, listeners: 0, detached: 0, exited: 0, nextCleanupAt: null };
+
+/** Ids in the subagent run map: a subagent between its wrapper's close and its result entry. */
+function subagentRunIds(): Set<string> {
+  const runs = globalThis.__piSubagentRuns;
+  return runs instanceof Map ? new Set(runs.keys()) : new Set();
+}
+
+// Field by field, so a row never carries more than the contract names.
+function toEventStream(stream: DebugEventStream): DebugEventStream {
+  const { holder, address, client, openedAt, connectedAt, lastWriteAt, droppedEvents, queuedBytes } = stream;
+  return { holder, address: address ?? null, client: client ?? null, openedAt, connectedAt, lastWriteAt, droppedEvents, queuedBytes };
+}
+
+function countBy<T>(rows: readonly T[], key: (row: T) => string): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const row of rows) counts.set(key(row), (counts.get(key(row)) ?? 0) + 1);
+  return counts;
+}
+
+function buildDetail(
+  sessionId: string,
+  entry: RpcSessionDebugEntry | undefined,
+  starting: readonly string[],
+  streams: readonly (DebugEventStream & { sessionId: string })[],
+): DebugSessionDetail {
+  const subagents = read<{ runs: DebugSubagentRun[]; notifications: DebugParentNotification[] }>(
+    () => subagentDebugSnapshot(sessionId),
+    { runs: [], notifications: [] },
+  );
+  return {
+    sessionId,
+    wrapper: entry?.snapshot ?? null,
+    lifecycle: read(() => getRpcSessionLifecycle(sessionId), null),
+    starting: starting.includes(sessionId),
+    // The only place extension code runs: each of this session's providers says whether it is active.
+    providers: read(
+      () => listSessionLivenessProviders({ sessionId, ...(entry?.sessionFile ? { sessionFile: entry.sessionFile } : {}) })
+        ?.map(({ name, active, byFile }) => ({ name, active, byFile })) ?? null,
+      null,
+    ),
+    eventStreams: streams.filter((stream) => stream.sessionId === sessionId).map(toEventStream),
+    subagents: {
+      active: read(() => hasUnsettledSubagentRun(sessionId), false),
+      runs: subagents.runs,
+      notifications: subagents.notifications,
+    },
+    mcp: entry ? read(() => entry.readMcp(), null) : null,
+  };
+}
+
 /**
- * Read-only snapshot for GET /api/agent/debug. Never starts a wrapper, opens a
- * stream or sends a command; each registry read is isolated so one stale
- * object cannot fail the whole answer.
+ * What `GET /api/agent/debug` answers (lib/debug-types.ts): the server's registries as counts,
+ * states and times, with `sessionId`'s detail. Synchronous and read-only: it starts no wrapper,
+ * opens no stream, moves no idle timer and never calls `send()`.
+ * `sessions` holds every id with a wrapper or an event stream.
  */
-export function buildDebugSnapshot(sessionId: string | null, now = Date.now()): DebugSnapshot {
+export function buildDebugSnapshot(sessionId: string | null, now = Date.now()): DebugSnapshotResponse {
   const wrappers = read(() => getRpcSessionDebugSnapshots(), []);
+  const starting = read(() => getRpcStartingSessionIds(), []);
+  // Registered, not asked: a summary runs no extension code.
+  const providers = read(() => listRegisteredSessionLivenessProviders(), null) ?? [];
   const streams = read(() => listAgentEventStreams(), []);
-  const startingCwds = read(() => getRpcStartingSessionCwds(), []);
+  const subagentIds = read(subagentRunIds, new Set<string>());
 
-  const streamsBySession = new Map<string, number>();
-  for (const stream of streams) {
-    streamsBySession.set(stream.sessionId, (streamsBySession.get(stream.sessionId) ?? 0) + 1);
+  const wrapperById = new Map<string, RpcSessionDebugEntry>();
+  for (const entry of wrappers) {
+    if (!wrapperById.has(entry.snapshot.sessionId)) wrapperById.set(entry.snapshot.sessionId, entry);
   }
+  const streamsBySession = countBy(streams, (stream) => stream.sessionId);
 
-  const sessions: DebugSessionRow[] = wrappers
-    .map((wrapper) => ({
-      ...wrapper,
-      streams: streamsBySession.get(wrapper.sessionId ?? "") ?? 0,
-    }))
-    .sort((a, b) => (a.sessionId ?? "").localeCompare(b.sessionId ?? ""));
+  const ids = new Set<string>([
+    ...wrapperById.keys(),
+    ...streams.map((stream) => stream.sessionId),
+  ]);
+  const sessions: DebugSessionSummary[] = [...ids].map((id) => {
+    const entry = wrapperById.get(id);
+    const snapshot = entry?.snapshot;
+    const sessionFile = entry?.sessionFile ?? null;
+    return {
+      sessionId: id,
+      state: snapshot?.state ?? "none",
+      running: snapshot?.run.running ?? false,
+      awaitingInput: snapshot?.awaitingInput ?? false,
+      subagent: snapshot?.subagent === true || subagentIds.has(id),
+      eventStreams: streamsBySession.get(id) ?? 0,
+      providers: providers.filter((provider) => provider.sessionId === id
+        || (sessionFile !== null && provider.sessionFile === sessionFile)).length,
+      nextIdleCheckAt: snapshot?.idle.nextCheckAt ?? null,
+      forcedByStop: snapshot?.idle.forcedByStop ?? false,
+      starts: read(() => getRpcSessionLifecycle(id)?.starts ?? 0, 0),
+    };
+  });
 
-  const selectedWrapper = sessionId ? wrappers.find((wrapper) => wrapper.sessionId === sessionId) : undefined;
-  const selected = selectedWrapper?.cwd
-    ? (() => {
-        const trust = read(
-          () => getProjectTrustStatus(selectedWrapper.cwd, getAgentDir()),
-          { requiresTrust: false, trusted: true, reasons: [] },
-        );
-        const mcpServers = read(
-          () => readMcpConfig(selectedWrapper.cwd).servers,
-          [] as McpServerInfo[],
-        );
-        return {
-          sessionId: selectedWrapper.sessionId ?? "",
-          trust: { requiresTrust: trust.requiresTrust, trusted: trust.trusted, reasons: trust.reasons },
-          mcpServers: mcpServers.map((server) => ({
-            name: server.name,
-            scope: server.scope,
-            transport: server.transport,
-            directToolsOn: server.directToolsOn,
-            disabled: server.disabled,
-          })),
-        };
-      })()
-    : null;
+  // Each page with its streams of every kind, labelled by the first one's request.
+  const pages = new Map<string | null, DebugServerPage>();
+  const countFor = (holder: string | null, address: string | null | undefined, client: string | null | undefined, kind: "agent" | "terminal" | "fileWatch") => {
+    let page = pages.get(holder);
+    if (!page) {
+      page = { holder, address: address ?? null, client: client ?? null, agent: 0, terminal: 0, fileWatch: 0 };
+      pages.set(holder, page);
+    }
+    page[kind] += 1;
+  };
+  for (const stream of streams) countFor(stream.holder, stream.address, stream.client, "agent");
+  for (const stream of read(() => listPageStreams(), [])) {
+    countFor(stream.holder, stream.address, stream.client, stream.kind === "terminal" ? "terminal" : "fileWatch");
+  }
+  const agentTotal = read(() => countAgentEventStreams(), streams.length);
+  const fileWatches = read(() => countFileWatches(), 0);
+  const terminals = read(() => getTerminalStats(now), NO_TERMINALS);
+
+  const server: DebugServerGlobal = {
+    startedAt: Math.round(now - process.uptime() * 1000),
+    idleTimeoutMs: SESSION_IDLE_TIMEOUT_MS,
+    heartbeatMs: AGENT_EVENT_HEARTBEAT_MS,
+    wrappers: {
+      alive: wrappers.filter((entry) => entry.snapshot.state === "alive").length,
+      closing: wrappers.filter((entry) => entry.snapshot.state === "closing").length,
+      starting: starting.length,
+    },
+    eventStreams: {
+      // The closer registry also counts streams opened before a hot reload of the stream module.
+      total: agentTotal,
+    },
+    // The counters, not the page list: they also hold streams opened without a page id.
+    sseTotal: agentTotal + terminals.listeners + fileWatches,
+    pages: [...pages.values()],
+    fileWatches,
+    terminals,
+  };
 
   return {
     now,
-    uptimeMs: Math.round(process.uptime() * 1000),
-    process: read(() => readProcessInfo(), {
-      rssBytes: 0,
-      heapUsedBytes: 0,
-      heapTotalBytes: 0,
-      externalBytes: 0,
-      arrayBuffersBytes: 0,
-      heapLimitBytes: 0,
-      eventLoopDelayMs: null,
-      perf: perfStatsSnapshot(),
-      parseQueue: { queued: 0, active: 0 },
-      memoryGuard: { limitBytes: 0, heapUsedBytes: 0, lastSweepAt: null, lastSweepEvicted: 0 },
-    }),
-    totals: {
-      wrappers: wrappers.length,
-      alive: wrappers.filter((wrapper) => wrapper.alive).length,
-      running: wrappers.filter((wrapper) => wrapper.running).length,
-      streams: streams.length,
-      startingCwds: startingCwds.length,
-    },
+    server,
     sessions,
-    startingCwds,
-    streams,
-    selected,
+    session: sessionId === null
+      ? null
+      : buildDetail(sessionId, wrapperById.get(sessionId), starting, streams),
   };
 }

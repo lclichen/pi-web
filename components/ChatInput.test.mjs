@@ -11,36 +11,22 @@ const jiti = createJiti(import.meta.url, {
 });
 const React = await jiti.import("react");
 const { renderToStaticMarkup } = await jiti.import("react-dom/server");
-const {
-  ChatInput,
-  ModelErrorBanner,
-  ModelScopeWarningBanner,
-  canClearBuiltinCommandInput,
-  canRestoreUserMessage,
-  canRunBuiltinSlashCommandWhileStreaming,
-  cycleListIndex,
-  filterModelOptions,
-  getUpwardMenuMaxHeight,
-  getUserMessageText,
-  getUserMessageDraftImages,
-  isExactSlashCommand,
-  modelSupportsImageInput,
-  readImageFile,
-  replaceLinksWithMarkdown,
-} = await jiti.import("./ChatInput.tsx");
+const { ChatInput, ModelErrorBanner, ModelScopeWarningBanner, RUN_END_CLICK_GUARD_MS, autoGrowTextarea, scrollTextareaCaretIntoView, canClearBuiltinCommandInput, canRestoreUserMessage, canRunBuiltinSlashCommandWhileStreaming, cycleListIndex, filterModelOptions, getUpwardMenuMaxHeight, getUserMessageText, getUserMessageDraftImages, isExactSlashCommand, isRunEndStrayClick, modelSupportsImageInput, offersBuiltinSlashCommandWhileStreaming, replaceLinksWithMarkdown, readImageFile, replaceTextareaRange, stacksComposerLayout, submitsSlashCommandOnEnter } = await jiti.import("./ChatInput.tsx");
+const { isBareMcpCommand } = await jiti.import("@/lib/mcp-command");
 const { ModelSelector } = await jiti.import("./ModelSelector.tsx");
-const { clearDraft, getDraft, mergeRestoredSubmissionDraft, mergeRestoredSubmissionText, rekeyDraft, setDraft } =
-  await jiti.import("@/lib/draft-store.ts");
+// As ChatInput.tsx imports it: on Windows jiti loads "@/lib/draft-store.ts"
+// as a second copy, and ChatInput would never see the drafts set here (#1211).
+const { clearDraft, getDraft, mergeRestoredSubmissionDraft, mergeRestoredSubmissionText, rekeyDraft, setDraft } = await jiti.import("@/lib/draft-store");
 const { I18nProvider } = await jiti.import("@/hooks/useI18n");
 
 test("preserves pasted HTML links as Markdown without changing plain text layout", () => {
   const link = (label, href, occurrence = 0) => ({ label, href, occurrence });
 
   assert.equal(
-    replaceLinksWithMarkdown("Jobs:\nEngineer\nEngineer\nDone", [
-      link("Engineer", "https://example.com/1"),
-      link("Engineer", "https://example.com/2", 1),
-    ]),
+    replaceLinksWithMarkdown(
+      "Jobs:\nEngineer\nEngineer\nDone",
+      [link("Engineer", "https://example.com/1"), link("Engineer", "https://example.com/2", 1)],
+    ),
     "Jobs:\n[Engineer](https://example.com/1)\n[Engineer](https://example.com/2)\nDone",
   );
   assert.equal(
@@ -54,14 +40,21 @@ test("preserves pasted HTML links as Markdown without changing plain text layout
   assert.equal(replaceLinksWithMarkdown("plain text", [link("missing", "https://example.com")]), null);
 });
 
+test("a phone stacks the streaming buttons under the draft instead of beside it", () => {
+  // Two buttons in the draft's row leave the placeholder about 150px on a 360px
+  // phone. Only a streaming run has those buttons; idle keeps the icon-only send
+  // button in the row, and a desktop has width for the row either way.
+  assert.equal(stacksComposerLayout(false, false, false), false);
+  assert.equal(stacksComposerLayout(false, false, true), false);
+  assert.equal(stacksComposerLayout(false, true, false), false);
+  assert.equal(stacksComposerLayout(false, true, true), true);
+  // Quote mode always stacks: it is a short excerpt, whichever platform shows it.
+  assert.equal(stacksComposerLayout(true, false, false), true);
+  assert.equal(stacksComposerLayout(true, true, false), true);
+});
+
 test("follow-up shortcuts preserve newline, IME, mobile and completion behavior", () => {
-  const source = ts.createSourceFile(
-    "ChatInput.tsx",
-    readFileSync(new URL("./ChatInput.tsx", import.meta.url), "utf8"),
-    ts.ScriptTarget.Latest,
-    true,
-    ts.ScriptKind.TSX,
-  );
+  const source = ts.createSourceFile("ChatInput.tsx", readFileSync(new URL("./ChatInput.tsx", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   function findHandler(node) {
     if (ts.isVariableDeclaration(node) && node.name.getText(source) === "handleKeyDown") {
       return node.initializer.arguments[0];
@@ -69,11 +62,9 @@ test("follow-up shortcuts preserve newline, IME, mobile and completion behavior"
     return ts.forEachChild(node, findHandler);
   }
   // Execute the component's actual callback without mounting the rest of the UI.
-  const script = new Script(
-    ts.transpileModule(findHandler(source).getText(source), {
-      compilerOptions: { target: ts.ScriptTarget.ES2020 },
-    }).outputText,
-  );
+  const script = new Script(ts.transpileModule(findHandler(source).getText(source), {
+    compilerOptions: { target: ts.ScriptTarget.ES2020 },
+  }).outputText);
   const cases = [
     ["Enter steers", {}, {}, "steer"],
     ["Alt+Enter follows up", { altKey: true }, {}, "followup"],
@@ -85,146 +76,241 @@ test("follow-up shortcuts preserve newline, IME, mobile and completion behavior"
     ["IME keyCode blocks sending", { altKey: true, nativeEvent: { keyCode: 229 } }, {}, "native"],
     ["composition grace blocks sending", { altKey: true }, { lastCompositionEndAtRef: { current: 950 } }, "prevented"],
     ["mobile Alt+Enter keeps native behavior", { altKey: true }, { isMobile: true }, "native"],
-    [
-      "mobile composition grace cannot send",
-      { altKey: true },
-      { isMobile: true, lastCompositionEndAtRef: { current: 950 } },
-      "native",
-    ],
+    ["mobile composition grace cannot send", { altKey: true }, { isMobile: true, lastCompositionEndAtRef: { current: 950 } }, "native"],
     ["mobile Ctrl+Alt+Enter follows up", { altKey: true, ctrlKey: true }, { isMobile: true }, "followup"],
     ["mobile Cmd+Alt+Enter follows up", { altKey: true, metaKey: true }, { isMobile: true }, "followup"],
-    [
-      "mobile modified Enter respects composition grace",
-      { altKey: true, ctrlKey: true },
-      { isMobile: true, lastCompositionEndAtRef: { current: 950 } },
-      "prevented",
-    ],
+    ["mobile modified Enter respects composition grace", { altKey: true, ctrlKey: true }, { isMobile: true, lastCompositionEndAtRef: { current: 950 } }, "prevented"],
     ["Enter falls back to follow-up", {}, { onSteer: undefined }, "followup"],
     ["Alt+Enter falls back to steer", { altKey: true }, { onFollowUp: undefined }, "steer"],
     ["slash completion takes priority", { altKey: true }, { slashMenuOpen: true, slashQuery: "help" }, "slash"],
-    [
-      "available built-in commands take priority",
-      { altKey: true },
-      {
-        slashMenuOpen: true,
-        slashQuery: "copy",
-        value: "/copy",
-        displayedSlashCommands: [{ name: "copy", source: "builtin", availableWhileStreaming: true }],
-      },
-      "send",
-    ],
+    ["available built-in commands take priority", { altKey: true }, { slashMenuOpen: true, slashQuery: "copy", value: "/copy", displayedSlashCommands: [{ name: "copy", source: "builtin", availableWhileStreaming: true }] }, "send"],
+    ["pi's built-in /mcp submits at once, also while streaming", {}, { slashMenuOpen: true, slashQuery: "mcp", value: "/mcp", displayedSlashCommands: [{ name: "mcp", source: "extension", sourceInfo: { path: "builtin:mcp" } }] }, "send"],
+    ["another extension's /mcp completes first", {}, { slashMenuOpen: true, slashQuery: "mcp", value: "/mcp", displayedSlashCommands: [{ name: "mcp", source: "extension", sourceInfo: { path: "/ext/mcp.ts" } }] }, "slash"],
     ["file completion takes priority", { altKey: true }, { atMenuOpen: true, atQuery: {} }, "file"],
     ["history selection takes priority", { altKey: true }, { historyMenuOpen: true }, "history"],
+    ["Ctrl+Enter mode: Enter inserts a newline", {}, { enterSendMode: "ctrlEnter", isStreaming: false }, "native"],
+    ["Ctrl+Enter mode: Ctrl+Enter sends", { ctrlKey: true }, { enterSendMode: "ctrlEnter", isStreaming: false }, "send"],
+    ["Ctrl+Enter mode: Cmd+Enter steers", { metaKey: true }, { enterSendMode: "ctrlEnter" }, "steer"],
+    ["Ctrl+Enter mode: composition grace blocks the newline", {}, { enterSendMode: "ctrlEnter", lastCompositionEndAtRef: { current: 950 } }, "prevented"],
+    ["Ctrl+Enter mode: Enter picks a file", {}, { enterSendMode: "ctrlEnter", atMenuOpen: true, atQuery: {} }, "file"],
+    ["Ctrl+Enter mode: Enter picks from history", {}, { enterSendMode: "ctrlEnter", historyMenuOpen: true }, "history"],
+    ["Ctrl+Enter mode: Enter completes an exact slash command instead of sending it", {}, { enterSendMode: "ctrlEnter", isStreaming: false, slashMenuOpen: true, slashQuery: "copy", value: "/copy", displayedSlashCommands: [{ name: "copy", source: "builtin" }] }, "slash"],
+    ["Ctrl+Enter mode: Ctrl+Enter sends an exact slash command", { ctrlKey: true }, { enterSendMode: "ctrlEnter", isStreaming: false, slashMenuOpen: true, slashQuery: "copy", value: "/copy", displayedSlashCommands: [{ name: "copy", source: "builtin" }] }, "send"],
+    ["mobile ignores Ctrl+Enter mode for plain Enter", {}, { enterSendMode: "ctrlEnter", isMobile: true }, "native"],
+    // An extension's dialog hides the menus (#1678): Enter must not pick from one the user cannot see.
+    ["an open extension dialog hides slash completion", {}, { isStreaming: false, extensionUiOpen: true, slashMenuOpen: true, slashQuery: "help" }, "send"],
+    ["an open extension dialog hides file completion", {}, { isStreaming: false, extensionUiOpen: true, atMenuOpen: true, atQuery: {} }, "send"],
+    ["an open extension dialog hides history selection", {}, { isStreaming: false, extensionUiOpen: true, historyMenuOpen: true }, "send"],
   ];
   for (const [name, keys, state, expected] of cases) {
     let action = "native";
     const handler = script.runInNewContext({
       Date: { now: () => 1000 },
       COMPOSITION_END_ENTER_GRACE_MS: 100,
-      isMobile: false,
-      isStreaming: true,
-      isComposingRef: { current: false },
-      lastCompositionEndAtRef: { current: 0 },
-      historyMenuOpen: false,
-      inputHistory: ["previous"],
-      historyActiveIndex: 0,
-      slashMenuOpen: false,
-      slashQuery: null,
-      displayedSlashCommands: [{}],
-      slashActiveIndex: 0,
-      atMenuOpen: false,
-      atQuery: null,
-      atMatches: [{}],
-      atActiveIndex: 0,
-      onSteer() {},
-      onFollowUp() {},
-      sendQueued(mode) {
-        action = mode;
-      },
-      handleSend() {
-        action = "send";
-      },
-      applySlashCommand() {
-        action = "slash";
-      },
-      isExactSlashCommand,
-      value: "",
-      setSlashMenuOpen() {},
-      applyAtCompletion() {
-        action = "file";
-      },
-      applyHistoryInput() {
-        action = "history";
-      },
+      isMobile: false, isStreaming: true, enterSendMode: "enter",
+      isComposingRef: { current: false }, lastCompositionEndAtRef: { current: 0 },
+      extensionUiOpen: false,
+      historyMenuOpen: false, inputHistory: ["previous"], historyActiveIndex: 0,
+      slashMenuOpen: false, slashQuery: null, displayedSlashCommands: [{}], slashActiveIndex: 0,
+      atMenuOpen: false, atQuery: null, atMatches: [{}], atActiveIndex: 0,
+      onSteer() {}, onFollowUp() {},
+      sendQueued(mode) { action = mode; }, handleSend() { action = "send"; },
+      applySlashCommand() { action = "slash"; },
+      submitsSlashCommandOnEnter, value: "", setSlashMenuOpen() {},
+      applyAtCompletion() { action = "file"; },
+      applyHistoryInput() { action = "history"; },
       ...state,
     });
     handler({
-      key: "Enter",
-      shiftKey: false,
-      altKey: false,
-      ctrlKey: false,
-      metaKey: false,
+      key: "Enter", shiftKey: false, altKey: false, ctrlKey: false, metaKey: false,
       nativeEvent: { isComposing: false, keyCode: 13 },
-      preventDefault() {
-        action = "prevented";
-      },
+      preventDefault() { action = "prevented"; },
       ...keys,
     });
     assert.equal(action, expected, name);
   }
 });
 
+test("file mention insertion uses one native undoable edit", () => {
+  const originalDocument = globalThis.document;
+  const calls = [];
+  const textarea = {
+    value: '@"my/"',
+    selectionStart: 5,
+    selectionEnd: 5,
+    focus() { calls.push(["focus"]); },
+    setSelectionRange(start, end) {
+      this.selectionStart = start;
+      this.selectionEnd = end;
+      calls.push(["selection", start, end]);
+    },
+  };
+  globalThis.document = {
+    execCommand(command, _showUi, text = "") {
+      calls.push(["command", command, text]);
+      if (command === "delete") {
+        textarea.value = textarea.value.slice(0, --textarea.selectionStart) + textarea.value.slice(textarea.selectionEnd);
+        textarea.selectionEnd = textarea.selectionStart;
+      } else if (command === "insertText") {
+        textarea.value = textarea.value.slice(0, textarea.selectionStart) + text + textarea.value.slice(textarea.selectionEnd);
+        textarea.selectionStart += text.length;
+        textarea.selectionEnd = textarea.selectionStart;
+      } else if (command === "forwardDelete") {
+        textarea.value = textarea.value.slice(0, textarea.selectionStart) + textarea.value.slice(textarea.selectionStart + 1);
+      }
+      return true;
+    },
+  };
+
+  try {
+    replaceTextareaRange(textarea, 0, 6, '@"my dir/"', 9);
+    assert.equal(textarea.value, '@"my dir/"');
+    assert.deepEqual(calls, [
+      ["focus"],
+      ...Array.from({ length: 5 }, () => ["command", "delete", ""]),
+      ["command", "insertText", '@"my dir/"'],
+      ["command", "forwardDelete", ""],
+      ["selection", 9, 9],
+    ]);
+
+    calls.length = 0;
+    Object.assign(textarea, { value: "hello selected", selectionStart: 6, selectionEnd: 14 });
+    replaceTextareaRange(textarea, 6, 14, "@file ");
+    assert.equal(textarea.value, "hello @file ");
+    assert.deepEqual(calls, [
+      ["focus"],
+      ["selection", 6, 14],
+      ["command", "insertText", "@file "],
+    ]);
+  } finally {
+    globalThis.document = originalDocument;
+  }
+});
+
+test("file mention insertion falls back to a plain edit when execCommand refuses", () => {
+  const originalDocument = globalThis.document;
+  const events = [];
+  const textarea = {
+    value: "AAA @re BBB",
+    selectionStart: 7,
+    selectionEnd: 7,
+    focus() {},
+    setSelectionRange(start, end) {
+      this.selectionStart = start;
+      this.selectionEnd = end;
+    },
+    setRangeText(text, start, end, mode) {
+      this.value = this.value.slice(0, start) + text + this.value.slice(end);
+      if (mode === "end") this.selectionStart = this.selectionEnd = start + text.length;
+    },
+    dispatchEvent(event) { events.push([event.type, event.bubbles]); return true; },
+  };
+  globalThis.document = { execCommand: () => false };
+
+  try {
+    replaceTextareaRange(textarea, 4, 7, "@readme.md ");
+    assert.equal(textarea.value, "AAA @readme.md  BBB");
+    assert.equal(textarea.selectionStart, 15);
+    assert.deepEqual(events, [["input", true]]);
+
+    events.length = 0;
+    Object.assign(textarea, { value: "hello selected", selectionStart: 6, selectionEnd: 14 });
+    replaceTextareaRange(textarea, 6, 14, "@file ");
+    assert.equal(textarea.value, "hello @file ");
+    assert.deepEqual(events, [["input", true]]);
+  } finally {
+    globalThis.document = originalDocument;
+  }
+});
+
+test("a plain-text paste the browser dropped is inserted from the event's own text (#1513)", () => {
+  const source = ts.createSourceFile("ChatInput.tsx", readFileSync(new URL("./ChatInput.tsx", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  function findHandler(node) {
+    if (ts.isVariableDeclaration(node) && node.name.getText(source) === "handlePaste") {
+      return node.initializer.arguments[0];
+    }
+    return ts.forEachChild(node, findHandler);
+  }
+  const script = new Script(ts.transpileModule(findHandler(source).getText(source), {
+    compilerOptions: { target: ts.ScriptTarget.ES2020 },
+  }).outputText);
+
+  // inputFollows: the browser's own insertion fired input (handleInput clears the ref).
+  function paste({ text, html = "", links = [], inputFollows = false, connected = true }) {
+    const timers = [];
+    const inserted = [];
+    const pendingPasteRef = { current: null };
+    const handler = script.runInNewContext({
+      compact: false, processImageFiles() {}, pendingPasteRef,
+      setTimeout(callback, delay) { timers.push([callback, delay]); },
+      replaceTextareaRange(ta, start, end, value) { inserted.push([start, end, value]); },
+      replaceLinksWithMarkdown,
+      DOMParser: class {
+        parseFromString() {
+          return {
+            body: {},
+            querySelectorAll: () => links.map(([label, href]) => ({ textContent: label, getAttribute: () => href })),
+            createRange: () => ({ setStart() {}, setEndBefore() {}, toString: () => "" }),
+          };
+        }
+      },
+      valueRef: { current: "" }, setValue() {}, setHistoryMenuOpen() {}, updateAtQuery() {}, requestAnimationFrame() {},
+    });
+    const nativeEvent = { defaultPrevented: false };
+    handler({
+      clipboardData: { items: [], getData: (type) => (type === "text/plain" ? text : type === "text/html" ? html : "") },
+      currentTarget: { value: "a draft", selectionStart: 2, selectionEnd: 5, isConnected: connected },
+      nativeEvent,
+      preventDefault() { nativeEvent.defaultPrevented = true; },
+    });
+    if (inputFollows) pendingPasteRef.current = null;
+    for (const [callback, delay] of timers) {
+      assert.equal(delay, 0);
+      callback();
+    }
+    return { inserted, prevented: nativeEvent.defaultPrevented, pending: pendingPasteRef.current };
+  }
+
+  // The native paste stays in charge: never prevented, nothing inserted twice.
+  assert.deepEqual(paste({ text: "dictated", inputFollows: true }), { inserted: [], prevented: false, pending: null });
+  // Dropped by the browser: the delivered text replaces the selection at paste time.
+  assert.deepEqual(paste({ text: "dictated" }), { inserted: [[2, 5, "dictated"]], prevented: false, pending: null });
+  // Rich text without links pastes natively too, and is recovered the same way.
+  assert.deepEqual(paste({ text: "rich", html: "<b>rich</b>" }).inserted, [[2, 5, "rich"]]);
+  // The link path takes the paste over itself: nothing to recover.
+  assert.deepEqual(paste({ text: "rich", html: "<a>rich</a>", links: [["rich", "https://example.com"]] }), { inserted: [], prevented: true, pending: null });
+  assert.deepEqual(paste({ text: "", html: "" }).inserted, []);
+  assert.deepEqual(paste({ text: "gone", connected: false }).inserted, []);
+});
+
 test("file mention arrows wrap around the match list", () => {
-  const source = ts.createSourceFile(
-    "ChatInput.tsx",
-    readFileSync(new URL("./ChatInput.tsx", import.meta.url), "utf8"),
-    ts.ScriptTarget.Latest,
-    true,
-    ts.ScriptKind.TSX,
-  );
+  const source = ts.createSourceFile("ChatInput.tsx", readFileSync(new URL("./ChatInput.tsx", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   function findHandler(node) {
     if (ts.isVariableDeclaration(node) && node.name.getText(source) === "handleKeyDown") {
       return node.initializer.arguments[0];
     }
     return ts.forEachChild(node, findHandler);
   }
-  const script = new Script(
-    ts.transpileModule(findHandler(source).getText(source), {
-      compilerOptions: { target: ts.ScriptTarget.ES2020 },
-    }).outputText,
-  );
+  const script = new Script(ts.transpileModule(findHandler(source).getText(source), {
+    compilerOptions: { target: ts.ScriptTarget.ES2020 },
+  }).outputText);
 
   function move(key, atActiveIndex, length) {
     let next = null;
     const handler = script.runInNewContext({
       Date: { now: () => 1000 },
       COMPOSITION_END_ENTER_GRACE_MS: 100,
-      isMobile: false,
-      isStreaming: false,
-      isComposingRef: { current: false },
-      lastCompositionEndAtRef: { current: 0 },
-      historyMenuOpen: false,
-      inputHistory: [],
-      historyActiveIndex: 0,
-      slashMenuOpen: false,
-      slashQuery: null,
-      displayedSlashCommands: [],
-      slashActiveIndex: 0,
-      atMenuOpen: true,
-      atQuery: {},
-      atMatches: Array.from({ length }, () => ({})),
-      atActiveIndex,
-      onSteer() {},
-      onFollowUp() {},
-      sendQueued() {},
-      handleSend() {},
+      isMobile: false, isStreaming: false, enterSendMode: "enter",
+      isComposingRef: { current: false }, lastCompositionEndAtRef: { current: 0 },
+      extensionUiOpen: false,
+      historyMenuOpen: false, inputHistory: [], historyActiveIndex: 0,
+      slashMenuOpen: false, slashQuery: null, displayedSlashCommands: [], slashActiveIndex: 0,
+      atMenuOpen: true, atQuery: {}, atMatches: Array.from({ length }, () => ({})), atActiveIndex,
+      onSteer() {}, onFollowUp() {},
+      sendQueued() {}, handleSend() {},
       applySlashCommand() {},
-      isExactSlashCommand() {
-        return false;
-      },
-      value: "@file",
-      setSlashMenuOpen() {},
-      setAtMenuOpen() {},
+      isExactSlashCommand() { return false; }, value: "@file",
+      setSlashMenuOpen() {}, setAtMenuOpen() {},
       applyAtCompletion() {},
       applyHistoryInput() {},
       cycleListIndex,
@@ -233,11 +319,7 @@ test("file mention arrows wrap around the match list", () => {
       },
     });
     handler({
-      key,
-      shiftKey: false,
-      altKey: false,
-      ctrlKey: false,
-      metaKey: false,
+      key, shiftKey: false, altKey: false, ctrlKey: false, metaKey: false,
       nativeEvent: { isComposing: false, keyCode: 0 },
       preventDefault() {},
     });
@@ -264,20 +346,47 @@ test("cycleListIndex wraps in both directions", () => {
 
 test("shows the follow-up shortcut in the button tooltip", () => {
   const html = renderToStaticMarkup(
-    React.createElement(
-      I18nProvider,
-      null,
-      React.createElement(ChatInput, {
-        onSend() {},
-        onAbort() {},
-        onFollowUp() {},
-        isStreaming: true,
-      }),
-    ),
+    React.createElement(I18nProvider, null, React.createElement(ChatInput, {
+      onSend() {}, onAbort() {}, onFollowUp() {}, isStreaming: true,
+    })),
   );
 
-  assert.match(html, /title="Queue this message to send after the current run finishes \(Alt\/Option\+Enter\)"/);
+  assert.match(html, /title="Queue this message after the agent finishes \(Alt\/Option\+Enter\)"/);
   assert.match(html, /aria-keyshortcuts="Alt\+Enter"/);
+});
+
+test("scrolls a long queue inside its own box, under the count and Recall (#1428)", () => {
+  const html = renderToStaticMarkup(
+    React.createElement(I18nProvider, null, React.createElement(ChatInput, {
+      onSend() {}, onAbort() {}, onSteer() {}, onFollowUp() {}, onRecallQueue() {}, isStreaming: true,
+      queuedMessages: { steering: Array.from({ length: 19 }, (_, i) => `steer-${i}`), followUp: ["follow-up-0"] },
+    })),
+  );
+  const rows = html.match(/<div style="max-height:min\(180px[^"]*overflow-y:auto[^"]*">(.*)$/s);
+  assert.ok(rows, "queued rows sit in a capped scroll box");
+  assert.match(html.slice(0, rows.index), /Queued · 20<\/span>.*Recall to input<\/button>/s);
+  assert.deepEqual([...rows[1].matchAll(/<div title="([^"]+)"/g)].map((match) => match[1]),
+    [...Array.from({ length: 19 }, (_, i) => `steer-${i}`), "follow-up-0"]);
+});
+
+test("the composer stays editable while compacting and says messages queue", () => {
+  const html = renderToStaticMarkup(
+    React.createElement(I18nProvider, null, React.createElement(ChatInput, {
+      onSend() {}, isCompacting: true,
+    })),
+  );
+
+  assert.doesNotMatch(html, /<textarea[^>]*\bdisabled\b/);
+  assert.match(html, /placeholder="Compacting… messages queue until it finishes"/);
+});
+
+test("ignores a pointer click that reaches Stop's slot just as the run ends", () => {
+  assert.equal(isRunEndStrayClick(1, 0), true);
+  assert.equal(isRunEndStrayClick(2, RUN_END_CLICK_GUARD_MS - 1), true);
+  assert.equal(isRunEndStrayClick(1, RUN_END_CLICK_GUARD_MS), false);
+  assert.equal(isRunEndStrayClick(1, Number.POSITIVE_INFINITY), false, "no run has ended yet");
+  assert.equal(isRunEndStrayClick(0, 0), false, "Enter/Space on a focused button is never a stray click");
+  assert.ok(RUN_END_CLICK_GUARD_MS <= 700, "a deliberate click after a run must not wait noticeably");
 });
 
 test("renders the upstream model error", () => {
@@ -402,43 +511,44 @@ test("renders the compact composer with the standard Send button and no session 
   assert.match(html, /<textarea/);
   assert.match(html, />Send<\/button>/);
   assert.equal((html.match(/<button\b/g) ?? []).length, 1);
-  assert.doesNotMatch(html, /type="file"|Attach image|Change tool preset/);
+  assert.doesNotMatch(html, /type="file"|Attach files|Change tool preset/);
 });
 
-test("the attach button takes any file and says so when a handler is wired", () => {
-  const html = renderToStaticMarkup(
-    React.createElement(
-      I18nProvider,
-      null,
-      React.createElement(ChatInput, {
-        onSend() {},
-        onAbort() {},
-        onAttachFiles() {},
-        isStreaming: false,
-      }),
-    ),
+test("the attach button takes any file when the chat handles them, and images only otherwise (#1101)", () => {
+  const render = (props) => renderToStaticMarkup(
+    React.createElement(I18nProvider, null, React.createElement(ChatInput, {
+      onSend() {}, onAbort() {}, isStreaming: false, ...props,
+    })),
   );
+  const fileInput = (html) => html.match(/<input[^>]*type="file"[^>]*>/)?.[0] ?? "";
 
+  const html = render({ onAttachFiles() {} });
   assert.match(html, /title="Attach files"/);
-  assert.match(html, /type="file"/);
-  assert.doesNotMatch(html, /accept="image\/\*"/);
+  assert.match(fileInput(html), /multiple=""/);
+  // No accept list and no capture: phones offer files, the photo library and the camera.
+  assert.doesNotMatch(fileInput(html), /accept=|capture=/);
+
+  assert.match(fileInput(render({})), /accept="image\/\*"/);
 });
 
-test("pasted files go through the chat drop path when a handler is available", () => {
-  const source = readFileSync(new URL("./ChatInput.tsx", import.meta.url), "utf8");
-  const start = source.indexOf("const handlePaste = useCallback(");
-  assert.notEqual(start, -1);
-  const block = source.slice(start, start + 1400);
-  // Files (images included) are handed to onAttachFiles before the image-only
-  // fallback, so a pasted PDF lands in the working directory instead of being
-  // dropped on the floor.
-  assert.match(block, /item\.kind === "file"/);
-  assert.match(block, /fileItems\.map\(\(item\) => item\.getAsFile\(\)\)/);
-  assert.match(block, /if \(files\.length\) onAttachFiles\(files\);/);
-  assert.ok(
-    block.indexOf("onAttachFiles(files)") < block.indexOf("processImageFiles(files)"),
-    "the shared path is tried first",
+test("picked files go to the chat's attach handler, or attach as images without one (#1101)", () => {
+  const photo = new File(["x"], "photo.png", { type: "image/png" });
+  const report = new File(["x"], "report.pdf", { type: "application/pdf" });
+  const pick = (context) => {
+    const calls = { attached: [], images: [] };
+    const target = { files: [photo, report], value: "C:\\fakepath\\photo.png" };
+    chatInputCallback("handleFilePick", {
+      processImageFiles: (files) => calls.images.push([...files]),
+      ...context(calls),
+    })({ target });
+    return { ...calls, value: target.value };
+  };
+
+  assert.deepEqual(
+    pick((calls) => ({ onAttachFiles: (files) => calls.attached.push([...files]) })),
+    { attached: [[photo, report]], images: [], value: "" },
   );
+  assert.deepEqual(pick(() => ({ onAttachFiles: undefined })), { attached: [], images: [[photo, report]], value: "" });
 });
 
 test("shows and locks the optimistic model while a switch is pending", () => {
@@ -465,17 +575,50 @@ test("shows and locks the optimistic model while a switch is pending", () => {
   assert.match(html, /animation:spin 0\.8s linear infinite/);
 });
 
-test("filters model options by name and id", () => {
+test("the live model selector can reapply its current model without changing draft-field selection behavior", () => {
+  const source = ts.createSourceFile("ModelSelector.tsx", readFileSync(new URL("./ModelSelector.tsx", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  function findChoose(node) {
+    if (ts.isVariableDeclaration(node) && node.name.getText(source) === "choose") return node.initializer;
+    return ts.forEachChild(node, findChoose);
+  }
+  const script = new Script(ts.transpileModule(findChoose(source).getText(source), {
+    compilerOptions: { target: ts.ScriptTarget.ES2020 },
+  }).outputText);
+  const option = { provider: "fixture", modelId: "same-id", name: "Fixture" };
+  for (const [active, automatic, live, expected] of [
+    [true, false, true, "reselect"],
+    [true, false, false, null],
+    [true, true, true, "change"],
+    [false, false, true, "change"],
+  ]) {
+    const calls = [];
+    const choose = script.runInNewContext({
+      value: active ? option : null, isAutoSelection: automatic,
+      setOpen: (value) => calls.push(["open", value]),
+      setFilter: (value) => calls.push(["filter", value]),
+      onChange: (provider, id) => calls.push(["change", provider, id]),
+      onReselect: live ? (provider, id) => calls.push(["reselect", provider, id]) : undefined,
+    });
+    choose(option);
+    assert.deepEqual(calls, [["open", false], ["filter", ""], ...(expected ? [[expected, option.provider, option.modelId]] : [])]);
+  }
+  assert.match(readFileSync(new URL("./ChatInput.tsx", import.meta.url), "utf8"), /onReselect=\{onModelChange\}/);
+});
+
+test("filters model options by name, id, provider and provider/id", () => {
   const options = [
     { provider: "ollama", modelId: "qwen3:latest", name: "Qwen 3" },
     { provider: "anthropic", modelId: "claude-sonnet-4-6", name: "Claude Sonnet 4.6" },
     { provider: "openai", modelId: "gpt-5.4", name: "GPT-5.4" },
+    { provider: "relay-a", modelId: "gpt-5.4", name: "GPT-5.4" },
   ];
 
   assert.deepEqual(filterModelOptions(options, "QWEN"), [options[0]]);
   assert.deepEqual(filterModelOptions(options, "claude-sonnet"), [options[1]]);
-  assert.equal(filterModelOptions(options, "OpenAI").length, 0);
-  assert.equal(filterModelOptions(options, "anthropic/claude").length, 0);
+  assert.deepEqual(filterModelOptions(options, "OpenAI"), [options[2]]);
+  assert.deepEqual(filterModelOptions(options, " anthropic/claude "), [options[1]]);
+  assert.deepEqual(filterModelOptions(options, "Relay-A/GPT"), [options[3]]);
+  assert.deepEqual(filterModelOptions(options, "gpt-5.4"), [options[2], options[3]]);
   assert.equal(filterModelOptions(options, "missing").length, 0);
   assert.equal(filterModelOptions(options, "  "), options);
 });
@@ -513,42 +656,32 @@ test("caps an upward menu to the visible space above its anchor", () => {
   assert.ok(getUpwardMenuMaxHeight(200, 36) < 400);
 });
 
-test("file mention menu applies the measured upward height cap", () => {
-  const source = readFileSync(new URL("./ChatInput.tsx", import.meta.url), "utf8");
-  const start = source.indexOf("{atMenuOpen &&");
-  assert.notEqual(start, -1);
-  const block = source.slice(start, start + 4000);
-  assert.match(block, /ref=\{atMenuRef\}/);
-  assert.match(block, /min\(48vh, 400px, \$\{atMenuMaxHeight\}px\)/);
-  assert.match(block, /flexDirection: "column"/);
-  assert.match(block, /minHeight: 0/);
-  assert.equal(block.includes('maxHeight: "min(48vh, 400px)"'), false);
-});
-
-test("file mention menu remeasures when its layout container shifts the anchor", () => {
-  const source = readFileSync(new URL("./ChatInput.tsx", import.meta.url), "utf8");
-  const start = source.indexOf("function subscribeUpwardMenuMaxHeight");
-  assert.notEqual(start, -1);
-  const block = source.slice(start, start + 1800);
-  assert.match(block, /const layoutContainer = parent\?\.parentElement;/);
-  assert.match(block, /anchorObserver\?\.observe\(layoutContainer\)/);
-});
-
-test("reads attached images as they are — pi resizes prompt images itself", async () => {
-  const originals = { FileReader: globalThis.FileReader };
+test("reads attached images unchanged, leaving resizing to pi", async () => {
+  const originals = {
+    FileReader: globalThis.FileReader,
+    createImageBitmap: globalThis.createImageBitmap,
+  };
+  let bitmapCalls = 0;
   globalThis.FileReader = class {
     readAsDataURL() {
       this.result = "data:image/png;base64,ORIGINAL";
       this.onload();
     }
   };
+  globalThis.createImageBitmap = async () => {
+    bitmapCalls += 1;
+    return { width: 6000, height: 4000, close() {} };
+  };
+
   try {
-    assert.deepEqual(await readImageFile({ size: 2 * 1024 * 1024, type: "image/png" }, "image/png"), {
+    assert.deepEqual(await readImageFile({ size: 8 * 1024 * 1024, type: "image/png" }, "image/png"), {
       data: "ORIGINAL",
       mimeType: "image/png",
     });
+    assert.equal(bitmapCalls, 0);
   } finally {
     globalThis.FileReader = originals.FileReader;
+    globalThis.createImageBitmap = originals.createImageBitmap;
   }
 });
 
@@ -576,42 +709,149 @@ test("locks built-in command submission until it settles", async () => {
     }
     return ts.forEachChild(node, findCallback);
   }
-  const callback = new Script(
-    ts.transpileModule(findCallback(source).getText(source), {
-      compilerOptions: { target: ts.ScriptTarget.ES2020 },
-    }).outputText,
-  ).runInNewContext({
+  const callback = new Script(ts.transpileModule(findCallback(source).getText(source), {
+    compilerOptions: { target: ts.ScriptTarget.ES2020 },
+  }).outputText).runInNewContext({
     attachedImages: [],
     attachedImagesRef: { current: [] },
     builtinCommandPendingRef: { current: false },
+    builtinCommandFocusRef: { current: null },
+    textareaRef: { current: null },
+    document: { activeElement: {} },
     canClearBuiltinCommandInput,
     clearInput() {},
-    onBuiltinCommand: async () =>
-      new Promise((resolve) => {
-        callback.resolve = resolve;
-      }),
-    setBuiltinCommandPending(value) {
-      callback.pendingStates.push(value);
-    },
+    onBuiltinCommand: async () => new Promise((resolve) => { callback.resolve = resolve; }),
+    setBuiltinCommandPending(value) { callback.pendingStates.push(value); },
     valueRef: { current: "/reload" },
+    draftKeyRef: { current: "session-a" },
+    holdStoredDraft(key) {
+      callback.holds.push(key);
+      return () => callback.holds.push(`released ${key}`);
+    },
   });
   callback.pendingStates = [];
+  callback.holds = [];
 
   const first = callback("/reload");
   assert.deepEqual(callback.pendingStates, [true]);
   assert.equal(await callback("/reload"), true);
   assert.deepEqual(callback.pendingStates, [true]);
+  assert.deepEqual(callback.holds, ["session-a"], "a second press takes no second hold");
   callback.resolve({ handled: true });
   assert.equal(await first, true);
   assert.deepEqual(callback.pendingStates, [true, false]);
-  assert.match(sourceText, /<fieldset\s+disabled=\{builtinCommandPending\}\s+aria-busy=\{builtinCommandPending\}/);
+  assert.deepEqual(callback.holds, ["session-a", "released session-a"]);
 });
 
 test("keeps only read-only built-ins available while a run is active", () => {
   assert.equal(canRunBuiltinSlashCommandWhileStreaming("/copy"), true);
   assert.equal(canRunBuiltinSlashCommandWhileStreaming("/session"), true);
+  // /side forks the session at file level, so a side question during a long
+  // parent run is the primary use case (ADR 0007).
+  assert.equal(canRunBuiltinSlashCommandWhileStreaming("/side"), true);
+  assert.equal(canRunBuiltinSlashCommandWhileStreaming("/side why did the test fail?"), true);
   assert.equal(canRunBuiltinSlashCommandWhileStreaming("/compact"), false);
+  assert.equal(canRunBuiltinSlashCommandWhileStreaming("/auto-compact"), false);
   assert.equal(canRunBuiltinSlashCommandWhileStreaming("/reload"), false);
+});
+
+test("a bare /mcp reaches the built-in handler while a run is active", () => {
+  assert.equal(offersBuiltinSlashCommandWhileStreaming("/mcp"), true);
+  assert.equal(offersBuiltinSlashCommandWhileStreaming("/copy"), true);
+  assert.equal(offersBuiltinSlashCommandWhileStreaming("/compact"), false);
+  // Subcommands act on the session's connections and are queued like any message.
+  assert.equal(offersBuiltinSlashCommandWhileStreaming("/mcp login docs"), false);
+  assert.equal(offersBuiltinSlashCommandWhileStreaming("/mcp:1"), false);
+  // The built-in list itself is unchanged: /mcp is not one of the composer's built-ins.
+  assert.equal(canRunBuiltinSlashCommandWhileStreaming("/mcp"), false);
+});
+
+test("Enter on pi's built-in /mcp submits it at once; other extension commands still complete first", () => {
+  const builtinMcp = { name: "mcp", source: "extension", sourceInfo: { path: "builtin:mcp", source: "builtin", scope: "temporary", origin: "top-level" } };
+  const otherMcp = { ...builtinMcp, sourceInfo: { ...builtinMcp.sourceInfo, path: "/ext/mcp.ts" } };
+  const copy = { name: "copy", description: "", source: "builtin", availableWhileStreaming: true };
+  const compact = { name: "compact", description: "", source: "builtin" };
+
+  assert.equal(submitsSlashCommandOnEnter("/mcp", builtinMcp, false), true);
+  assert.equal(submitsSlashCommandOnEnter("/mcp", builtinMcp, true), true);
+  assert.equal(submitsSlashCommandOnEnter("/mc", builtinMcp, false), false);
+  assert.equal(submitsSlashCommandOnEnter("/mcp", otherMcp, false), false);
+  assert.equal(submitsSlashCommandOnEnter("/deploy", { ...otherMcp, name: "deploy" }, false), false);
+  // The composer's built-ins keep their rule: typed in full, and while streaming only those allowed then.
+  assert.equal(submitsSlashCommandOnEnter("/copy", copy, true), true);
+  assert.equal(submitsSlashCommandOnEnter("/compact", compact, false), true);
+  assert.equal(submitsSlashCommandOnEnter("/compact", compact, true), false);
+  assert.equal(submitsSlashCommandOnEnter("/co", copy, false), false);
+});
+
+function chatInputCallback(name, context) {
+  const sourceText = readFileSync(new URL("./ChatInput.tsx", import.meta.url), "utf8");
+  const source = ts.createSourceFile("ChatInput.tsx", sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  function findCallback(node) {
+    if (ts.isVariableDeclaration(node) && node.name.getText(source) === name) {
+      return node.initializer.arguments[0];
+    }
+    return ts.forEachChild(node, findCallback);
+  }
+  return new Script(ts.transpileModule(findCallback(source).getText(source), {
+    compilerOptions: { target: ts.ScriptTarget.ES2020 },
+  }).outputText).runInNewContext(context);
+}
+
+test("while a run streams, a bare /mcp opens Settings or is queued as before", async () => {
+  const run = async (value, handled, { mode = "steer", images = [] } = {}) => {
+    const calls = { builtin: [], prompts: [], cleared: 0 };
+    const sendQueued = chatInputCallback("sendQueued", {
+      value,
+      attachedImages: images,
+      onAudioUnlock() {},
+      clearInput() { calls.cleared += 1; },
+      onBuiltinCommand: async () => ({ handled }),
+      canRunBuiltinSlashCommandWhileStreaming,
+      isBareMcpCommand,
+      runBuiltinCommand: async (message) => { calls.builtin.push(message); return handled; },
+      onPromptWithStreamingBehavior: (message, behavior, attached) => calls.prompts.push([message, behavior, attached?.length ?? 0]),
+      onSteer() { throw new Error("slash messages are prompts"); },
+      onFollowUp() { throw new Error("slash messages are prompts"); },
+    });
+    sendQueued(mode);
+    await new Promise((resolve) => setImmediate(resolve));
+    return calls;
+  };
+
+  // Owned: Settings opened, nothing queued, the handler clears the input itself.
+  assert.deepEqual(await run("/mcp", true), { builtin: ["/mcp"], prompts: [], cleared: 0 });
+  // Another extension's /mcp: queued exactly as before.
+  assert.deepEqual(await run("/mcp", false), { builtin: ["/mcp"], prompts: [["/mcp", "steer", 0]], cleared: 1 });
+  assert.deepEqual(await run("/mcp", false, { mode: "followup" }), { builtin: ["/mcp"], prompts: [["/mcp", "followUp", 0]], cleared: 1 });
+  // Subcommands and a /mcp with images never reach the handler.
+  assert.deepEqual(await run("/mcp login docs", true), { builtin: [], prompts: [["/mcp login docs", "steer", 0]], cleared: 1 });
+  assert.deepEqual(await run("/mcp", true, { images: [{}] }), { builtin: [], prompts: [["/mcp", "steer", 1]], cleared: 1 });
+  // The composer's own built-ins are unchanged.
+  assert.deepEqual(await run("/copy", true), { builtin: ["/copy"], prompts: [], cleared: 0 });
+});
+
+test("handleSend lets a handled /mcp through while streaming and sends an unowned one when idle", async () => {
+  const run = async (value, { isStreaming, handled }) => {
+    const calls = { builtin: [], sent: [] };
+    const handleSend = chatInputCallback("handleSend", {
+      value,
+      attachedImages: [],
+      onAudioUnlock() {},
+      isStreaming,
+      offersBuiltinSlashCommandWhileStreaming,
+      runBuiltinCommand: async (message) => { calls.builtin.push(message); return handled; },
+      clearInput() {},
+      onSend: (message) => calls.sent.push(message),
+    });
+    await handleSend();
+    return calls;
+  };
+  assert.deepEqual(await run("/mcp", { isStreaming: true, handled: true }), { builtin: ["/mcp"], sent: [] });
+  assert.deepEqual(await run("/mcp", { isStreaming: false, handled: true }), { builtin: ["/mcp"], sent: [] });
+  assert.deepEqual(await run("/mcp", { isStreaming: false, handled: false }), { builtin: ["/mcp"], sent: ["/mcp"] });
+  // Streaming without steer handlers keeps any other message in the composer, as before.
+  assert.deepEqual(await run("/mcp login", { isStreaming: true, handled: false }), { builtin: [], sent: [] });
 });
 
 test("restores text and base64 images when editing a user message", () => {
@@ -624,16 +864,22 @@ test("restores text and base64 images when editing a user message", () => {
   };
 
   assert.equal(getUserMessageText(message), "Review this image @src/example.ts ");
-  assert.deepEqual(getUserMessageDraftImages(message), [{ data: "AQID", mimeType: "image/png" }]);
+  assert.deepEqual(getUserMessageDraftImages(message), [
+    { data: "AQID", mimeType: "image/png" },
+  ]);
 });
 
 test("restores legacy flat image entries when editing a user message", () => {
   const message = {
     role: "user",
-    content: [{ type: "image", data: "AQID", mimeType: "image/jpeg" }],
+    content: [
+      { type: "image", data: "AQID", mimeType: "image/jpeg" },
+    ],
   };
 
-  assert.deepEqual(getUserMessageDraftImages(message), [{ data: "AQID", mimeType: "image/jpeg" }]);
+  assert.deepEqual(getUserMessageDraftImages(message), [
+    { data: "AQID", mimeType: "image/jpeg" },
+  ]);
 });
 
 test("does not restore a historical message over a pending image attachment", () => {
@@ -645,12 +891,18 @@ test("does not restore a historical message over a pending image attachment", ()
 
 test("restores a cleared submission using the queued React state", () => {
   let value = "failed submission";
-  const updates = [() => "", (current) => mergeRestoredSubmissionText("failed submission", current)];
+  const updates = [
+    () => "",
+    (current) => mergeRestoredSubmissionText("failed submission", current),
+  ];
 
   for (const update of updates) value = update(value);
 
   assert.equal(value, "failed submission");
-  assert.equal(mergeRestoredSubmissionText("failed submission", "new draft"), "failed submission\n\nnew draft");
+  assert.equal(
+    mergeRestoredSubmissionText("failed submission", "new draft"),
+    "failed submission\n\nnew draft",
+  );
   assert.equal(
     mergeRestoredSubmissionText("failed submission", "failed submission"),
     "failed submission\n\nfailed submission",
@@ -659,16 +911,24 @@ test("restores a cleared submission using the queued React state", () => {
 
 test("keeps a failed first submission recoverable across a composer remount", () => {
   const image = { data: "AQID", mimeType: "image/png" };
-  const restored = mergeRestoredSubmissionDraft("failed submission", [image], "", []);
+  const restored = mergeRestoredSubmissionDraft(
+    "failed submission",
+    [image],
+    "",
+    [],
+  );
 
   assert.deepEqual(restored, {
     value: "failed submission",
     images: [image],
   });
-  assert.deepEqual(mergeRestoredSubmissionDraft("failed submission", [image], "new draft", []), {
-    value: "failed submission\n\nnew draft",
-    images: [image],
-  });
+  assert.deepEqual(
+    mergeRestoredSubmissionDraft("failed submission", [image], "new draft", []),
+    {
+      value: "failed submission\n\nnew draft",
+      images: [image],
+    },
+  );
 });
 
 test("preserves duplicate image attachments when restoring a submission", () => {
@@ -705,10 +965,10 @@ test("rekey keeps a synchronously restored draft when React state is still empty
   clearDraft(sessionKey);
   setDraft(provisionalKey, { value: "restored before state flush", images: [] });
 
-  assert.deepEqual(rekeyDraft(provisionalKey, sessionKey, { value: "", images: [] }), {
-    value: "restored before state flush",
-    images: [],
-  });
+  assert.deepEqual(
+    rekeyDraft(provisionalKey, sessionKey, { value: "", images: [] }),
+    { value: "restored before state flush", images: [] },
+  );
   assert.equal(getDraft(provisionalKey), null);
   assert.deepEqual(getDraft(sessionKey), {
     value: "restored before state flush",
@@ -741,6 +1001,26 @@ test("renders compact errors above the input as a wrapping alert", () => {
   assert.ok(html.indexOf('role="alert"') < html.indexOf("<textarea"));
 });
 
+test("a compact error can be dismissed when the composer is given a handler", () => {
+  const render = (props) => renderToStaticMarkup(
+    React.createElement(
+      I18nProvider,
+      null,
+      React.createElement(ChatInput, {
+        onSend() {},
+        onAbort() {},
+        onCompact() {},
+        isStreaming: false,
+        compactError: "Nothing to compact (session too small)",
+        ...props,
+      }),
+    ),
+  );
+
+  assert.match(render({ onDismissCompactError() {} }), /aria-label="Dismiss compaction error"/);
+  assert.doesNotMatch(render({}), /Dismiss compaction error/);
+});
+
 test("modelSupportsImageInput warns only when modality info is known and lacks image", () => {
   const modelList = [
     { id: "text-only", name: "Text Only", provider: "ollama", input: ["text"] },
@@ -758,55 +1038,146 @@ test("modelSupportsImageInput warns only when modality info is known and lacks i
   assert.equal(modelSupportsImageInput({ provider: "ollama", modelId: "text-only" }, undefined), true);
 });
 
-test(
-  "renders image warnings for known text-only defaults without an explicit model selection",
-  {
-    skip: "jiti splits the in-memory draft store instance on Windows; warning code verified at ChatInput.tsx:899/1496 — covered instead by VM E2E",
-  },
-  () => {
-    const draftKey = "new:/tmp/image-warning-default";
-    const modelList = [
-      { id: "text-only", name: "Text Only", provider: "custom", input: ["text"] },
-      { id: "vision", name: "Vision", provider: "custom", input: ["text", "image"] },
-      { id: "unknown", name: "Unknown", provider: "custom" },
-    ];
-    setDraft(draftKey, {
-      value: "Describe this image",
-      images: [{ data: "aW1hZ2U=", mimeType: "image/png" }],
-    });
+test("renders image warnings for known text-only defaults without an explicit model selection", () => {
+  const draftKey = "new:/tmp/image-warning-default";
+  const modelList = [
+    { id: "text-only", name: "Text Only", provider: "custom", input: ["text"] },
+    { id: "vision", name: "Vision", provider: "custom", input: ["text", "image"] },
+    { id: "unknown", name: "Unknown", provider: "custom" },
+  ];
+  setDraft(draftKey, {
+    value: "Describe this image",
+    images: [{ data: "aW1hZ2U=", mimeType: "image/png" }],
+  });
 
-    try {
-      for (const [modelId, warningExpected] of [
-        ["text-only", true],
-        ["vision", false],
-        ["unknown", false],
-        [null, false],
-      ]) {
-        const html = renderToStaticMarkup(
-          React.createElement(
-            I18nProvider,
-            null,
-            React.createElement(ChatInput, {
-              onSend() {},
-              onAbort() {},
-              isStreaming: false,
-              isAutoModelSelection: true,
-              model: modelId ? { provider: "custom", modelId } : null,
-              modelList,
-              draftKey,
-            }),
-          ),
-        );
+  try {
+    for (const [modelId, warningExpected] of [["text-only", true], ["vision", false], ["unknown", false], [null, false]]) {
+      const html = renderToStaticMarkup(
+        React.createElement(
+          I18nProvider,
+          null,
+          React.createElement(ChatInput, {
+            onSend() {},
+            onAbort() {},
+            isStreaming: false,
+            isAutoModelSelection: true,
+            model: modelId ? { provider: "custom", modelId } : null,
+            modelList,
+            draftKey,
+          }),
+        ),
+      );
 
-        assert.match(html, /<img/);
-        assert.equal(html.includes("Images may not be sent"), warningExpected, `default model: ${modelId}`);
-        if (warningExpected) {
-          assert.match(html, /The selected model \(Text Only\) does not support image input/);
-          assert.ok(html.indexOf('role="alert"') < html.indexOf("<textarea"));
-        }
+      assert.match(html, /<img/);
+      assert.equal(html.includes("Images may not be sent"), warningExpected, `default model: ${modelId}`);
+      if (warningExpected) {
+        assert.match(html, /The selected model \(Text Only\) does not support image input/);
+        assert.ok(html.indexOf('role="alert"') < html.indexOf("<textarea"));
       }
-    } finally {
-      clearDraft(draftKey);
     }
-  },
-);
+  } finally {
+    clearDraft(draftKey);
+  }
+});
+
+test("selector rows keep the default star and the floating save button in one gutter", async () => {
+  const { SelectorRow } = await jiti.import("./SelectorRow.tsx");
+  const star = (isDefault) => ({ isDefault, saveLabel: "Save as default", defaultLabel: "Default", onSave: () => {} });
+  const row = (props) => renderToStaticMarkup(React.createElement(SelectorRow, {
+    active: false,
+    onSelect: () => {},
+    ...props,
+  }, "Alpha"));
+
+  const savable = row({ star: star(false) });
+  assert.match(savable, /role="option"/);
+  assert.match(savable, /aria-label="Save as default"/);
+  // Hidden until hover or focus, but kept out of the row's text by the gutter.
+  assert.match(savable, /opacity:0/);
+  assert.match(savable, /tabindex="-1"/);
+  assert.match(savable, /padding:7px 36px 7px 12px/);
+  assert.doesNotMatch(savable, /aria-label="Default"/);
+
+  // The default row shows a static marker in the same spot and no button.
+  const saved = row({ star: star(true) });
+  assert.match(saved, /role="img" aria-label="Default"/);
+  assert.match(saved, /fill="currentColor"/);
+  assert.doesNotMatch(saved, /Save as default/);
+
+  const plain = row({});
+  assert.doesNotMatch(plain, /Save as default|aria-label="Default"/);
+  assert.match(plain, /padding:7px 12px/);
+  // Rows without a star still line up with starred ones in the same menu.
+  assert.match(row({ gutter: true }), /padding:7px 36px 7px 12px/);
+
+  const active = row({ active: true });
+  assert.match(active, /aria-selected="true"/);
+  assert.doesNotMatch(active, /border-left/);
+});
+
+test("grows the composer to its text and hides the scrollbar until the text is taller than the box", () => {
+  const fake = (value, scrollHeight, clientHeight) => ({
+    value,
+    style: { height: "", overflowY: "" },
+    scrollTop: 0,
+    get scrollHeight() { return scrollHeight; },
+    clientHeight,
+  });
+
+  const empty = fake("", 48, 24);
+  autoGrowTextarea(empty);
+  assert.equal(empty.style.height, "24px", "an empty box keeps the height CSS gives it, not its placeholder's lines");
+  assert.equal(empty.style.overflowY, "hidden", "a wrapped placeholder never scrolls an empty composer");
+
+  const oneLine = fake("hi", 24, 24);
+  autoGrowTextarea(oneLine);
+  assert.equal(oneLine.style.height, "24px");
+  assert.equal(oneLine.style.overflowY, "hidden");
+
+  const tall = fake("lots", 320, 24);
+  autoGrowTextarea(tall);
+  assert.equal(tall.style.height, "200px", "the box caps at 200 px");
+  assert.equal(tall.style.overflowY, "auto", "capped text scrolls");
+});
+
+test("a capped composer keeps its scroll while it regrows, so a caret at the end stays visible", () => {
+  // As a browser does: an "auto" height fits the whole text, which clamps
+  // scrollTop to 0.
+  const fake = (value, scrollHeight, clientHeight) => {
+    let height = "";
+    const ta = {
+      value,
+      style: {
+        overflowY: "",
+        get height() { return height; },
+        set height(next) { height = next; if (next === "auto") ta.scrollTop = 0; },
+      },
+      scrollTop: 40,
+      get scrollHeight() { return scrollHeight; },
+      clientHeight,
+    };
+    return ta;
+  };
+
+  const tall = fake("lots of lines", 320, 24);
+  autoGrowTextarea(tall);
+  assert.equal(tall.style.height, "200px");
+  assert.equal(tall.scrollTop, 40, "the auto-height reset does not leave the box scrolled back to the top");
+});
+
+test("a programmatic caret at the end scrolls an overflowing box to its bottom, a mid-text caret does not", () => {
+  const fake = (value, selectionEnd, scrollHeight) => ({
+    value,
+    selectionEnd,
+    scrollTop: 0,
+    get scrollHeight() { return scrollHeight; },
+  });
+
+  const atEnd = fake("many\nlines", 10, 320);
+  scrollTextareaCaretIntoView(atEnd);
+  assert.equal(atEnd.scrollTop, 320, "a caret at the very end scrolls to the bottom");
+
+  const mid = fake("many\nlines", 3, 320);
+  scrollTextareaCaretIntoView(mid);
+  assert.equal(mid.scrollTop, 0, "a mid-text caret leaves the scroll alone");
+});

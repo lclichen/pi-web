@@ -1,41 +1,17 @@
 import { NextResponse } from "next/server";
 import { existsSync } from "fs";
-import { addWorktree, findCurrentWorktreePath, listWorktrees, removeWorktree, resolveProject } from "@/lib/worktree";
-import {
-  allowFileRoot,
-  getAllowedFileRootsForRequest,
-  isExistingFilePathAllowed,
-  isFilePathAllowed,
-} from "@/lib/file-access";
-import { allowedRootsWithSessionCwds } from "@/lib/session-cwd-access";
-import { requireUserIdentity } from "@/lib/web-session";
-import { isCallerOwnedProjectHome } from "@/lib/projects";
-import { isCallerQuickWorkspace } from "@/lib/mode-homes";
+import { addWorktree, findCurrentWorktreePath, listWorktrees, removeWorktree, resolveProject, WorktreeBranchInUseError, worktreeRemovalRequiresForce } from "@/lib/worktree";
+import { allowFileRoot, getAllowedFileRoots, isExistingFilePathAllowed, isFilePathAllowed } from "@/lib/file-access";
 import { projectIdentityKey } from "@/lib/project-identity";
 
-/** Same gate as /api/files: session cwds / project roots / explicitly allowed
- *  dirs — but derived from the REQUEST identity (previously host-space roots
- *  only, which 403'd every non-admin project home and quick workspace). Paths
- *  outside the regular roots fall back to ownership: the caller's own project
- *  homes and quick workspaces pass (same semantics as /api/project-trust). */
-async function checkCwdAllowed(req: Request, cwd: string): Promise<NextResponse | null> {
-  const allowedRoots = await allowedRootsWithSessionCwds(req, await getAllowedFileRootsForRequest(req));
-  if (isFilePathAllowed(cwd, allowedRoots) && isExistingFilePathAllowed(cwd, allowedRoots)) {
-    return null;
+/** Same gate as /api/files: only session cwds / project roots / explicitly
+ *  allowed dirs may be inspected or mutated through this endpoint. */
+async function checkCwdAllowed(cwd: string): Promise<NextResponse | null> {
+  const allowedRoots = await getAllowedFileRoots();
+  if (!isFilePathAllowed(cwd, allowedRoots) || !isExistingFilePathAllowed(cwd, allowedRoots)) {
+    return NextResponse.json({ error: "Access denied" }, { status: 403 });
   }
-  const identity = requireUserIdentity(req);
-  if (identity.ok) {
-    const { user } = identity.session;
-    if (
-      user.id === 0 ||
-      user.role === "admin" ||
-      isCallerOwnedProjectHome(cwd, user.id, false) ||
-      isCallerQuickWorkspace(cwd, user.id)
-    ) {
-      return null;
-    }
-  }
-  return NextResponse.json({ error: "Access denied" }, { status: 403 });
+  return null;
 }
 
 // GET /api/worktrees?cwd=  →  { projectRoot, projectKey, isGit, isTopLevel, currentWorktreePath, worktrees }
@@ -45,7 +21,7 @@ export async function GET(req: Request) {
     if (!cwd) {
       return NextResponse.json({ error: "cwd is required" }, { status: 400 });
     }
-    const denied = await checkCwdAllowed(req, cwd);
+    const denied = await checkCwdAllowed(cwd);
     if (denied) return denied;
 
     const project = await resolveProject(cwd);
@@ -78,16 +54,18 @@ export async function GET(req: Request) {
 }
 
 // POST /api/worktrees  body: { cwd, branch }  →  { path, branch }
+//   409 { code: "branch_in_use", branch, worktreePath } when another worktree has the branch,
+//   code "branch_worktree_missing" when that worktree's folder is gone (git worktree prune clears it)
 export async function POST(req: Request) {
   try {
-    const body = (await req.json()) as { cwd?: string; branch?: string };
+    const body = await req.json() as { cwd?: string; branch?: string };
     if (!body.cwd || typeof body.cwd !== "string") {
       return NextResponse.json({ error: "cwd is required" }, { status: 400 });
     }
     if (!body.branch || typeof body.branch !== "string") {
       return NextResponse.json({ error: "branch is required" }, { status: 400 });
     }
-    const denied = await checkCwdAllowed(req, body.cwd);
+    const denied = await checkCwdAllowed(body.cwd);
     if (denied) return denied;
     if (!existsSync(body.cwd)) {
       return NextResponse.json({ error: `Directory does not exist: ${body.cwd}` }, { status: 400 });
@@ -97,6 +75,17 @@ export async function POST(req: Request) {
     return NextResponse.json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    if (error instanceof WorktreeBranchInUseError) {
+      return NextResponse.json(
+        {
+          error: message,
+          code: error.missing ? "branch_worktree_missing" : "branch_in_use",
+          branch: error.branch,
+          worktreePath: error.worktreePath,
+        },
+        { status: 409 },
+      );
+    }
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }
@@ -104,23 +93,23 @@ export async function POST(req: Request) {
 // DELETE /api/worktrees  body: { cwd, path, force? }
 export async function DELETE(req: Request) {
   try {
-    const body = (await req.json()) as { cwd?: string; path?: string; force?: boolean };
+    const body = await req.json() as { cwd?: string; path?: string; force?: boolean };
     if (!body.cwd || typeof body.cwd !== "string") {
       return NextResponse.json({ error: "cwd is required" }, { status: 400 });
     }
     if (!body.path || typeof body.path !== "string") {
       return NextResponse.json({ error: "path is required" }, { status: 400 });
     }
-    const denied = await checkCwdAllowed(req, body.cwd);
+    const denied = await checkCwdAllowed(body.cwd);
     if (denied) return denied;
 
     await removeWorktree(body.cwd, body.path, body.force === true);
     return NextResponse.json({ success: true });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    // git refuses to remove dirty worktrees without --force; surface that so
-    // the UI can offer a force-remove confirmation.
-    const dirty = /contains modified or untracked files|is dirty/i.test(message);
+    // Git refuses some worktree removals without --force, including worktrees
+    // with submodule state. Surface that so the UI can offer confirmation.
+    const dirty = worktreeRemovalRequiresForce(message);
     return NextResponse.json({ error: message, dirty }, { status: dirty ? 409 : 400 });
   }
 }

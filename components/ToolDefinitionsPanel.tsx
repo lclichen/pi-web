@@ -31,19 +31,23 @@ function formatValue(value: unknown): string {
 }
 
 function formatSchemaType(schema: Record<string, unknown>): string {
-  const variants = Array.isArray(schema.anyOf) ? schema.anyOf : Array.isArray(schema.oneOf) ? schema.oneOf : null;
+  const variants = Array.isArray(schema.anyOf)
+    ? schema.anyOf
+    : Array.isArray(schema.oneOf)
+      ? schema.oneOf
+      : null;
   if (variants) {
     return variants
-      .map((variant) =>
-        variant && typeof variant === "object" ? formatSchemaType(variant as Record<string, unknown>) : "unknown",
-      )
+      .map((variant) => variant && typeof variant === "object"
+        ? formatSchemaType(variant as Record<string, unknown>)
+        : "unknown")
       .filter((value, index, values) => values.indexOf(value) === index)
       .join(" | ");
   }
 
   if (schema.const !== undefined) return formatValue(schema.const);
   if (Array.isArray(schema.enum) && schema.enum.length > 0 && schema.type === undefined) {
-    return [...new Set(schema.enum.map((value) => (value === null ? "null" : typeof value)))].join(" | ");
+    return [...new Set(schema.enum.map((value) => value === null ? "null" : typeof value))].join(" | ");
   }
 
   const rawType = schema.type;
@@ -52,13 +56,14 @@ function formatSchemaType(schema: Record<string, unknown>): string {
     : typeof rawType === "string"
       ? rawType
       : typeof schema.$ref === "string"
-        ? (schema.$ref.split("/").pop() ?? "object")
+        ? schema.$ref.split("/").pop() ?? "object"
         : "unknown";
 
   if (type === "array") {
     const items = schema.items;
-    const itemType =
-      items && typeof items === "object" ? formatSchemaType(items as Record<string, unknown>) : "unknown";
+    const itemType = items && typeof items === "object"
+      ? formatSchemaType(items as Record<string, unknown>)
+      : "unknown";
     return `${itemType}[]`;
   }
   return type;
@@ -74,7 +79,7 @@ export function getToolParameterFields(parameters?: Record<string, unknown>): Pa
   );
 
   return Object.entries(properties).map(([name, value]) => {
-    const schema = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+    const schema = value && typeof value === "object" ? value as Record<string, unknown> : {};
     return {
       name,
       type: formatSchemaType(schema),
@@ -91,38 +96,45 @@ function EmptyState({ children }: { children: string }) {
 }
 
 export function ToolDefinitionsPanel({ loading, tools, translate }: Props) {
-  const activeTools = useMemo(() => tools?.filter((tool) => tool.active) ?? null, [tools]);
+  // What the model is sent: under codemode's "only" mode the active built-in tools are reached
+  // from scripts, and codemode's description lists them.
+  const declaredTools = useMemo(
+    () => tools?.filter((tool) => tool.active && !tool.declarationHidden) ?? null,
+    [tools],
+  );
   const [selectedToolName, setSelectedToolName] = useState<string | null>(null);
 
   useEffect(() => {
-    setSelectedToolName((current) =>
-      activeTools?.some((tool) => tool.name === current) ? current : (activeTools?.[0]?.name ?? null),
-    );
-  }, [activeTools]);
+    setSelectedToolName((current) => (
+      declaredTools?.some((tool) => tool.name === current)
+        ? current
+        : declaredTools?.[0]?.name ?? null
+    ));
+  }, [declaredTools]);
 
-  const selectedTool = activeTools?.find((tool) => tool.name === selectedToolName) ?? activeTools?.[0] ?? null;
+  const selectedTool = declaredTools?.find((tool) => tool.name === selectedToolName)
+    ?? declaredTools?.[0]
+    ?? null;
   const fields = selectedTool ? getToolParameterFields(selectedTool.parameters) : [];
 
   return (
     <div className="tool-definitions-panel">
       <nav className="tool-definitions-sidebar" aria-label={translate("tools.title")}>
         <div className="tool-definitions-list">
-          {activeTools && activeTools.length > 0 ? (
-            activeTools.map((tool) => {
-              const selected = tool.name === selectedTool?.name;
-              return (
-                <button
-                  key={tool.name}
-                  type="button"
-                  className={`tool-definitions-item${selected ? " selected" : ""}`}
-                  aria-pressed={selected}
-                  onClick={() => setSelectedToolName(tool.name)}
-                >
-                  <code>{tool.name}</code>
-                </button>
-              );
-            })
-          ) : activeTools ? (
+          {declaredTools && declaredTools.length > 0 ? declaredTools.map((tool) => {
+            const selected = tool.name === selectedTool?.name;
+            return (
+              <button
+                key={tool.name}
+                type="button"
+                className={`tool-definitions-item${selected ? " selected" : ""}`}
+                aria-pressed={selected}
+                onClick={() => setSelectedToolName(tool.name)}
+              >
+                <code>{tool.name}</code>
+              </button>
+            );
+          }) : declaredTools ? (
             <EmptyState>{translate("tools.noTools")}</EmptyState>
           ) : (
             <EmptyState>{loading ? translate("tools.loading") : translate("tools.load")}</EmptyState>
@@ -190,7 +202,11 @@ export function ToolDefinitionsPanel({ loading, tools, translate }: Props) {
           </div>
         ) : (
           <EmptyState>
-            {activeTools ? translate("tools.noTools") : loading ? translate("tools.loading") : translate("tools.load")}
+            {declaredTools
+              ? translate("tools.noTools")
+              : loading
+                ? translate("tools.loading")
+                : translate("tools.load")}
           </EmptyState>
         )}
       </section>

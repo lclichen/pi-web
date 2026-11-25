@@ -4,36 +4,16 @@ import { promisify } from "util";
 import fs from "fs";
 import path from "path";
 import {
-  getAllowedFileRootsForRequest,
+  getAllowedFileRoots,
   isExistingFilePathAllowed,
   isFilePathAllowed,
   isWindowsAbsolutePath,
 } from "@/lib/file-access";
-import { allowedRootsWithSessionCwds } from "@/lib/session-cwd-access";
+import { projectGitEnvironment } from "@/lib/git-environment";
 import { buildEntriesFromFiles, filterFileEntries, type FileIndexEntry } from "@/lib/file-fuzzy";
+import { isHiddenOutsideGit } from "@/lib/file-tree-visibility";
 
 const execFileAsync = promisify(execFile);
-
-// Same skip lists as /api/files — only used for the non-git readdir fallback.
-// Git-tracked repos rely on .gitignore instead (matches the TUI's fd behavior).
-const IGNORED_NAMES = new Set([
-  "node_modules",
-  ".git",
-  ".next",
-  "dist",
-  "build",
-  "__pycache__",
-  ".turbo",
-  ".cache",
-  "coverage",
-  ".pytest_cache",
-  ".mypy_cache",
-  "target",
-  "vendor",
-  ".DS_Store",
-]);
-
-const IGNORED_SUFFIXES = [".pyc"];
 
 /** Cap on the plain (no-query) response used as the client-side index */
 const MAX_FILES = 5000;
@@ -76,7 +56,7 @@ async function listWithGit(cwd: string): Promise<FileListing | null> {
     const { stdout } = await execFileAsync(
       "git",
       ["-C", cwd, "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
-      { timeout: 10_000, maxBuffer: 64 * 1024 * 1024, env: { ...process.env, LC_ALL: "C" } },
+      { timeout: 10_000, maxBuffer: 64 * 1024 * 1024, env: projectGitEnvironment() },
     );
     const all = stdout.split("\0").filter(Boolean);
     if (all.length > GIT_HARD_CAP) {
@@ -102,7 +82,9 @@ function listWithWalk(cwd: string): FileListing {
       continue;
     }
     for (const d of dirents) {
-      if (IGNORED_NAMES.has(d.name) || IGNORED_SUFFIXES.some((s) => d.name.endsWith(s))) continue;
+      // The file tree's name list, only for this non-git fallback. Git repos
+      // rely on .gitignore instead (matches the TUI's fd behavior).
+      if (isHiddenOutsideGit(d.name)) continue;
       const childRel = rel ? `${rel}/${d.name}` : d.name;
       if (d.isDirectory()) {
         if (depth + 1 <= MAX_WALK_DEPTH) {
@@ -128,17 +110,13 @@ function listWithWalk(cwd: string): FileListing {
 // Guarded by the same allow-list as /api/files.
 export async function GET(req: NextRequest) {
   try {
-    const cwd = req.nextUrl.searchParams.get("cwd")?.trim() ?? "";
+    const cwd = req.nextUrl.searchParams.get("cwd") ?? "";
     if (!cwd || (!cwd.startsWith("/") && !isWindowsAbsolutePath(cwd))) {
       return NextResponse.json({ error: "cwd must be an absolute path" }, { status: 400 });
     }
     const query = req.nextUrl.searchParams.get("q")?.slice(0, MAX_QUERY_LENGTH) ?? "";
 
-    // Same fence as /api/files: request roots PLUS the caller's session cwds.
-    // getAllowedFileRoots() alone dropped session directories after restarts
-    // (and always for non-admin users), making every @ file menu empty while
-    // the file explorer (which uses allowedRootsWithSessionCwds) kept working.
-    const allowedRoots = await allowedRootsWithSessionCwds(req, await getAllowedFileRootsForRequest(req));
+    const allowedRoots = await getAllowedFileRoots();
     if (!isFilePathAllowed(cwd, allowedRoots)) {
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }

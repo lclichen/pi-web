@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "fs";
 import { homedir } from "os";
 import { isAbsolute, join, relative, resolve, sep } from "path";
-import type { SkillInfo, SkillInstallInfo, SkillInstallScope } from "./api-types";
+import type { SkillInfo, SkillInstallInfo, SkillInstallScope } from "@/lib/api-types";
 
 interface SkillLockEntry {
   source?: unknown;
@@ -24,18 +24,18 @@ interface GlobalLockPathOptions {
 interface AnnotateSkillOptions {
   cwd: string;
   agentDir: string;
+  homeDir?: string;
   globalLockPath?: string;
   projectLockPath?: string;
-  /** Per-user skill store (user-config/u<id>/skills) and its npx lock file. */
-  userSkillsRoot?: string;
-  userLockPath?: string;
 }
 
 export function getGlobalSkillsLockPath({
   homeDir = homedir(),
   xdgStateHome = process.env.XDG_STATE_HOME,
 }: GlobalLockPathOptions = {}): string {
-  return xdgStateHome ? join(xdgStateHome, "skills", ".skill-lock.json") : join(homeDir, ".agents", ".skill-lock.json");
+  return xdgStateHome
+    ? join(xdgStateHome, "skills", ".skill-lock.json")
+    : join(homeDir, ".agents", ".skill-lock.json");
 }
 
 function readSkillLock(path: string): Record<string, SkillLockEntry> {
@@ -52,7 +52,10 @@ function isWithin(path: string, root: string): boolean {
   return rel !== "" && rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
 }
 
-function findLockEntry(entries: Record<string, SkillLockEntry>, skillName: string): SkillLockEntry | undefined {
+function findLockEntry(
+  entries: Record<string, SkillLockEntry>,
+  skillName: string,
+): SkillLockEntry | undefined {
   if (entries[skillName]) return entries[skillName];
   const normalizedName = skillName.toLowerCase();
   const key = Object.keys(entries).find((name) => name.toLowerCase() === normalizedName);
@@ -71,7 +74,11 @@ function normalizeSource(source: string, sourceType?: string): string {
 
 function buildSkillsShUrl(source: string, skillName: string): string | undefined {
   if (!source || source.includes("://") || source.startsWith("git@")) return undefined;
-  const sourcePath = source.split("/").filter(Boolean).map(encodeURIComponent).join("/");
+  const sourcePath = source
+    .split("/")
+    .filter(Boolean)
+    .map(encodeURIComponent)
+    .join("/");
   if (!sourcePath) return undefined;
   return `https://skills.sh/${sourcePath}/${encodeURIComponent(skillName)}`;
 }
@@ -90,8 +97,11 @@ function getInstallInfo(
   const skillPath = typeof entry.skillPath === "string" ? entry.skillPath : undefined;
   const ref = typeof entry.ref === "string" ? entry.ref : undefined;
   const rawVersionHash = scope === "global" ? entry.skillFolderHash : entry.computedHash;
-  const versionHash = typeof rawVersionHash === "string" && rawVersionHash ? rawVersionHash : undefined;
-  const isGitHubSource = sourceType === "github" && /^[\w.-]+\/[\w.-]+$/.test(source);
+  const versionHash = typeof rawVersionHash === "string" && rawVersionHash
+    ? rawVersionHash
+    : undefined;
+  const isGitHubSource =
+    sourceType === "github" && /^[\w.-]+\/[\w.-]+$/.test(source);
   const hasComparableVersion = scope === "global" || !ref;
 
   return {
@@ -103,7 +113,9 @@ function getInstallInfo(
     ...(skillPath && { skillPath }),
     ...(ref && { ref }),
     ...(versionHash && { versionHash }),
-    canCheckForUpdates: Boolean(isGitHubSource && skillPath && versionHash && hasComparableVersion),
+    canCheckForUpdates: Boolean(
+      isGitHubSource && skillPath && versionHash && hasComparableVersion,
+    ),
   };
 }
 
@@ -112,29 +124,27 @@ export function annotateSkillsWithInstallInfo(
   {
     cwd,
     agentDir,
-    globalLockPath = getGlobalSkillsLockPath(),
+    homeDir = homedir(),
+    globalLockPath = getGlobalSkillsLockPath({ homeDir }),
     projectLockPath = join(cwd, "skills-lock.json"),
-    userSkillsRoot,
-    userLockPath,
   }: AnnotateSkillOptions,
 ): SkillInfo[] {
   const globalEntries = readSkillLock(globalLockPath);
   const projectEntries = readSkillLock(projectLockPath);
-  const userEntries = userLockPath ? readSkillLock(userLockPath) : {};
-  const globalSkillsRoot = join(agentDir, "skills");
-  const projectSkillsRoot = join(cwd, ".pi", "skills");
+  // The skills CLI installs for pi into its own dirs up to 1.5.x and into the
+  // Agent Skills dirs (.agents/skills) since 1.7; pi loads both.
+  const globalSkillsRoots = [join(agentDir, "skills"), join(homeDir, ".agents", "skills")];
+  const projectSkillsRoots = [join(cwd, ".pi", "skills"), join(cwd, ".agents", "skills")];
+  const isWithinAny = (path: string, roots: string[]) => roots.some((root) => isWithin(path, root));
 
   return skills.map((skill) => {
     if (!existsSync(skill.filePath)) return skill;
 
-    const install =
-      userSkillsRoot && isWithin(skill.filePath, userSkillsRoot)
-        ? getInstallInfo(userEntries, skill.name, "user")
-        : isWithin(skill.filePath, globalSkillsRoot)
-          ? getInstallInfo(globalEntries, skill.name, "global")
-          : isWithin(skill.filePath, projectSkillsRoot)
-            ? getInstallInfo(projectEntries, skill.name, "project")
-            : undefined;
+    const install = isWithinAny(skill.filePath, globalSkillsRoots)
+      ? getInstallInfo(globalEntries, skill.name, "global")
+      : isWithinAny(skill.filePath, projectSkillsRoots)
+        ? getInstallInfo(projectEntries, skill.name, "project")
+        : undefined;
 
     return install ? { ...skill, install } : skill;
   });

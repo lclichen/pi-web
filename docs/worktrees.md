@@ -26,9 +26,13 @@ Switching worktrees affects:
 
 Existing sessions stay grouped under the same project. Opening an existing session moves the effective working directory back to that session's checkout.
 
+A new session can also pick its checkout right above the message box. While a new chat is still empty, a small bar there shows its project and, at a repository root, its worktree. Choosing another one moves the new chat there, keeping what you have typed, attached images, and the model and reasoning level you picked (a model the other project does not offer goes back to automatic). It offers the same project and worktree menus as the sidebar's Files tab, with `Use default directory` and `Open another project...` for any other folder; only the Files tab removes worktrees. A project's `+` in the sidebar starts the new chat in the worktree you are using for that project (or in the main checkout of another project); use the bar to pick a different one.
+
+The project group's `⋯` menu also offers **Open in new tab**. It opens a new chat in the same directory the group's `+` would use, without switching the original browser tab or copying its conversation or draft. Merely opening the new tab does not create a session or send a prompt.
+
 ## Creating a Worktree
 
-Choose `New worktree...` from the worktree menu and enter a branch name.
+Choose `New worktree...` from the worktree menu and enter a branch name. From the bar above an empty new chat, the new chat then moves into the new worktree.
 
 Pi Web creates the checkout at:
 
@@ -52,7 +56,7 @@ If the branch already exists, Pi Web adds a worktree for that branch. If it does
 
 ## Removing a Worktree
 
-Use the remove button next to a non-main worktree to remove that checkout.
+In the Files tab's worktree menu, use the remove button next to a non-main worktree to remove that checkout.
 
 Removing a worktree does not delete:
 
@@ -75,7 +79,7 @@ Each session still remembers the working directory it was created with. That mea
 ## Troubleshooting
 
 **I do not see the worktree switcher.**
-Select a Git repository root. Non-Git directories and repo subdirectories show a small hint instead of the switcher.
+Select a Git repository root. A repo subdirectory shows a small hint instead of the switcher; a non-Git directory shows the project picker alone.
 
 **A branch cannot be added as a worktree.**
 Git allows a branch to be checked out in only one worktree at a time. Switch to the existing worktree for that branch, or remove it first.

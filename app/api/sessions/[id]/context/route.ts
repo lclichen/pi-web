@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
-import { buildSessionContext } from "@/lib/session-reader";
+import { resolveSessionPath, openSessionManager, buildSessionContext } from "@/lib/session-reader";
 import { getRpcSession } from "@/lib/rpc-manager";
-import { openSessionManagerAsync } from "@/lib/session-open";
-import { checkLiveSessionAccess, resolveSessionAccess } from "@/lib/session-access";
+import { attachTranscriptNotices, readSessionTranscriptNotices } from "@/lib/transcript-notices-server";
+import type { SessionEntry } from "@/lib/types";
 
-export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(
+  req: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
   const { id } = await params;
   const url = new URL(req.url);
   const leafId = url.searchParams.get("leafId") ?? undefined;
@@ -18,40 +21,34 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const before = url.searchParams.get("before") ?? undefined;
 
   try {
-    // Fast path for live sessions mirrors dev's events route; everything else
-    // goes through dev's per-user access fence instead of upstream's global
-    // resolveSessionPath (MERGE-NOTE(upgrade/0.84): space-aware lookup).
     const rpc = getRpcSession(id);
     const liveRpc = rpc?.isAlive() ? rpc : undefined;
-    if (liveRpc) {
-      // Registry hit: no file path to fence — check ownership explicitly.
-      const fence = checkLiveSessionAccess(req, id);
-      if (!fence.ok) return NextResponse.json({ error: fence.error }, { status: fence.status });
-    }
-    let filePath: string | null = null;
-    if (!liveRpc) {
-      const access = await resolveSessionAccess(req, id);
-      if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
-      filePath = access.path;
-    }
+    const filePath = liveRpc ? null : await resolveSessionPath(id);
     if (!liveRpc && !filePath) {
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
     }
 
-    // History pagination: cached read-only manager (repeat pages are ~1ms map
-    // hits); a cold large transcript parses on a worker thread (dev 批次3).
-    const sm = liveRpc?.inner.sessionManager ?? (await openSessionManagerAsync(filePath!));
+    const sm = liveRpc?.inner.sessionManager ?? openSessionManager(filePath!);
     // `before` is the oldest entry already on the client; fetch its ancestors
     // only (excludeLeaf) so prepending the page does not duplicate `before`.
-    const context = buildSessionContext(sm.getEntries() as never, before ?? leafId, {
+    const entries = sm.getEntries();
+    // Without a leaf, pi's own, as the full read walks from: the reply names it.
+    const branchLeafId = leafId ?? sm.getLeafId();
+    const transcriptNotices = readSessionTranscriptNotices({
+      entries: entries as unknown as SessionEntry[],
+      cwd: sm.getHeader()?.cwd ?? "",
+      leafId: branchLeafId,
+      models: liveRpc?.inner.modelRuntime,
+    });
+    const context = attachTranscriptNotices(buildSessionContext(entries as never, before ?? branchLeafId, {
       deferThinking,
       deferToolResultImages,
       tail,
       excludeLeaf: Boolean(before),
       sessionId: id,
-    });
+    }), transcriptNotices);
 
-    return NextResponse.json({ context, tail, before: before ?? null });
+    return NextResponse.json({ context, tail, before: before ?? null, leafId: branchLeafId });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
   }

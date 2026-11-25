@@ -20,19 +20,21 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array<ArrayBuffer> {
 }
 
 export function isPushSupported(): boolean {
-  return (
-    typeof window !== "undefined" && "serviceWorker" in navigator && "PushManager" in window && "Notification" in window
-  );
+  return typeof window !== "undefined"
+    && "serviceWorker" in navigator
+    && "PushManager" in window
+    && "Notification" in window;
 }
 
 export async function setupPushSubscription(locale: string): Promise<boolean> {
   if (!isPushSupported() || Notification.permission !== "granted") return false;
   if (activeSubscriptionPromise) return activeSubscriptionPromise;
-  activeSubscriptionPromise = (async () => {
+
+  const attempt = (async () => {
     try {
       const configResponse = await fetch("/api/push/config");
       if (!configResponse.ok) return false;
-      const { publicKey } = (await configResponse.json()) as { publicKey?: string };
+      const { publicKey } = await configResponse.json() as { publicKey?: string };
       if (!publicKey) return false;
 
       const registration = await navigator.serviceWorker.ready;
@@ -58,32 +60,9 @@ export async function setupPushSubscription(locale: string): Promise<boolean> {
     }
   })();
 
-  return activeSubscriptionPromise;
-}
-
-/**
- * Drop this browser's push subscription on logout. The endpoint belongs to the
- * browser profile, so leaving it registered would keep delivering the previous
- * login's session completions here until another user claims it.
- */
-export async function teardownPushSubscription(): Promise<void> {
-  if (!isPushSupported()) return;
-  activeSubscriptionPromise = null;
-  try {
-    const registration = await Promise.race([
-      navigator.serviceWorker.ready,
-      new Promise<null>((resolve) => setTimeout(() => resolve(null), 2000)),
-    ]);
-    if (!registration) return;
-    const subscription = await registration.pushManager.getSubscription();
-    if (!subscription) return;
-    await fetch("/api/push/subscribe", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ endpoint: subscription.endpoint }),
-    }).catch(() => {});
-    await subscription.unsubscribe().catch(() => {});
-  } catch {
-    // Best effort: the server-side owner check still suppresses stale pushes.
-  }
+  activeSubscriptionPromise = attempt;
+  void attempt.then((ok) => {
+    if (!ok && activeSubscriptionPromise === attempt) activeSubscriptionPromise = null;
+  });
+  return attempt;
 }

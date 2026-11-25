@@ -1,16 +1,20 @@
 "use strict";
 
-// Next bakes three preview-mode secrets into .next/prerender-manifest.json at
-// build time. `next start` compares the `x-prerender-revalidate` request header
-// with `preview.previewModeId` *before* running middleware/proxy, and skips the
-// proxy when they match (next-server.js -> checkIsOnDemandRevalidate). A
-// published package therefore leaks a header value that bypasses proxy.ts:
-// the login gate and the Host/Origin/Fetch-Metadata checks.
+// The published npm tarball ships `.next/prerender-manifest.json`, whose
+// `preview` block holds the build's preview-mode secrets. One of them,
+// `previewModeId`, is the value Next compares against the `x-prerender-revalidate`
+// request header: when they match, Next treats the request as an on-demand
+// revalidation and skips middleware/proxy entirely (see next-server.js
+// `runMiddleware`). Because the value is baked into every published version, an
+// attacker who reads the tarball can send that header and bypass `proxy.ts` —
+// the central password gate and the Host/Origin/Fetch-Metadata checks.
 //
-// Rotate the three secrets with fresh random values before every `next start`.
-// This must run in each launch path (bin/pi-web.js, start-all.sh, VM scripts),
-// not at build time: a build-time value would still be readable from the
-// distributed package.
+// `next start` reads these secrets only from this file (there is no runtime env
+// override) and never regenerates them, so we rewrite the three preview secrets
+// with fresh random values before launching Next. That makes the published
+// values useless and unique per launch. Done at startup rather than in a
+// postinstall hook so it runs on the guaranteed launch path and cannot be
+// skipped with `--ignore-scripts`.
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const crypto = require("crypto");
@@ -31,53 +35,44 @@ function freshPreviewSecrets() {
 }
 
 /**
- * Rewrite the preview-mode secrets in `<nextDir>/prerender-manifest.json`.
- * Never throws: returns a status the caller can surface. A read-only install
- * (AppImage/squashfs) cannot rotate, so warn instead of silently staying
- * vulnerable.
+ * Rewrite the preview-mode secrets in `.next/prerender-manifest.json` with fresh
+ * random values. Never throws: returns a status the caller can surface so a
+ * read-only install (where the rewrite cannot happen) is visible rather than a
+ * silent bypass.
  *
  * @param {string} nextDir absolute path to the package's `.next` directory
- * @returns {{ ok: boolean, reason?: "missing"|"unreadable"|"unexpected-shape"|"unwritable", error?: Error }}
+ * @returns {{ ok: boolean, reason?: string, error?: Error }}
  */
 function rotatePreviewSecrets(nextDir) {
   const manifestPath = path.join(nextDir, PRERENDER_MANIFEST);
 
   let manifest;
-  let mode;
   try {
     manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
-    mode = fs.statSync(manifestPath).mode;
   } catch (error) {
-    if (error && error.code === "ENOENT") return { ok: false, reason: "missing" };
-    if (error instanceof SyntaxError) return { ok: false, reason: "unreadable", error };
+    if (error && error.code === "ENOENT") {
+      return { ok: false, reason: "missing" };
+    }
     return { ok: false, reason: "unreadable", error };
   }
 
-  if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)) {
-    return { ok: false, reason: "unexpected-shape" };
-  }
-  if (
-    manifest.preview !== undefined &&
-    (typeof manifest.preview !== "object" || manifest.preview === null || Array.isArray(manifest.preview))
-  ) {
+  if (!manifest || typeof manifest !== "object" || typeof manifest.preview !== "object") {
     return { ok: false, reason: "unexpected-shape" };
   }
 
-  manifest.preview = { ...(manifest.preview ?? {}), ...freshPreviewSecrets() };
+  manifest.preview = { ...manifest.preview, ...freshPreviewSecrets() };
 
   // Write to a sibling temp file and rename so a concurrent `next start` never
   // reads a half-written manifest.
   const tempPath = path.join(nextDir, `${PRERENDER_MANIFEST}.${process.pid}.tmp`);
   try {
     fs.writeFileSync(tempPath, JSON.stringify(manifest));
-    // Keep the manifest's permissions (0644 normally; some installs use 0600).
-    if (typeof mode === "number") fs.chmodSync(tempPath, mode);
     fs.renameSync(tempPath, manifestPath);
   } catch (error) {
     try {
       fs.rmSync(tempPath, { force: true });
     } catch {
-      // Best effort: a stray temp file is harmless.
+      // Best effort: leaving a stray temp file is harmless.
     }
     return { ok: false, reason: "unwritable", error };
   }
@@ -103,21 +98,8 @@ function getRotationWarning(reason) {
   ].join("\n");
 }
 
-function main(argv) {
-  const strict = argv.includes("--strict");
-  const nextDir = argv.find((arg) => !arg.startsWith("--")) ?? path.join(__dirname, "..", ".next");
-  const result = rotatePreviewSecrets(path.resolve(nextDir));
-  if (!result.ok) {
-    process.stderr.write(`${getRotationWarning(result.reason)}\n`);
-    if (strict) process.exitCode = 1;
-  }
-}
-
-if (require.main === module) main(process.argv.slice(2));
-
 module.exports = {
   PRERENDER_MANIFEST,
-  freshPreviewSecrets,
   rotatePreviewSecrets,
   getRotationWarning,
 };

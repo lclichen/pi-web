@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { stripAnsi } from "@/lib/ansi";
 import { runNpx } from "@/lib/npx";
 import type { SkillSearchResult } from "@/lib/api-types";
 import { normalizeSkillhubBase, searchSkillhub, skillhubItemToSearchResult } from "@/lib/skillhub";
@@ -6,7 +7,6 @@ import { getServerSettings } from "@/lib/server-settings";
 
 export const dynamic = "force-dynamic";
 
-const ANSI_RE = /\x1B\[[0-9;]*m/g;
 const DEFAULT_LIMIT = 50;
 const MIN_LIMIT = 1;
 const MAX_LIMIT = 50;
@@ -37,7 +37,7 @@ function formatInstalls(count?: number): string {
 }
 
 function parseSearchOutput(raw: string): SkillSearchResult[] {
-  const clean = raw.replace(ANSI_RE, "");
+  const clean = stripAnsi(raw);
   const results: SkillSearchResult[] = [];
   const lines = clean.split("\n");
   for (let i = 0; i < lines.length; i++) {
@@ -136,7 +136,6 @@ export async function POST(req: Request) {
     } catch {
       const { stdout, stderr } = await runNpx(["skills", "find", query.trim()], {
         timeout: 20000,
-        env: { ...process.env, FORCE_COLOR: "0" },
       });
 
       const results = parseSearchOutput(stdout + stderr).slice(0, limit);

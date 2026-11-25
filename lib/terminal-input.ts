@@ -30,6 +30,8 @@ const ALT_ARROW_SEQUENCES: Record<string, string> = {
 
 function legacyCtrlSequence(key: string): string | null {
   if (key.length !== 1) return null;
+  if (key === " ") return "\x00";
+  if (key === "/" || key === "-") return "\x1f";
   const code = key.toUpperCase().charCodeAt(0);
   if (code >= 64 && code <= 95) return String.fromCharCode(code & 0x1f);
   if (key === "?") return "\x7f";
@@ -51,6 +53,13 @@ export function toTerminalKeyData(event: TerminalKeyEventLike): string | null {
     if (control) return control;
   }
 
+  const sequence = SPECIAL_KEY_SEQUENCES[event.key];
+  const modifier = 1 + (event.shiftKey ? 1 : 0) + (event.altKey ? 2 : 0) + (event.ctrlKey ? 4 : 0);
+  if (modifier > 1 && !(event.altKey && !event.ctrlKey && !event.shiftKey && ALT_ARROW_SEQUENCES[event.key])) {
+    if (/^\x1b\[[ABCDHF]$/.test(sequence ?? "")) return `\x1b[1;${modifier}${sequence.at(-1)}`;
+    if (/^\x1b\[\d+~$/.test(sequence ?? "")) return `${sequence.slice(0, -1)};${modifier}~`;
+  }
+
   if (event.altKey && !event.ctrlKey) {
     if (key === "Backspace") return "\x1b\x7f";
     const arrow = ALT_ARROW_SEQUENCES[key];
@@ -64,6 +73,19 @@ export function toTerminalKeyData(event: TerminalKeyEventLike): string | null {
   return SPECIAL_KEY_SEQUENCES[key] ?? null;
 }
 
+const PASTE_START = "\x1b[200~";
+const PASTE_END = "\x1b[201~";
+
+/**
+ * Wraps pasted text in bracketed-paste markers. pi-tui ends a paste at the first
+ * end marker and reads what follows as typed input, so markers inside the text
+ * are removed, until none is left: removing one can join the text around it
+ * into another.
+ */
 export function asBracketedPaste(text: string): string {
-  return `\x1b[200~${text}\x1b[201~`;
+  let content = text;
+  while (content.includes(PASTE_START) || content.includes(PASTE_END)) {
+    content = content.split(PASTE_START).join("").split(PASTE_END).join("");
+  }
+  return `${PASTE_START}${content}${PASTE_END}`;
 }

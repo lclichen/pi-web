@@ -1,34 +1,28 @@
 import { NextResponse } from "next/server";
-import { checkLiveSessionAccess } from "@/lib/session-access";
 import { getRpcSession } from "@/lib/rpc-manager";
-import { acquireSessionLivenessLease, renewSessionLivenessLeases } from "@/lib/session-liveness";
+import { hasUnsettledSubagentRun } from "@/lib/subagent-runtime";
 
-// POST /api/agent/[id]/lease - Renew the selected session's liveness lease.
-// The page calls this every 30s while the session is selected, even when the
-// agent is idle; each renewal resets the session's idle countdown so an open
-// tab keeps the wrapper (and any background task) alive. A page whose SSE
-// stream is closed (idle session) gets a lease here instead; it expires 90s
-// after the page stops renewing. Unknown ids answer 200 without creating one.
-export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
+// POST /api/agent/[id]/lease - A page renews the session it has selected, whether or not it
+// holds the event stream: the session's idle countdown starts over (renewIdleTimer()), so it
+// is reaped one idle timeout after the last page let go. The reply says what is under way:
+// a hidden page lets go of an idle stream and opens it again when this reports activity
+// (#1283). Never starts a wrapper.
+export async function POST(
+  _req: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
   const { id } = await params;
-
-  // Live sessions are served from the in-memory registry; the ownership fence
-  // prevents another logged-in user from keeping someone else's session warm.
-  const fence = checkLiveSessionAccess(req, id);
-  if (!fence.ok) return NextResponse.json({ error: fence.error }, { status: fence.status });
-
-  let renewed = renewSessionLivenessLeases(id);
-  let created = false;
-  if (renewed === 0 && (getRpcSession(id)?.isAlive() ?? false)) {
-    // No stream lease yet: create a page lease. Its TTL releases it if the
-    // page disappears; the next POST finds and renews it.
-    acquireSessionLivenessLease(id);
-    renewed = 1;
-    created = true;
-  }
-
-  return NextResponse.json(
-    { success: true, renewed, ...(created ? { created } : {}) },
-    { headers: { "Cache-Control": "no-store" } },
-  );
+  const session = getRpcSession(id);
+  const alive = Boolean(session?.isAlive());
+  // A wrapper built before a hot reload lacks the method; its own timer still runs.
+  if (alive && typeof session!.renewIdleTimer === "function") session!.renewIdleTimer();
+  return NextResponse.json({
+    success: true,
+    // A run, a queued prompt, a `!` command or a compaction (isRunning()).
+    running: alive && session!.isRunning(),
+    // An extension dialog waiting for an answer.
+    awaitingInput: alive && session!.isAwaitingInput(),
+    // A subagent under this session, at any depth, whose end starts a turn here.
+    subagentsActive: hasUnsettledSubagentRun(id),
+  }, { headers: { "Cache-Control": "no-store" } });
 }

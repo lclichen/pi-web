@@ -14,22 +14,12 @@
 /coverage
 /test-results/
 
-# pi-web runtime data (session metas, mode stub homes)
-/.e2e-data/
-/data/
-
-# generated monaco assets (scripts/copy-monaco.mjs)
-/public/monaco
-
 # next.js
 /.next/
 /out/
 
 # production
 /build
-
-# offline distribution artifacts (scripts/package-linux.sh)
-/dist
 
 # misc
 .DS_Store
@@ -45,6 +35,7 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
 
 # vercel
 .vercel
@@ -54,11 +45,3 @@ yarn-error.log*
 next-env.d.ts
 .factory
 e2e_*.mjs
-
-# 本地凭据 — 绝不入库（模板见 scripts/vm-credentials.example.cjs）
-scripts/vm-credentials.cjs
-bench-results/
-tmp-qtc.cjs
-
-# 内部解密组件（apkg-publisher，经 package-linux.sh 注入客户包；不入库）
-bin/apkg-publisher*

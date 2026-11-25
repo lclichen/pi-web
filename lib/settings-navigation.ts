@@ -1,29 +1,24 @@
 export const SETTINGS_SECTION_VALUES = [
   "general",
   "models",
-  "account",
-  "api-keys",
-  "embed",
   "skills",
   "agents",
-  "mcp",
   "plugins",
-  "policy",
-  "quick-templates",
-  "bundles",
-  "global-config",
+  "mcp",
 ] as const;
 
 export type SettingsSection = (typeof SETTINGS_SECTION_VALUES)[number];
 export type SettingsDetailSection = Exclude<SettingsSection, "general">;
 
 const STORAGE_KEY = "pi-web:settings-navigation";
-const PROJECT_SECTIONS = new Set<SettingsSection>(["skills", "agents", "mcp", "plugins", "policy"]);
+// Sections that need a project to show anything. Settings › MCP is not one: it
+// lists the global mcp.json without a project and adds a Project group with one.
+const PROJECT_SECTIONS = new Set<SettingsSection>(["skills", "agents", "plugins"]);
 
-/** 旧分区 id → 新 id（localStorage 恢复跨版本兼容）。 */
-const LEGACY_SECTIONS: Record<string, SettingsSection> = {
-  "upload-limits": "global-config",
-};
+/** Whether a section is unavailable until a project is open. */
+export function settingsSectionRequiresProject(section: SettingsSection): boolean {
+  return PROJECT_SECTIONS.has(section);
+}
 
 interface StorageLike {
   getItem(key: string): string | null;
@@ -45,7 +40,8 @@ function getBrowserStorage(): StorageLike | null {
 }
 
 function isSettingsSection(value: unknown): value is SettingsSection {
-  return typeof value === "string" && SETTINGS_SECTION_VALUES.includes(value as SettingsSection);
+  return typeof value === "string"
+    && SETTINGS_SECTION_VALUES.includes(value as SettingsSection);
 }
 
 function readState(storage: StorageLike): SettingsNavigationState {
@@ -57,10 +53,11 @@ function readState(storage: StorageLike): SettingsNavigationState {
     const state = parsed as SettingsNavigationState;
     return {
       section: typeof state.section === "string" ? state.section : undefined,
-      selections:
-        state.selections !== null && typeof state.selections === "object" && !Array.isArray(state.selections)
-          ? state.selections
-          : undefined,
+      selections: state.selections !== null
+        && typeof state.selections === "object"
+        && !Array.isArray(state.selections)
+        ? state.selections
+        : undefined,
     };
   } catch {
     return {};
@@ -69,7 +66,10 @@ function readState(storage: StorageLike): SettingsNavigationState {
 
 function selectionKey(section: SettingsDetailSection, cwd?: string | null): string | null {
   if (section === "models") return section;
-  return cwd ? JSON.stringify([section, cwd]) : null;
+  if (cwd) return JSON.stringify([section, cwd]);
+  // MCP works without a project; its selection then lives under the bare name,
+  // which no project key (always an array) can collide with.
+  return section === "mcp" ? section : null;
 }
 
 export function getLastSettingsSection(
@@ -78,10 +78,9 @@ export function getLastSettingsSection(
 ): SettingsSection {
   if (!storage) return "general";
   try {
-    const rawSection = readState(storage).section;
-    const section = rawSection ? (LEGACY_SECTIONS[rawSection] ?? rawSection) : undefined;
+    const section = readState(storage).section;
     if (!isSettingsSection(section)) return "general";
-    return PROJECT_SECTIONS.has(section) && !cwd ? "general" : section;
+    return settingsSectionRequiresProject(section) && !cwd ? "general" : section;
   } catch {
     return "general";
   }

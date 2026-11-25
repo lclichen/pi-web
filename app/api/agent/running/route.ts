@@ -1,35 +1,32 @@
 import { NextResponse } from "next/server";
 import { getSessionListVersion } from "@/lib/session-reader";
-import { getCompletionNotificationSuppressedRpcSessionIds, getRunningRpcSessionInfos } from "@/lib/rpc-manager";
-import { spaceForRequest } from "@/lib/session-spaces";
-import { requireUserIdentity } from "@/lib/web-session";
+import {
+  getAwaitingInputRpcSessionIds,
+  getCompletionNotificationSuppressedRpcSessionIds,
+  getRunningRpcSessionIds,
+} from "@/lib/rpc-manager";
+import { getSessionUiStateRevision } from "@/lib/session-ui-state";
+import { getSessionIdsWithUnsettledSubagentRuns } from "@/lib/subagent-runtime";
 
 export const dynamic = "force-dynamic";
 
 // GET /api/agent/running - Lightweight snapshot for visible-tab polling.
-// Running sessions are per-user; admins see all (live-status support).
-export async function GET(req: Request) {
-  const identity = requireUserIdentity(req);
-  if (!identity.ok) return NextResponse.json({ error: "登录已失效" }, { status: 401 });
-  const { user } = identity.session;
-  // MERGE-NOTE(upgrade/0.84): upstream lists every running session globally;
-  // dev's multi-user fence filters by ownerId instead (admins still see all).
-  const runningSessionIds = getRunningRpcSessionInfos()
-    .filter((r) => (user.role === "admin" ? true : r.ownerId === user.id))
-    .map((r) => r.sessionId);
-  // Web-push completion-notification suppression (upstream) rides along behind
-  // the same per-user fence so other users' session ids never leak.
-  const visible = new Set(runningSessionIds);
-  const completionNotificationSuppressedSessionIds = getCompletionNotificationSuppressedRpcSessionIds().filter(
-    (sessionId) => visible.has(sessionId),
-  );
+// sessionUiStateRevision (null when unreadable) tells the sidebar its pins and
+// archive changed elsewhere; it costs one stat while the file is unchanged.
+// subagentsActiveSessionIds: sessions whose subagents can still start a run
+// there, so the sidebar announces their completion only after the last one.
+// serverNow: this server's clock, which stamps reads (`readAt`); a browser
+// dates its unread markers on it (lib/unread-markers.ts), never on its own.
+export async function GET() {
   return NextResponse.json(
     {
-      // Per-space generation (dev 批次2): another user's agent_end no longer
-      // makes this client re-pull its whole session list.
-      sessionListVersion: getSessionListVersion(spaceForRequest(identity.session)),
-      runningSessionIds,
-      completionNotificationSuppressedSessionIds,
+      sessionListVersion: getSessionListVersion(),
+      runningSessionIds: getRunningRpcSessionIds(),
+      awaitingInputSessionIds: getAwaitingInputRpcSessionIds(),
+      completionNotificationSuppressedSessionIds: getCompletionNotificationSuppressedRpcSessionIds(),
+      subagentsActiveSessionIds: getSessionIdsWithUnsettledSubagentRuns(),
+      sessionUiStateRevision: getSessionUiStateRevision(),
+      serverNow: Date.now(),
     },
     { headers: { "Cache-Control": "no-store" } },
   );

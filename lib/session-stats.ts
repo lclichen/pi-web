@@ -1,4 +1,4 @@
-import type { AgentMessage, AgentUsage, SessionEntry } from "./types";
+import type { AgentMessage, AgentUsage, SessionContext, SessionEntry, SessionMessage } from "./types";
 
 export interface SessionFileStats {
   userMessages: number;
@@ -14,6 +14,21 @@ export interface SessionFileStats {
     total: number;
   };
   cost: number;
+}
+
+/** Most session ids one POST /api/sessions/stats takes; the agent switcher sends a larger family in batches. */
+export const MAX_SESSION_STATS_IDS = 200;
+
+/** One session's totals for the agent switcher (POST /api/sessions/stats). */
+export interface SessionUsageSummary {
+  tokens: SessionFileStats["tokens"];
+  cost: number;
+  toolCalls: number;
+  /** Estimated active time across all entries, as the stats popover shows it. */
+  totalActiveMs: number;
+  /** Recorded settings of this session's active branch, not its profile defaults. */
+  model?: SessionContext["model"];
+  thinkingLevel?: string;
 }
 
 function emptyStats(): SessionFileStats {
@@ -37,7 +52,9 @@ function addUsage(stats: SessionFileStats, usage?: AgentUsage): void {
   stats.cost += usage.cost?.total ?? 0;
 }
 
-function addMessage(stats: SessionFileStats, message: AgentMessage): void {
+function addMessage(stats: SessionFileStats, message: SessionMessage): void {
+  // Like the SDK, every message entry counts toward the total, including the
+  // transcript system messages that hold the prompt and tool loadout.
   stats.totalMessages += 1;
   if (message.role === "user") {
     stats.userMessages += 1;
@@ -99,8 +116,9 @@ export function mergeSessionStats(
  * Aggregate usage across ALL entries in a session file.
  *
  * Mirrors the SDK's `AgentSession.getSessionStats()`: besides assistant
- * (and tool-result) messages, this also counts usage recorded on compaction
- * and branch-summary entries. Compaction only appends a summary entry — the
+ * (and tool-result) messages, this also counts usage recorded on compaction,
+ * branch-summary and `usage` entries (prompt-cache warming, which is billed
+ * but never enters model context). Compaction only appends a summary entry — the
  * summarized history stays in the file — so these totals grow monotonically
  * for the life of the session. Totals computed over the active context alone
  * (the compaction-aware message list) shrink whenever old history is
@@ -111,7 +129,7 @@ export function computeSessionStats(entries: SessionEntry[]): SessionFileStats {
   const stats = emptyStats();
 
   for (const entry of entries) {
-    if (entry.type === "compaction" || entry.type === "branch_summary") {
+    if (entry.type === "compaction" || entry.type === "branch_summary" || entry.type === "usage") {
       addUsage(stats, entry.usage);
       continue;
     }

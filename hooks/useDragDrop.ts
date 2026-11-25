@@ -28,12 +28,6 @@ export function droppedItems(dataTransfer: DataTransfer): DroppedItem[] {
   return Array.from(dataTransfer.files).map((file) => ({ kind: "file", file }));
 }
 
-/**
- * Drag-and-drop for the chat area. Every dragged file is accepted — not just
- * images: non-image files are uploaded into the working directory, and letting
- * the browser handle the drop would paste the client's local path into the
- * composer (a path the server cannot read).
- */
 export function useDragDrop(onDrop: (items: DroppedItem[]) => void) {
   const [isDragOver, setIsDragOver] = useState(false);
   const counterRef = useRef(0);
@@ -59,15 +53,12 @@ export function useDragDrop(onDrop: (items: DroppedItem[]) => void) {
     }
   }, []);
 
-  const handleDrop = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault();
-      counterRef.current = 0;
-      setIsDragOver(false);
-      onDrop(droppedItems(e.dataTransfer));
-    },
-    [onDrop],
-  );
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    counterRef.current = 0;
+    setIsDragOver(false);
+    onDrop(droppedItems(e.dataTransfer));
+  }, [onDrop]);
 
   return { isDragOver, handleDragEnter, handleDragOver, handleDragLeave, handleDrop };
 }

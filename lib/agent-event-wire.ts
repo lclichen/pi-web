@@ -1,11 +1,24 @@
 import type { JsonAgentSessionEvent } from "@earendil-works/pi-coding-agent";
+import type { AgentSessionLike } from "./pi-types";
+import type { ToolResultMessage } from "./types";
+import { withoutContentSignatures, withoutMessageSignatures } from "./message-signatures";
 
 export interface AgentEventLike {
   type: string;
   [key: string]: unknown;
 }
 
-type JsonMessageUpdateEvent = Extract<JsonAgentSessionEvent, { type: "message_update" }>;
+/**
+ * How often an agent event stream sends `{ type: "heartbeat" }`. It is a data event, not an SSE
+ * comment, so the browser's EventSource sees it: a stream silent for a few of these is dead
+ * (a half-open connection, a proxy that dropped it), and `AgentEventConnection` reconnects.
+ */
+export const AGENT_EVENT_HEARTBEAT_MS = 30_000;
+
+type JsonMessageUpdateEvent = Extract<
+  JsonAgentSessionEvent,
+  { type: "message_update" }
+>;
 
 type JsonAssistantMessageEvent = JsonMessageUpdateEvent["assistantMessageEvent"];
 type JsonToolCallStartEvent = Extract<JsonAssistantMessageEvent, { type: "toolcall_start" }>;
@@ -20,38 +33,192 @@ export type ClientMessageUpdateEvent = Omit<JsonMessageUpdateEvent, "assistantMe
   assistantMessageEvent: ClientAssistantMessageEvent;
 };
 
-const OMITTED_EVENT_TYPES = new Set(["turn_start", "turn_end"]);
+const OMITTED_EVENT_TYPES = new Set([
+  "turn_start",
+  "turn_end",
+  // Carries the whole appended entry (an extension's custom entry, such as a
+  // codemode `store()` write, can be 1 MiB), and nothing in the browser reads it.
+  "entry_appended",
+  // A `!` command's output per chunk: the wrapper sends `bash_output` snapshots instead.
+  "bash_execution_update",
+]);
+
+/**
+ * How many nested calls a codemode progress snapshot keeps. The script
+ * publishes every call made so far each time one starts or finishes, so the
+ * bytes on the wire grow with the square of the call count.
+ */
+export const CODEMODE_SNAPSHOT_CALL_LIMIT = 200;
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function toolCallMetadata(event: Record<string, unknown>): { id: string; toolName: string } | null {
-  if ((event.type !== "toolcall_start" && event.type !== "toolcall_delta") || !isObject(event.partial)) return null;
+/**
+ * A `tool_execution_*` event for a call that another tool made while it ran
+ * (`ctx.executeTool()`, which codemode scripts use). The SDK gives those
+ * `parentToolCallId` and ids of the form `<parent>/<n>`; the model never sees
+ * them as tool calls, and the parent's own updates already report them.
+ */
+export function isNestedToolExecutionEvent(event: AgentEventLike): boolean {
+  return (
+    event.type === "tool_execution_start"
+    || event.type === "tool_execution_update"
+    || event.type === "tool_execution_end"
+  ) && typeof event.parentToolCallId === "string" && event.parentToolCallId !== "";
+}
+
+/** Keep the newest calls of a codemode snapshot (`details.calls`) and count the rest. */
+function truncateCodemodeSnapshot(partialResult: unknown): unknown {
+  if (!isObject(partialResult) || !isObject(partialResult.details)) return partialResult;
+  const calls = partialResult.details.calls;
+  if (!Array.isArray(calls) || calls.length <= CODEMODE_SNAPSHOT_CALL_LIMIT) return partialResult;
+  return {
+    ...partialResult,
+    details: {
+      ...partialResult.details,
+      calls: calls.slice(-CODEMODE_SNAPSHOT_CALL_LIMIT),
+      omittedCalls: calls.length - CODEMODE_SNAPSHOT_CALL_LIMIT,
+    },
+  };
+}
+
+export function parallelToolCallIds(content: unknown, agent: Pick<AgentSessionLike["agent"], "toolExecution" | "state">, stopReason?: unknown): Set<string> {
+  if (agent.toolExecution !== "parallel" || !Array.isArray(content)
+    || stopReason === "length" || stopReason === "error" || stopReason === "aborted") return new Set();
+  const calls = content.filter((block): block is { type: "toolCall"; id: string; name: string } =>
+    isObject(block) && block.type === "toolCall" && typeof block.id === "string" && typeof block.name === "string");
+  // pi executes the whole batch sequentially if any called tool requires it.
+  if (calls.some((call) => agent.state?.tools?.find((tool) => tool.name === call.name)?.executionMode === "sequential")) return new Set();
+  return new Set(calls.map((call) => call.id));
+}
+
+export function liveToolExecutionEvent(event: AgentEventLike, needsEarlyResult: boolean): AgentEventLike {
+  if (event.type !== "tool_execution_end" || needsEarlyResult || isNestedToolExecutionEvent(event) || !isObject(event.result)) return event;
+  const clientEvent = { ...event };
+  delete clientEvent.result;
+  return clientEvent;
+}
+
+export function toolResultFromExecutionEnd(event: AgentEventLike): ToolResultMessage | undefined {
+  if (event.type !== "tool_execution_end" || isNestedToolExecutionEvent(event)
+    || typeof event.toolCallId !== "string" || !isObject(event.result)
+    || !Array.isArray(event.result.content)) return undefined;
+  return {
+    role: "toolResult",
+    toolCallId: event.toolCallId,
+    toolName: typeof event.toolName === "string" ? event.toolName : undefined,
+    content: event.result.content as ToolResultMessage["content"],
+    details: event.result.details,
+    usage: event.result.usage as ToolResultMessage["usage"],
+    isError: event.isError === true,
+    ...(typeof event.durationMs === "number" ? { durationMs: event.durationMs } : {}),
+  };
+}
+
+/** Early completions and replays carry display fields, never raw structuredContent. Nested calls stay slim. */
+function toClientToolExecutionEvent(event: AgentEventLike): AgentEventLike | null {
+  const nested = isNestedToolExecutionEvent(event);
+  if (event.type === "tool_execution_start") {
+    if (!nested) return event;
+    return {
+      type: "tool_execution_start",
+      toolCallId: event.toolCallId,
+      toolName: event.toolName,
+      parentToolCallId: event.parentToolCallId,
+    };
+  }
+  if (event.type === "tool_execution_update") {
+    if (nested) return null;
+    return {
+      type: "tool_execution_update",
+      toolCallId: event.toolCallId,
+      toolName: event.toolName,
+      partialResult: event.toolName === "codemode"
+        ? truncateCodemodeSnapshot(event.partialResult)
+        : event.partialResult,
+    };
+  }
+  return {
+    type: "tool_execution_end",
+    toolCallId: event.toolCallId,
+    toolName: event.toolName,
+    isError: event.isError,
+    ...(!nested && isObject(event.result) ? { result: {
+      content: event.result.content,
+      details: event.result.details,
+      usage: event.result.usage,
+    } } : {}),
+    // pi's measured run time: a card shows it before the result message, which
+    // a parallel batch sends only once its last call ends.
+    ...(!nested && typeof event.durationMs === "number" ? { durationMs: event.durationMs } : {}),
+    ...(nested ? { parentToolCallId: event.parentToolCallId } : {}),
+  };
+}
+
+function toolCallMetadata(
+  event: Record<string, unknown>,
+): { id: string; toolName: string } | null {
+  if (
+    (event.type !== "toolcall_start" && event.type !== "toolcall_delta")
+    || !isObject(event.partial)
+  ) return null;
   const content = event.partial.content;
   const contentIndex = event.contentIndex;
   if (!Array.isArray(content) || typeof contentIndex !== "number") return null;
 
   const block = content[contentIndex];
   if (!isObject(block) || block.type !== "toolCall") return null;
-  const id = typeof block.id === "string" ? block.id : typeof block.toolCallId === "string" ? block.toolCallId : null;
-  const toolName =
-    typeof block.name === "string" ? block.name : typeof block.toolName === "string" ? block.toolName : null;
+  const id = typeof block.id === "string"
+    ? block.id
+    : (typeof block.toolCallId === "string" ? block.toolCallId : null);
+  const toolName = typeof block.name === "string"
+    ? block.name
+    : (typeof block.toolName === "string" ? block.toolName : null);
   return id !== null && toolName !== null ? { id, toolName } : null;
 }
 
+/** A `message_start` / `message_end` for a transcript system message (prompt and tool loadout). */
+export function isSystemMessageEvent(event: AgentEventLike): boolean {
+  return (event.type === "message_start" || event.type === "message_end")
+    && isObject(event.message)
+    && event.message.role === "system";
+}
+
 /** Apply pi-web's event filters plus Pi 0.84's message_update projection. */
-export function toClientAgentEvent(event: AgentEventLike): AgentEventLike | ClientMessageUpdateEvent | null {
+export function toClientAgentEvent(
+  event: AgentEventLike,
+): AgentEventLike | ClientMessageUpdateEvent | null {
   if (OMITTED_EVENT_TYPES.has(event.type)) return null;
+  // Pi >= 0.86 appends the prompt and tool loadout to the transcript as system
+  // messages, which the agent loop announces like any message. They carry the
+  // whole prompt plus every tool schema and are never rendered, so drop them
+  // before they cost the browser bandwidth.
+  if (isSystemMessageEvent(event)) return null;
+  if (event.type === "message_start" || event.type === "message_end") {
+    const message = withoutMessageSignatures(event.message);
+    if (message !== event.message) return { ...event, message };
+  }
+  // The agent loop announces a finished message (a tool result, a delivered
+  // user message) with `message_start` and `message_end` back to back. The
+  // browser builds only an assistant reply from its start and reads nothing
+  // but the role of the others, so their body (an image read's base64) went
+  // out twice.
+  if (event.type === "message_start" && isObject(event.message) && event.message.role !== "assistant") {
+    return { type: "message_start", message: { role: event.message.role } };
+  }
 
   if (event.type === "message_update") {
-    const assistantMessageEvent = event.assistantMessageEvent;
-    if (
-      typeof assistantMessageEvent !== "object" ||
-      assistantMessageEvent === null ||
-      Array.isArray(assistantMessageEvent)
-    )
-      return null;
+    const rawAssistantMessageEvent = event.assistantMessageEvent;
+    if (!isObject(rawAssistantMessageEvent)) return null;
+    let assistantMessageEvent = rawAssistantMessageEvent;
+
+    if ("toolCall" in assistantMessageEvent) {
+      const toolCall = withoutContentSignatures(assistantMessageEvent.toolCall);
+      if (toolCall !== assistantMessageEvent.toolCall) {
+        assistantMessageEvent = { ...assistantMessageEvent, toolCall };
+      }
+    }
 
     if (!("partial" in assistantMessageEvent)) {
       return {
@@ -69,62 +236,21 @@ export function toClientAgentEvent(event: AgentEventLike): AgentEventLike | Clie
     } as ClientMessageUpdateEvent;
   }
 
-  if (event.type === "tool_execution_update") {
-    return {
-      type: "tool_execution_update",
-      toolCallId: event.toolCallId,
-      toolName: event.toolName,
-      partialResult: event.partialResult,
-    };
-  }
+  if (
+    event.type === "tool_execution_start"
+    || event.type === "tool_execution_update"
+    || event.type === "tool_execution_end"
+  ) return toClientToolExecutionEvent(event);
 
   if (event.type === "agent_end") return { type: "agent_end" };
   return event;
 }
 
-export function isEventIncludedInSnapshot(event: AgentEventLike, snapshot: unknown): boolean {
-  return (
-    snapshot !== undefined &&
-    (event.type === "message_start" || event.type === "message_update") &&
-    event.message === snapshot
-  );
-}
-
-// ============================================================================
-// Serialize-once caches (dev 批次1). The wrapper hands the same event object
-// to every SSE listener of a session; without these, each connection repeats
-// the toClientAgentEvent projection AND its JSON.stringify — N tabs on one
-// session pay N× the serialization for every token. The cache rides on the
-// event object itself (symbol keys are invisible to JSON.stringify and to
-// object spread), so it lives exactly as long as the event does.
-// ============================================================================
-
-const CLIENT_EVENT_CACHE: symbol = Symbol.for("pi-web.clientAgentEventCache");
-const WIRE_JSON_CACHE: symbol = Symbol.for("pi-web.agentEventJsonCache");
-
-/** Project an event once per event object, shared by every listener. */
-export function cachedClientAgentEvent(
+export function isEventIncludedInSnapshot(
   event: AgentEventLike,
-): AgentEventLike | ClientMessageUpdateEvent | null {
-  const holder = event as unknown as Record<
-    symbol,
-    { v: AgentEventLike | ClientMessageUpdateEvent | null } | undefined
-  >;
-  let cached = holder[CLIENT_EVENT_CACHE];
-  if (!cached) {
-    cached = { v: toClientAgentEvent(event) };
-    holder[CLIENT_EVENT_CACHE] = cached;
-  }
-  return cached.v;
-}
-
-/** JSON-encode an event/envelope once per object, shared by every listener. */
-export function cachedAgentEventJson(data: object): string {
-  const holder = data as unknown as Record<symbol, { v: string } | undefined>;
-  let cached = holder[WIRE_JSON_CACHE];
-  if (!cached) {
-    cached = { v: JSON.stringify(data) };
-    holder[WIRE_JSON_CACHE] = cached;
-  }
-  return cached.v;
+  snapshot: unknown,
+): boolean {
+  return snapshot !== undefined
+    && (event.type === "message_start" || event.type === "message_update")
+    && event.message === snapshot;
 }

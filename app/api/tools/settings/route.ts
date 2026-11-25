@@ -1,85 +1,148 @@
 import { NextResponse } from "next/server";
+import type { McpErrorResponse, McpRefusalReason, ToolSettingsResponse } from "@/lib/api-types";
+import {
+  CODEMODE_INLINE_BUDGET_MAX,
+  isCodemodeInlineBudget,
+  isCodemodeMode,
+  isCodemodePreference,
+  readCodemodePreference,
+  readCodemodeSettings,
+  writeCodemodeInlineBudget,
+  writeCodemodeMode,
+  writeCodemodePreference,
+} from "@/lib/codemode-settings";
 import { hasJsonContentType, isApiRequestAllowed } from "@/lib/request-security";
 import {
-  isPowerShellToolEnabled,
+  readBuiltinTools,
   readPowerShellToolEnabled,
-  replaceShellTool,
+  writeBuiltinTools,
   writePowerShellToolEnabled,
 } from "@/lib/powershell-settings";
-import { createUserSettingsManager, updateUserAgentSettings } from "@/lib/user-settings-storage";
-import { requireUserIdentity } from "@/lib/web-session";
+import { SETTINGS_BUILTIN_TOOLS } from "@/lib/tool-presets";
 
 export const dynamic = "force-dynamic";
 
-const BASE_TOOLS = ["read", "bash", "edit", "write"];
+// The only writer of the global `defaultTools` key: the built-in tool switches
+// and the PowerShell switch (Windows) in Settings › General, and the Code mode choice (ADR 0006, chosen in Settings › MCP) both
+// edit it, under the lock pi's SettingsManager takes on the same file. Settings
+// › MCP saves the global `codemode.mode` and `codemode.inlineBudget` here too,
+// under the same lock.
+// Every refusal carries a `reason` code the panel translates, beside the
+// English `error` it shows only as the diagnostic of an `internal` failure.
 
-async function userPowerShellEnabled(userId: number): Promise<boolean> {
-  const manager = createUserSettingsManager(process.cwd(), userId);
-  return isPowerShellToolEnabled(manager.getDefaultTools());
+const CHANGES = ["enabled", "builtinTools", "codemode", "codemodeMode", "codemodeInlineBudget"] as const;
+
+function refusal(status: number, reason: McpRefusalReason, error: string) {
+  return NextResponse.json({ error, reason } satisfies McpErrorResponse, { status });
 }
 
-// GET /api/tools/settings[?scope=global]
-// Default = the calling user's preference; scope=global is the admin default.
-export async function GET(req: Request) {
+function errorResponse(error: unknown) {
+  return refusal(500, "internal", error instanceof Error ? error.message : String(error));
+}
+
+async function readToolSettings(): Promise<ToolSettingsResponse> {
+  // One after the other: each takes the file lock, and a reader that finds it
+  // held backs off for about a second.
+  const powerShellEnabled = await readPowerShellToolEnabled();
+  const builtinTools = await readBuiltinTools();
+  const codemode = await readCodemodePreference();
+  const { mode: codemodeMode, inlineBudget: codemodeInlineBudget } = await readCodemodeSettings();
+  return { isWindows: process.platform === "win32", powerShellEnabled, builtinTools, codemode, codemodeMode, codemodeInlineBudget };
+}
+
+export async function GET() {
   try {
-    const identity = requireUserIdentity(req);
-    if (!identity.ok) return NextResponse.json({ error: "登录已失效" }, { status: identity.status });
-    const user = identity.session.user;
-    const globalScope = new URL(req.url).searchParams.get("scope") === "global";
-    if (globalScope && user.id !== 0 && user.role !== "admin") {
-      return NextResponse.json({ error: "全局工具设置仅管理员可查看" }, { status: 403 });
-    }
-    return NextResponse.json({
-      isWindows: process.platform === "win32",
-      powerShellEnabled: globalScope ? await readPowerShellToolEnabled() : await userPowerShellEnabled(user.id),
-    });
+    return NextResponse.json(await readToolSettings());
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
+    return errorResponse(error);
   }
 }
 
-// PUT /api/tools/settings { enabled, scope?: "user" | "global" }
-// "user" is the default and never changes the global defaultTools.
 export async function PUT(req: Request) {
   if (!isApiRequestAllowed(req)) {
-    return NextResponse.json({ error: "Untrusted API request" }, { status: 403 });
+    return refusal(403, "request-denied", "Untrusted API request");
   }
   if (!hasJsonContentType(req)) {
-    return NextResponse.json({ error: "Content-Type must be application/json" }, { status: 415 });
-  }
-  if (process.platform !== "win32") {
-    return NextResponse.json({ error: "PowerShell tool settings are only available on Windows" }, { status: 404 });
+    return refusal(415, "content-type", "Content-Type must be application/json");
   }
 
+  let body: unknown;
   try {
-    const identity = requireUserIdentity(req);
-    if (!identity.ok) return NextResponse.json({ error: "登录已失效" }, { status: identity.status });
-    const user = identity.session.user;
-    const body = (await req.json()) as { enabled?: unknown; scope?: unknown };
-    if (typeof body.enabled !== "boolean") {
-      return NextResponse.json({ error: "enabled must be a boolean" }, { status: 400 });
-    }
-    const globalScope = body.scope === "global";
-    if (globalScope) {
-      if (user.id !== 0 && user.role !== "admin") {
-        return NextResponse.json({ error: "全局工具设置仅管理员可修改" }, { status: 403 });
-      }
-      return NextResponse.json({
-        isWindows: true,
-        powerShellEnabled: await writePowerShellToolEnabled(body.enabled),
-      });
-    }
+    body = await req.json();
+  } catch {
+    return refusal(400, "invalid-request", "Invalid JSON body");
+  }
+  if (typeof body !== "object" || body === null || Array.isArray(body)) {
+    return refusal(400, "invalid-request", "Expected a JSON object");
+  }
+  const changes = body as { enabled?: unknown; builtinTools?: unknown; codemode?: unknown; codemodeMode?: unknown; codemodeInlineBudget?: unknown };
+  if (CHANGES.filter((key) => key in changes).length !== 1) {
+    return refusal(400, "invalid-request", "Send one of enabled (PowerShell), builtinTools, codemode, codemodeMode or codemodeInlineBudget");
+  }
 
-    const manager = createUserSettingsManager(process.cwd(), user.id);
-    const current = manager.getDefaultTools() ?? BASE_TOOLS;
-    let next = replaceShellTool(current, body.enabled);
-    if (!current.some((name) => name === "bash" || name === "powershell")) {
-      next = [...next, body.enabled ? "powershell" : "bash"];
+  if ("builtinTools" in changes) {
+    // The built-in tools new sessions start with; every other defaultTools entry is kept.
+    const tools = changes.builtinTools;
+    if (!Array.isArray(tools) || !tools.every((name) => SETTINGS_BUILTIN_TOOLS.includes(name))) {
+      return refusal(400, "invalid-request", `builtinTools must list names from ${SETTINGS_BUILTIN_TOOLS.join(", ")}`);
     }
-    if (user.id > 0) updateUserAgentSettings(user.id, { defaultTools: next });
-    else await writePowerShellToolEnabled(body.enabled);
-    return NextResponse.json({ isWindows: true, powerShellEnabled: body.enabled });
+    try {
+      await writeBuiltinTools(tools);
+      return NextResponse.json(await readToolSettings());
+    } catch (error) {
+      return errorResponse(error);
+    }
+  }
+
+  if ("codemodeMode" in changes) {
+    // "on" removes the key: it is pi's default.
+    if (!isCodemodeMode(changes.codemodeMode)) {
+      return refusal(400, "invalid-request", "codemodeMode must be \"on\" or \"only\"");
+    }
+    try {
+      await writeCodemodeMode(changes.codemodeMode);
+      return NextResponse.json(await readToolSettings());
+    } catch (error) {
+      return errorResponse(error);
+    }
+  }
+
+  if ("codemodeInlineBudget" in changes) {
+    // null removes the key, which gives sessions pi's default.
+    const budget = changes.codemodeInlineBudget;
+    if (budget !== null && !isCodemodeInlineBudget(budget)) {
+      return refusal(400, "invalid-request", `codemodeInlineBudget must be a whole number from 0 to ${CODEMODE_INLINE_BUDGET_MAX}, or null`);
+    }
+    try {
+      await writeCodemodeInlineBudget(budget ?? undefined);
+      return NextResponse.json(await readToolSettings());
+    } catch (error) {
+      return errorResponse(error);
+    }
+  }
+
+  if ("codemode" in changes) {
+    if (!isCodemodePreference(changes.codemode)) {
+      return refusal(400, "invalid-request", "codemode must be \"automatic\" or \"always\"");
+    }
+    try {
+      await writeCodemodePreference(changes.codemode);
+      return NextResponse.json(await readToolSettings());
+    } catch (error) {
+      return errorResponse(error);
+    }
+  }
+
+  if (process.platform !== "win32") {
+    return refusal(404, "invalid-request", "PowerShell tool settings are only available on Windows");
+  }
+  if (typeof changes.enabled !== "boolean") {
+    return refusal(400, "invalid-request", "enabled must be a boolean");
+  }
+  try {
+    await writePowerShellToolEnabled(changes.enabled);
+    return NextResponse.json(await readToolSettings());
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
+    return errorResponse(error);
   }
 }

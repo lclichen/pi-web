@@ -1,42 +1,27 @@
+import { existsSync } from "fs";
 import { stat } from "fs/promises";
 import { resolve } from "path";
-import { createAgentSessionServices, getAgentDir, ModelRuntime, type SettingsManager } from "@earendil-works/pi-coding-agent";
+import { createAgentSessionServices, getAgentDir, type SettingsManager } from "@earendil-works/pi-coding-agent";
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import {
   loadModelsWithCache,
-  MODELS_LOAD_TIMEOUT_MS,
   withModelRuntimeError,
   withSafeModelLoadFailure,
   type ModelsData,
 } from "@/lib/models-cache";
-import { resolveVisibleModels, selectInitialModelScope } from "@/lib/model-scope";
-import { getAllowedFileRootsForRequest, isExistingFilePathAllowed } from "@/lib/file-access";
-import { getProjectTrustStatus, projectTrustReloadOptions } from "@/lib/project-trust";
-import { requireUserIdentity } from "@/lib/web-session";
-import { getOwnedProject, isCallerOwnedProjectHome, projectHome } from "@/lib/projects";
-import { isCallerSessionCwdAllowed } from "@/lib/session-cwd-access";
-import { ensureUserModelRuntime } from "@/lib/user-models";
-import { createUserSettingsManager } from "@/lib/user-settings-storage";
-import { isCallerQuickWorkspace } from "@/lib/mode-homes";
+import { orderSelectorModels, resolveVisibleModels, selectInitialModelScope } from "@/lib/model-scope";
+import { getAllowedFileRoots, isExistingFilePathAllowed } from "@/lib/file-access";
+import { projectTrustReloadOptions } from "@/lib/project-trust";
+import { llamaCppExtension } from "@/lib/pi-sdk-internals";
+import { providerDisplayNames, rememberProviderModels, withDeferredProviderModels } from "@/lib/deferred-provider-models";
+import { inferRemovedWorktree } from "@/lib/worktree";
+import { cwdMissingBody } from "@/lib/missing-cwd";
 
 export const dynamic = "force-dynamic";
 
-const modelNameCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
-
-function compareModelEntries(
-  a: { id: string; name: string; provider: string },
-  b: { id: string; name: string; provider: string },
-): number {
-  return (
-    modelNameCollator.compare(a.name || a.id, b.name || b.id) ||
-    modelNameCollator.compare(a.provider, b.provider) ||
-    modelNameCollator.compare(a.id, b.id)
-  );
-}
-
-async function loadModels(cwd: string, userId: number, isAdmin: boolean): Promise<ModelsData> {
+async function loadModels(cwd: string, scopeAll = false): Promise<ModelsData> {
   const nameMap = new Map<string, string>();
-  let modelList: { id: string; name: string; provider: string }[] = [];
+  let modelList: { id: string; name: string; provider: string; providerName: string }[] = [];
   let defaultModel: { provider: string; modelId: string } | null = null;
   const thinkingLevels: Record<string, string[]> = {};
   const thinkingLevelMaps: Record<string, Record<string, string | null>> = {};
@@ -46,35 +31,32 @@ async function loadModels(cwd: string, userId: number, isAdmin: boolean): Promis
   // runs a repository's .pi/extensions factories, so honor project trust here
   // too (see lib/project-trust.ts, #236).
   const trustReloadOptions = projectTrustReloadOptions(cwd, agentDir);
-  const trustStatus = getProjectTrustStatus(cwd, agentDir);
-  const settingsManager = createUserSettingsManager(cwd, userId, {
-    projectTrusted: !trustStatus.requiresTrust || trustStatus.trusted,
-  });
-  // 多用户：普通用户优先用自己的「全局+用户」合并运行时（模型列表应与
-  // 会话实际可用模型一致）；管理员用全局层。
-  const scoped = isAdmin ? null : ensureUserModelRuntime(userId);
-  const scopedRuntime = scoped ? await ModelRuntime.create({ ...scoped }) : undefined;
   const services = await createAgentSessionServices({
-    ...(scopedRuntime ? { modelRuntime: scopedRuntime } : {}),
     cwd,
     agentDir,
-    settingsManager,
+    resourceLoaderOptions: { extensionFactories: [llamaCppExtension] },
     ...(trustReloadOptions ? { resourceLoaderReloadOptions: trustReloadOptions } : {}),
   });
   const modelError = services.modelRuntime.getError();
   const settings: SettingsManager = services.settingsManager;
+  await rememberProviderModels(services.modelRuntime);
+  const providerNames = providerDisplayNames(services.modelRuntime);
   // `enabledModels` supports globs and fuzzy patterns, so resolve it the same
   // way the CLI does instead of comparing pattern strings literally (#307).
-  const scope = await resolveVisibleModels(services.modelRuntime, settings.getEnabledModels());
+  const scope = await resolveVisibleModels(
+    withDeferredProviderModels(services.modelRuntime),
+    scopeAll ? undefined : settings.getEnabledModels(),
+  );
   const { visible, thinkingLevelPins, warnings } = scope;
-  modelList = visible
-    .map((m) => ({
-      id: m.id,
-      name: m.name,
-      provider: m.provider,
-      input: m.input,
-    }))
-    .sort(compareModelEntries);
+  modelList = orderSelectorModels(scope).map((m) => ({
+    id: m.id,
+    name: m.name,
+    provider: m.provider,
+    // The selector groups by provider id, but labels the group with its display
+    // name; models.json providers get theirs from `name` too.
+    providerName: providerNames.get(m.provider) ?? m.provider,
+    input: m.input,
+  }));
   for (const m of visible) {
     const key = `${m.provider}:${m.id}`;
     nameMap.set(key, m.name);
@@ -92,11 +74,12 @@ async function loadModels(cwd: string, userId: number, isAdmin: boolean): Promis
   if (initial.model) {
     defaultModel = { provider: initial.model.provider, modelId: initial.model.id };
   }
-  const defaultThinkingLevel =
-    initial.thinkingLevel ??
-    (initial.model ? settings.getModelThinkingLevel(initial.model.provider, initial.model.id) : undefined) ??
-    settings.getDefaultThinkingLevel() ??
-    null;
+  const defaultThinkingLevel = initial.thinkingLevel
+    ?? (initial.model
+      ? settings.getModelThinkingLevel(initial.model.provider, initial.model.id)
+      : undefined)
+    ?? settings.getDefaultThinkingLevel()
+    ?? null;
 
   return withModelRuntimeError(
     {
@@ -104,10 +87,12 @@ async function loadModels(cwd: string, userId: number, isAdmin: boolean): Promis
       modelList,
       defaultModel,
       defaultThinkingLevel,
+      savedDefaultThinkingLevel: settings.getDefaultThinkingLevel() ?? null,
       thinkingLevels,
       thinkingLevelMaps,
       thinkingLevelPins,
       ...(warnings.length > 0 ? { modelScopeWarnings: warnings } : {}),
+      isScoped: scopeAll ? false : scope.scopedModels.length > 0,
     },
     modelError,
   );
@@ -118,80 +103,45 @@ const EMPTY_MODELS: ModelsData = {
   modelList: [],
   defaultModel: null,
   defaultThinkingLevel: null,
+  savedDefaultThinkingLevel: null,
   thinkingLevels: {},
   thinkingLevelMaps: {},
   thinkingLevelPins: {},
+  isScoped: false,
 };
 
 export async function GET(req: Request) {
-  const identity = requireUserIdentity(req);
-  if (!identity.ok) return Response.json({ error: "登录已失效" }, { status: identity.status });
-  const { user } = identity.session;
-  const isAdmin = user.role === "admin";
-  const embed = identity.session.embed;
+  const url = new URL(req.url);
+  const requestedCwd = resolve(url.searchParams.get("cwd") || process.cwd());
+  const scopeAll = url.searchParams.get("scope") === "all";
+  // A subagent run isolated in a worktree has that worktree removed when the run
+  // finishes, yet its session file still records the worktree as its cwd. Fall back
+  // to the main repo it branched from, so opening a finished subagent resolves the
+  // same models a non-isolated one would. The roots check below runs on the folder
+  // actually answered from, so the fallback reaches no project that was not allowed
+  // by name already.
+  const cwd = existsSync(requestedCwd)
+    ? requestedCwd
+    : inferRemovedWorktree(requestedCwd)?.projectRoot ?? requestedCwd;
 
-  // Project-scoped model config: ?projectId= resolves the home server-side
-  // (ownership-checked), so a not-yet-materialized session can pick models.
-  const projectId = new URL(req.url).searchParams.get("projectId");
-  const explicitCwd = new URL(req.url).searchParams.get("cwd");
-  if (embed && projectId && projectId !== embed.scope.projectId) {
+  let cwdStat;
+  try {
+    cwdStat = await stat(cwd);
+  } catch {
+    // Typed: a moved project's session is not a model problem (#1422).
+    return Response.json(cwdMissingBody(cwd), { status: 400 });
+  }
+  if (!cwdStat.isDirectory()) {
+    return Response.json({ error: `Not a directory: ${cwd}` }, { status: 400 });
+  }
+  const allowedRoots = await getAllowedFileRoots();
+  if (!isExistingFilePathAllowed(cwd, allowedRoots)) {
     return Response.json({ error: "Access denied" }, { status: 403 });
-  }
-  let cwd: string;
-  if (projectId) {
-    const project = getOwnedProject(projectId, user.id, isAdmin);
-    if (!project) return Response.json({ error: "项目不存在" }, { status: 404 });
-    cwd = resolve(projectHome(project));
-  } else {
-    cwd = resolve(explicitCwd || process.cwd());
-  }
-
-  // 无显式 cwd（如快速会话选择后、会话尚未建立的模型选择器）= 部署级
-  // 默认配置层（服务器自身目录）。它不是任何用户的文件空间，不参与目录
-  // 归属检查——此前按 process.cwd() 走 roots 检查，非管理员必 403
-  // "Access denied"（前端表现为"模型错误/无权限/未配置默认模型"）。
-  if (explicitCwd || projectId) {
-    let cwdStat;
-    try {
-      cwdStat = await stat(cwd);
-    } catch {
-      return Response.json({ error: `Directory does not exist: ${cwd}` }, { status: 400 });
-    }
-    if (!cwdStat.isDirectory()) {
-      return Response.json({ error: `Not a directory: ${cwd}` }, { status: 400 });
-    }
-    const allowedRoots = await getAllowedFileRootsForRequest(req);
-    if (!isExistingFilePathAllowed(cwd, allowedRoots)) {
-      // Embed tokens must stay inside their workspace — no owner/admin-wide
-      // project-home fallback.
-      if (embed) {
-        return Response.json({ error: "Access denied" }, { status: 403 });
-      }
-      // Project homes are config carriers outside the regular roots — allow the
-      // caller's own projects (the two-layer merge reads their .pi/ here).
-      // Existing sessions' cwds pass too: the transient allowed-roots set is
-      // repopulated only at session creation, so after a restart this check
-      // would otherwise 403 every materialized session ("No available models").
-      // Quick workspaces exist BEFORE the first message (no session yet) and
-      // are not project homes — allow the caller's own quick-homes subtree.
-      if (
-        !isCallerOwnedProjectHome(cwd, user.id, isAdmin) &&
-        !(await isCallerSessionCwdAllowed(req, cwd)) &&
-        !isCallerQuickWorkspace(cwd, user.id)
-      ) {
-        return Response.json({ error: "Access denied" }, { status: 403 });
-      }
-    }
   }
 
   try {
-    const cacheKey = `${cwd}::${isAdmin ? "global" : `u${user.id}`}`;
-    return Response.json(
-      await loadModelsWithCache(cacheKey, () => loadModels(cwd, user.id, isAdmin), {
-        timeoutMs: MODELS_LOAD_TIMEOUT_MS,
-        onTimeout: () => withSafeModelLoadFailure(EMPTY_MODELS),
-      }),
-    );
+    const cacheKey = scopeAll ? `${cwd}#all` : cwd;
+    return Response.json(await loadModelsWithCache(cacheKey, () => loadModels(cwd, scopeAll)));
   } catch {
     return Response.json(withSafeModelLoadFailure(EMPTY_MODELS));
   }

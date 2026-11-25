@@ -7,6 +7,7 @@ const PROVIDER_ICONS: Record<string, { symbol: string; color: boolean }> = {
   "ant-ling": { symbol: "antgroup", color: true },
   deepseek: { symbol: "deepseek", color: true },
   groq: { symbol: "groq", color: false },
+  "llama.cpp": { symbol: "llama-cpp", color: false },
   mistral: { symbol: "mistral", color: true },
   moonshotai: { symbol: "moonshot", color: false },
   "moonshotai-cn": { symbol: "moonshot", color: false },
@@ -23,6 +24,8 @@ const PROVIDER_ICONS: Record<string, { symbol: string; color: boolean }> = {
   "vercel-ai-gateway": { symbol: "vercel", color: false },
   "github-copilot": { symbol: "githubcopilot", color: false },
   "amazon-bedrock": { symbol: "aws", color: true },
+  azure: { symbol: "azure", color: true },
+  // pi's id before 1.0.3; a models.json block may still name it.
   "azure-openai-responses": { symbol: "azure", color: true },
   "kimi-coding": { symbol: "kimi", color: true },
   nvidia: { symbol: "nvidia", color: true },

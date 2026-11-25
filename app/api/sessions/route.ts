@@ -1,120 +1,65 @@
 import { NextResponse } from "next/server";
-import { jsonResponse } from "@/lib/json-response";
 import {
   attachSessionProjectInfo,
   getSessionListVersion,
   listAllSessions,
+  listSessionSummaries,
   mergeSessionLists,
 } from "@/lib/session-reader";
 import {
+  getAwaitingInputRpcSessionIds,
   getCompletionNotificationSuppressedRpcSessionIds,
   getRpcSessionInfos,
-  getRpcSessionOwner,
-  getRunningRpcSessionInfos,
+  getRunningRpcSessionIds,
+  withSubagentDisplayStatus,
 } from "@/lib/rpc-manager";
-import { requireUserIdentity } from "@/lib/web-session";
-import { spaceForRequest } from "@/lib/session-spaces";
-import { getSessionMetas, inferLegacyModeFromCwd } from "@/lib/session-metas";
-import { migrateQuickSessionMetas } from "@/lib/quick-project-migration";
-import { getProject } from "@/lib/projects";
-import { getAgentForUser } from "@/lib/relay/registry";
-import { filterSessionsForEmbedScope } from "@/lib/embed-scope";
+import { startServerPerf } from "@/lib/perf";
 
 export const dynamic = "force-dynamic";
 
-// GET /api/sessions[?space=host][&force=1] — sessions visible to the caller:
-// their own space, plus the host space (CLI sessions) for admins via ?space=host.
-// Entries carry the pi-web execution mode from the sidecar metas; live (not yet
-// persisted) RPC sessions are merged in, fenced per user.
 export async function GET(req: Request) {
-  const identity = requireUserIdentity(req);
-  if (!identity.ok) return NextResponse.json({ error: "登录已失效" }, { status: 401 });
-  const { user } = identity.session;
-
+  const perf = startServerPerf("GET /api/sessions");
   try {
     const searchParams = new URL(req.url).searchParams;
     const force = searchParams.get("force") === "1";
-    const includeArchived = searchParams.get("includeArchived") === "1";
-    const space = spaceForRequest(identity.session, searchParams);
-    // MERGE-NOTE(upgrade/0.84): upstream's listAllSessions({ force }) became
-    // listAllSessions(space, { force }) — dev shards the catalogue per user.
-    // Runtime (not-yet-persisted) sessions are merged in per upstream, but
-    // filtered to the caller's own live sessions (admins see all).
-    const [persistedSessions, runtimeSessions, initialMetas] = await Promise.all([
-      listAllSessions(space, { force }),
-      Promise.resolve(getRpcSessionInfos()).then((infos) =>
-        attachSessionProjectInfo(
-          infos.filter((s) => {
-            const owner = getRpcSessionOwner(s.id);
-            return user.role === "admin" || !owner || owner.ownerId === user.id;
-          }),
-        ),
-      ),
-      Promise.resolve(getSessionMetas()),
+    // `summary=1` serves header/stat metadata so the sidebar can paint without
+    // waiting for every session transcript to be parsed.
+    const summary = searchParams.get("summary") === "1";
+    perf?.span("start");
+    const persistedSessionsPromise = summary
+      ? listSessionSummaries()
+      : listAllSessions({ force });
+    // Capture before awaiting: mutations during the scan still require a later refresh.
+    const sessionListVersion = getSessionListVersion();
+    const [persistedSessions, runtimeSessions] = await Promise.all([
+      persistedSessionsPromise,
+      attachSessionProjectInfo(getRpcSessionInfos()),
     ]);
-    // One-time lazy migration: existing Quick sessions acquire the stable
-    // (owner, template) project id used by the Quick Project model.
-    let metas = initialMetas;
-    if (await migrateQuickSessionMetas(user.id)) metas = getSessionMetas();
-    const allSessions = mergeSessionLists(persistedSessions, runtimeSessions).map((s) => {
-      const meta = metas[s.id];
-      // 无 meta 的遗留沙箱会话按 cwd 兜底推断，避免落进 Host 目录组。
-      const mode = meta?.mode ?? inferLegacyModeFromCwd(s.cwd);
-      // local-machine/ssh：附真实工作区（用户机器/远程主机上的绝对路径）。
-      // cwd 是服务端 home——模型输出里的文件链接若按 cwd 解析会指到 host
-      // 目录（bug 2026-10-26），前端用 workspaceDir 作链接解析基。
-      const remoteProject =
-        (mode === "local-machine" || mode === "ssh") && meta?.projectId ? getProject(meta.projectId) : undefined;
-      let workspaceDir = remoteProject?.workdir;
-      // 未绑 workdir 的 local-machine 会话跑在 agent 共享根上——在线 agent
-      // 的 workspaceRoot 就是它的真实工作区（离线时未知，回落旧行为）。
-      if (!workspaceDir && mode === "local-machine") {
-        workspaceDir = getAgentForUser(meta?.ownerId ?? user.id)?.info?.workspaceRoot;
-      }
-      const ownerId = getRpcSessionOwner(s.id)?.ownerId ?? meta?.ownerId;
-      return {
-        ...s,
-        ...(mode ? { mode, ...(meta?.projectId ? { projectId: meta.projectId } : {}) } : {}),
-        ...(workspaceDir ? { workspaceDir } : {}),
-        // 管理员支持视图：归属提示（普通用户只会看到自己的会话，无影响）。
-        ...(ownerId !== undefined ? { ownerId } : {}),
-        ...(meta?.ownerName ? { ownerName: meta.ownerName } : {}),
-        ...(meta?.archivedAt ? { archivedAt: meta.archivedAt } : {}),
-      };
-    });
-    const scopedSessions = identity.session.embed
-      ? filterSessionsForEmbedScope(allSessions, identity.session.embed.scope)
-      : allSessions;
-    const sessions =
-      identity.session.embed && !includeArchived
-        ? scopedSessions.filter((session) => !session.archivedAt)
-        : scopedSessions;
-    // Capture AFTER the scan: mutations during the scan bump the generation,
-    // so the client sees a version it cannot reconcile and refreshes again.
-    // Per-space generation (dev 批次2): scoped to this caller's space.
-    const sessionListVersion = getSessionListVersion(space);
-    // Live-sessions are per-user unless the caller is an admin on the host space.
-    const visibleSessionIds = new Set(sessions.map((session) => session.id));
-    const runningSessionIds = getRunningRpcSessionInfos()
-      .filter((r) => (user.role === "admin" ? true : r.ownerId === user.id) && visibleSessionIds.has(r.sessionId))
-      .map((r) => r.sessionId);
-    // Web-push completion-notification suppression rides along behind the same
-    // per-user fence so other users' session ids never leak.
-    const visibleRunning = new Set(runningSessionIds);
-    const completionNotificationSuppressedSessionIds = getCompletionNotificationSuppressedRpcSessionIds().filter(
-      (sessionId) => visibleRunning.has(sessionId),
-    );
-    return jsonResponse(
-      req,
+    perf?.span("scan+projects");
+    const sessions = withSubagentDisplayStatus(mergeSessionLists(persistedSessions, runtimeSessions));
+    return perf?.attach(NextResponse.json(
       {
         sessions,
         sessionListVersion,
-        runningSessionIds,
-        completionNotificationSuppressedSessionIds,
+        runningSessionIds: getRunningRpcSessionIds(),
+        awaitingInputSessionIds: getAwaitingInputRpcSessionIds(),
+        completionNotificationSuppressedSessionIds: getCompletionNotificationSuppressedRpcSessionIds(),
+      },
+      { headers: { "Cache-Control": "no-store" } },
+    )) ?? NextResponse.json(
+      {
+        sessions,
+        sessionListVersion,
+        runningSessionIds: getRunningRpcSessionIds(),
+        awaitingInputSessionIds: getAwaitingInputRpcSessionIds(),
+        completionNotificationSuppressedSessionIds: getCompletionNotificationSuppressedRpcSessionIds(),
       },
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (error) {
-    return NextResponse.json({ error: String(error) }, { status: 500, headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json(
+      { error: String(error) },
+      { status: 500, headers: { "Cache-Control": "no-store" } },
+    );
   }
 }

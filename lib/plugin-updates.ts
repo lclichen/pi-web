@@ -2,10 +2,16 @@ import { execFile } from "child_process";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import { promisify } from "util";
-import { DefaultPackageManager, getAgentDir, SettingsManager } from "@earendil-works/pi-coding-agent";
+import {
+  DefaultPackageManager,
+  getAgentDir,
+  SettingsManager,
+} from "@earendil-works/pi-coding-agent";
 import { gt, maxSatisfying, rcompare, valid, validRange } from "semver";
 import type { PluginScope, PluginUpdateResult } from "@/lib/api-types";
 import { nodeCliInvocation } from "./node-cli";
+import { parseNpmSource } from "./npm-source";
+import { sanitizeProjectCommandEnvironment } from "./project-command-env";
 import { getProjectTrustStatus } from "./project-trust";
 
 const execFileAsync = promisify(execFile);
@@ -28,25 +34,8 @@ type CheckOptions = {
   runCommand?: CommandRunner;
 };
 
-type ParsedNpmSource = {
-  name: string;
-  spec: string;
-  version?: string;
-};
-
 function toPluginScope(scope: ConfiguredPackage["scope"]): PluginScope {
   return scope === "project" ? "project" : "global";
-}
-
-function parseNpmSource(source: string): ParsedNpmSource | undefined {
-  if (!source.startsWith("npm:")) return undefined;
-  const spec = source.slice(4).trim();
-  const match = spec.match(/^(@?[^@]+(?:\/[^@]+)?)(?:@(.+))?$/);
-  return {
-    name: match?.[1] ?? spec,
-    spec,
-    version: match?.[2],
-  };
 }
 
 function hasGitRef(source: string): boolean {
@@ -73,7 +62,11 @@ export function isPluginSourceCheckable(source: string): boolean {
   return false;
 }
 
-function result(pkg: ConfiguredPackage, state: PluginUpdateResult["state"], message?: string): PluginUpdateResult {
+function result(
+  pkg: ConfiguredPackage,
+  state: PluginUpdateResult["state"],
+  message?: string,
+): PluginUpdateResult {
   const npm = parseNpmSource(pkg.source);
   return {
     source: pkg.source,
@@ -83,6 +76,19 @@ function result(pkg: ConfiguredPackage, state: PluginUpdateResult["state"], mess
     state,
     message,
   };
+}
+
+/**
+ * The environment of an update check's `npm view` / `git` child: the host's
+ * without `PORT`, `NODE_ENV`, `NEXT_*` and `PI_WEB_PASSWORD` (ADR 0001). npm
+ * runs in the project folder and reads its `.npmrc`, which expands `${VAR}`
+ * from this environment into the registry it names, auth tokens included.
+ */
+export function updateCheckEnvironment(
+  overrides?: NodeJS.ProcessEnv,
+  base: NodeJS.ProcessEnv = process.env,
+): NodeJS.ProcessEnv {
+  return sanitizeProjectCommandEnvironment(overrides ? { ...base, ...overrides } : base);
 }
 
 async function runCommand(
@@ -95,7 +101,7 @@ async function runCommand(
   const invocation = command === "npm" ? nodeCliInvocation("npm", args) : { command, args };
   const { stdout } = await execFileAsync(invocation.command, invocation.args, {
     cwd: options.cwd,
-    env: options.env ? { ...process.env, ...options.env } : process.env,
+    env: updateCheckEnvironment(options.env),
     encoding: "utf8",
     timeout: 10_000,
   });
@@ -137,13 +143,20 @@ async function checkNpmPackage(
   const [command = "npm", ...commandArgs] = npmCommand ?? [];
   if (!command) return result(pkg, "error", "Invalid npmCommand.");
   const current = readInstalledVersion(pkg.installedPath);
-  const stdout = await runner(command, [...commandArgs, "view", npm.spec, "version", "--json"], { cwd });
-  const range = npm.version ? (validRange(npm.version) ?? undefined) : undefined;
+  const stdout = await runner(
+    command,
+    [...commandArgs, "view", npm.spec, "version", "--json"],
+    { cwd },
+  );
+  const range = npm.version ? validRange(npm.version) ?? undefined : undefined;
   const latest = readLatestVersion(stdout, range);
   return result(pkg, gt(latest, current) ? "update-available" : "up-to-date");
 }
 
-async function checkGitPackage(pkg: ConfiguredPackage, runner: CommandRunner): Promise<PluginUpdateResult> {
+async function checkGitPackage(
+  pkg: ConfiguredPackage,
+  runner: CommandRunner,
+): Promise<PluginUpdateResult> {
   if (!pkg.installedPath || !existsSync(pkg.installedPath)) {
     return result(pkg, "error", "Package is not installed.");
   }
@@ -155,7 +168,9 @@ async function checkGitPackage(pkg: ConfiguredPackage, runner: CommandRunner): P
   const upstream = await runner("git", ["rev-parse", "--abbrev-ref", "@{upstream}"], options)
     .then((value) => value.trim())
     .catch(() => "");
-  const ref = upstream.startsWith("origin/") ? `refs/heads/${upstream.slice("origin/".length)}` : "HEAD";
+  const ref = upstream.startsWith("origin/")
+    ? `refs/heads/${upstream.slice("origin/".length)}`
+    : "HEAD";
   const remoteOutput = await runner("git", ["ls-remote", "origin", ref], options);
   const remote = remoteOutput.match(/^([0-9a-f]{40,64})\s+/m)?.[1];
   if (!remote) throw new Error(`Failed to determine remote ${ref}.`);
@@ -189,21 +204,19 @@ export async function checkPluginUpdates(
   });
   const runner = options.runCommand ?? runCommand;
 
-  return Promise.all(
-    selected.map(async (pkg) => {
-      if (!isPluginSourceCheckable(pkg.source)) {
-        return result(pkg, "unsupported", "Pinned or local packages cannot be checked automatically.");
-      }
-      if (isOffline()) {
-        return result(pkg, "error", "Update checks are disabled while PI_OFFLINE=1.");
-      }
-      try {
-        return parseNpmSource(pkg.source)
-          ? await checkNpmPackage(pkg, cwd, npmCommand, runner)
-          : await checkGitPackage(pkg, runner);
-      } catch (error) {
-        return result(pkg, "error", error instanceof Error ? error.message : String(error));
-      }
-    }),
-  );
+  return Promise.all(selected.map(async (pkg) => {
+    if (!isPluginSourceCheckable(pkg.source)) {
+      return result(pkg, "unsupported", "Pinned or local packages cannot be checked automatically.");
+    }
+    if (isOffline()) {
+      return result(pkg, "error", "Update checks are disabled while PI_OFFLINE=1.");
+    }
+    try {
+      return parseNpmSource(pkg.source)
+        ? await checkNpmPackage(pkg, cwd, npmCommand, runner)
+        : await checkGitPackage(pkg, runner);
+    } catch (error) {
+      return result(pkg, "error", error instanceof Error ? error.message : String(error));
+    }
+  }));
 }

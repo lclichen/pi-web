@@ -1,11 +1,7 @@
 import type { AuthEvent, AuthPrompt } from "@earendil-works/pi-ai";
-import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { randomUUID } from "node:crypto";
-import { NextResponse } from "next/server";
 import { invalidateModelsCache } from "@/lib/models-cache";
-import { requireUserIdentity } from "@/lib/web-session";
-import { credentialAuthPath } from "@/lib/user-models";
-import { isApiRequestAllowed } from "@/lib/request-security";
+import { createLoginOptions, createModelRuntimeWithExtensions } from "@/lib/model-runtime";
 
 export const dynamic = "force-dynamic";
 
@@ -20,14 +16,10 @@ function getCallbackRegistry() {
 }
 
 // POST /api/auth/login/[provider] — frontend sends redirect URL or auth code
-export async function POST(req: Request, { params }: { params: Promise<{ provider: string }> }) {
-  if (!isApiRequestAllowed(req)) {
-    return NextResponse.json({ error: "Untrusted API request" }, { status: 403 });
-  }
-  const identity = requireUserIdentity(req);
-  if (!identity.ok) {
-    return NextResponse.json({ error: "登录已失效" }, { status: identity.status });
-  }
+export async function POST(
+  req: Request,
+  { params }: { params: Promise<{ provider: string }> }
+) {
   const { provider } = await params;
   const { token, code } = (await req.json()) as { token?: string; code?: string };
 
@@ -51,17 +43,29 @@ export async function POST(req: Request, { params }: { params: Promise<{ provide
 }
 
 // GET /api/auth/login/[provider] — SSE stream for OAuth flow
-export async function GET(req: Request, { params }: { params: Promise<{ provider: string }> }) {
-  const identity = requireUserIdentity(req);
-  if (!identity.ok) {
-    return NextResponse.json({ error: "登录已失效" }, { status: identity.status });
-  }
+export async function GET(
+  req: Request,
+  { params }: { params: Promise<{ provider: string }> }
+) {
   const { provider } = await params;
-  const authPath = credentialAuthPath(identity.session.user.id, identity.session.user.role === "admin");
 
   const encoder = new TextEncoder();
+  // An extension's login can report progress from a timer or a server event
+  // after this stream closed (login settled, or the client went away). Enqueue
+  // then throws outside any await of ours: an uncaughtException in the log.
+  let closed = false;
   const send = (controller: ReadableStreamDefaultController, data: unknown) => {
-    controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+    if (closed) return;
+    try {
+      controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+    } catch {
+      closed = true;
+    }
+  };
+  const close = (controller: ReadableStreamDefaultController) => {
+    if (closed) return;
+    closed = true;
+    try { controller.close(); } catch { /* already closed */ }
   };
 
   // AbortController propagates client disconnect into ModelRuntime.login().
@@ -70,10 +74,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ provider
 
   const stream = new ReadableStream({
     async start(controller) {
-      const modelRuntime = await ModelRuntime.create({ authPath });
+      const modelRuntime = await createModelRuntimeWithExtensions();
       if (!modelRuntime.getProvider(provider)?.auth.oauth) {
         send(controller, { type: "error", message: `Unknown provider: ${provider}` });
-        controller.close();
+        close(controller);
         return;
       }
 
@@ -129,10 +133,13 @@ export async function GET(req: Request, { params }: { params: Promise<{ provider
       // Also cancel on client disconnect
       abort.signal.addEventListener("abort", cleanup);
 
+      const loginOptions = createLoginOptions();
       try {
         await modelRuntime.login(provider, "oauth", {
           prompt: async (prompt: AuthPrompt) => {
-            const request = prompt.type === "manual_code" ? getManualInputRequest() : createClientInputRequest();
+            const request = prompt.type === "manual_code"
+              ? getManualInputRequest()
+              : createClientInputRequest();
             if (prompt.type === "select") {
               send(controller, {
                 type: "select_request",
@@ -172,7 +179,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ provider
             }
           },
           signal: abort.signal,
-        });
+        }, loginOptions.options);
 
         invalidateModelsCache();
         send(controller, { type: "success" });
@@ -185,10 +192,12 @@ export async function GET(req: Request, { params }: { params: Promise<{ provider
         }
       } finally {
         cleanup();
-        controller.close();
+        await loginOptions.flush();
+        close(controller);
       }
     },
     cancel() {
+      closed = true;
       abort.abort();
     },
   });

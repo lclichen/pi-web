@@ -5,14 +5,17 @@ import type {
   SettingsManager,
   SlashCommandInfo,
   Theme,
-  UserBashEventResult,
 } from "@earendil-works/pi-coding-agent";
-import type {
-  AgentLoopTurnUpdate,
-  AgentMessage as PiAgentMessage,
-  PrepareNextTurnContext,
-} from "@earendil-works/pi-agent-core";
+import type { AgentMessage as PiAgentMessage } from "@earendil-works/pi-agent-core";
 import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
+
+export interface BashResultLike {
+  output: string;
+  exitCode?: number;
+  cancelled?: boolean;
+  truncated?: boolean;
+  fullOutputPath?: string;
+}
 
 export interface ContextUsage {
   percent: number | null;
@@ -23,6 +26,8 @@ export interface ContextUsage {
 export interface ModelLike {
   id: string;
   provider: string;
+  /** Dollars per million tokens. */
+  cost?: { input: number; output: number; cacheRead: number; cacheWrite: number };
 }
 
 export interface ToolInfo {
@@ -30,6 +35,8 @@ export interface ToolInfo {
   description: string;
   parameters?: unknown;
   promptGuidelines?: string[];
+  /** How the model reaches the tool (pi >= 0.99); absent means `direct`. */
+  exposure?: "direct" | "model-only" | "codemode" | "deferred" | "hidden";
   sourceInfo?: unknown;
 }
 
@@ -75,6 +82,10 @@ interface SkillLike {
 
 interface ResourceLoaderLike {
   getSkills(): { skills: SkillLike[] };
+  getExtensions?(): {
+    errors?: readonly { path: string; error: string }[];
+    warnings?: readonly { path: string; warning: string }[];
+  };
   getAgentsFiles(): { agentsFiles: Array<{ path: string; content: string }> };
 }
 
@@ -84,34 +95,28 @@ interface ExtensionRunnerLike {
     description?: string;
     sourceInfo: SlashCommandInfo["sourceInfo"];
   }>;
-  emit?(event: { type: "session_shutdown"; reason: "quit" }): Promise<unknown>;
-  /** Gives mode extensions (sandbox / ssh / relay) first claim on `!`/`!!`
-   *  commands, mirroring pi CLI rpc-mode. Returns operations/result or
-   *  undefined when no handler wants the command. */
-  emitUserBash?(event: {
-    type: "user_bash";
-    command: string;
-    excludeFromContext: boolean;
-    cwd: string;
-  }): Promise<UserBashEventResult | undefined>;
+  emit?(event:
+    | { type: "session_shutdown"; reason: "quit" }
+    | { type: "session_before_fork"; entryId: string; position: "before" | "at" }
+  ): Promise<unknown>;
+  hasHandlers?(eventType: string): boolean;
+  /** pi's `user_bash` hook: an extension may run a `!` command itself (`result`) or say how (`operations`). */
+  emitUserBash?(event: { type: "user_bash"; command: string; excludeFromContext: boolean; cwd: string }): Promise<
+    { operations: BashOperations; result?: never } | { operations?: never; result: BashResultLike } | undefined
+  >;
   setUIContext?(uiContext?: unknown, mode?: "tui" | "rpc" | "json" | "print"): void;
 }
 
 type DialogOptionsLike = {
   signal?: AbortSignal;
   timeout?: number;
-  /** pi-web capability: ask the host for a checkbox multi-select dialog. */
-  multiSelect?: boolean;
 };
 
 type WidgetOptionsLike = {
   placement?: "aboveEditor" | "belowEditor";
-  metadata?: unknown;
 };
 
 export interface ExtensionUiContextLike {
-  /** pi-web advertises checkbox multi-select support to extensions. */
-  readonly supportsMultiSelect?: boolean;
   select(title: string, options: string[], opts?: DialogOptionsLike): Promise<string | undefined>;
   confirm(title: string, message: string, opts?: DialogOptionsLike): Promise<boolean>;
   input(title: string, placeholder?: string, opts?: DialogOptionsLike): Promise<string | undefined>;
@@ -123,11 +128,7 @@ export interface ExtensionUiContextLike {
   setWorkingVisible(visible: boolean): void;
   setWorkingIndicator(options?: { frames?: string[]; intervalMs?: number }): void;
   setHiddenThinkingLabel(label?: string): void;
-  setWidget(
-    key: string,
-    content: string[] | ((...args: never[]) => unknown) | undefined,
-    options?: WidgetOptionsLike,
-  ): void;
+  setWidget(key: string, content: string[] | ((...args: never[]) => unknown) | undefined, options?: WidgetOptionsLike): void;
   setFooter(factory: unknown): void;
   setHeader(factory: unknown): void;
   setTitle(title: string): void;
@@ -156,20 +157,32 @@ export interface AgentSessionLike {
   readonly model: ModelLike | undefined;
   readonly modelRuntime: {
     getModel: (provider: string, modelId: string) => ModelLike | undefined;
-    refresh: (options?: { allowNetwork?: boolean }) => Promise<unknown>;
+    refresh: (options?: { allowNetwork?: boolean; providers?: string[]; signal?: AbortSignal }) => Promise<unknown>;
   };
   readonly sessionManager: SessionManager;
   readonly settingsManager: SettingsManager;
+  /**
+   * The prompt this session would send right now, rendered from its current options.
+   *
+   * Readable before the first run, unlike `agent.state.systemPrompt`, which replays the
+   * transcript and is empty until a run persists a system message. It does not keep the
+   * sections a `before_agent_start` handler changed for a finished run; the replay does.
+   */
+  readonly systemPrompt: string;
   readonly agent: {
+    readonly toolExecution: "parallel" | "sequential";
     state?: {
-      systemPrompt?: string;
+      /** Replayed from the transcript's system messages since Pi 0.86; never assign it. */
+      readonly systemPrompt?: string;
       thinkingLevel?: string;
       streamingMessage?: PiAgentMessage;
+      /** The declared tools, with the descriptions `prepareLoadout` hooks set for the model. */
+      readonly tools?: readonly { readonly name: string; readonly description: string; readonly executionMode?: "parallel" | "sequential" }[];
     };
-    prepareNextTurnWithContext?: (
-      context: PrepareNextTurnContext,
-      signal?: AbortSignal,
-    ) => Promise<AgentLoopTurnUpdate | undefined> | AgentLoopTurnUpdate | undefined;
+    /** Steers and follow-ups pi has queued, its custom messages included (`getSteeringMessages()` lists texts only). */
+    hasQueuedMessages(): boolean;
+    /** The current run's abort signal; Stop aborts it. */
+    readonly signal?: AbortSignal;
   };
   readonly extensionRunner: ExtensionRunnerLike;
   readonly promptTemplates: readonly PromptTemplateLike[];
@@ -179,45 +192,33 @@ export interface AgentSessionLike {
   dispose(): void;
   reload(options?: { beforeSessionStart?: () => void | Promise<void> }): Promise<void>;
   subscribe(listener: (event: AgentSessionEvent) => void): () => void;
-  prompt(
-    text: string,
-    options?: {
-      images?: Array<{ type: "image"; data: string; mimeType: string }>;
-      streamingBehavior?: "steer" | "followUp";
-      source?: "interactive" | "rpc";
-      preflightResult?: (success: boolean) => void;
-    },
-  ): Promise<void>;
-  sendCustomMessage<T = unknown>(
-    message: {
-      customType: string;
-      content: string | (TextContent | ImageContent)[];
-      display: boolean;
-      details?: T;
-    },
-    options?: {
-      triggerTurn?: boolean;
-      deliverAs?: "steer" | "followUp" | "nextTurn";
-    },
-  ): Promise<void>;
+  prompt(text: string, options?: {
+    images?: Array<{ type: "image"; data: string; mimeType: string }>;
+    streamingBehavior?: "steer" | "followUp";
+    source?: "interactive" | "rpc";
+    /** Called once the SDK accepts the input; a rejected prompt only rejects the returned promise. */
+    preflightResult?: (disposition: "handled" | "queued" | "started") => void;
+  }): Promise<void>;
+  sendCustomMessage<T = unknown>(message: {
+    customType: string;
+    content: string | (TextContent | ImageContent)[];
+    display: boolean;
+    details?: T;
+  }, options?: {
+    triggerTurn?: boolean;
+    deliverAs?: "steer" | "followUp" | "nextTurn";
+  }): Promise<void>;
   abort(): Promise<void>;
-  executeBash(
-    command: string,
-    onChunk?: (chunk: string) => void,
-    options?: {
-      excludeFromContext?: boolean;
-      operations?: BashOperations;
-    },
-  ): Promise<{ output: string; exitCode?: number; cancelled?: boolean; truncated?: boolean; fullOutputPath?: string }>;
-  /** Records an externally executed bash result into session history
-   *  (the pre-executed path of the user_bash extension event). */
-  recordBashResult?(
-    command: string,
-    result: { output: string; exitCode?: number; cancelled?: boolean; truncated?: boolean; fullOutputPath?: string },
-    options?: { excludeFromContext?: boolean },
-  ): void;
+  executeBash(command: string, onChunk?: (chunk: string) => void, options?: {
+    excludeFromContext?: boolean;
+    operations?: BashOperations;
+  }): Promise<BashResultLike>;
+  /** Writes a `!` command's result to the session, as executeBash does; for a result an extension produced. */
+  recordBashResult?(command: string, result: BashResultLike, options?: { excludeFromContext?: boolean }): void;
   abortBash(): void;
   readonly isBashRunning: boolean;
+  /** An auto-retry waiting out its backoff; optional because test sessions leave it out. */
+  readonly isRetrying?: boolean;
   setModel(model: ModelLike): Promise<void>;
   navigateTree(targetId: string, options?: { summarize?: boolean }): Promise<NavigateTreeResult>;
   setThinkingLevel(level: string): void;
@@ -227,8 +228,8 @@ export interface AgentSessionLike {
   getLastAssistantText(): string | undefined;
   setAutoCompactionEnabled(enabled: boolean): void;
   setAutoRetryEnabled(enabled: boolean): void;
-  steer(text: string, images?: Array<{ type: "image"; data: string; mimeType: string }>): Promise<void>;
-  followUp(text: string, images?: Array<{ type: "image"; data: string; mimeType: string }>): Promise<void>;
+  steer(text: string, images?: Array<{ type: "image"; data: string; mimeType: string }>): Promise<"handled" | "queued">;
+  followUp(text: string, images?: Array<{ type: "image"; data: string; mimeType: string }>): Promise<"handled" | "queued">;
   readonly pendingMessageCount: number;
   getSteeringMessages(): readonly string[];
   getFollowUpMessages(): readonly string[];

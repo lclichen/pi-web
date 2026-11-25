@@ -13,7 +13,8 @@ The script starts and stops its own Turbopack dev server on an available
 loopback port. Run it in a checkout without an active dev server; Next.js
 shares `.next/dev/lock` within a checkout. All fixtures are created before
 startup in a temporary `PI_CODING_AGENT_DIR` and removed on completion.
-No model credentials or existing Pi sessions are needed.
+No model credentials or existing Pi sessions are needed. Git is required for
+the linked-worktree fixture.
 
 CI runs lint, type checking, and unit tests in one job. A separate job builds
 the application in a clean checkout and runs the same browser tests with
@@ -31,38 +32,50 @@ Coverage:
 - Markdown, code blocks, and real tool-call/tool-result blocks render.
 - Chat width and font size persist, existing drafts resize, and short settings
   panels keep every language option reachable on desktop and mobile.
+- Interface/chat and monospace font lists and weights apply live, survive
+  refresh, sync between tabs and reset independently without changing width or
+  font size. Headings and Markdown emphasis retain their weights.
+- On a desktop the sidebar shows the files below the sessions; Settings ›
+  General › File browser brings back the Sessions | Files tabs and returns,
+  without remounting the file tree (its file search keeps its query).
 - Unknown sessions and paths outside the fixture project are rejected.
+- Sidebar sessions open in browser tabs (`session-navigation.mjs`, desktop
+  Chromium, one context so tabs share storage): a plain click and Enter
+  select in place without a page load; Ctrl+click, middle-click and the row
+  menu's Open in new tab (right-click, ⋯, T; just before Delete) open the clicked row's session in
+  a new tab while the original keeps its own; both tabs keep their session
+  through reloads; pinned and archived rows link the same way; nothing
+  creates, copies or prompts a session; a missing session's link selects none
+  in a fresh profile; a keyboard Fork puts focus on the copy row's link.
+- Project groups offer Open in new tab (`project-navigation.mjs`, desktop
+  and mobile Chromium): the current linked worktree, another project's root,
+  and a pinned project without sessions open as fresh composers. Reload keeps
+  that destination, not a remembered session. The original tab keeps its
+  session, directory, draft, files and group expansion; + still opens in the
+  same tab, and no session is created, copied, prompted or stopped. An
+  unavailable directory shows the validation error instead of another session.
+- The model picker, with a synthetic catalog: on a phone, a simulated keyboard
+  (visual viewport shrink, pan, a late height with no event) keeps the same
+  filter focused and the list in the visible viewport. Native phone keyboards
+  still need real-device verification.
+- Settings › Models drags a custom provider's models within it (never into
+  another provider) and moves them with Alt+↑/↓, keeps the moved row focused,
+  keeps the selected model open and its row mounted while it is edited, sorts
+  shown names once with A–Z, appends later additions, and saves only the changed array order
+  while preserving rename tracking (`model-order.mjs`, desktop and phone widths,
+  mocked config routes).
+- `/compact` leaves the composer focused and accepts the next draft while its
+  POST is pending, on desktop and phone widths. The compaction response is mocked;
+  no model is called (`composer-focus.mjs`).
 - A local extension checks dialog keyboard navigation, Esc cancellation,
-  collapse/expand draft preservation, countdown display, and server-side expiry.
-
-Guardrail UI suite (separate runner, deterministic — no real model):
-
-```sh
-npm run test:e2e:guardrails
-```
-
-- A local OpenAI-compatible mock model (`e2e/mock-model.mjs`) drives a real
-  `write` tool call to an out-of-workspace path, so the **path guard ask**
-  dialog appears deterministically.
-- Scenarios: ask options + allow-once / deny / deny-and-never-again /
-  allow-and-never-again (decisions file, second-turn skip), session switch
-  (hide + replay), page reload (replay), multi-window mirroring in both orders
-  (ask first, and both windows open before the prompt; one answer closes both),
-  audit-free assertions.
-- Each page keeps a single relay-status SSE. A second window therefore cannot
-  exhaust the browser's six HTTP/1.1 connections per host (the earlier
-  “loading session” hang); keep that budget in mind when adding a resident SSE.
-- Runs its own dev server on a free loopback port (same `.next/dev` lock rule).
-
-Real-channel checks (run against the VM / real targets, not part of `npm test`):
-
-- `e2e/ssh-real.mjs` — runs INSIDE the VM: real ssh2 loopback to `127.0.0.1`,
-  exercises `ssh-tools` bash/read/write/edit/ls/grep/find + `user_bash`
-  against a temp remote dir, then cleans up. Prereq: a loopback key at
-  `~/.ssh/qa_loopback` appended to `authorized_keys`:
-  `ssh-keygen -q -t ed25519 -N "" -f ~/.ssh/qa_loopback && cat ~/.ssh/qa_loopback.pub >> ~/.ssh/authorized_keys`.
-- Local-machine / sandbox real tool round-trips live in the Python SDK QA suite
-  (`qa/test_modes.py`: write/read must land on the paired machine / container).
+  collapse/expand draft preservation, countdown display, server-side expiry,
+  and that `setEditorText` replaces the composer's draft while `pasteToEditor`
+  inserts at the caret.
+- A session whose folder is gone shows the "Project folder not found" banner
+  with Fork into another folder…; the directory picker's choice forks it there
+  (pi 1.5.2's Fork), the copy opens with the refused prompt still in its
+  composer, and the source stays (`missing-cwd-fork.mjs`, 1280 and 390px).
+- The production assistant header keeps its height and numeric columns when streaming metrics appear, update and disappear. Static component renders cover digit boundaries with proportional and monospace fonts, without a live model. Run this check alone with `node e2e/streaming-metrics.mjs` (1280, 390 and 320px).
 
 Model prompts, live model streaming, and agent execution are outside this suite.
 Failures save a screenshot, Playwright trace, and server log under

@@ -1,45 +1,38 @@
-import { NextResponse } from "next/server";
 import { createAgentEventStream } from "@/lib/agent-event-stream";
-import { checkLiveSessionAccess, resolveSessionAccess } from "@/lib/session-access";
-import { getRpcSession, startRpcSession, type AgentSessionWrapper } from "@/lib/rpc-manager";
-import { restoreSessionOptions } from "@/lib/session-restore-options";
-import { sessionCookieRefreshHeader } from "@/lib/web-session";
+import { resolveSessionPath } from "@/lib/session-reader";
+import { getRpcSession, startRpcSession } from "@/lib/rpc-manager";
+import { isValidLivenessHolder } from "@/lib/session-liveness";
+import { describeStreamClient } from "@/lib/stream-client";
 
 export const dynamic = "force-dynamic";
 
-// GET /api/agent/[id]/events - SSE stream of agent events
-export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
+// GET /api/agent/[id]/events?holder=<page id> - SSE stream of agent events. The holder, the
+// request's reported address and its browser label only label the stream for the debug panel: the
+// page's lease renewals keep the session alive, never the stream (#1283).
+export async function GET(
+  req: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
   const { id } = await params;
   if (req.signal.aborted) return new Response(null, { status: 204 });
-
-  // Sliding renewal: each (re)connect is a natural cookie refresh point —
-  // headers can only be set at stream open, so long-lived connections are
-  // covered by the hourly /api/webauth/touch ping instead.
-  const sessionRefreshCookie = sessionCookieRefreshHeader(req);
+  const holderParam = new URL(req.url).searchParams.get("holder");
+  const holder = isValidLivenessHolder(holderParam) ? holderParam : null;
 
   // Fast path: already-running session
-  const existing = getRpcSession(id);
-  let sessionPromise: Promise<AgentSessionWrapper>;
-  if (existing?.isAlive()) {
-    // Ownership fence for the registry fast path (see checkLiveSessionAccess).
-    const fence = checkLiveSessionAccess(req, id);
-    if (!fence.ok) return NextResponse.json({ error: fence.error }, { status: fence.status });
-    sessionPromise = Promise.resolve(existing);
+  const session = getRpcSession(id);
+  let sessionPromise;
+  if (session?.isAlive()) {
+    sessionPromise = Promise.resolve(session);
   } else {
-    const access = await resolveSessionAccess(req, id);
-    if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
-    const filePath = access.path;
+    const filePath = await resolveSessionPath(id);
     if (!filePath) {
       return new Response("Session not found", { status: 404 });
     }
     if (req.signal.aborted) return new Response(null, { status: 204 });
-    // Same mode-extension injections as new sessions (sandbox bridge etc.).
-    sessionPromise = restoreSessionOptions(req, id)
-      .then((options) => startRpcSession(id, filePath, undefined, options))
-      .then((result) => result.session);
+    sessionPromise = startRpcSession(id, filePath, undefined).then((result) => result.session);
   }
 
-  const stream = createAgentEventStream(req, id, sessionPromise);
+  const stream = createAgentEventStream(req, id, sessionPromise, { holder, ...describeStreamClient(req.headers) });
 
   return new Response(stream, {
     headers: {
@@ -47,7 +40,6 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       "Cache-Control": "no-cache, no-transform",
       Connection: "keep-alive",
       "X-Accel-Buffering": "no",
-      ...(sessionRefreshCookie ? { "Set-Cookie": sessionRefreshCookie } : {}),
     },
   });
 }

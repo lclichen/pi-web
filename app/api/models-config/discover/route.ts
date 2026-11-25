@@ -1,8 +1,5 @@
 import { NextResponse } from "next/server";
 import { resolveModelDiscoveryAuth } from "@/lib/model-discovery-auth";
-import { requireUserIdentity } from "@/lib/web-session";
-import { isApiRequestAllowed } from "@/lib/request-security";
-import { ensureUserModelRuntime } from "@/lib/user-models";
 import { buildModelsListUrl, parseDiscoveredModels } from "@/lib/model-discovery";
 
 export const dynamic = "force-dynamic";
@@ -34,35 +31,39 @@ function buildHeaders(api: string, apiKey: string | undefined, configured: Recor
 }
 
 export async function POST(req: Request) {
-  if (!isApiRequestAllowed(req)) {
-    return NextResponse.json({ error: "Untrusted API request" }, { status: 403 });
-  }
-  const identity = requireUserIdentity(req);
-  if (!identity.ok) {
-    return NextResponse.json({ error: "登录已失效" }, { status: identity.status });
-  }
-  const scopedAuth =
-    identity.session.user.role === "admin" ? undefined : ensureUserModelRuntime(identity.session.user.id)?.authPath;
   try {
-    const body = (await req.json()) as { providerName?: unknown; provider?: unknown };
+    const body = await req.json() as { providerName?: unknown; provider?: unknown };
     const providerName = typeof body.providerName === "string" ? body.providerName.trim() : "";
     if (!providerName) return NextResponse.json({ error: "providerName is required" }, { status: 400 });
     if (!isRecord(body.provider)) return NextResponse.json({ error: "provider is required" }, { status: 400 });
 
-    const baseUrl = typeof body.provider.baseUrl === "string" ? body.provider.baseUrl.trim() : "";
+    const configuredBaseUrl = typeof body.provider.baseUrl === "string" ? body.provider.baseUrl.trim() : "";
+    const configuredApi = typeof body.provider.api === "string" && body.provider.api ? body.provider.api : "";
+
+    let auth: Awaited<ReturnType<typeof resolveModelDiscoveryAuth>>;
+    try {
+      auth = await resolveModelDiscoveryAuth(providerName, body.provider);
+    } catch (error) {
+      // Without a configured Base URL, pi's catalog was the only other source of
+      // one; for a custom provider it fails with an error about the placeholder model.
+      if (!configuredBaseUrl) return NextResponse.json({ error: "Base URL is required" }, { status: 400 });
+      throw error;
+    }
+    if (typeof body.provider.apiKey === "string" && body.provider.apiKey.trim() && !auth.apiKey) {
+      return NextResponse.json({ error: `No API key found for "${providerName}"` }, { status: 400 });
+    }
+
+    // Fall back to pi's provider catalog so built-in providers, and entries
+    // that only list models, do not have to repeat the upstream base URL.
+    const baseUrl = configuredBaseUrl || auth.baseUrl || "";
     if (!baseUrl) return NextResponse.json({ error: "Base URL is required" }, { status: 400 });
-    const api = typeof body.provider.api === "string" && body.provider.api ? body.provider.api : "openai-completions";
+    const api = configuredApi || auth.api || "openai-completions";
 
     let endpoint: URL;
     try {
       endpoint = buildModelsListUrl(baseUrl, api);
     } catch {
       return NextResponse.json({ error: "Base URL is invalid" }, { status: 400 });
-    }
-
-    const auth = await resolveModelDiscoveryAuth(providerName, body.provider, scopedAuth);
-    if (typeof body.provider.apiKey === "string" && body.provider.apiKey.trim() && !auth.apiKey) {
-      return NextResponse.json({ error: `No API key found for "${providerName}"` }, { status: 400 });
     }
 
     const response = await fetch(endpoint, {
@@ -72,13 +73,10 @@ export async function POST(req: Request) {
     });
     const responseText = await response.text();
     if (!response.ok) {
-      return NextResponse.json(
-        {
-          error: responseText.slice(0, 500) || `Upstream returned HTTP ${response.status}`,
-          status: response.status,
-        },
-        { status: 502 },
-      );
+      return NextResponse.json({
+        error: responseText.slice(0, 500) || `Upstream returned HTTP ${response.status}`,
+        status: response.status,
+      }, { status: 502 });
     }
 
     let payload: unknown;

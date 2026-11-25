@@ -6,16 +6,13 @@ const jiti = createJiti(import.meta.url, {
   jsx: { runtime: "automatic" },
   tsconfigPaths: true,
 });
-const { buildActivePath, compressChain, hasSessionBranches, selectTopLevelBranches } =
-  await jiti.import("./BranchNavigator.tsx");
+const { BranchNavigator, buildActivePath, compressChain, hasSessionBranches, selectTopLevelBranches } = await jiti.import("./BranchNavigator.tsx");
+const React = await jiti.import("react");
+const { renderToStaticMarkup } = await jiti.import("react-dom/server");
+const { I18nProvider } = await jiti.import("@/hooks/useI18n");
+const { enLocale } = await jiti.import("@/lib/i18n/messages/en.ts");
 
-const msg = (id, role, text) => ({
-  type: "message",
-  id,
-  parentId: null,
-  timestamp: "t",
-  message: { role, content: text },
-});
+const msg = (id, role, text) => ({ type: "message", id, parentId: null, timestamp: "t", message: { role, content: text } });
 const info = (id) => ({ type: "session_info", id, parentId: null, timestamp: "t", name: "x" });
 const model = (id) => ({ type: "model_change", id, parentId: null, timestamp: "t", provider: "test", modelId: "test" });
 const node = (entry, children = []) => ({ entry, children });
@@ -58,20 +55,14 @@ test("compressChain falls back to the chain end when no message entry exists", (
 test("selectTopLevelBranches returns all roots for multi-root trees", () => {
   const r1 = node(msg("u1", "user", "第一问"));
   const r2 = node(msg("u1b", "user", "第一问改"));
-  assert.deepEqual(
-    selectTopLevelBranches([r1, r2]).map((n) => n.entry.id),
-    ["u1", "u1b"],
-  );
+  assert.deepEqual(selectTopLevelBranches([r1, r2]).map((n) => n.entry.id), ["u1", "u1b"]);
 });
 
 test("selectTopLevelBranches returns children of the first branching node", () => {
   const b1 = node(msg("u2", "user", "分支一"));
   const b2 = node(msg("u2b", "user", "分支二"));
   const root = node(msg("u1", "user", "第一问"), [node(msg("a1", "assistant", "答"), [b1, b2])]);
-  assert.deepEqual(
-    selectTopLevelBranches([root]).map((n) => n.entry.id),
-    ["u2", "u2b"],
-  );
+  assert.deepEqual(selectTopLevelBranches([root]).map((n) => n.entry.id), ["u2", "u2b"]);
 });
 
 test("selectTopLevelBranches returns empty for a linear session", () => {
@@ -82,7 +73,10 @@ test("selectTopLevelBranches returns empty for a linear session", () => {
 test("hasSessionBranches distinguishes linear sessions from branched sessions", () => {
   const linear = node(msg("u1", "user", "第一问"), [node(msg("a1", "assistant", "答"))]);
   const branched = node(msg("u1", "user", "第一问"), [
-    node(msg("a1", "assistant", "答"), [node(msg("u2", "user", "分支一")), node(msg("u2b", "user", "分支二"))]),
+    node(msg("a1", "assistant", "答"), [
+      node(msg("u2", "user", "分支一")),
+      node(msg("u2b", "user", "分支二")),
+    ]),
   ]);
 
   assert.equal(hasSessionBranches([]), false);
@@ -107,40 +101,27 @@ test("selectTopLevelBranches works on preview-only server projections", () => {
   const branchPoint = { entry: msg("a1", "assistant", "答"), children: [arm1, arm2] };
   const root = { entry: msg("u1", "user", "第一问"), children: [branchPoint] };
   const topLevel = selectTopLevelBranches([root]);
-  assert.deepEqual(
-    topLevel.map((n) => n.entry.id),
-    ["a2", "a2b"],
-  );
+  assert.deepEqual(topLevel.map((n) => n.entry.id), ["a2", "a2b"]);
   assert.deepEqual(compressChain(topLevel[0]).branchPreview, { role: "user", text: "分支一" });
   assert.equal(compressChain(topLevel[0]).node.entry.id, "a2");
 });
 
 test("multi-root metadata chains use their user previews and assistant representatives", () => {
-  const r1 = node(model("m1"), [
-    {
-      entry: msg("a1", "assistant", "回答一"),
-      children: [],
-      compressedEntryIds: ["u1"],
-      branchPreview: { role: "user", text: "第一问" },
-    },
-  ]);
-  const r2 = node(info("s2"), [
-    {
-      entry: msg("a2", "assistant", "回答二"),
-      children: [],
-      compressedEntryIds: ["u2"],
-      branchPreview: { role: "user", text: "第二问" },
-    },
-  ]);
+  const r1 = node(model("m1"), [{
+    entry: msg("a1", "assistant", "回答一"),
+    children: [],
+    compressedEntryIds: ["u1"],
+    branchPreview: { role: "user", text: "第一问" },
+  }]);
+  const r2 = node(info("s2"), [{
+    entry: msg("a2", "assistant", "回答二"),
+    children: [],
+    compressedEntryIds: ["u2"],
+    branchPreview: { role: "user", text: "第二问" },
+  }]);
   const topLevel = selectTopLevelBranches([r1, r2]);
-  assert.deepEqual(
-    topLevel.map((n) => compressChain(n).branchPreview.text),
-    ["第一问", "第二问"],
-  );
-  assert.deepEqual(
-    topLevel.map((n) => compressChain(n).node.entry.id),
-    ["a1", "a2"],
-  );
+  assert.deepEqual(topLevel.map((n) => compressChain(n).branchPreview.text), ["第一问", "第二问"]);
+  assert.deepEqual(topLevel.map((n) => compressChain(n).node.entry.id), ["a1", "a2"]);
 });
 
 // --- #509 regression: recursive tree consumption overflowed the stack on a
@@ -152,13 +133,7 @@ function linearTree(n) {
   const nodes = [];
   let prev = null;
   for (let i = 0; i < n; i++) {
-    const entry = {
-      type: "message",
-      id: `e${i}`,
-      parentId: prev,
-      timestamp: "t",
-      message: { role: "user", content: `m${i}` },
-    };
+    const entry = { type: "message", id: `e${i}`, parentId: prev, timestamp: "t", message: { role: "user", content: `m${i}` } };
     nodes.push({ entry, children: [] });
     if (prev) nodes[nodes.length - 2].children = [nodes[nodes.length - 1]];
     prev = `e${i}`;
@@ -178,14 +153,8 @@ test("hasSessionBranches reports false for a linear chain (no branching) and tru
   assert.equal(hasSessionBranches([linearTree(5000)]), false);
   const root = linearTree(3);
   root.children[0].children[0].children = [
-    {
-      entry: { type: "message", id: "b1", parentId: "e2", timestamp: "t", message: { role: "user", content: "x" } },
-      children: [],
-    },
-    {
-      entry: { type: "message", id: "b2", parentId: "e2", timestamp: "t", message: { role: "user", content: "y" } },
-      children: [],
-    },
+    { entry: { type: "message", id: "b1", parentId: "e2", timestamp: "t", message: { role: "user", content: "x" } }, children: [] },
+    { entry: { type: "message", id: "b2", parentId: "e2", timestamp: "t", message: { role: "user", content: "y" } }, children: [] },
   ];
   assert.equal(hasSessionBranches([root]), true);
   assert.equal(hasSessionBranches([root]), true);
@@ -194,13 +163,49 @@ test("hasSessionBranches reports false for a linear chain (no branching) and tru
 test("hasSessionBranches reports true for multiple root nodes (a branch from the first message)", () => {
   // Each root has a single child, so no node.children.length > 1 — only the
   // multiple-root shape makes this a branch.
-  const r1 = {
-    entry: { type: "message", id: "r1", parentId: null, timestamp: "t", message: { role: "user", content: "a" } },
-    children: [],
-  };
-  const r2 = {
-    entry: { type: "message", id: "r2", parentId: null, timestamp: "t", message: { role: "user", content: "b" } },
-    children: [],
-  };
+  const r1 = { entry: { type: "message", id: "r1", parentId: null, timestamp: "t", message: { role: "user", content: "a" } }, children: [] };
+  const r2 = { entry: { type: "message", id: "r2", parentId: null, timestamp: "t", message: { role: "user", content: "b" } }, children: [] };
   assert.equal(hasSessionBranches([r1, r2]), true);
+});
+
+test("compressChain never labels a branch with a transcript system message", () => {
+  // Pi >= 0.86 roots new sessions at a system message holding the prompt.
+  const system = { type: "message", id: "sys", parentId: null, timestamp: "t", message: { role: "system", content: "", sections: { preamble: "You are an expert coding assistant." } } };
+  const chain = node(system, [node(msg("u1", "user", "原始问题"), [node(msg("a1", "assistant", "答"))])]);
+  const { labelEntry, node: rep, skipped } = compressChain(chain);
+  assert.equal(labelEntry.id, "u1");
+  assert.equal(rep.entry.id, "a1");
+  assert.equal(skipped, 2);
+});
+
+test("a locked navigator keeps the tree readable but offers no branch to switch to", () => {
+  const tree = [node(msg("u1", "user", "question"), [
+    node(msg("a1", "assistant", "first answer")),
+    node(msg("a2", "assistant", "second answer")),
+  ])];
+  const render = (locked) => renderToStaticMarkup(React.createElement(
+    I18nProvider,
+    null,
+    React.createElement(BranchNavigator, {
+      tree,
+      activeLeafId: "a1",
+      onLeafChange() {},
+      open: true,
+      hasSession: true,
+      locked,
+    }),
+  ));
+  const lockedNotice = enLocale.messages["i18n.branchesLockedWhileRunning"].replace("'", "&#x27;");
+
+  const unlocked = render(false);
+  assert.match(unlocked, /second answer/);
+  assert.equal((unlocked.match(/cursor:pointer/g) ?? []).length, 3);
+  assert.doesNotMatch(unlocked, new RegExp(lockedNotice));
+
+  const locked = render(true);
+  assert.match(locked, /second answer/);
+  assert.match(locked, new RegExp(lockedNotice));
+  // Only the panel header stays clickable; branch rows are not.
+  assert.equal((locked.match(/cursor:pointer/g) ?? []).length, 1);
+  assert.equal((locked.match(/cursor:default/g) ?? []).length, 2);
 });

@@ -212,6 +212,9 @@ interface Props {
   onEditContent?: (message: UserMessage, entryId: string) => void;
   onCancelEdit?: () => void;
   isEditing?: boolean;
+  /** Manual retry for the last failed turn. */
+  onRetry?: () => void;
+  retrying?: boolean;
   showTimestamp?: boolean;
   prevTimestamp?: number;
   sessionId?: string;
@@ -296,12 +299,12 @@ function haveSameRelevantToolEntries<T>(
   return true;
 }
 
-export const MessageView = memo(function MessageView({ message, isStreaming, toolResults, toolClocks, modelNames, cwd, onOpenFile, onOpenSubagent, entryId, searchBlock, onFork, forkEntryId, forking, onEditContent, onCancelEdit, isEditing, showTimestamp, prevTimestamp, sessionId, writtenFiles, turnDurationMs, onCompact, isCompacting, compactError }: Props) {
+export const MessageView = memo(function MessageView({ message, isStreaming, toolResults, toolClocks, modelNames, cwd, onOpenFile, onOpenSubagent, entryId, searchBlock, onFork, forkEntryId, forking, onEditContent, onCancelEdit, isEditing, onRetry, retrying, showTimestamp, prevTimestamp, sessionId, writtenFiles, turnDurationMs, onCompact, isCompacting, compactError }: Props) {
   if (message.role === "user") {
     return <UserMessageView message={message as UserMessage} cwd={cwd} onOpenFile={onOpenFile} entryId={entryId} onFork={onFork} forkEntryId={entryId ?? forkEntryId} forking={forking} onEditContent={onEditContent} onCancelEdit={onCancelEdit} isEditing={isEditing} />;
   }
   if (message.role === "assistant") {
-    return <AssistantMessageView message={message as AssistantMessage} isStreaming={isStreaming} toolResults={toolResults} toolClocks={toolClocks} modelNames={modelNames} cwd={cwd} onOpenFile={onOpenFile} onOpenSubagent={onOpenSubagent} showTimestamp={showTimestamp} prevTimestamp={prevTimestamp} sessionId={sessionId} entryId={entryId} searchBlock={searchBlock} writtenFiles={writtenFiles} turnDurationMs={turnDurationMs} onCompact={onCompact} isCompacting={isCompacting} compactError={compactError} />;
+    return <AssistantMessageView message={message as AssistantMessage} isStreaming={isStreaming} toolResults={toolResults} toolClocks={toolClocks} modelNames={modelNames} cwd={cwd} onOpenFile={onOpenFile} onOpenSubagent={onOpenSubagent} showTimestamp={showTimestamp} prevTimestamp={prevTimestamp} sessionId={sessionId} entryId={entryId} searchBlock={searchBlock} writtenFiles={writtenFiles} turnDurationMs={turnDurationMs} onCompact={onCompact} isCompacting={isCompacting} compactError={compactError} onRetry={onRetry} retrying={retrying} />;
   }
   if (message.role === "toolResult") {
     // Rendered inline under its toolCall — skip standalone rendering if paired
@@ -334,6 +337,8 @@ export const MessageView = memo(function MessageView({ message, isStreaming, too
     && prev.onEditContent === next.onEditContent
     && prev.onCancelEdit === next.onCancelEdit
     && prev.isEditing === next.isEditing
+    && prev.onRetry === next.onRetry
+    && prev.retrying === next.retrying
     && prev.showTimestamp === next.showTimestamp
     && prev.prevTimestamp === next.prevTimestamp
     && prev.writtenFiles === next.writtenFiles
@@ -706,6 +711,8 @@ function AssistantMessageView({
   onCompact,
   isCompacting,
   compactError,
+  onRetry,
+  retrying,
 }: {
   message: AssistantMessage;
   isStreaming?: boolean;
@@ -725,6 +732,8 @@ function AssistantMessageView({
   onCompact?: () => void;
   isCompacting?: boolean;
   compactError?: string | null;
+  onRetry?: () => void;
+  retrying?: boolean;
 }) {
   const { t } = useI18n();
   const time = showTimestamp ? formatTime(message.timestamp) : null;
@@ -912,6 +921,30 @@ function AssistantMessageView({
         >
           Error: {providerError}
         </div>
+      )}
+      {providerError && onRetry && (
+        <button
+          type="button"
+          onClick={onRetry}
+          disabled={retrying}
+          title={t("chat.retryRequestHint")}
+          style={{
+            marginTop: 6,
+            alignSelf: "flex-start",
+            height: 24,
+            padding: "0 9px",
+            border: "1px solid rgba(239,68,68,0.45)",
+            borderRadius: 5,
+            background: "rgba(239,68,68,0.08)",
+            color: "#ef4444",
+            cursor: retrying ? "default" : "pointer",
+            opacity: retrying ? 0.6 : 1,
+            fontSize: 11.5,
+            fontWeight: 600,
+          }}
+        >
+          ↻ {t("chat.retryRequest")}
+        </button>
       )}
 
       {truncated && (

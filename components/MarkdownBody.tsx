@@ -38,11 +38,14 @@ function MarkdownImage({
   ...props
 }: ComponentProps<"img"> & ExtraProps & { cwd?: string }) {
   const insideLink = useContext(MarkdownLinkContext);
+  const remoteSessionId = useContext(RemoteFileSessionContext);
   delete props.node;
   const href = typeof src === "string" ? src : undefined;
   const filePath = href ? resolveLocalFileHref(href, cwd) : null;
   const mediaSrc = filePath
-    ? `/api/files/${encodeFilePathForApi(filePath)}?type=read`
+    ? remoteSessionId
+      ? `/api/remotefs/${encodeFilePathForApi(filePath)}?src=${encodeURIComponent(remoteSessionId)}`
+      : `/api/files/${encodeFilePathForApi(filePath)}?type=read`
     : href;
   // `![](take.wav)` is how a model shows a sound or clip it made, and an <img>
   // cannot play it. The file API already streams both with range requests.

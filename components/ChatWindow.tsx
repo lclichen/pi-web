@@ -1265,12 +1265,18 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
                        {t("chat.loadEarlier")}
                     </div>
                   )}
-                  <div ref={attachTranscriptRows}>{rendered.slice(startIndex)}</div>
+                  <div ref={attachTranscriptRows}>
+                    <RemoteFileSessionContext.Provider value={remoteFileSessionId}>
+                      {rendered.slice(startIndex)}
+                    </RemoteFileSessionContext.Provider>
+                  </div>
                 </>
               );
             })()}
             {isStreaming && hasStreamingContent && (
-              <StreamingReply store={streamingStore} onCommit={updatePromptAnchor} toolResults={toolResultsMap} modelNames={modelNames} cwd={linkCwd} onOpenFile={onOpenFile} onOpenSubagent={onOpenSubagent} />
+              <RemoteFileSessionContext.Provider value={remoteFileSessionId}>
+                <StreamingReply store={streamingStore} onCommit={updatePromptAnchor} toolResults={toolResultsMap} modelNames={modelNames} cwd={linkCwd} onOpenFile={onOpenFile} onOpenSubagent={onOpenSubagent} />
+              </RemoteFileSessionContext.Provider>
             )}
 
             {(agentRunning || isCompacting) && !hasStreamingContent && (agentPhase || isCompacting) && (

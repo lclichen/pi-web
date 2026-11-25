@@ -121,6 +121,8 @@ function renderFence(lang: string, code: string, isStreaming: boolean | undefine
   return <CodeBlock code={code} lang={lang} isStreaming={isStreaming} />;
 }
 
+export const RemoteFileSessionContext = createContext<string | null>(null);
+
 export const MarkdownBody = memo(function MarkdownBody({ children, className, isStreaming, cwd, onOpenFile, onNavigateLink, keepLineBreaks, keepTextLayout }: MarkdownBodyProps) {
   const normalizedMarkdown = useMemo(() => normalizeDisplayMath(children), [children]);
   // A streaming reply grows by a few characters per chunk; parsing all of it

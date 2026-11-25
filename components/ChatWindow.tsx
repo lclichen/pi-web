@@ -14,7 +14,7 @@ import { getFinalAnswerViews, keepWrittenFiles, type FinalAnswerViews } from "@/
 import { formatTurnDuration, getTurnDurationMs } from "@/lib/turn-duration";
 import { dropMentionText, splitDroppedItems, uploadFiles, type DroppedItem } from "@/lib/file-upload-client";
 import { MessageView } from "./MessageView";
-import { MarkdownBody } from "./MarkdownBody";
+import { MarkdownBody, RemoteFileSessionContext } from "./MarkdownBody";
 import { ChatInput, getUserMessageDraftImages, getUserMessageText, type ChatInputHandle } from "./ChatInput";
 import { DirectoryPicker } from "./DirectoryPicker";
 import { ChatMinimap, useMessageRefs } from "./ChatMinimap";
@@ -1388,13 +1388,15 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
             </div>
           </div>
         )}
-        {chatInputElement}
-        <ExtensionStatusBar
-          statuses={extensionStatuses}
-          widgets={extensionWidgets}
-          onCommand={handleSend}
-          commandsDisabled={sessionBusy}
-        />
+        <div className="relative shrink-0">
+          {chatInputElement}
+          <ExtensionStatusBar
+            statuses={extensionStatuses}
+            widgets={extensionWidgets}
+            onCommand={handleSend}
+            commandsDisabled={sessionBusy}
+          />
+        </div>
       </div>
       {isEmptyNew && <div className="min-h-0 flex-1" />}
       {forkPickerOpen && (
@@ -1611,65 +1613,53 @@ function ExtensionSizeIcon({ expanded }: { expanded: boolean }) {
   );
 }
 
+/** 选项自带与数字徽章相同的序号（"1. …"）时只去掉显示前缀，响应值保持原样。 */
+function stripOptionOrdinal(text: string, index: number): string {
+  const match = /^\s*(\d{1,2})[.)、](?!\d)\s*/.exec(text);
+  if (!match || Number(match[1]) !== index + 1) return text;
+  const rest = text.slice(match[0].length);
+  return rest.trim() ? rest : text;
+}
+
+/** rpiv-ask-user-question marks its appended custom-answer row with this suffix. */
+const CUSTOM_OPTION_MARKER = "\u2063";
+
+/** Response prefix for the checkbox multi-select dialog (extension parses it). */
+const MULTI_SELECT_RESPONSE_MARKER = "\u2062";
+
+function splitCustomOption(option: string): { text: string; isCustom: boolean } {
+  return option.endsWith(CUSTOM_OPTION_MARKER)
+    ? { text: option.slice(0, -CUSTOM_OPTION_MARKER.length), isCustom: true }
+    : { text: option, isCustom: false };
+}
+
 function ExtensionDialog({
   request,
-  waitingCount,
+  waitingCount: _waitingCount,
   onRespond,
 }: {
-  request: ExtensionDialogRequest;
-  /** Further dialogs queued behind this one; each opens after this one is answered. */
-  waitingCount: number;
-  onRespond: (request: ExtensionDialogRequest, response: { value: string } | { confirmed: boolean } | { cancelled: true }) => void;
+  request: ExtensionDialogRequest & { multiSelect?: boolean };
+  waitingCount?: number;
+  onRespond: (
+    request: ExtensionDialogRequest,
+    response: { value: string } | { confirmed: boolean } | { cancelled: true },
+  ) => void;
 }) {
   const { t } = useI18n();
-  const [value, setValue] = useState(request.method === "editor" ? request.prefill ?? "" : "");
+  const [value, setValue] = useState(request.method === "editor" ? (request.prefill ?? "") : "");
   const [collapsed, setCollapsed] = useState(false);
-  // Dialogs open at the historical width and grow only when their own content cannot
-  // fit (a code block or table that would scroll sideways), so no extension has to ask
-  // for room. The maximize button is the user's own override for this dialog (#947).
-  const dialogRef = useRef<HTMLDivElement>(null);
-  const bodyRef = useRef<HTMLDivElement>(null);
-  const [fitWidth, setFitWidth] = useState<number | null>(null);
-  const [full, setFull] = useState(false);
-  const toggleFull = useCallback(() => setFull((prev) => !prev), []);
   const [now, setNow] = useState(() => Date.now());
-  const focusFirstOption = useCallback((element: HTMLDivElement | null) => element?.focus(), []);
+  const [customEditIndex, setCustomEditIndex] = useState<number | null>(null);
+  const [customDraft, setCustomDraft] = useState("");
+  const [customValue, setCustomValue] = useState("");
+  const [multiSelected, setMultiSelected] = useState<Set<number>>(() => new Set());
+  const isMultiSelect = request.method === "select" && request.multiSelect === true;
+  const customRowRef = useRef<HTMLDivElement | null>(null);
+  const customInputRef = useRef<HTMLInputElement | null>(null);
+  const firstOptionFocused = useRef(false);
   const summary = getExtensionDialogSummary(request);
-  const remainingSeconds = request.expiresAt === undefined
-    ? null
-    : Math.max(0, Math.ceil((request.expiresAt - now) / 1000));
-
-  useLayoutEffect(() => {
-    if (collapsed) return;
-    const dialog = dialogRef.current;
-    const body = bodyRef.current;
-    if (!dialog || !body) return;
-    let disposed = false;
-    const fit = () => {
-      if (disposed) return;
-      const blocks = body.querySelectorAll<HTMLElement>("pre, .markdown-table-wrap");
-      if (blocks.length === 0) return;
-      // Code fences wrap their long lines; measured unwrapped, they still widen
-      // the dialog as far as the screen allows and wrap only past that. The
-      // class is an attribute change, which the observer below does not watch.
-      body.classList.add("extension-dialog-measuring");
-      const overflows = Array.from(blocks, (block) => block.scrollWidth - block.clientWidth);
-      body.classList.remove("extension-dialog-measuring");
-      const needed = fitExtensionDialogWidth(dialog.offsetWidth, overflows);
-      // Only ever grow: shrinking again would make the dialog jump while it is read.
-      if (needed !== null) setFitWidth((prev) => (prev !== null && prev >= needed ? prev : needed));
-    };
-    fit();
-    // Highlighted code replaces its plain fallback after the first paint, and a web
-    // font can change glyph widths once it arrives.
-    const mutations = new MutationObserver(fit);
-    mutations.observe(body, { childList: true, subtree: true, characterData: true });
-    void document.fonts?.ready.then(fit);
-    return () => {
-      disposed = true;
-      mutations.disconnect();
-    };
-  }, [collapsed]);
+  const remainingSeconds =
+    request.expiresAt === undefined ? null : Math.max(0, Math.ceil((request.expiresAt - now) / 1000));
 
   useEffect(() => {
     if (request.expiresAt === undefined) return;
@@ -1677,6 +1667,11 @@ function ExtensionDialog({
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, [request.expiresAt]);
+
+  // Clicking the row keeps focus on the row; move it into the editor once it exists.
+  useEffect(() => {
+    if (customEditIndex !== null) customInputRef.current?.focus();
+  }, [customEditIndex]);
 
   const countdown = remainingSeconds !== null && (
     <span style={{ fontSize: 11, color: "var(--text-dim)", whiteSpace: "nowrap", flexShrink: 0 }}>
@@ -1692,10 +1687,32 @@ function ExtensionDialog({
     }
   };
 
+  const startCustomEdit = (index: number) => {
+    setCustomEditIndex(index);
+    setCustomDraft(isMultiSelect ? customValue : "");
+  };
+
+  const toggleMultiOption = (index: number) => {
+    setMultiSelected((previous) => {
+      const next = new Set(previous);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
+  };
+
+  const submitMulti = () => {
+    const selected = [...multiSelected].sort((a, b) => a - b);
+    const custom = (customEditIndex !== null ? customDraft : customValue).trim();
+    onRespond(request, {
+      value: `${MULTI_SELECT_RESPONSE_MARKER}${JSON.stringify({ selected, ...(custom ? { custom } : {}) })}`,
+    });
+  };
+
   return (
     <div
       onKeyDown={(event) => {
-        if (event.key !== "Escape" || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
+        if (event.key !== "Escape" || event.nativeEvent.isComposing) return;
         event.preventDefault();
         event.stopPropagation();
         onRespond(request, { cancelled: true });
@@ -1736,253 +1753,403 @@ function ExtensionDialog({
           <span style={{ fontSize: 11, fontWeight: 650, color: "var(--accent)", flexShrink: 0 }}>
             {t("chat.extensionPending")}
           </span>
-          <span style={{ fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>
-            {stripAnsi(request.title)}
+          <span
+            style={{
+              fontSize: 13,
+              fontWeight: 600,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              flex: 1,
+              minWidth: 0,
+            }}
+          >
+            {request.title}
           </span>
           {summary && (
-            <span style={{ fontSize: 12, color: "var(--text-dim)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "34%", flexShrink: 1 }}>
+            <span
+              style={{
+                fontSize: 12,
+                color: "var(--text-dim)",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+                maxWidth: "34%",
+                flexShrink: 1,
+              }}
+            >
               {summary}
             </span>
           )}
-          <ExtensionWaitingCount count={waitingCount} />
           {countdown}
-          <span style={{ fontSize: 12, color: "var(--text-muted)", flexShrink: 0 }}>
-            {t("chat.extensionExpand")}
-          </span>
+          <span style={{ fontSize: 12, color: "var(--text-muted)", flexShrink: 0 }}>{t("chat.extensionExpand")}</span>
         </button>
       ) : (
-      <div
-        ref={dialogRef}
-        role="dialog"
-        aria-label={stripAnsi(request.title)}
-        style={{
-          pointerEvents: "auto",
-          // "Full" fills the content region above the composer: the overlay is inset:0 with
-          // 20px padding, so 100% keeps that breathing room without covering the input.
-          width: full ? "100%" : `min(${fitWidth ?? EXTENSION_DIALOG_BASE_WIDTH}px, 100%)`,
-          maxHeight: full ? "100%" : "min(760px, 100%)",
-          display: "flex",
-          flexDirection: "column",
-          border: "1px solid var(--border)",
-          borderRadius: 8,
-          background: "var(--bg)",
-          boxShadow: "0 20px 60px rgba(0,0,0,0.28)",
-          overflow: "hidden",
-        }}
-      >
-        <div style={{ flexShrink: 1, minHeight: 0, display: "flex", alignItems: "flex-start", gap: 8, padding: "12px 14px", borderBottom: "1px solid var(--border)", maxHeight: "50vh", overflowY: "auto" }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            {/* Pi's TUI shows the title verbatim, newlines included; select/input have no
-                separate message field, so extensions put multi-line text here. */}
-            <div style={{ color: "var(--text)", fontSize: 14, fontWeight: 650, lineHeight: 1.45, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{stripAnsi(request.title)}</div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 3, color: "var(--text-dim)", fontSize: 11, fontFamily: "var(--font-mono)" }}>
-              <span>{t("chat.extensionRequest")}</span>
-              <ExtensionWaitingCount count={waitingCount} />
-              {countdown}
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={toggleFull}
-            title={full ? t("chat.extensionRestoreSize") : t("chat.extensionMaximize")}
-            aria-label={full ? t("chat.extensionRestoreSize") : t("chat.extensionMaximize")}
-            style={{
-              display: "grid",
-              placeItems: "center",
-              width: 28,
-              height: 28,
-              borderRadius: 6,
-              border: "1px solid var(--border)",
-              background: "var(--bg-panel)",
-              color: "var(--text-muted)",
-              cursor: "pointer",
-              flexShrink: 0,
-            }}
-          >
-            <ExtensionSizeIcon expanded={full} />
-          </button>
-          <button
-            type="button"
-            onClick={() => setCollapsed(true)}
-            aria-expanded={true}
-            title={t("chat.extensionCollapse")}
-            aria-label={t("chat.extensionCollapse")}
-            style={{
-              display: "grid",
-              placeItems: "center",
-              width: 28,
-              height: 28,
-              borderRadius: 6,
-              border: "1px solid var(--border)",
-              background: "var(--bg-panel)",
-              color: "var(--text-muted)",
-              cursor: "pointer",
-              flexShrink: 0,
-            }}
-          >
-            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <polyline points="2 3.5 5 6.5 8 3.5" />
-            </svg>
-          </button>
-        </div>
-
         <div
-          ref={bodyRef}
+          role="dialog"
+          aria-label={request.title}
           style={{
-            padding: 14,
-            flex: "1 1 auto", minHeight: 0, overflowY: "auto",
+            pointerEvents: "auto",
+            width: "min(560px, 100%)",
+            maxHeight: "min(760px, 100%)",
+            display: "flex",
+            flexDirection: "column",
+            border: "1px solid var(--border)",
+            borderRadius: 8,
+            background: "var(--bg)",
+            boxShadow: "0 20px 60px rgba(0,0,0,0.28)",
+            overflow: "hidden",
           }}
         >
-          {request.method === "confirm" && (
-            <MarkdownBody>{stripAnsi(request.message)}</MarkdownBody>
-          )}
-          {request.method === "select" && (
-            <div
-              onKeyDown={(event) => {
-                if (!["ArrowDown", "ArrowRight", "ArrowUp", "ArrowLeft", "Home", "End"].includes(event.key)) return;
-                const buttons = Array.from(event.currentTarget.querySelectorAll<HTMLElement>("[data-extension-option]"));
-                const index = buttons.indexOf(event.target as HTMLElement);
-                if (index < 0) return;
-                event.preventDefault();
-                const next = event.key === "Home" ? 0
-                  : event.key === "End" ? buttons.length - 1
-                  : (index + (event.key === "ArrowDown" || event.key === "ArrowRight" ? 1 : -1) + buttons.length) % buttons.length;
-                buttons[next].focus({ preventScroll: true });
-                buttons[next].scrollIntoView({ block: "nearest" });
-              }}
-              style={{ display: "grid", gap: 8 }}
-            >
-              {request.options.map((option, index) => (
-                <div
-                  key={option}
-                  role="button"
-                  tabIndex={0}
-                  data-extension-option
-                  aria-label={stripAnsi(option)}
-                  ref={index === 0 ? focusFirstOption : undefined}
-                  onClick={() => onRespond(request, { value: option })}
-                  onKeyDown={(event) => {
-                    if (event.key !== "Enter" && event.key !== " ") return;
-                    event.preventDefault();
-                    onRespond(request, { value: option });
-                  }}
-                  style={{
-                    width: "100%",
-                    padding: "9px 10px",
-                    borderRadius: 7,
-                    border: "1px solid var(--border)",
-                    background: "var(--bg-panel)",
-                    color: "var(--text)",
-                    cursor: "pointer",
-                    textAlign: "left",
-                    fontSize: 13,
-                    overflowWrap: "anywhere",
-                    // Match the scroller's padding so keyboard navigation never parks the
-                    // option flush against the edge, where whole-pixel scroll snapping and
-                    // overflow clipping cut off its focus ring.
-                    scrollMargin: 14,
-                  }}
-                >
-                  <div inert>
-                    <MarkdownBody>{stripAnsi(option)}</MarkdownBody>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-          {request.method === "input" && (
-            <input
-              autoFocus
-              value={value}
-              placeholder={request.placeholder}
-              onChange={(e) => setValue(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.nativeEvent.isComposing && e.nativeEvent.keyCode !== 229) submitValue();
-              }}
-              style={{
-                width: "100%",
-                padding: "9px 10px",
-                borderRadius: 7,
-                border: "1px solid var(--border)",
-                background: "var(--bg-panel)",
-                color: "var(--text)",
-                outline: "none",
-                fontSize: 13,
-              }}
-            />
-          )}
-          {request.method === "editor" && (
-            <textarea
-              autoFocus
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              onKeyDown={(e) => {
-                if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && !e.nativeEvent.isComposing && e.nativeEvent.keyCode !== 229) submitValue();
-              }}
-              style={{
-                width: "100%",
-                minHeight: 220,
-                padding: 10,
-                borderRadius: 7,
-                border: "1px solid var(--border)",
-                background: "var(--bg-panel)",
-                color: "var(--text)",
-                outline: "none",
-                resize: "vertical",
-                fontSize: 13,
-                lineHeight: 1.55,
-                fontFamily: "var(--font-mono)",
-              }}
-            />
-          )}
-        </div>
-
-        <div style={{ flexShrink: 0, display: "flex", justifyContent: "flex-end", gap: 8, padding: "10px 14px", borderTop: "1px solid var(--border)", background: "var(--bg-panel)" }}>
-          <button
-            autoFocus={request.method === "confirm" || (request.method === "select" && request.options.length === 0)}
-            onClick={() => onRespond(request, { cancelled: true })}
+          <div
             style={{
-              padding: "6px 10px",
-              borderRadius: 6,
-              border: "1px solid var(--border)",
-              background: "var(--bg)",
-              color: "var(--text-muted)",
-              cursor: "pointer",
+              // 对话框高度随内容自适应，百分比 maxHeight 无法解析；用视口单位封顶，
+              // 并允许在矮窗口里收缩，把剩余空间留给选项列表。
+              flexShrink: 2,
+              minHeight: 0,
+              display: "flex",
+              alignItems: "flex-start",
+              gap: 8,
+              padding: "12px 14px",
+              borderBottom: "1px solid var(--border)",
+              maxHeight: "min(40vh, 300px)",
+              overflowY: "auto",
             }}
           >
-             {t("chat.cancel")}
-          </button>
-          {request.method === "confirm" ? (
+            <div style={{ flex: 1, minWidth: 0 }}>
+              {/* Pi's TUI shows the title verbatim, newlines included; select/input have no
+                separate message field, so extensions put multi-line text here. */}
+              <div
+                style={{
+                  color: "var(--text)",
+                  fontSize: 14,
+                  fontWeight: 650,
+                  lineHeight: 1.45,
+                  whiteSpace: "pre-wrap",
+                  overflowWrap: "anywhere",
+                }}
+              >
+                {request.title}
+              </div>
+              {countdown && <div style={{ marginTop: 3 }}>{countdown}</div>}
+            </div>
             <button
-              onClick={submitValue}
+              type="button"
+              onClick={() => {
+                // Re-focus the first option when this dialog expands again.
+                firstOptionFocused.current = false;
+                setCollapsed(true);
+              }}
+              aria-expanded={true}
+              title={t("chat.extensionCollapse")}
+              aria-label={t("chat.extensionCollapse")}
               style={{
-                padding: "6px 10px",
+                display: "grid",
+                placeItems: "center",
+                width: 28,
+                height: 28,
                 borderRadius: 6,
-                border: "1px solid var(--accent)",
-                background: "var(--accent)",
-                color: "var(--accent-contrast)",
+                border: "1px solid var(--border)",
+                background: "var(--bg-panel)",
+                color: "var(--text-muted)",
                 cursor: "pointer",
+                flexShrink: 0,
               }}
             >
-               {t("chat.confirm")}
+              <svg
+                width="10"
+                height="10"
+                viewBox="0 0 10 10"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <polyline points="2 3.5 5 6.5 8 3.5" />
+              </svg>
             </button>
-          ) : request.method !== "select" ? (
-            <button
-              onClick={submitValue}
-              style={{
-                padding: "6px 10px",
-                borderRadius: 6,
-                border: "1px solid var(--accent)",
-                background: "var(--accent)",
-                color: "var(--accent-contrast)",
-                cursor: "pointer",
-              }}
-            >
-               {t("chat.submit")}
-            </button>
-          ) : null}
+          </div>
+
+          <div
+            style={{
+              padding: 14,
+              flex: "1 1 auto",
+              minHeight: 0,
+              overflowY: "auto",
+            }}
+          >
+            {request.method === "confirm" && <MarkdownBody>{request.message}</MarkdownBody>}
+            {request.method === "select" && (
+              <div
+                onKeyDown={(event) => {
+                  // 数字快捷键（对标 ZCode 问答面板）：1-9 直接选择对应项；
+                  // 自定义答案行改为原地进入输入态，避免再弹第二个输入框。
+                  if (/^[1-9]$/.test(event.key) && !event.nativeEvent.isComposing) {
+                    const idx = Number(event.key) - 1;
+                    const target = request.options[idx];
+                    if (target !== undefined) {
+                      event.preventDefault();
+                      if (splitCustomOption(target).isCustom) startCustomEdit(idx);
+                      else if (isMultiSelect) toggleMultiOption(idx);
+                      else onRespond(request, { value: target });
+                    }
+                    return;
+                  }
+                  if (!["ArrowDown", "ArrowRight", "ArrowUp", "ArrowLeft", "Home", "End"].includes(event.key)) return;
+                  const buttons = Array.from(
+                    event.currentTarget.querySelectorAll<HTMLElement>("[data-extension-option]"),
+                  );
+                  const index = buttons.indexOf(event.target as HTMLElement);
+                  if (index < 0) return;
+                  event.preventDefault();
+                  const next =
+                    event.key === "Home"
+                      ? 0
+                      : event.key === "End"
+                        ? buttons.length - 1
+                        : (index +
+                            (event.key === "ArrowDown" || event.key === "ArrowRight" ? 1 : -1) +
+                            buttons.length) %
+                          buttons.length;
+                  buttons[next].focus({ preventScroll: true });
+                  buttons[next].scrollIntoView({ block: "nearest" });
+                }}
+                style={{ display: "grid", gap: 8 }}
+              >
+                {request.options.map((option, index) => {
+                  // 选项含换行时拆主行/描述行（ZCode label+description 形态）；
+                  // 单行选项整体按行内 markdown 渲染（保留行内语法，不产生块级列表）。
+                  // 带标记的自定义答案行选中后原地展开输入框。
+                  const { text: optionText, isCustom } = splitCustomOption(option);
+                  const lines = optionText.split("\n");
+                  const isMultiLine = lines.length > 1 && lines.slice(1).join("").trim().length > 0;
+                  const editingCustom = isCustom && customEditIndex === index;
+                  const customChecked =
+                    isCustom && isMultiSelect && (editingCustom ? customDraft : customValue).trim().length > 0;
+                  const checked = isCustom ? customChecked : isMultiSelect && multiSelected.has(index);
+                  const customDisplay =
+                    isCustom && isMultiSelect && !editingCustom && customValue.trim() ? customValue.trim() : null;
+                  const label = customDisplay ?? stripOptionOrdinal(lines[0], index);
+                  return (
+                    <div
+                      key={option}
+                      role={editingCustom ? "group" : isMultiSelect && !isCustom ? "checkbox" : "button"}
+                      tabIndex={editingCustom ? -1 : 0}
+                      data-extension-option
+                      aria-label={customDisplay ?? optionText}
+                      aria-checked={isMultiSelect && !isCustom ? checked : undefined}
+                      aria-pressed={isCustom && isMultiSelect ? customChecked : undefined}
+                      aria-keyshortcuts={index < 9 ? String(index + 1) : undefined}
+                      ref={(element) => {
+                        if (isCustom) customRowRef.current = element;
+                        // Focus the first option once. The inline callback re-runs
+                        // on every render, so an unguarded focus would steal focus
+                        // back from the custom-answer editor.
+                        if (index === 0 && element && !firstOptionFocused.current && customEditIndex === null) {
+                          firstOptionFocused.current = true;
+                          element.focus();
+                        }
+                      }}
+                      onClick={() => {
+                        if (isCustom) {
+                          if (!editingCustom) startCustomEdit(index);
+                          else customInputRef.current?.focus();
+                        } else if (isMultiSelect) toggleMultiOption(index);
+                        else onRespond(request, { value: option });
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key !== "Enter" && event.key !== " ") return;
+                        event.preventDefault();
+                        if (isCustom) {
+                          if (!editingCustom) startCustomEdit(index);
+                        } else if (isMultiSelect) toggleMultiOption(index);
+                        else onRespond(request, { value: option });
+                      }}
+                      className="ext-select-option"
+                    >
+                      {index < 9 && (
+                        <span className="ext-select-badge" aria-hidden="true">
+                          {index + 1}
+                        </span>
+                      )}
+                      {editingCustom ? (
+                        <input
+                          autoFocus
+                          ref={customInputRef}
+                          className="ext-select-custom-input"
+                          value={customDraft}
+                          placeholder={t("chat.extensionCustomPlaceholder")}
+                          aria-label={t("chat.extensionCustomPlaceholder")}
+                          onChange={(event) => setCustomDraft(event.target.value)}
+                          onKeyDown={(event) => {
+                            // Keep arrows/numbers inside the input: the list's
+                            // shortcut handler must not fire while typing.
+                            event.stopPropagation();
+                            if (event.nativeEvent.isComposing) return;
+                            if (event.key === "Enter") {
+                              event.preventDefault();
+                              if (isMultiSelect) {
+                                setCustomValue(customDraft.trim());
+                                setCustomEditIndex(null);
+                                requestAnimationFrame(() => customRowRef.current?.focus());
+                              } else {
+                                const text = customDraft.trim();
+                                if (text) onRespond(request, { value: `${CUSTOM_OPTION_MARKER}${text}` });
+                              }
+                            } else if (event.key === "Escape") {
+                              event.preventDefault();
+                              setCustomEditIndex(null);
+                              setCustomDraft("");
+                              requestAnimationFrame(() => customRowRef.current?.focus());
+                            }
+                          }}
+                        />
+                      ) : isMultiLine ? (
+                        <span style={{ minWidth: 0, flex: 1 }}>
+                          <span className="ext-select-label">{label}</span>
+                          <span className="ext-select-desc">
+                            <MarkdownBody>{lines.slice(1).join("\n")}</MarkdownBody>
+                          </span>
+                        </span>
+                      ) : (
+                        <span className="ext-select-inline" inert style={{ minWidth: 0, flex: 1 }}>
+                          <MarkdownBody>{customDisplay ?? stripOptionOrdinal(optionText, index)}</MarkdownBody>
+                        </span>
+                      )}
+                      {isMultiSelect && (
+                        <span className={`ext-select-check${checked ? " is-checked" : ""}`} aria-hidden="true">
+                          {checked ? "✓" : ""}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {request.method === "input" && (
+              <input
+                autoFocus
+                value={value}
+                placeholder={request.placeholder}
+                onChange={(e) => setValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.nativeEvent.isComposing) submitValue();
+                }}
+                style={{
+                  width: "100%",
+                  padding: "9px 10px",
+                  borderRadius: 7,
+                  border: "1px solid var(--border)",
+                  background: "var(--bg-panel)",
+                  color: "var(--text)",
+                  outline: "none",
+                  fontSize: 13,
+                }}
+              />
+            )}
+            {request.method === "editor" && (
+              <textarea
+                autoFocus
+                value={value}
+                onChange={(e) => setValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && !e.nativeEvent.isComposing) submitValue();
+                }}
+                style={{
+                  width: "100%",
+                  minHeight: 220,
+                  padding: 10,
+                  borderRadius: 7,
+                  border: "1px solid var(--border)",
+                  background: "var(--bg-panel)",
+                  color: "var(--text)",
+                  outline: "none",
+                  resize: "vertical",
+                  fontSize: 13,
+                  lineHeight: 1.55,
+                  fontFamily: "var(--font-mono)",
+                }}
+              />
+            )}
+          </div>
+
+          <div
+            style={{
+              flexShrink: 0,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "flex-end",
+              gap: 8,
+              padding: "10px 14px",
+              borderTop: "1px solid var(--border)",
+              background: "var(--bg-panel)",
+            }}
+          >
+            <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+              <button
+                autoFocus={
+                  request.method === "confirm" || (request.method === "select" && request.options.length === 0)
+                }
+                onClick={() => onRespond(request, { cancelled: true })}
+                style={{
+                  padding: "6px 10px",
+                  borderRadius: 6,
+                  border: "1px solid var(--border)",
+                  background: "var(--bg)",
+                  color: "var(--text-muted)",
+                  cursor: "pointer",
+                }}
+              >
+                {t("chat.cancel")}
+              </button>
+              {isMultiSelect ? (
+                <button
+                  onClick={submitMulti}
+                  style={{
+                    padding: "6px 10px",
+                    borderRadius: 6,
+                    border: "1px solid var(--accent)",
+                    background: "var(--accent)",
+                    color: "#fff",
+                    cursor: "pointer",
+                  }}
+                >
+                  {t("chat.confirm")}
+                </button>
+              ) : request.method === "confirm" ? (
+                <button
+                  onClick={submitValue}
+                  style={{
+                    padding: "6px 10px",
+                    borderRadius: 6,
+                    border: "1px solid var(--accent)",
+                    background: "var(--accent)",
+                    color: "#fff",
+                    cursor: "pointer",
+                  }}
+                >
+                  {t("chat.confirm")}
+                </button>
+              ) : request.method !== "select" ? (
+                <button
+                  onClick={submitValue}
+                  style={{
+                    padding: "6px 10px",
+                    borderRadius: 6,
+                    border: "1px solid var(--accent)",
+                    background: "var(--accent)",
+                    color: "#fff",
+                    cursor: "pointer",
+                  }}
+                >
+                  {t("chat.submit")}
+                </button>
+              ) : null}
+            </div>
+          </div>
         </div>
-      </div>
       )}
     </div>
   );

@@ -3004,3 +3004,152 @@ span.token.table {
     display: none !important;
   }
 }
+
+.ext-select-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg-panel);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+  scroll-margin: 14px;
+  transition:
+    border-color 0.1s ease,
+    background 0.1s ease;
+}
+
+.ext-select-option:hover {
+  border-color: var(--text-dim);
+}
+
+.ext-select-option[aria-checked="true"] {
+  background: var(--bg-selected);
+}
+
+.ext-select-option:focus-visible {
+  border-color: var(--accent);
+  background: var(--bg-selected);
+  outline: none;
+}
+
+.ext-select-option:focus-visible .ext-select-badge {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+.ext-select-badge {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  transition:
+    border-color 0.1s ease,
+    background 0.1s ease,
+    color 0.1s ease;
+}
+
+/* Checkbox marker for multi-select rows. */
+.ext-select-check {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  transition:
+    background 0.1s ease,
+    border-color 0.1s ease;
+}
+
+.ext-select-check.is-checked {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.ext-select-label {
+  min-width: 0;
+  flex: 1;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.ext-select-desc {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+/* “Type something” row: expands into an inline editor instead of opening a
+   second dialog. */
+.ext-select-custom-input {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 8px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.45;
+  outline: none;
+}
+
+.ext-select-custom-input::placeholder {
+  color: var(--text-dim);
+}
+
+/* 选项内 markdown 跟随选项排版，不继承聊天正文的 14px/1.7 与段落间距。 */
+.ext-select-option .markdown-body {
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.ext-select-option .markdown-body p {
+  margin: 0;
+}
+
+/* 单行选项按行内渲染：序号已由徽章提供，不再生成嵌套有序列表和缩进。 */
+.ext-select-inline .markdown-body ul,
+.ext-select-inline .markdown-body ol {
+  margin: 0;
+  padding-left: 0;
+  list-style: none;
+}
+
+.ext-select-inline .markdown-body li {
+  margin: 0;
+  padding-left: 0;
+}
+
+.ext-select-inline .markdown-body li::marker {
+  content: none;
+}
+

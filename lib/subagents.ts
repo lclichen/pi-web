@@ -11,6 +11,7 @@ import { getProjectTrustStatus } from "./project-trust";
 import { disabledBuiltInSubagents } from "./subagent-settings";
 import { PRESET_READ_ONLY } from "./tool-presets";
 import type { SessionEntry, SubagentSessionStatus } from "./types";
+import { isUserScopedConfig, userAgentsDir } from "./user-config";
 
 export const SUBAGENT_META_TYPE = "pi-web:subagent";
 export const SUBAGENT_STATUS_TYPE = "pi-web:subagent-status";
@@ -444,16 +445,17 @@ function isProjectProfilePathAllowed(cwd: string, target: string): boolean {
 
 function readProfileDirectory(dir: string, scope: SubagentScope, cwd: string): SubagentProfile[] {
   if (!existsSync(dir)) return [];
-  if (scope !== "global" && !isProjectProfilePathAllowed(cwd, dir)) return [];
+  if (scope !== "global" && scope !== "user" && !isProjectProfilePathAllowed(cwd, dir)) return [];
   return readdirSync(dir, { withFileTypes: true })
     .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
     .map((entry) => parseProfileFile(join(dir, entry.name), scope))
     .filter((profile): profile is SubagentProfile => profile !== null);
 }
 
-function profileDirectories(cwd: string): Array<[string, Exclude<SubagentScope, "builtin">]> {
+function profileDirectories(cwd: string, userId?: number): Array<[string, Exclude<SubagentScope, "builtin">]> {
   return [
     [join(getAgentDir(), "agents"), "global"],
+    ...(isUserScopedConfig(userId) ? ([[userAgentsDir(userId!), "user"]] as Array<[string, "user"]>) : []),
     [join(resolve(cwd), ".agents", "agents"), "workspace"],
     [join(resolve(cwd), ".pi", "agents"), "project"],
   ];
@@ -475,30 +477,30 @@ function builtInProfiles(): SubagentProfile[] {
 }
 
 /** Every configured source, including profiles shadowed by a higher-precedence scope. */
-export function listSubagentProfileSources(cwd: string): SubagentProfile[] {
+export function listSubagentProfileSources(cwd: string, userId?: number): SubagentProfile[] {
   const profiles = builtInProfiles();
-  for (const [dir, scope] of profileDirectories(cwd)) {
+  for (const [dir, scope] of profileDirectories(cwd, userId)) {
     profiles.push(...readProfileDirectory(dir, scope, cwd));
   }
   return profiles.sort((a, b) => a.displayName.localeCompare(b.displayName));
 }
 
-export function listSubagentProfiles(cwd: string): SubagentProfile[] {
+export function listSubagentProfiles(cwd: string, userId?: number): SubagentProfile[] {
   // A project or workspace profile is the project's own system prompt and tool
   // grant for a child, so it loads only in a trusted folder, as pi loads
   // `.pi/SYSTEM.md`, skills and prompts.
   const projectTrusted = getProjectTrustStatus(cwd, getAgentDir()).trusted;
   // A same-name file replaces the built-in outright, its own `enabled` included.
   const byName = new Map(builtInProfiles().map((profile) => [profile.name.toLowerCase(), profile]));
-  for (const [dir, scope] of profileDirectories(cwd)) {
-    if (scope !== "global" && !projectTrusted) continue;
+  for (const [dir, scope] of profileDirectories(cwd, userId)) {
+    if ((scope === "workspace" || scope === "project") && !projectTrusted) continue;
     for (const profile of readProfileDirectory(dir, scope, cwd)) byName.set(profile.name.toLowerCase(), profile);
   }
   return [...byName.values()].sort((a, b) => a.displayName.localeCompare(b.displayName));
 }
 
-export function resolveSubagentProfile(cwd: string, name: string): SubagentProfile | undefined {
-  return listSubagentProfiles(cwd).find((profile) => profile.name.toLowerCase() === name.trim().toLowerCase() && profile.enabled);
+export function resolveSubagentProfile(cwd: string, name: string, userId?: number): SubagentProfile | undefined {
+  return listSubagentProfiles(cwd, userId).find((profile) => profile.name.toLowerCase() === name.trim().toLowerCase() && profile.enabled);
 }
 
 function assertProfileName(name: string): string {
@@ -509,15 +511,19 @@ function assertProfileName(name: string): string {
   return normalized;
 }
 
-function writableProfileDirectory(cwd: string, scope: SubagentWritableScope): string {
+function writableProfileDirectory(cwd: string, scope: SubagentWritableScope, userId?: number): string {
   if (scope === "global") return join(getAgentDir(), "agents");
+  if (scope === "user") {
+    if (!isUserScopedConfig(userId)) throw new Error("User agent profiles require a logged-in user");
+    return userAgentsDir(userId as number);
+  }
   if (scope === "project") return join(resolve(cwd), ".pi", "agents");
   throw new Error("Agent scope must be global or project");
 }
 
-function assertWritableProfileDirectory(cwd: string, scope: SubagentWritableScope): string {
-  const dir = writableProfileDirectory(cwd, scope);
-  if (scope === "global") return dir;
+function assertWritableProfileDirectory(cwd: string, scope: SubagentWritableScope, userId?: number): string {
+  const dir = writableProfileDirectory(cwd, scope, userId);
+  if (scope === "global" || scope === "user") return dir;
 
   let existingAncestor = dir;
   while (!existsSync(existingAncestor)) {
@@ -535,6 +541,7 @@ export function saveSubagentProfile(
   cwd: string,
   scope: SubagentWritableScope,
   profile: Omit<SubagentProfile, "scope" | "filePath">,
+  userId?: number,
 ): SubagentProfile {
   const name = assertProfileName(profile.name);
   const tools = [...new Set(profile.tools.filter((tool) => BUILTIN_TOOLS.has(tool)))];
@@ -557,7 +564,7 @@ export function saveSubagentProfile(
   const codemode = validateSavedCodemode(profile.codemode);
   const requestedMcp = validateSavedMcp(profile.mcp);
   const promptMode = profile.promptMode === "replace" ? "replace" : "append";
-  const dir = assertWritableProfileDirectory(cwd, scope);
+  const dir = assertWritableProfileDirectory(cwd, scope, userId);
   mkdirSync(dir, { recursive: true });
   if (scope === "project" && !isProjectProfilePathAllowed(cwd, dir)) {
     throw new Error("Agent profile directory is outside the project root");
@@ -629,9 +636,9 @@ export function saveSubagentProfile(
   };
 }
 
-export function deleteSubagentProfile(cwd: string, scope: SubagentWritableScope, name: string): void {
+export function deleteSubagentProfile(cwd: string, scope: SubagentWritableScope, name: string, userId?: number): void {
   const safeName = assertProfileName(name);
-  const filePath = join(assertWritableProfileDirectory(cwd, scope), `${safeName}.md`);
+  const filePath = join(assertWritableProfileDirectory(cwd, scope, userId), `${safeName}.md`);
   if (existsSync(filePath)) unlinkSync(filePath);
 }
 

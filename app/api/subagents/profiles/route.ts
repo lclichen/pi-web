@@ -9,6 +9,7 @@ import {
   type SubagentWritableScope,
 } from "@/lib/subagents";
 import { writeDisabledBuiltInSubagent } from "@/lib/subagent-settings";
+import { requireUserIdentity } from "@/lib/web-session";
 
 export const dynamic = "force-dynamic";
 
@@ -19,21 +20,26 @@ async function validateCwd(cwd: unknown): Promise<string> {
 }
 
 function validateScope(scope: unknown): SubagentWritableScope {
-  if (scope !== "global" && scope !== "project") throw new Error("scope must be global or project");
+  if (scope !== "global" && scope !== "user" && scope !== "project") throw new Error("scope must be global, user or project");
   return scope;
+}
+
+function callerUserId(req: Request): number {
+  const identity = requireUserIdentity(req);
+  return identity.ok ? identity.session.user.id : 0;
 }
 
 /** A built-in has no file to save or delete, but its switch is persisted all the same. */
 function validateToggleScope(scope: unknown): SubagentWritableScope | "builtin" {
   if (scope === "builtin") return scope;
-  if (scope !== "global" && scope !== "project") throw new Error("scope must be global, project, or builtin");
+  if (scope !== "global" && scope !== "user" && scope !== "project") throw new Error("scope must be global, user, project, or builtin");
   return scope;
 }
 
 export async function GET(req: Request) {
   try {
     const cwd = await validateCwd(new URL(req.url).searchParams.get("cwd"));
-    return NextResponse.json({ profiles: listSubagentProfileSources(cwd) });
+    return NextResponse.json({ profiles: listSubagentProfileSources(cwd, callerUserId(req)) });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return NextResponse.json({ error: message }, { status: message === "Access denied" ? 403 : 400 });
@@ -52,7 +58,7 @@ export async function PUT(req: Request) {
     if (!body.profile || typeof body.profile.name !== "string") {
       return NextResponse.json({ error: "profile required" }, { status: 400 });
     }
-    return NextResponse.json({ profile: saveSubagentProfile(cwd, scope, body.profile) });
+    return NextResponse.json({ profile: saveSubagentProfile(cwd, scope, body.profile, callerUserId(req)) });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return NextResponse.json({ error: message }, { status: message === "Access denied" ? 403 : 400 });
@@ -67,7 +73,8 @@ export async function PATCH(req: Request) {
     if (typeof body.name !== "string") return NextResponse.json({ error: "name required" }, { status: 400 });
     if (typeof body.enabled !== "boolean") return NextResponse.json({ error: "enabled required" }, { status: 400 });
     const name = body.name;
-    const source = listSubagentProfileSources(cwd).find((profile) =>
+    const userId = callerUserId(req);
+    const source = listSubagentProfileSources(cwd, userId).find((profile) =>
       profile.scope === scope && profile.name.toLowerCase() === name.toLowerCase()
     );
     if (!source) return NextResponse.json({ error: "Agent profile not found" }, { status: 404 });
@@ -100,7 +107,7 @@ export async function PATCH(req: Request) {
       persistSession: source.persistSession,
       enabled: source.enabled,
     };
-    return NextResponse.json({ profile: saveSubagentProfile(cwd, scope, { ...profile, enabled: body.enabled }) });
+    return NextResponse.json({ profile: saveSubagentProfile(cwd, scope, { ...profile, enabled: body.enabled }, userId) });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return NextResponse.json({ error: message }, { status: message === "Access denied" ? 403 : 400 });
@@ -113,7 +120,7 @@ export async function DELETE(req: Request) {
     const cwd = await validateCwd(body.cwd);
     const scope = validateScope(body.scope);
     if (typeof body.name !== "string") return NextResponse.json({ error: "name required" }, { status: 400 });
-    deleteSubagentProfile(cwd, scope, body.name);
+    deleteSubagentProfile(cwd, scope, body.name, callerUserId(req));
     return NextResponse.json({ ok: true });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

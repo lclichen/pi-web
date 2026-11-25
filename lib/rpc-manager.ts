@@ -25,6 +25,7 @@ import { cacheSessionPath, catalogFirstMessage, getLatestModelChange, invalidate
 import { computeLiveSessionTotalActiveMs } from "./session-timing";
 import { getProjectTrustStatus, projectTrustReloadOptions } from "./project-trust";
 import { notifySessionComplete } from "./web-push";
+import { filterActiveToolsForMode, isRemoteMode, mcpExcludedServers, type ToolExclusion } from "./tool-policy";
 import { hasActiveSessionLivenessProvider } from "./session-liveness";
 import type { SlashCommandInfo } from "@earendil-works/pi-coding-agent";
 import type { AgentSessionLike, ExtensionUiContextLike, ToolInfo } from "./pi-types";
@@ -430,6 +431,10 @@ export class AgentSessionWrapper {
   // What the session was built on, so a model or level picked before the deferred switch stands.
   private readonly builtOnModel: string | undefined;
   private readonly builtOnThinkingLevel: string | undefined;
+  /** 模式钳制剔除报告（get_state 暴露给 UI；逐回合由 enforceModeTools 刷新）。 */
+  private modeToolExcluded: ToolExclusion[] = [];
+  /** 远程模式 MCP 剔除集合缓存（cwd|ownerId|mode）。 */
+  private mcpExclusionCache: { key: string; map: Map<string, string> } | null = null;
   private mcpHostDisposed = false;
   // The MCP wait of the prompt being admitted; Stop ends it.
   private mcpPromptWait: { controller: AbortController; done: Promise<void> } | null = null;
@@ -1129,6 +1134,45 @@ export class AgentSessionWrapper {
     } finally {
       this.blockingUiWaiters.delete(release);
     }
+  }
+
+  /**
+   * 模式钳制：剔除当前模式无执行通道的声明工具、被剔除 MCP 服务器的直接
+   * 工具和网关元工具。每回合重放，抵消 pi-mcp-adapter 的 syncProxyTool。
+   */
+  enforceModeTools(): string | undefined {
+    if (!isRemoteMode(this.mode)) {
+      this.modeToolExcluded = [];
+      return undefined;
+    }
+    const getActive = (this.inner as AgentSessionLike & { getActiveToolNames?: () => string[] }).getActiveToolNames;
+    if (typeof getActive !== "function") return undefined;
+    const current = getActive.call(this.inner);
+    const exclusions = this.getMcpExclusions();
+    const registered = this.inner.getAllTools().map((tool) => tool.name);
+    this.modeToolExcluded = filterActiveToolsForMode(registered, {
+      mode: this.mode,
+      excludedMcpServers: exclusions,
+    }).excluded;
+    const { allowed } = filterActiveToolsForMode(current, { mode: this.mode, excludedMcpServers: exclusions });
+    if (allowed.length === current.length) return undefined;
+    this.inner.setActiveToolsByName([...allowed].sort());
+    return this.inner.agent?.state?.systemPrompt;
+  }
+
+  /** 绑定后应用一次模式钳制（MCP 工具在 session_start 异步注册，必须等绑定）。 */
+  enforceModeToolsAfterBind(): void {
+    void this.waitForExtensionsBound()
+      .then(() => this.enforceModeTools())
+      .catch(() => {});
+  }
+
+  private getMcpExclusions(): Map<string, string> {
+    const key = `${this.cwd}|${this.ownerId}|${this.mode}`;
+    if (this.mcpExclusionCache?.key === key) return this.mcpExclusionCache.map;
+    const map = mcpExcludedServers(this.cwd, this.ownerId, this.mode);
+    this.mcpExclusionCache = { key, map };
+    return map;
   }
 
   private shouldWaitForExtensions(type: string): boolean {

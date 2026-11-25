@@ -1,7 +1,7 @@
 import { execFile } from "child_process";
 import { existsSync, mkdirSync, readFileSync, realpath, realpathSync } from "fs";
 import { access } from "fs/promises";
-import { basename, dirname, join, resolve } from "path";
+import { basename, dirname, isAbsolute, join, resolve } from "path";
 import { promisify } from "util";
 import { allowFileRoot } from "./allowed-roots";
 import { projectGitEnvironment } from "./git-environment";
@@ -285,8 +285,9 @@ async function resolveProjectUncached(cwd: string): Promise<ProjectInfo> {
 
 /** Main repo root (parent of the shared .git dir, or a bare clone), or throws for non-git dirs */
 async function getRepoRoot(cwd: string): Promise<string> {
-  const commonDir = await git(cwd, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
-  return realPathOrSelf(repoRootFromCommonDir(toNativePath(commonDir)));
+  const commonDir = await git(cwd, ["rev-parse", "--git-common-dir"]);
+  const absolute = isAbsolute(commonDir) ? commonDir : join(cwd, commonDir);
+  return realPathOrSelf(repoRootFromCommonDir(toNativePath(absolute)));
 }
 
 /** Every worktree git has registered, `missing` when it is prunable or its folder is gone. */

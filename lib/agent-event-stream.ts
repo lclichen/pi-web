@@ -3,7 +3,7 @@ import {
   isEventIncludedInSnapshot,
   toClientAgentEvent,
   type AgentEventLike,
-} from "./agent-event-wire";
+} from "./agent-event-wire.ts";
 import type { DebugEventStream } from "./debug-types";
 
 export interface AgentEventStreamSession {

@@ -381,3 +381,9 @@ export function createAgentEventStream(
     size: (chunk) => chunk.byteLength,
   });
 }
+
+/** Register an extra cleanup for process shutdown (batch task streams). */
+export function registerEventStreamCloser(closer: StreamCloser): () => void {
+  activeStreamClosers.add(closer);
+  return () => activeStreamClosers.delete(closer);
+}

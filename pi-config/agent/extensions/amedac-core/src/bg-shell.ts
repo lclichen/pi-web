@@ -28,7 +28,7 @@ import {
   type ExtensionContext,
   type InlineExtension,
 } from "@earendil-works/pi-coding-agent";
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 
 export const BG_TASKS_WIDGET_KEY = "bg-tasks";
 // Model-visible output dir as a POSIX path (the read tool and remote shells

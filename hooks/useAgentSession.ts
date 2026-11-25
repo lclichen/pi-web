@@ -233,6 +233,9 @@ export interface UseAgentSessionOptions {
   sessionRunning?: boolean;
   newSessionCwd: string | null;
   newSessionDraftKey: string | null;
+  newSessionMode?: "host" | "sandbox" | "local-machine" | "ssh" | "quick";
+  newSessionProjectId?: string | null;
+  commandAllowlist?: string[];
   /** A run ended; `aborted` when it was stopped rather than finished (pi's `agent_settled.aborted`). */
   onAgentEnd?: (end: AgentEndInfo) => void;
   /** An extension's `ctx.shutdown()` ended this session's runtime, as pi quits. Its file may remain. */
@@ -459,7 +462,7 @@ type SlashCommandsResponse = {
 
 export function useAgentSession(opts: UseAgentSessionOptions) {
   const {
-    session, newSessionCwd, newSessionDraftKey, onAgentEnd, onSessionEnded, onToolEnd, onAttentionNeeded, onSessionCreated, onSessionForked, onSideSession,
+    session, newSessionCwd, newSessionDraftKey, newSessionMode, newSessionProjectId, commandAllowlist, onAgentEnd, onSessionEnded, onToolEnd, onAttentionNeeded, onSessionCreated, onSessionForked, onSideSession,
     modelsRefreshKey, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onSessionStatsPanelOpen,
     onOpenSettings, onDebugSnapshotReaderChange,
   } = opts;
@@ -1131,6 +1134,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         body: JSON.stringify({
           cwd: newSessionCwd,
           type: "ensure_session",
+          ...(newSessionMode ? { mode: newSessionMode } : {}),
+          ...(newSessionProjectId ? { projectId: newSessionProjectId } : {}),
+          ...(commandAllowlist && commandAllowlist.length > 0 ? { commandAllowlist } : {}),
           ...(toolNames !== undefined ? { toolNames } : {}),
           ...(selectedModel ? { provider: selectedModel.provider, modelId: selectedModel.modelId } : {}),
           ...(selectedThinkingLevel
@@ -3719,4 +3725,17 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     // Subscriptions
     handleAgentEventRef,
   };
+}
+
+/** Fork compatibility: the subagent call summary rendered by the chat status widget. */
+export interface SubagentCall {
+  key: string;
+  type: string;
+  description: string;
+  startedAt: number;
+  endedAt?: number;
+  status: string;
+  agentId?: string;
+  durationMs?: number;
+  subagentSessionId?: string;
 }

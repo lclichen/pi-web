@@ -135,13 +135,14 @@ export function mcpServerModePolicy(entry: ServerEntry, transport: McpTransport,
 export function mcpExcludedServers(cwd: string, userId: number, mode: SessionMode): Map<string, string> {
   const out = new Map<string, string>();
   if (!isRemoteMode(mode)) return out;
-  let servers: { name: string; entry: ServerEntry; transport: McpTransport }[];
+  let servers: { name: string; entry?: ServerEntry; transport?: McpTransport }[];
   try {
     servers = readMcpConfig(cwd, { userId }).servers;
   } catch {
     return out; // 配置读失败不制造额外剔除；路径护栏与围栏仍生效
   }
   for (const server of servers) {
+    if (!server.entry) continue;
     const policy = mcpServerModePolicy(server.entry, server.transport ?? detectTransport(server.entry), mode);
     if (policy.excluded) out.set(server.name, policy.reason ?? "远端模式不可用");
   }

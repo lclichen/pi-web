@@ -4,8 +4,10 @@ import path from "path";
 import {
   allowFileRoot,
   getAllowedFileRoots,
+  getAllowedFileRootsForRequest,
   isExistingFilePathAllowed,
   isFilePathAllowed,
+  normalizeSlashes,
 } from "@/lib/file-access";
 import { checkLinkedDirectoryApproval, withOutsideLinkTargets } from "@/lib/linked-directory";
 import {
@@ -30,6 +32,7 @@ import {
 } from "@/lib/file-upload";
 import { parseFormDataWithinLimit, RequestBodyTooLargeError } from "@/lib/bounded-form-data";
 import { filePathFromApiSegments, samePath } from "@/lib/paths";
+import { allowedRootsWithSessionCwds } from "@/lib/session-cwd-access";
 import { hasParentDirectorySegment } from "@/lib/path-security";
 import { readTextPreviewChunk } from "@/lib/text-preview";
 import { registerFileWatch } from "@/lib/file-watch-registry";
@@ -725,6 +728,85 @@ export async function GET(
       entries: withOutsideLinkTargets(filePath, entries, dirents, allowedRoots),
       path: filePath,
     });
+  } catch (error) {
+    return NextResponse.json({ error: String(error) }, { status: 500 });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Fork file mutations: mkdir/upload-dir (PUT), delete (DELETE), rename (PATCH).
+// Upstream 0.18 only kept POST/GET; these routes restore the product's
+// explorer/attachment behavior on the same path fence.
+
+export async function PUT(request: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
+  try {
+    const { path: segments } = await params;
+    const filePath = filePathFromApiSegments(segments);
+    const allowedRoots = await allowedRootsWithSessionCwds(request, await getAllowedFileRootsForRequest(request));
+    if (!isFilePathAllowed(filePath, allowedRoots)) {
+      return NextResponse.json({ error: "Access denied" }, { status: 403 });
+    }
+
+    const body = (await request.json().catch(() => ({}))) as { type?: string; content?: string };
+    const isDir = body.type === "dir";
+    const content = typeof body.content === "string" ? body.content : "";
+
+    if (fs.existsSync(filePath) && isDir) {
+      return NextResponse.json({ error: "Directory already exists" }, { status: 409 });
+    }
+
+    const parentDir = path.dirname(filePath);
+    if (!fs.existsSync(parentDir)) fs.mkdirSync(parentDir, { recursive: true });
+    if (isDir) fs.mkdirSync(filePath, { recursive: true });
+    else fs.writeFileSync(filePath, content, "utf8");
+
+    return NextResponse.json({ success: true, path: filePath });
+  } catch (error) {
+    return NextResponse.json({ error: String(error) }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
+  try {
+    const { path: segments } = await params;
+    const filePath = filePathFromApiSegments(segments);
+    const allowedRoots = await allowedRootsWithSessionCwds(request, await getAllowedFileRootsForRequest(request));
+    if (!isExistingFilePathAllowed(filePath, allowedRoots)) {
+      return NextResponse.json({ error: "Access denied" }, { status: 403 });
+    }
+    if (!fs.existsSync(filePath)) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+    const stat = fs.statSync(filePath);
+    if (stat.isDirectory()) fs.rmSync(filePath, { recursive: true });
+    else fs.unlinkSync(filePath);
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    return NextResponse.json({ error: String(error) }, { status: 500 });
+  }
+}
+
+export async function PATCH(request: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
+  try {
+    const { path: segments } = await params;
+    const oldPath = filePathFromApiSegments(segments);
+    const allowedRoots = await allowedRootsWithSessionCwds(request, await getAllowedFileRootsForRequest(request));
+    if (!isExistingFilePathAllowed(oldPath, allowedRoots)) {
+      return NextResponse.json({ error: "Access denied" }, { status: 403 });
+    }
+
+    const body = (await request.json().catch(() => ({}))) as { newPath?: string };
+    if (!body.newPath) return NextResponse.json({ error: "newPath required" }, { status: 400 });
+    const newPath = normalizeSlashes(body.newPath);
+    if (!isFilePathAllowed(newPath, allowedRoots)) {
+      return NextResponse.json({ error: "Access denied for destination" }, { status: 403 });
+    }
+    if (!fs.existsSync(oldPath)) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    if (fs.existsSync(newPath)) return NextResponse.json({ error: "Destination already exists" }, { status: 409 });
+
+    const parentDir = path.dirname(newPath);
+    if (!fs.existsSync(parentDir)) fs.mkdirSync(parentDir, { recursive: true });
+    fs.renameSync(oldPath, newPath);
+    return NextResponse.json({ success: true, oldPath, newPath });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
   }

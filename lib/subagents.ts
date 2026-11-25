@@ -20,8 +20,8 @@ export const SUBAGENT_CONTROL_TOOL_NAMES = ["Agent", "get_subagent_result", "ste
 export type SubagentStatus = SubagentSessionStatus;
 export type SubagentCodemode = "inherit" | "on" | "off";
 export type SubagentMcp = "on" | "off";
-export type SubagentScope = "builtin" | "global" | "workspace" | "project";
-export type SubagentWritableScope = Extract<SubagentScope, "global" | "project">;
+export type SubagentScope = "builtin" | "global" | "user" | "workspace" | "project";
+export type SubagentWritableScope = Extract<SubagentScope, "global" | "user" | "project">;
 
 export interface SubagentProfile {
   name: string;
@@ -204,7 +204,7 @@ function validateSavedMcp(value: unknown): SubagentMcp | undefined {
   throw new Error("mcp must be one of: on, off");
 }
 
-const BUILTIN_PROFILES: SubagentProfile[] = [
+export const BUILTIN_PROFILES: SubagentProfile[] = [
   {
     name: "general-purpose",
     displayName: "General purpose",

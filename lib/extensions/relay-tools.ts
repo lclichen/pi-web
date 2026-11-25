@@ -4,7 +4,7 @@ import {
   type ExtensionAPI,
   type InlineExtension,
 } from "@earendil-works/pi-coding-agent";
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import { join } from "node:path";
 import { relayRpc } from "@/lib/relay/forward";
 import { getAgentForUser } from "@/lib/relay/registry";

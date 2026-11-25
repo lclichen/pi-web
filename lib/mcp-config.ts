@@ -92,7 +92,7 @@ function toServerInfo(name: string, entry: ServerEntry, scope: ConfigScope, sour
     disabled: Boolean((entry as ServerEntry).disabled),
     scopeDisabled: Boolean((entry as ServerEntry).disabled),
     sourcePath,
-  };
+  } as McpServerInfo;
 }
 
 /** A project-level tombstone: `{ "name": { "disabled": true } }` with no
@@ -197,17 +197,17 @@ export function readMcpConfig(cwd: string, options?: ReadMcpOptions): McpConfigD
   const deduped: McpServerInfo[] = [];
   for (const list of groups.values()) {
     list.sort((a, b) => scopeRank[a.scope] - scopeRank[b.scope]);
-    const real = list.find((s) => !isDisabledOnlyEntry(s.entry));
+    const real = list.find((s) => !isDisabledOnlyEntry(s.entry!));
     // A tombstone with no underlying server (e.g. a stale quick-template
     // deny-list entry) has nothing to show; skip it.
     if (!real) continue;
-    const tombstone = list.find((s) => scopeRank[s.scope] < scopeRank[real.scope] && isDisabledOnlyEntry(s.entry));
+    const tombstone = list.find((s) => scopeRank[s.scope] < scopeRank[real.scope] && isDisabledOnlyEntry(s.entry!));
     deduped.push({
       ...real,
-      scopeDisabled: Boolean(real.entry.disabled),
+      scopeDisabled: Boolean(real.entry!.disabled),
       ...(tombstone
         ? { disabled: true, ...(tombstone.scope === "project" ? { projectOverride: true } : {}) }
-        : { disabled: Boolean(real.entry.disabled) }),
+        : { disabled: Boolean(real.entry!.disabled) }),
     });
   }
 

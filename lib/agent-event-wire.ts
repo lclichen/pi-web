@@ -254,3 +254,16 @@ export function isEventIncludedInSnapshot(
     && (event.type === "message_start" || event.type === "message_update")
     && event.message === snapshot;
 }
+
+const WIRE_JSON_CACHE = Symbol.for("pi-web.agentEventWireJson");
+
+/** JSON-encode an event/envelope once per object, shared by every listener. */
+export function cachedAgentEventJson(data: object): string {
+  const holder = data as unknown as Record<symbol, { v: string } | undefined>;
+  let cached = holder[WIRE_JSON_CACHE];
+  if (!cached) {
+    cached = { v: JSON.stringify(data) };
+    holder[WIRE_JSON_CACHE] = cached;
+  }
+  return cached.v;
+}

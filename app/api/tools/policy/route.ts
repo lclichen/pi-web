@@ -56,12 +56,12 @@ export async function GET(req: Request) {
   try {
     const doc = readMcpConfig(dir.cwd, { userId: ownerId });
     mcpServers = doc.servers.map((server) => {
-      const policy = mcpServerModePolicy(server.entry, server.transport, mode);
+      const policy = mcpServerModePolicy(server.entry!, (server.transport ?? "stdio") as "stdio" | "http", mode);
       return {
         name: server.name,
-        transport: server.transport,
-        disabled: server.disabled,
-        declaration: server.entry.piWeb ?? null,
+        transport: server.transport ?? "stdio",
+        disabled: Boolean(server.disabled),
+        declaration: server.entry!.piWeb ?? null,
         excludedInMode: policy.excluded,
         ...(policy.reason ? { reason: policy.reason } : {}),
       };

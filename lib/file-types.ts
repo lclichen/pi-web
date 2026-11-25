@@ -67,10 +67,6 @@ export function getVideoMime(filePath: string): string | null {
   return Object.hasOwn(VIDEO_EXT_TO_MIME, ext) ? VIDEO_EXT_TO_MIME[ext] : null;
 }
 
-export function getVideoMime(filePath: string): string | null {
-  return VIDEO_EXT_TO_MIME[getFileExt(filePath)] ?? null;
-}
-
 export function getDocumentMime(filePath: string): string | null {
   const ext = getFileExt(filePath) as DocumentPreviewKind;
   return Object.hasOwn(DOCUMENT_EXT_TO_MIME, ext) ? DOCUMENT_EXT_TO_MIME[ext] : null;

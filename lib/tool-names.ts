@@ -34,11 +34,3 @@ export function isApplyPatchToolName(toolName: string): boolean {
   );
 }
 
-/** Codex-style patch tools (e.g. the pi-apply-patch extension). */
-export function isApplyPatchToolName(toolName: string): boolean {
-  const name = toolName.toLowerCase();
-  return name === "apply_patch" ||
-    name.startsWith("apply_patch_") ||
-    name.endsWith(".apply_patch") ||
-    name.endsWith("_apply_patch");
-}

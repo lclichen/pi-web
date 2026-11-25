@@ -66,3 +66,26 @@ export async function setupPushSubscription(locale: string): Promise<boolean> {
   });
   return attempt;
 }
+
+/** Best-effort teardown on logout/disable; server-side ownership still fences stale pushes. */
+export async function teardownPushSubscription(): Promise<void> {
+  if (!isPushSupported()) return;
+  activeSubscriptionPromise = null;
+  try {
+    const registration = await Promise.race([
+      navigator.serviceWorker.ready,
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 2000)),
+    ]);
+    if (!registration) return;
+    const subscription = await registration.pushManager.getSubscription();
+    if (!subscription) return;
+    await fetch("/api/push/subscribe", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ endpoint: subscription.endpoint }),
+    }).catch(() => {});
+    await subscription.unsubscribe().catch(() => {});
+  } catch {
+    // Best effort.
+  }
+}

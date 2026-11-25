@@ -710,7 +710,7 @@ export function makeOtelTracingExtension(): (pi: ExtensionAPI) => void {
 
     pi.on("before_agent_start", async (event, ctx) => {
       const current = active(ctx);
-      current?.startPrompt(event.prompt, event.systemPrompt);
+      current?.startPrompt((event as { prompt?: string }).prompt ?? "", event.systemPrompt);
     });
 
     pi.on("turn_start", async (event) => {

@@ -393,6 +393,22 @@ export interface SessionInfo {
   /** True while the runtime session exists only in memory and its JSONL file
    *  has not been created yet. Disk-backed actions must wait until this clears. */
   transient?: boolean;
+  /** Fork compatibility fields (multi-mode sessions, projects and Quick). */
+  quickTemplate?: {
+    id: string;
+    name: string;
+    hash: string;
+    capturedAt: string;
+    stale?: true;
+    detached?: true;
+  };
+  quickGroupKey?: string;
+  mode?: "host" | "sandbox" | "local-machine" | "ssh" | "quick";
+  projectId?: string;
+  ownerId?: number;
+  ownerName?: string;
+  workspaceDir?: string;
+  archivedAt?: number;
 }
 
 export interface SessionContext {

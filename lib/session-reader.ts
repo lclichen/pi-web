@@ -301,7 +301,14 @@ export async function listSessionSummaries(): Promise<SessionInfo[]> {
   return buildSessionList(await listSessionsIncremental({ deferDetails: true }));
 }
 
-export async function listAllSessions(options: { force?: boolean; allowStale?: boolean } = {}): Promise<SessionInfo[]> {
+export type SessionSpace = { kind: "host" } | { kind: "user"; userId: number };
+
+/** Accepts both the fork's listAllSessions(space, options) and upstream's listAllSessions(options). */
+export async function listAllSessions(
+  spaceOrOptions: SessionSpace | { force?: boolean; allowStale?: boolean } = {},
+  maybeOptions: { force?: boolean; allowStale?: boolean } = {},
+): Promise<SessionInfo[]> {
+  const options = "kind" in spaceOrOptions ? maybeOptions : spaceOrOptions;
   if (options.force) invalidateSessionListCache();
   const generation = globalThis.__piSessionListGeneration ?? 0;
 
@@ -318,7 +325,7 @@ export async function listAllSessions(options: { force?: boolean; allowStale?: b
   // every forked and subagent session, and it is triggered by ordinary agent
   // activity rather than by anything the caller did.
   if (options.allowStale && cache) {
-    void listAllSessions().catch(() => undefined);
+    void listAllSessions(options).catch(() => undefined);
     return cache.data;
   }
 
@@ -593,7 +600,10 @@ export function openSessionManager(
   return sm;
 }
 
-export async function resolveSessionPath(sessionId: string): Promise<string | null> {
+export async function resolveSessionPath(
+  sessionId: string,
+  _space: SessionSpace = { kind: "host" },
+): Promise<string | null> {
   const cached = getPathCache().get(sessionId);
   if (cached) return cached;
 
@@ -998,4 +1008,12 @@ function entryToUiMessage(
     default:
       return null;
   }
+}
+
+/** Fork compatibility: invalidate the list after a session-specific change. */
+export function invalidateSessionListForSession(
+  _sessionFile?: string | null,
+  _ownerId = 0,
+): void {
+  invalidateSessionListCache();
 }

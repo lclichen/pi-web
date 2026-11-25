@@ -6,6 +6,6 @@ export async function register(): Promise<void> {
   // Node calls in the Edge module.
   if (process.env.NEXT_RUNTIME === "nodejs") {
     const { registerNodeInstrumentation } = await import("./instrumentation-node");
-    registerNodeInstrumentation();
+    await registerNodeInstrumentation();
   }
 }

@@ -5,7 +5,7 @@
  * pi-web (environment-info keeps only its mode-specific prompt block).
  */
 import { defineTool, type ExtensionAPI, type InlineExtension } from "@earendil-works/pi-coding-agent";
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 
 export function makeContextStatusExtension(): InlineExtension {
   return (pi: ExtensionAPI): void => {

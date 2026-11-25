@@ -17,7 +17,7 @@
  *                      The link keeps working after the container/agent stops.
  */
 import { defineTool, type ExtensionAPI, type InlineExtension } from "@earendil-works/pi-coding-agent";
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import { join, resolve, sep } from "node:path";
 import { lstatSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { createShare, SHARE_MAX_BYTES, ShareLimitError } from "../share-store.ts";

@@ -548,9 +548,9 @@ export function SessionToolbar({
                 key={`${s.scope}/${s.name}`}
                 name={s.name}
                 description={s.summary}
-                enabled={prefs.mcpEnabled && !s.disabled}
+                enabled={prefs.mcpEnabled && !Boolean(s.disabled)}
                 badge={s.transport}
-                onToggle={() => toggleMcpServer(s.name, s.scope, s.disabled)}
+                onToggle={() => toggleMcpServer(s.name, s.scope, Boolean(s.disabled))}
               />
             ))
           )}

@@ -175,7 +175,7 @@ export type McpTrustFolderInfo =
 // is an English diagnostic, `reason` a code the panel translates.
 // ---------------------------------------------------------------------------
 
-export type McpScope = "global" | "project";
+export type McpScope = "global" | "user" | "quick" | "project";
 export type McpTransportKind = "stdio" | "http";
 /** What a project entry may change of the global server of its name (the SDK's `OVERRIDE_KEYS`). */
 export type McpOverrideKey = "enabled" | "exposure" | "toolExposure";
@@ -323,6 +323,17 @@ export interface McpServerInfo {
    * file holds it now (same `configKey`).
    */
   status?: McpServerStatus;
+  /** pi-web fork: the adapter entry shape used by the settings/API surfaces. */
+  entry?: ServerEntry;
+  /** Lower-priority entry shadowed by a higher-priority scope. */
+  shadowed?: boolean;
+  summary?: string;
+  directToolsOn?: boolean;
+  disabled?: boolean;
+  /** The entry's own disabled flag (ignores a project-level override). */
+  scopeDisabled?: boolean;
+  /** Effective disable comes from a project-level {disabled:true} tombstone. */
+  projectOverride?: boolean;
 }
 
 /** How a connection test ended (`POST /api/mcp/test`). */
@@ -818,13 +829,24 @@ export interface AppUpdateResponse {
   latestVersion: string;
   updateAvailable: boolean;
   releaseUrl: string;
+  /** Fork updater: catalog/npm/off, channel and the target framework details. */
+  source?: "catalog" | "npm" | "off";
+  channel?: string;
+  target?: {
+    version: string;
+    channel: string;
+    releasedAt?: string;
+    frameworks: Array<{ kind: "tarball" | "appimage" | "electron"; fileName: string; sizeBytes: number }>;
+  };
+  pkgKind?: "tarball" | "appimage" | "electron";
+  canSelfUpdate?: boolean;
 }
 
 export interface PushConfigResponse {
   publicKey: string;
 }
 
-export type PluginScope = "global" | "project";
+export type PluginScope = "global" | "user" | "project";
 export type PluginResourceKind = "extension" | "skill" | "prompt" | "theme";
 
 export interface PluginResourceCounts {
@@ -902,4 +924,171 @@ export interface PluginToggleResult {
 
 export interface PluginsBulkResponse extends PluginsResponse {
   results: PluginToggleResult[];
+}
+
+// ---------------------------------------------------------------------------
+// pi-web fork additions (user/project scopes, MCP adapter 2.x entry shape,
+// updater, preferences). Upstream 0.18 uses its own MCP types; these remain
+// for the fork's settings/API surfaces and are adapted at the call sites.
+
+export type ConfigScope = "project" | "user" | "quick" | "global";
+
+export interface AgentInfo {
+  name: string;
+  /** "builtin" marks the read-only built-in subagents appended by the API. */
+  scope: ConfigScope | "builtin";
+  filePath: string;
+  description?: string;
+  tools?: string[];
+  disallowedTools?: string[];
+  model?: string;
+  thinking?: string;
+  maxTurns?: number;
+  parseError?: string;
+  enabled?: boolean;
+  isDefault?: boolean;
+}
+
+export interface AgentDetail extends AgentInfo {
+  systemPrompt: string;
+  rawFrontmatter: Record<string, unknown>;
+}
+
+export interface ServerEntry {
+  command?: string;
+  args?: string[];
+  socket?: string;
+  env?: Record<string, string>;
+  cwd?: string;
+  url?: string;
+  headers?: Record<string, string>;
+  auth?: "oauth" | "bearer" | false;
+  bearerToken?: string;
+  bearerTokenEnv?: string;
+  oauth?: unknown;
+  lifecycle?: "keep-alive" | "lazy" | "lazy-keep-alive" | "eager";
+  idleTimeout?: number;
+  requestTimeoutMs?: number;
+  toolTimeoutMs?: number;
+  protocolVersion?: "legacy" | "auto" | "2026-07-28";
+  tasks?: boolean;
+  inheritEnv?: boolean;
+  caFile?: string;
+  requestHeadersCommand?: unknown;
+  literalEnv?: boolean;
+  clientMetadataUrl?: string;
+  toolPrefix?: McpToolPrefix;
+  exposeResources?: boolean;
+  directTools?: boolean | string[] | "search";
+  includeTools?: string[];
+  excludeTools?: string[];
+  debug?: boolean;
+  trace?: boolean;
+  disabled?: boolean;
+  piWeb?: McpWebDeclaration;
+}
+
+export interface McpWebDeclaration {
+  plane?: "host" | "workspace";
+  risk?: "none" | "read" | "write" | "exec" | "network" | "unknown";
+  pathParams?: string[];
+  commandParams?: string[];
+}
+
+export type McpToolPrefix = "server" | "none" | "short" | "mcp";
+export type McpHostConfigDiscovery = "off" | "prompt" | "on";
+
+export interface McpTraceSettings {
+  enabled?: boolean;
+  file?: string;
+  maxBytes?: number;
+  maxEvents?: number;
+}
+
+export interface McpSettings {
+  toolPrefix?: McpToolPrefix;
+  showStatusIcon?: boolean;
+  hostConfigDiscovery?: McpHostConfigDiscovery;
+  idleTimeout?: number;
+  requestTimeoutMs?: number;
+  directTools?: boolean;
+  disableProxyTool?: boolean;
+  namespaceProxyTools?: boolean;
+  exposeResources?: boolean;
+  allowInstall?: boolean;
+  deferWithMissingMetadata?: boolean;
+  ancestorConfigRoots?: string[];
+  oauthCredentialStore?: "encrypted-file";
+  autoAuth?: boolean;
+  sampling?: boolean;
+  samplingAutoApprove?: boolean;
+  elicitation?: boolean;
+  outputGuard?: boolean | Record<string, number>;
+  trace?: McpTraceSettings;
+  authRequiredMessage?: string;
+  oauthDir?: string;
+}
+
+export type McpTransport = "stdio" | "http";
+
+export interface McpConfigDiagnostic {
+  scope: ConfigScope;
+  path: string;
+  parseError?: string;
+}
+
+export interface McpConfigDocument {
+  servers: McpServerInfo[];
+  settings?: McpSettings;
+  settingsScope?: ConfigScope;
+  diagnostics: McpConfigDiagnostic[];
+}
+
+export interface McpTool {
+  name: string;
+  title?: string;
+  description?: string;
+  inputSchema?: unknown;
+}
+
+export interface ProbeResult {
+  tools: McpTool[];
+  error?: string;
+  needsAuth?: boolean;
+}
+
+export interface McpServerTools {
+  server: string;
+  scope: ConfigScope;
+  transport: McpTransport;
+  tools: McpTool[];
+  error?: string;
+  needsAuth?: boolean;
+}
+
+export interface WebPreferences {
+  mcpEnabled: boolean;
+  subagentsEnabled: boolean;
+  labVerifyEnabled: boolean;
+}
+
+export const DEFAULT_PREFERENCES: WebPreferences = {
+  mcpEnabled: true,
+  subagentsEnabled: true,
+  labVerifyEnabled: true,
+};
+
+export interface UpdateApplyResponse {
+  started: boolean;
+  statusUrl?: string;
+  error?: string;
+}
+
+export interface UpdateStatusResponse {
+  phase: "idle" | "downloading" | "verifying" | "staging" | "swapping" | "restarting" | "done" | "failed";
+  message?: string;
+  progress?: number;
+  targetVersion?: string;
+  updatedAt?: number;
+  error?: string;
 }

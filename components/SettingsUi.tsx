@@ -877,3 +877,12 @@ export function ConfigStatusDot({ active, color }: { active?: boolean; color?: s
     />
   );
 }
+
+/** Fork compatibility: compact info affordance used by the product settings pages. */
+export function ConfigInfoTip({ text }: { text: string }) {
+  return (
+    <span className="config-info-tip" role="img" aria-label={text} title={text}>
+      i
+    </span>
+  );
+}

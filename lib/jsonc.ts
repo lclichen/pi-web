@@ -33,3 +33,6 @@ export function stripJsonComments(input: string): string {
 export function parseJsonc(text: string): unknown {
   return JSON.parse(stripJsonComments(text.replace(/^\uFEFF/, "")));
 }
+
+/** Fork compatibility: MCP readers use the same JSONC rules under this name. */
+export const stripJsonc = stripJsonComments;

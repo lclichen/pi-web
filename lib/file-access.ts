@@ -1,6 +1,7 @@
 import { getAdditionalAllowedRoots, normalizeSlashes } from "./allowed-roots";
 import { isExistingPathWithinRoots, isPathWithinRoots } from "./path-security";
 import { listAllSessions } from "./session-reader";
+import { requireUserIdentity } from "./web-session";
 export { allowFileRoot, normalizeSlashes } from "./allowed-roots";
 export { isWindowsAbsolutePath } from "./paths";
 
@@ -52,4 +53,19 @@ export async function cwdAccessRefusal(cwd: string | null | undefined): Promise<
   if (!cwd) return Response.json({ error: "cwd required" }, { status: 400 });
   if (!isExistingFilePathAllowed(cwd, await getAllowedFileRoots())) return Response.json({ error: "Access denied" }, { status: 403 });
   return undefined;
+}
+
+/**
+ * Allowed roots for an incoming request. Host space for admins / auth-off;
+ * ordinary users get an empty set (they use remote/workspace filesystems);
+ * embed tokens stay fenced to their workspace.
+ */
+export async function getAllowedFileRootsForRequest(req: Request | undefined | null): Promise<Set<string>> {
+  const identity = req ? requireUserIdentity(req) : { ok: true as const, session: null };
+  if (!identity.ok) return new Set<string>();
+  if (identity.session?.embed) return new Set(identity.session.embed.allowedRoots);
+  if (!identity.session || identity.session.user.id === 0 || identity.session.user.role === "admin") {
+    return getAllowedFileRoots();
+  }
+  return new Set<string>();
 }

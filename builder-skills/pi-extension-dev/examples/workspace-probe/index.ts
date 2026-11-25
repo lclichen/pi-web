@@ -18,7 +18,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 
 const REQUEST_EVENT = "pi-web:workspace:request";
 const REPLY_PREFIX = "pi-web:workspace:reply:";

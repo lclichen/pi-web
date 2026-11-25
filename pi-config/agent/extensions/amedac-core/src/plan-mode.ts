@@ -33,7 +33,7 @@ import {
   type ExtensionContext,
   type InlineExtension,
 } from "@earendil-works/pi-coding-agent";
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import { sessionPlanPath } from "./session-plan.ts";
 import { buildReminderMessage } from "./reminder-channel.ts";
 

@@ -90,7 +90,7 @@ export async function generateGitInsight(source: AgentSession, input: GitInsight
   await sourceAgent.waitForIdle();
 
   const options = buildGitInsightAgentOptions(sourceAgent);
-  options.initialState!.systemPrompt = input.mode === "review" ? REVIEW_SYSTEM : COMMIT_MSG_SYSTEM;
+  options.initialState = { ...(options.initialState ?? {}), systemPrompt: input.mode === "review" ? REVIEW_SYSTEM : COMMIT_MSG_SYSTEM } as typeof options.initialState;
 
   const temporaryAgent = new Agent(options);
   const runPromise = temporaryAgent.prompt(buildPrompt(input));

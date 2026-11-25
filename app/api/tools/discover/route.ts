@@ -45,7 +45,7 @@ export async function GET(req: Request) {
         mcp: doc.servers.map((s) => ({
           server: s.name,
           scope: s.scope,
-          transport: s.transport,
+          transport: s.transport ?? "stdio",
           tools: [],
         })),
       });
@@ -54,21 +54,21 @@ export async function GET(req: Request) {
     const probeResults: McpServerTools[] = await Promise.all(
       doc.servers.map(async (s) => {
         try {
-          if (s.entry.command && s.entry.piWeb?.plane === "workspace") {
+          if (s.entry!.command && s.entry!.piWeb?.plane === "workspace") {
             // Never spawn a workspace-plane stdio server in the control plane.
             return {
               server: s.name,
               scope: s.scope,
-              transport: s.transport,
+              transport: s.transport ?? "stdio",
               tools: [],
               error: "在会话配对机器上运行；本页不直接探测",
             };
           }
-          const result = await probeServer(s.entry, 10000);
+          const result = await probeServer(s.entry!, 10000);
           return {
             server: s.name,
             scope: s.scope,
-            transport: s.transport,
+            transport: s.transport ?? "stdio",
             tools: result.tools,
             error: result.error,
             needsAuth: result.needsAuth,
@@ -77,7 +77,7 @@ export async function GET(req: Request) {
           return {
             server: s.name,
             scope: s.scope,
-            transport: s.transport,
+            transport: s.transport ?? "stdio",
             tools: [],
             error: e instanceof Error ? e.message : String(e),
           };

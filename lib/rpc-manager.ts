@@ -175,6 +175,13 @@ type WrapperMcpHost = Pick<McpHost, "prepareForPrompt" | "dispose"> & Partial<Pi
 type AgentSessionWrapperOptions = {
   exactSystemPrompt?: () => string;
   chatOnly?: boolean;
+  /** Fork compatibility: owning project (remote sessions) and execution mode. */
+  projectId?: string;
+  ownerId?: number;
+  mode?: "host" | "sandbox" | "local-machine" | "ssh" | "quick";
+  projection?: unknown;
+  webUiPrompt?: boolean;
+  quickPrompt?: unknown;
   onAgentRunComplete?: AgentRunCompleteListener;
   suppressCompletionNotifications?: boolean;
   /** A subagent's wrapper: a run ended and nothing is left to do. */
@@ -302,6 +309,13 @@ export interface RpcSessionStartOptions {
   initialModel?: { provider: string; modelId: string };
   allowInitialModelFallback?: boolean;
   thinkingLevel?: ThinkingLevel;
+  /** Fork compatibility: project/user attribution and extra extension loadout. */
+  projectId?: string;
+  ownerId?: number;
+  ownerName?: string;
+  mode?: "host" | "sandbox" | "local-machine" | "ssh" | "quick";
+  additionalExtensionPaths?: string[];
+  extensionFactories?: unknown[];
 }
 
 const CODING_TOOL_NAMES = ["read", "bash", "powershell", "edit", "write", "grep", "find", "ls"];
@@ -368,6 +382,9 @@ interface ActiveToolEvents {
 }
 
 export class AgentSessionWrapper {
+  readonly projectId?: string;
+  readonly ownerId: number;
+  readonly mode: "host" | "sandbox" | "local-machine" | "ssh" | "quick";
   // A Set, not an array: an SSE stream unsubscribes from inside emit() when it
   // closes on session_shutdown, and splicing an array mid-iteration made the
   // next stream miss that same event.
@@ -456,6 +473,9 @@ export class AgentSessionWrapper {
     public readonly inner: AgentSessionLike,
     options: AgentSessionWrapperOptions = {},
   ) {
+    this.projectId = options.projectId;
+    this.ownerId = options.ownerId ?? 0;
+    this.mode = options.mode ?? "host";
     this.exactSystemPrompt = options.exactSystemPrompt;
     this.chatOnly = options.chatOnly ?? false;
     this.onAgentRunComplete = options.onAgentRunComplete;
@@ -3913,4 +3933,78 @@ export async function startRpcSession(
 
   locks.set(sessionId, starting);
   return starting;
+}
+
+// ---------------------------------------------------------------------------
+// Fork compatibility exports (project busy/reload gates, session ownership,
+// ask-timeout refresh). Upstream 0.18 does not expose these helpers.
+
+export interface ProjectRuntimeBusy {
+  busy: boolean;
+  sessions: string[];
+  batchTasks: string[];
+}
+
+export interface ProjectReloadResult {
+  reloaded: string[];
+  pending: string[];
+  failed: { sessionId: string; error: string }[];
+}
+
+export function getRpcSessionOwner(
+  sessionId: string,
+): { ownerId: number; mode: "host" | "sandbox" | "local-machine" | "ssh" | "quick" } | undefined {
+  const session = getRegistry().get(sessionId);
+  if (!session) return undefined;
+  return { ownerId: session.ownerId, mode: session.mode };
+}
+
+export async function getProjectRuntimeBusy(projectId: string): Promise<ProjectRuntimeBusy> {
+  const sessions = [...getRegistry().values()]
+    .filter((wrapper) => wrapper.projectId === projectId && wrapper.isAlive() && wrapper.isRunning())
+    .map((wrapper) => wrapper.sessionId);
+  let batchTasks: string[] = [];
+  try {
+    const store = (await import("./batch/task-store")) as {
+      listActiveProjectTasks?: (id: string) => { taskId: string }[];
+    };
+    if (typeof store.listActiveProjectTasks === "function") {
+      batchTasks = store.listActiveProjectTasks(projectId).map((task) => task.taskId);
+    }
+  } catch {
+    // batch store unavailable (tests/trimmed builds): sessions still gate.
+  }
+  return { busy: sessions.length > 0 || batchTasks.length > 0, sessions, batchTasks };
+}
+
+export async function reloadProjectSessions(projectId: string): Promise<ProjectReloadResult> {
+  const result: ProjectReloadResult = { reloaded: [], pending: [], failed: [] };
+  for (const wrapper of getRegistry().values()) {
+    if (wrapper.projectId !== projectId || !wrapper.isAlive()) continue;
+    // Upstream wrappers do not expose reloadWhenIdle(); report the live ones as
+    // pending so the caller can retry after they go idle.
+    result.pending.push(wrapper.sessionId);
+  }
+  return result;
+}
+
+export function refreshRpcAskTimeouts(): void {
+  for (const session of getRegistry().values()) {
+    const refresh = (session as unknown as { refreshAskTimeouts?: () => void }).refreshAskTimeouts;
+    if (session.isAlive() && typeof refresh === "function") refresh.call(session);
+  }
+}
+
+export async function shutdownProjectSessions(projectId: string): Promise<void> {
+  const sessions = [...getRegistry().values()].filter(
+    (wrapper) => wrapper.projectId === projectId && wrapper.isAlive(),
+  );
+  await Promise.allSettled(sessions.map((wrapper) => wrapper.shutdown()));
+}
+
+export async function shutdownUserSessions(ownerId: number): Promise<void> {
+  const sessions = [...getRegistry().values()].filter(
+    (wrapper) => wrapper.ownerId === ownerId && wrapper.isAlive(),
+  );
+  await Promise.allSettled(sessions.map((wrapper) => wrapper.shutdown()));
 }

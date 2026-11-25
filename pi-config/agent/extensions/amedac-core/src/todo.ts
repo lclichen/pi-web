@@ -31,7 +31,8 @@ import {
   type ExtensionContext,
   type InlineExtension,
 } from "@earendil-works/pi-coding-agent";
-import { StringEnum, Type } from "@earendil-works/pi-ai";
+import { StringEnum } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import { encodeTodoWidget, type TodoItem, type TodoStatus, TODO_WIDGET_KEY } from "./todo-protocol.ts";
 import { buildReminderMessage } from "./reminder-channel.ts";
 import { PLAN_MODE_ENTRY_TYPE } from "./plan-mode.ts";

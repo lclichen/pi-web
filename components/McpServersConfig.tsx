@@ -412,7 +412,7 @@ export function McpServersConfig({
     if (creating || !selectedKey) return;
     const srv = servers.find((x) => serverKey(x.scope, x.name) === selectedKey);
     if (!srv) return;
-    setForm((f) => ({ ...f, disabled: srv.disabled, scopeDisabled: Boolean(srv.scopeDisabled) }));
+    setForm((f) => ({ ...f, disabled: Boolean(srv.disabled), scopeDisabled: Boolean(srv.scopeDisabled) }));
   }, [servers, creating, selectedKey]);
 
   useEffect(() => {
@@ -437,12 +437,12 @@ export function McpServersConfig({
   };
 
   const selectServer = (info: McpServerInfo) => {
-    const nextForm = entryToForm(info.name, info.scope, info.entry);
+    const nextForm = entryToForm(info.name, info.scope, info.entry!);
     // form.disabled is the EFFECTIVE state (a project override may disable a
     // global entry without changing its own scopeDisabled flag).
-    nextForm.disabled = info.disabled;
+    nextForm.disabled = Boolean(info.disabled);
     setForm(nextForm);
-    setBaseEntry({ ...info.entry });
+    setBaseEntry({ ...info.entry! });
     setOriginalName(info.name);
     setOriginalScope(info.scope);
     setSelectedKey(serverKey(info.scope, info.name));

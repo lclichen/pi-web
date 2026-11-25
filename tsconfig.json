@@ -1,10 +1,6 @@
 {
   "compilerOptions": {
-    "lib": [
-      "dom",
-      "dom.iterable",
-      "esnext"
-    ],
+    "lib": ["dom", "dom.iterable", "esnext"],
     "allowJs": true,
     "skipLibCheck": true,
     "strict": true,
@@ -12,6 +8,7 @@
     "esModuleInterop": true,
     "module": "esnext",
     "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
     "jsx": "react-jsx",
@@ -22,21 +19,22 @@
       }
     ],
     "paths": {
-      "@/*": [
-        "./*"
-      ]
+      "@/*": ["./*"]
     },
     "target": "ES2017"
   },
-  "include": [
-    "next-env.d.ts",
-    "**/*.ts",
-    "**/*.tsx",
-    ".next/types/**/*.ts",
-    ".next/dev/types/**/*.ts"
-  ],
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts", ".next/dev/types/**/*.ts"],
   "exclude": [
     "node_modules",
-    "demo"
+    // Upstream demo/ is a separate Next.js app with its own SDK stubs; its
+    // module declarations must not shadow the real pi 1.6 types.
+    "demo",
+    // 打包产物目录：package-linux 会把 sandbox 扩展等第三方源码拷进来，
+    // 它们的 TS 风格（如 .ts 后缀导入）不属于本项目，不能进类型检查。
+    "build",
+    "dist",
+    // 随包分发的 pi 扩展模板（vendored 上游包，含可选 peer 的导入），
+    // 由 pi 的 jiti 加载器在目标机加载，不参与本工程类型检查。
+    "pi-config"
   ]
 }

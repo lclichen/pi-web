@@ -4,7 +4,7 @@ import {
   type ExtensionAPI,
   type InlineExtension,
 } from "@earendil-works/pi-coding-agent";
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import { relayRpc } from "@/lib/relay/forward";
 import { getAgentForUser } from "@/lib/relay/registry";
 import { clientCompatibility } from "@/lib/client-compat";
@@ -75,7 +75,7 @@ export function isRelayWorkspaceServer(entry: ServerEntry): boolean {
 export function assertRelayWorkspaceMcpSafe(projectHome: string, userId?: number): void {
   const doc = readMcpConfig(projectHome, { scopes: ["project"], userId });
   for (const server of doc.servers) {
-    const problem = relayWorkspaceEntryProblem(server.entry);
+    const problem = relayWorkspaceEntryProblem(server.entry!);
     if (problem) throw new Error(`workspace MCP「${server.name}」配置不安全：${problem}`);
   }
 }
@@ -210,7 +210,7 @@ export function makeRemoteMcpToolsExtension(options: RelayMcpOptions): InlineExt
       return;
     }
     const servers = doc.servers.filter(
-      (server) => isRelayWorkspaceServer(server.entry) && !relayWorkspaceEntryProblem(server.entry),
+      (server) => isRelayWorkspaceServer(server.entry!) && !relayWorkspaceEntryProblem(server.entry!),
     );
     if (servers.length === 0 || !agentReady()) return;
 
@@ -224,7 +224,7 @@ export function makeRemoteMcpToolsExtension(options: RelayMcpOptions): InlineExt
 
     const usedToolNames = new Set<string>();
     for (const server of servers) {
-      const entry = server.entry;
+      const entry = server.entry!;
       const serverKey = `${serverKeyPrefix}:${server.name}`;
       serverKeys.add(serverKey);
       const requestTimeoutMs =

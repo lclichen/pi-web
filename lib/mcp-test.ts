@@ -362,7 +362,7 @@ export function openTestConnection(
   const requestTimeoutMs = options.requestTimeoutMs ?? MCP_TEST_REQUEST_TIMEOUT_MS;
   const { config } = target;
   const timeout = Math.min(config.timeout ?? SDK_DEFAULT_TIMEOUT_SECONDS, requestTimeoutMs / 1000);
-  const entry: McpServerEntry = { name: target.name, config: { ...config, timeout }, source: target.sourcePath, scope: target.scope };
+  const entry: McpServerEntry = { name: target.name, config: { ...config, timeout }, source: target.sourcePath, scope: target.scope === "user" || target.scope === "quick" ? "global" : target.scope };
   const transports: McpTransport[] = [];
   const factory = createPiWebMcpTransportFactory(internals);
   const connection = new internals.McpServerConnection({

@@ -95,19 +95,7 @@ function formatSize(size: number): string {
   return size >= 1024 * 1024 ? `${(size / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(size / 1024))} KB`;
 }
 
-export function BundlesConfig({
-  embedded = false,
-  cwd: _cwd,
-  onClose: _onClose,
-  isAdmin: _isAdmin,
-  trust: _trust,
-}: {
-  embedded?: boolean;
-  cwd?: string;
-  onClose?: () => void;
-  isAdmin?: boolean;
-  trust?: unknown;
-}) {
+export function BundlesConfig({ embedded = false }: { embedded?: boolean }) {
   const { t } = useI18n();
   const { confirm, confirmDialog } = useConfirm();
   /** 子页：Agent 定义（配置包）｜解密密钥（.apkg KEK，只写不可读）。 */

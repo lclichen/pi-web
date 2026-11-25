@@ -38,6 +38,11 @@ export interface CodemodeModeSetting {
   invalid?: string;
 }
 
+export interface ShellToolSettingsResponse {
+  isWindows: boolean;
+  powerShellEnabled: boolean;
+}
+
 export interface ToolSettingsResponse {
   isWindows: boolean;
   powerShellEnabled: boolean;

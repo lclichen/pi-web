@@ -766,6 +766,10 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
   const messageCwd = session?.cwd ?? newSessionCwd ?? undefined;
   // local-machine/ssh: model-output links resolve against the real workspace, not the server home.
   const linkCwd = session?.workspaceDir ?? messageCwd;
+  const remoteFileSessionId =
+    session?.id && (session.mode === "sandbox" || session.mode === "local-machine" || session.mode === "ssh")
+      ? session.id
+      : null;
   const promptAnchorSpacerRef = useRef<HTMLDivElement | null>(null);
   const promptAnchorSpacerHeightRef = useRef(0);
   const promptAnchorMeasureFrameRef = useRef<number | null>(null);
@@ -879,6 +883,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
       ref={chatInputRef}
       onSend={handleSend}
       onAbort={handleAbort}
+      remoteFileSessionId={remoteFileSessionId}
       onSideChat={onSideSession && !isHiddenRelation(session?.relation) ? askInSideChat : undefined}
       onSteer={agentRunning ? handleSteer : undefined}
       onFollowUp={agentRunning ? handleFollowUp : undefined}

@@ -1,5 +1,7 @@
 "use client";
 
+import { encodeFilePathForApi } from "@/lib/file-paths";
+
 import React, { memo, useRef, useState, useCallback, useEffect, useLayoutEffect, useImperativeHandle, forwardRef, KeyboardEvent } from "react";
 import type { BuiltinSlashCommandResult, CompactResultInfo, QueuedMessages, SlashCommandInfo } from "@/hooks/useAgentSession";
 import type { SkillsResponse } from "@/lib/api-types";
@@ -116,6 +118,8 @@ interface Props {
   draftKey?: string;
   /** Session working directory — enables the @ file autocomplete menu */
   cwd?: string | null;
+  /** Remote session: @ search goes through /api/remotefs (server cwd is a stub home). */
+  remoteFileSessionId?: string | null;
   /** Files picked with the attach button, handled like files dropped onto the chat. Without it the button takes images only. */
   onAttachFiles?: (files: File[]) => void;
 }
@@ -762,6 +766,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
   onPromptWithStreamingBehavior,
   draftKey,
   cwd,
+  remoteFileSessionId = null,
   onAttachFiles,
   compact = false,
 }: Props, ref) {
@@ -1308,13 +1313,18 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
   // server-side against the full listing. Local matches render immediately
   // and are replaced when the (debounced) server result for the current
   // query arrives; stale responses are ignored via the query/cwd tag.
-  const needsServerSearch = Boolean(atQueryText && fileIndex?.truncated && fileIndex.cwd === cwd);
+  const needsServerSearch = Boolean(atQueryText && remoteFileSessionId)
+    || Boolean(atQueryText && fileIndex?.truncated && fileIndex.cwd === cwd);
   useEffect(() => {
     if (!needsServerSearch || !cwd || !atQueryText) return;
     const fetchCwd = cwd;
     const query = atQueryText;
     const timer = setTimeout(() => {
-      fetch(`/api/file-index?cwd=${encodeURIComponent(fetchCwd)}&q=${encodeURIComponent(query)}`)
+      const searchBase = remoteFileSessionId ? "/" : fetchCwd;
+      const request = remoteFileSessionId
+        ? `/api/remotefs/${encodeFilePathForApi(searchBase)}?src=${encodeURIComponent(remoteFileSessionId)}&type=search&q=${encodeURIComponent(query)}`
+        : `/api/file-index?cwd=${encodeURIComponent(fetchCwd)}&q=${encodeURIComponent(query)}`;
+      fetch(request)
         .then((res) => {
           if (!res.ok) throw new Error(`file search failed: ${res.status}`);
           return res.json() as Promise<{ matches?: FileIndexEntry[] }>;
@@ -1325,7 +1335,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
         });
     }, 150);
     return () => clearTimeout(timer);
-  }, [needsServerSearch, atQueryText, cwd]);
+  }, [needsServerSearch, atQueryText, cwd, remoteFileSessionId]);
 
   const serverResultInUse = needsServerSearch
     && atServerResult !== null
@@ -1356,6 +1366,13 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
     if (fileIndexFetchingRef.current === cwd) return;
     fileIndexFetchingRef.current = cwd;
     const fetchCwd = cwd;
+    if (remoteFileSessionId) {
+      // Remote: no server index; every query searches remotefs.
+      setFileIndex({ cwd, entries: [], truncated: true });
+      setFileIndexLoading(false);
+      fileIndexFetchingRef.current = null;
+      return;
+    }
     setFileIndexLoading(true);
     fetch(`/api/file-index?cwd=${encodeURIComponent(fetchCwd)}`)
       .then((res) => {
@@ -1374,7 +1391,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
         fileIndexFetchingRef.current = null;
         setFileIndexLoading(false);
       });
-  }, [atTokenActive, cwd]);
+  }, [atTokenActive, cwd, remoteFileSessionId]);
 
   const applyAtCompletion = useCallback((entry: FileIndexEntry) => {
     if (!atQuery) return;

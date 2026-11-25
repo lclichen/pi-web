@@ -18,7 +18,7 @@
  */
 
 export const PI_DOCS_BLOCK_START = "Pi documentation (read only when the user asks";
-export const PI_DOCS_BLOCK_END = "(e.g., tui.md for TUI API details)";
+export const PI_DOCS_BLOCK_END = "</docs>";
 
 const WORKING_DIRECTORY_LINE = /(^|\n)Current working directory:[^\n]*/gi;
 

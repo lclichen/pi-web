@@ -1,5 +1,5 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
-import { createAgentSessionFromServices, createAgentSessionServices, getAgentDir, initTheme, SessionManager, SettingsManager, Theme, type ModelRuntime } from "@earendil-works/pi-coding-agent";
+import { createAgentSessionFromServices, createAgentSessionServices, getAgentDir, initTheme, SessionManager, SettingsManager, Theme, type InlineExtension, type ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { KeybindingsManager as TuiKeybindingsManager, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
 import { randomUUID } from "crypto";
 import { existsSync, realpathSync, writeFileSync } from "fs";
@@ -27,6 +27,12 @@ import { getProjectTrustStatus, projectTrustReloadOptions } from "./project-trus
 import { notifySessionComplete } from "./web-push";
 import { copySessionImages } from "./session-images";
 import { copySessionMeta } from "./session-metas";
+import { composeQuickSystemPrompt, createQuickPromptExtension, type QuickTemplateHolder } from "./quick-prompt";
+import { quickToolAllowlist, quickToolNames, type QuickToolAllowlist } from "./quick-tools";
+import { createPromptConsistencyExtension, describePromptDrift, type PromptPin } from "./prompt-consistency";
+import { appendWebUiAddendum } from "./web-system-prompt";
+import { getSessionMeta, recordSessionMeta, type SessionMeta } from "./session-metas";
+
 import { checkSessionQuota } from "./session-guard";
 import { filterActiveToolsForMode, isRemoteMode, mcpExcludedServers, type ToolExclusion } from "./tool-policy";
 import { hasActiveSessionLivenessProvider } from "./session-liveness";
@@ -184,8 +190,8 @@ type AgentSessionWrapperOptions = {
   ownerId?: number;
   mode?: "host" | "sandbox" | "local-machine" | "ssh" | "quick";
   projection?: unknown;
+  quickPrompt?: QuickTemplateHolder;
   webUiPrompt?: boolean;
-  quickPrompt?: unknown;
   onAgentRunComplete?: AgentRunCompleteListener;
   suppressCompletionNotifications?: boolean;
   /** A subagent's wrapper: a run ended and nothing is left to do. */
@@ -319,7 +325,9 @@ export interface RpcSessionStartOptions {
   ownerName?: string;
   mode?: "host" | "sandbox" | "local-machine" | "ssh" | "quick";
   additionalExtensionPaths?: string[];
-  extensionFactories?: unknown[];
+  extensionFactories?: InlineExtension[];
+  /** Quick mode: template-pinned prompt/model/MCP allowlist. */
+  quick?: { systemPrompt?: string; model?: { provider: string; modelId: string }; mcpServers?: string[]; mcpTools?: string[] };
 }
 
 const CODING_TOOL_NAMES = ["read", "bash", "powershell", "edit", "write", "grep", "find", "ls"];
@@ -385,6 +393,14 @@ interface ActiveToolEvents {
   update?: AgentEvent;
 }
 
+/** Quick-mode active tool set: template MCP allowlist only (closed world). */
+function quickToolSet(session: AgentSessionLike, allowlist?: QuickToolAllowlist): string[] {
+  return quickToolNames(
+    session.getAllTools().map((tool) => tool.name),
+    allowlist,
+  );
+}
+
 export class AgentSessionWrapper {
   readonly projectId?: string;
   readonly ownerId: number;
@@ -422,6 +438,11 @@ export class AgentSessionWrapper {
   // get_state calls waiting for the binding, released early by a blocking dialog (waitForStateRead()).
   private blockingUiWaiters = new Set<() => void>();
   private readonly exactSystemPrompt?: () => string;
+  private readonly quickPrompt?: QuickTemplateHolder;
+  private quickToolAllowlist?: QuickToolAllowlist;
+  private readonly webUiPrompt: boolean;
+  private promptPin?: PromptPin;
+  private forceEmptySystemPrompt = false;
   private readonly chatOnly: boolean;
   private readonly onAgentRunComplete?: AgentRunCompleteListener;
   private readonly onDirectTurnSettled?: (aborted: boolean) => void;
@@ -485,6 +506,8 @@ export class AgentSessionWrapper {
     this.ownerId = options.ownerId ?? 0;
     this.mode = options.mode ?? "host";
     this.exactSystemPrompt = options.exactSystemPrompt;
+    this.quickPrompt = options.quickPrompt;
+    this.webUiPrompt = options.webUiPrompt ?? false;
     this.chatOnly = options.chatOnly ?? false;
     this.onAgentRunComplete = options.onAgentRunComplete;
     this.onDirectTurnSettled = options.onDirectTurnSettled;
@@ -494,6 +517,8 @@ export class AgentSessionWrapper {
     this.sideChat = options.sideChat === true;
     this.afterSessionStart = options.afterSessionStart;
     this.deferredStartupModel = options.deferredStartupModel ?? null;
+    this.installExactSystemPromptContinuation();
+    this.installWebUiAddendumContinuation();
     this.builtOnModel = inner.model && `${inner.model.provider}/${inner.model.id}`;
     this.builtOnThinkingLevel = inner.agent?.state?.thinkingLevel;
     this.startupNotices = options.startupIssues ? [] : null;
@@ -1193,8 +1218,128 @@ export class AgentSessionWrapper {
     }
   }
 
+  private installExactSystemPromptContinuation(): void {
+    if (!this.exactSystemPrompt) return;
+    const agent = this.inner.agent as {
+      prepareNextTurnWithContext?: (turn: unknown, signal?: unknown) => Promise<{ context?: { systemPrompt?: string } } | undefined>;
+    };
+    const previous = agent.prepareNextTurnWithContext;
+    if (typeof previous !== "function") return;
+    agent.prepareNextTurnWithContext = async (turn: unknown, signal?: unknown) => {
+      const prepared = await previous(turn, signal);
+      const source = prepared?.context ?? (turn as { context?: { systemPrompt?: string } }).context;
+      if (!source) return prepared;
+      return { ...prepared, context: { ...source, systemPrompt: this.exactSystemPrompt!() } };
+    };
+  }
+
+  /** Non-quick: keep the active tool order byte-stable across registrations. */
+  normalizeActiveToolOrder(): void {
+    const inner = this.inner as AgentSessionLike & { getActiveToolNames?: () => string[] };
+    if (typeof inner.getActiveToolNames !== "function") return;
+    const active = inner.getActiveToolNames();
+    const sorted = [...active].sort();
+    if (sorted.some((name, index) => name !== active[index])) inner.setActiveToolsByName(sorted);
+  }
+
+  /** Mirror the web-output addendum into the prompt shown by the UI. */
+  private installWebUiAddendumContinuation(): void {
+    if (!this.webUiPrompt) return;
+    const previous = (this.inner.agent as { prepareNextTurnWithContext?: (turn: unknown, signal?: unknown) => Promise<{ context?: { systemPrompt?: string } } | undefined> }).prepareNextTurnWithContext;
+    if (typeof previous !== "function") return;
+    (this.inner.agent as { prepareNextTurnWithContext?: unknown }).prepareNextTurnWithContext = async (turn: unknown, signal?: unknown) => {
+      const prepared = await previous(turn, signal);
+      const source = prepared?.context ?? (turn as { context?: { systemPrompt?: string } }).context;
+      if (!source) return prepared;
+      if (this.forceEmptySystemPrompt) return prepared;
+      const patched = appendWebUiAddendum(source.systemPrompt ?? "");
+      if (patched === source.systemPrompt) return prepared;
+      return { ...prepared, context: { ...source, systemPrompt: patched } };
+    };
+  }
+
+  private applyQuickPromptToState(): void {
+    if (!this.quickPrompt) return;
+    const state = this.inner.agent?.state as { systemPrompt?: string } | undefined;
+    if (state && typeof state.systemPrompt === "string") {
+      state.systemPrompt = composeQuickSystemPrompt(state.systemPrompt, this.quickPrompt.current);
+    }
+  }
+
+  private applyWebUiAddendumToState(): void {
+    if (!this.webUiPrompt || this.forceEmptySystemPrompt) return;
+    const state = this.inner.agent?.state as { systemPrompt?: string } | undefined;
+    if (state?.systemPrompt) state.systemPrompt = appendWebUiAddendum(state.systemPrompt);
+  }
+
+  /** Quick: tools are decided solely by the template allowlist; clamp after binding and each turn. */
+  setQuickToolAllowlist(allowlist: QuickToolAllowlist | undefined): void {
+    this.quickToolAllowlist = allowlist;
+    const apply = () => this.enforceQuickTools();
+    if (this.extensionsBound) apply();
+    else void this.waitForExtensionsBound().then(apply).catch(() => {});
+  }
+
+  enforceQuickTools(): void {
+    const filtered = quickToolSet(this.inner, this.quickToolAllowlist)
+      .filter((name) => !CODING_TOOL_NAMES.includes(name))
+      .sort();
+    this.inner.setActiveToolsByName(filtered);
+  }
+
+  quickTurnBase(): string | undefined {
+    this.enforceQuickTools();
+    return this.inner.agent?.state?.systemPrompt;
+  }
+
+  updateQuickTemplate(template: string | undefined): void {
+    if (!this.quickPrompt) return;
+    this.quickPrompt.current = template;
+    this.applyQuickPromptToState();
+  }
+
+  /** Pin the first observed prompt hash and warn once on drift. */
+  observePrompt(hash: string, len: number, tools: number): void {
+    const current: PromptPin = { hash, len, tools };
+    if (!this.promptPin) {
+      let meta: SessionMeta | undefined;
+      try { meta = getSessionMeta(this.sessionId); } catch { /* observability only */ }
+      const pinned = meta?.promptPin;
+      if (pinned && pinned.hash !== hash) {
+        console.warn(`[pi-web] prompt drift on restore (session ${this.sessionId.slice(0, 13)}): pinned=${pinned.hash} now=${hash} (${describePromptDrift(pinned, current)})`);
+      }
+      this.promptPin = current;
+      if (!pinned || pinned.hash !== hash) this.persistPromptPin(current);
+      return;
+    }
+    const pin = this.promptPin;
+    if (pin.hash !== hash) {
+      console.warn(`[pi-web] system prompt drift (session ${this.sessionId.slice(0, 13)}): ${pin.hash} -> ${hash} (${describePromptDrift(pin, current)})`);
+      this.promptPin = current;
+      this.persistPromptPin(current);
+    }
+  }
+
+  private persistPromptPin(pin: PromptPin): void {
+    try {
+      const meta = getSessionMeta(this.sessionId);
+      recordSessionMeta(this.sessionId, {
+        ...(meta ?? { mode: this.mode ?? "host", ownerId: this.ownerId ?? 0 }),
+        ...meta,
+        promptPin: pin,
+      } as SessionMeta);
+    } catch {
+      // Persistence failure only loses cross-restart continuity.
+    }
+  }
+
   /** Apply a coding tool selection; `carry` defaults to the tools active now. */
   setActiveToolSelection(toolNames: string[], carry: readonly string[] = this.inner.getActiveToolNames()): void {
+    if (this.quickPrompt) {
+      const allowed = quickToolSet(this.inner, this.quickToolAllowlist);
+      this.inner.setActiveToolsByName(toolNames.filter((name) => allowed.includes(name)));
+      return;
+    }
     this.inner.setActiveToolsByName(resolveActiveToolNames(this.inner, toolNames, carry));
   }
 
@@ -1974,6 +2119,7 @@ export class AgentSessionWrapper {
       }
 
       case "get_tools": {
+        if (this.quickPrompt) this.enforceQuickTools();
         // A hidden tool is withdrawn: pi ignores it when setting the active tools.
         const all: ToolInfo[] = this.inner.getAllTools().filter((t) => t.exposure !== "hidden");
         const active = new Set<string>(this.inner.getActiveToolNames());
@@ -2024,6 +2170,20 @@ export class AgentSessionWrapper {
       case "set_tools": {
         const toolNames = command.toolNames as string[];
         this.setActiveToolSelection(toolNames);
+        return null;
+      }
+
+      case "apply_quick_template": {
+        const templateId = command.templateId as string;
+        if (typeof templateId !== "string" || !templateId) throw new Error("templateId required");
+        const { getQuickTemplate } = await import("./quick-templates");
+        const template = getQuickTemplate(templateId);
+        if (!template) throw new Error(`快速会话模板不存在：${templateId}`);
+        this.updateQuickTemplate(template.systemPrompt);
+        this.setQuickToolAllowlist(quickToolAllowlist(template));
+        if (template.model) {
+          await this.send({ type: "set_model", provider: template.model.provider, modelId: template.model.modelId });
+        }
         return null;
       }
 
@@ -3607,6 +3767,10 @@ export async function startRpcSession(
   const requestedToolNames = options.toolNames === undefined
     ? undefined
     : validateSessionToolSelection(options.toolNames);
+  const quick = options.quick;
+  const quickTemplateHolder: QuickTemplateHolder | undefined = quick ? { current: quick.systemPrompt } : undefined;
+  const quickTurnClampRef: { current?: () => string | undefined } = {};
+  const promptPinRef: { current?: (hash: string, len: number, tools: number) => void } = {};
   const registry = getRegistry();
   const locks = getLocks();
 
@@ -3771,6 +3935,18 @@ export async function startRpcSession(
               : {}),
             appendSystemPrompt: subagentResources.appendSystemPrompt,
           }
+        : quick && !subagentResources
+          ? {
+              noSkills: true,
+              noPromptTemplates: true,
+              noThemes: true,
+              noContextFiles: true,
+              appendSystemPromptOverride: () => [],
+              extensionFactories: [
+                createQuickPromptExtension(quickTemplateHolder!, () => quickTurnClampRef.current?.()),
+                createPromptConsistencyExtension((h, l, t) => promptPinRef.current?.(h, l, t)),
+              ],
+            }
         : chatOnly
           ? { ...CHAT_ONLY_RESOURCE_LOADER_OPTIONS, extensionFactories: [exactSystemPromptExtension] }
         : {
@@ -3788,6 +3964,7 @@ export async function startRpcSession(
                 () => listSubagentProfiles(sessionCwd),
                 isBuiltInSubagentsEnabled,
               ),
+              createPromptConsistencyExtension((h, l, t) => promptPinRef.current?.(h, l, t)),
             ],
             extensionsOverride: (base) => preferUserPowerShellExtension(
               preferUserBashExtension(preferPiWebSubagentExtension(base)),
@@ -3897,7 +4074,7 @@ export async function startRpcSession(
     // already holds the extension tools pi activates on registration and whatever
     // `defaultTools` names (such as `+codemode`), so installed extensions stay usable in
     // Pi Web just like in the `pi` CLI.
-    if (!subagentResources && !chatOnly) {
+    if (!subagentResources && !chatOnly && !quick) {
       const initialToolNames = inner.getActiveToolNames();
       inner.setActiveToolsByName(
         resolveActiveToolNames(inner, selectedToolNames ?? initialToolNames, initialToolNames),
@@ -3950,6 +4127,11 @@ export async function startRpcSession(
     const wrapper = new AgentSessionWrapper(inner, {
       exactSystemPrompt,
       chatOnly,
+      ownerId: options.ownerId ?? 0,
+      mode: options.mode ?? "host",
+      ...(options.projectId ? { projectId: options.projectId } : {}),
+      webUiPrompt: !subagentResources,
+      ...(quick && !subagentResources ? { quickPrompt: quickTemplateHolder } : {}),
       onAgentRunComplete: (completedSessionId, _sessionName) => {
         void notifySessionComplete(completedSessionId, options.ownerId ?? 0).catch((error) => {
           console.error("[pi-web] failed to send completion push:", error instanceof Error ? error.message : error);
@@ -3971,6 +4153,11 @@ export async function startRpcSession(
         }
         : {}),
     });
+    if (quick && !subagentResources) {
+      quickTurnClampRef.current = () => wrapper.quickTurnBase();
+      wrapper.setQuickToolAllowlist(quickToolAllowlist(quick));
+    }
+    promptPinRef.current = (hash, len, tools) => wrapper.observePrompt(hash, len, tools);
     const realSessionId = inner.sessionId as string;
     registerRpcWrapper(wrapper);
     recordStartRegisteredId(sessionId, realSessionId);

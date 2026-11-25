@@ -12,7 +12,7 @@
  */
 
 export const QUICK_IDENTITY_ORIGINAL =
-  "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.";
+  "You are a coding assistant running inside pi, a coding agent harness. Help users inspect files, run commands, and modify code.";
 
 export const QUICK_IDENTITY_REPLACEMENT =
   "You are a helpful assistant in pi-web's quick session mode — a lightweight conversation with no workspace: there are no file, command, or coding tools here. Answer the user directly; if a tools list is present, those tools (typically external MCP tools) are the ones you may call.";

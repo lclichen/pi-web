@@ -1132,7 +1132,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          cwd: newSessionCwd,
+          cwd: newSessionCwd ?? undefined,
           type: "ensure_session",
           ...(newSessionMode ? { mode: newSessionMode } : {}),
           ...(newSessionProjectId ? { projectId: newSessionProjectId } : {}),

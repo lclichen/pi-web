@@ -112,11 +112,11 @@ export function WorkspaceTerminal({ cwd, visible, remote = null, onClose }: Prop
 
     const inputSub = term.onData((data) => {
       if (sessionId && !dead)
-        void post(remote ? `/api/remoteterminal/${sessionId}/input` : `/api/terminal/${sessionId}/input`, { data });
+        void post(remote ? `/api/remoteterminal/${sessionId}/input` : `/api/terminal/${sessionId}`, remote ? { data } : { type: "input", data });
     });
     const resizeSub = term.onResize(({ cols, rows }) => {
       if (sessionId && !dead)
-        void post(remote ? `/api/remoteterminal/${sessionId}/resize` : `/api/terminal/${sessionId}/resize`, {
+        void post(remote ? `/api/remoteterminal/${sessionId}/resize` : `/api/terminal/${sessionId}`, {
           cols,
           rows,
         });
@@ -127,7 +127,7 @@ export function WorkspaceTerminal({ cwd, visible, remote = null, onClose }: Prop
 
     (async () => {
       try {
-        const res = await fetch(remote ? "/api/remoteterminal/create" : "/api/terminal/create", {
+        const res = await fetch(remote ? "/api/remoteterminal/create" : "/api/terminal", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(
@@ -139,9 +139,11 @@ export function WorkspaceTerminal({ cwd, visible, remote = null, onClose }: Prop
         const body = (await res.json().catch(() => null)) as {
           success?: boolean;
           data?: { sessionId?: string };
+          id?: string;
           error?: string;
         };
-        if (!res.ok || !body?.success || !body.data?.sessionId) {
+        const newId = body?.data?.sessionId ?? body?.id;
+        if (!res.ok || !newId) {
           // The platform caps concurrent PTYs per container and rejects the
           // WebSocket upgrade with HTTP 429 (ws surfaces it verbatim).
           const raw = body?.error ?? `HTTP ${res.status}（响应无内容，服务器路由可能崩溃）`;
@@ -151,7 +153,7 @@ export function WorkspaceTerminal({ cwd, visible, remote = null, onClose }: Prop
           term.writeln(`\x1b[31m无法启动终端：${msg}\x1b[0m`);
           return;
         }
-        sessionId = body.data.sessionId;
+        sessionId = newId;
 
         es = new EventSource(remote ? `/api/remoteterminal/${sessionId}/events` : `/api/terminal/${sessionId}/events`);
         es.onmessage = (e) => {
@@ -182,7 +184,8 @@ export function WorkspaceTerminal({ cwd, visible, remote = null, onClose }: Prop
       ro.disconnect();
       es?.close();
       if (sessionId)
-        void post(remote ? `/api/remoteterminal/${sessionId}/close` : `/api/terminal/${sessionId}/close`, {});
+        if (remote) void post(`/api/remoteterminal/${sessionId}/close`, {});
+      else void fetch(`/api/terminal/${sessionId}`, { method: "DELETE", keepalive: true }).catch(() => {});
       term.dispose();
       fitRef.current = null;
       termRef.current = null;

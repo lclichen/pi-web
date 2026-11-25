@@ -15,6 +15,7 @@ import {
 } from "@/lib/rpc-manager";
 import { startServerPerf } from "@/lib/perf";
 import { getSessionMetas, inferLegacyModeFromCwd } from "@/lib/session-metas";
+import { migrateQuickSessionMetas } from "@/lib/quick-project-migration";
 import { getProject } from "@/lib/projects";
 import { getAgentForUser } from "@/lib/relay/registry";
 import { requireUserIdentity } from "@/lib/web-session";
@@ -43,7 +44,8 @@ export async function GET(req: Request) {
       attachSessionProjectInfo(getRpcSessionInfos()),
     ]);
     perf?.span("scan+projects");
-    const metas = getSessionMetas();
+    let metas = getSessionMetas();
+    if (await migrateQuickSessionMetas(user.id)) metas = getSessionMetas();
     const sessions = withSubagentDisplayStatus(mergeSessionLists(persistedSessions, runtimeSessions)).map((s) => {
       const meta = metas[s.id];
       const mode = meta?.mode ?? inferLegacyModeFromCwd(s.cwd);

@@ -25,6 +25,9 @@ import { cacheSessionPath, catalogFirstMessage, getLatestModelChange, invalidate
 import { computeLiveSessionTotalActiveMs } from "./session-timing";
 import { getProjectTrustStatus, projectTrustReloadOptions } from "./project-trust";
 import { notifySessionComplete } from "./web-push";
+import { copySessionImages } from "./session-images";
+import { copySessionMeta } from "./session-metas";
+import { checkSessionQuota } from "./session-guard";
 import { filterActiveToolsForMode, isRemoteMode, mcpExcludedServers, type ToolExclusion } from "./tool-policy";
 import { hasActiveSessionLivenessProvider } from "./session-liveness";
 import type { SlashCommandInfo } from "@earendil-works/pi-coding-agent";
@@ -1769,6 +1772,7 @@ export class AgentSessionWrapper {
         // idle source is shut down, because the browser moves to the child.
         const keepSource = this.isSessionRunningForReplacement();
         return this.withSessionReplacement("fork", async () => {
+          const sourceSessionId = this.inner.sessionId;
           const sessionManager = this.inner.sessionManager;
           const currentSessionFile = this.inner.sessionFile;
 
@@ -1807,6 +1811,8 @@ export class AgentSessionWrapper {
           }
 
           const newSessionId = forkedManager.getSessionId();
+          copySessionMeta(sourceSessionId, newSessionId);
+          copySessionImages(sourceSessionId, newSessionId);
           cacheSessionPath(newSessionId, newSessionFile);
           invalidateSessionListCache();
           if (!keepSource) await this.shutdownAfterSessionReplacement("fork");
@@ -1833,6 +1839,8 @@ export class AgentSessionWrapper {
         if (!forkedPath) throw new Error("Failed to create forked session");
 
         const newSessionId = SessionManager.open(forkedPath, sessionDir).getSessionId();
+        copySessionMeta(this.inner.sessionId, newSessionId);
+        copySessionImages(this.inner.sessionId, newSessionId);
         cacheSessionPath(newSessionId, forkedPath);
         invalidateSessionListCache();
         return { cancelled: false, newSessionId };
@@ -1843,6 +1851,7 @@ export class AgentSessionWrapper {
           throw new Error("Cannot clone while the session is running");
         }
         this.refuseForkOfSideChat();
+        const sourceSessionId = this.inner.sessionId;
         const sessionManager = this.inner.sessionManager;
         const currentSessionFile = this.inner.sessionFile;
         const leafId = typeof command.leafId === "string" ? command.leafId : sessionManager.getLeafId();
@@ -1868,6 +1877,8 @@ export class AgentSessionWrapper {
           if (!clonedPath || !existsSync(clonedPath)) throw new Error("Failed to clone current session branch");
 
           const newSessionId = SessionManager.open(clonedPath, sessionDir).getSessionId();
+          copySessionMeta(sourceSessionId, newSessionId);
+          copySessionImages(sourceSessionId, newSessionId);
           cacheSessionPath(newSessionId, clonedPath);
           invalidateSessionListCache();
           await this.shutdownAfterSessionReplacement("clone");
@@ -3218,6 +3229,7 @@ export async function setRpcSessionTools(
   sessionId: string,
   sessionFile: string | undefined,
   requestedToolNames: unknown,
+  restoreOptions: RpcSessionStartOptions = {},
 ): Promise<SetRpcSessionToolsResult> {
   const toolNames = requestedToolNames === undefined
     ? undefined
@@ -3232,7 +3244,7 @@ export async function setRpcSessionTools(
     const pending = closingRpcSessionWait(sessionId) ?? getLocks().get(sessionId);
     if (pending) {
       await pending.catch(() => undefined);
-      return setRpcSessionTools(sessionId, sessionFile, requestedToolNames);
+      return setRpcSessionTools(sessionId, sessionFile, requestedToolNames, restoreOptions);
     }
     if (!existsSync(sessionFile)) {
       invalidateSessionPathCache(sessionId);
@@ -3249,7 +3261,10 @@ export async function setRpcSessionTools(
     if (toolNames === undefined) appendClearedSessionToolSelection(manager);
     else appendSessionToolSelection(manager, toolNames);
     invalidateSessionListCache();
-    const started = await startRpcSession(sessionId, sessionFile, undefined);
+    const started = await startRpcSession(sessionId, sessionFile, undefined, {
+      ...restoreOptions,
+      ...(toolNames !== undefined ? { toolNames } : {}),
+    });
     return { session: started.session, sessionId: started.realSessionId, recreated: false };
   }
 
@@ -3287,12 +3302,15 @@ export async function setRpcSessionTools(
     : { model: existing.inner.model, thinkingLevel: existing.inner.agent.state?.thinkingLevel };
   await existing.shutdown();
 
+  const inheritedExtensions = restoreOptions.extensionFactories;
   if (persistedFile) {
-    const started = await startRpcSession(sessionId, persistedFile, undefined);
+    const started = await startRpcSession(sessionId, persistedFile, undefined, restoreOptions);
     return { session: started.session, sessionId: started.realSessionId, recreated: true };
   }
 
   const started = await startRpcSession(`__recreate__${randomUUID()}`, "", sessionCwd, {
+    ...restoreOptions,
+    ...(inheritedExtensions ? { extensionFactories: inheritedExtensions } : {}),
     ...(toolNames !== undefined ? { toolNames } : {}),
     ...(model ? { initialModel: { provider: model.provider, modelId: model.id } } : {}),
     allowInitialModelFallback: true,
@@ -4051,4 +4069,16 @@ export async function shutdownUserSessions(ownerId: number): Promise<void> {
     (wrapper) => wrapper.ownerId === ownerId && wrapper.isAlive(),
   );
   await Promise.allSettled(sessions.map((wrapper) => wrapper.shutdown()));
+}
+
+/** Admission check for POST /api/agent/new (per-user + global live sessions). */
+export function checkRpcSessionQuota(user: { id: number; role: "admin" | "user" }): ReturnType<typeof checkSessionQuota> {
+  let globalLive = 0;
+  let perUserLive = 0;
+  for (const session of getRegistry().values()) {
+    if (!session.isAlive()) continue;
+    globalLive += 1;
+    if (session.ownerId === user.id) perUserLive += 1;
+  }
+  return checkSessionQuota({ userId: user.id, role: user.role, perUserLive, globalLive });
 }

@@ -1,11 +1,53 @@
 import { NextResponse } from "next/server";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type { InlineExtension } from "@earendil-works/pi-coding-agent";
 import { existsSync } from "fs";
 import { randomUUID } from "crypto";
 import { allowFileRoot } from "@/lib/file-access";
-import { invalidateSessionListCache } from "@/lib/session-reader";
-import { startRpcSession } from "@/lib/rpc-manager";
-import { cwdMissingBody } from "@/lib/missing-cwd";
+import { makeSshToolsExtension } from "@/lib/extensions/ssh-tools";
+import { makeSandboxBgChannel, makeRelayBgChannel, makeSshBgChannel } from "@/lib/extensions/bg-channels";
+import type { BgExecChannel } from "@/lib/extensions/bg-shell";
+import { makeBgTasksExtension } from "@/lib/extensions/bg-tasks";
+import { makeShareFileExtension } from "@/lib/extensions/share";
+import type { RemoteSessionContext } from "@/lib/remote-session";
+import { resolveCoreExtensionPaths } from "@/lib/session-restore-options";
+import { getQuickTemplate, DEFAULT_TEMPLATE_ID } from "@/lib/quick-templates";
+import { readSshConfig } from "@/lib/ssh";
+import { invalidateSessionListForSession } from "@/lib/session-reader";
+import { checkRpcSessionQuota, startRpcSession } from "@/lib/rpc-manager";
+import { requireUserIdentity } from "@/lib/web-session";
+import { isSessionMode, modeAllowedForUser, type SessionMode } from "@/lib/session-modes";
+import {
+  descriptorForNewSession,
+  descriptorForProject,
+  type SessionDescriptor,
+} from "@/lib/session-descriptor";
+import { samePath } from "@/lib/paths";
+import { spaceDir } from "@/lib/session-spaces";
+import { ensureSandboxHome, ensureLocalHome, ensureQuickHome } from "@/lib/mode-homes";
+import { ensureQuickSessionWorkspace } from "@/lib/quick-session";
+import { pathScopeForSession, writePathScope } from "@/lib/path-scope";
+import { projectionSessionFor } from "@/lib/projection/session-context";
+import { recordSessionMeta } from "@/lib/session-metas";
+import { makeRelayToolsExtension } from "@/lib/extensions/relay-tools";
+import { assertRelayWorkspaceMcpSafe, makeRemoteMcpToolsExtension } from "@/lib/extensions/remote-mcp";
+import { sessionDirsForProject } from "@/lib/session-context";
+import { makeRemoteVerifyExtension } from "@/lib/extensions/remote-verify";
+import { makeEnvironmentInfoExtension } from "@/lib/extensions/environment-info";
+import {
+  ensureQuickProject,
+  ensureProjectHome,
+  removeLegacySandboxExtensionLink,
+  getOwnedProject,
+  writeSandboxConfig,
+  type ProjectRecord,
+} from "@/lib/projects";
+import { makeSandboxToolsExtension } from "@/lib/extensions/sandbox-tools";
+import { makeHostWorkspaceServiceExtension } from "@/lib/extensions/host-workspace";
+import { requireCompatibleAgent } from "@/lib/relay/agent-gate";
+import { isApiRequestAllowed } from "@/lib/request-security";
+import { platformGet } from "@/lib/platform/client";
+import { readSandboxHomeConfig, setSandboxContainer } from "@/lib/mode-homes";
 
 const THINKING_LEVELS = new Set<ThinkingLevel>(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
 
@@ -16,37 +58,450 @@ function parseThinkingLevel(value: unknown): ThinkingLevel | undefined {
   }
   throw new Error(`Invalid thinking level: ${String(value)}`);
 }
-// POST /api/agent/new  body: { cwd: string; type: string; message?: string; ... }
+
+/**
+ * Resolve which container an unbound sandbox session should target. The
+ * sandbox extension's CLI fallback is INTERACTIVE (it prompts when several
+ * containers are running) — unusable in an embedded RPC session. pi-web
+ * resolves deterministically instead: exactly one running container is
+ * auto-picked; several require an explicit binding (clear 409); none leaves
+ * it unset so the extension's out-of-box auto-provision still applies.
+ */
+async function resolveAutoContainer(apiKey: string): Promise<{ containerId?: number; conflict?: string }> {
+  const list = await platformGet<{ containers: Array<{ id: number; name: string }> }>("/api/v1/containers", apiKey, {
+    filter: "running",
+  });
+  const running = list.containers ?? [];
+  if (running.length === 1) return { containerId: running[0].id };
+  if (running.length > 1) {
+    return {
+      conflict: `有 ${running.length} 个容器在运行（${running.map((c) => `#${c.id} ${c.name}`).join("、")}），请在项目菜单里绑定其中一个，或停止多余的容器`,
+    };
+  }
+  return {};
+}
+
+// POST /api/agent/new  body: { cwd: string; mode?: "host"|"sandbox"|"local-machine"; type: string; ... }
 // Spawns a brand-new pi session. Most calls immediately send the first command;
 // type:"ensure_session" only creates the runtime so clients can query commands.
-// Returns pi's real session id plus the model/thinking state selected at startup.
+// With PI_WEB_AUTH=on the session is bound to the calling user's space and the
+// requested execution mode (design doc §2/§4).
 export async function POST(req: Request) {
+  if (!isApiRequestAllowed(req)) {
+    return NextResponse.json({ error: "Untrusted API request" }, { status: 403 });
+  }
+  const identity = requireUserIdentity(req);
+  if (!identity.ok) return NextResponse.json({ error: "登录已失效" }, { status: 401 });
+  const { user } = identity.session;
+
+  // Admission quota (dev 批次4): caps live sessions per user and globally so
+  // one user (or an org-wide burst) cannot walk the process into its heap
+  // limit. Admins are exempt from the per-user cap only.
+  const quota = checkRpcSessionQuota({ id: user.id, role: user.role });
+  if (quota) return NextResponse.json({ error: quota.error }, { status: quota.status });
+
   let commandType: string | undefined;
   let promptAccepted = false;
   try {
-    const body = await req.json() as { cwd?: string; [key: string]: unknown };
+    const body = (await req.json()) as { cwd?: string; mode?: unknown; projectId?: unknown; [key: string]: unknown };
+    const embed = identity.session.embed;
+    const rawMode = body.mode;
+    if (rawMode !== undefined && !isSessionMode(rawMode)) {
+      return NextResponse.json({ error: `Invalid mode: ${String(rawMode)}` }, { status: 400 });
+    }
+    if (embed) {
+      // New sessions may only be created inside the access token's project.
+      const requestedProjectId = typeof body.projectId === "string" ? body.projectId : undefined;
+      if (requestedProjectId && requestedProjectId !== embed.scope.projectId) {
+        return NextResponse.json({ error: "Access denied" }, { status: 403 });
+      }
+      if (typeof body.cwd === "string" && body.cwd && !samePath(body.cwd, embed.scope.cwd)) {
+        return NextResponse.json({ error: "Access denied" }, { status: 403 });
+      }
+      body.projectId = embed.scope.projectId;
+      body.cwd = embed.scope.cwd;
+      delete body.mode;
+      // 嵌入会话的工具档位由服务端产品配置决定，忽略客户端传值（P2-6）。
+      delete body.toolNames;
+    }
     const { cwd, ...command } = body;
     commandType = typeof command.type === "string" ? command.type : undefined;
-
-    if (!cwd || typeof cwd !== "string") {
-      return NextResponse.json({
-        error: "cwd is required",
-        ...(commandType === "prompt"
-          ? { code: "prompt_rejected", accepted: false }
-          : {}),
-      }, { status: 400 });
+    // The PROJECT decides the runtime mode for project-scoped sessions — an
+    // absent client mode must not register the live session as "host": the
+    // ownership registry outranks sidecar metas in the remote file/terminal
+    // APIs, so a host-registered sandbox session breaks remotefs/remoteterminal.
+    const projectForMode =
+      typeof body.projectId === "string" && body.projectId
+        ? getOwnedProject(body.projectId, user.id, user.role === "admin")
+        : undefined;
+    const mode = projectForMode?.mode ?? (rawMode as SessionMode | undefined) ?? "host";
+    const effectiveMode = mode;
+    const permission = modeAllowedForUser(effectiveMode, { id: user.id, role: user.role });
+    if (!permission.ok) {
+      return NextResponse.json({ error: permission.reason }, { status: 403 });
     }
-    if (!existsSync(cwd)) {
-      return NextResponse.json({
-        ...cwdMissingBody(cwd),
-        ...(commandType === "prompt"
-          ? { code: "prompt_rejected", accepted: false }
-          : {}),
-      }, { status: 400 });
+    // SSH has no standalone form: the old fallthrough silently created a
+    // Host-local session while recording mode=ssh. Fail closed instead.
+    if (effectiveMode === "ssh" && !projectForMode) {
+      return NextResponse.json({ error: "SSH 会话必须绑定 SSH 项目（projectId）" }, { status: 400 });
+    }
+
+    let descriptor: SessionDescriptor | undefined;
+
+    let effectiveCwd: string | undefined = typeof cwd === "string" ? cwd : undefined;
+    let templateIdForMeta: string | undefined;
+    let quickSlugForMeta: string | undefined;
+    let quickOptions:
+      | {
+          systemPrompt?: string;
+          model?: { provider: string; modelId: string };
+          mcpServers?: string[];
+          mcpTools?: string[];
+        }
+      | undefined;
+    let extensionFactories: InlineExtension[] | undefined;
+    // Background-task channel for remote modes (bg_run). Registered under the
+    // SDK's real session id inside startRpcSession; without it (and with the
+    // session marked remote) bg_run fails loudly instead of running on the Host.
+    let bgChannel: BgExecChannel | undefined;
+    // share_file 工具的远程读取上下文（与 bgChannel 同源的模式参数）。
+    let shareRemote: RemoteSessionContext | undefined;
+    let sessionDir: string | undefined;
+    // 工作区目录（lib/session-context.ts 契约）：提示词告知模型用；绝不
+    // 作为会话 cwd。
+    let workspaceDirForEnv: string | undefined;
+
+    // Project-scoped session (sandbox / local-machine): the project record —
+    // not the client — decides mode and home directory.
+    let projectRef: ProjectRecord | undefined;
+    if (typeof body.projectId === "string" && body.projectId) {
+      if (user.id === 0) {
+        return NextResponse.json({ error: "项目会话需要登录（多用户模式）" }, { status: 400 });
+      }
+      const project = getOwnedProject(body.projectId, user.id, user.role === "admin");
+      if (!project) return NextResponse.json({ error: "项目不存在" }, { status: 404 });
+      projectRef = project;
+      const home = ensureProjectHome(project);
+      const dirs = sessionDirsForProject(project, home);
+      workspaceDirForEnv = dirs.workspaceDir;
+      if (project.mode === "sandbox") {
+        if (!process.env.PI_WEB_PLATFORM_URL) {
+          return NextResponse.json({ error: "沙箱模式未配置（缺少 PI_WEB_PLATFORM_URL）" }, { status: 400 });
+        }
+        if (!identity.session.apiKey) {
+          return NextResponse.json({ error: "沙箱模式需要平台凭证，请重新登录" }, { status: 401 });
+        }
+        // Project's own .pi/sandbox-platform.json carries url/container; refresh credentials.
+        writeSandboxConfig(home, { apiKey: identity.session.apiKey });
+        // Legacy cleanup: projects created before the amedac-core merge carry
+        // a .pi/extensions/pi-sandbox-extension symlink that would now double-
+        // register the container tools.
+        removeLegacySandboxExtensionLink(home);
+        let projectContainerId = Number(project.containerId ?? 0) || 0;
+        if (project.containerId) {
+          writeSandboxConfig(home, { containerId: project.containerId });
+        } else {
+          // Unbound project ("跟随平台默认"): resolve deterministically here —
+          // the extension's interactive container picker cannot run in RPC mode.
+          let containerId = Number(readSandboxHomeConfig(user.id).containerId) || 0;
+          if (!containerId) {
+            const auto = await resolveAutoContainer(identity.session.apiKey);
+            if (auto.conflict) {
+              return NextResponse.json({ error: auto.conflict }, { status: 409 });
+            }
+            containerId = auto.containerId ?? 0;
+          }
+          if (containerId) {
+            writeSandboxConfig(home, { containerId });
+            projectContainerId = containerId;
+          }
+        }
+        if (projectContainerId) {
+          bgChannel = makeSandboxBgChannel(identity.session.apiKey, projectContainerId);
+          shareRemote = {
+            mode: "sandbox",
+            userId: user.id,
+            apiKey: identity.session.apiKey,
+            containerId: projectContainerId,
+            isAdmin: user.role === "admin",
+            homePrefix: home,
+          };
+        }
+        extensionFactories = [
+          // Container tool routing: amedac-core sandbox module, inline
+          // (merged from the retired pi-sandbox-extension package).
+          makeSandboxToolsExtension(),
+          makeRemoteVerifyExtension("sandbox", user.id),
+          makeEnvironmentInfoExtension({
+            mode: "sandbox",
+            username: user.username,
+            projectName: project.name,
+            ...(project.containerId !== undefined && project.containerId !== null
+              ? { containerId: Number(project.containerId) }
+              : {}),
+          }),
+        ];
+      } else if (project.mode === "ssh") {
+        // SSH mode: the SDK session runs in the project home; the ssh-tools
+        // extension routes the seven coding tools to the remote host. The
+        // config was written at project creation — missing config = broken
+        // project, surfaced honestly instead of silently running locally.
+        const sshConfig = readSshConfig(home);
+        if (!sshConfig) {
+          return NextResponse.json({ error: "SSH 项目缺少连接配置（.pi/ssh.json 缺失）" }, { status: 400 });
+        }
+        extensionFactories = [
+          makeSshToolsExtension({
+            projectId: project.id,
+            sshConfig,
+            workdir: project.workdir ?? "/",
+            projectHome: home,
+          }),
+          makeEnvironmentInfoExtension({
+            mode: "ssh",
+            username: user.username,
+            projectName: project.name,
+            workspaceDir: dirs.workspaceDir,
+          }),
+        ];
+        bgChannel = makeSshBgChannel(project.id, sshConfig, project.workdir ?? "/");
+        shareRemote = {
+          mode: "ssh",
+          userId: user.id,
+          apiKey: "",
+          containerId: 0,
+          projectId: project.id,
+          sshConfig,
+          workdir: project.workdir ?? "/",
+          isAdmin: user.role === "admin",
+          homePrefix: home,
+        };
+      } else if (project.mode === "host") {
+        extensionFactories = [
+          makeEnvironmentInfoExtension({ mode: "host", username: user.username, hostDir: home }),
+          makeHostWorkspaceServiceExtension(home),
+        ];
+      } else if (project.mode === "quick") {
+        const templateId = project.templateId ?? DEFAULT_TEMPLATE_ID;
+        const template = getQuickTemplate(templateId);
+        if (!template) {
+          return NextResponse.json({ error: `快速会话模板不存在：${templateId}` }, { status: 400 });
+        }
+        const quickProject = await ensureQuickProject(user.id, user.username, template);
+        projectRef = quickProject;
+        const quickHome = quickProject.workspaceRoot ?? home;
+        effectiveCwd = quickHome;
+        workspaceDirForEnv = quickHome;
+        descriptor = descriptorForProject(quickProject, user.id, quickHome, quickHome);
+        templateIdForMeta = templateId;
+        quickSlugForMeta = quickProject.quickDir;
+        quickOptions = {
+          systemPrompt: template.systemPrompt,
+          ...(template.model ? { model: template.model } : {}),
+          ...(template.mcpServers && template.mcpServers.length > 0 ? { mcpServers: template.mcpServers } : {}),
+          ...(template.mcpTools && template.mcpTools.length > 0 ? { mcpTools: template.mcpTools } : {}),
+        };
+        extensionFactories = [makeHostWorkspaceServiceExtension(quickHome)];
+      } else {
+        const gate = requireCompatibleAgent(user.id, project.machineId);
+        if (!gate.ok) {
+          return NextResponse.json({ error: gate.error }, { status: gate.status });
+        }
+        try {
+          assertRelayWorkspaceMcpSafe(home, user.id);
+        } catch (error) {
+          return NextResponse.json(
+            { error: error instanceof Error ? error.message : String(error) },
+            { status: 409 },
+          );
+        }
+        extensionFactories = [
+          makeRelayToolsExtension(user.id, {
+            projectHome: home,
+            ...(project.workdir ? { workspaceDir: project.workdir } : {}),
+            ...(project.machineId ? { machineId: project.machineId } : {}),
+          }),
+          makeRemoteMcpToolsExtension({
+            userId: user.id,
+            userName: user.username,
+            projectHome: home,
+            ...(project.workdir ? { workspaceDir: project.workdir } : {}),
+            ...(project.machineId ? { machineId: project.machineId } : {}),
+          }),
+          makeRemoteVerifyExtension("local-machine", user.id),
+          makeEnvironmentInfoExtension({
+            mode: "local-machine",
+            username: user.username,
+            projectName: project.name,
+            workspaceDir: dirs.workspaceDir,
+          }),
+        ];
+        bgChannel = makeRelayBgChannel(user.id, project.machineId ?? undefined, project.workdir);
+        shareRemote = {
+          mode: "local-machine",
+          userId: user.id,
+          apiKey: "",
+          containerId: 0,
+          ...(project.machineId ? { machineId: project.machineId } : {}),
+          ...(project.workdir ? { workdir: project.workdir } : {}),
+          isAdmin: user.role === "admin",
+          homePrefix: home,
+        };
+      }
+      // 目录契约（lib/session-context.ts）：SDK 会话 cwd 一律 = 服务器侧
+      // 项目目录（projectDir）。project.workdir 是工作区路径（用户机器/
+      // 远端），只进提示词与工具映射层——此前误用作会话 cwd，SDK 在服务
+      // 器上把它 resolve 成 `<repo>/D:\…` 混合路径写进会话头，恢复时模型
+      // 路由按 cwd 找目录直接报 Directory does not exist。
+      if (project.mode !== "quick") {
+        effectiveCwd = home;
+        descriptor = descriptorForProject(project, user.id, home, project.workdir);
+      }
+    } else if (mode === "sandbox") {
+      if (!process.env.PI_WEB_PLATFORM_URL) {
+        return NextResponse.json({ error: "沙箱模式未配置（缺少 PI_WEB_PLATFORM_URL）" }, { status: 400 });
+      }
+      if (user.id !== 0 && !identity.session.apiKey) {
+        return NextResponse.json({ error: "沙箱模式需要平台凭证，请重新登录" }, { status: 401 });
+      }
+      // Per-user stub home carries the sandbox config (url/apiKey/container/
+      // disableLocalFallback) via <home>/.pi/sandbox-platform.json.
+      effectiveCwd = ensureSandboxHome(user.id, {
+        url: process.env.PI_WEB_PLATFORM_URL,
+        apiKey: identity.session.apiKey,
+        disableLocalFallback: true,
+      });
+      descriptor = descriptorForNewSession({ mode: "sandbox", ownerId: user.id, cwd: effectiveCwd });
+      if (user.id !== 0 && !Number(readSandboxHomeConfig(user.id).containerId)) {
+        // No user-pinned default: resolve deterministically (same reasoning
+        // as the project branch — no interactive picker in RPC mode).
+        const auto = await resolveAutoContainer(identity.session.apiKey);
+        if (auto.conflict) {
+          return NextResponse.json({ error: auto.conflict }, { status: 409 });
+        }
+        if (auto.containerId) setSandboxContainer(user.id, auto.containerId);
+      }
+      removeLegacySandboxExtensionLink(effectiveCwd!);
+      extensionFactories = [
+        makeSandboxToolsExtension(),
+        makeRemoteVerifyExtension("sandbox", user.id),
+        makeEnvironmentInfoExtension({ mode: "sandbox", username: user.username }),
+      ];
+      {
+        const containerId = Number(readSandboxHomeConfig(user.id).containerId) || 0;
+        if (containerId) bgChannel = makeSandboxBgChannel(identity.session.apiKey, containerId);
+        shareRemote = {
+          mode: "sandbox",
+          userId: user.id,
+          apiKey: identity.session.apiKey ?? "",
+          containerId,
+          isAdmin: user.role === "admin",
+        };
+      }
+    } else if (mode === "local-machine") {
+      if (user.id !== 0) {
+        const gate = requireCompatibleAgent(user.id);
+        if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
+      }
+      effectiveCwd = ensureLocalHome(user.id);
+      descriptor = descriptorForNewSession({ mode: "local-machine", ownerId: user.id, cwd: effectiveCwd });
+      extensionFactories = [
+        makeRelayToolsExtension(user.id),
+        makeRemoteVerifyExtension("local-machine", user.id),
+        makeEnvironmentInfoExtension({ mode: "local-machine", username: user.username }),
+      ];
+      bgChannel = makeRelayBgChannel(user.id);
+      shareRemote = {
+        mode: "local-machine",
+        userId: user.id,
+        apiKey: "",
+        containerId: 0,
+        isAdmin: user.role === "admin",
+      };
+    } else {
+      // Host mode keeps the caller-supplied server directory.
+      if (mode !== "quick" && (!effectiveCwd || !existsSync(effectiveCwd))) {
+        return NextResponse.json(
+          {
+            error: `Directory does not exist: ${String(effectiveCwd)}`,
+            ...(commandType === "prompt" ? { code: "prompt_rejected", accepted: false } : {}),
+          },
+          { status: 400 },
+        );
+      }
+      extensionFactories = [
+        makeEnvironmentInfoExtension({ mode: "host", username: user.username, hostDir: effectiveCwd }),
+        ...(effectiveCwd ? [makeHostWorkspaceServiceExtension(effectiveCwd)] : []),
+      ];
+      descriptor = descriptorForNewSession({
+        mode: "host",
+        ownerId: user.id,
+        cwd: effectiveCwd,
+        management: "webui",
+      });
+    }
+
+    if (!effectiveCwd && mode !== "quick") {
+      return NextResponse.json(
+        {
+          error: "cwd is required",
+          ...(commandType === "prompt" ? { code: "prompt_rejected", accepted: false } : {}),
+        },
+        { status: 400 },
+      );
+    }
+
+    // 远程会话的路径空间标记：工具路径（/workspace/…、用户机器绝对路径）
+    // 由路径护栏映射回项目 home 后再套 deny/allow 规则（lib/path-scope.ts）。
+    if (effectiveCwd) {
+      const scope = pathScopeForSession(projectRef?.mode ?? mode, projectRef);
+      if (scope) writePathScope(effectiveCwd, scope);
+    }
+
+    // Quick mode: no workspace — a per-user scratch home is only used for the
+    // session file layout and MCP-config fallback. The template pins model /
+    // system prompt / MCP allowlist.
+    if (mode === "quick") {
+      const templateId = typeof body.templateId === "string" ? body.templateId : DEFAULT_TEMPLATE_ID;
+      const template = getQuickTemplate(templateId);
+      if (!template) {
+        return NextResponse.json({ error: `快速会话模板不存在：${templateId}` }, { status: 400 });
+      }
+      // 每会话独立工作区（lib/quick-session.ts）：独立目录 + quick MCP 物化
+      // + 模板快照——会话间配置互不干涉，模板版本可追溯。
+      const ws = ensureQuickSessionWorkspace(user.id, template);
+      const quickProject = await ensureQuickProject(user.id, user.username, template);
+      projectRef = quickProject;
+      quickSlugForMeta = ws.slug;
+      effectiveCwd = ws.dir;
+      descriptor = descriptorForProject(quickProject, user.id, ws.dir);
+      extensionFactories = [makeHostWorkspaceServiceExtension(effectiveCwd)];
+      templateIdForMeta = templateId;
+      quickOptions = {
+        systemPrompt: template.systemPrompt,
+        ...(template.model ? { model: template.model } : {}),
+        ...(template.mcpServers && template.mcpServers.length > 0 ? { mcpServers: template.mcpServers } : {}),
+        ...(template.mcpTools && template.mcpTools.length > 0 ? { mcpTools: template.mcpTools } : {}),
+      };
+    }
+
+    // User sessions live in the caller's shard; host sessions in the global dir.
+    if (user.id !== 0 && mode !== "host") {
+      sessionDir = spaceDir({ kind: "user", userId: user.id });
+    }
+    if (mode === "host" && user.id !== 0) {
+      // Admin host sessions also go to the admin's shard (CLI keeps the root).
+      sessionDir = spaceDir({ kind: "user", userId: user.id });
     }
 
     // Use a one-time key so startRpcSession's lock doesn't conflict with real session ids
-    const { provider, modelId, toolNames, thinkingLevel, ...promptCommand } = command as { provider?: string; modelId?: string; toolNames?: string[]; thinkingLevel?: unknown; [key: string]: unknown };
+    const { provider, modelId, toolNames, thinkingLevel, ...promptCommand } = command as {
+      provider?: string;
+      modelId?: string;
+      toolNames?: string[];
+      thinkingLevel?: unknown;
+      [key: string]: unknown;
+    };
     if ((provider && !modelId) || (!provider && modelId)) {
       throw new Error("provider and modelId must be provided together");
     }
@@ -56,21 +511,70 @@ export async function POST(req: Request) {
     // that share a key onto one session. Date.now() (ms resolution) collides for
     // requests in the same millisecond, merging two new sessions into one.
     const tempKey = `__new__${randomUUID()}`;
-    const { session, realSessionId } = await startRpcSession(tempKey, "", cwd, {
+    const coreExtensionPaths = resolveCoreExtensionPaths();
+    const { session, realSessionId } = await startRpcSession(tempKey, "", effectiveCwd, {
       ...(toolNames ? { toolNames } : {}),
-      ...(provider && modelId ? { initialModel: { provider, modelId } } : {}),
+      ...(quickOptions?.model ? { initialModel: quickOptions.model } : {}),
+      ...(provider && modelId && !quickOptions?.model ? { initialModel: { provider, modelId } } : {}),
       ...(explicitThinkingLevel ? { thinkingLevel: explicitThinkingLevel } : {}),
+      ...(sessionDir ? { sessionDir } : {}),
+      ownerId: user.id,
+      ownerName: user.username,
+      mode,
+      ...(bgChannel ? { bgChannel } : {}),
+      ...(quickOptions ? { quick: quickOptions } : {}),
+      // Core extensions (todo/plan_save/plan-mode) load via the global agent
+      // dir's amedac-core package (single source of truth with the CLI
+      // distribution); restoreSessionOptions adds a source-layout fallback.
+      // Only server-coupled extensions inject inline here.
+      extensionFactories: [
+        makeBgTasksExtension(),
+        // share_file：所有模式可用（quick 除外——无工作区可分享）。
+        ...(mode !== "quick"
+          ? [
+              makeShareFileExtension({
+                ownerId: user.id,
+                ownerName: user.username,
+                mode: mode === "host" ? "host" : mode,
+                cwd: effectiveCwd ?? "/",
+                ...(shareRemote ? { remote: shareRemote } : {}),
+              }),
+            ]
+          : []),
+        ...(extensionFactories ?? []),
+      ],
+      ...(coreExtensionPaths ? { additionalExtensionPaths: coreExtensionPaths } : {}),
+      ...(projectRef ? { projectCredentialDir: effectiveCwd } : {}),
+      ...(projectRef ? { projectId: projectRef.id } : {}),
+      ...(projectRef && projectRef.mode !== "quick" && projectRef.mode !== "host"
+        ? { projection: projectionSessionFor(projectRef, user, identity.session.apiKey ?? "") }
+        : {}),
+      ...(user.id > 0 ? { userModelConfigUserId: user.id } : {}),
     });
 
-    // Keep the files-route allowed-roots cache (see app/api/files/[...path]/route.ts)
-    // in sync so the new cwd is immediately readable via /api/files. Without this,
-    // a file request under a brand-new cwd would 403 for up to the cache TTL.
-    allowFileRoot(cwd);
-    invalidateSessionListCache();
+    recordSessionMeta(realSessionId, {
+      mode: effectiveMode,
+      ...(descriptor ? { descriptor } : {}),
+      ownerId: user.id,
+      ownerName: user.username,
+      ...(projectRef ? { projectId: projectRef.id } : {}),
+      ...(templateIdForMeta ? { templateId: templateIdForMeta } : {}),
+      ...(quickSlugForMeta ? { quickDir: quickSlugForMeta } : {}),
+    });
+    // Scoped to the new session's own space (dev 批次2).
+    invalidateSessionListForSession(session.sessionFile, user.id);
 
-    // Answers before session_start has finished when it waits on an extension dialog (#1678):
-    // the page opens the event stream that shows the dialog only once this reply names the id.
-    const state = await session.send({ type: "get_state" }) as {
+    // Host-mode sessions keep the files-route allowed-roots cache in sync so
+    // the cwd is immediately readable via /api/files (sandbox/local sessions
+    // don't expose server-local files at all).
+    if (mode === "host" && effectiveCwd) {
+      allowFileRoot(effectiveCwd);
+    }
+    if (mode === "quick" && effectiveCwd) {
+      allowFileRoot(effectiveCwd);
+    }
+
+    const state = (await session.send({ type: "get_state" })) as {
       model?: { id: string; provider: string };
       thinkingLevel?: string;
     };
@@ -80,9 +584,8 @@ export async function POST(req: Request) {
         success: true,
         sessionId: realSessionId,
         data: null,
-        model: state.model
-          ? { provider: state.model.provider, modelId: state.model.id }
-          : null,
+        mode: effectiveMode,
+        model: state.model ? { provider: state.model.provider, modelId: state.model.id } : null,
         thinkingLevel: state.thinkingLevel,
       });
     }
@@ -94,17 +597,17 @@ export async function POST(req: Request) {
       success: true,
       sessionId: realSessionId,
       data: result,
-      model: state.model
-        ? { provider: state.model.provider, modelId: state.model.id }
-        : null,
+      mode,
+      model: state.model ? { provider: state.model.provider, modelId: state.model.id } : null,
       thinkingLevel: state.thinkingLevel,
     });
   } catch (error) {
-    return NextResponse.json({
-      error: error instanceof Error ? error.message : String(error),
-      ...(commandType === "prompt" && !promptAccepted
-        ? { code: "prompt_rejected", accepted: false }
-        : {}),
-    }, { status: 500 });
+    return NextResponse.json(
+      {
+        error: error instanceof Error ? error.message : String(error),
+        ...(commandType === "prompt" && !promptAccepted ? { code: "prompt_rejected", accepted: false } : {}),
+      },
+      { status: 500 },
+    );
   }
 }

@@ -55,9 +55,15 @@ export interface SkillSearchResult {
   package: string;
   installs: string;
   url: string;
+  /** SkillHub results (internal registry) carry these instead of npx fields. */
+  source?: "skillhub";
+  namespace?: string;
+  slug?: string;
+  version?: string;
+  summary?: string;
 }
 
-export type SkillInstallScope = "global" | "project";
+export type SkillInstallScope = "global" | "user" | "project";
 
 export interface SkillInstallInfo {
   package: string;

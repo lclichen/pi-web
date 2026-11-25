@@ -3888,8 +3888,8 @@ export async function startRpcSession(
     const wrapper = new AgentSessionWrapper(inner, {
       exactSystemPrompt,
       chatOnly,
-      onAgentRunComplete: (completedSessionId, sessionName) => {
-        void notifySessionComplete(completedSessionId, sessionName).catch((error) => {
+      onAgentRunComplete: (completedSessionId, _sessionName) => {
+        void notifySessionComplete(completedSessionId, options.ownerId ?? 0).catch((error) => {
           console.error("[pi-web] failed to send completion push:", error instanceof Error ? error.message : error);
         });
       },

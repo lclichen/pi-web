@@ -78,7 +78,7 @@ self.addEventListener("push", (event) => {
   } catch {
     // Ignore malformed or missing push payloads.
   }
-  const { title, body, url, tag } = payload;
+  const { title, body, url, tag, ownerId } = payload;
   if (typeof title !== "string" || !title || typeof body !== "string" || !body) return;
 
   // Always surface a system notification. iOS revokes the push subscription
@@ -87,7 +87,17 @@ self.addEventListener("push", (event) => {
   // subscription in the background-delivery case. Notifications sharing a tag
   // replace each other instead of stacking, so a visible window merely sees
   // the completion notification re-appear.
-  event.waitUntil(showPushNotification(title, body, url, tag));
+  event.waitUntil(
+    (async () => {
+      // A push endpoint belongs to the browser profile, not the login. After a
+      // logout or account switch, do not surface the previous user's completion.
+      if (typeof ownerId === "number" && ownerId > 0) {
+        const current = await currentUserId();
+        if (current !== ownerId) return;
+      }
+      await showPushNotification(title, body, url, tag);
+    })(),
+  );
 });
 
 // An open page announces a completion itself from its event stream, and the
@@ -117,6 +127,18 @@ async function hasRecentNotification(tag, now) {
     });
   } catch {
     return false;
+  }
+}
+
+async function currentUserId() {
+  try {
+    const response = await fetch("/api/webauth/me", { cache: "no-store", credentials: "same-origin" });
+    if (!response.ok) return null;
+    const data = await response.json();
+    return typeof data?.user?.id === "number" ? data.user.id : null;
+  } catch {
+    // Offline/unreachable: fail closed rather than leak to a stale login.
+    return null;
   }
 }
 

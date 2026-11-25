@@ -911,6 +911,8 @@ export interface PluginPackageInfo {
   counts: PluginResourceCounts;
   resources: PluginResourceInfo[];
   status: "loaded" | "installed" | "missing" | "disabled";
+  origin?: "package" | "settings" | "directory";
+  sourceLabel?: string;
 }
 
 export interface PluginsResponse {
@@ -919,6 +921,7 @@ export interface PluginsResponse {
   totals: PluginResourceCounts;
   diagnostics: PluginDiagnostic[];
   projectResourcesLoaded: boolean;
+  packagesOffline?: boolean;
 }
 
 /** One package of a bulk enable/disable; `error` means it was left as it was. */

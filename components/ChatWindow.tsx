@@ -904,6 +904,9 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
       ref={chatInputRef}
       onSend={handleSend}
       onAbort={handleAbort}
+      embedded={embedded}
+      embeddedDensity={embeddedDensity}
+      allowedCommandNames={commandAllowlist}
       remoteFileSessionId={remoteFileSessionId}
       onSideChat={onSideSession && !isHiddenRelation(session?.relation) ? askInSideChat : undefined}
       onSteer={agentRunning ? handleSteer : undefined}

@@ -34,6 +34,7 @@ import { DismissButton } from "./DismissButton";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useEnterSendMode } from "@/hooks/useEnterSendMode";
 import { useI18n } from "@/hooks/useI18n";
+import { isEmbedCommandAllowed, normalizeEmbedCommandName, slashCommandNameFromText } from "@/lib/embed-commands";
 import { useChatAppearance } from "@/hooks/useChatAppearance";
 import { useFontPreferences } from "@/hooks/useFontPreferences";
 import type { ToolPreset } from "@/lib/tool-presets";
@@ -104,6 +105,12 @@ interface Props {
   onRecallQueue?: () => void;
   slashCommands?: SlashCommandInfo[];
   slashCommandsLoading?: boolean;
+  /** Embed shell: hide secondary controls and enforce the product's command allowlist. */
+  embedded?: boolean;
+  embeddedDensity?: "comfortable" | "compact" | "mini";
+  allowedCommandNames?: string[];
+  /** A known but disallowed slash command was typed; caller shows a notice. */
+  onBlockedCommand?: (name: string) => void;
   /**
    * An extension's dialog or panel is open over the chat. Its layer sits under the composer's
    * menus, so the history, `/` and `@` menus hide meanwhile and come back once it closes: typing
@@ -760,6 +767,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
   savedDefaultThinkingLevel, onSetDefaultThinkingLevel,
   retryInfo, queuedMessages, inputHistory = [], onRecallQueue,
   slashCommands, slashCommandsLoading, onLoadSlashCommands,
+  embedded = false, embeddedDensity, allowedCommandNames, onBlockedCommand,
   extensionUiOpen = false,
   onBuiltinCommand,
   soundEnabled, onSoundToggle, onAudioUnlock,
@@ -775,7 +783,10 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
   const { ui: uiFontFamily, uiWeight } = useFontPreferences();
   const isMobile = useIsMobile();
   // The controls row under the composer: a finger's 44px on a phone.
-  const controlSize = isMobile ? 44 : 32;
+  const denseControls = isMobile || (embedded && embeddedDensity !== "comfortable");
+  const denseEmbed = embedded && embeddedDensity !== "comfortable";
+  const miniEmbed = embedded && embeddedDensity === "mini";
+  const controlSize = denseControls ? 44 : 32;
   const enterSendMode = useEnterSendMode();
   const [value, setValue] = useState(() => (draftKey ? getDraft(draftKey)?.value ?? "" : ""));
   const [toolDropdownOpen, setToolDropdownOpen] = useState(false);
@@ -1246,13 +1257,25 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
     const msg = value.trim();
     if (!msg && !attachedImages.length) return;
     onAudioUnlock?.();
+    if (allowedCommandNames) {
+      const slashName = slashCommandNameFromText(msg);
+      if (slashName) {
+        const target = normalizeEmbedCommandName(slashName);
+        const known = BUILTIN_SLASH_COMMANDS.some((command) => normalizeEmbedCommandName(command.name) === target)
+          || (slashCommands ?? []).some((command) => normalizeEmbedCommandName(command.name) === target);
+        if (known && !isEmbedCommandAllowed(allowedCommandNames, slashName)) {
+          onBlockedCommand?.(slashName);
+          return;
+        }
+      }
+    }
     const builtinAllowed = !isStreaming || offersBuiltinSlashCommandWhileStreaming(msg);
     if (builtinAllowed && await runBuiltinCommand(msg)) return;
     // A `!` command runs beside the run, as in pi's TUI; anything else queues.
     if (isStreaming && !(msg.startsWith("!") && !attachedImages.length)) return;
     clearInput();
     onSend(msg, attachedImages.length ? attachedImages : undefined);
-  }, [value, attachedImages, isStreaming, runBuiltinCommand, onSend, clearInput, onAudioUnlock]);
+  }, [value, attachedImages, isStreaming, runBuiltinCommand, onSend, clearInput, onAudioUnlock, allowedCommandNames, onBlockedCommand, slashCommands]);
 
   const slashQuery = !compact && value.startsWith("/") && !/\s/.test(value.slice(1))
     ? value.slice(1).toLowerCase()
@@ -1263,7 +1286,8 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
     const builtinCommands = isStreaming
       ? BUILTIN_SLASH_COMMANDS.filter((command) => command.availableWhileStreaming)
       : BUILTIN_SLASH_COMMANDS;
-    const commands = [...builtinCommands, ...(slashCommands ?? [])];
+    const commands = [...builtinCommands, ...(slashCommands ?? [])]
+      .filter((command) => isEmbedCommandAllowed(allowedCommandNames, command.name));
     return filterSlashCommands(commands, slashQuery, t);
   })();
 
@@ -2529,7 +2553,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
               lineHeight: 1.6,
               fontFamily: "inherit",
               minHeight: compact ? 96 : 24,
-              maxHeight: 200,
+              maxHeight: denseEmbed ? (miniEmbed ? 72 : 120) : 200,
               overflow: "auto",
             }}
           />
@@ -2620,7 +2644,9 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
                 alignSelf: "flex-end",
                 display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
                 // Mobile: icon-only so the placeholder and draft keep the width.
-                ...(isMobile ? { width: 36, height: 36, padding: 0 } : { padding: "7px 14px" }),
+                width: denseEmbed ? 40 : 56,
+                height: denseEmbed ? 40 : 56,
+                ...(denseEmbed ? { padding: 0 } : isMobile ? { padding: 0 } : { padding: "7px 14px" }),
                 background: (value.trim() || attachedImages.length) ? "var(--accent)" : "var(--bg-panel)",
                 border: "none",
                 borderRadius: 8,
@@ -2876,7 +2902,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
                 )}
               </div>
             )}
-            {!isStreaming && onToolPresetChange && (
+            {!embedded && !isStreaming && onToolPresetChange && (
               <div ref={toolDropdownRef} style={{
                 // On a phone the menu opens from the strip's right edge, not
                 // the button's: its preset descriptions are wider than the room
@@ -3033,7 +3059,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
               </button>
             )}
 
-            {onSoundToggle !== undefined && (
+            {!embedded && onSoundToggle !== undefined && (
               <button
                 onClick={onSoundToggle}
                  title={soundEnabled ? t("chat.disableSound") : t("chat.enableSound")}

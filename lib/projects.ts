@@ -56,6 +56,10 @@ export interface ProjectRecord {
   /** Local-machine: which of the user's paired machines this project runs on
    *  (multi-machine). Absent = the user's default (most recent) machine. */
   machineId?: string;
+  /** Local-machine: the machineId this project was bound to before the most
+   *  recent rebind (「重新连接机器」). Display/undo metadata only — sessions
+   *  always use `machineId`; untouched by PATCHes that do not rebind. */
+  previousMachineId?: string;
   /** SSH mode: connection for the remote host (stored 0600 in the project home). */
   ssh?: SshConfigInput;
   /** Optional preset config bundle applied to the fresh home. */
@@ -325,7 +329,14 @@ export function updateProject(
     }
     if (patch.machineId !== undefined && project.mode === "local-machine") {
       // null/empty clears the binding → the user's default machine.
-      if (patch.machineId && /^[A-Za-z0-9_-]{1,64}$/.test(patch.machineId)) project.machineId = patch.machineId;
+      const next =
+        patch.machineId && /^[A-Za-z0-9_-]{1,64}$/.test(patch.machineId) ? patch.machineId : undefined;
+      // 改绑时记下旧值（「撤销」用），且只在真的换了机器时写——重命名之类的
+      // PATCH 不会碰 previousMachineId。旧项目没有显式 machineId 时无值可记。
+      if (next !== project.machineId) {
+        if (project.machineId) project.previousMachineId = project.machineId;
+      }
+      if (next) project.machineId = next;
       else delete project.machineId;
     }
     if (patch.containerId !== undefined && project.mode === "sandbox") {

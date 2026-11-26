@@ -25,9 +25,11 @@ import {
 } from "@/lib/sidebar-state-shared";
 import { formatRelativeTime } from "@/lib/subagent-shared";
 import { machineBadgeState } from "@/lib/machine-badge";
+import { countUnpairedMachineProjects, needsMachineReconnect } from "@/lib/project-machine-reconnect";
 import { ProjectSettingsDialog } from "./ProjectSettingsDialog";
 import { ProjectImportDialog } from "./ProjectImportDialog";
 import { ApplyBundleDialog } from "./ApplyBundleDialog";
+import { ReconnectMachineDialog } from "./ReconnectMachineDialog";
 
 function loadSortMode(): SidebarSortMode {
   if (typeof window === "undefined") return "project";
@@ -193,6 +195,8 @@ export function ProjectSessionTree({
   const [settingsId, setSettingsId] = useState<string | null>(null);
   const [importId, setImportId] = useState<string | null>(null);
   const [applyBundleId, setApplyBundleId] = useState<string | null>(null);
+  // 「重新连接机器」对话框绑定的本机项目（绑定机器已解配 / 离线时可选）。
+  const [reconnectProject, setReconnectProject] = useState<ProjectRecord | null>(null);
   const [hostImportDir, setHostImportDir] = useState<string | null>(null);
   const [draggedGroupKey, setDraggedGroupKey] = useState<string | null>(null);
   const [dragOverGroupKey, setDragOverGroupKey] = useState<string | null>(null);
@@ -1132,6 +1136,14 @@ export function ProjectSessionTree({
     return sortSidebarGroups(items, sortMode).map((item) => item.project);
   }, [latestByProject, pinRankByProjectKey, pinnedProjectKeys, projectOrderRank, projects, sortMode]);
 
+  // 上线提示（轻量）：有机器在线、且存在绑定机器已解配的本机项目时，在项目
+  // 列表上方给一条细提示。只提示、绝不自动改绑——用户可能换了物理机器，自动
+  // 指过去会让项目连到错误的机器。机器目录未到达（relayReady=false）时不判定。
+  const unpairedMachineProjects = useMemo(
+    () => countUnpairedMachineProjects(orderedProjects, relayReady ? (relayMachines ?? []) : undefined),
+    [orderedProjects, relayMachines, relayReady],
+  );
+
   const orderedHostGroups = useMemo(() => {
     const items = hostGroups.map(([root, list]) => {
       const key = hostPinKey(root);
@@ -1668,6 +1680,28 @@ export function ProjectSessionTree({
           {unreadOnly && !hasVisibleTopLevelSession && (
             <div style={{ padding: "8px 6px", fontSize: 11, color: "var(--text-dim)" }}>
               {t("sessions.noUnreadSessions")}
+            </div>
+          )}
+
+          {/* 有机器上线且存在已解配的本机项目：细条提示（不打断、不自动改绑）。 */}
+          {sessionSpace === "mine" && !unreadOnly && unpairedMachineProjects > 0 && (
+            <div
+              role="status"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                margin: "0 2px 4px",
+                padding: "4px 8px",
+                borderRadius: 5,
+                border: "1px solid rgba(245,158,11,0.35)",
+                background: "rgba(245,158,11,0.10)",
+                color: "var(--warning, #f59e0b)",
+                fontSize: 10.5,
+                lineHeight: 1.4,
+              }}
+            >
+              {t("sessions.machineReconnectBanner", { count: unpairedMachineProjects })}
             </div>
           )}
 
@@ -2655,6 +2689,17 @@ export function ProjectSessionTree({
                 setMenu(null);
               }}
             />
+            {/* 本机项目的绑定机器已解配 / 离线：提供重新连接入口（换机器或换目录）。 */}
+            {needsMachineReconnect(menuProject, relayReady ? (relayMachines ?? []) : undefined) && (
+              <MenuItem
+                label={t("sessions.machineReconnect")}
+                hint={t("sessions.machineReconnectHint")}
+                onClick={() => {
+                  setReconnectProject(menuProject);
+                  setMenu(null);
+                }}
+              />
+            )}
             <MenuSection label={t("sessions.menuGroupConfig")} />
             <MenuItem
               label={t("sessions.settingsModelCredentials")}
@@ -2850,6 +2895,17 @@ export function ProjectSessionTree({
           onDiscard={() => void discardProjection()}
           onClose={() => {
             if (!projectionBusy) setProjectionProject(null);
+          }}
+        />
+      )}
+
+      {reconnectProject && (
+        <ReconnectMachineDialog
+          project={reconnectProject}
+          onClose={() => setReconnectProject(null)}
+          onReconnected={() => {
+            loadProjects();
+            refreshSessions();
           }}
         />
       )}

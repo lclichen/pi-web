@@ -14,6 +14,9 @@ import { isApiRequestAllowed, hasJsonContentType } from "@/lib/request-security"
 import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from "fs";
 import { invalidateModelsCache } from "@/lib/models-cache";
 import { validateAgentDirectory } from "@/lib/relay/browse";
+import { getMachinesForUser } from "@/lib/relay/registry";
+import { listAgentTokens } from "@/lib/relay/relay-store";
+import { DEFAULT_MACHINE_ID } from "@/lib/relay/protocol";
 import { withProjectConfigWriteLock, ProjectConfigLockBusyError } from "@/lib/project-config-lock";
 
 export const dynamic = "force-dynamic";
@@ -76,6 +79,31 @@ export async function PATCH(req: Request, ctx: RouteCtx) {
     body = (await req.json()) as Record<string, unknown>;
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
+  // Local-machine 改绑机器（「重新连接机器」）：非空 machineId 必须是该用户
+  // 机器目录里的一台——否则客户端可以把项目绑到不属于自己的机器上。空串 /
+  // null = 清除绑定（回落到默认机器），不做归属校验。错误信息不回显机器名，
+  // 避免泄漏别的用户的信息。
+  const callerId = r.identity!.session.user.id;
+  const requestedMachineId =
+    body.machineId !== undefined && (body.machineId === null || typeof body.machineId === "string")
+      ? (body.machineId as string | null)
+      : undefined;
+  const nextMachineId = typeof requestedMachineId === "string" && requestedMachineId ? requestedMachineId : "";
+  if (project.mode === "local-machine" && nextMachineId) {
+    // 正常归属：该用户机器目录里的一台。auth-off（userId 0）是隐式 host 单用户
+    // ——与 getOwnedProject 对 0 的放行一致，token 目录里的机器都算「本机」：
+    // 部署曾开启多用户时，旧 token 的 userId 非 0，只看 getMachinesForUser(0)
+    // 会把合法的改绑全部拒掉，而浏览器侧（getStatus()）仍能看到那台机器。
+    // auth-on 不做这条豁免；0 之外的任何身份都必须真的拥有该机器。
+    const paired = getMachinesForUser(callerId).some((m) => m.machineId === nextMachineId);
+    const authOffMachine =
+      callerId === 0 &&
+      listAgentTokens().some(({ record }) => (record.machineId ?? DEFAULT_MACHINE_ID) === nextMachineId);
+    if (!paired && !authOffMachine) {
+      return NextResponse.json({ error: "该机器未在当前账号下配对，请先完成本机配对后再绑定" }, { status: 400 });
+    }
   }
 
   // 项目 home 配置写入（ADR-0004 §4.2 共享写锁）：models/auth 凭据、
@@ -166,12 +194,18 @@ export async function PATCH(req: Request, ctx: RouteCtx) {
 
   // Local-machine workdir: validate on the paired machine before persisting,
   // so a typo cannot point the project at a directory that does not exist.
+  // 校验必须打在**本次请求要绑定**的机器上：同一请求里既换机器又换目录正是
+  // 「重新连接」的典型形态，拿项目当前（已解配的）旧机器去校验必然失败。
   let workdirPatch: string | undefined;
   if (typeof body.workdir === "string" && project.mode === "local-machine") {
     const candidate = body.workdir.trim();
     if (candidate) {
       try {
-        workdirPatch = await validateAgentDirectory(r.identity!.session.user.id, project.machineId, candidate);
+        workdirPatch = await validateAgentDirectory(
+          r.identity!.session.user.id,
+          nextMachineId || project.machineId,
+          candidate,
+        );
       } catch (error) {
         return NextResponse.json(
           { error: `工作目录不可用：${error instanceof Error ? error.message : String(error)}` },

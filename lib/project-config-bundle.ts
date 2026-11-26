@@ -85,6 +85,10 @@ const ALLOWED_PREFIXES = [".pi/", "labs/"];
 const ALLOWED_ROOT_FILES = new Set(["manifest.json", "readme.md", "agents.md"]);
 /** ALLOWED_ROOT_FILES entries that are archive metadata only — never written. */
 const METADATA_ROOT_FILES = new Set(["manifest.json", "readme.md"]);
+/** Root-level Python runtime emitted by apkg-publisher when package Python is
+ * not all under .pi/ or labs/. These exact files are written to the project
+ * home; entry wrappers find the loader by walking ancestors. */
+const ALLOWED_RUNTIME_FILES = new Set([".apkg_runtime/apkg.py", ".apkg_runtime/python.bundle"]);
 
 export interface ExportStats {
   files: number;
@@ -288,8 +292,9 @@ export function sanitizeConfigEntryPath(name: string): string {
 export function assertAllowedConfigPath(relPath: string): void {
   const lower = relPath.toLowerCase();
   if (ALLOWED_ROOT_FILES.has(lower)) return;
+  if (ALLOWED_RUNTIME_FILES.has(lower)) return;
   if (ALLOWED_PREFIXES.some((p) => lower.startsWith(p) || lower === p.slice(0, -1))) return;
-  throw new Error(`包内不支持的路径（仅支持 .pi/ 与 labs/）: ${relPath.slice(0, 80)}`);
+  throw new Error(`包内不支持的路径（仅支持 .pi/、labs/ 与 .apkg_runtime 运行时）: ${relPath.slice(0, 80)}`);
 }
 
 /** One validated config file destined for a project home. */

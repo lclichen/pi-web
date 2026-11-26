@@ -18,7 +18,7 @@ const EXT_TO_LANGUAGE: Record<string, string> = {
   ex: "elixir", exs: "elixir", hs: "haskell", ml: "ocaml", clj: "clojure", nix: "nix",
   html: "html", htm: "html", vue: "markup", svelte: "markup", astro: "markup",
   css: "css", scss: "scss", less: "less",
-  json: "json", jsonl: "json", yaml: "yaml", yml: "yaml",
+  json: "json", jsonl: "json", csv: "csv", tsv: "tsv", yaml: "yaml", yml: "yaml",
   toml: "toml", ini: "ini", cfg: "ini", properties: "properties",
   xml: "xml", md: "markdown", mdx: "markdown", tex: "latex",
   sh: "bash", bash: "bash", zsh: "bash", fish: "bash",

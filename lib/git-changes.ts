@@ -46,6 +46,24 @@ function isRelativeWithin(relative: string): boolean {
   return relative === "" || (!relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative));
 }
 
+/** True when any directory between `root` and `target` is a symlink/junction. */
+function pathGoesThroughLink(root: string, target: string): boolean {
+  const relative = path.relative(path.resolve(root), path.resolve(target));
+  if (!isRelativeWithin(relative) || relative === "") return false;
+  const parts = relative.split(path.sep);
+  let current = path.resolve(root);
+  // The target file itself is not a link we followed; only its parents matter.
+  for (const part of parts.slice(0, -1)) {
+    current = path.join(current, part);
+    try {
+      if (fs.lstatSync(current).isSymbolicLink()) return true;
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
 function yieldToEventLoop(): Promise<void> {
   return new Promise((resolve) => setImmediate(resolve));
 }
@@ -279,18 +297,24 @@ export async function getGitFileDiff(cwd: string, filePath: string): Promise<Git
   if (!repositoryRoot) return { supported: false };
   // Git names the repository by its real path, while the file and the cwd may be named
   // through a link: compare real paths. A file whose real path leaves the repository
-  // stays out; the route has already checked that real path against the allowed roots.
+  // through a directory link is still shown when the link itself is inside and the
+  // route authorized the target (Windows junctions, #748); a nested checkout is not.
   const realRoot = resolveExistingPath(repositoryRoot);
   const realFilePath = resolveExistingPath(filePath);
-  if (!isWithinPath(realRoot, realFilePath)) return { supported: false };
+  const lexicalRoot = path.resolve(repositoryRoot);
+  const resolvedFilePath = path.resolve(filePath);
+  if (!isWithinPath(realRoot, realFilePath)) {
+    if (!isWithinPath(lexicalRoot, resolvedFilePath) || !pathGoesThroughLink(lexicalRoot, resolvedFilePath)) {
+      return { supported: false };
+    }
+  }
   // Reading the index runs a repository-configured fsmonitor hook. Opening a
   // file in another checkout (one nested in the cwd, say) must not run its hook,
   // as expanding that folder in the file tree does not (lib/file-tree-visibility.ts);
   // the cwd's own repository keeps its fsmonitor.
   const gitConfig = isWithinPath(realRoot, resolveExistingPath(cwd)) ? [] : ["-c", "core.fsmonitor=false"];
 
-  const resolvedFilePath = path.resolve(filePath);
-  const relativePath = toGitPath(path.relative(realRoot, realFilePath));
+  const relativePath = toGitPath(path.relative(lexicalRoot, resolvedFilePath));
   const entries = await readStatusEntries(repositoryRoot, gitConfig);
   const entry = entries.find((candidate) => candidate.path === relativePath);
   if (!entry) return { supported: false };

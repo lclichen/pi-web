@@ -54,7 +54,10 @@ test("every language a source file gets is a Prism grammar, or text", async () =
   const names = [...textExtensions.map((ext) => `sample.${ext}`), "Dockerfile", "Makefile", ".env.local"];
   for (const name of names) {
     const language = await languageOf(name);
-    if (language !== "text") assert.equal(refractor.registered(language), true, `${name}: ${language}`);
+    // TSV renders as a delimiter table; PrismLight has no tsv grammar.
+    if (language !== "text" && language !== "tsv") {
+      assert.equal(refractor.registered(language), true, `${name}: ${language}`);
+    }
   }
 });
 

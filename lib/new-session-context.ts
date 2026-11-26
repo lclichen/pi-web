@@ -39,6 +39,11 @@ export interface NewSessionTarget {
 export interface NewSessionOptions {
   /** Move the fresh composer's draft and model picks to the new one instead of parking the draft. */
   carryComposer?: boolean;
+  /** Managed-project drafts carry their project binding and execution mode. */
+  projectId?: string | null;
+  projectLabel?: string | null;
+  templateId?: string | null;
+  mode?: "host" | "sandbox" | "local-machine" | "ssh" | "quick";
 }
 
 /** What the sidebar reports for its cwd, for the bar above a fresh composer. */

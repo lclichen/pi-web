@@ -226,6 +226,18 @@ export function AppShell() {
   // The temporary id distinguishes consecutive fresh composers in one cwd.
   const [newSessionCwd, setNewSessionCwd] = useState<string | null>(null);
   const [newSessionDraftId, setNewSessionDraftId] = useState("initial");
+  // 待创建草稿的项目/模板/模式只属于新会话：已有会话的模型请求必须用会话
+  // 自己的 cwd，残留的 projectId 会在项目删除后让 /api/models 404。
+  const [newSessionProjectId, setNewSessionProjectId] = useState<string | null>(null);
+  const [newSessionProjectLabel, setNewSessionProjectLabel] = useState<string | null>(null);
+  const [newSessionTemplateId, setNewSessionTemplateId] = useState<string | null>(null);
+  const [newSessionMode, setNewSessionMode] = useState<NonNullable<SessionInfo["mode"]>>("host");
+  const newSessionModeRef = useRef<NonNullable<SessionInfo["mode"]>>("host");
+  newSessionModeRef.current = newSessionMode;
+  const newSessionProjectIdRef = useRef<string | null>(null);
+  newSessionProjectIdRef.current = newSessionProjectId;
+  const newSessionProjectLabelRef = useRef<string | null>(null);
+  newSessionProjectLabelRef.current = newSessionProjectLabel;
   const activeNewSessionDraftKeyRef = useRef<string | null>(null);
   // The bar above a fresh composer (NewSessionContextBar): the sidebar reports
   // what it shows and carries out its moves, which remount the composer. Its
@@ -921,6 +933,11 @@ export function AppShell() {
         rekeyDraft(activeDraftKey, parkedNewSessionDraftKey(cwd));
       }
       activeNewSessionDraftKeyRef.current = null;
+      // 恢复的是已有会话：草稿专属的项目/模板/标签随草稿失效，否则
+      // 已有会话的模型请求会带着已删除项目的 id（404「项目不存在」）。
+      setNewSessionProjectId(null);
+      setNewSessionProjectLabel(null);
+      setNewSessionTemplateId(null);
       // Selecting the session must remount the chat with the session
       // present: useAgentSession loads content in a mount-only effect, so
       // the null-session welcome mount from the switch would never load
@@ -1047,6 +1064,11 @@ export function AppShell() {
       }
     }
     setNewSessionCwd(null);
+    // 恢复的是已有会话：清掉草稿专属状态，避免旧项目/模板残留污染
+    // 模型解析与新建会话。
+    setNewSessionProjectId(null);
+    setNewSessionProjectLabel(null);
+    setNewSessionTemplateId(null);
     setSelectedSession(session);
     setSessionKey((k) => k + 1);
     setBranchTree([]);
@@ -1106,6 +1128,10 @@ export function AppShell() {
     setNewSessionDraftId(sessionId);
     setSelectedSession(null);
     setNewSessionCwd(cwd);
+    setNewSessionProjectId(options?.projectId ?? null);
+    setNewSessionProjectLabel(options?.projectLabel ?? null);
+    setNewSessionTemplateId(options?.templateId ?? null);
+    setNewSessionMode(options?.mode ?? "host");
     setSessionKey((k) => k + 1);
     setBranchTree([]);
     setBranchActiveLeafId(null);
@@ -1160,7 +1186,14 @@ export function AppShell() {
     invalidateWorkspaceRestore();
     activeNewSessionDraftKeyRef.current = null;
     setNewSessionCwd(null);
-    setSelectedSession(session);
+    // 草稿已落盘为真实会话：项目/模板/标签只属于待创建草稿，继续保留
+    // 会让之后打开别的会话时模型请求仍带旧 projectId（项目删除后 404）。
+    setNewSessionProjectId(null);
+    setNewSessionProjectLabel(null);
+    setNewSessionTemplateId(null);
+    // transient SessionInfo 不带 mode，按草稿模式补上，否则 quick 会话
+    // 首条消息后 quick 相关的工具/文件面板行为会失效。
+    setSelectedSession(session.mode ? session : { ...session, mode: newSessionModeRef.current });
     hydrateSelectedSession(session.id);
     router.replace(`?session=${encodeURIComponent(session.id)}`, { scroll: false });
   }, [invalidateWorkspaceRestore, router, hydrateSelectedSession]);
@@ -1328,6 +1361,10 @@ export function AppShell() {
     setRefreshKey((k) => k + 1);
     setSessionKey((k) => k + 1);
     setNewSessionCwd(null);
+    // fork 出的已经是真实会话：草稿专属状态不得残留。
+    setNewSessionProjectId(null);
+    setNewSessionProjectLabel(null);
+    setNewSessionTemplateId(null);
     setSelectedSession((prev) => ({
       ...(prev ?? { path: "", cwd: "", created: "", modified: "", messageCount: 0, firstMessage: "" }),
       id: newSessionId,
@@ -1361,6 +1398,12 @@ export function AppShell() {
       activeNewSessionDraftKeyRef.current = cwd ? `new:${draftId}:${cwd}` : null;
       setSelectedSession(null);
       setNewSessionCwd(cwd ?? null);
+      // 删除后回到同目录的空白草稿：从被删会话继承项目身份，而不是让
+      // 之前草稿遗留的 projectId/mode 决定后续会话（可能是别的项目）。
+      setNewSessionProjectId(active.projectId ?? null);
+      setNewSessionProjectLabel(null);
+      setNewSessionTemplateId(null);
+      setNewSessionMode(active.mode ?? "host");
       setSessionKey((k) => k + 1);
       setBranchTree([]);
       setBranchActiveLeafId(null);
@@ -2965,6 +3008,9 @@ export function AppShell() {
               sessionRunning={Boolean(selectedSession && runningSessionIds.has(selectedSession.id))}
               newSessionCwd={effectiveNewSessionCwd}
               newSessionDraftKey={newSessionDraftKey}
+              newSessionProjectId={newSessionProjectId}
+              newSessionMode={newSessionMode}
+              newSessionTemplateId={newSessionTemplateId}
               newSessionContextBar={newSessionContextBar}
               initialNewSessionChoices={selectedSession === null ? carriedNewSessionChoices : null}
               onNewSessionChoicesChange={handleNewSessionChoicesChange}

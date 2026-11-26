@@ -444,15 +444,6 @@ export function ProjectSessionTree({
     });
   };
 
-  const duplicate = async (project: ProjectRecord) => {
-    await fetch(`/api/projects/${encodeURIComponent(project.id)}/duplicate`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
-    }).catch(() => {});
-    loadProjects();
-  };
-
   // 导出配置包：拉 zip blob 触发浏览器下载（.pi/ 配置 + labs/，凭证已剥离）。
   const exportConfig = async (project: ProjectRecord) => {
     try {
@@ -767,7 +758,19 @@ export function ProjectSessionTree({
 
   const remove = async (project: ProjectRecord) => {
     if (!window.confirm(t("sessions.deleteProjectConfirm", { name: project.name }))) return;
-    await fetch(`/api/projects/${encodeURIComponent(project.id)}`, { method: "DELETE" }).catch(() => {});
+    try {
+      const res = await fetch(`/api/projects/${encodeURIComponent(project.id)}`, { method: "DELETE" });
+      if (!res.ok) {
+        // 409（仍有运行中的会话/批量任务、PROJECT_LOCKED）等失败必须告知用户，
+        // 否则界面看起来像删成功了。
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        window.alert(data.error ?? t("sessions.operationFailedHttp", { code: res.status }));
+        return;
+      }
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : String(e));
+      return;
+    }
     loadProjects();
     refreshSessions();
   };
@@ -816,13 +819,42 @@ export function ProjectSessionTree({
     cleanAttachmentsAt(`/api/host/attachments?dir=${encodeURIComponent(dir)}`, dir);
 
   const setContainer = async (project: ProjectRecord, containerId: number | null) => {
-    await fetch(`/api/projects/${encodeURIComponent(project.id)}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ containerId }),
-    }).catch(() => {});
+    try {
+      const res = await fetch(`/api/projects/${encodeURIComponent(project.id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ containerId }),
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        window.alert(data.error ?? t("sessions.operationFailedHttp", { code: res.status }));
+        return;
+      }
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : String(e));
+      return;
+    }
     loadProjects();
     setMenu(null);
+  };
+
+  const renameProject = async (project: ProjectRecord, name: string) => {
+    try {
+      const res = await fetch(`/api/projects/${encodeURIComponent(project.id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        window.alert(data.error ?? t("sessions.operationFailedHttp", { code: res.status }));
+        return;
+      }
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : String(e));
+      return;
+    }
+    loadProjects();
   };
 
   // 项目快照槽（游戏存档制：保存/恢复/删除，服务端做 FIFO 淘汰）。
@@ -2542,26 +2574,10 @@ export function ProjectSessionTree({
               label={t("common.rename")}
               onClick={() => {
                 const name = window.prompt(t("sessions.newProjectName"), menuProject.name);
-                if (name?.trim()) {
-                  void fetch(`/api/projects/${encodeURIComponent(menuProject.id)}`, {
-                    method: "PATCH",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ name: name.trim() }),
-                  }).then(() => loadProjects());
-                }
+                if (name?.trim()) void renameProject(menuProject, name.trim());
                 setMenu(null);
               }}
             />
-            {menuProject.mode !== "host" && (
-              <MenuItem
-                label={t("sessions.duplicateNewProject")}
-                hint={t("sessions.hintDuplicateProject")}
-                onClick={() => {
-                  void duplicate(menuProject);
-                  setMenu(null);
-                }}
-              />
-            )}
             <MenuSection label={t("sessions.menuGroupConfig")} />
             <MenuItem
               label={t("sessions.settingsModelCredentials")}

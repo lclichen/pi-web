@@ -18,7 +18,7 @@ export async function GET(req: Request) {
   return NextResponse.json({ projects: listProjects(identity.session.user.id).map(publicProject) });
 }
 
-// POST /api/projects { name, mode, containerId?, seedFromProjectId? }
+// POST /api/projects { name, mode, containerId? }
 export async function POST(req: Request) {
   if (!isApiRequestAllowed(req)) {
     return NextResponse.json({ error: "Untrusted API request" }, { status: 403 });
@@ -38,7 +38,6 @@ export async function POST(req: Request) {
     name?: unknown;
     mode?: unknown;
     containerId?: unknown;
-    seedFromProjectId?: unknown;
     imageId?: unknown;
     workspaceId?: unknown;
     workdir?: unknown;
@@ -127,7 +126,6 @@ export async function POST(req: Request) {
     mode,
     ...(typeof body.containerId === "number" ? { containerId: body.containerId } : {}),
     ...(typeof body.imageId === "number" ? { imageId: body.imageId } : {}),
-    ...(typeof body.seedFromProjectId === "string" ? { seedFromProjectId: body.seedFromProjectId } : {}),
     ...(workdir ? { workdir } : {}),
     ...(mode === "host" && workdir ? { workspaceRoot: workdir } : {}),
     ...(machineId ? { machineId } : {}),

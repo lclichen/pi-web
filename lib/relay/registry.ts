@@ -1,4 +1,5 @@
 import type { WebSocket } from "ws";
+import { DEFAULT_MACHINE_ID } from "./protocol";
 import type { AgentHello, AgentInfo, AgentToRelayMessage, MachineStatus, PairingCode, RelayStatus } from "./protocol";
 import { generatePairingCode, normalizeCode, PAIRING_TTL_MS } from "./pairing";
 import { isKnownToken, listAgentTokens } from "./relay-store";
@@ -41,8 +42,8 @@ export interface AgentConn {
   seq: number;
 }
 
-/** Machine id used when an agent predates machine identity. */
-export const DEFAULT_MACHINE_ID = "default";
+// 常量本体在 protocol.ts（客户端也要用它判定 legacy 项目）；这里保留原有导出。
+export { DEFAULT_MACHINE_ID };
 
 export interface StatusUpdate {
   userId: number;

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ListChevronsDownUp, ListChevronsUpDown, ListFilter, Pin } from "lucide-react";
 import { useI18n } from "@/hooks/useI18n";
+import { useRelayAgent } from "@/hooks/useRelayAgent";
 import type { SessionInfo } from "@/lib/types";
 import type { ProjectRecord } from "@/lib/projects";
 import type { HostDirRecord } from "@/lib/host-dirs";
@@ -23,6 +24,7 @@ import {
   type SidebarSortMode,
 } from "@/lib/sidebar-state-shared";
 import { formatRelativeTime } from "@/lib/subagent-shared";
+import { machineBadgeState } from "@/lib/machine-badge";
 import { ProjectSettingsDialog } from "./ProjectSettingsDialog";
 import { ProjectImportDialog } from "./ProjectImportDialog";
 import { ApplyBundleDialog } from "./ApplyBundleDialog";
@@ -162,6 +164,9 @@ export function ProjectSessionTree({
   projectsRefreshKey,
 }: Props) {
   const t = useT();
+  // 本机项目行要标出“连接的是哪台机器”：机器目录复用已有的 relay 状态订阅
+  // （useRelayAgent 按页共享一个 EventSource），上下线由 SSE 推送自动刷新。
+  const { machines: relayMachines, ready: relayReady } = useRelayAgent();
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
   // Host 目录注册表：让"新建 Host 项目"在没有会话时也能显示一个空组。
   // 只影响侧栏占位；会话仍按 cwd 动态聚合，不绑定 projectId。
@@ -1753,6 +1758,37 @@ export function ProjectSessionTree({
                 badge && (badge.conflicts > 0 || badge.errors > 0 || badge.timedOut)
                   ? "var(--danger)"
                   : "var(--warning)";
+              // 本机模式项目：标出绑定的机器。机器目录还没到达（relayReady=false）
+              // 时先不判定，避免先闪一下「机器已解配」。
+              const machineBadge = machineBadgeState(project, relayReady ? (relayMachines ?? []) : undefined);
+              const machineBadgeDot =
+                machineBadge?.status === "online"
+                  ? "var(--success)"
+                  : machineBadge?.status === "unpaired"
+                    ? "var(--warning)"
+                    : "#9ca3af";
+              const machineBadgeTitle = !machineBadge
+                ? ""
+                : machineBadge.status === "unpaired"
+                  ? t("sessions.machineUnpaired")
+                  : machineBadge.status === "offline"
+                    ? [
+                        machineBadge.name,
+                        t("sessions.machineOffline"),
+                        ...(machineBadge.lastSeenAt
+                          ? [t("sessions.machineLastSeen", { time: new Date(machineBadge.lastSeenAt).toLocaleString() })]
+                          : []),
+                      ].join(" · ")
+                    : [
+                        machineBadge.name,
+                        ...(machineBadge.upgradeRequired
+                          ? [
+                              machineBadge.requiredVersion
+                                ? t("sessions.machineUpgradeHint", { version: machineBadge.requiredVersion })
+                                : t("sessions.machineUpgrade"),
+                            ]
+                          : [t("sessions.machineOnline")]),
+                      ].join(" · ");
               return (
                 <div key={project.id} style={{ marginBottom: 2, order: groupRenderOrder.get(project.id) ?? 0 }}>
                   <div
@@ -1870,6 +1906,47 @@ export function ProjectSessionTree({
                     >
                       {project.name}
                     </span>
+                    {machineBadge && (
+                      <span
+                        data-machine-state={machineBadge.status}
+                        data-machine-id={machineBadge.machineId}
+                        title={machineBadgeTitle}
+                        aria-label={machineBadgeTitle}
+                        // 机器徽标只做状态展示：点击不能触发项目行的展开/折叠。
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 3,
+                          flexShrink: 0,
+                          maxWidth: 104,
+                          fontSize: 9.5,
+                          fontWeight: 600,
+                          lineHeight: 1,
+                          color: machineBadge.status === "unpaired" ? "var(--warning)" : "var(--text-muted)",
+                        }}
+                      >
+                        <span
+                          aria-hidden="true"
+                          style={{
+                            width: 5,
+                            height: 5,
+                            borderRadius: "50%",
+                            flexShrink: 0,
+                            background: machineBadgeDot,
+                            boxShadow: machineBadge.status === "online" ? "0 0 4px var(--success)" : "none",
+                          }}
+                        />
+                        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {machineBadge.status === "unpaired" ? t("sessions.machineUnpaired") : machineBadge.name}
+                        </span>
+                        {machineBadge.upgradeRequired && (
+                          <span style={{ color: "var(--warning)", flexShrink: 0 }}>
+                            {t("sessions.machineUpgrade")}
+                          </span>
+                        )}
+                      </span>
+                    )}
                     {showBadge && (
                       <button
                         type="button"

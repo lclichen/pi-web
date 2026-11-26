@@ -62,6 +62,13 @@ function normalizePath(path: string): string {
   return path.replace(/^\.\//, "").replace(/\\/g, "/");
 }
 
+/** Dependency trees ride along in .pi/extensions/<name>/node_modules but are
+ * not extensions themselves; skip them from the inventory so they neither
+ * inflate counts nor consume the entry cap. */
+function isExtensionDependencyPath(rel: string): boolean {
+  return /^\.pi\/extensions\/(?:[^/]+\/)*node_modules\//i.test(rel);
+}
+
 /** Preview whitelist: everything a bundle may legally carry. */
 export function isPreviewablePath(path: string): boolean {
   const rel = normalizePath(path);
@@ -131,6 +138,7 @@ export async function inspectBundleZip(zipData: Buffer): Promise<BundleInspectio
 
   const entries = Object.values(archive.files)
     .filter((e) => !e.dir)
+    .filter((e) => !isExtensionDependencyPath(normalizePath(e.name)))
     .slice(0, MAX_PREVIEW_ENTRIES);
   const jsonReads: Array<{ path: string; text: string }> = [];
 
@@ -215,7 +223,22 @@ export async function inspectBundleZip(zipData: Buffer): Promise<BundleInspectio
     }
   }
 
-  inspection.counts.extensions = inspection.extensions.length;
+  // 扩展以“目录”计数，不是文件：.pi/extensions/<name>/package.json + index.js
+  // 以及 node_modules 依赖树都属于同一个扩展（此前每个文件都算一个，依赖树
+  // 会把数字撑到几百上千）。只有带 package.json / index.* / main.* 的目录算扩展。
+  const extensionDirs = new Set<string>();
+  for (const ext of inspection.extensions) {
+    const rel = ext.path.replace(/^\.pi\/extensions\//i, "");
+    const slash = rel.indexOf("/");
+    if (slash === -1) continue;
+    const dir = rel.slice(0, slash);
+    if (dir === "node_modules" || dir.startsWith(".")) continue;
+    const file = rel.slice(slash + 1);
+    if (/^(package\.json|index\.(?:[cm]?[jt]s)|main\.[cm]?js)$/i.test(file)) {
+      extensionDirs.add(dir);
+    }
+  }
+  inspection.counts.extensions = extensionDirs.size;
   // 技能以“目录”计数，不是文件：.pi/skills/<name>/SKILL.md + references/* 属于
   // 同一个技能（此前把每个文件都算成一个技能，内容清单里的数字虚高）。
   // 扁平文件（.pi/skills/<name>.md，历史包）各算一个；缺 SKILL.md 的目录不计。

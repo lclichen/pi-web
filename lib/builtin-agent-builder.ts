@@ -37,13 +37,17 @@
  *
  * 1.2.0：MCP 技能补全 piWeb 执行面声明；local-machine 项目的 stdio MCP
  * 可用 plane="workspace" 在用户配对机器运行（agent >= 0.8.0）。
+ *
+ * 1.2.1：agent-packaging 增加“运行位置与工作区投影”约定——远端只投影
+ * skills/agents/attachments/runtime 与 .apkg_runtime 白名单文件；扩展与
+ * runCli 在服务器执行；加密 Python 需 --apkg-tool 携带解密二进制。
  */
 import JSZip from "jszip";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 export const BUILTIN_AGENT_BUILDER_NAME = "agent-builder";
-export const BUILTIN_AGENT_BUILDER_VERSION = "1.2.0";
+export const BUILTIN_AGENT_BUILDER_VERSION = "1.2.1";
 
 /** Developer skills shipped inside the builder bundle (source of truth:
  *  <repo>/builder-skills/, copied verbatim into .pi/skills/ of the zip).
@@ -208,6 +212,37 @@ local-machine 项目会被导入闸门拒绝。
    由管理员在 设置 → 模型 统一管理，换模型不该触发 Agent 重新打包。
 
 历史包若携带 models.json 仍可导入与查看（兼容），新定义一律不写。
+
+## 运行位置与工作区投影（远端执行必读）
+
+Agent 的扩展/MCP 配置由 pi-web 服务器加载，但**技能脚本、CLI 入口和附件**可能需要在
+远端工作区（sandbox / SSH / 配对机器）执行。投影只同步下面这些目录：
+
+| 目录 | 是否投影 | 用途 |
+|---|---|---|
+| \`.pi/skills/**\` | 是 | 技能正文、scripts/、references/、assets/ |
+| \`.pi/agents/**\` | 是 | 子代理定义 |
+| \`.pi/attachments/**\` | 是 | 图片/附件 |
+| \`.pi/runtime/**\` | 是 | **推荐**：远端入口脚本 + 运行数据（如 \`.pi/runtime/tools/v0_cli.py\`） |
+| \`.pi/.apkg_runtime/{apkg.py,python.bundle,apkg-publisher,apkg-publisher.exe}\` | 是（仅这些文件） | 加密 Python 的 loader、密文与解密二进制 |
+| \`.apkg_runtime/...\`（包根） | 是（仅同名四个文件） | 混合布局的运行时 |
+| \`.pi/extensions/**\` | 否 | 扩展在 pi-web 服务器执行；\`runCli\`/child_process 也在服务器上 |
+| \`.pi/settings.json\`、\`.pi/mcp.json\` 等 | 否 | 服务器侧配置 |
+
+约定：
+
+1. **要在远端执行的脚本放到 \`.pi/runtime/tools/\` 或技能目录的 \`scripts/\`**；
+   不要放 \`.pi/extensions/\`（它不投影，且在服务器执行）。
+2. 脚本配套的配置/数据放同一投影目录（如 \`.pi/runtime/sample/config.json\`），
+   用脚本相对路径定位；远端工作区 root 是 \`.pi\` 的父目录。
+3. 投影上限：2000 个文件 / 总计 64MB / 单文件 32MB；\`.git\` 与
+   \`node_modules/.cache\` 不投影，普通 \`node_modules\` 会随技能/运行时投影。
+4. 加密 Python（\`--harden\`/\`--python-bytecode\`）在远端运行需要
+   \`.pi/.apkg_runtime\` 与客户专用 \`apkg-publisher\`。打包时用
+   \`--apkg-tool <客户运行版>\` 把它放进运行时；二进制必须匹配目标
+   OS/架构（Linux 包给 sandbox/SSH，Windows 包给配对 Windows 机器）。
+5. 如果逻辑必须在 **服务器** 执行（例如扩展里的 \`runCli\` 调 Python），
+   就不需要投影；但也不能假定它在远端可见。
 
 ## 自检清单（导出前逐项核对）
 

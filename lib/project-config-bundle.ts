@@ -87,8 +87,18 @@ const ALLOWED_ROOT_FILES = new Set(["manifest.json", "readme.md", "agents.md"]);
 const METADATA_ROOT_FILES = new Set(["manifest.json", "readme.md"]);
 /** Root-level Python runtime emitted by apkg-publisher when package Python is
  * not all under .pi/ or labs/. These exact files are written to the project
- * home; entry wrappers find the loader by walking ancestors. */
-const ALLOWED_RUNTIME_FILES = new Set([".apkg_runtime/apkg.py", ".apkg_runtime/python.bundle"]);
+ * home; entry wrappers find the loader by walking ancestors. The decryptor
+ * binary is optional (only when the package targets a remote workspace). */
+const ALLOWED_RUNTIME_FILES = new Set([
+  ".apkg_runtime/apkg.py",
+  ".apkg_runtime/python.bundle",
+  ".apkg_runtime/apkg-publisher",
+  ".apkg_runtime/apkg-publisher.exe",
+  ".pi/.apkg_runtime/apkg.py",
+  ".pi/.apkg_runtime/python.bundle",
+  ".pi/.apkg_runtime/apkg-publisher",
+  ".pi/.apkg_runtime/apkg-publisher.exe",
+]);
 
 export interface ExportStats {
   files: number;

@@ -22,7 +22,8 @@ const { allowFileRoot } = await jiti.import("../../../lib/allowed-roots.ts");
 allowFileRoot(root);
 
 // A route exports only its handlers, so the extensions it maps come from its source.
-const source = fs.readFileSync(new URL("./[...path]/route.ts", import.meta.url), "utf8");
+// The classifier moved to the shared lib so /api/remotefs previews the same way.
+const source = fs.readFileSync(new URL("../../../lib/file-language.ts", import.meta.url), "utf8");
 const sourceFile = ts.createSourceFile("route.ts", source, ts.ScriptTarget.Latest, true);
 let extensionMap;
 sourceFile.forEachChild(function visit(node) {

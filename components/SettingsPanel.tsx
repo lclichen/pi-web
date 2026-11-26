@@ -1,7 +1,8 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useI18n } from "@/hooks/useI18n";
+import { useIsMobile } from "@/hooks/useIsMobile";
 import { useTheme, type ThemePreference } from "@/hooks/useTheme";
 import {
   CHAT_CONTENT_WIDTH_DEFAULT,
@@ -28,7 +29,7 @@ import { PolicyConfig } from "./PolicyConfig";
 import { BundlesConfig } from "./BundlesConfig";
 import { AdminGlobalConfig } from "./AdminGlobalConfig";
 import { SubagentsConfig } from "./SubagentsConfig";
-import { ConfigButton, ConfigSwitch } from "./SettingsUi";
+import { ConfigButton, ConfigDetailNavigationContext, ConfigSwitch, type ConfigDetailNavigation } from "./SettingsUi";
 import { UpdateCard } from "./UpdateCard";
 import { isConfirmDialogOpen, useConfirm } from "./use-confirm";
 import { isAnySettingsDirty } from "@/lib/settings-dirty";
@@ -589,11 +590,95 @@ function GeneralSettings({
   );
 }
 
+// A phone shows Settings one level at a time: the sections, a section (its list), a row's detail.
+type PhoneLevel = "home" | "section" | "detail";
+
+const PHONE_PARENT_LEVEL: Record<PhoneLevel, PhoneLevel> = { home: "home", section: "home", detail: "section" };
+const PHONE_LEVEL_DEPTH: Record<PhoneLevel, number> = { home: 0, section: 1, detail: 2 };
+const PHONE_LEVEL_EASING = "cubic-bezier(0.2, 0.8, 0.2, 1)";
+
+/**
+ * A phone's level change slides the new level in: from the right going in,
+ * from the left (a shorter way, fading up) going back, as a navigation stack
+ * does. The header's Back and title fade in with it. Only the new level moves
+ * (the old one is gone at once), so the main area clips it; nothing moves
+ * under prefers-reduced-motion.
+ */
+function animatePhoneLevelChange(main: HTMLElement | null, header: HTMLElement | null, from: PhoneLevel, to: PhoneLevel) {
+  if (!main || typeof main.animate !== "function") return;
+  if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+  const forward = PHONE_LEVEL_DEPTH[to] > PHONE_LEVEL_DEPTH[from];
+  main.animate(forward
+    ? [
+      { transform: "translateX(100%)", boxShadow: "-12px 0 24px rgba(0, 0, 0, 0.12)" },
+      { transform: "translateX(0)", boxShadow: "-12px 0 24px rgba(0, 0, 0, 0)" },
+    ]
+    : [{ transform: "translateX(-30%)", opacity: 0.4 }, { transform: "translateX(0)", opacity: 1 }], {
+    duration: 280,
+    easing: PHONE_LEVEL_EASING,
+  });
+  header?.querySelectorAll<HTMLElement>(".settings-phone-back, .settings-dialog-title").forEach((element) => {
+    element.animate([
+      { opacity: 0, transform: `translateX(${forward ? 16 : -16}px)` },
+      { opacity: 1, transform: "translateX(0)" },
+    ], { duration: 220, easing: PHONE_LEVEL_EASING });
+  });
+}
+
+/**
+ * The phone's level, with an entry in the browser history for each level
+ * entered, so the system Back gesture goes up one level instead of leaving the
+ * page. The entry copies the current history state (Next's router reads it)
+ * and keeps the URL. Closing Settings drops the entries it added.
+ */
+function usePhoneSettingsLevel(isPhone: boolean, openAtHome: boolean) {
+  const [level, setLevel] = useState<PhoneLevel>(openAtHome ? "home" : "section");
+  // A desktop shows a section, so a window narrowed to a phone's width stays
+  // on it instead of falling back to the level the panel opened at.
+  if (!isPhone && level !== "section") setLevel("section");
+  const levelRef = useRef(level);
+  levelRef.current = level;
+  const pushedRef = useRef(0);
+
+  useEffect(() => {
+    if (!isPhone) return;
+    const onPopState = () => {
+      if (pushedRef.current === 0) return;
+      pushedRef.current -= 1;
+      setLevel((current) => PHONE_PARENT_LEVEL[current]);
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [isPhone]);
+
+  const enter = useCallback((next: PhoneLevel) => {
+    if (!isPhone) return;
+    window.history.pushState(window.history.state, "");
+    pushedRef.current += 1;
+    setLevel(next);
+  }, [isPhone]);
+
+  const goUp = useCallback(() => {
+    // An entry this panel added: popstate goes up, as the system Back does.
+    if (pushedRef.current > 0) window.history.back();
+    else setLevel((current) => PHONE_PARENT_LEVEL[current]);
+  }, []);
+
+  const dropHistory = useCallback(() => {
+    const pushed = pushedRef.current;
+    pushedRef.current = 0;
+    if (pushed > 0) window.history.go(-pushed);
+  }, []);
+
+  return { level, levelRef, enter, goUp, dropHistory };
+}
+
 export function SettingsPanel({
   cwd,
   sessionId,
   initialSection,
-  onClose,
+  openAtHome = false,
+  onClose: closeSettings,
   onSessionReloaded,
   quoteSelectionEnabled,
   onQuoteSelectionChange,
@@ -604,6 +689,36 @@ export function SettingsPanel({
   const [section, setSection] = useState<SettingsSection>(initialSection);
   const [mountedSections, setMountedSections] = useState<ReadonlySet<SettingsSection>>(() => new Set([section]));
   const tabsScrollboxRef = useRef<HTMLDivElement>(null);
+  const isPhone = useIsMobile();
+  const phone = usePhoneSettingsLevel(isPhone, openAtHome);
+  const { dropHistory, enter: enterPhoneLevel, goUp: goUpPhoneLevel, levelRef: phoneLevelRef } = phone;
+  const headerRef = useRef<HTMLDivElement>(null);
+  const mainRef = useRef<HTMLElement>(null);
+  const shownPhoneLevelRef = useRef(phone.level);
+  // Before paint, so the new level never shows in place first.
+  useLayoutEffect(() => {
+    const from = shownPhoneLevelRef.current;
+    shownPhoneLevelRef.current = phone.level;
+    if (isPhone && from !== phone.level) animatePhoneLevelChange(mainRef.current, headerRef.current, from, phone.level);
+  }, [isPhone, phone.level]);
+  const onClose = useCallback(() => {
+    dropHistory();
+    closeSettings();
+  }, [closeSettings, dropHistory]);
+  // Named by the detail's active row (ConfigSidebarItem); none until one reports.
+  const [detailTitle, setDetailTitle] = useState<string | null>(null);
+  const detailNavigation = useMemo<ConfigDetailNavigation>(() => ({
+    detailOpen: phone.level === "detail",
+    openDetail: () => {
+      if (phoneLevelRef.current !== "section") return;
+      setDetailTitle(null);
+      enterPhoneLevel("detail");
+    },
+    closeDetail: () => {
+      if (phoneLevelRef.current === "detail") goUpPhoneLevel();
+    },
+    reportDetailTitle: setDetailTitle,
+  }), [enterPhoneLevel, goUpPhoneLevel, phone.level, phoneLevelRef]);
   // 分组仅驱动分隔线渲染：个人 | 工作区配置 | 管理员。
   const sections: Array<{
     id: SettingsSection;
@@ -701,6 +816,7 @@ export function SettingsPanel({
     setMountedSections((current) => new Set(current).add(nextSection));
     setSection(nextSection);
     setLastSettingsSection(nextSection);
+    if (isPhone && phoneLevelRef.current === "home") enterPhoneLevel("section");
     // 深链/恢复进入分区时，把激活 tab 滚进可视区（tab 条可横向滚动）。
     requestAnimationFrame(() => {
       tabsScrollboxRef.current
@@ -758,8 +874,25 @@ export function SettingsPanel({
       className="settings-dialog-backdrop"
     >
       <div className="settings-dialog-surface">
-        <div className="settings-dialog-header">
-          <strong className="settings-dialog-title">{t("settings.title")}</strong>
+        <div className="settings-dialog-header" ref={headerRef}>
+          {isPhone && phone.level !== "home" && (
+            <button
+              type="button"
+              className="settings-phone-back"
+              onClick={goUpPhoneLevel}
+              title={t("skills.documentBack")}
+              aria-label={t("skills.documentBack")}
+            >
+              ‹
+            </button>
+          )}
+          <strong className="settings-dialog-title">
+            {isPhone && phone.level !== "home"
+              ? phone.level === "detail"
+                ? detailTitle ?? sections.find((item) => item.id === section)?.label ?? t("settings.title")
+                : sections.find((item) => item.id === section)?.label ?? t("settings.title")
+              : t("settings.title")}
+          </strong>
           <select
             aria-label={t("settings.sectionPicker")}
             value={section}
@@ -806,7 +939,24 @@ export function SettingsPanel({
           </button>
         </div>
 
-        <main className="settings-dialog-main">
+        <main className="settings-dialog-main" ref={mainRef}>
+          {isPhone && phone.level === "home" ? (
+            <nav className="settings-phone-section-list" aria-label={t("settings.title")}>
+              {sections.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className="settings-phone-section"
+                  disabled={item.requiresProject && !cwd}
+                  onClick={() => activateSection(item.id)}
+                >
+                  <SettingsSectionIcon section={item.id} />
+                  <span>{item.label}</span>
+                </button>
+              ))}
+            </nav>
+          ) : (
+          <ConfigDetailNavigationContext.Provider value={detailNavigation}>
           {sectionHost(
             "general",
             <GeneralSettings
@@ -842,6 +992,8 @@ export function SettingsPanel({
                 onReloaded={onSessionReloaded}
               />,
             )}
+          </ConfigDetailNavigationContext.Provider>
+          )}
         </main>
       </div>
       {confirmDialog}

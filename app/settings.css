@@ -2850,3 +2850,51 @@ select.mcp-add-input {
   color: var(--text);
   font-weight: 600;
 }
+
+/* Phone hierarchy: the section list, the Back control and the slide-in level. */
+.settings-phone-section-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+}
+
+.settings-phone-section {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.settings-phone-section:hover:not(:disabled),
+.settings-phone-section:focus-visible {
+  background: var(--bg-hover);
+}
+
+.settings-phone-section:disabled {
+  color: var(--text-dim);
+  cursor: not-allowed;
+}
+
+.settings-phone-back {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}

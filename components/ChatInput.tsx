@@ -705,8 +705,11 @@ function QueuedMessageRow({
 
   return (
     <div
+      // The text itself is the tooltip; the kind chip and the hint at the end
+      // name what the row is. `title` first keeps markup assertions literal.
+      title={text}
       className="queued-message-row"
-      title={kind === "steer" ? t("chat.queueSteerTip") : t("chat.queueFollowUpTip")}
+      aria-label={`${kind === "steer" ? t("chat.queueSteerTip") : t("chat.queueFollowUpTip")}: ${text}`}
       style={{
         display: "flex",
         alignItems: "center",

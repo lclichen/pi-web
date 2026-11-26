@@ -238,15 +238,22 @@ async function resolveProjectUncached(cwd: string): Promise<ProjectInfo> {
     if (!await pathExists(cwd)) {
       return (await inferRemovedWorktreeAsync(cwd)) ?? projectFallback(cwd);
     }
+    // Git 2.30 (the oldest supported) has no `--path-format=absolute`: it
+    // echoes the option as a path line and shifts every answer. Ask without
+    // it and resolve relative answers here.
     const out = await git(cwd, [
-      "rev-parse", "--path-format=absolute",
+      "rev-parse",
       "--git-common-dir", "--git-dir", "--show-toplevel",
       "--abbrev-ref", "HEAD",
     ]);
     const [commonDirRaw, gitDirRaw, toplevelRaw, ref] = out.split("\n").map((l) => l.trim());
     // Only the first three lines are paths — `ref` is a branch name and must
     // keep its forward slashes (`feature/foo`).
-    const [commonDir, gitDir, toplevel] = [commonDirRaw, gitDirRaw, toplevelRaw].map(toNativePath);
+    const asAbsolute = (value: string) => {
+      const native = toNativePath(value);
+      return isAbsolute(native) ? native : join(cwd, native);
+    };
+    const [commonDir, gitDir, toplevel] = [commonDirRaw, gitDirRaw, toplevelRaw].map(asAbsolute);
     // git prints resolved (symlink-free) paths; normalize cwd the same way
     const realCwd = await realPathOrSelfAsync(cwd);
     // For a linked worktree, --git-dir differs from --git-common-dir.

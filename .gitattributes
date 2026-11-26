@@ -1,3 +1,7 @@
 
+# Sources are stored and checked out LF-only: source-shape tests read files
+# and assert on exact newlines, so a CRLF checkout breaks them.
+* text=auto eol=lf
+
 # Hook scripts must stay LF-only: a CRLF checkout breaks the shebang on Windows
 .githooks/* text eol=lf

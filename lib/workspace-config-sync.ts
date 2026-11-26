@@ -132,6 +132,9 @@ function isSyncDenied(rel: string): boolean {
   if (lower === ".pi/extensions/pi-sandbox-extension" || lower.startsWith(".pi/extensions/pi-sandbox-extension/")) {
     return true;
   }
+  // Host → workspace projection owns the encrypted Python runtime; letting a
+  // remote copy flow back could replace the loader/binary with a stale one.
+  if (lower === ".pi/.apkg_runtime" || lower.startsWith(".pi/.apkg_runtime/")) return true;
   const base = rel.split("/").pop()?.toLowerCase() ?? "";
   if (SYNC_DENIED_BASENAMES.has(base)) return true;
   return SYNC_EXTRA_DENIED_BASENAMES.has(base);

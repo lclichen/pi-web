@@ -197,6 +197,9 @@ async function walkHost(hostHome: string, hostFs: HostWalkFs = { readdir, stat }
   };
 
   await walk(".pi");
+  // Mixed-layout Python runtime lives at the project-home root; only the
+  // exact loader/bundle/decryptor files pass isProjectedPath.
+  await walk(".apkg_runtime");
   // Sort before caps: SKILL/scripts/references first, node_modules last.
   files.sort((a, b) => {
     const priority = projectionPriority(a.rel) - projectionPriority(b.rel);

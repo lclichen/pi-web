@@ -8,14 +8,41 @@ import { isDeniedConfigPath } from "../project-config-bundle";
  *   user discards it.
  * - attachments are a read-only cache of the Host primary; drift is overwritten
  *   (with a periodic full-content verification because stat is only a fast path).
+ * - runtime/ is a one-way copy of entry scripts + data that must execute in the
+ *   remote workspace.
+ * - .apkg_runtime is limited to the Python loader, encrypted bundle and optional
+ *   platform-matched decryptor; arbitrary files there are never projected.
  */
 
 export const PROJECTION_SKILLS_PREFIX = ".pi/skills/";
 export const PROJECTION_AGENTS_PREFIX = ".pi/agents/";
 export const PROJECTION_ATTACHMENTS_PREFIX = ".pi/attachments/";
+/** Runnable entry assets + data for remote workspaces. */
+export const PROJECTION_RUNTIME_PREFIX = ".pi/runtime/";
+
+/** apkg-publisher Python runtime (loader + encrypted bundle + optional
+ *  platform-matched decryptor binary). Only these exact files are projected;
+ *  arbitrary .apkg_runtime content is still rejected. */
+const APKG_RUNTIME_FILES = new Set([
+  ".pi/.apkg_runtime/apkg.py",
+  ".pi/.apkg_runtime/python.bundle",
+  ".pi/.apkg_runtime/apkg-publisher",
+  ".pi/.apkg_runtime/apkg-publisher.exe",
+  ".apkg_runtime/apkg.py",
+  ".apkg_runtime/python.bundle",
+  ".apkg_runtime/apkg-publisher",
+  ".apkg_runtime/apkg-publisher.exe",
+]);
 
 /** Roots passed to a provider's batched manifest (no trailing slash). */
-export const PROJECTION_ROOTS = [".pi/skills", ".pi/agents", ".pi/attachments"] as const;
+export const PROJECTION_ROOTS = [
+  ".pi/skills",
+  ".pi/agents",
+  ".pi/attachments",
+  ".pi/runtime",
+  ".pi/.apkg_runtime",
+  ".apkg_runtime",
+] as const;
 
 export const PROJECTION_MAX_FILES = 2_000;
 export const PROJECTION_MAX_BYTES = 64 * 1024 * 1024;
@@ -27,6 +54,7 @@ const PROJECTION_PREFIXES = [
   PROJECTION_SKILLS_PREFIX,
   PROJECTION_AGENTS_PREFIX,
   PROJECTION_ATTACHMENTS_PREFIX,
+  PROJECTION_RUNTIME_PREFIX,
 ] as const;
 
 export function normalizeProjectionRel(rel: string): string {
@@ -53,16 +81,20 @@ export function isProjectionDir(rel: string): boolean {
   const normalized = normalizeProjectionRel(rel);
   if (isProjectionExcludedPath(normalized)) return false;
   if (normalized === ".pi") return true;
+  if (normalized === ".apkg_runtime" || normalized.startsWith(".apkg_runtime/")) return true;
   return [
     ".pi/skills",
     ".pi/agents",
     ".pi/attachments",
+    ".pi/runtime",
+    ".pi/.apkg_runtime",
   ].some((dir) => normalized === dir || normalized.startsWith(`${dir}/`));
 }
 
 export function isProjectedPath(rel: string): boolean {
   const normalized = normalizeProjectionRel(rel);
   if (isProjectionExcludedPath(normalized)) return false;
+  if (APKG_RUNTIME_FILES.has(normalized)) return true;
   if (!PROJECTION_PREFIXES.some((prefix) => normalized.startsWith(prefix))) return false;
   if (normalized === ".pi/.sync-backups" || normalized.startsWith(".pi/.sync-backups/")) return false;
   if (isAttachmentRel(normalized)) {
@@ -76,6 +108,7 @@ export function isProjectedPath(rel: string): boolean {
 /** Sort priority for truncation: node_modules last, scripts/docs first. */
 export function projectionPriority(rel: string): number {
   const normalized = normalizeProjectionRel(rel);
+  if (APKG_RUNTIME_FILES.has(normalized)) return 0;
   if (normalized.includes("/node_modules/")) return 2;
   if (normalized.endsWith("/SKILL.md") || normalized.endsWith("/AGENTS.md")) return 0;
   if (normalized.includes("/scripts/") || normalized.includes("/references/") || normalized.includes("/assets/")) {

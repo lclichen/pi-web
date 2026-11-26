@@ -803,6 +803,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           messageCount,
           firstMessage,
           transient: true,
+          // 草稿的项目绑定随会话一起带出：selectedSession 接手后草稿态
+          // newSessionProjectId 会被清掉，水合完成前模型列表仍需要它按项目
+          // home 解析。
+          ...(newSessionProjectIdRef.current ? { projectId: newSessionProjectIdRef.current } : {}),
         },
         provisionalDraftKey,
       );
@@ -1974,11 +1978,20 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
   const loadModels = useCallback(
     async (signal?: AbortSignal) => {
-      const modelCwd = newSessionCwd ?? session?.cwd ?? "";
-      // Project-scoped sessions resolve their model config server-side from the
-      // project home (the client may only know the projectId, not the path).
-      const modelsUrl = newSessionProjectId
-        ? `/api/models?projectId=${encodeURIComponent(newSessionProjectId)}`
+      // 项目作用域只属于尚未落盘的新会话草稿：服务端按项目 home 解析模型
+      // 配置（客户端可能只有 projectId，没有路径）。已有会话一律用会话自己
+      // 的 cwd——选中别的会话后残留的旧 projectId 可能已指向被删除的项目
+      //（模型错误「项目不存在」）。刚创建、尚未水合的 transient 会话其 cwd
+      // 还只是草稿占位（项目草稿为 "/"），此时用会话自身携带的 projectId。
+      const projectId =
+        isNew && !sessionIdRef.current
+          ? newSessionProjectId
+          : session?.transient
+            ? (session.projectId ?? null)
+            : null;
+      const modelCwd = session?.cwd ?? newSessionCwd ?? "";
+      const modelsUrl = projectId
+        ? `/api/models?projectId=${encodeURIComponent(projectId)}`
         : modelCwd
           ? `/api/models?cwd=${encodeURIComponent(modelCwd)}`
           : "/api/models";
@@ -2032,7 +2045,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         }
       }
     },
-    [isNew, newSessionCwd, newSessionProjectId, session?.cwd],
+    [isNew, newSessionCwd, newSessionProjectId, session?.cwd, session?.projectId, session?.transient],
   );
 
   const handleBuiltinSlashCommand = useCallback(

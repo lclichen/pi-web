@@ -1,14 +1,12 @@
 import {
-  cpSync,
   existsSync,
   lstatSync,
   mkdirSync,
   readFileSync,
-  readdirSync,
   rmSync,
   statSync,
 } from "fs";
-import { join, relative, resolve } from "path";
+import { join, resolve } from "path";
 import { randomUUID } from "crypto";
 import { writePrivateFileAtomicSync } from "./atomic-file";
 import { dataDir } from "./mode-homes";
@@ -30,21 +28,8 @@ import type { SessionMode } from "./session-modes";
  * 分层"). Each project owns a home directory whose `.pi/` carries the project
  * config layer (settings/agents/skills/extensions/sandbox container, and
  * optionally auth.json/models.json for project-scoped model credentials)
- * layered on top of the admin-managed global agent dir. Duplicating a project
- * copies its config snapshot — that is the "多套配置切换" workflow.
+ * layered on top of the admin-managed global agent dir.
  */
-
-/** Runtime chat attachments and sync backups live under .pi but are
- *  machine-local temps; project duplication must not carry them. */
-function isRuntimeConfigPath(relPath: string): boolean {
-  const normalized = relPath.replace(/\\/g, "/").replace(/^\.\//, "");
-  return (
-    normalized === ".pi/attachments" ||
-    normalized.startsWith(".pi/attachments/") ||
-    normalized === ".pi/.sync-backups" ||
-    normalized.startsWith(".pi/.sync-backups/")
-  );
-}
 
 export interface ProjectRecord {
   id: string;
@@ -64,13 +49,17 @@ export interface ProjectRecord {
   templateMissing?: boolean;
   /** Sandbox: pinned container id for this project's sessions. */
   containerId?: number;
-  /** Sandbox: image chosen at creation (duplicates carry it; environment identity). */
+  /** Sandbox: image chosen at creation (environment identity). */
   imageId?: number;
   /** Local-machine: the project working directory on the user's machine (relay-side path). */
   workdir?: string;
   /** Local-machine: which of the user's paired machines this project runs on
    *  (multi-machine). Absent = the user's default (most recent) machine. */
   machineId?: string;
+  /** Local-machine: the machineId this project was bound to before the most
+   *  recent rebind (「重新连接机器」). Display/undo metadata only — sessions
+   *  always use `machineId`; untouched by PATCHes that do not rebind. */
+  previousMachineId?: string;
   /** SSH mode: connection for the remote host (stored 0600 in the project home). */
   ssh?: SshConfigInput;
   /** Optional preset config bundle applied to the fresh home. */
@@ -198,7 +187,6 @@ export async function createProject(input: {
   mode: string;
   containerId?: number;
   imageId?: number;
-  seedFromProjectId?: string;
   /** Local-machine mode: the project's working directory on the user's machine. */
   workdir?: string;
   /** Host external-dir / Quick workspace root. */
@@ -218,7 +206,7 @@ export async function createProject(input: {
   const name = input.name.trim();
   if (!name || name.length > 64) return { ok: false, error: "项目名不能为空且不超过 64 字符" };
   if (!PROJECT_MODES.has(input.mode)) return { ok: false, error: `不支持的模式：${input.mode}` };
-  // 同一用户下项目名唯一：重名会让侧栏分组与复制/导入的目标辨识混乱。
+  // 同一用户下项目名唯一：重名会让侧栏分组与导入的目标辨识混乱。
   const duplicate = Object.values(projectData().projects).find((p) => p.ownerId === input.ownerId && p.name === name);
   if (duplicate) {
     return { ok: false, error: `已存在同名项目「${name}」，请换一个名称` };
@@ -230,8 +218,8 @@ export async function createProject(input: {
     if (!root || !existsSync(root) || !statSync(root).isDirectory()) {
       return { ok: false, error: "项目工作目录不存在或不是目录" };
     }
-    if (input.presetBundle || input.seedFromProjectId) {
-      return { ok: false, error: "Host/Quick 项目不支持预置模板或从其他项目复制" };
+    if (input.presetBundle) {
+      return { ok: false, error: "Host/Quick 项目不支持预置模板" };
     }
   }
 
@@ -278,47 +266,12 @@ export async function createProject(input: {
     writeSshConfig(home, input.ssh);
   }
 
-  // 预置配置模板：在 seed 之前应用（seed 的整包复制应优先级更高）。
+  // 预置配置模板：写入新项目 home。
   if (input.presetBundle) {
     if (!isValidBundleName(input.presetBundle) || !bundleExists(input.presetBundle)) {
       return { ok: false, error: `配置模板不存在：${input.presetBundle}` };
     }
     await applyBundleToDirectory(input.presetBundle, home);
-  }
-
-  // Optionally seed from another project: copy its ENTIRE home — `.pi/` config
-  // plus project-level data such as labs/ and .lab-training/ state (the
-  // teaching workflow "复制项目" expects both to carry over). Copy after the
-  // sandbox config write above so the fresh credentials survive.
-  if (input.seedFromProjectId) {
-    const seed = getProject(input.seedFromProjectId);
-    if (seed && seed.ownerId === input.ownerId && seed.id !== project.id) {
-      const seedHome = projectHome(seed);
-      if (existsSync(seedHome)) {
-        for (const entry of readdirSync(seedHome)) {
-          if (entry === ".pi") {
-            cpSync(join(seedHome, ".pi"), join(home, ".pi"), {
-              recursive: true,
-              // Runtime chat attachments are per-machine temp files; never
-              // carry them into a duplicate project.
-              filter: (src) => !isRuntimeConfigPath(relative(seedHome, src)),
-            });
-            // The copy carries the seed's sandbox credentials; re-write this
-            // project's own binding on top.
-            if (project.mode === "sandbox") {
-              writeSandboxConfig(home, {
-                url: safePlatformUrl() ?? "",
-                apiKey: "",
-                ...(project.containerId !== undefined ? { containerId: project.containerId } : {}),
-                disableLocalFallback: true,
-              });
-            }
-          } else {
-            cpSync(join(seedHome, entry), join(home, entry), { recursive: true });
-          }
-        }
-      }
-    }
   }
 
   // All project homes are pi-web-managed (sandbox/local-machine/ssh sessions
@@ -376,7 +329,14 @@ export function updateProject(
     }
     if (patch.machineId !== undefined && project.mode === "local-machine") {
       // null/empty clears the binding → the user's default machine.
-      if (patch.machineId && /^[A-Za-z0-9_-]{1,64}$/.test(patch.machineId)) project.machineId = patch.machineId;
+      const next =
+        patch.machineId && /^[A-Za-z0-9_-]{1,64}$/.test(patch.machineId) ? patch.machineId : undefined;
+      // 改绑时记下旧值（「撤销」用），且只在真的换了机器时写——重命名之类的
+      // PATCH 不会碰 previousMachineId。旧项目没有显式 machineId 时无值可记。
+      if (next !== project.machineId) {
+        if (project.machineId) project.previousMachineId = project.machineId;
+      }
+      if (next) project.machineId = next;
       else delete project.machineId;
     }
     if (patch.containerId !== undefined && project.mode === "sandbox") {
@@ -477,12 +437,6 @@ export function deleteProject(projectId: string): boolean {
   return true;
 }
 
-/**
- * Duplicate a project: copy its ENTIRE home under a new id. The container
- * binding is intentionally NOT carried over — two projects sharing one
- * container would overwrite each other's synced /workspace. The copy starts
- * unbound; session-start resolution picks/creates its own container.
- */
 /** One Quick Project per (owner, template), independent of workspace version. */
 export function findQuickProject(ownerId: number, templateId: string): ProjectRecord | undefined {
   return Object.values(projectData().projects).find(
@@ -549,32 +503,6 @@ export async function ensureQuickProject(  ownerId: number,
   const raced = findQuickProject(ownerId, template.id);
   if (raced) return raced;
   throw new Error(created.error);
-}
-
-export async function duplicateProject(
-  projectId: string,
-  newName: string,
-): Promise<{ ok: true; project: ProjectRecord } | { ok: false; error: string }> {
-  const source = getProject(projectId);
-  if (!source) return { ok: false, error: "项目不存在" };
-  if (source.mode === "host" || source.mode === "quick") {
-    return { ok: false, error: "Host/Quick 项目不支持复制" };
-  }
-  // 复制的目标名若已占用，自动加序号后缀（用户的意图是"再来一份"）。
-  let candidate = newName;
-  let n = 2;
-  while (Object.values(projectData().projects).some((p) => p.ownerId === source.ownerId && p.name === candidate)) {
-    candidate = `${newName} (${n++})`;
-  }
-  return await createProject({
-    name: candidate,
-    ownerId: source.ownerId,
-    ownerName: source.ownerName,
-    mode: source.mode,
-    // The copy keeps the source environment identity (same image).
-    ...(source.imageId !== undefined ? { imageId: source.imageId } : {}),
-    seedFromProjectId: source.id,
-  });
 }
 
 // ---- sandbox project config ----

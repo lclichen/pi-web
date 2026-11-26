@@ -33,7 +33,7 @@ function script(text) {
 const loadScript = script(`(${loader.initializer.arguments[0].getText(source)})`);
 const retryScript = script(retry.getText(source));
 
-function setup(fetchImpl) {
+function setup(fetchImpl, overrides = {}) {
   const writes = [];
   const delays = [];
   const context = {
@@ -54,6 +54,7 @@ function setup(fetchImpl) {
     delay: async (ms) => {
       delays.push(ms);
     },
+    ...overrides,
   };
   for (const name of [
     "ModelError",
@@ -123,6 +124,63 @@ test("model-load failures stay visible through bounded retries and clear on reco
   assert.ok(recovered.writes.some(([name, value]) => name === "ModelList" && value[0].id === "test"));
   assert.ok(recovered.writes.some(([name, value]) => name === "NewSessionDefaultModel" && value.modelId === "test"));
   assert.ok(recovered.writes.some(([name, value]) => name === "NewSessionDefaultThinkingLevel" && value === "high"));
+});
+
+test("existing sessions resolve models from their own cwd, never a stale project id", async () => {
+  const urls = [];
+  const state = setup(
+    async (url) => {
+      urls.push(String(url));
+      return Response.json({ models: {}, modelList: [] });
+    },
+    {
+      // 项目删除后的残留：已有会话绝不能继续按它解析（404「项目不存在」）。
+      newSessionProjectId: "deleted-project",
+      newSessionCwd: null,
+      session: { id: "s1", cwd: "/projects/live", transient: false },
+      isNew: false,
+      sessionIdRef: { current: "s1" },
+    },
+  );
+  await state.run();
+  assert.deepEqual(urls, ["/api/models?cwd=%2Fprojects%2Flive"]);
+});
+
+test("only fresh drafts use projectId; a transient created session uses its own project binding", async () => {
+  const urls = [];
+  const fetchImpl = async (url) => {
+    urls.push(String(url));
+    return Response.json({ models: {}, modelList: [] });
+  };
+
+  const draft = setup(fetchImpl, { newSessionCwd: "/", newSessionProjectId: "project-a" });
+  await draft.run();
+  assert.deepEqual(urls, ["/api/models?projectId=project-a"]);
+
+  urls.length = 0;
+  // 刚创建、尚未水合：cwd 还是草稿占位 "/"，但草稿态 projectId 已清，
+  // 只能依赖会话自身携带的项目绑定，不能回退到残留的旧 projectId。
+  const transient = setup(fetchImpl, {
+    newSessionProjectId: "stale-project",
+    newSessionCwd: null,
+    session: { id: "s2", cwd: "/", transient: true, projectId: "project-b" },
+    isNew: false,
+    sessionIdRef: { current: "s2" },
+  });
+  await transient.run();
+  assert.deepEqual(urls, ["/api/models?projectId=project-b"]);
+
+  urls.length = 0;
+  // 水合完成（transient=false）后一律用真实 cwd。
+  const hydrated = setup(fetchImpl, {
+    newSessionProjectId: "stale-project",
+    newSessionCwd: null,
+    session: { id: "s2", cwd: "/projects/b", transient: false, projectId: "project-b" },
+    isNew: false,
+    sessionIdRef: { current: "s2" },
+  });
+  await hydrated.run();
+  assert.deepEqual(urls, ["/api/models?cwd=%2Fprojects%2Fb"]);
 });
 
 test("cancelling model loads prevents state writes and further retries", async () => {

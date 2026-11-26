@@ -797,6 +797,13 @@ export function AppShell() {
     // with its own extension state (step position, QA mode, etc).
     setSelectedSession(null);
     setNewSessionCwd(cwd);
+    // 训练会话必须继承当前会话的项目身份（项目 home / 远程工具路由 / 模型
+    // 配置）；草稿态 projectId 已在选中/创建会话时清空，这里显式传递，
+    // 否则远程项目会退回用户级 home（cwd 被服务端忽略）。
+    if (selectedSession) {
+      setNewSessionProjectId(selectedSession.projectId ?? null);
+      setNewSessionMode(selectedSession.mode ?? "host");
+    }
     setSessionKey((k) => k + 1);
     setBranchTree([]);
     setBranchActiveLeafId(null);
@@ -806,7 +813,7 @@ export function AppShell() {
     setTimeout(() => {
       sendCommandRef.current?.("/lab");
     }, 100);
-  }, [selectedSession?.cwd, newSessionCwd, router]);
+  }, [selectedSession, newSessionCwd, router]);
 
   const handleFileViewerStateChange = useCallback(
     (tabId: string, viewerRevision: number, viewerState: FileViewerState) => {
@@ -1207,6 +1214,11 @@ export function AppShell() {
             rekeyDraft(activeDraftKey, parkedNewSessionDraftKey(cwd));
           }
           activeNewSessionDraftKeyRef.current = null;
+          // 恢复的是已有会话：清掉草稿专属状态，避免旧项目/模板残留污染
+          // 模型解析与新建会话。
+          setNewSessionProjectId(null);
+          setNewSessionProjectLabel(null);
+          setNewSessionTemplateId(null);
           // Selecting the session must remount the chat with the session
           // present: useAgentSession loads content in a mount-only effect, so
           // the null-session welcome mount from the switch would never load
@@ -1340,6 +1352,12 @@ export function AppShell() {
         }
       }
       setNewSessionCwd(null);
+      // 仅新会话有意义的状态随草稿一并失效：残留的 newSessionProjectId 会让
+      // 已有会话的模型请求继续按旧项目解析（项目删除后 /api/models 404
+      // 「项目不存在」）；label/template 同理只属于待创建草稿。
+      setNewSessionProjectId(null);
+      setNewSessionProjectLabel(null);
+      setNewSessionTemplateId(null);
       setSelectedSession(session);
       setSessionKey((k) => k + 1);
       setBranchTree([]);
@@ -1462,6 +1480,11 @@ export function AppShell() {
       invalidateWorkspaceRestore();
       activeNewSessionDraftKeyRef.current = null;
       setNewSessionCwd(null);
+      // 草稿已落盘为真实会话：项目/模板/标签只属于待创建草稿，继续保留
+      // 会让之后打开别的会话时模型请求仍带旧 projectId（项目删除后 404）。
+      setNewSessionProjectId(null);
+      setNewSessionProjectLabel(null);
+      setNewSessionTemplateId(null);
       // transient SessionInfo 不带 mode，/api/sessions/[id] 也不合并 session-metas
       // ——按草稿模式补上，否则 quick 会话首条消息后 hideFileExplorer/quickMode 失效。
       setSelectedSession(session.mode ? session : { ...session, mode: newSessionModeRef.current });
@@ -1597,6 +1620,11 @@ export function AppShell() {
       setRefreshKey((k) => k + 1);
       setSessionKey((k) => k + 1);
       setNewSessionCwd(null);
+      // fork 出的已经是真实会话：草稿专属状态不得残留（stale projectId 会
+      // 让模型请求打到旧项目/已删除项目）。
+      setNewSessionProjectId(null);
+      setNewSessionProjectLabel(null);
+      setNewSessionTemplateId(null);
       setSelectedSession((prev) => ({
         ...(prev ?? { path: "", cwd: "", created: "", modified: "", messageCount: 0, firstMessage: "" }),
         id: newSessionId,
@@ -1639,6 +1667,12 @@ export function AppShell() {
         activeNewSessionDraftKeyRef.current = cwd ? `new:${draftId}:${cwd}` : null;
         setSelectedSession(null);
         setNewSessionCwd(cwd ?? null);
+        // 删除后回到同目录的空白草稿：从被删会话继承项目身份，而不是让
+        // 之前草稿遗留的 projectId/mode 决定后续会话（可能是别的项目）。
+        setNewSessionProjectId(selectedSession.projectId ?? null);
+        setNewSessionProjectLabel(null);
+        setNewSessionTemplateId(null);
+        setNewSessionMode(selectedSession.mode ?? "host");
         setSessionKey((k) => k + 1);
         setBranchTree([]);
         setBranchActiveLeafId(null);

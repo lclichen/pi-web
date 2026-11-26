@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ListChevronsDownUp, ListChevronsUpDown, ListFilter, Pin } from "lucide-react";
 import { useI18n } from "@/hooks/useI18n";
+import { useRelayAgent } from "@/hooks/useRelayAgent";
 import type { SessionInfo } from "@/lib/types";
 import type { ProjectRecord } from "@/lib/projects";
 import type { HostDirRecord } from "@/lib/host-dirs";
@@ -23,9 +24,12 @@ import {
   type SidebarSortMode,
 } from "@/lib/sidebar-state-shared";
 import { formatRelativeTime } from "@/lib/subagent-shared";
+import { machineBadgeState } from "@/lib/machine-badge";
+import { countUnpairedMachineProjects, needsMachineReconnect } from "@/lib/project-machine-reconnect";
 import { ProjectSettingsDialog } from "./ProjectSettingsDialog";
 import { ProjectImportDialog } from "./ProjectImportDialog";
 import { ApplyBundleDialog } from "./ApplyBundleDialog";
+import { ReconnectMachineDialog } from "./ReconnectMachineDialog";
 
 function loadSortMode(): SidebarSortMode {
   if (typeof window === "undefined") return "project";
@@ -162,6 +166,9 @@ export function ProjectSessionTree({
   projectsRefreshKey,
 }: Props) {
   const t = useT();
+  // 本机项目行要标出“连接的是哪台机器”：机器目录复用已有的 relay 状态订阅
+  // （useRelayAgent 按页共享一个 EventSource），上下线由 SSE 推送自动刷新。
+  const { machines: relayMachines, ready: relayReady } = useRelayAgent();
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
   // Host 目录注册表：让"新建 Host 项目"在没有会话时也能显示一个空组。
   // 只影响侧栏占位；会话仍按 cwd 动态聚合，不绑定 projectId。
@@ -188,6 +195,8 @@ export function ProjectSessionTree({
   const [settingsId, setSettingsId] = useState<string | null>(null);
   const [importId, setImportId] = useState<string | null>(null);
   const [applyBundleId, setApplyBundleId] = useState<string | null>(null);
+  // 「重新连接机器」对话框绑定的本机项目（绑定机器已解配 / 离线时可选）。
+  const [reconnectProject, setReconnectProject] = useState<ProjectRecord | null>(null);
   const [hostImportDir, setHostImportDir] = useState<string | null>(null);
   const [draggedGroupKey, setDraggedGroupKey] = useState<string | null>(null);
   const [dragOverGroupKey, setDragOverGroupKey] = useState<string | null>(null);
@@ -442,15 +451,6 @@ export function ProjectSessionTree({
       localStorage.setItem(COLLAPSE_KEY, JSON.stringify([...next]));
       return next;
     });
-  };
-
-  const duplicate = async (project: ProjectRecord) => {
-    await fetch(`/api/projects/${encodeURIComponent(project.id)}/duplicate`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
-    }).catch(() => {});
-    loadProjects();
   };
 
   // 导出配置包：拉 zip blob 触发浏览器下载（.pi/ 配置 + labs/，凭证已剥离）。
@@ -767,7 +767,19 @@ export function ProjectSessionTree({
 
   const remove = async (project: ProjectRecord) => {
     if (!window.confirm(t("sessions.deleteProjectConfirm", { name: project.name }))) return;
-    await fetch(`/api/projects/${encodeURIComponent(project.id)}`, { method: "DELETE" }).catch(() => {});
+    try {
+      const res = await fetch(`/api/projects/${encodeURIComponent(project.id)}`, { method: "DELETE" });
+      if (!res.ok) {
+        // 409（仍有运行中的会话/批量任务、PROJECT_LOCKED）等失败必须告知用户，
+        // 否则界面看起来像删成功了。
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        window.alert(data.error ?? t("sessions.operationFailedHttp", { code: res.status }));
+        return;
+      }
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : String(e));
+      return;
+    }
     loadProjects();
     refreshSessions();
   };
@@ -816,13 +828,42 @@ export function ProjectSessionTree({
     cleanAttachmentsAt(`/api/host/attachments?dir=${encodeURIComponent(dir)}`, dir);
 
   const setContainer = async (project: ProjectRecord, containerId: number | null) => {
-    await fetch(`/api/projects/${encodeURIComponent(project.id)}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ containerId }),
-    }).catch(() => {});
+    try {
+      const res = await fetch(`/api/projects/${encodeURIComponent(project.id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ containerId }),
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        window.alert(data.error ?? t("sessions.operationFailedHttp", { code: res.status }));
+        return;
+      }
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : String(e));
+      return;
+    }
     loadProjects();
     setMenu(null);
+  };
+
+  const renameProject = async (project: ProjectRecord, name: string) => {
+    try {
+      const res = await fetch(`/api/projects/${encodeURIComponent(project.id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        window.alert(data.error ?? t("sessions.operationFailedHttp", { code: res.status }));
+        return;
+      }
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : String(e));
+      return;
+    }
+    loadProjects();
   };
 
   // 项目快照槽（游戏存档制：保存/恢复/删除，服务端做 FIFO 淘汰）。
@@ -1094,6 +1135,14 @@ export function ProjectSessionTree({
     });
     return sortSidebarGroups(items, sortMode).map((item) => item.project);
   }, [latestByProject, pinRankByProjectKey, pinnedProjectKeys, projectOrderRank, projects, sortMode]);
+
+  // 上线提示（轻量）：有机器在线、且存在绑定机器已解配的本机项目时，在项目
+  // 列表上方给一条细提示。只提示、绝不自动改绑——用户可能换了物理机器，自动
+  // 指过去会让项目连到错误的机器。机器目录未到达（relayReady=false）时不判定。
+  const unpairedMachineProjects = useMemo(
+    () => countUnpairedMachineProjects(orderedProjects, relayReady ? (relayMachines ?? []) : undefined),
+    [orderedProjects, relayMachines, relayReady],
+  );
 
   const orderedHostGroups = useMemo(() => {
     const items = hostGroups.map(([root, list]) => {
@@ -1634,6 +1683,28 @@ export function ProjectSessionTree({
             </div>
           )}
 
+          {/* 有机器上线且存在已解配的本机项目：细条提示（不打断、不自动改绑）。 */}
+          {sessionSpace === "mine" && !unreadOnly && unpairedMachineProjects > 0 && (
+            <div
+              role="status"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                margin: "0 2px 4px",
+                padding: "4px 8px",
+                borderRadius: 5,
+                border: "1px solid rgba(245,158,11,0.35)",
+                background: "rgba(245,158,11,0.10)",
+                color: "var(--warning, #f59e0b)",
+                fontSize: 10.5,
+                lineHeight: 1.4,
+              }}
+            >
+              {t("sessions.machineReconnectBanner", { count: unpairedMachineProjects })}
+            </div>
+          )}
+
           {/* 项目列表只属于“我的会话”空间：Host(CLI) 是 CLI/服务器目录会话的
           专用视图，混入平台项目组（多为空态）只会稀释真正的 CLI 分组；
           项目的浏览/管理入口在“我的会话”一侧。 */}
@@ -1721,6 +1792,37 @@ export function ProjectSessionTree({
                 badge && (badge.conflicts > 0 || badge.errors > 0 || badge.timedOut)
                   ? "var(--danger)"
                   : "var(--warning)";
+              // 本机模式项目：标出绑定的机器。机器目录还没到达（relayReady=false）
+              // 时先不判定，避免先闪一下「机器已解配」。
+              const machineBadge = machineBadgeState(project, relayReady ? (relayMachines ?? []) : undefined);
+              const machineBadgeDot =
+                machineBadge?.status === "online"
+                  ? "var(--success)"
+                  : machineBadge?.status === "unpaired"
+                    ? "var(--warning)"
+                    : "#9ca3af";
+              const machineBadgeTitle = !machineBadge
+                ? ""
+                : machineBadge.status === "unpaired"
+                  ? t("sessions.machineUnpaired")
+                  : machineBadge.status === "offline"
+                    ? [
+                        machineBadge.name,
+                        t("sessions.machineOffline"),
+                        ...(machineBadge.lastSeenAt
+                          ? [t("sessions.machineLastSeen", { time: new Date(machineBadge.lastSeenAt).toLocaleString() })]
+                          : []),
+                      ].join(" · ")
+                    : [
+                        machineBadge.name,
+                        ...(machineBadge.upgradeRequired
+                          ? [
+                              machineBadge.requiredVersion
+                                ? t("sessions.machineUpgradeHint", { version: machineBadge.requiredVersion })
+                                : t("sessions.machineUpgrade"),
+                            ]
+                          : [t("sessions.machineOnline")]),
+                      ].join(" · ");
               return (
                 <div key={project.id} style={{ marginBottom: 2, order: groupRenderOrder.get(project.id) ?? 0 }}>
                   <div
@@ -1838,6 +1940,47 @@ export function ProjectSessionTree({
                     >
                       {project.name}
                     </span>
+                    {machineBadge && (
+                      <span
+                        data-machine-state={machineBadge.status}
+                        data-machine-id={machineBadge.machineId}
+                        title={machineBadgeTitle}
+                        aria-label={machineBadgeTitle}
+                        // 机器徽标只做状态展示：点击不能触发项目行的展开/折叠。
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 3,
+                          flexShrink: 0,
+                          maxWidth: 104,
+                          fontSize: 9.5,
+                          fontWeight: 600,
+                          lineHeight: 1,
+                          color: machineBadge.status === "unpaired" ? "var(--warning)" : "var(--text-muted)",
+                        }}
+                      >
+                        <span
+                          aria-hidden="true"
+                          style={{
+                            width: 5,
+                            height: 5,
+                            borderRadius: "50%",
+                            flexShrink: 0,
+                            background: machineBadgeDot,
+                            boxShadow: machineBadge.status === "online" ? "0 0 4px var(--success)" : "none",
+                          }}
+                        />
+                        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {machineBadge.status === "unpaired" ? t("sessions.machineUnpaired") : machineBadge.name}
+                        </span>
+                        {machineBadge.upgradeRequired && (
+                          <span style={{ color: "var(--warning)", flexShrink: 0 }}>
+                            {t("sessions.machineUpgrade")}
+                          </span>
+                        )}
+                      </span>
+                    )}
                     {showBadge && (
                       <button
                         type="button"
@@ -2542,22 +2685,17 @@ export function ProjectSessionTree({
               label={t("common.rename")}
               onClick={() => {
                 const name = window.prompt(t("sessions.newProjectName"), menuProject.name);
-                if (name?.trim()) {
-                  void fetch(`/api/projects/${encodeURIComponent(menuProject.id)}`, {
-                    method: "PATCH",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ name: name.trim() }),
-                  }).then(() => loadProjects());
-                }
+                if (name?.trim()) void renameProject(menuProject, name.trim());
                 setMenu(null);
               }}
             />
-            {menuProject.mode !== "host" && (
+            {/* 本机项目的绑定机器已解配 / 离线：提供重新连接入口（换机器或换目录）。 */}
+            {needsMachineReconnect(menuProject, relayReady ? (relayMachines ?? []) : undefined) && (
               <MenuItem
-                label={t("sessions.duplicateNewProject")}
-                hint={t("sessions.hintDuplicateProject")}
+                label={t("sessions.machineReconnect")}
+                hint={t("sessions.machineReconnectHint")}
                 onClick={() => {
-                  void duplicate(menuProject);
+                  setReconnectProject(menuProject);
                   setMenu(null);
                 }}
               />
@@ -2757,6 +2895,17 @@ export function ProjectSessionTree({
           onDiscard={() => void discardProjection()}
           onClose={() => {
             if (!projectionBusy) setProjectionProject(null);
+          }}
+        />
+      )}
+
+      {reconnectProject && (
+        <ReconnectMachineDialog
+          project={reconnectProject}
+          onClose={() => setReconnectProject(null)}
+          onReconnected={() => {
+            loadProjects();
+            refreshSessions();
           }}
         />
       )}

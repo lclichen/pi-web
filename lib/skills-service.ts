@@ -36,6 +36,10 @@ export async function loadSkillsWithInstallInfo(cwd: string, userId = 0): Promis
   const loader = new DefaultResourceLoader({
     cwd,
     agentDir,
+    // Extensions add skills only through `resources_discover` at session_start,
+    // which a listing never runs, so loading them here would only import every
+    // extension for nothing (#1226).
+    noExtensions: true,
     ...(extraSkillPaths.length > 0 ? { additionalSkillPaths: extraSkillPaths } : {}),
   });
   await loader.reload(projectTrustReloadOptions(cwd, agentDir));

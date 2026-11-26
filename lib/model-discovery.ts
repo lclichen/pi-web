@@ -46,16 +46,21 @@ function firstPositiveInteger(value: Record<string, unknown>, fields: readonly s
 }
 
 /**
- * `modalities.input` (models.dev and pi's own metadata) or a bare `input` array
- * names what the model takes. Only the modalities pi knows survive; a list
- * naming none of them says nothing, and `["image"]` is kept as advertised —
- * guessing `text` back in would override what the gateway said.
+ * `modalities.input` (models.dev and pi's own metadata), a bare `input` array,
+ * or a gateway's `input_modalities` names what the model takes. Only the
+ * modalities pi knows survive; a list naming none of them says nothing, and
+ * `["image"]` is kept as advertised — guessing `text` back in would override
+ * what the gateway said.
  */
 function inputFromValue(value: Record<string, unknown>): string[] | undefined {
   const modalities = value.modalities;
   const list = isRecord(modalities) && Array.isArray(modalities.input)
     ? modalities.input
-    : Array.isArray(value.input) ? value.input : undefined;
+    : Array.isArray(value.input)
+      ? value.input
+      : Array.isArray(value.input_modalities)
+        ? value.input_modalities
+        : Array.isArray(value.inputModalities) ? value.inputModalities : undefined;
   if (!list) return undefined;
   const input = Array.from(new Set(list
     .filter((entry): entry is string => typeof entry === "string")

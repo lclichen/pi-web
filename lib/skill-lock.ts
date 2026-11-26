@@ -27,6 +27,9 @@ interface AnnotateSkillOptions {
   homeDir?: string;
   globalLockPath?: string;
   projectLockPath?: string;
+  /** Per-user skill store and lock (`state/users/u<id>/...`). */
+  userSkillsRoot?: string;
+  userLockPath?: string;
 }
 
 export function getGlobalSkillsLockPath({
@@ -127,10 +130,13 @@ export function annotateSkillsWithInstallInfo(
     homeDir = homedir(),
     globalLockPath = getGlobalSkillsLockPath({ homeDir }),
     projectLockPath = join(cwd, "skills-lock.json"),
+    userSkillsRoot,
+    userLockPath,
   }: AnnotateSkillOptions,
 ): SkillInfo[] {
   const globalEntries = readSkillLock(globalLockPath);
   const projectEntries = readSkillLock(projectLockPath);
+  const userEntries = userLockPath ? readSkillLock(userLockPath) : {};
   // The skills CLI installs for pi into its own dirs up to 1.5.x and into the
   // Agent Skills dirs (.agents/skills) since 1.7; pi loads both.
   const globalSkillsRoots = [join(agentDir, "skills"), join(homeDir, ".agents", "skills")];
@@ -140,11 +146,13 @@ export function annotateSkillsWithInstallInfo(
   return skills.map((skill) => {
     if (!existsSync(skill.filePath)) return skill;
 
-    const install = isWithinAny(skill.filePath, globalSkillsRoots)
-      ? getInstallInfo(globalEntries, skill.name, "global")
-      : isWithinAny(skill.filePath, projectSkillsRoots)
-        ? getInstallInfo(projectEntries, skill.name, "project")
-        : undefined;
+    const install = userSkillsRoot && isWithin(skill.filePath, userSkillsRoot)
+      ? getInstallInfo(userEntries, skill.name, "user")
+      : isWithinAny(skill.filePath, globalSkillsRoots)
+        ? getInstallInfo(globalEntries, skill.name, "global")
+        : isWithinAny(skill.filePath, projectSkillsRoots)
+          ? getInstallInfo(projectEntries, skill.name, "project")
+          : undefined;
 
     return install ? { ...skill, install } : skill;
   });

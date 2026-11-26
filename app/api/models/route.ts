@@ -5,6 +5,7 @@ import { createAgentSessionServices, getAgentDir, type SettingsManager } from "@
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import {
   loadModelsWithCache,
+  MODELS_LOAD_TIMEOUT_MS,
   withModelRuntimeError,
   withSafeModelLoadFailure,
   type ModelsData,
@@ -141,7 +142,10 @@ export async function GET(req: Request) {
 
   try {
     const cacheKey = scopeAll ? `${cwd}#all` : cwd;
-    return Response.json(await loadModelsWithCache(cacheKey, () => loadModels(cwd, scopeAll)));
+    return Response.json(await loadModelsWithCache(cacheKey, () => loadModels(cwd, scopeAll), {
+      timeoutMs: MODELS_LOAD_TIMEOUT_MS,
+      onTimeout: () => withSafeModelLoadFailure(EMPTY_MODELS),
+    }));
   } catch {
     return Response.json(withSafeModelLoadFailure(EMPTY_MODELS));
   }

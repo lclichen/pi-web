@@ -2122,6 +2122,13 @@ export class AgentSessionWrapper {
         return null;
       }
 
+      case "stop_bg": {
+        // Background-shell stop bridge: the bg-shell extension's registry
+        // lives on globalThis in this same process (amedac-core).
+        const { stopBgTask } = await import("./extensions/bg-shell");
+        return stopBgTask(this.inner.sessionId, String(command.taskId ?? ""));
+      }
+
       case "clear_queue": {
         this.queuedImageTexts.clear();
         // Full clear only: pi has no single-item dequeue. For single-item

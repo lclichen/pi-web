@@ -21,10 +21,22 @@ export const PI_DOCS_BLOCK_START = "Pi documentation (read only when the user as
 export const PI_DOCS_BLOCK_END = "</docs>";
 
 const WORKING_DIRECTORY_LINE = /(^|\n)Current working directory:[^\n]*/gi;
+const CWD_BLOCK = /[ \t]*<cwd>[\s\S]*?<\/cwd>[ \t]*\r?\n?/g;
 
 /** Remove the whole SDK docs-index block (anchors included), tidying the
  *  blank-line seam. Returns the input unchanged when the anchors are absent. */
 export function stripPiDocumentationBlock(prompt: string): string {
+  // pi 1.6 wraps the index in `<docs>…</docs>`.
+  const taggedStart = prompt.indexOf("<docs>");
+  if (taggedStart >= 0) {
+    const taggedEnd = prompt.indexOf("</docs>", taggedStart);
+    if (taggedEnd >= 0) {
+      const after = prompt.slice(taggedEnd + PI_DOCS_BLOCK_END.length);
+      const out = prompt.slice(0, taggedStart) + after.replace(/^[ \t]*\r?\n/, "");
+      return out.replace(/\n{3,}/g, "\n\n");
+    }
+  }
+  // Older SDKs shipped the index bare; keep the legacy anchors working.
   const start = prompt.indexOf(PI_DOCS_BLOCK_START);
   if (start < 0) return prompt;
   const end = prompt.indexOf(PI_DOCS_BLOCK_END, start);
@@ -35,11 +47,12 @@ export function stripPiDocumentationBlock(prompt: string): string {
   return out;
 }
 
-/** Remove the SDK's `Current working directory: <path>` line(s). Used for
- *  remote workspace modes where that path is a server-side config carrier the
- *  model must never touch; the real workspace is stated in PI_WEB_ENV. */
+/** Remove the SDK's working-directory statement (`<cwd>…</cwd>` in pi 1.6,
+ *  `Current working directory: <path>` before it). Used for remote workspace
+ *  modes where that path is a server-side config carrier the model must never
+ *  touch; the real workspace is stated in PI_WEB_ENV. */
 export function stripWorkingDirectoryLine(prompt: string): string {
-  let out = prompt.replace(WORKING_DIRECTORY_LINE, "$1");
+  let out = prompt.replace(CWD_BLOCK, "").replace(WORKING_DIRECTORY_LINE, "$1");
   out = out.replace(/\n{3,}/g, "\n\n").replace(/[ \t]+$/gm, "");
   return out.replace(/\s+$/, "");
 }

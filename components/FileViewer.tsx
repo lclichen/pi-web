@@ -21,6 +21,7 @@ import {
 import { encodeFilePathForApi, getFileDirectory, getFileName, getRelativeFilePath } from "@/lib/file-paths";
 import { FILE_WATCH_HEARTBEAT_MS, fileVersion, fileVersionChanged } from "@/lib/file-version";
 import { injectSandboxedHtmlPolyfill } from "@/lib/html-sandbox-polyfill";
+import { inlineHtmlPreviewAssets, rewriteHtmlPreviewAssets, type UnloadedHtmlAsset } from "@/lib/html-preview-assets";
 import { HIDDEN_PAGE_GRACE_MS, usePageHiddenFor } from "@/hooks/usePageHidden";
 import { pageId, trackEventSource } from "@/lib/page-debug";
 import { parsePdfPageFragment, resolveLocalFileHref, shouldOpenLocalFileInApp } from "@/lib/file-links";
@@ -265,8 +266,16 @@ function getFileApiUrl(
   type: "read" | "download" | "meta" | "preview" | "watch",
   sourceSessionId?: string | null,
   params: Record<string, string | number | undefined> = {},
+  remote?: { sessionId: string } | null,
 ): string {
   const encoded = encodeFilePathForApi(filePath);
+  if (remote) {
+    const searchParams = new URLSearchParams({ type, src: remote.sessionId });
+    for (const [key, value] of Object.entries(params)) {
+      if (value !== undefined) searchParams.set(key, String(value));
+    }
+    return `/api/remotefs/${encoded}?${searchParams.toString()}`;
+  }
   const searchParams = new URLSearchParams({ type });
   if (sourceSessionId) searchParams.set("sessionId", sourceSessionId);
   // A watch is a stream: the page that holds it, for the Debug panel's connected pages.
@@ -1338,6 +1347,7 @@ function TextFileViewer({
   filePath,
   cwd,
   sourceSessionId,
+  remote = null,
   onOpenFile,
   onMentionLines,
   onAtMention,
@@ -1432,7 +1442,7 @@ function TextFileViewer({
 
   const fetchContent = useCallback((filePath: string, offset = 0) => {
     const requestId = ++contentRequestRef.current;
-    return fetch(getFileApiUrl(filePath, "read", sourceSessionId, { offset: offset || undefined }))
+    return fetch(getFileApiUrl(filePath, "read", sourceSessionId, { offset: offset || undefined }, remote))
       .then((r) => r.json())
       .then((d: FileData & { mtime?: string; error?: string }) => {
         if (requestId !== contentRequestRef.current) return null;
@@ -1517,7 +1527,7 @@ function TextFileViewer({
       void fetchGitDiff(filePath);
     };
 
-    const es = trackEventSource("file-watch", new EventSource(getFileApiUrl(filePath, "watch", sourceSessionId)), filePath);
+    const es = trackEventSource("file-watch", new EventSource(getFileApiUrl(filePath, "watch", sourceSessionId, {}, remote)), filePath);
     esRef.current = es;
     const stopSupervising = superviseWatch(es);
 
@@ -1532,7 +1542,7 @@ function TextFileViewer({
         synchronize();
         return;
       }
-      fetch(getFileApiUrl(filePath, "meta", sourceSessionId))
+      fetch(getFileApiUrl(filePath, "meta", sourceSessionId, {}, remote))
         .then((response) => response.json())
         .then((meta: { size?: number; mtime?: string }) => {
           if (!active) return;
@@ -1602,7 +1612,7 @@ function TextFileViewer({
       return;
     }
     const controller = new AbortController();
-    fetch(getFileApiUrl(filePath, "download", sourceSessionId), { signal: controller.signal })
+    fetch(getFileApiUrl(filePath, "download", sourceSessionId, {}, remote), { signal: controller.signal })
       .then(async (r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         setHtmlFull({ text: await r.text() });
@@ -1653,9 +1663,58 @@ function TextFileViewer({
     : isMarkdown && !data?.truncated);
   const effectiveDisplayMode = isDeletedDiff ? "diff" : displayMode;
   const rawHtml = data?.truncated ? htmlFull?.text : viewerContent;
+  // A sandboxed preview runs in an opaque origin, so /api/files requests from
+  // inside it are cross-site and the SameSite=Lax session cookie is withheld
+  // (403). Fetch the referenced local assets from this page (first-party) and
+  // embed them as data: URLs instead of weakening the sandbox.
+  const [htmlPreviewDoc, setHtmlPreviewDoc] = useState<string | null>(null);
+  const [htmlPreviewUnloaded, setHtmlPreviewUnloaded] = useState<UnloadedHtmlAsset[]>([]);
+  useEffect(() => {
+    setHtmlPreviewDoc(null);
+    setHtmlPreviewUnloaded([]);
+    if (!isHtml || effectiveDisplayMode !== "preview" || !rawHtml) return;
+    let cancelled = false;
+    const controller = new AbortController();
+    void inlineHtmlPreviewAssets(rawHtml, {
+      dir: getFileDirectory(filePath),
+      cwd,
+      toUrl: (p) => getFileApiUrl(p, "read", sourceSessionId, undefined, remote),
+      fetchAsset: async (abs) => {
+        const res = await fetch(getFileApiUrl(abs, "read", sourceSessionId, undefined, remote), {
+          credentials: "same-origin",
+          signal: controller.signal,
+        });
+        if (!res.ok) return { error: String(res.status) };
+        return {
+          bytes: await res.arrayBuffer(),
+          contentType: res.headers.get("content-type") ?? "",
+        };
+      },
+    })
+      .then((result) => {
+        if (cancelled) return;
+        setHtmlPreviewDoc(result.html);
+        setHtmlPreviewUnloaded(result.unloaded);
+      })
+      .catch(() => {
+        // The rewrite fallback below still renders the page without embedded assets.
+      });
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [isHtml, effectiveDisplayMode, rawHtml, filePath, cwd, sourceSessionId, remote]);
   const htmlPreview = useMemo(
-    () => isHtml && effectiveDisplayMode === "preview" ? injectSandboxedHtmlPolyfill(rawHtml ?? "") : "",
-    [isHtml, effectiveDisplayMode, rawHtml],
+    () => isHtml && effectiveDisplayMode === "preview"
+      ? injectSandboxedHtmlPolyfill(
+          htmlPreviewDoc ?? rewriteHtmlPreviewAssets(rawHtml ?? "", {
+            dir: getFileDirectory(filePath),
+            cwd,
+            toUrl: (p) => getFileApiUrl(p, "read", sourceSessionId, undefined, remote),
+          }),
+        )
+      : "",
+    [isHtml, effectiveDisplayMode, htmlPreviewDoc, rawHtml, filePath, cwd, sourceSessionId, remote],
   );
   // A partly loaded HTML file previews whole, so Load more belongs to its source view.
   const showLoadMore = !!data?.truncated && !(isHtml && effectiveDisplayMode === "preview");
@@ -1862,7 +1921,7 @@ function TextFileViewer({
           ? resolveLocalFileHref(src, markdownDirectory, cwd ?? markdownDirectory)
           : null;
         const imageSrc = imagePath
-          ? getFileApiUrl(imagePath, "read", sourceSessionId)
+          ? getFileApiUrl(imagePath, "read", sourceSessionId, undefined, remote)
           : src;
         // Dynamic local paths are served directly by the file API.
         // eslint-disable-next-line @next/next/no-img-element
@@ -2071,12 +2130,31 @@ function TextFileViewer({
             {htmlFull?.error ?? t("i18n.loading")}
           </div>
         ) : isHtml && effectiveDisplayMode === "preview" ? (
-          <iframe
-            srcDoc={htmlPreview}
-            sandbox="allow-scripts"
-            style={{ width: "100%", height: "100%", border: "none", background: "var(--bg)" }}
-             title={t("i18n.htmlPreview")}
-          />
+          <>
+            {htmlPreviewUnloaded.length > 0 && (
+              <div
+                role="status"
+                style={{
+                  padding: "6px 12px",
+                  fontSize: 11,
+                  color: "var(--text-dim)",
+                  borderBottom: "1px solid var(--border)",
+                  background: "color-mix(in srgb, var(--warning, #d97706) 10%, transparent)",
+                }}
+              >
+                {t("files.htmlPreviewBlocked", { count: htmlPreviewUnloaded.length })}
+                {htmlPreviewUnloaded.some((asset) => asset.reason === "too-large")
+                  ? ` · ${t("files.htmlPreviewTooLarge")}`
+                  : ""}
+              </div>
+            )}
+            <iframe
+              srcDoc={htmlPreview}
+              sandbox="allow-scripts"
+              style={{ width: "100%", height: "100%", border: "none", background: "var(--bg)" }}
+              title={t("i18n.htmlPreview")}
+            />
+          </>
         ) : isMarkdown && effectiveDisplayMode === "preview" ? (
           <div
             className="markdown-body markdown-file-preview"
@@ -2104,7 +2182,7 @@ function TextFileViewer({
           <div style={{ height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, padding: 24, color: "var(--text-muted)", fontSize: 13, textAlign: "center" }}>
             <span>{t("files.binaryNoPreview")}</span>
             <a
-              href={getFileApiUrl(filePath, "download", sourceSessionId)}
+              href={getFileApiUrl(filePath, "download", sourceSessionId, {}, remote)}
               download={getFileName(filePath)}
               className="file-viewer-mode-button"
               style={{ display: "inline-flex", alignItems: "center", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text)", textDecoration: "none" }}

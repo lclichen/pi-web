@@ -298,9 +298,13 @@ export type SessionSpace = { kind: "host" } | { kind: "user"; userId: number };
 function spaceMatchesPath(space: SessionSpace, filePath: string): boolean {
   const root = resolvePath(defaultSessionsDir());
   const rel = relative(root, resolvePath(filePath));
-  if (!rel || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) return false;
-  if (space.kind === "host") return !rel.startsWith(`users${sep}`);
-  return rel.startsWith(`users${sep}u${space.userId}${sep}`);
+  const outsideRoot = !rel || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel);
+  if (space.kind === "host") {
+    // Live/transient transcripts and test fixtures may live outside the tree;
+    // anything inside it except a user shard belongs to the host space.
+    return outsideRoot || !rel.startsWith(`users${sep}`);
+  }
+  return !outsideRoot && rel.startsWith(`users${sep}u${space.userId}${sep}`);
 }
 
 /**
@@ -376,7 +380,7 @@ export async function listAllSessions(
   // every forked and subagent session, and it is triggered by ordinary agent
   // activity rather than by anything the caller did.
   if (options.allowStale && cache) {
-    void listAllSessions(options).catch(() => undefined);
+    void listAllSessions(space, { force: options.force }).catch(() => undefined);
     return scoped(cache.data);
   }
 

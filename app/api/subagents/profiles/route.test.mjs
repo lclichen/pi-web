@@ -386,7 +386,8 @@ test("profiles route rejects missing paths, malformed profiles, and unsafe names
 
   response = await PUT(jsonRequest("PUT", { cwd, scope: "builtin", profile: profile() }));
   assert.equal(response.status, 400);
-  assert.deepEqual(await response.json(), { error: "scope must be global or project" });
+  // Product scopes include per-user profiles, so the message names them too.
+  assert.deepEqual(await response.json(), { error: "scope must be global, user or project" });
 
   response = await PATCH(jsonRequest("PATCH", { cwd, scope: "workspace", name: "explore", enabled: false }));
   assert.equal(response.status, 400);

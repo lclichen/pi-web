@@ -1278,6 +1278,8 @@ export const enLocale: LocalePlugin = {
     "sessions.container2": "No container",
     "sessions.containerUnbound": "Not bound (platform default)",
     "sessions.copyPath": "Copy path",
+    "sessions.deleteHostProject": "Delete Host project",
+    "sessions.deleteHostProjectConfirm": "Delete Host project \"{name}\"? (The server directory is kept, but project sessions are removed)",
     "sessions.deleteProject": "Delete project",
     "sessions.deleteProjectConfirm": "Delete project \"{name}\" and its config directory? (Sessions are kept)",
     "sessions.deleteSession": "Delete session",

@@ -1278,6 +1278,8 @@ export const zhTWLocale: LocalePlugin = {
     "sessions.container2": "无容器",
     "sessions.containerUnbound": "未綁定（使用平台預設）",
     "sessions.copyPath": "复制路径",
+    "sessions.deleteHostProject": "刪除 Host 專案",
+    "sessions.deleteHostProjectConfirm": "刪除 Host 專案「{name}」？（不會刪除伺服器目錄，但會刪除專案會話記錄）",
     "sessions.deleteProject": "删除项目",
     "sessions.deleteProjectConfirm": "删除项目「{name}」及其配置目录？（会话记录保留）",
     "sessions.deleteSession": "删除会话",

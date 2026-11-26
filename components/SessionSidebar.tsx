@@ -2522,7 +2522,10 @@ export function SessionSidebar({
                 onSelectSession={handleSelectSessionFromList}
                 onNewSessionInProject={(project: ProjectRecord) => {
                   const tempId = typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now()}`;
-                  onNewSession?.(tempId, "/", project.mode, project.id, project.name);
+                  // Host 项目是外部目录：文件浏览器需要真实 cwd；服务端仍以
+                  // projectId 解析 home，客户端 cwd 只用于 explorer。
+                  const cwd = project.mode === "host" ? (project.workspaceRoot ?? "/") : "/";
+                  onNewSession?.(tempId, cwd, project.mode, project.id, project.name);
                 }}
                 onNewSessionInDirectory={(dir: string) => {
                   // Host 空间：目录组没有 ProjectRecord，走 host 模式 + 真实路径

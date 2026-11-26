@@ -5,6 +5,7 @@ import { sendAgentCommand } from "@/lib/agent-client";
 import type { PluginPackageInfo, PluginUpdateResult, PluginsResponse } from "@/lib/api-types";
 import { useI18n } from "@/hooks/useI18n";
 import { getLastSettingsSelection, setLastSettingsSelection } from "@/lib/settings-navigation";
+import { itemsToSwitch } from "./settings-ui-helpers";
 import {
   ConfigButton,
   ConfigDetail,
@@ -18,6 +19,7 @@ import {
   ConfigFooter,
   ConfigListAction,
   ConfigPanelShell,
+  ConfigSaveTarget,
   ConfigSidebar,
   ConfigSidebarGroupLabel,
   ConfigSidebarItem,
@@ -71,6 +73,26 @@ function installLocation(scope: PluginScope): string {
     : scope === "user"
       ? "user config / {npm,git}"
       : "~/.pi/agent/{npm,git}";
+}
+
+function scopeLabel(scope: PluginScope, t: ReturnType<typeof useI18n>["t"]): string {
+  if (scope === "project") return t("skills.scope.project");
+  if (scope === "user") return t("skills.scope.user");
+  return t("skills.scope.global");
+}
+
+export function packagesToSwitch<T extends Pick<PluginPackageInfo, "disabled" | "filtered">>(
+  packages: T[],
+  enabled: boolean,
+): T[] {
+  return itemsToSwitch(packages, enabled, (pkg) => !pkg.disabled, (pkg) => pkg.filtered);
+}
+
+/** Enabled filtered packages, which switching their group off leaves on. */
+export function filteredPackagesKeptOn<T extends Pick<PluginPackageInfo, "disabled" | "filtered">>(
+  packages: T[],
+): T[] {
+  return packages.filter((pkg) => !pkg.disabled && pkg.filtered);
 }
 
 /** Never render the project's real root; show a relative path for project files. */
@@ -378,9 +400,22 @@ function AddPluginPanel({
             pi.dev/packages
           </a>
         </div>
-        <div style={{ fontSize: 12, color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>
-          {installLocation(scope)}
-        </div>
+        <ConfigSaveTarget
+          value={scope}
+          label={t("config.saveTo")}
+          options={[
+            { value: "global", label: scopeLabel("global", t), disabled: !isAdmin },
+            { value: "user", label: scopeLabel("user", t) },
+            { value: "project", label: scopeLabel("project", t), disabled: !projectResourcesLoaded },
+          ]}
+          path={installLocation(scope)}
+          disabledReason={t("trust.projectScopeUnavailable")}
+          onChange={(next) => {
+            if (next === "project" && !projectResourcesLoaded) return;
+            if (next === "global" && !isAdmin) return;
+            onScopeChange(next);
+          }}
+        />
       </div>
 
       <ConfigField label="Source">

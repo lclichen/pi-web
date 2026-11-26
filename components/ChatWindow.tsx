@@ -343,6 +343,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
     handleCompact, handleSteer, handleFollowUp, handlePromptWithStreamingBehavior, handleAbortCompaction,
     dismissCompactError,
     handleRecallQueue,
+    handleQueueOp,
     handleBuiltinSlashCommand,
     handleToolPresetChange, handleThinkingLevelChange, handleSetDefaultModel, handleSetDefaultThinkingLevel, loadSlashCommands, loadAllModels, scrollUserMsgToTop,
     loadContext, activeLeafId, scrollToBottom, scrollToMessage,
@@ -991,6 +992,7 @@ ${block.text}` : block.text;
       onSetDefaultThinkingLevel={session || isNew ? handleSetDefaultThinkingLevel : undefined}
       retryInfo={retryInfo}
       queuedMessages={queuedMessages}
+      onQueueOp={handleQueueOp}
       inputHistory={inputHistory}
       onRecallQueue={handleRecallQueue}
       slashCommands={slashCommands}

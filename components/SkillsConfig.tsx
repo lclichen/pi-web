@@ -7,9 +7,12 @@ import type {
   SkillInstallScope,
   SkillSearchResult,
   SkillsResponse,
+  SkillToggleResult,
   SkillUpdateResult,
 } from "@/lib/api-types";
+import { parseFrontmatter } from "@/lib/frontmatter";
 import { getLastSettingsSelection, setLastSettingsSelection } from "@/lib/settings-navigation";
+import { itemsToSwitch } from "./settings-ui-helpers";
 import { useConfirm } from "./use-confirm";
 import {
   ConfigButton,
@@ -24,6 +27,7 @@ import {
   ConfigFooter,
   ConfigListAction,
   ConfigPanelShell,
+  ConfigSaveTarget,
   ConfigSidebar,
   ConfigSidebarGroupLabel,
   ConfigSidebarItem,
@@ -51,11 +55,73 @@ export function sourceLabel(skill: Skill): "project" | "user" | "global" | "path
   return "path";
 }
 
-export function orderSkillsByDormancy<T extends Pick<Skill, "disableModelInvocation">>(skills: T[]): T[] {
-  return [
+function scopeLabel(scope: "global" | "user" | "project" | "path", t: ReturnType<typeof useI18n>["t"]): string {
+  if (scope === "project") return t("skills.scope.project");
+  if (scope === "user") return t("skills.scope.user");
+  if (scope === "global") return t("skills.scope.global");
+  return t("skills.scope.path");
+}
+
+export function orderSkillsByDormancy<T extends Pick<Skill, "disableModelInvocation">>(skills: T[]): T[] {  return [
     ...skills.filter((skill) => !skill.disableModelInvocation),
     ...skills.filter((skill) => skill.disableModelInvocation),
   ];
+}
+
+/**
+ * The skills a group switch would change: those of the group not already in
+ * the requested state.
+ */
+export function skillsToSwitch<T extends Pick<Skill, "disableModelInvocation">>(skills: T[], enabled: boolean): T[] {
+  return itemsToSwitch(skills, enabled, (skill) => !skill.disableModelInvocation);
+}
+
+/** Applies a bulk toggle's results; a skill whose file reported an error keeps its state. */
+export function applySkillToggleResults<T extends Pick<Skill, "filePath" | "disableModelInvocation">>(
+  skills: T[],
+  results: SkillToggleResult[],
+  disableModelInvocation: boolean,
+): T[] {
+  const changed = new Set(results.filter((result) => !result.error).map((result) => result.filePath));
+  return skills.map((skill) => (changed.has(skill.filePath) ? { ...skill, disableModelInvocation } : skill));
+}
+
+/**
+ * The Markdown under a skill's frontmatter. Given the skill's name, a first
+ * heading that only repeats it is dropped: the pane already shows the name.
+ */
+export function skillInstructionsBody(content: string, name?: string): string {
+  const body = parseFrontmatter(content).rest.trim();
+  if (!name) return body;
+  const firstLine = body.match(/^#{1,6}[ \t]+(.*?)[ \t]*#*[ \t]*(?:\r?\n|$)/);
+  if (!firstLine || firstLine[1].trim().toLowerCase() !== name.trim().toLowerCase()) return body;
+  return body.slice(firstLine[0].length).trim();
+}
+
+/**
+ * A link in a skill document: a path in the skill folder, from the linking
+ * document's folder as pi resolves a skill's relative paths, and a heading.
+ * An absolute path or a `..` past the folder stays, for the route to refuse.
+ */
+export function resolveSkillLink(href: string, fromDocument: string): { document: string; anchor: string } {
+  const hash = href.indexOf("#");
+  const [linkPath, anchor] = [hash < 0 ? href : href.slice(0, hash), hash < 0 ? "" : href.slice(hash + 1)].map(
+    (part) => {
+      try {
+        return decodeURIComponent(part);
+      } catch {
+        return part;
+      }
+    },
+  );
+  if (!linkPath) return { document: fromDocument, anchor };
+  if (linkPath.startsWith("/")) return { document: linkPath, anchor };
+  const parts = fromDocument.split("/").slice(0, -1);
+  for (const part of linkPath.split("/")) {
+    if (part === ".." && parts.length && parts[parts.length - 1] !== "..") parts.pop();
+    else if (part && part !== ".") parts.push(part);
+  }
+  return { document: parts.join("/"), anchor };
 }
 
 function updateKey(skill: Skill): string | null {
@@ -452,53 +518,22 @@ function AddSkillPanel({
         {uploadMsg && <div style={{ fontSize: 12, color: "#22c55e" }}>{uploadMsg}</div>}
 
         {/* Scope + install path row */}
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div
-            style={{
-              display: "flex",
-              borderRadius: 5,
-              border: "1px solid var(--border)",
-              overflow: "hidden",
-              fontSize: 12,
-              flexShrink: 0,
-            }}
-          >
-            {(["global", "user", "project"] as const).map((s) => (
-              <button
-                key={s}
-                onClick={() => {
-                  if ((s !== "project" || projectResourcesLoaded) && (s !== "global" || isAdmin)) setScope(s);
-                }}
-                disabled={(s === "project" && !projectResourcesLoaded) || (s === "global" && !isAdmin)}
-                title={s === "project" && !projectResourcesLoaded ? t("trust.projectScopeUnavailable") : undefined}
-                style={{
-                  padding: "3px 10px",
-                  border: "none",
-                  cursor: (s === "project" && !projectResourcesLoaded) || (s === "global" && !isAdmin) ? "not-allowed" : "pointer",
-                  background: scope === s ? "var(--bg-selected)" : "none",
-                  color: scope === s ? "var(--text)" : "var(--text-dim)",
-                  fontWeight: scope === s ? 600 : 400,
-                  opacity: (s === "project" && !projectResourcesLoaded) || (s === "global" && !isAdmin) ? 0.45 : 1,
-                  borderRight: s !== "project" ? "1px solid var(--border)" : "none",
-                }}
-              >
-                {s === "user" ? t("skills.scope.user") : s}
-              </button>
-            ))}
-          </div>
-          <span
-            style={{
-              fontSize: 12,
-              color: "var(--text-dim)",
-              fontFamily: "var(--font-mono)",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}
-          >
-            → {installPath}
-          </span>
-        </div>
+        <ConfigSaveTarget
+          value={scope}
+          label={t("config.saveTo")}
+          options={[
+            { value: "global", label: scopeLabel("global", t), disabled: !isAdmin },
+            { value: "user", label: scopeLabel("user", t) },
+            { value: "project", label: scopeLabel("project", t), disabled: !projectResourcesLoaded },
+          ]}
+          path={installPath}
+          disabledReason={t("trust.projectScopeUnavailable")}
+          onChange={(next) => {
+            if (next === "project" && !projectResourcesLoaded) return;
+            if (next === "global" && !isAdmin) return;
+            setScope(next);
+          }}
+        />
 
         {/* Errors */}
         {searchError && <div style={{ fontSize: 12, color: "#f87171" }}>{searchError}</div>}

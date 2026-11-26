@@ -184,6 +184,12 @@ export interface RelayStatus {
   machines?: MachineStatus[];
 }
 
+/** Machine id used when an agent predates machine identity (and by projects
+ *  created before multi-machine pairing). Lives here, not in registry.ts, so
+ *  client code can resolve legacy projects without importing the server-side
+ *  relay (which pulls in ws/node). */
+export const DEFAULT_MACHINE_ID = "default";
+
 /** One paired machine in a RelayStatus snapshot. */
 export interface MachineStatus {
   machineId: string;

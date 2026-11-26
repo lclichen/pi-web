@@ -41,13 +41,16 @@
  * 1.2.1：agent-packaging 增加“运行位置与工作区投影”约定——远端只投影
  * skills/agents/attachments/runtime 与 .apkg_runtime 白名单文件；扩展与
  * runCli 在服务器执行；加密 Python 需 --apkg-tool 携带解密二进制。
+ *
+ * 1.2.2：新增 .pi/bundle.json "workspaceProjection": {"runtime": false}
+ * 开关——runtime 与 apkg_runtime 仅留服务器，不投影到远端工作区。
  */
 import JSZip from "jszip";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 export const BUILTIN_AGENT_BUILDER_NAME = "agent-builder";
-export const BUILTIN_AGENT_BUILDER_VERSION = "1.2.1";
+export const BUILTIN_AGENT_BUILDER_VERSION = "1.2.2";
 
 /** Developer skills shipped inside the builder bundle (source of truth:
  *  <repo>/builder-skills/, copied verbatim into .pi/skills/ of the zip).
@@ -241,7 +244,11 @@ Agent 的扩展/MCP 配置由 pi-web 服务器加载，但**技能脚本、CLI �
    \`.pi/.apkg_runtime\` 与客户专用 \`apkg-publisher\`。打包时用
    \`--apkg-tool <客户运行版>\` 把它放进运行时；二进制必须匹配目标
    OS/架构（Linux 包给 sandbox/SSH，Windows 包给配对 Windows 机器）。
-5. 如果逻辑必须在 **服务器** 执行（例如扩展里的 \`runCli\` 调 Python），
+5. 如果运行时**只在服务器执行**（例如扩展里的 \`runCli\` 调 Python），
+   在 \`.pi/bundle.json\` 写 \`"workspaceProjection": {"runtime": false}\`：
+   \`.pi/runtime\` 和 \`.apkg_runtime\` 不再复制到远端工作区，但 skills、
+   agents、attachments 仍照常投影。默认（不写）= runtime 投影。
+6. 如果逻辑必须在 **服务器** 执行（例如扩展里的 \`runCli\` 调 Python），
    就不需要投影；但也不能假定它在远端可见。
 
 ## 自检清单（导出前逐项核对）

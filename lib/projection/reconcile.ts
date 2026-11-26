@@ -8,13 +8,14 @@ import {
   PROJECTION_MAX_BYTES,
   PROJECTION_MAX_FILE_BYTES,
   PROJECTION_MAX_FILES,
-  PROJECTION_ROOTS,
   isAttachmentRel,
   isProjectedPath,
   isProjectionDir,
   normalizeProjectionRel,
   projectionPriority,
   projectionRootError,
+  projectionRoots,
+  type ProjectionPolicyOptions,
 } from "./policy";
 import {
   gcProjectionManifests,
@@ -43,6 +44,9 @@ export interface ProjectionInput {
   budgetMs?: number;
   /** Repair: force these rels (or directory prefixes) to Host content. */
   forcePaths?: string[];
+  /** Override package-level projection.runtime (tests / callers that already
+   *  parsed .pi/bundle.json); undefined = read it from the Host home. */
+  projectRuntime?: boolean;
   /** Force a full-content attachment verification. */
   forceFullVerify?: boolean;
   /** Host 读取依赖注入（默认 node:fs）；生产路径不传。 */
@@ -141,6 +145,31 @@ interface HostFile {
   mtimeMs: number;
 }
 
+/**
+ * Package-level switch: `.pi/bundle.json`
+ *   { "workspaceProjection": { "runtime": false } }
+ * (also accepts `"workspaceProjection": false` / `"runtimeProjection": false`).
+ * Default is true for backward compatibility: runtime scripts + apkg runtime
+ * are projected unless the package explicitly keeps them Host-only.
+ */
+export async function readProjectRuntimeProjection(hostHome: string): Promise<boolean> {
+  try {
+    const parsed = JSON.parse(await readFile(join(hostHome, ".pi", "bundle.json"), "utf8")) as Record<
+      string,
+      unknown
+    >;
+    const workspace = parsed.workspaceProjection;
+    if (workspace === false) return false;
+    if (workspace && typeof workspace === "object" && (workspace as { runtime?: unknown }).runtime === false) {
+      return false;
+    }
+    if (parsed.runtimeProjection === false) return false;
+    return true;
+  } catch {
+    return true;
+  }
+}
+
 interface HostWalkResult {
   files: HostFile[];
   truncated: { reason: string; skipped: number } | null;
@@ -150,7 +179,11 @@ interface HostWalkResult {
   unreadableFiles: string[];
 }
 
-async function walkHost(hostHome: string, hostFs: HostWalkFs = { readdir, stat }): Promise<HostWalkResult> {
+async function walkHost(
+  hostHome: string,
+  hostFs: HostWalkFs = { readdir, stat },
+  options: ProjectionPolicyOptions = {},
+): Promise<HostWalkResult> {
   const files: HostFile[] = [];
   const unreadablePrefixes: string[] = [];
   const unreadableFiles: string[] = [];
@@ -175,10 +208,10 @@ async function walkHost(hostHome: string, hostFs: HostWalkFs = { readdir, stat }
       }
       const rel = relDir ? `${relDir}/${entry.name}` : entry.name;
       if (entry.isDirectory()) {
-        if (isProjectionDir(rel)) await walk(rel);
+        if (isProjectionDir(rel, options)) await walk(rel);
         continue;
       }
-      if (!entry.isFile() || !isProjectedPath(rel)) continue;
+      if (!entry.isFile() || !isProjectedPath(rel, options)) continue;
       const abs = join(hostHome, rel);
       try {
         const info = await hostFs.stat(abs);
@@ -199,7 +232,7 @@ async function walkHost(hostHome: string, hostFs: HostWalkFs = { readdir, stat }
   await walk(".pi");
   // Mixed-layout Python runtime lives at the project-home root; only the
   // exact loader/bundle/decryptor files pass isProjectedPath.
-  await walk(".apkg_runtime");
+  if (options.projectRuntime !== false) await walk(".apkg_runtime");
   // Sort before caps: SKILL/scripts/references first, node_modules last.
   files.sort((a, b) => {
     const priority = projectionPriority(a.rel) - projectionPriority(b.rel);
@@ -286,13 +319,14 @@ async function deleteWorkspaceFile(ws: WorkspaceOperations, rel: string): Promis
 async function loadWorkspaceIndex(
   workspace: WorkspaceOperations,
   deadline: number,
+  options: ProjectionPolicyOptions,
 ): Promise<Map<string, WorkspaceStat> | null> {
   if (!workspace.manifest) return null;
   const remaining = deadline - Date.now();
   if (remaining <= 0) return null;
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    const attempt = workspace.manifest([...PROJECTION_ROOTS]);
+    const attempt = workspace.manifest(projectionRoots(options.projectRuntime !== false));
     // The call may outlive the race on a slow link; observe its rejection so
     // it cannot surface as an unhandled promise rejection.
     attempt.catch(() => {});
@@ -305,7 +339,7 @@ async function loadWorkspaceIndex(
     const index = new Map<string, WorkspaceStat>();
     for (const entry of result.entries) {
       const rel = normalizeProjectionRel(entry.path);
-      if (!isProjectedPath(rel)) continue;
+      if (!isProjectedPath(rel, options)) continue;
       index.set(rel, { isFile: true, isDirectory: false, size: entry.size, mtimeMs: entry.mtimeMs });
     }
     return index;
@@ -348,9 +382,11 @@ async function runReconcile(input: ProjectionInput): Promise<ProjectionResult> {
   }
 
   const workspace = input.workspace;
-  const workspaceIndex = await loadWorkspaceIndex(workspace, deadline);
+  const projectRuntime = input.projectRuntime ?? (await readProjectRuntimeProjection(input.hostHome));
+  const policyOptions: ProjectionPolicyOptions = { projectRuntime };
+  const workspaceIndex = await loadWorkspaceIndex(workspace, deadline, policyOptions);
 
-  const host = await walkHost(input.hostHome, input.hostFs);
+  const host = await walkHost(input.hostHome, input.hostFs, policyOptions);
   const hostFiles = new Map<string, { file: HostFile; sha256: string }>();
   const hostFailed = new Set<string>();
   // Host 读取不完整判定：rel 命中不可信前缀/集合时，它在 hostFiles 里的缺失

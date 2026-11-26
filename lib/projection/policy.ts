@@ -35,14 +35,24 @@ const APKG_RUNTIME_FILES = new Set([
 ]);
 
 /** Roots passed to a provider's batched manifest (no trailing slash). */
-export const PROJECTION_ROOTS = [
-  ".pi/skills",
-  ".pi/agents",
-  ".pi/attachments",
-  ".pi/runtime",
-  ".pi/.apkg_runtime",
-  ".apkg_runtime",
-] as const;
+const BASE_PROJECTION_ROOTS = [".pi/skills", ".pi/agents", ".pi/attachments"] as const;
+const RUNTIME_PROJECTION_ROOTS = [".pi/runtime", ".pi/.apkg_runtime", ".apkg_runtime"] as const;
+
+export interface ProjectionPolicyOptions {
+  /** `.pi/bundle.json` workspaceProjection.runtime (default true). When false,
+   *  runtime scripts and the encrypted Python runtime stay Host-only. */
+  projectRuntime?: boolean;
+}
+
+export function projectionRoots(projectRuntime = true): string[] {
+  return projectRuntime
+    ? [...BASE_PROJECTION_ROOTS, ...RUNTIME_PROJECTION_ROOTS]
+    : [...BASE_PROJECTION_ROOTS];
+}
+
+/** Default roots (runtime projected); callers with a package declaration use
+ *  projectionRoots(projectRuntime). */
+export const PROJECTION_ROOTS = projectionRoots(true);
 
 export const PROJECTION_MAX_FILES = 2_000;
 export const PROJECTION_MAX_BYTES = 64 * 1024 * 1024;
@@ -54,7 +64,6 @@ const PROJECTION_PREFIXES = [
   PROJECTION_SKILLS_PREFIX,
   PROJECTION_AGENTS_PREFIX,
   PROJECTION_ATTACHMENTS_PREFIX,
-  PROJECTION_RUNTIME_PREFIX,
 ] as const;
 
 export function normalizeProjectionRel(rel: string): string {
@@ -77,10 +86,15 @@ function isProjectionExcludedPath(rel: string): boolean {
 }
 
 /** Directories the Host walk descends into (`.pi` itself plus the subtrees). */
-export function isProjectionDir(rel: string): boolean {
+export function isProjectionDir(rel: string, options: ProjectionPolicyOptions = {}): boolean {
   const normalized = normalizeProjectionRel(rel);
   if (isProjectionExcludedPath(normalized)) return false;
   if (normalized === ".pi") return true;
+  if (options.projectRuntime === false) {
+    return [".pi/skills", ".pi/agents", ".pi/attachments"].some(
+      (dir) => normalized === dir || normalized.startsWith(`${dir}/`),
+    );
+  }
   if (normalized === ".apkg_runtime" || normalized.startsWith(".apkg_runtime/")) return true;
   return [
     ".pi/skills",
@@ -91,11 +105,14 @@ export function isProjectionDir(rel: string): boolean {
   ].some((dir) => normalized === dir || normalized.startsWith(`${dir}/`));
 }
 
-export function isProjectedPath(rel: string): boolean {
+export function isProjectedPath(rel: string, options: ProjectionPolicyOptions = {}): boolean {
   const normalized = normalizeProjectionRel(rel);
   if (isProjectionExcludedPath(normalized)) return false;
-  if (APKG_RUNTIME_FILES.has(normalized)) return true;
-  if (!PROJECTION_PREFIXES.some((prefix) => normalized.startsWith(prefix))) return false;
+  const projectRuntime = options.projectRuntime !== false;
+  if (projectRuntime && APKG_RUNTIME_FILES.has(normalized)) return true;
+  if (!PROJECTION_PREFIXES.some((prefix) => normalized.startsWith(prefix))) {
+    if (!projectRuntime || !normalized.startsWith(PROJECTION_RUNTIME_PREFIX)) return false;
+  }
   if (normalized === ".pi/.sync-backups" || normalized.startsWith(".pi/.sync-backups/")) return false;
   if (isAttachmentRel(normalized)) {
     const name = normalized.slice(PROJECTION_ATTACHMENTS_PREFIX.length);

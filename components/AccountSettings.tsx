@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { teardownPushSubscription } from "@/lib/push-client";
+import { clearStoredDrafts } from "@/lib/draft-store";
 import { ConfigButton } from "./SettingsUi";
 
 interface AccountUser {
@@ -201,8 +202,12 @@ export function AccountSettings() {
           variant="danger"
           onClick={async () => {
             await teardownPushSubscription();
-            await fetch("/api/webauth/logout", { method: "POST" }).catch(() => {});
-            window.location.href = "/login";
+            const response = await fetch("/api/webauth/logout", { method: "POST" });
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            // The server session is gone: stored drafts belonged to it and must
+            // not leak into the next account on this browser.
+            clearStoredDrafts();
+            window.location.replace("/login");
           }}
         >
           {t("app.logOut2")}

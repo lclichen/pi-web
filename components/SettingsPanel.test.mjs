@@ -11,7 +11,8 @@ test("the trust dialog Settings › MCP opens stacks above Settings", () => {
 });
 
 test("signing out removes the stored drafts once the server signed out", async () => {
-  const panelSource = await readFile(new URL("./SettingsPanel.tsx", import.meta.url), "utf8");
+  // The account section (settings › 用户) owns signing out in the merged shell.
+  const panelSource = await readFile(new URL("./AccountSettings.tsx", import.meta.url), "utf8");
   assert.match(
     panelSource,
     /if \(!response\.ok\) throw new Error\([^\n]*\);\n(?:\s*\/\/[^\n]*\n)*\s*clearStoredDrafts\(\);\n\s*window\.location\.replace\("\/login"\);/,

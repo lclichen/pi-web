@@ -1431,7 +1431,7 @@ ${block.text}` : block.text;
               position: "absolute",
               bottom: "100%",
               left: 0,
-              right: isMobile ? 0 : CHAT_MINIMAP_WIDTH,
+              right: isMobile || embedded ? 0 : CHAT_MINIMAP_WIDTH,
               display: "flex",
               justifyContent: "center",
               paddingBottom: 10,

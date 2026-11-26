@@ -214,10 +214,17 @@ function somethingAt(path: string): boolean {
 export function hasTrustRelevantEntries(cwd: string, home: string = process.env.HOME || homedir()): boolean {
   const folder = realPathOr(cwd);
   if (hasOwnTrustEntries(folder)) return true;
-  const userSkills = join(realPathOr(home), ".agents", "skills");
+  // The user's own `~/.agents/skills` is a global skill dir, never a project
+  // signal. Compare against the real home too: a test/fixture home still
+  // walks ancestors through the developer's profile (Windows temp folders
+  // live under it), where the real skills dir would otherwise count.
+  const userSkillsDirs = [
+    join(realPathOr(home), ".agents", "skills"),
+    join(realPathOr(homedir()), ".agents", "skills"),
+  ];
   for (let current = folder; ; current = dirname(current)) {
     const skills = join(current, ".agents", "skills");
-    if (!samePath(skills, userSkills) && somethingAt(skills)) return true;
+    if (!userSkillsDirs.some((dir) => samePath(skills, dir)) && somethingAt(skills)) return true;
     if (dirname(current) === current) return false;
   }
 }

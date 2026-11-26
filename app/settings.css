@@ -2821,3 +2821,32 @@ select.mcp-add-input {
     }
   }
 }
+
+/* Sub-tabs shared by the Agents admin (bundles) and Policy sections. */
+.bundle-subtabs,
+.policy-subtabs {
+  display: flex;
+  flex-shrink: 0;
+  gap: 2px;
+  padding: 6px 14px 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+}
+
+.bundle-subtab,
+.policy-subtab {
+  padding: 6px 12px 7px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.bundle-subtab.is-active,
+.policy-subtab.is-active {
+  border-bottom-color: var(--accent);
+  color: var(--text);
+  font-weight: 600;
+}

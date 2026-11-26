@@ -105,6 +105,7 @@ import { DismissButton } from "./DismissButton";
 import { FileExplorer, type FileExplorerHandle } from "./FileExplorer";
 import { PiWebTitle } from "./PiWebTitle";
 import { ProjectWorktreePicker, type ProjectWorktreePickerHandle, type WorktreeRemoval } from "./ProjectWorktreePicker";
+import { RemoteConnectWizard } from "./RemoteConnectWizard";
 import { SessionSearch } from "./SessionSearch";
 import { SessionTree, sessionRowTitle, type SessionTreeReveal } from "./SessionTree";
 import { SidebarMenu, type SidebarMenuAnchor, type SidebarMenuItem } from "./SidebarMenu";
@@ -538,6 +539,20 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onSelectSid
   const [error, setError] = useState<string | null>(null);
   const [selectedCwd, setSelectedCwd] = useState<string | null>(null);
   const [homeDir, setHomeDir] = useState<string>("");
+  // The managed-project wizard (sandbox / local machine / SSH). The
+  // environment menu and the guided tour open it by dispatching
+  // `pi-web:open-project-wizard`, with a mode to start on its config step.
+  const [showProjectWizard, setShowProjectWizard] = useState(false);
+  const [wizardInitialMethod, setWizardInitialMethod] = useState<"sandbox" | "local" | "ssh" | null>(null);
+  useEffect(() => {
+    const onOpenWizard = (event: Event) => {
+      const mode = (event as CustomEvent<{ mode?: string }>).detail?.mode;
+      setWizardInitialMethod(mode === "sandbox" || mode === "local" || mode === "ssh" ? mode : null);
+      setShowProjectWizard(true);
+    };
+    window.addEventListener("pi-web:open-project-wizard", onOpenWizard);
+    return () => window.removeEventListener("pi-web:open-project-wizard", onOpenWizard);
+  }, []);
   // Open for the files tab's project list, or for the composer's bar ("new-session").
   const [customPathOpen, setCustomPathOpen] = useState<false | "files" | "new-session">(false);
   const [customPathValue, setCustomPathValue] = useState(loadLastCustomCwd);
@@ -3041,6 +3056,20 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onSelectSid
       onFocus={(event) => { sidebarFocusRef.current = event.target; }}
       onBlur={(event) => { if (event.relatedTarget === null && !document.hasFocus()) return; if (!event.currentTarget.contains(event.relatedTarget)) sidebarFocusRef.current = null; }}
     >
+      {showProjectWizard && (
+        <RemoteConnectWizard
+          initialMethod={wizardInitialMethod}
+          onClose={() => {
+            setShowProjectWizard(false);
+            setWizardInitialMethod(null);
+          }}
+          onCreated={() => {
+            // The project list and every projection badge read fresh data.
+            window.dispatchEvent(new Event("pi-web:config-changed"));
+            window.dispatchEvent(new CustomEvent("pi-web:sidebar-pins-changed"));
+          }}
+        />
+      )}
       {customPathOpen && (
         <DirectoryPicker
           initialPath={customPathValue}
@@ -3104,6 +3133,15 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onSelectSid
           </div>
         )}
         <span className="sidebar-header-spacer" />
+        <button
+          type="button"
+          className="sidebar-new-button"
+          onClick={() => setShowProjectWizard(true)}
+          title={t("sidebar.newProject")}
+          aria-label={t("sidebar.newProject")}
+        >
+          <FolderIcon size={13} />
+        </button>
         <button
           type="button"
           className="sidebar-new-button"

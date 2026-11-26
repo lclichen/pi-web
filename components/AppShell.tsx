@@ -21,6 +21,10 @@ import { AgentSessionPanel } from "./AgentSessionPanel";
 import { DebugPanel, DebugPanelBoundary } from "./DebugPanel";
 import { SessionChatPanel } from "./SessionChatPanel";
 import { TerminalPanel } from "./TerminalPanel";
+import { EnvironmentsMenu } from "./EnvironmentsMenu";
+import { MyWorkspaceDialog } from "./MyWorkspaceDialog";
+import { SandboxManagerDialog } from "./SandboxManagerDialog";
+import { WebUIGuide, WebUIGuideResumePill } from "./WebUIGuide";
 import { newTerminalTab, restoreTerminalTabs, TERMINAL_TABS_KEY, type TerminalTab } from "./terminal-tab-state";
 import { appendSideTab, restoreSideTabs, sideTabsKey } from "./side-tab-state";
 import { useTheme } from "@/hooks/useTheme";
@@ -263,6 +267,55 @@ export function AppShell() {
   // The plain Settings button opens a phone's Settings on its list of sections; shortcuts open theirs.
   const [settingsOpenAtHome, setSettingsOpenAtHome] = useState(false);
   const [modelsRefreshKey, setModelsRefreshKey] = useState(0);
+  // The environment menu's workspace/sandbox entries need a signed-in user
+  // (they are platform-backed); local machines show regardless.
+  const [signedIn, setSignedIn] = useState(false);
+  const [isAdminUser, setIsAdminUser] = useState(false);
+  const [myWorkspaceOpen, setMyWorkspaceOpen] = useState(false);
+  const [sandboxManager, setSandboxManager] = useState<
+    { projectId?: string; projectName?: string; containerId?: number } | null
+  >(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/webauth/me")
+      .then(async (res) => {
+        if (!res.ok) return;
+        const data = (await res.json()) as { user?: { role?: string } };
+        if (cancelled) return;
+        setSignedIn(true);
+        setIsAdminUser(data.user?.role === "admin");
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  // WebUI guided tour: auto-opens once on a first visit; closing keeps the
+  // progress, skipping marks it done.
+  const [webGuideOpen, setWebGuideOpen] = useState(false);
+  const [guideResumeVisible, setGuideResumeVisible] = useState(false);
+  useEffect(() => {
+    try {
+      if (
+        !window.localStorage.getItem("webui-guide-done") &&
+        !window.localStorage.getItem("webui-guide-progress") &&
+        !window.localStorage.getItem("webui-guide-step")
+      ) {
+        setWebGuideOpen(true);
+      }
+    } catch {
+      /* localStorage unavailable: no auto-open */
+    }
+  }, []);
+  const closeWebGuide = useCallback((options?: { skip?: boolean }) => {
+    setWebGuideOpen(false);
+    if (!options?.skip) return;
+    try {
+      window.localStorage.setItem("webui-guide-done", "1");
+    } catch {
+      /* ignored */
+    }
+  }, []);
   const [projectTrust, setProjectTrust] = useState<ProjectTrustStatus | null>(null);
   const [projectTrustDialogOpen, setProjectTrustDialogOpen] = useState(false);
   const [projectTrustBusy, setProjectTrustBusy] = useState(false);
@@ -2522,6 +2575,13 @@ export function AppShell() {
               </svg>
             )}
           </button>
+          {!isMobile && (
+            <EnvironmentsMenu
+              signedIn={signedIn}
+              onOpenWorkspace={() => setMyWorkspaceOpen(true)}
+              onOpenSandbox={() => setSandboxManager({})}
+            />
+          )}
           {isMobile && (
             <div
               ref={mobileToolbarRef}
@@ -3172,6 +3232,39 @@ export function AppShell() {
         onConfirm={() => void handleTrustProject()}
         onStatus={setProjectTrust}
       />
+    )}
+    {myWorkspaceOpen && <MyWorkspaceDialog onClose={() => setMyWorkspaceOpen(false)} />}
+    {sandboxManager && (
+      <SandboxManagerDialog
+        bind={sandboxManager.projectId && sandboxManager.projectName
+          ? {
+              projectId: sandboxManager.projectId,
+              projectName: sandboxManager.projectName,
+              ...(sandboxManager.containerId !== undefined ? { containerId: sandboxManager.containerId } : {}),
+            }
+          : null}
+        onClose={() => setSandboxManager(null)}
+        onChanged={() => setRefreshKey((key) => key + 1)}
+      />
+    )}
+    <WebUIGuide
+      open={webGuideOpen}
+      onClose={closeWebGuide}
+      onOpenSettings={(section) => openSettingsSection(section)}
+      onStartQuickSession={() => window.dispatchEvent(
+        new CustomEvent("pi-web:open-project-wizard", { detail: { mode: "quick" } }),
+      )}
+      onNewProject={() => window.dispatchEvent(new CustomEvent("pi-web:open-project-wizard"))}
+      onCreateProject={(mode) =>
+        window.dispatchEvent(new CustomEvent("pi-web:open-project-wizard", { detail: { mode } }))
+      }
+      hasSession={showChat}
+      onJumpOut={() => setGuideResumeVisible(true)}
+      onFinished={() => setGuideResumeVisible(false)}
+      isAdmin={isAdminUser}
+    />
+    {guideResumeVisible && !webGuideOpen && (
+      <WebUIGuideResumePill onResume={() => setWebGuideOpen(true)} onDismiss={() => setGuideResumeVisible(false)} />
     )}
     </>
   );

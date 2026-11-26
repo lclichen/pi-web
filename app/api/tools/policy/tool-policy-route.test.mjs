@@ -20,7 +20,9 @@ test("gates on isApiRequestAllowed + requireUserIdentity before resolving the pr
 
 test("uses the same policy functions as the session assembly (single source of truth)", () => {
   assert.match(src, /import \{ isRemoteMode, mcpServerModePolicy \} from "@\/lib\/tool-policy"/);
-  assert.match(src, /mcpServerModePolicy\(server\.entry, server\.transport, mode\)/);
+  // The merged route narrows the optionally-typed MCP entry and transport at
+  // the call site; the assertion keeps the shared-policy fact, not the tokens.
+  assert.match(src, /mcpServerModePolicy\(server\.entry!?,\s*\(?server\.transport\b/);
   assert.match(src, /import \{ TOOL_MANIFEST \} from "@\/lib\/extensions\/tool-manifest"/);
 });
 
@@ -32,5 +34,5 @@ test("project mode comes from the project registry; unknown cwd falls back to ho
 
 test("MCP servers are read with the requester's user scope (per-user layer included)", () => {
   assert.match(src, /readMcpConfig\(dir\.cwd, \{ userId: ownerId \}\)/);
-  assert.match(src, /server\.entry\.piWeb \?\? null/);
+  assert.match(src, /server\.entry!?\.piWeb \?\? null/);
 });

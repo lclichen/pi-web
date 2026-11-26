@@ -1,17 +1,40 @@
 import { NextResponse } from "next/server";
 import { existsSync } from "fs";
 import { addWorktree, findCurrentWorktreePath, listWorktrees, removeWorktree, resolveProject, WorktreeBranchInUseError, worktreeRemovalRequiresForce } from "@/lib/worktree";
-import { allowFileRoot, getAllowedFileRoots, isExistingFilePathAllowed, isFilePathAllowed } from "@/lib/file-access";
+import {
+  allowFileRoot,
+  getAllowedFileRootsForRequest,
+  isExistingFilePathAllowed,
+  isFilePathAllowed,
+} from "@/lib/file-access";
+import { allowedRootsWithSessionCwds } from "@/lib/session-cwd-access";
+import { requireUserIdentity } from "@/lib/web-session";
+import { isCallerOwnedProjectHome } from "@/lib/projects";
+import { isCallerQuickWorkspace } from "@/lib/mode-homes";
 import { projectIdentityKey } from "@/lib/project-identity";
 
-/** Same gate as /api/files: only session cwds / project roots / explicitly
- *  allowed dirs may be inspected or mutated through this endpoint. */
-async function checkCwdAllowed(cwd: string): Promise<NextResponse | null> {
-  const allowedRoots = await getAllowedFileRoots();
-  if (!isFilePathAllowed(cwd, allowedRoots) || !isExistingFilePathAllowed(cwd, allowedRoots)) {
-    return NextResponse.json({ error: "Access denied" }, { status: 403 });
+/** Same gate as /api/files, derived from the REQUEST identity: session cwds,
+ *  project roots and explicitly allowed dirs; a path outside them still passes
+ *  for the caller's own project home or quick workspace (the same ownership
+ *  fallback /api/project-trust and /api/files use). */
+async function checkCwdAllowed(req: Request, cwd: string): Promise<NextResponse | null> {
+  const allowedRoots = await allowedRootsWithSessionCwds(req, await getAllowedFileRootsForRequest(req));
+  if (isFilePathAllowed(cwd, allowedRoots) && isExistingFilePathAllowed(cwd, allowedRoots)) {
+    return null;
   }
-  return null;
+  const identity = requireUserIdentity(req);
+  if (identity.ok) {
+    const { user } = identity.session;
+    if (
+      user.id === 0 ||
+      user.role === "admin" ||
+      isCallerOwnedProjectHome(cwd, user.id, false) ||
+      isCallerQuickWorkspace(cwd, user.id)
+    ) {
+      return null;
+    }
+  }
+  return NextResponse.json({ error: "Access denied" }, { status: 403 });
 }
 
 // GET /api/worktrees?cwd=  →  { projectRoot, projectKey, isGit, isTopLevel, currentWorktreePath, worktrees }
@@ -21,7 +44,7 @@ export async function GET(req: Request) {
     if (!cwd) {
       return NextResponse.json({ error: "cwd is required" }, { status: 400 });
     }
-    const denied = await checkCwdAllowed(cwd);
+    const denied = await checkCwdAllowed(req, cwd);
     if (denied) return denied;
 
     const project = await resolveProject(cwd);
@@ -65,7 +88,7 @@ export async function POST(req: Request) {
     if (!body.branch || typeof body.branch !== "string") {
       return NextResponse.json({ error: "branch is required" }, { status: 400 });
     }
-    const denied = await checkCwdAllowed(body.cwd);
+    const denied = await checkCwdAllowed(req, body.cwd);
     if (denied) return denied;
     if (!existsSync(body.cwd)) {
       return NextResponse.json({ error: `Directory does not exist: ${body.cwd}` }, { status: 400 });
@@ -100,7 +123,7 @@ export async function DELETE(req: Request) {
     if (!body.path || typeof body.path !== "string") {
       return NextResponse.json({ error: "path is required" }, { status: 400 });
     }
-    const denied = await checkCwdAllowed(body.cwd);
+    const denied = await checkCwdAllowed(req, body.cwd);
     if (denied) return denied;
 
     await removeWorktree(body.cwd, body.path, body.force === true);

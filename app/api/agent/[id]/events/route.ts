@@ -3,6 +3,8 @@ import { createAgentEventStream } from "@/lib/agent-event-stream";
 import { checkLiveSessionAccess, resolveSessionAccess } from "@/lib/session-access";
 import { getRpcSession, startRpcSession, type AgentSessionWrapper } from "@/lib/rpc-manager";
 import { restoreSessionOptions } from "@/lib/session-restore-options";
+import { isValidLivenessHolder } from "@/lib/session-liveness";
+import { describeStreamClient } from "@/lib/stream-client";
 import { sessionCookieRefreshHeader } from "@/lib/web-session";
 
 export const dynamic = "force-dynamic";
@@ -11,6 +13,12 @@ export const dynamic = "force-dynamic";
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   if (req.signal.aborted) return new Response(null, { status: 204 });
+
+  // The holder, the request's reported address and its browser label only
+  // label the stream for the debug panel: the page's lease renewals keep the
+  // session alive, never the stream (#1283).
+  const holderParam = new URL(req.url).searchParams.get("holder");
+  const holder = isValidLivenessHolder(holderParam) ? holderParam : null;
 
   // Sliding renewal: each (re)connect is a natural cookie refresh point —
   // headers can only be set at stream open, so long-lived connections are
@@ -39,7 +47,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       .then((result) => result.session);
   }
 
-  const stream = createAgentEventStream(req, id, sessionPromise);
+  const stream = createAgentEventStream(req, id, sessionPromise, { holder, ...describeStreamClient(req.headers) });
 
   return new Response(stream, {
     headers: {

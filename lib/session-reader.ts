@@ -292,31 +292,82 @@ async function loadAllSessions(): Promise<SessionInfo[]> {
   return buildSessionList(await listSessionsIncremental());
 }
 
+export type SessionSpace = { kind: "host" } | { kind: "user"; userId: number };
+
+/** Whether a session file belongs to the caller's space (user shards are `sessions/users/u<id>/`). */
+function spaceMatchesPath(space: SessionSpace, filePath: string): boolean {
+  const root = resolvePath(defaultSessionsDir());
+  const rel = relative(root, resolvePath(filePath));
+  if (!rel || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) return false;
+  if (space.kind === "host") return !rel.startsWith(`users${sep}`);
+  return rel.startsWith(`users${sep}u${space.userId}${sep}`);
+}
+
+/**
+ * cwds of all sessions stored in user shards (host-mode sessions of logged-in
+ * admins live there). The HOST allowed-roots fence derives from session cwds
+ * but the host-space listing never scans shards — this closes that gap so a
+ * restart no longer drops admin host-project directories from the fence.
+ */
+export async function listShardSessionCwds(): Promise<string[]> {
+  const root = resolvePath(defaultSessionsDir());
+  const cwds: string[] = [];
+  let sessions: SessionInfo[] = [];
+  try {
+    sessions = await loadAllSessions();
+  } catch {
+    return cwds;
+  }
+  for (const session of sessions) {
+    if (!session.cwd) continue;
+    const rel = relative(root, resolvePath(session.path));
+    if (rel.startsWith(`users${sep}`)) cwds.push(session.cwd);
+  }
+  return cwds;
+}
+
 /**
  * Return a cheap catalogue for the first paint. Changed files contribute only
  * header/stat metadata; a normal listAllSessions() call hydrates the exact
  * counts, names, and first messages afterwards.
  */
-export async function listSessionSummaries(): Promise<SessionInfo[]> {
-  return buildSessionList(await listSessionsIncremental({ deferDetails: true }));
+export async function listSessionSummaries(space: SessionSpace = { kind: "host" }): Promise<SessionInfo[]> {
+  const list = await buildSessionList(await listSessionsIncremental({ deferDetails: true }));
+  return list.filter((session) => spaceMatchesPath(space, session.path));
 }
-
-export type SessionSpace = { kind: "host" } | { kind: "user"; userId: number };
 
 /** Accepts both the fork's listAllSessions(space, options) and upstream's listAllSessions(options). */
 export async function listAllSessions(
   spaceOrOptions: SessionSpace | { force?: boolean; allowStale?: boolean } = {},
   maybeOptions: { force?: boolean; allowStale?: boolean } = {},
 ): Promise<SessionInfo[]> {
-  const options = "kind" in spaceOrOptions ? maybeOptions : spaceOrOptions;
+  const space: SessionSpace = "kind" in spaceOrOptions ? spaceOrOptions : { kind: "host" };
+  const options: { force?: boolean; allowStale?: boolean } = "kind" in spaceOrOptions ? maybeOptions : spaceOrOptions;
+  const scoped = (list: SessionInfo[]) => list.filter((session) => spaceMatchesPath(space, session.path));
   if (options.force) invalidateSessionListCache();
+  // A user shard's directory mtime changes when its first session lands there
+  // (or a project folder appears): a scan cached before that would hide the
+  // caller's new session for the whole TTL. Host listings ignore shards, so
+  // only a user-space read pays for this stat.
+  if (space.kind === "user") {
+    const shardCache = globalThis.__piSessionListCache;
+    if (shardCache) {
+      try {
+        if (statSync(join(defaultSessionsDir(), "users", `u${space.userId}`)).mtimeMs > shardCache.ts) {
+          invalidateSessionListCache();
+        }
+      } catch {
+        // No shard yet: an empty space.
+      }
+    }
+  }
   const generation = globalThis.__piSessionListGeneration ?? 0;
 
   // Return cached result if still fresh (avoids re-scanning session files
   // and re-spawning git processes on every page load).
   const cache = globalThis.__piSessionListCache;
   if (cache && cache.generation === generation && Date.now() - cache.ts < SESSION_LIST_CACHE_TTL_MS) {
-    return cache.data;
+    return scoped(cache.data);
   }
 
   // Callers that only need session metadata — mapping search hits onto sidebar
@@ -326,13 +377,13 @@ export async function listAllSessions(
   // activity rather than by anything the caller did.
   if (options.allowStale && cache) {
     void listAllSessions(options).catch(() => undefined);
-    return cache.data;
+    return scoped(cache.data);
   }
 
   // Coalescing dedup: concurrent callers share the same in-flight promise
   // only while it belongs to the current cache generation.
   if (globalThis.__piSessionListPromise && globalThis.__piSessionListPromiseGeneration === generation) {
-    return globalThis.__piSessionListPromise;
+    return globalThis.__piSessionListPromise.then(scoped);
   }
 
   const loadPromise = loadAllSessions().then((data) => {
@@ -340,10 +391,10 @@ export async function listAllSessions(
     // scan for the current generation. Returning the stale result here made a
     // refresh race indistinguishable from a successful refresh.
     if ((globalThis.__piSessionListGeneration ?? 0) !== generation) {
-      return listAllSessions();
+      return listAllSessions(space, options);
     }
     globalThis.__piSessionListCache = { data, ts: Date.now(), generation };
-    return data;
+    return scoped(data);
   });
   const trackedPromise = loadPromise.finally(() => {
     if (globalThis.__piSessionListPromise === trackedPromise) {
@@ -352,7 +403,7 @@ export async function listAllSessions(
     }
   });
 
-  globalThis.__piSessionListPromise = trackedPromise;
+  globalThis.__piSessionListPromise = loadPromise;
   globalThis.__piSessionListPromiseGeneration = generation;
   return trackedPromise;
 }
@@ -602,21 +653,28 @@ export function openSessionManager(
 
 export async function resolveSessionPath(
   sessionId: string,
-  _space: SessionSpace = { kind: "host" },
+  space: SessionSpace = { kind: "host" },
 ): Promise<string | null> {
   const cached = getPathCache().get(sessionId);
-  if (cached) return cached;
+  if (cached && spaceMatchesPath(space, cached)) return cached;
 
-  const targetedPath = await findSessionPathById(sessionId);
-  if (targetedPath) {
-    cacheSessionPath(sessionId, targetedPath);
-    return getPathCache().get(sessionId) ?? null;
+  // Targeted lookup covers the host root only; user shards live two levels
+  // below it and come from the space-scoped catalogue scan.
+  if (space.kind === "host") {
+    const targetedPath = await findSessionPathById(sessionId);
+    if (targetedPath && spaceMatchesPath(space, targetedPath)) {
+      cacheSessionPath(sessionId, targetedPath);
+      return getPathCache().get(sessionId) ?? null;
+    }
   }
 
   // Unknown layouts, malformed candidates, and duplicate IDs retain the
   // existing authoritative catalogue scan instead of negative-caching a miss.
-  await listAllSessions();
-  return getPathCache().get(sessionId) ?? null;
+  const list = await listAllSessions(space);
+  const hit = list.find((session) => session.id === sessionId);
+  if (!hit) return null;
+  cacheSessionPath(sessionId, hit.path);
+  return hit.path;
 }
 
 export async function resolveSessionIdByPath(filePath: string): Promise<string | undefined> {

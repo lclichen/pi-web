@@ -1,6 +1,6 @@
 import { getAdditionalAllowedRoots, normalizeSlashes } from "./allowed-roots";
 import { isExistingPathWithinRoots, isPathWithinRoots } from "./path-security";
-import { listAllSessions } from "./session-reader";
+import { listAllSessions, listShardSessionCwds } from "./session-reader";
 import { requireUserIdentity } from "./web-session";
 export { allowFileRoot, normalizeSlashes } from "./allowed-roots";
 export { isWindowsAbsolutePath } from "./paths";
@@ -28,6 +28,10 @@ export async function getAllowedFileRoots(): Promise<Set<string>> {
     // the project dropdown lists it even when only worktrees have sessions.
     if (s.projectRoot) roots.add(normalizeSlashes(s.projectRoot));
   }
+
+  // Per-user shards are outside the host listing but their folders are still
+  // legitimate host roots after a restart (admins' own sessions live there).
+  for (const cwd of await listShardSessionCwds()) roots.add(normalizeSlashes(cwd));
 
   for (const root of getAdditionalAllowedRoots()) roots.add(root);
 

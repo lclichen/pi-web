@@ -209,7 +209,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     const fence = checkLiveSessionAccess(req, id);
     if (!fence.ok) return NextResponse.json({ error: fence.error }, { status: fence.status });
 
-    const state = await session.send({ type: "get_state" });
+    const state = (await session.send({ type: "get_state" })) as Record<string, unknown>;
+    // Status reads leave out the system prompt, most of the reply (agentStatusUrl()).
+    if (new URL(req.url).searchParams.get("systemPrompt") === "0") delete state.systemPrompt;
     return NextResponse.json({ running: true, state });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });

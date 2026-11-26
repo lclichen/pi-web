@@ -12,7 +12,7 @@ import {
 } from "@/lib/session-reader";
 import { checkLiveSessionAccess, resolveSessionAccess } from "@/lib/session-access";
 import { sessionPathKey } from "@/lib/session-path";
-import { getRpcSession } from "@/lib/rpc-manager";
+import { getRpcSession, renameRpcSession } from "@/lib/rpc-manager";
 import { projectTreeForResponse } from "@/lib/project-tree";
 import { computeSessionTotalActiveMs } from "@/lib/session-timing";
 import { computeSessionStats } from "@/lib/session-stats";
@@ -24,6 +24,8 @@ import { invalidateSessionManagerCache, openSessionManager, openSessionManagerAs
 import { jsonResponse } from "@/lib/json-response";
 import { setSessionArchived } from "@/lib/session-metas";
 import { deleteSessionCascade } from "@/lib/state/lifecycle";
+import { SIDE_META_TYPE } from "@/lib/side-session";
+import { forgetSessionUiState } from "@/lib/session-ui-state";
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -166,13 +168,23 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     const access = await resolveSessionAccess(req, id, new URL(req.url).searchParams);
     if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
     const filePath = access.path;
-    if (!filePath) {
+    if (!filePath && !getRpcSession(id)?.isAlive()) {
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
     }
     if (body.name !== undefined) {
-      const sm = openSessionManager(filePath, { mutable: true });
-      sm.appendSessionInfo(body.name.trim());
-      invalidateSessionManagerCache(filePath);
+      const trimmed = body.name.trim();
+      // A session a wrapper holds is renamed in it, never on disk behind its
+      // back: the entry hangs off the live leaf and extensions get
+      // session_info_changed. A start in flight or a closing wrapper is
+      // awaited first; otherwise the file is appended directly.
+      const renamed = await renameRpcSession(id, trimmed, () => {
+        if (!filePath) return false;
+        const sm = openSessionManager(filePath, { mutable: true });
+        sm.appendSessionInfo(trimmed);
+        invalidateSessionManagerCache(filePath);
+        return true;
+      });
+      if (!renamed) return NextResponse.json({ error: "Session not found" }, { status: 404 });
     }
     if (body.archived !== undefined && !setSessionArchived(id, body.archived)) {
       return NextResponse.json({ error: "该会话缺少元数据，无法归档" }, { status: 409 });
@@ -217,6 +229,68 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
     // Scan sibling files in the same directory
     const targetPathKey = sessionPathKey(filePath);
     const dir = dirname(filePath);
+
+    // Subagent transcripts and side chats below this one go with it: their
+    // metadata names the parent. Forks stay and are re-parented below.
+    const removedDescendants: string[] = [];
+    try {
+      const byId = new Map<string, { path: string; subagentParent?: string; sideParent?: string }>();
+      for (const file of readdirSync(dir).filter((name) => name.endsWith(".jsonl") && sessionPathKey(join(dir, name)) !== targetPathKey)) {
+        const childPath = join(dir, file);
+        try {
+          const lines = readFileSync(childPath, "utf8").split("\n");
+          const header = JSON.parse(lines[0]) as { type?: string; id?: string };
+          if (header.type !== "session" || !header.id) continue;
+          const info: { path: string; subagentParent?: string; sideParent?: string } = { path: childPath };
+          for (let index = 1; index < lines.length; index += 1) {
+            let entry: { type?: string; customType?: string; data?: unknown };
+            try {
+              entry = JSON.parse(lines[index]);
+            } catch {
+              continue;
+            }
+            if (entry.type !== "custom" || typeof entry.data !== "object" || entry.data === null) continue;
+            const parentSessionId = (entry.data as { parentSessionId?: unknown }).parentSessionId;
+            if (typeof parentSessionId !== "string") continue;
+            if (entry.customType === SUBAGENT_META_TYPE) info.subagentParent = parentSessionId;
+            if (entry.customType === SIDE_META_TYPE) info.sideParent = parentSessionId;
+          }
+          byId.set(header.id, info);
+        } catch {
+          /* skip malformed */
+        }
+      }
+      const doomed = new Set<string>();
+      for (let grew = true; grew; ) {
+        grew = false;
+        for (const [childId, info] of byId) {
+          if (doomed.has(childId)) continue;
+          const parents = [info.subagentParent, info.sideParent].filter((value): value is string => Boolean(value));
+          if (parents.some((parentId) => parentId === id || doomed.has(parentId))) {
+            doomed.add(childId);
+            grew = true;
+          }
+        }
+      }
+      for (const childId of doomed) {
+        const info = byId.get(childId);
+        if (!info) continue;
+        try {
+          unlinkSync(info.path);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+        }
+        invalidateSessionPathCache(childId);
+        invalidateSessionManagerCache(info.path);
+        invalidateSessionListForSession(info.path);
+        deleteSessionCascade(childId);
+        removedDescendants.push(childId);
+      }
+    } catch {
+      /* best effort */
+    }
+    if (removedDescendants.length > 0) await forgetSessionUiState(removedDescendants);
+
     try {
       const files = readdirSync(dir).filter(
         (file) => file.endsWith(".jsonl") && sessionPathKey(join(dir, file)) !== targetPathKey,
@@ -226,12 +300,41 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
         try {
           const content = readFileSync(childPath, "utf8");
           const lines = content.split("\n");
-          const header = JSON.parse(lines[0]) as { type?: string; parentSession?: string };
+          const header = JSON.parse(lines[0]) as { type?: string; id?: string; parentSession?: string };
           if (
             header.type === "session" &&
             header.parentSession &&
             sessionPathKey(header.parentSession) === targetPathKey
           ) {
+            // A side chat belongs to its parent's family: deleting the parent
+            // takes it along, while deleting the side chat alone leaves the
+            // parent and the sibling side chats untouched.
+            const isSideOfTarget = lines.slice(1).some((line) => {
+              try {
+                const entry = JSON.parse(line) as {
+                  type?: string;
+                  customType?: string;
+                  data?: { parentSessionId?: string };
+                };
+                return (
+                  entry.type === "custom" &&
+                  entry.customType === SIDE_META_TYPE &&
+                  entry.data?.parentSessionId === id
+                );
+              } catch {
+                return false;
+              }
+            });
+            if (isSideOfTarget) {
+              try {
+                unlinkSync(childPath);
+              } catch {
+                /* already gone */
+              }
+              if (header.id) invalidateSessionPathCache(header.id);
+              invalidateSessionListForSession(childPath);
+              continue;
+            }
             // Rewrite header with new parentSession
             header.parentSession = parentSessionPath;
             lines[0] = JSON.stringify(header);
@@ -280,6 +383,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
     invalidateSessionListForSession(filePath);
     deleteSessionImages(id);
     deleteSessionCascade(id);
+    await forgetSessionUiState([id]);
     return NextResponse.json({ ok: true });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });

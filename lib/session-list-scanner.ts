@@ -508,6 +508,41 @@ async function enumerateSessionFiles(sessionsDir: string): Promise<string[]> {
 	const files: string[] = [];
 	for (const dir of dirs) {
 		const dirPath = join(sessionsDir, dir.name);
+		if (dir.name === "users") {
+			// Per-user shards: sessions/users/u<id>/<project>/<session>.jsonl.
+			// The space fence in listAllSessions decides which of them a caller sees.
+			try {
+				const shards = (await readdir(dirPath, { withFileTypes: true }))
+					.filter((entry) => entry.isDirectory() && /^u\d+$/.test(entry.name));
+				for (const shard of shards) {
+					const shardPath = join(dirPath, shard.name);
+					try {
+						const entries = await readdir(shardPath, { withFileTypes: true });
+						for (const entry of entries) {
+							if (entry.isFile() && entry.name.endsWith(".jsonl")) {
+								// Older shards keep transcripts directly beside the shard.
+								files.push(join(shardPath, entry.name));
+								continue;
+							}
+							if (!entry.isDirectory() && !entry.isSymbolicLink()) continue;
+							const projectPath = join(shardPath, entry.name);
+							try {
+								for (const f of await readdir(projectPath)) {
+									if (f.endsWith(".jsonl")) files.push(join(projectPath, f));
+								}
+							} catch {
+								// unreadable project dir: skip as absent
+							}
+						}
+					} catch {
+						// unreadable shard: skip as absent
+					}
+				}
+			} catch {
+				// no shards yet
+			}
+			continue;
+		}
 		try {
 			for (const f of await readdir(dirPath)) {
 				if (f.endsWith(".jsonl")) files.push(join(dirPath, f));

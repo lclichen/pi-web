@@ -766,7 +766,11 @@ export function ProjectSessionTree({
   };
 
   const remove = async (project: ProjectRecord) => {
-    if (!window.confirm(t("sessions.deleteProjectConfirm", { name: project.name }))) return;
+    const confirmText =
+      project.mode === "host"
+        ? t("sessions.deleteHostProjectConfirm", { name: project.name })
+        : t("sessions.deleteProjectConfirm", { name: project.name });
+    if (!window.confirm(confirmText)) return;
     try {
       const res = await fetch(`/api/projects/${encodeURIComponent(project.id)}`, { method: "DELETE" });
       if (!res.ok) {
@@ -1785,9 +1789,9 @@ export function ProjectSessionTree({
               if (badge?.timedOut) badgeParts.push(t("sessions.projectionTimedOut"));
               if (badge?.pending) badgeParts.push(t("sessions.projectionPending"));
               const badgeTitle = badgeParts.join(" · ");
-              const showBadge = Boolean(
-                badge && (badgeCount > 0 || badge.truncated || badge.timedOut || badge.pending),
-              );
+              const showBadge =
+                project.mode !== "host" &&
+                Boolean(badge && (badgeCount > 0 || badge.truncated || badge.timedOut || badge.pending));
               const badgeColor =
                 badge && (badge.conflicts > 0 || badge.errors > 0 || badge.timedOut)
                   ? "var(--danger)"
@@ -2682,7 +2686,7 @@ export function ProjectSessionTree({
               }}
             />
             <MenuItem
-              label={t("common.rename")}
+              label={menuProject.mode === "host" ? t("sessions.renameHostDir") : t("common.rename")}
               onClick={() => {
                 const name = window.prompt(t("sessions.newProjectName"), menuProject.name);
                 if (name?.trim()) void renameProject(menuProject, name.trim());
@@ -2701,14 +2705,16 @@ export function ProjectSessionTree({
               />
             )}
             <MenuSection label={t("sessions.menuGroupConfig")} />
-            <MenuItem
-              label={t("sessions.settingsModelCredentials")}
-              hint={t("sessions.hintProjectSettings")}
-              onClick={() => {
-                setSettingsId(menuProject.id);
-                setMenu(null);
-              }}
-            />
+            {menuProject.mode !== "host" && (
+              <MenuItem
+                label={t("sessions.settingsModelCredentials")}
+                hint={t("sessions.hintProjectSettings")}
+                onClick={() => {
+                  setSettingsId(menuProject.id);
+                  setMenu(null);
+                }}
+              />
+            )}
             <MenuItem
               label={t("sessions.importProjectConfig")}
               hint={t("sessions.hintImportProjectConfig")}
@@ -2733,30 +2739,34 @@ export function ProjectSessionTree({
                 setMenu(null);
               }}
             />
-            <MenuItem
-              label={t("sessions.workspaceSyncConfig")}
-              hint={t("sessions.hintWorkspaceSyncConfig")}
-              onClick={() => {
-                void syncWorkspaceConfig(menuProject);
-                setMenu(null);
-              }}
-            />
-            <MenuItem
-              label={t("sessions.projectionMenu")}
-              hint={t("sessions.hintProjectionMenu")}
-              onClick={() => {
-                void openProjection(menuProject);
-                setMenu(null);
-              }}
-            />
-            <MenuItem
-              label={t("sessions.rollbackMenu")}
-              hint={t("sessions.hintRollbackMenu")}
-              onClick={() => {
-                void openRollback(menuProject);
-                setMenu(null);
-              }}
-            />
+            {menuProject.mode !== "host" && (
+              <>
+                <MenuItem
+                  label={t("sessions.workspaceSyncConfig")}
+                  hint={t("sessions.hintWorkspaceSyncConfig")}
+                  onClick={() => {
+                    void syncWorkspaceConfig(menuProject);
+                    setMenu(null);
+                  }}
+                />
+                <MenuItem
+                  label={t("sessions.projectionMenu")}
+                  hint={t("sessions.hintProjectionMenu")}
+                  onClick={() => {
+                    void openProjection(menuProject);
+                    setMenu(null);
+                  }}
+                />
+                <MenuItem
+                  label={t("sessions.rollbackMenu")}
+                  hint={t("sessions.hintRollbackMenu")}
+                  onClick={() => {
+                    void openRollback(menuProject);
+                    setMenu(null);
+                  }}
+                />
+              </>
+            )}
             {menuProject.mode === "sandbox" && <MenuSection label={t("sessions.menuGroupSandbox")} />}
             {menuProject.mode === "sandbox" &&
               (() => {
@@ -2848,9 +2858,18 @@ export function ProjectSessionTree({
                 setMenu(null);
               }}
             />
+            {menuProject.mode === "host" && menuProject.workspaceRoot && (
+              <MenuItem
+                label={t("sessions.copyPath")}
+                onClick={() => {
+                  void navigator.clipboard?.writeText(menuProject.workspaceRoot!).catch(() => {});
+                  setMenu(null);
+                }}
+              />
+            )}
             <div style={{ borderTop: "1px solid var(--border)" }} />
             <MenuItem
-              label={t("sessions.deleteProject")}
+              label={menuProject.mode === "host" ? t("sessions.deleteHostProject") : t("sessions.deleteProject")}
               danger
               onClick={() => {
                 void remove(menuProject);

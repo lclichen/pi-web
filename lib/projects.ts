@@ -100,13 +100,15 @@ export function listProjects(ownerId: number): ProjectRecord[] {
 }
 
 /**
- * Project record for API responses: omit the real workspace path. The client
- * only needs identity/mode/name; workdir is resolved server-side for tools.
+ * Project record for API responses: omit machine paths. Host projects are
+ * admin-created external directories; their client-side file explorer and
+ * "new session" flow need the directory, so keep workspaceRoot for mode=host
+ * only. workdir is always machine-local and never leaves the server.
  */
-export function publicProject(project: ProjectRecord): Omit<ProjectRecord, "workdir" | "workspaceRoot"> {
+export function publicProject(project: ProjectRecord): Omit<ProjectRecord, "workdir"> {
   const copy: ProjectRecord = { ...project };
   delete copy.workdir;
-  delete copy.workspaceRoot;
+  if (project.mode !== "host") delete copy.workspaceRoot;
   return copy;
 }
 

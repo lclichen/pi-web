@@ -356,6 +356,7 @@ export const zhTWLocale: LocalePlugin = {
     "chat.dismissCompactError": "關閉壓縮錯誤",
     "chat.dormant": "休眠",
     "chat.downloadFullOutput": "下載完整輸出",
+    "chat.dropAfterSessionStart": "會話建立後（送出第一則訊息）才能新增遠端檔案",
     "chat.dropAlreadyExists": "工作目錄中已有同名檔案，未覆寫，引用的是既有檔案：{names}",
     "chat.dropFailed": "上傳失敗：{message}",
     "chat.dropFoldersUnsupported": "不支援拖入資料夾，請拖入其中的檔案：{names}",

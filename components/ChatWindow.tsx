@@ -12,7 +12,8 @@ import { collapsesProcessDetails, countToolCallBlocks, getDisplayableAssistantBl
 import { extractTurnWrittenFiles, type WrittenFile } from "@/lib/turn-written-files";
 import { getFinalAnswerViews, keepWrittenFiles, type FinalAnswerViews } from "@/lib/turn-views";
 import { formatTurnDuration, getTurnDurationMs } from "@/lib/turn-duration";
-import { dropMentionText, splitDroppedItems, uploadFiles, type DroppedItem } from "@/lib/file-upload-client";
+import { dropMentionText, splitDroppedItems, type DroppedItem, type UploadTarget } from "@/lib/file-upload-client";
+import { uploadChatAttachments } from "@/lib/chat-attachments";
 import { MessageView } from "./MessageView";
 import { MarkdownBody, RemoteFileSessionContext } from "./MarkdownBody";
 import { ChatInput, getUserMessageDraftImages, getUserMessageText, type ChatInputHandle } from "./ChatInput";
@@ -747,46 +748,60 @@ ${block.text}` : block.text;
   }, [ctxKey, onContextUsageChange]);
   useEffect(() => () => { onContextUsageChange?.(null); }, [onContextUsageChange]);
 
-  // Images attach to the prompt. Other files go through the file explorer's
-  // upload into the working directory, never replacing a file already there,
-  // and come back as @mentions. The composer's attach button takes the same
-  // path, for phones that cannot drop files.
-  const uploadDroppedFiles = useCallback(async (files: File[]) => {
-    const cwd = session?.cwd ?? newSessionCwd;
-    if (!cwd) {
-      addNotice({ type: "warning", message: t("chat.dropNeedsCwd") });
-      return;
-    }
-    try {
-      const { status, data } = await uploadFiles(cwd, files, "skip");
-      if (status !== 200 && status !== 207) throw new Error(data.error ?? `HTTP ${status}`);
-      const uploaded = data.uploaded ?? [];
-      const skipped = data.skipped ?? [];
-      const mentions = dropMentionText(files, [...uploaded, ...skipped]);
-      if (mentions) chatInputRef?.current?.insertText(mentions);
-      if (uploaded.length > 0) {
-        addNotice({ type: "success", message: t("chat.dropUploaded", { count: uploaded.length }) });
-        onFilesUploaded?.();
-      }
-      if (skipped.length > 0) {
-        addNotice({ type: "warning", message: t("chat.dropAlreadyExists", { names: skipped.join(", ") }) });
-      }
-      for (const failure of data.errors ?? []) {
-        addNotice({ type: "error", message: t("chat.dropFailed", { message: `${failure.name}: ${failure.error}` }) });
-      }
-    } catch (uploadError) {
-      addNotice({ type: "error", message: t("chat.dropFailed", { message: uploadError instanceof Error ? uploadError.message : String(uploadError) }) });
-    }
-  }, [addNotice, chatInputRef, newSessionCwd, onFilesUploaded, session?.cwd, t]);
+  const messageCwd = session?.cwd ?? newSessionCwd ?? undefined;
+  // local-machine/ssh: model-output links resolve against the real workspace, not the server home.
+  const linkCwd = session?.workspaceDir ?? messageCwd;
+  const remoteFileSessionId =
+    session?.id && (session.mode === "sandbox" || session.mode === "local-machine" || session.mode === "ssh")
+      ? session.id
+      : null;
+
+  // Images attach to the prompt and are also stored under .pi/attachments, so
+  // tools take their bytes; other files land in the working directory and come
+  // back as @mentions. Remote sessions keep the Host primary copy and mirror it
+  // into the remote workspace (lib/chat-attachments.ts).
+  const uploadChatFiles = useCallback(
+    (target: UploadTarget, files: File[], images: File[]) =>
+      uploadChatAttachments(target, files, images, {
+        addNotice,
+        t,
+        insertText: (text) => chatInputRef?.current?.insertText(text),
+        onUploaded: onFilesUploaded,
+      }),
+    [addNotice, chatInputRef, onFilesUploaded, t],
+  );
 
   const onDrop = useCallback((items: DroppedItem[]) => {
     const { images, files, folders } = splitDroppedItems(items);
-    if (images.length > 0) chatInputRef?.current?.addImages(images);
     if (folders.length > 0) {
       addNotice({ type: "warning", message: t("chat.dropFoldersUnsupported", { names: folders.join(", ") }) });
     }
-    if (files.length > 0) void uploadDroppedFiles(files);
-  }, [addNotice, chatInputRef, t, uploadDroppedFiles]);
+    if (files.length === 0 && images.length === 0) return;
+
+    // Remote sessions upload through the virtual workspace root ("/"), the same
+    // base the file explorer uses; session.cwd there is a host-side stub home.
+    // A remote draft has no session yet: wait for its first message.
+    const pendingRemoteDraft = !session && newSessionCwd !== null
+      && newSessionMode !== undefined && newSessionMode !== "host" && newSessionMode !== "quick";
+    if (pendingRemoteDraft) {
+      addNotice({ type: "warning", message: t("chat.dropAfterSessionStart") });
+      return;
+    }
+    const target: UploadTarget | null = remoteFileSessionId
+      ? { directory: "/", sessionId: remoteFileSessionId }
+      : messageCwd
+        ? { directory: messageCwd }
+        : null;
+    if (!target) {
+      if (images.length > 0) chatInputRef?.current?.addImages(images);
+      if (files.length > 0) addNotice({ type: "warning", message: t("chat.dropNeedsCwd") });
+      return;
+    }
+    // Images reach the model inline too; keep the attachment chips while the
+    // files are being mirrored.
+    if (images.length > 0) chatInputRef?.current?.addImages(images);
+    void uploadChatFiles(target, files, images);
+  }, [addNotice, chatInputRef, messageCwd, newSessionCwd, newSessionMode, remoteFileSessionId, session, t, uploadChatFiles]);
 
   const onAttachFiles = useCallback((files: File[]) => {
     onDrop(files.map((file) => ({ kind: "file", file })));
@@ -832,13 +847,6 @@ ${block.text}` : block.text;
 
   const isEmptyNew = isNew && messages.length === 0 && !isStreaming && !sessionBusy;
   useScrollbarVisibility(scrollContainerRef, Boolean(session?.id) || !isEmptyNew);
-  const messageCwd = session?.cwd ?? newSessionCwd ?? undefined;
-  // local-machine/ssh: model-output links resolve against the real workspace, not the server home.
-  const linkCwd = session?.workspaceDir ?? messageCwd;
-  const remoteFileSessionId =
-    session?.id && (session.mode === "sandbox" || session.mode === "local-machine" || session.mode === "ssh")
-      ? session.id
-      : null;
   const promptAnchorSpacerRef = useRef<HTMLDivElement | null>(null);
   const promptAnchorSpacerHeightRef = useRef(0);
   const promptAnchorMeasureFrameRef = useRef<number | null>(null);

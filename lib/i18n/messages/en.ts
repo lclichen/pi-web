@@ -356,6 +356,7 @@ export const enLocale: LocalePlugin = {
     "chat.dismissCompactError": "Dismiss compaction error",
     "chat.dormant": "dormant",
     "chat.downloadFullOutput": "download full output",
+    "chat.dropAfterSessionStart": "Remote files can be added after the session starts (send the first message)",
     "chat.dropAlreadyExists": "Already in the working directory and not replaced; the mention points to the existing file: {names}",
     "chat.dropFailed": "Upload failed: {message}",
     "chat.dropFoldersUnsupported": "Folders cannot be dropped here; drop the files inside instead: {names}",

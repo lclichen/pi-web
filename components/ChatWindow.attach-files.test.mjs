@@ -29,11 +29,14 @@ const report = new File(["x"], "report.pdf", { type: "application/pdf" });
 const log = new File(["x"], "server.log", { type: "" });
 
 /** Picks files with the composer's attach button, through ChatWindow's real drop path. */
-async function attach(files, { cwd = "/project", response } = {}) {
-  const calls = { images: [], uploads: [], mentions: [], notices: [], refreshed: 0 };
+async function attach(files, { cwd = "/project" } = {}) {
+  const calls = { images: [], uploads: [], mentions: [], notices: [] };
   const scope = {
     session: null,
     newSessionCwd: cwd,
+    newSessionMode: "host",
+    messageCwd: cwd ?? undefined,
+    remoteFileSessionId: null,
     chatInputRef: {
       current: {
         addImages: (images) => calls.images.push(...images),
@@ -42,15 +45,12 @@ async function attach(files, { cwd = "/project", response } = {}) {
     },
     addNotice: (notice) => calls.notices.push([notice.type, notice.message]),
     t: (key, vars) => (vars ? `${key} ${JSON.stringify(vars)}` : key),
-    onFilesUploaded: () => { calls.refreshed += 1; },
     splitDroppedItems,
     dropMentionText,
-    uploadFiles: async (target, uploads, strategy) => {
-      calls.uploads.push([target, uploads.map((file) => file.name), strategy]);
-      return response;
+    uploadChatFiles: async (target, uploads, images) => {
+      calls.uploads.push([target.directory, uploads.map((file) => file.name), images.map((file) => file.name)]);
     },
   };
-  scope.uploadDroppedFiles = chatWindowCallback("uploadDroppedFiles", scope);
   scope.onDrop = chatWindowCallback("onDrop", scope);
   chatWindowCallback("onAttachFiles", scope)(files);
   await new Promise((resolve) => setImmediate(resolve));
@@ -58,22 +58,17 @@ async function attach(files, { cwd = "/project", response } = {}) {
 }
 
 test("the attach button sends picked files down the chat drop path (#1101)", async () => {
-  const mixed = await attach([photo, report, log], {
-    response: { status: 207, data: { uploaded: ["report.pdf"], skipped: ["server.log"] } },
-  });
-  // Images attach to the prompt; the rest are uploaded like a drop: never replacing a file, then mentioned.
+  const mixed = await attach([photo, report, log]);
+  // Images attach to the prompt and are stored with the other files (so tools
+  // can read them); nothing replaces an existing name.
   assert.deepEqual(mixed.images, [photo]);
-  assert.deepEqual(mixed.uploads, [["/project", ["report.pdf", "server.log"], "skip"]]);
-  assert.deepEqual(mixed.mentions, ["@report.pdf @server.log "]);
-  assert.deepEqual(mixed.notices, [
-    ["success", 'chat.dropUploaded {"count":1}'],
-    ["warning", 'chat.dropAlreadyExists {"names":"server.log"}'],
-  ]);
-  assert.equal(mixed.refreshed, 1);
+  assert.deepEqual(mixed.uploads, [["/project", ["report.pdf", "server.log"], ["photo.png"]]]);
+  assert.deepEqual(mixed.mentions, []);
+  assert.deepEqual(mixed.notices, []);
 
   const imagesOnly = await attach([photo]);
   assert.deepEqual(imagesOnly.images, [photo]);
-  assert.deepEqual(imagesOnly.uploads, []);
+  assert.deepEqual(imagesOnly.uploads, [["/project", [], ["photo.png"]]]);
   assert.deepEqual(imagesOnly.notices, []);
 });
 

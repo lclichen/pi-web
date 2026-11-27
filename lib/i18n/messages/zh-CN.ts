@@ -356,6 +356,7 @@ export const zhCNLocale: LocalePlugin = {
     "chat.dismissCompactError": "关闭压缩错误",
     "chat.dormant": "休眠",
     "chat.downloadFullOutput": "下载完整输出",
+    "chat.dropAfterSessionStart": "会话创建后（发送第一条消息）才能添加远端文件",
     "chat.dropAlreadyExists": "工作目录中已有同名文件，未覆盖，引用的是已有文件：{names}",
     "chat.dropFailed": "上传失败：{message}",
     "chat.dropFoldersUnsupported": "不支持拖入文件夹，请拖入其中的文件：{names}",

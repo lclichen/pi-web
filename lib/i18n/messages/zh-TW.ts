@@ -2181,6 +2181,7 @@ export const zhTWLocale: LocalePlugin = {
     "sessions.quick": "快速會話",
     "sessions.quick2": "快速",
     "sessions.quickDetachedHint": "該模板已被刪除：舊會話仍可開啟繼續，但不能從此模板新建會話。",
+    "sessions.quickIntro": "快速會話：無工作區，選擇助理模板直接開始",
     "sessions.quickSessionsHint": "快速會話：無工作區的輕量對話",
     "sessions.quickSessionsYetPickTemplate": "暫無快速會話——點上方 ⚡ 按模板開始；每次選擇模板都會新建一個獨立會話。",
     "sessions.quickTemplateDeleted": "模板已刪除",

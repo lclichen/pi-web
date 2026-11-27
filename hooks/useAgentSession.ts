@@ -236,6 +236,7 @@ export interface UseAgentSessionOptions {
   newSessionDraftKey: string | null;
   newSessionMode?: "host" | "sandbox" | "local-machine" | "ssh" | "quick";
   newSessionProjectId?: string | null;
+  newSessionTemplateId?: string | null;
   commandAllowlist?: string[];
   /** A run ended; `aborted` when it was stopped rather than finished (pi's `agent_settled.aborted`). */
   onAgentEnd?: (end: AgentEndInfo) => void;
@@ -463,7 +464,7 @@ type SlashCommandsResponse = {
 
 export function useAgentSession(opts: UseAgentSessionOptions) {
   const {
-    session, newSessionCwd, newSessionDraftKey, newSessionMode, newSessionProjectId, commandAllowlist, onAgentEnd, onSessionEnded, onToolEnd, onAttentionNeeded, onSessionCreated, onSessionForked, onSideSession,
+    session, newSessionCwd, newSessionDraftKey, newSessionMode, newSessionProjectId, newSessionTemplateId, commandAllowlist, onAgentEnd, onSessionEnded, onToolEnd, onAttentionNeeded, onSessionCreated, onSessionForked, onSideSession,
     modelsRefreshKey, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onSessionStatsPanelOpen,
     onOpenSettings, onDebugSnapshotReaderChange,
   } = opts;
@@ -1124,7 +1125,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
   const ensureNewSession = useCallback(async () => {
     if (sessionIdRef.current) return sessionIdRef.current;
-    if (!isNew || !newSessionCwd) return sessionIdRef.current;
+    if (!isNew || newSessionCwd === null) return sessionIdRef.current;
     if (ensuringNewSessionRef.current) return ensuringNewSessionRef.current;
 
     const promise = (async () => {
@@ -1145,6 +1146,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           type: "ensure_session",
           ...(newSessionMode ? { mode: newSessionMode } : {}),
           ...(newSessionProjectId ? { projectId: newSessionProjectId } : {}),
+          ...(newSessionMode === "quick" && newSessionTemplateId ? { templateId: newSessionTemplateId } : {}),
           ...(commandAllowlist && commandAllowlist.length > 0 ? { commandAllowlist } : {}),
           ...(toolNames !== undefined ? { toolNames } : {}),
           ...(selectedModel ? { provider: selectedModel.provider, modelId: selectedModel.modelId } : {}),

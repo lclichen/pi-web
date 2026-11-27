@@ -2,6 +2,7 @@
 
 import { useEffect, useImperativeHandle, useLayoutEffect, useState, useCallback, useMemo, useRef, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode, type Ref, type RefObject, type UIEvent as ReactUIEvent } from "react";
 import type { SessionInfo } from "@/lib/types";
+import type { ProjectRecord } from "@/lib/projects";
 import { listSessionFamilies, type SessionFamily, isHiddenRelation } from "@/lib/session-family";
 import { clearDraft } from "@/lib/draft-store";
 import { dispatchSessionRowContextMenu } from "@/lib/session-row-context-menu";
@@ -108,6 +109,7 @@ import { ProjectWorktreePicker, type ProjectWorktreePickerHandle, type WorktreeR
 import { RemoteConnectWizard } from "./RemoteConnectWizard";
 import { SessionSearch } from "./SessionSearch";
 import { SessionTree, sessionRowTitle, type SessionTreeReveal } from "./SessionTree";
+import { ProjectSessionTree } from "./ProjectSessionTree";
 import { SidebarMenu, type SidebarMenuAnchor, type SidebarMenuItem } from "./SidebarMenu";
 import { SidebarToast, type SidebarToastAction, type SidebarToastData } from "./SidebarToast";
 import {
@@ -204,10 +206,15 @@ function ToolbarIconButton({
   );
 }
 
-function sessionListUrl(summary: boolean, force: boolean): string {
-  if (summary) return "/api/sessions?summary=1";
-  if (force) return "/api/sessions?force=1";
-  return "/api/sessions";
+function sessionListUrl(summary: boolean, force: boolean, space?: "host"): string {
+  const params = new URLSearchParams();
+  if (summary) params.set("summary", "1");
+  else if (force) params.set("force", "1");
+  // Admin host space lists the CLI/host shard; the tree's space switch asks
+  // for it explicitly. User projects and Quick share the user space.
+  if (space) params.set("space", space);
+  const query = params.toString();
+  return query ? `/api/sessions?${query}` : "/api/sessions";
 }
 
 /** How a pick in the sidebar opens a session. */
@@ -234,6 +241,13 @@ interface Props {
   onInitialRestoreDone?: () => void;
   refreshKey?: number;
   onSessionDeleted?: (sessionId: string) => void;
+  /** Platform identity: the managed project tree renders when auth is on and a user is signed in. */
+  authInfo?: {
+    enabled: boolean;
+    user: { id: number; username: string; role: "admin" | "user" } | null;
+  } | null;
+  /** Project row menu → sandbox manager bound to that project. */
+  onManageSandbox?: (project: ProjectRecord) => void;
   selectedCwd?: string | null;
   onCwdChange?: (
     cwd: string | null,
@@ -519,7 +533,7 @@ function buttonAnchor(element: HTMLElement, align: "start" | "end"): SidebarMenu
   return { kind: "rect", rect: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom }, align };
 }
 
-export function SessionSidebar({ selectedSessionId, onSelectSession, onSelectSideChat, onNewSession, controlRef, onNewSessionContextChange, initialSessionId, initialSessionLinked, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onOpenFile, onOpenTerminal, explorerRefreshKey, onExplorerRefresh, onAtMention, onAtMentions, onBackgroundTaskDone, hiddenFinishedSessionIds, onRunningSessionIdsChange, onSessionsChange }: Props) {
+export function SessionSidebar({ selectedSessionId, onSelectSession, onSelectSideChat, onNewSession, controlRef, onNewSessionContextChange, initialSessionId, initialSessionLinked, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, authInfo = null, onManageSandbox, selectedCwd: selectedCwdProp, onCwdChange, onOpenFile, onOpenTerminal, explorerRefreshKey, onExplorerRefresh, onAtMention, onAtMentions, onBackgroundTaskDone, hiddenFinishedSessionIds, onRunningSessionIdsChange, onSessionsChange }: Props) {
   const { t } = useI18n();
   const isMobile = useIsMobile();
   const [allSessions, setAllSessions] = useState<SessionInfo[]>([]);
@@ -582,6 +596,27 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onSelectSid
   const [fileManager, setFileManager] = useState<FileManagerAvailability | null>(null);
   const [fileManagerError, setFileManagerError] = useState<string | null>(null);
   const [runningSessionIds, setRunningSessionIds] = useState<Set<string>>(() => new Set());
+  // Project tree space: mine/projects, the admin's Host sessions, or Quick.
+  const [sessionSpace, setSessionSpace] = useState<"mine" | "host" | "quick">(() => {
+    try {
+      const saved = window.localStorage.getItem("pi-web:sidebar-space");
+      return saved === "host" || saved === "quick" ? saved : "mine";
+    } catch {
+      return "mine";
+    }
+  });
+  const sessionSpaceRef = useRef(sessionSpace);
+  sessionSpaceRef.current = sessionSpace;
+  const authInfoRef = useRef(authInfo);
+  authInfoRef.current = authInfo;
+  const [projectsRefreshKey, setProjectsRefreshKey] = useState(0);
+  // The Host space's "open a server directory" pass: the picker registers the
+  // folder as an empty Host group and starts a session there.
+  const hostDirPickRef = useRef(false);
+  // ⚡ Quick menu: templates start a workspace-less chat in one pick.
+  const [quickMenuOpen, setQuickMenuOpen] = useState(false);
+  const [quickTemplates, setQuickTemplates] = useState<Array<{ id: string; name: string; description?: string }>>([]);
+  const quickMenuRef = useRef<HTMLDivElement>(null);
   const [awaitingInputSessionIds, setAwaitingInputSessionIds] = useState<Set<string>>(() => new Set());
   // Sessions whose subagents can still report back with a run there: not done yet (#1434).
   const [subagentsActiveSessionIds, setSubagentsActiveSessionIds] = useState<Set<string>>(() => new Set());
@@ -866,7 +901,12 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onSelectSid
     const loadId = ++sessionLoadIdRef.current;
     try {
       if (showLoading) setLoading(true);
-      const res = await fetch(sessionListUrl(summary, force), {
+      const space = authInfoRef.current?.enabled &&
+        authInfoRef.current.user?.role === "admin" &&
+        sessionSpaceRef.current === "host"
+        ? "host" as const
+        : undefined;
+      const res = await fetch(sessionListUrl(summary, force, space), {
         cache: "no-store",
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -916,6 +956,66 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onSelectSid
       if (loadId === sessionLoadIdRef.current) setLoading(false);
     }
   }, []);
+
+  const handleSessionSpaceChange = useCallback((space: "mine" | "host" | "quick") => {
+    if (space === "host" && authInfoRef.current?.user?.role !== "admin") return;
+    if (sessionSpaceRef.current === space) return;
+    sessionSpaceRef.current = space;
+    setSessionSpace(space);
+    try {
+      window.localStorage.setItem("pi-web:sidebar-space", space);
+    } catch {
+      /* storage unavailable: the space lasts this tab */
+    }
+    // Host space is a different server shard; the other two share the user list.
+    void loadSessions(false, true);
+  }, [loadSessions]);
+
+  useEffect(() => {
+    if (!quickMenuOpen) return;
+    if (quickTemplates.length === 0) {
+      fetch("/api/quick-templates")
+        .then((res) => (res.ok ? (res.json() as Promise<{ templates?: Array<{ id: string; name: string; description?: string }> }>) : null))
+        .then((data) => setQuickTemplates(data?.templates ?? []))
+        .catch(() => {});
+    }
+    const onPointerDown = (event: MouseEvent | TouchEvent) => {
+      if (quickMenuRef.current && !quickMenuRef.current.contains(event.target as Node)) setQuickMenuOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      event.preventDefault();
+      setQuickMenuOpen(false);
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("touchstart", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("touchstart", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [quickMenuOpen, quickTemplates.length]);
+
+  // A persisted Host space only makes sense for an admin: reload its shard once
+  // the identity is known, and pull a non-admin back to their projects.
+  useEffect(() => {
+    if (!authInfo?.enabled || !authInfo.user) return;
+    if (sessionSpaceRef.current === "host") {
+      if (authInfo.user.role !== "admin") {
+        sessionSpaceRef.current = "mine";
+        setSessionSpace("mine");
+        try {
+          window.localStorage.setItem("pi-web:sidebar-space", "mine");
+        } catch {
+          /* storage unavailable */
+        }
+        void loadSessions(false, true);
+      } else {
+        void loadSessions(false, true);
+      }
+    }
+  }, [authInfo?.enabled, authInfo?.user?.role, loadSessions]);
 
   const initialLoadDone = useRef(false);
   useEffect(() => {
@@ -1381,6 +1481,21 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onSelectSid
         saveLastCustomCwd(data.cwd);
         setCustomPathValue(data.cwd);
       }
+      if (hostDirPickRef.current) {
+        hostDirPickRef.current = false;
+        setCustomPathOpen(false);
+        // Register the folder so the Host space shows it even before its first
+        // session lands (the registry backs empty groups).
+        await fetch("/api/host/dirs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ cwd: data.cwd }),
+        }).catch(() => null);
+        setProjectsRefreshKey((key) => key + 1);
+        const tempId = typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now()}`;
+        onNewSession?.(tempId, data.cwd, data.projectKey, { mode: "host" });
+        return;
+      }
       setCustomPathOpen(false);
       if (purpose === "new-session") {
         // The composer's bar asked: the shell decides whether its fresh
@@ -1405,7 +1520,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onSelectSid
     } finally {
       setCustomPathValidating(false);
     }
-  }, [customPathOpen, customPathValue, customPathValidating, focusAfterCommit]);
+  }, [customPathOpen, customPathValue, customPathValidating, focusAfterCommit, onNewSession]);
 
   const handleCustomPathClick = useCallback(() => {
     setCustomPathOpen("files");
@@ -3059,14 +3174,25 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onSelectSid
       {showProjectWizard && (
         <RemoteConnectWizard
           initialMethod={wizardInitialMethod}
+          isAdmin={authInfo ? authInfo.user?.role === "admin" : true}
           onClose={() => {
             setShowProjectWizard(false);
             setWizardInitialMethod(null);
           }}
-          onCreated={() => {
+          onCreated={(project) => {
             // The project list and every projection badge read fresh data.
+            setProjectsRefreshKey((key) => key + 1);
             window.dispatchEvent(new Event("pi-web:config-changed"));
             window.dispatchEvent(new CustomEvent("pi-web:sidebar-pins-changed"));
+            // Enter the new project at once: a fresh composer bound to its id
+            // and execution mode (the server resolves the project home itself).
+            handleSessionSpaceChange("mine");
+            const tempId = typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now()}`;
+            onNewSession?.(tempId, "/", undefined, {
+              mode: project.mode,
+              projectId: project.id,
+              projectLabel: project.name,
+            });
           }}
         />
       )}
@@ -3081,6 +3207,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onSelectSid
             const opener = customPathOpen === "new-session" ? folderReturnFocusRef.current : null;
             folderPickRef.current = null;
             folderReturnFocusRef.current = null;
+            hostDirPickRef.current = false;
             setCustomPathOpen(false);
             setCustomPathError(null);
             if (opener) focusAfterCommit(() => (opener.isConnected ? opener : null));
@@ -3152,6 +3279,84 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onSelectSid
           <PlusIcon size={12} />
           <span className="sidebar-new-label">{t("sidebar.new")}</span>
         </button>
+        <div ref={quickMenuRef} style={{ position: "relative", flexShrink: 0 }} data-quick-menu>
+          <button
+            type="button"
+            className="sidebar-new-button"
+            onClick={() => setQuickMenuOpen((open) => !open)}
+            title={t("sessions.quickIntro")}
+            aria-label={t("sessions.quickIntro")}
+            aria-haspopup="menu"
+            aria-expanded={quickMenuOpen}
+          >
+            ⚡
+          </button>
+          {quickMenuOpen && (
+            <div
+              role="menu"
+              aria-label={t("sessions.quick")}
+              style={{
+                position: "absolute",
+                top: "calc(100% + 4px)",
+                right: 0,
+                zIndex: 60,
+                minWidth: 210,
+                maxHeight: 320,
+                overflowY: "auto",
+                padding: 4,
+                background: "var(--bg-panel)",
+                border: "1px solid var(--border)",
+                borderRadius: 8,
+                boxShadow: "0 8px 24px rgba(0, 0, 0, 0.28)",
+              }}
+            >
+              {quickTemplates.length === 0 ? (
+                <div style={{ padding: "8px 10px", fontSize: 11, color: "var(--text-dim)" }}>
+                  {t("sessions.quickSessionsYetPickTemplate")}
+                </div>
+              ) : (
+                quickTemplates.map((template) => (
+                  <button
+                    key={template.id}
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setQuickMenuOpen(false);
+                      handleSessionSpaceChange("quick");
+                      const tempId = typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now()}`;
+                      onNewSession?.(tempId, "", undefined, {
+                        mode: "quick",
+                        templateId: template.id,
+                        projectLabel: template.name,
+                      });
+                    }}
+                    style={{
+                      display: "block",
+                      width: "100%",
+                      padding: "7px 10px",
+                      border: "none",
+                      borderRadius: 6,
+                      background: "transparent",
+                      color: "var(--text)",
+                      fontSize: 12,
+                      textAlign: "left",
+                      cursor: "pointer",
+                    }}
+                    onMouseEnter={(event) => { event.currentTarget.style.background = "var(--bg-hover)"; }}
+                    onMouseLeave={(event) => { event.currentTarget.style.background = "transparent"; }}
+                  >
+                    <span style={{ display: "block", fontWeight: 600 }}>{template.name}</span>
+                    {template.description && (
+                      <span style={{ display: "block", marginTop: 2, fontSize: 11, color: "var(--text-dim)" }}>
+                        {template.description}
+                      </span>
+                    )}
+                  </button>
+                ))
+              )}
+            </div>
+          )}
+        </div>
         <button
           ref={searchButtonRef}
           type="button"
@@ -3228,13 +3433,73 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onSelectSid
             {/* Kept mounted under the archive view, so going back finds it as
                 it was: inert while the archive slides in, then hidden. */}
             <div className="sidebar-sessions-view" hidden={archiveMotion.mainHidden} inert={archiveMotion.mainInert}>
-              <SessionTree
-                {...treeProps}
-                rows={model.rows}
-                emptyLabel={t("sidebar.noSessions")}
-                reveal={treeReveal}
-                onRevealHandled={handleRevealHandled}
-              />
+              {authInfo?.enabled && authInfo.user ? (
+                <div style={{ flex: "1 1 auto", minHeight: 0, overflowY: "auto" }}>
+                <ProjectSessionTree
+                  sessions={allSessions}
+                  runningSessionIds={runningSessionIds}
+                  unreadSessionIds={unreadSessionIds}
+                  selectedSessionId={selectedSessionId}
+                  onSelectSession={handleSelectSessionFromList}
+                  onNewSessionInProject={(project) => {
+                    const tempId = typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now()}`;
+                    // Host 项目是外部目录：文件浏览器需要真实 cwd；服务端仍以
+                    // projectId 解析 home，客户端 cwd 只用于 explorer。
+                    const cwd = project.mode === "host" ? (project.workspaceRoot ?? "/") : "/";
+                    onNewSession?.(tempId, cwd, project.mode === "host" ? cwd : undefined, {
+                      mode: project.mode,
+                      projectId: project.id,
+                      projectLabel: project.name,
+                    });
+                  }}
+                  onNewSessionInDirectory={(dir) => {
+                    const tempId = typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now()}`;
+                    onNewSession?.(tempId, dir, dir, { mode: "host" });
+                  }}
+                  onNewSessionFromTemplate={(templateId, templateName) => {
+                    const tempId = typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now()}`;
+                    handleSessionSpaceChange("quick");
+                    onNewSession?.(tempId, "", undefined, {
+                      mode: "quick",
+                      templateId,
+                      projectLabel: templateName,
+                    });
+                  }}
+                  onDeleteSession={async (id) => {
+                    const res = await fetch(`/api/sessions/${encodeURIComponent(id)}`, { method: "DELETE" }).catch(() => null);
+                    if (res?.ok) clearDraft(id);
+                    onSessionDeleted?.(id);
+                    void loadSessions();
+                  }}
+                  onRenameSession={async (id, name) => {
+                    await fetch(`/api/sessions/${encodeURIComponent(id)}`, {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ name }),
+                    }).catch(() => {});
+                    void loadSessions();
+                  }}
+                  refreshSessions={() => { void loadSessions(false, true); }}
+                  isAdmin={authInfo.user.role === "admin"}
+                  sessionSpace={sessionSpace}
+                  onSessionSpaceChange={handleSessionSpaceChange}
+                  onOpenServerDirectory={() => {
+                    hostDirPickRef.current = true;
+                    setCustomPathOpen("files");
+                  }}
+                  onManageSandbox={onManageSandbox}
+                  projectsRefreshKey={projectsRefreshKey}
+                />
+                </div>
+              ) : (
+                <SessionTree
+                  {...treeProps}
+                  rows={model.rows}
+                  emptyLabel={t("sidebar.noSessions")}
+                  reveal={treeReveal}
+                  onRevealHandled={handleRevealHandled}
+                />
+              )}
             </div>
             {/* Mounted while open and on its way out, inert then, so nothing
                 in it is clicked twice; the tree is back under it at once. */}

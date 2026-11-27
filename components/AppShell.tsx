@@ -283,6 +283,11 @@ export function AppShell() {
   // (they are platform-backed); local machines show regardless.
   const [signedIn, setSignedIn] = useState(false);
   const [isAdminUser, setIsAdminUser] = useState(false);
+  // Sidebar project tree: project records only exist for signed-in users.
+  const [authInfo, setAuthInfo] = useState<{
+    enabled: boolean;
+    user: { id: number; username: string; role: "admin" | "user" } | null;
+  } | null>(null);
   const [myWorkspaceOpen, setMyWorkspaceOpen] = useState(false);
   const [sandboxManager, setSandboxManager] = useState<
     { projectId?: string; projectName?: string; containerId?: number } | null
@@ -292,10 +297,17 @@ export function AppShell() {
     fetch("/api/webauth/me")
       .then(async (res) => {
         if (!res.ok) return;
-        const data = (await res.json()) as { user?: { role?: string } };
+        const data = (await res.json()) as {
+          authEnabled?: boolean;
+          user?: { id: number; username: string; role: "admin" | "user" } | null;
+        };
         if (cancelled) return;
-        setSignedIn(true);
-        setIsAdminUser(data.user?.role === "admin");
+        const enabled = data.authEnabled === true;
+        const user = data.user ?? null;
+        setAuthInfo({ enabled, user });
+        // Auth off: the server treats every request as the host admin.
+        setSignedIn(enabled ? Boolean(user) : true);
+        setIsAdminUser(!enabled || user?.role === "admin");
       })
       .catch(() => {});
     return () => {
@@ -1128,10 +1140,29 @@ export function AppShell() {
     setNewSessionDraftId(sessionId);
     setSelectedSession(null);
     setNewSessionCwd(cwd);
-    setNewSessionProjectId(options?.projectId ?? null);
     setNewSessionProjectLabel(options?.projectLabel ?? null);
-    setNewSessionTemplateId(options?.templateId ?? null);
-    setNewSessionMode(options?.mode ?? "host");
+    if (options?.mode === "quick") {
+      // Quick drafts carry the template, never a project id: the server resolves
+      // the per-template workspace itself. The client-side cwd is only for the
+      // explorer/models until the real session hydrates.
+      setNewSessionTemplateId(options.templateId ?? null);
+      setNewSessionProjectId(null);
+      setNewSessionMode("quick");
+      const templateId = options.templateId ?? "default";
+      setNewSessionCwd(`/api/quick-workspace/${templateId}`);
+      void fetch(`/api/quick-workspace/${encodeURIComponent(templateId)}`)
+        .then((res) => (res.ok ? (res.json() as Promise<{ cwd?: string }>) : null))
+        .then((data) => {
+          if (data?.cwd) setNewSessionCwd(data.cwd);
+        })
+        .catch(() => {
+          // The server's quick branch resolves the workspace itself.
+        });
+    } else {
+      setNewSessionTemplateId(null);
+      setNewSessionProjectId(options?.projectId ?? null);
+      setNewSessionMode(options?.mode ?? "host");
+    }
     setSessionKey((k) => k + 1);
     setBranchTree([]);
     setBranchActiveLeafId(null);
@@ -1771,6 +1802,12 @@ export function AppShell() {
         onInitialRestoreDone={handleInitialRestoreDone}
         refreshKey={refreshKey}
         onSessionDeleted={handleSessionDeleted}
+        authInfo={authInfo}
+        onManageSandbox={(project) => setSandboxManager({
+          projectId: project.id,
+          projectName: project.name,
+          ...(project.containerId !== undefined ? { containerId: project.containerId } : {}),
+        })}
         selectedCwd={selectedSession?.cwd ?? newSessionCwd ?? null}
         onCwdChange={handleCwdChange}
         onOpenFile={handleOpenFile}

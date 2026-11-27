@@ -2181,6 +2181,7 @@ export const enLocale: LocalePlugin = {
     "sessions.quick": "Quick",
     "sessions.quick2": "Quick",
     "sessions.quickDetachedHint": "This template was deleted: its sessions stay usable, but no new session can start from it.",
+    "sessions.quickIntro": "Quick session: no workspace — pick an assistant template and start right away",
     "sessions.quickSessionsHint": "Quick sessions: lightweight chats with no workspace",
     "sessions.quickSessionsYetPickTemplate": "No quick sessions yet — pick a template via the ⚡ button above; every pick starts a NEW session.",
     "sessions.quickTemplateDeleted": "Template deleted",

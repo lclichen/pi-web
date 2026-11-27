@@ -44,13 +44,16 @@
  *
  * 1.2.2：新增 .pi/bundle.json "workspaceProjection": {"runtime": false}
  * 开关——runtime 与 apkg_runtime 仅留服务器，不投影到远端工作区。
+ *
+ * 1.2.3：agent-packaging 增加“打 zip 包”结构与自检命令，避免模型每次
+ * 重新探索包格式。
  */
 import JSZip from "jszip";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 export const BUILTIN_AGENT_BUILDER_NAME = "agent-builder";
-export const BUILTIN_AGENT_BUILDER_VERSION = "1.2.2";
+export const BUILTIN_AGENT_BUILDER_VERSION = "1.2.3";
 
 /** Developer skills shipped inside the builder bundle (source of truth:
  *  <repo>/builder-skills/, copied verbatim into .pi/skills/ of the zip).
@@ -251,11 +254,51 @@ Agent 的扩展/MCP 配置由 pi-web 服务器加载，但**技能脚本、CLI �
 6. 如果逻辑必须在 **服务器** 执行（例如扩展里的 \`runCli\` 调 Python），
    就不需要投影；但也不能假定它在远端可见。
 
+## 打 zip 包（手工打包时）
+
+首选项目菜单「导出配置包」：它会生成正确的 \`manifest.json\`、排除凭据/运行态文件，
+并保留扩展的 \`node_modules\`。只有不能使用导出时才手工打 zip：
+
+- **压缩包根目录就是项目根**：顶层直接是 \`.pi/\`（以及可选 \`AGENTS.md\`、\`readme.md\`）；
+  不要多套一层 \`my-agent/\`，否则导入后路径变成 \`my-agent/.pi/...\`，整包失效。
+- 必须带：\`.pi/bundle.json\`、\`.pi/agents/\`、\`.pi/extensions/\`（含 \`package.json\`
+  和入口、\`node_modules\`）、\`.pi/skills/\`、\`.pi/mcp.json\`、\`.pi/runtime/\`。
+- 不要带：\`auth.json\`、\`ssh.json\`、\`sandbox-platform.json\`、\`models.json\`、
+  \`.pi/sessions/\`、\`.pi/tmp/\`、\`.pi/plans/\`、\`.pi/attachments/\`、\`.git\`、
+  \`node_modules/.cache\`。
+- 跨平台 Python 打包示例（在项目根执行）：
+
+\`\`\`bash
+python3 - <<'PY'
+import os, zipfile
+KEEP_ROOT = {".pi", ".apkg_runtime", "AGENTS.md", "readme.md"}
+SKIP_DIRS = {".git", "__pycache__", ".cache"}
+SKIP_PREFIXES = (".pi/sessions/", ".pi/tmp/", ".pi/plans/", ".pi/attachments/")
+SKIP_FILES = {".pi/auth.json", ".pi/ssh.json", ".pi/sandbox-platform.json", ".pi/models.json"}
+with zipfile.ZipFile("agent.zip", "w", zipfile.ZIP_DEFLATED) as z:
+    for base, dirs, files in os.walk("."):
+        dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
+        for name in files:
+            rel = os.path.relpath(os.path.join(base, name), ".").replace(os.sep, "/")
+            if not (rel in KEEP_ROOT or rel.startswith(".pi/") or rel.startswith(".apkg_runtime/")):
+                continue
+            if rel in SKIP_FILES or rel.startswith(SKIP_PREFIXES):
+                continue
+            z.write(rel, rel)
+PY
+\`\`\`
+
+- 打包后自检（必须是 \`.pi/...\` 开头，不能出现 \`agent/.pi/...\`）：
+
+\`\`\`bash
+python3 -c "import zipfile; n=zipfile.ZipFile('agent.zip').namelist(); print('\\n'.join(n)); assert all(x.startswith('.pi/') or x in ('AGENTS.md','readme.md') for x in n)"
+\`\`\`
+
 ## 自检清单（导出前逐项核对）
 
 1. 所有新增文件都在 .pi/ 下（+ 根 AGENTS.md）。
-2. 扩展目录含 package.json（name/version/main）与入口文件；代码可被
-   node --check 语法校验通过。
+2. 扩展目录含 package.json（name/version/main）与入口文件（index.js 或
+   package.json 的 pi.extensions）；代码可被 node --check 语法校验通过。
 3. skills/*/SKILL.md 的 frontmatter 含 name 与 description。
 4. mcp.json 是合法 JSON、每个服务器都有 command 或 url（导出/导入会跑同一套
    schema 校验，失败会给出具体字段）；包内没有 models.json。

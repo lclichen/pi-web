@@ -248,6 +248,10 @@ interface Props {
   } | null;
   /** Project row menu → sandbox manager bound to that project. */
   onManageSandbox?: (project: ProjectRecord) => void;
+  /** Selected session's remote backend: the explorer and terminal talk to it. */
+  remoteSessionProp?: { sessionId: string; label: string } | null;
+  /** A remote draft that has no session yet: panels wait instead of showing host files. */
+  pendingRemoteMode?: "host" | "sandbox" | "local-machine" | "ssh" | "quick" | null;
   selectedCwd?: string | null;
   onCwdChange?: (
     cwd: string | null,
@@ -255,7 +259,7 @@ interface Props {
     projectKey?: string | null,
   ) => void;
   onOpenFile?: (filePath: string, fileName: string, options?: { sourceSessionId?: string | null; modeHint?: "diff" }) => void;
-  onOpenTerminal?: (cwd: string) => void;
+  onOpenTerminal?: (cwd: string, remote?: { sessionId: string; label: string } | null) => void;
   explorerRefreshKey?: number;
   onExplorerRefresh?: () => void;
   onAtMention?: (relativePath: string, isDir: boolean) => void;
@@ -533,9 +537,10 @@ function buttonAnchor(element: HTMLElement, align: "start" | "end"): SidebarMenu
   return { kind: "rect", rect: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom }, align };
 }
 
-export function SessionSidebar({ selectedSessionId, onSelectSession, onSelectSideChat, onNewSession, controlRef, onNewSessionContextChange, initialSessionId, initialSessionLinked, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, authInfo = null, onManageSandbox, selectedCwd: selectedCwdProp, onCwdChange, onOpenFile, onOpenTerminal, explorerRefreshKey, onExplorerRefresh, onAtMention, onAtMentions, onBackgroundTaskDone, hiddenFinishedSessionIds, onRunningSessionIdsChange, onSessionsChange }: Props) {
+export function SessionSidebar({ selectedSessionId, onSelectSession, onSelectSideChat, onNewSession, controlRef, onNewSessionContextChange, initialSessionId, initialSessionLinked, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, authInfo = null, onManageSandbox, remoteSessionProp = null, pendingRemoteMode = null, selectedCwd: selectedCwdProp, onCwdChange, onOpenFile, onOpenTerminal, explorerRefreshKey, onExplorerRefresh, onAtMention, onAtMentions, onBackgroundTaskDone, hiddenFinishedSessionIds, onRunningSessionIdsChange, onSessionsChange }: Props) {
   const { t } = useI18n();
   const isMobile = useIsMobile();
+  const remoteSession = remoteSessionProp ?? null;
   const [allSessions, setAllSessions] = useState<SessionInfo[]>([]);
   // Tracked in a ref only: the version is compared against the polled value to
   // decide whether the list needs reloading, and no render reads it.
@@ -3071,8 +3076,11 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onSelectSid
   const keyIconSize = stacked ? 13 : 14;
   const terminalButton = (
     <ToolbarIconButton
-      onClick={() => { if (explorerCwd) onOpenTerminal?.(explorerCwd); }}
-      disabled={!explorerCwd || !onOpenTerminal}
+      onClick={() => {
+        if (remoteSession) onOpenTerminal?.("/", remoteSession);
+        else if (explorerCwd) onOpenTerminal?.(explorerCwd);
+      }}
+      disabled={(!explorerCwd && !remoteSession) || !onOpenTerminal}
       title={t("terminal.open")}
     >
       <TerminalIcon size={keyIconSize} />
@@ -3668,7 +3676,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onSelectSid
             {!stacked && explorerCwd && (
               <div className="sidebar-files-actions" role="group" aria-label={t("sidebar.fileActions")}>
                 {onOpenTerminal && terminalButton}
-                {fileManagerButton}
+                {!remoteSession && fileManagerButton}
                 {uploadButton}
                 {refreshButton}
                 {ignoredFilesButton("sidebar-files-views-start")}
@@ -3687,10 +3695,15 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onSelectSid
               section hides it, so the expanded tree, a search and an upload in
               progress survive a switch. */}
           <div ref={explorerScrollRef} className="sidebar-files-scroll scrollbar-subtle">
-            {explorerCwd && (
+            {pendingRemoteMode && pendingRemoteMode !== "host" && !remoteSession ? (
+              <div style={{ padding: 16, fontSize: 12, color: "var(--text-dim)", textAlign: "center" }}>
+                {t("sessions.remoteFilesPending")}
+              </div>
+            ) : explorerCwd && (
               <FileExplorer
                 ref={fileExplorerRef}
-                cwd={explorerCwd}
+                cwd={remoteSession ? "/" : explorerCwd}
+                remote={remoteSession}
                 onOpenFile={onOpenFile ?? (() => {})}
                 refreshKey={explorerKey}
                 onAtMention={onAtMention}

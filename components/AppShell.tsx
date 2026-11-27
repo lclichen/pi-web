@@ -21,6 +21,7 @@ import { AgentSessionPanel } from "./AgentSessionPanel";
 import { DebugPanel, DebugPanelBoundary } from "./DebugPanel";
 import { SessionChatPanel } from "./SessionChatPanel";
 import { TerminalPanel } from "./TerminalPanel";
+import { WorkspaceTerminal } from "./WorkspaceTerminal";
 import { EnvironmentsMenu } from "./EnvironmentsMenu";
 import { MyWorkspaceDialog } from "./MyWorkspaceDialog";
 import { SandboxManagerDialog } from "./SandboxManagerDialog";
@@ -726,7 +727,7 @@ export function AppShell() {
     if (!terminalsRestored) return;
     try {
       window.sessionStorage.setItem(TERMINAL_TABS_KEY, JSON.stringify({
-        tabs: terminalTabs.map(({ id, cwd }) => ({ id, cwd })),
+        tabs: terminalTabs.filter((tab) => !tab.remote).map(({ id, cwd }) => ({ id, cwd })),
         activeId: activeFileTabId,
         open: rightPanelOpen,
       }));
@@ -1474,9 +1475,11 @@ export function AppShell() {
     handleOpenFile(filePath, getFileName(filePath), { sourceSessionId: selectedSession?.id ?? null, page });
   }, [handleOpenFile, selectedSession?.id]);
 
-  const handleOpenTerminal = useCallback((cwd: string) => {
-    const existing = terminalTabs.find((tab) => tab.cwd === cwd);
-    const tab = existing ?? newTerminalTab(cwd);
+  const handleOpenTerminal = useCallback((cwd: string, remote?: { sessionId: string; label: string } | null) => {
+    const existing = remote
+      ? terminalTabs.find((tab) => tab.remote?.sessionId === remote.sessionId)
+      : terminalTabs.find((tab) => tab.cwd === cwd && !tab.remote);
+    const tab = existing ?? newTerminalTab(remote ? "/" : cwd, remote ?? undefined);
     if (!existing) setTerminalTabs((tabs) => [...tabs, tab]);
     setActiveFileTabId(tab.id);
     setRightPanelOpen(true);
@@ -1642,6 +1645,28 @@ export function AppShell() {
 
   // Show chat area if a session is selected, or if we have a cwd to start a new session in
   const effectiveNewSessionCwd = newSessionCwd ?? (selectedSession === null && activeCwd ? activeCwd : null);
+  const activeSessionMode = selectedSession?.mode
+    ?? (selectedSession === null && newSessionCwd !== null ? newSessionMode : undefined);
+  // Memoized identity: the explorer/terminal effects key on the object; a fresh
+  // object per render would tear down and recreate the remote PTY.
+  const remoteSessionCtx = useMemo(
+    () => activeSessionMode && activeSessionMode !== "host" && activeSessionMode !== "quick" && selectedSession
+      ? {
+          sessionId: selectedSession.id,
+          label: activeSessionMode === "sandbox"
+            ? translate("app.sandboxContainer")
+            : activeSessionMode === "ssh"
+              ? translate("app.sshRemoteHost")
+              : translate("app.localMachine"),
+        }
+      : null,
+    [activeSessionMode, selectedSession, translate],
+  );
+  // A remote draft has no session yet: file/terminal panels must wait instead of
+  // falling back to the server's local directory.
+  const pendingRemoteMode = selectedSession === null && newSessionCwd !== null && newSessionMode !== "host"
+    ? newSessionMode
+    : null;
   const newSessionDraftKey = selectedSession === null && effectiveNewSessionCwd
     ? `new:${newSessionDraftId}:${effectiveNewSessionCwd}`
     : null;
@@ -1803,6 +1828,8 @@ export function AppShell() {
         refreshKey={refreshKey}
         onSessionDeleted={handleSessionDeleted}
         authInfo={authInfo}
+        remoteSessionProp={remoteSessionCtx}
+        pendingRemoteMode={pendingRemoteMode}
         onManageSandbox={(project) => setSandboxManager({
           projectId: project.id,
           projectName: project.name,
@@ -3215,6 +3242,7 @@ export function AppShell() {
               key={`${fileWorkspaceGeneration}:${activeFileTab.id}:${activeFileTab.viewerRevision ?? 0}`}
               filePath={activeFileTab.filePath}
               cwd={activeCwd ?? undefined}
+              remote={remoteSessionCtx}
               sourceSessionId={activeFileTab.sourceSessionId}
               gitRefreshKey={explorerRefreshKey}
               initialDisplayMode={activeFileTab.initialDisplayMode}
@@ -3242,13 +3270,22 @@ export function AppShell() {
           ) : null}
           {terminalTabs.map((tab) => (
             <div key={tab.id} hidden={tab.id !== activeFileTabId} style={{ width: "100%", height: "100%" }}>
-              <TerminalPanel
-                tab={tab}
-                active={rightPanelOpen && tab.id === activeFileTabId}
-                onRestart={() => setTerminalTabs((tabs) => tabs.map((item) => item.id === tab.id ? { ...item, closing: "restart" } : item))}
-                onClosed={() => handleTerminalClosed(tab)}
-                onCloseError={() => setTerminalTabs((tabs) => tabs.map((item) => item.id === tab.id ? { ...item, closing: undefined } : item))}
-              />
+              {tab.remote ? (
+                <WorkspaceTerminal
+                  cwd="/"
+                  remote={tab.remote}
+                  visible={rightPanelOpen && tab.id === activeFileTabId}
+                  onClose={() => handleTerminalClosed(tab)}
+                />
+              ) : (
+                <TerminalPanel
+                  tab={tab}
+                  active={rightPanelOpen && tab.id === activeFileTabId}
+                  onRestart={() => setTerminalTabs((tabs) => tabs.map((item) => item.id === tab.id ? { ...item, closing: "restart" } : item))}
+                  onClosed={() => handleTerminalClosed(tab)}
+                  onCloseError={() => setTerminalTabs((tabs) => tabs.map((item) => item.id === tab.id ? { ...item, closing: undefined } : item))}
+                />
+              )}
             </div>
           ))}
           {activeAgentTab && (

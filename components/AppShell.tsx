@@ -1719,6 +1719,20 @@ export function AppShell() {
     window.addEventListener(OPEN_PLAN_PANEL_EVENT, open);
     return () => window.removeEventListener(OPEN_PLAN_PANEL_EVENT, open);
   }, []);
+  // Esc closes the shell's side drawers (focus returns to the page when the
+  // drawer is removed; a full focus trap is part of the UI pass).
+  useEffect(() => {
+    if (!planPanelOpen && !agentsPanelOpen && !gitPanelCwd) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      event.preventDefault();
+      setPlanPanelOpen(false);
+      setAgentsPanelOpen(false);
+      setGitPanelCwd(null);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [agentsPanelOpen, gitPanelCwd, planPanelOpen]);
   const newSessionDraftKey = selectedSession === null && effectiveNewSessionCwd
     ? `new:${newSessionDraftId}:${effectiveNewSessionCwd}`
     : null;
@@ -3407,7 +3421,7 @@ export function AppShell() {
         aria-modal="true"
         aria-label={translate("chat.planPanelTitle")}
         onClick={() => setPlanPanelOpen(false)}
-        style={{ position: "fixed", inset: 0, zIndex: 120, display: "flex", justifyContent: "flex-end", background: "rgba(0,0,0,0.32)" }}
+        style={{ position: "fixed", inset: 0, zIndex: 300, display: "flex", justifyContent: "flex-end", background: "rgba(0,0,0,0.32)" }}
       >
         <div
           onClick={(event) => event.stopPropagation()}
@@ -3429,7 +3443,7 @@ export function AppShell() {
         aria-modal="true"
         aria-label={translate("chat.agentsPanelTitle")}
         onClick={() => setAgentsPanelOpen(false)}
-        style={{ position: "fixed", inset: 0, zIndex: 120, display: "flex", justifyContent: "flex-end", background: "rgba(0,0,0,0.32)" }}
+        style={{ position: "fixed", inset: 0, zIndex: 300, display: "flex", justifyContent: "flex-end", background: "rgba(0,0,0,0.32)" }}
       >
         <div
           onClick={(event) => event.stopPropagation()}
@@ -3451,7 +3465,7 @@ export function AppShell() {
         aria-modal="true"
         aria-label={translate("sidebar.openGit")}
         onClick={() => setGitPanelCwd(null)}
-        style={{ position: "fixed", inset: 0, zIndex: 120, display: "flex", justifyContent: "flex-end", background: "rgba(0,0,0,0.32)" }}
+        style={{ position: "fixed", inset: 0, zIndex: 300, display: "flex", justifyContent: "flex-end", background: "rgba(0,0,0,0.32)" }}
       >
         <div
           onClick={(event) => event.stopPropagation()}

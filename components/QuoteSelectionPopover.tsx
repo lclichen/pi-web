@@ -12,6 +12,8 @@ interface Props {
   chatInputRef?: RefObject<ChatInputHandle | null>;
   /** Ask in side chat; absent where a side chat cannot start (a side chat itself). */
   startSideChat?: (prompt: string, quote: string) => Promise<string | null | undefined>;
+  /** Ask in a new chat forked from the selected message's entry. */
+  askInNewChat?: (prompt: string, sourceEntryId: string) => Promise<void>;
 }
 
 /**
@@ -19,14 +21,16 @@ interface Props {
  * ChatWindow: a selection made or cleared re-renders this popover alone, never
  * the transcript, whose render grows with every loaded turn.
  */
-export function QuoteSelectionPopover({ rootRef, chatInputRef, startSideChat }: Props) {
+export function QuoteSelectionPopover({ rootRef, chatInputRef, startSideChat, askInNewChat }: Props) {
   const { t } = useI18n();
   const [quotedSelection, setQuotedSelection] = useState<{
     text: string;
     top: number;
     left: number;
+    sourceEntryId?: string;
   } | null>(null);
   const [quoteInputOpen, setQuoteInputOpen] = useState(false);
+  const [quoteMode, setQuoteMode] = useState<"side" | "new">("side");
   const [quoteSubmitting, setQuoteSubmitting] = useState(false);
   const [quoteError, setQuoteError] = useState<string | null>(null);
   const quotePopoverRef = useRef<HTMLDivElement | null>(null);
@@ -54,10 +58,14 @@ export function QuoteSelectionPopover({ rootRef, chatInputRef, startSideChat }: 
         return;
       }
       const rect = range.getBoundingClientRect();
+      const ancestor = range.commonAncestorContainer;
+      const element = ancestor instanceof Element ? ancestor : ancestor.parentElement;
+      const sourceEntryId = element?.closest("[data-entry-id]")?.getAttribute("data-entry-id") ?? undefined;
       setQuotedSelection({
         text,
         top: Math.min(window.innerHeight - 44, rect.bottom + 8),
         left: Math.max(64, Math.min(window.innerWidth - 64, rect.left + rect.width / 2)),
+        ...(sourceEntryId ? { sourceEntryId } : {}),
       });
     };
     document.addEventListener("pointerup", captureQuotedSelection);
@@ -123,25 +131,31 @@ export function QuoteSelectionPopover({ rootRef, chatInputRef, startSideChat }: 
     closeQuotedSelection();
   }, [chatInputRef, quotedSelection, closeQuotedSelection]);
 
-  const askSelectionInSideChat = useCallback(async (prompt: string) => {
-    if (!startSideChat || quoteSubmitting || !prompt.trim() || !quotedSelection) return;
+  const submitQuotePrompt = useCallback(async (prompt: string) => {
+    if (quoteSubmitting || !prompt.trim() || !quotedSelection) return;
     setQuoteSubmitting(true);
     setQuoteError(null);
     try {
-      const refusal = await startSideChat(prompt, quotedSelection.text);
-      if (!refusal) {
-        closeQuotedSelection();
-        return;
+      if (quoteMode === "new") {
+        if (!askInNewChat || !quotedSelection.sourceEntryId) return;
+        await askInNewChat(prompt, quotedSelection.sourceEntryId);
+      } else {
+        if (!startSideChat) return;
+        const refusal = await startSideChat(prompt, quotedSelection.text);
+        if (refusal) {
+          quoteChatInputRef.current?.restoreSubmission(prompt);
+          setQuoteError(refusal);
+          return;
+        }
       }
-      quoteChatInputRef.current?.restoreSubmission(prompt);
-      setQuoteError(refusal);
+      closeQuotedSelection();
     } catch (error) {
       quoteChatInputRef.current?.restoreSubmission(prompt);
       setQuoteError(error instanceof Error ? error.message : String(error));
     } finally {
       setQuoteSubmitting(false);
     }
-  }, [quotedSelection, quoteSubmitting, closeQuotedSelection, startSideChat]);
+  }, [askInNewChat, quotedSelection, quoteMode, quoteSubmitting, closeQuotedSelection, startSideChat]);
 
   if (!quotedSelection) return null;
   return createPortal(
@@ -175,7 +189,7 @@ export function QuoteSelectionPopover({ rootRef, chatInputRef, startSideChat }: 
           style={{ width: "100%", minWidth: 0, margin: 0, padding: 0, border: "none", display: "flex", flexDirection: "column", gap: 10 }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ flex: 1, minWidth: 0, fontSize: 12, fontWeight: 600 }}>{t("chat.askInSideChat")}</span>
+            <span style={{ flex: 1, minWidth: 0, fontSize: 12, fontWeight: 600 }}>{t(quoteMode === "new" ? "chat.askInNewChat" : "chat.askInSideChat")}</span>
             <button type="button" className="file-viewer-icon-button" title={t("i18n.close")} aria-label={t("i18n.close")} disabled={quoteSubmitting} onClick={closeQuotedSelection} style={{ border: "none" }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
             </button>
@@ -183,7 +197,7 @@ export function QuoteSelectionPopover({ rootRef, chatInputRef, startSideChat }: 
           <ChatInput
             ref={quoteChatInputRef}
             compact
-            onSend={askSelectionInSideChat}
+            onSend={submitQuotePrompt}
             onAbort={closeQuotedSelection}
             isStreaming={false}
           />
@@ -205,6 +219,26 @@ export function QuoteSelectionPopover({ rootRef, chatInputRef, startSideChat }: 
         </svg>
         <span>{t("chat.quoteSelection")}</span>
       </button>
+      {askInNewChat && quotedSelection.sourceEntryId && (
+        <button
+          type="button"
+          className="file-viewer-icon-button"
+          title={t("chat.askInNewChat")}
+          aria-label={t("chat.askInNewChat")}
+          onPointerDown={(event) => event.preventDefault()}
+          onClick={() => {
+            setQuoteMode("new");
+            setQuoteInputOpen(true);
+            window.getSelection()?.removeAllRanges();
+          }}
+          style={{ width: "auto", height: 35, flex: "0 0 auto", gap: 5, padding: "0 10px", border: "none", fontSize: 12, fontWeight: 500 }}
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M12 5v14M5 12h14" />
+          </svg>
+          <span>{t("chat.askInNewChat")}</span>
+        </button>
+      )}
       {startSideChat && (
         <button
           type="button"
@@ -212,7 +246,11 @@ export function QuoteSelectionPopover({ rootRef, chatInputRef, startSideChat }: 
           title={t("chat.askInSideChat")}
           aria-label={t("chat.askInSideChat")}
           onPointerDown={(event) => event.preventDefault()}
-          onClick={() => { setQuoteInputOpen(true); window.getSelection()?.removeAllRanges(); }}
+          onClick={() => {
+            setQuoteMode("side");
+            setQuoteInputOpen(true);
+            window.getSelection()?.removeAllRanges();
+          }}
           style={{ width: "auto", height: 35, flex: "0 0 auto", gap: 5, padding: "0 10px", border: "none", fontSize: 12, fontWeight: 500 }}
         >
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

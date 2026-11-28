@@ -78,7 +78,7 @@ interface Props {
   onLabStateChange?: (widget: { metadata?: unknown } | null, has: boolean) => void;
   onOpenAgentsPanel?: () => void;
   onOpenPlanPanel?: () => void;
-  onAskInNewChat?: (prompt: string, sourceSessionId: string, sourceEntryId: string) => unknown;
+  onAskInNewChat?: (prompt: string, sourceSessionId: string, sourceEntryId: string) => Promise<void> | void;
   onOpenSession?: (sessionId: string) => unknown;
   onPlanActivity?: () => void;
   onSubagentCallsChange?: (calls: import("@/hooks/useAgentSession").SubagentCall[]) => void;
@@ -294,7 +294,7 @@ function ProcessDetailsGroup({ messageCount, toolCallCount, durationMs, cost, ca
   );
 }
 
-export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initialScrollPosition, onScrollPositionChange, sessionRunning, readOnly = false, projectTrustBanner, newSessionTemplateId, onNewSessionTemplateChange, plan = null, planPanelActive = false, quickMode = false, remoteSession: _remoteSession, terminalPanelActive: _terminalPanelActive, sendCommandRef: _sendCommandRef, onLabStateChange: _onLabStateChange, onOpenAgentsPanel, onOpenPlanPanel, onAskInNewChat: _onAskInNewChat, onOpenSession: _onOpenSession, onPlanActivity, onSubagentCallsChange, onToggleTerminalPanel: _onToggleTerminalPanel, newSessionCwd, newSessionDraftKey, newSessionMode, newSessionProjectId, embedded, embeddedDensity, embeddedShort, commandAllowlist, newSessionContextBar, initialNewSessionChoices, onNewSessionChoicesChange, onAgentEnd, onSessionEnded, onToolEnd, onAttentionNeeded, onSessionCreated, onSessionForked, panel = false, onSideSession, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onDebugSnapshotReaderChange, onSessionStatsChange, onSessionStatsPanelOpen, onOpenSettings, onContextUsageChange, onOpenFile, onFilesUploaded, onOpenSubagent, quoteSelectionEnabled = false, initialPrompt, onInitialPromptConsumed, soundEnabled = true, onSoundToggle, playDoneSound = () => {}, unlockAudio, holdAudio }: Props) {
+export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initialScrollPosition, onScrollPositionChange, sessionRunning, readOnly = false, projectTrustBanner, newSessionTemplateId, onNewSessionTemplateChange, plan = null, planPanelActive = false, quickMode = false, remoteSession: _remoteSession, terminalPanelActive: _terminalPanelActive, sendCommandRef: _sendCommandRef, onLabStateChange: _onLabStateChange, onOpenAgentsPanel, onOpenPlanPanel, onAskInNewChat, onOpenSession: _onOpenSession, onPlanActivity, onSubagentCallsChange, onToggleTerminalPanel: _onToggleTerminalPanel, newSessionCwd, newSessionDraftKey, newSessionMode, newSessionProjectId, embedded, embeddedDensity, embeddedShort, commandAllowlist, newSessionContextBar, initialNewSessionChoices, onNewSessionChoicesChange, onAgentEnd, onSessionEnded, onToolEnd, onAttentionNeeded, onSessionCreated, onSessionForked, panel = false, onSideSession, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onDebugSnapshotReaderChange, onSessionStatsChange, onSessionStatsPanelOpen, onOpenSettings, onContextUsageChange, onOpenFile, onFilesUploaded, onOpenSubagent, quoteSelectionEnabled = false, initialPrompt, onInitialPromptConsumed, soundEnabled = true, onSoundToggle, playDoneSound = () => {}, unlockAudio, holdAudio }: Props) {
   const { t } = useI18n();
   const isMobile = useIsMobile();
   const completionNotificationsEnabled = !isHiddenRelation(session?.relation);
@@ -1496,6 +1496,11 @@ ${block.text}` : block.text;
           rootRef={messageContentRef}
           chatInputRef={chatInputRef}
           startSideChat={onSideSession && !isHiddenRelation(session?.relation) ? startSideChat : undefined}
+          askInNewChat={onAskInNewChat ? async (prompt, sourceEntryId) => {
+            const sourceSessionId = sessionIdRef.current ?? session?.id;
+            if (!sourceSessionId) return;
+            await onAskInNewChat(prompt, sourceSessionId, sourceEntryId);
+          } : undefined}
         />
       )}
 

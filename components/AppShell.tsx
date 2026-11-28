@@ -90,6 +90,7 @@ import { formatActiveDuration, formatCompactCount, formatCostShort } from "@/lib
 import type { FileViewerState } from "@/lib/file-viewer-state";
 import { PRESET_READ_ONLY, type ToolEntry } from "@/lib/tool-presets";
 import { createSideChat, deleteSideChat } from "@/lib/side-chat-client";
+import { sendAgentCommand } from "@/lib/agent-client";
 import { sideChatHit } from "@/lib/session-search-hit";
 import { getAgentStripMembers, getAgentsBadge, getSessionFamily, isHiddenRelation, sideChatTitle } from "@/lib/session-family";
 import { getLastSettingsSection, settingsSectionRequiresProject, type SettingsSection } from "@/lib/settings-navigation";
@@ -283,6 +284,8 @@ export function AppShell() {
   const newSessionBarFocusRef = useRef<NewSessionContextControl | null>(null);
   const newSessionChoicesRef = useRef<NewSessionChoices | null>(null);
   const [carriedNewSessionChoices, setCarriedNewSessionChoices] = useState<NewSessionChoices | null>(null);
+  // Selected text asked in a new chat: the fork's id and the prompt its composer takes once.
+  const [pendingQuotePrompt, setPendingQuotePrompt] = useState<{ sessionId: string; text: string } | null>(null);
   const handleNewSessionChoicesChange = useCallback((choices: NewSessionChoices) => {
     newSessionChoicesRef.current = choices;
     setCarriedNewSessionChoices(null);
@@ -1440,6 +1443,17 @@ export function AppShell() {
     hydrateSelectedSession(newSessionId);
     router.replace(`?session=${encodeURIComponent(newSessionId)}`, { scroll: false });
   }, [handleSelectSession, invalidateWorkspaceRestore, router, hydrateSelectedSession]);
+
+  // Selected text → a branch fork of its message, asked in the new chat's composer.
+  const handleAskInNewChat = useCallback(async (prompt: string, sourceSessionId: string, sourceEntryId: string) => {
+    const result = await sendAgentCommand<{ newSessionId?: string }>(sourceSessionId, {
+      type: "fork_branch",
+      entryId: sourceEntryId,
+    });
+    if (!result?.newSessionId) throw new Error(translate("chat.quoteForkFailed"));
+    setPendingQuotePrompt({ sessionId: result.newSessionId, text: prompt });
+    handleSessionForked(result.newSessionId);
+  }, [handleSessionForked, translate]);
 
   // The sidebar calls this when the initial session is not in its list.
   const handleInitialRestoreDone = useCallback(() => {
@@ -3161,7 +3175,10 @@ export function AppShell() {
               onOpenAgentsPanel={() => setAgentsPanelOpen(true)}
               onPlanActivity={() => setPlanActivityTick((n) => n + 1)}
               onSubagentCallsChange={setSubagentCalls}
+              onAskInNewChat={handleAskInNewChat}
               quoteSelectionEnabled={quoteSelectionEnabled}
+              initialPrompt={pendingQuotePrompt && pendingQuotePrompt.sessionId === selectedSession?.id ? pendingQuotePrompt.text : undefined}
+              onInitialPromptConsumed={() => setPendingQuotePrompt(null)}
               soundEnabled={soundEnabled}
               onSoundToggle={onSoundToggle}
               playDoneSound={playDoneSound}

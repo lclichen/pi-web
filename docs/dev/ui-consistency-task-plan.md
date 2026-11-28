@@ -236,6 +236,9 @@ backdrop 透明度一致。
    Settings 的 resource 页。
 3. 窄屏：菜单项两行布局（title + desc），desc 单行 ellipsis。
 4. 仅 admin 可见，非 admin 不占位。
+5. **移动端可达性**：当前 `EnvironmentsMenu` 只在 `!isMobile` 时渲染，手机上管理员
+   没有平台管理入口。请在移动端“更多控件”菜单或 Settings › 全局配置页补一个入口
+   （二选一，保持与桌面入口一致）。
 
 ### P1-4 远程文件页与远程终端的一致性
 

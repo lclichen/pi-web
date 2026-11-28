@@ -3353,7 +3353,7 @@ export function AppShell() {
               onOpenFile={(filePath, page) => handleOpenFile(
                 filePath,
                 getFileName(filePath),
-                { sourceSessionId: activeFileTab.sourceSessionId, page },
+                { sourceSessionId: activeFileTab.sourceSessionId, remote: activeFileTab.remote ?? null, page },
               )}
             />
           ) : !terminalTabs.some((tab) => tab.id === activeFileTabId) && !activeAgentTab ? (

@@ -244,6 +244,9 @@ export interface UseAgentSessionOptions {
   onSessionEnded?: (sessionId: string) => void;
   /** A top-level tool call finished; the files it touched may have changed. */
   onToolEnd?: (toolName: string) => void;
+  /** A plan-affecting tool call finished (plan_save, a write/edit of a plan
+   *  file): the shell re-probes the session plan now instead of on backoff. */
+  onPlanActivity?: () => void;
   onAttentionNeeded?: (request: BlockingExtensionUiRequest) => void;
   onSessionCreated?: (session: SessionInfo, sourceDraftKey: string) => void;
   /** A fork to open. `session` is its row when it may belong to another project (a fork into another folder). */
@@ -471,6 +474,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
   const isNew = session === null && newSessionCwd !== null;
   const initialChoices = isNew ? opts.initialNewSessionChoices ?? null : null;
+  // The shell re-probes the plan on plan-affecting tool ends; read through a
+  // ref so the (stable) event handler never captures a stale callback.
+  const onPlanActivityRef = useRef(opts.onPlanActivity);
+  onPlanActivityRef.current = opts.onPlanActivity;
 
   const [data, setData] = useState<SessionData | null>(null);
   const [loading, setLoading] = useState(!isNew);
@@ -478,7 +485,13 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [activeLeafId, setActiveLeafId] = useState<string | null>(null);
   const [messages, setMessages] = useState<AgentMessage[]>([]);
   const [activeToolResults, setActiveToolResults] = useState<Map<string, ToolResultMessage>>(new Map());
-  // Running tool calls' clocks, on `performance.now()` (lib/tool-clock.ts).
+  // Live Agent tool calls for the status capsule and the subagent directory;
+  // rebuilt from history on load (deriveSubagentCalls) and updated by the
+  // Agent tool's start/end events.
+  const [subagentCalls, setSubagentCalls] = useState<SubagentCall[]>([]);
+  useEffect(() => {
+    if (isNew) setSubagentCalls([]);
+  }, [isNew]);  // Running tool calls' clocks, on `performance.now()` (lib/tool-clock.ts).
   const [toolClocks, setToolClocks] = useState<ToolClocks>(NO_TOOL_CLOCKS);
   const [entryIds, setEntryIds] = useState<string[]>([]);
   // Entry ids that took over a run's message keys when the file was read again (lib/message-keys.ts).
@@ -897,6 +910,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         && cached.entryIds.length >= (d.context.entryIds ?? []).length,
       );
       const persistedMessages = revisionUnchanged ? messagesRef.current : d.context.messages;
+      setSubagentCalls(deriveSubagentCalls(persistedMessages));
       setData(revisionUnchanged
         ? {
             ...d,
@@ -1051,9 +1065,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         // Older page: prepend so scroll position stays anchored.
         setMessages((prev) => [...d.context.messages, ...prev]);
         setEntryIds((prev) => [...d.context.entryIds, ...prev]);
+        setSubagentCalls((prev) => [...deriveSubagentCalls(d.context.messages), ...prev]);
       } else {
         setMessages(d.context.messages);
         setEntryIds(d.context.entryIds ?? []);
+        setSubagentCalls(deriveSubagentCalls(d.context.messages));
       }
       return d.context;
     } catch (e) {
@@ -2187,6 +2203,19 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         const name = event.toolName as string;
         const startedAt = performance.now();
         setToolClocks((prev) => applyToolClockEvent(prev, event, startedAt));
+        if (name === "Agent") {
+          const args = (event.args ?? {}) as { subagent_type?: unknown; description?: unknown };
+          setSubagentCalls((prev) => [
+            ...prev.filter((c) => c.key !== id),
+            {
+              key: id,
+              type: typeof args.subagent_type === "string" ? args.subagent_type : "agent",
+              description: typeof args.description === "string" ? args.description : "",
+              startedAt: Date.now(),
+              status: "running",
+            },
+          ]);
+        }
         setAgentPhase((prev) => {
           const tools = prev?.kind === "running_tools" ? [...prev.tools] : [];
           if (!tools.some((t) => t.id === id)) tools.push({ id, name });
@@ -2240,6 +2269,31 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         const endedAt = performance.now();
         setToolClocks((prev) => applyToolClockEvent(prev, event, endedAt));
         const result = toolResultFromExecutionEnd(event);
+        // Plan-affecting tool ends re-probe the plan file immediately: the
+        // shell's idle backoff would otherwise delay a freshly saved plan.
+        {
+          const toolName = event.toolName as string | undefined;
+          const path = String((event as { args?: { path?: unknown } }).args?.path ?? "");
+          if (
+            toolName === "plan_save"
+            || ((toolName === "write" || toolName === "edit") && /(^|\/)(\.pi\/)?plans?[-/]|plan\.md|PLAN\.md/i.test(path))
+          ) {
+            onPlanActivityRef.current?.();
+          }
+        }
+        if (event.toolName === "Agent") {
+          const { status, agentId, durationMs, subagentSessionId } = subagentDetailsOf(
+            (event.result as { details?: unknown } | undefined)?.details,
+          );
+          setSubagentCalls((prev) => prev.map((call) => call.key !== id ? call : {
+            ...call,
+            ...(status === "background" ? {} : { endedAt: Date.now() }),
+            status: status ?? ((event as { isError?: boolean }).isError ? "error" : "completed"),
+            ...(agentId ? { agentId } : {}),
+            ...(durationMs !== undefined ? { durationMs } : {}),
+            ...(subagentSessionId ? { subagentSessionId } : {}),
+          }));
+        }
         setActiveToolResults((prev) => {
           if (!result && !prev.has(id)) return prev;
           const next = new Map(prev);
@@ -3773,6 +3827,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     scrollToBottom, scrollUserMsgToTop, scrollToMessage,
     dispatch, setAgentRunning, setForkingEntryId,
     bashRunning, pendingBash,
+    subagentCalls,
     // Subscriptions
     handleAgentEventRef,
   };
@@ -3789,4 +3844,54 @@ export interface SubagentCall {
   agentId?: string;
   durationMs?: number;
   subagentSessionId?: string;
+}
+
+function subagentDetailsOf(raw: unknown): {
+  status?: string;
+  agentId?: string;
+  durationMs?: number;
+  subagentSessionId?: string;
+} {
+  if (raw === null || typeof raw !== "object") return {};
+  const details = raw as { status?: unknown; agentId?: unknown; durationMs?: unknown; subagentSessionId?: unknown };
+  return {
+    ...(typeof details.status === "string" ? { status: details.status } : {}),
+    ...(typeof details.agentId === "string" ? { agentId: details.agentId } : {}),
+    ...(typeof details.durationMs === "number" ? { durationMs: details.durationMs } : {}),
+    ...(typeof details.subagentSessionId === "string" ? { subagentSessionId: details.subagentSessionId } : {}),
+  };
+}
+
+/** Rebuild the call list from loaded session history (page load / reload). */
+function deriveSubagentCalls(messages: AgentMessage[]): SubagentCall[] {
+  const calls = new Map<string, SubagentCall>();
+  for (const message of messages) {
+    if (message.role === "assistant") {
+      for (const block of message.content) {
+        if (block.type !== "toolCall" || block.toolName !== "Agent") continue;
+        const input = block.input as { subagent_type?: unknown; description?: unknown };
+        calls.set(block.toolCallId, {
+          key: block.toolCallId,
+          type: typeof input.subagent_type === "string" ? input.subagent_type : "agent",
+          description: typeof input.description === "string" ? input.description : "",
+          startedAt: message.timestamp ?? Date.now(),
+          status: "running",
+        });
+      }
+    } else if (message.role === "toolResult") {
+      const call = calls.get(message.toolCallId);
+      if (!call) continue;
+      const { status, agentId, durationMs, subagentSessionId } = subagentDetailsOf(message.details);
+      const isBackground = status === "background";
+      calls.set(call.key, {
+        ...call,
+        ...(isBackground ? {} : { endedAt: message.timestamp ?? Date.now() }),
+        status: status ?? (message.isError ? "error" : "completed"),
+        ...(agentId ? { agentId } : {}),
+        ...(durationMs !== undefined ? { durationMs } : {}),
+        ...(subagentSessionId ? { subagentSessionId } : {}),
+      });
+    }
+  }
+  return [...calls.values()];
 }

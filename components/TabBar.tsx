@@ -13,6 +13,8 @@ export interface Tab {
   kind?: "terminal" | "agent" | "side";
   closing?: boolean;
   sourceSessionId?: string | null;
+  /** The remote backend this tab's file lives on (remote sessions only). */
+  remote?: { sessionId: string; label: string } | null;
   initialDisplayMode?: FileViewerDisplayMode;
   /** PDF page requested by the link that opened this tab (`#page=N`). */
   page?: number;

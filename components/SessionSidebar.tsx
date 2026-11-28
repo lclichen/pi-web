@@ -252,14 +252,18 @@ interface Props {
   remoteSessionProp?: { sessionId: string; label: string } | null;
   /** A remote draft that has no session yet: panels wait instead of showing host files. */
   pendingRemoteMode?: "host" | "sandbox" | "local-machine" | "ssh" | "quick" | null;
+  /** Quick sessions have no workspace of their own: hide the whole files section. */
+  hideFileExplorer?: boolean;
   selectedCwd?: string | null;
   onCwdChange?: (
     cwd: string | null,
     projectRoot?: string | null,
     projectKey?: string | null,
   ) => void;
-  onOpenFile?: (filePath: string, fileName: string, options?: { sourceSessionId?: string | null; modeHint?: "diff" }) => void;
+  onOpenFile?: (filePath: string, fileName: string, options?: { sourceSessionId?: string | null; modeHint?: "diff"; remote?: { sessionId: string; label: string } | null }) => void;
   onOpenTerminal?: (cwd: string, remote?: { sessionId: string; label: string } | null) => void;
+  /** Files toolbar → the git panel for this workspace. */
+  onOpenGit?: (cwd: string) => void;
   explorerRefreshKey?: number;
   onExplorerRefresh?: () => void;
   onAtMention?: (relativePath: string, isDir: boolean) => void;
@@ -537,7 +541,7 @@ function buttonAnchor(element: HTMLElement, align: "start" | "end"): SidebarMenu
   return { kind: "rect", rect: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom }, align };
 }
 
-export function SessionSidebar({ selectedSessionId, onSelectSession, onSelectSideChat, onNewSession, controlRef, onNewSessionContextChange, initialSessionId, initialSessionLinked, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, authInfo = null, onManageSandbox, remoteSessionProp = null, pendingRemoteMode = null, selectedCwd: selectedCwdProp, onCwdChange, onOpenFile, onOpenTerminal, explorerRefreshKey, onExplorerRefresh, onAtMention, onAtMentions, onBackgroundTaskDone, hiddenFinishedSessionIds, onRunningSessionIdsChange, onSessionsChange }: Props) {
+export function SessionSidebar({ selectedSessionId, onSelectSession, onSelectSideChat, onNewSession, controlRef, onNewSessionContextChange, initialSessionId, initialSessionLinked, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, authInfo = null, onManageSandbox, remoteSessionProp = null, pendingRemoteMode = null, hideFileExplorer = false, selectedCwd: selectedCwdProp, onCwdChange, onOpenFile, onOpenTerminal, onOpenGit, explorerRefreshKey, onExplorerRefresh, onAtMention, onAtMentions, onBackgroundTaskDone, hiddenFinishedSessionIds, onRunningSessionIdsChange, onSessionsChange }: Props) {
   const { t } = useI18n();
   const isMobile = useIsMobile();
   const remoteSession = remoteSessionProp ?? null;
@@ -615,6 +619,13 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onSelectSid
   const authInfoRef = useRef(authInfo);
   authInfoRef.current = authInfo;
   const [projectsRefreshKey, setProjectsRefreshKey] = useState(0);
+  // A project's configuration changed elsewhere (wizard, config sync, sandbox
+  // binding): the project rows' projection/badge state is read again.
+  useEffect(() => {
+    const onConfigChanged = () => setProjectsRefreshKey((key) => key + 1);
+    window.addEventListener("pi-web:config-changed", onConfigChanged);
+    return () => window.removeEventListener("pi-web:config-changed", onConfigChanged);
+  }, []);
   // The Host space's "open a server directory" pass: the picker registers the
   // folder as an empty Host group and starts a session there.
   const hostDirPickRef = useRef(false);
@@ -663,6 +674,11 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onSelectSid
   const filesPlacement = useFilesPlacement();
   const stacked = !isMobile && filesPlacement === "below";
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>("sessions");
+  // A quick session has no workspace: the files section is gone, so a tab
+  // that was on files falls back to the sessions list.
+  useEffect(() => {
+    if (hideFileExplorer) setSidebarTab("sessions");
+  }, [hideFileExplorer]);
   const [filesCollapsed, setFilesCollapsed] = useState(false);
   const sessionsTabRef = useRef<HTMLButtonElement>(null);
   const filesTabRef = useRef<HTMLButtonElement>(null);
@@ -3086,6 +3102,23 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onSelectSid
       <TerminalIcon size={keyIconSize} />
     </ToolbarIconButton>
   );
+  const gitButton = onOpenGit ? (
+    <ToolbarIconButton
+      onClick={() => {
+        if (explorerCwd) onOpenGit(explorerCwd);
+      }}
+      disabled={!explorerCwd || !!remoteSession}
+      title={remoteSession ? t("sidebar.gitRemoteUnsupported") : t("sidebar.openGit")}
+    >
+      <svg width={keyIconSize} height={keyIconSize} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <circle cx="6" cy="5" r="2" />
+        <circle cx="6" cy="19" r="2" />
+        <circle cx="18" cy="7" r="2" />
+        <path d="M6 7v10" />
+        <path d="M8 5h6a4 4 0 0 1 4 4v0" />
+      </svg>
+    </ToolbarIconButton>
+  ) : null;
   const fileManagerButton = (
     <ToolbarIconButton
       onClick={() => {
@@ -3248,6 +3281,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onSelectSid
               <MessageIcon size={13} className="sidebar-tab-icon" />
               <span className="sidebar-tab-label">{t("sidebar.tabSessions")}</span>
             </button>
+            {!hideFileExplorer && (
             <button
               ref={filesTabRef}
               type="button"
@@ -3265,6 +3299,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onSelectSid
               <span className="sidebar-tab-label">{t("sidebar.tabFiles")}</span>
               {explorerCwd && changesCount > 0 && <span className="sidebar-tab-count" aria-hidden="true">{changesCount}</span>}
             </button>
+            )}
           </div>
         )}
         <span className="sidebar-header-spacer" />
@@ -3579,7 +3614,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onSelectSid
         role={stacked ? "region" : "tabpanel"}
         aria-label={stacked ? t("sidebar.tabFiles") : undefined}
         aria-labelledby={stacked ? undefined : "session-sidebar-tab-files"}
-        hidden={!stacked && sidebarTab !== "files"}
+        hidden={hideFileExplorer || (!stacked && sidebarTab !== "files")}
         className="sidebar-panel sidebar-files-panel"
         onScrollCapture={rememberScroll}
         onTransitionEnd={(event) => { if (event.target === event.currentTarget && event.propertyName === "height") endFilesFold(); }}
@@ -3604,6 +3639,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onSelectSid
               {changedFilesTitle && <span className="sidebar-files-section-count" aria-hidden="true">· {changesCount}</span>}
             </button>
             <div className="sidebar-files-keys" role="group" aria-label={t("sidebar.fileActions")}>
+              {gitButton}
               {terminalButton}
               {fileManagerButton}
               {uploadButton}
@@ -3675,6 +3711,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onSelectSid
                 search is the toolbar row's search button. */}
             {!stacked && explorerCwd && (
               <div className="sidebar-files-actions" role="group" aria-label={t("sidebar.fileActions")}>
+                {gitButton}
                 {onOpenTerminal && terminalButton}
                 {!remoteSession && fileManagerButton}
                 {uploadButton}

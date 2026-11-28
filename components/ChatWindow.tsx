@@ -22,6 +22,10 @@ import { ChatMinimap, useMessageRefs } from "./ChatMinimap";
 import { QuoteSelectionPopover } from "./QuoteSelectionPopover";
 import { ExtensionStatusBar } from "./ExtensionStatusBar";
 import { AnsiText } from "./AnsiText";
+import { ChatStatusWidget, type CapsuleBgTask } from "./ChatStatusWidget";
+import { QuickTemplateBar } from "./QuickTemplateBar";
+import { parseTodoWidgetLine } from "@/lib/extensions/todo-protocol";
+import type { SessionPlan } from "@/hooks/use-session-plan";
 import { useI18n } from "@/hooks/useI18n";
 import { phaseLabel } from "@/lib/chat-phase-label";
 import { useAgentSession, type AgentEndInfo, type NewSessionChoices, type NoticeItem } from "@/hooks/useAgentSession";
@@ -65,7 +69,7 @@ interface Props {
   /** Quick template selection carried by the shell. */
   newSessionTemplateId?: string | null;
   onNewSessionTemplateChange?: (id: string) => void;
-  plan?: unknown;
+  plan?: SessionPlan | null;
   planPanelActive?: boolean;
   quickMode?: boolean;
   remoteSession?: unknown;
@@ -290,7 +294,7 @@ function ProcessDetailsGroup({ messageCount, toolCallCount, durationMs, cost, ca
   );
 }
 
-export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initialScrollPosition, onScrollPositionChange, sessionRunning, readOnly = false, projectTrustBanner, newSessionTemplateId, onNewSessionTemplateChange: _onNewSessionTemplateChange, plan: _plan, planPanelActive: _planPanelActive, quickMode: _quickMode, remoteSession: _remoteSession, terminalPanelActive: _terminalPanelActive, sendCommandRef: _sendCommandRef, onLabStateChange: _onLabStateChange, onOpenAgentsPanel: _onOpenAgentsPanel, onOpenPlanPanel: _onOpenPlanPanel, onAskInNewChat: _onAskInNewChat, onOpenSession: _onOpenSession, onPlanActivity: _onPlanActivity, onSubagentCallsChange: _onSubagentCallsChange, onToggleTerminalPanel: _onToggleTerminalPanel, newSessionCwd, newSessionDraftKey, newSessionMode, newSessionProjectId, embedded, embeddedDensity, embeddedShort, commandAllowlist, newSessionContextBar, initialNewSessionChoices, onNewSessionChoicesChange, onAgentEnd, onSessionEnded, onToolEnd, onAttentionNeeded, onSessionCreated, onSessionForked, panel = false, onSideSession, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onDebugSnapshotReaderChange, onSessionStatsChange, onSessionStatsPanelOpen, onOpenSettings, onContextUsageChange, onOpenFile, onFilesUploaded, onOpenSubagent, quoteSelectionEnabled = false, initialPrompt, onInitialPromptConsumed, soundEnabled = true, onSoundToggle, playDoneSound = () => {}, unlockAudio, holdAudio }: Props) {
+export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initialScrollPosition, onScrollPositionChange, sessionRunning, readOnly = false, projectTrustBanner, newSessionTemplateId, onNewSessionTemplateChange, plan = null, planPanelActive = false, quickMode = false, remoteSession: _remoteSession, terminalPanelActive: _terminalPanelActive, sendCommandRef: _sendCommandRef, onLabStateChange: _onLabStateChange, onOpenAgentsPanel, onOpenPlanPanel, onAskInNewChat: _onAskInNewChat, onOpenSession: _onOpenSession, onPlanActivity, onSubagentCallsChange, onToggleTerminalPanel: _onToggleTerminalPanel, newSessionCwd, newSessionDraftKey, newSessionMode, newSessionProjectId, embedded, embeddedDensity, embeddedShort, commandAllowlist, newSessionContextBar, initialNewSessionChoices, onNewSessionChoicesChange, onAgentEnd, onSessionEnded, onToolEnd, onAttentionNeeded, onSessionCreated, onSessionForked, panel = false, onSideSession, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onDebugSnapshotReaderChange, onSessionStatsChange, onSessionStatsPanelOpen, onOpenSettings, onContextUsageChange, onOpenFile, onFilesUploaded, onOpenSubagent, quoteSelectionEnabled = false, initialPrompt, onInitialPromptConsumed, soundEnabled = true, onSoundToggle, playDoneSound = () => {}, unlockAudio, holdAudio }: Props) {
   const { t } = useI18n();
   const isMobile = useIsMobile();
   const completionNotificationsEnabled = !isHiddenRelation(session?.relation);
@@ -336,6 +340,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
     savedDefaultThinkingLevel,
     agentPhase,
     isNew,
+    subagentCalls,
     editEntryId,
     showScrollToBottom,
     sessionIdRef, scrollContainerRef,
@@ -349,7 +354,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
     handleToolPresetChange, handleThinkingLevelChange, handleSetDefaultModel, handleSetDefaultThinkingLevel, loadSlashCommands, loadAllModels, scrollUserMsgToTop,
     loadContext, activeLeafId, scrollToBottom, scrollToMessage,
   } = useAgentSession({
-    session, sessionRunning, newSessionCwd, newSessionDraftKey, newSessionMode, newSessionProjectId, newSessionTemplateId, commandAllowlist, initialNewSessionChoices, onNewSessionChoicesChange, onAgentEnd: wrappedOnAgentEnd, onSessionEnded, onToolEnd, onAttentionNeeded, onSessionCreated, onSessionForked, onSideSession,
+    session, sessionRunning, newSessionCwd, newSessionDraftKey, newSessionMode, newSessionProjectId, newSessionTemplateId, commandAllowlist, initialNewSessionChoices, onNewSessionChoicesChange, onAgentEnd: wrappedOnAgentEnd, onSessionEnded, onToolEnd, onPlanActivity, onAttentionNeeded, onSessionCreated, onSessionForked, onSideSession,
     modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onSessionStatsPanelOpen,
     onOpenSettings, onDebugSnapshotReaderChange, t,
     deferInitialScroll: Boolean(pendingScrollRestore),
@@ -840,10 +845,54 @@ ${block.text}` : block.text;
     }
     return history.reverse();
   }, [messages]);
+  // Status capsule payloads: the todo and plan-mode extensions publish JSON
+  // widget lines, bg-shell publishes its task list, and the goal is the
+  // session's first user line.
+  const capsuleTodos = useMemo(() => {
+    const widget = extensionWidgets.find((w) => w.key === "todo-list");
+    return widget && widget.lines.length > 0 ? parseTodoWidgetLine(widget.lines[0]) : [];
+  }, [extensionWidgets]);
+  const capsulePlanMode = useMemo<"execute" | "plan" | null>(() => {
+    const widget = extensionWidgets.find((w) => w.key === "plan-mode");
+    if (!widget || widget.lines.length === 0) return null;
+    try {
+      const parsed = JSON.parse(widget.lines[0]) as { mode?: string };
+      return parsed.mode === "plan" ? "plan" : parsed.mode === "execute" ? "execute" : null;
+    } catch {
+      return null;
+    }
+  }, [extensionWidgets]);
+  const capsuleBgTasks = useMemo<CapsuleBgTask[]>(() => {
+    const widget = extensionWidgets.find((w) => w.key === "bg-tasks");
+    if (!widget || widget.lines.length === 0) return [];
+    try {
+      const parsed = JSON.parse(widget.lines[0]) as CapsuleBgTask[];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }, [extensionWidgets]);
+  const capsuleGoal = useMemo(() => {
+    for (const message of messages) {
+      const text = getUserInputText(message);
+      if (!text) continue;
+      const firstLine = text.split("\n", 1)[0]?.trim() ?? "";
+      if (!firstLine) continue;
+      return firstLine.length > 60 ? `${firstLine.slice(0, 60)}…` : firstLine;
+    }
+    return null;
+  }, [messages]);
+  // The floating capsule reports the height it covers so the first message
+  // starts below it (0 while hidden).
+  const [capsuleTopPad, setCapsuleTopPad] = useState(0);
+  // Lift live subagent calls for the shell-side directory panel.
+  useEffect(() => {
+    onSubagentCallsChange?.(subagentCalls);
+  }, [onSubagentCallsChange, subagentCalls]);
+
   const messageRefs = useMessageRefs(turnRefCount);
   const revealHistoryForMinimap = useCallback(() => {
-    setVisibleCount((current) => Math.max(current, messages.length * 2));
-  }, [messages.length]);
+    setVisibleCount((current) => Math.max(current, messages.length * 2));  }, [messages.length]);
 
   const isEmptyNew = isNew && messages.length === 0 && !isStreaming && !sessionBusy;
   useScrollbarVisibility(scrollContainerRef, Boolean(session?.id) || !isEmptyNew);
@@ -1098,6 +1147,24 @@ ${block.text}` : block.text;
         {extensionCustomUi && (
           <ExtensionCustomPanel key={extensionCustomUi.id} request={extensionCustomUi} waitingCount={waitingExtensionCustomUiCount} onInput={sendExtensionCustomInput} />
         )}
+        {!embedded && (
+          <ChatStatusWidget
+            subagentCalls={subagentCalls}
+            onOpenAgents={() => onOpenAgentsPanel?.()}
+            onOpenPlan={() => onOpenPlanPanel?.()}
+            sessionId={session?.id ?? null}
+            cwd={session?.cwd ?? newSessionCwd ?? null}
+            agentRunning={agentRunning}
+            bashRunning={bashRunning}
+            planActive={planPanelActive}
+            plan={plan}
+            todos={capsuleTodos}
+            bgTasks={capsuleBgTasks}
+            goal={capsuleGoal}
+            planMode={capsulePlanMode}
+            onTopReserveChange={setCapsuleTopPad}
+          />
+        )}
         {!isEmptyNew && <>
         <div
           ref={scrollContainerRef}
@@ -1108,7 +1175,7 @@ ${block.text}` : block.text;
           className="scrollbar-subtle min-w-0 flex-1 overflow-x-hidden overflow-y-auto pt-4 [scrollbar-gutter:stable]"
           style={{ visibility: pendingScrollRestore ? "hidden" : undefined }}
         >
-          <div style={{ minWidth: 0, padding: `0 ${CHAT_COLUMN_PADDING}px` }}>
+          <div style={{ minWidth: 0, padding: `${capsuleTopPad}px ${CHAT_COLUMN_PADDING}px 0` }}>
             <div ref={messageContentRef} style={{ width: "100%", minWidth: 0, maxWidth: "var(--chat-content-max-width, 820px)", margin: "0 auto" }}>
             {(() => {
               let lastUserIdx = -1;
@@ -1485,6 +1552,14 @@ ${block.text}` : block.text;
           </div>
         )}
         <div className="relative shrink-0">
+          {quickMode && (
+            <QuickTemplateBar
+              session={session}
+              newSessionTemplateId={newSessionTemplateId}
+              onNewSessionTemplateChange={onNewSessionTemplateChange}
+              disabled={sessionBusy}
+            />
+          )}
           {projectTrustBanner}
           {chatInputElement}
           <ExtensionStatusBar

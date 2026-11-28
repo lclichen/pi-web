@@ -3,12 +3,14 @@
 import { Fragment, memo, useState, useRef, useEffect, useMemo, type CSSProperties, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import { MarkdownBody } from "./MarkdownBody";
+import { MessageFeedback } from "./MessageFeedback";
 import { ImagePreview } from "./ImagePreview";
 import { ThinkingIcon } from "./ThinkingIcon";
 import { copyText } from "@/lib/clipboard";
 import { useI18n } from "@/hooks/useI18n";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { parseCompactionSummary } from "@/lib/compaction-summary";
+import { openPlanPanel } from "@/lib/open-plan-event";
 import { getAssistantErrorMessage, getThinkingPreview, hasAssistantAnswer, isAssistantAborted, isAssistantTruncated, isEmptyThinkingBlock, splitThinkingPieces } from "@/lib/message-display";
 import { stripAnsi } from "@/lib/ansi";
 import { formatTurnDuration } from "@/lib/turn-duration";
@@ -1040,6 +1042,7 @@ function AssistantMessageView({
              <span className="message-action-label">{copied ? t("i18n.copied") : t("i18n.copy")}</span>
           </button>
         )}
+        <MessageFeedback sessionId={sessionId} entryId={entryId} snippet={textContent} visible={hovered && !isStreaming} />
         {time && !isStreaming && (
           <span style={{ fontSize: 10, color: "var(--text-dim)", marginLeft: "auto", whiteSpace: "nowrap" }}>{time}</span>
         )}
@@ -1317,6 +1320,15 @@ function ToolCallBlock({ block, result, notRun, duration, clock, onOpenSubagent,
   const isError = (result?.isError ?? false)
     || (isApplyPatchToolName(block.toolName) && applyPatchResultHasFailures(result?.details));
   const subagent = isSubagentToolDetails(result?.details) ? result.details : null;
+  // exit_plan_mode carries the submitted plan in its result details: preview
+  // it and offer the plan panel (the panel is opened by a window event, so no
+  // callback has to thread through the memoized message tree).
+  const planExit = block.toolName === "exit_plan_mode"
+    && result?.details
+    && typeof (result.details as { planMarkdown?: unknown }).planMarkdown === "string"
+    && (result.details as { planMarkdown: string }).planMarkdown.length > 0
+    ? (result.details as { planMarkdown: string; approved?: boolean; feedback?: string })
+    : null;
   const codemodeCallCount = codemode ? codemode.calls.length + codemode.omitted : 0;
 
   return (
@@ -1390,7 +1402,39 @@ function ToolCallBlock({ block, result, notRun, duration, clock, onOpenSubagent,
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="5" y="7" width="14" height="11" rx="2" /><path d="M9 11h.01M15 11h.01M9 15h6M12 7V4M10 4h4" /></svg>
           </button>
         )}
+        {planExit && (
+          <button
+            type="button"
+            onClick={openPlanPanel}
+            title={t("chat.planCardOpen")}
+            aria-label={t("chat.planCardOpen")}
+            style={{ width: 32, display: "grid", placeItems: "center", border: "none", borderLeft: "1px solid var(--border)", background: "none", color: "var(--text-muted)", cursor: "pointer", flexShrink: 0 }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 4h6a2 2 0 0 1 2 2v14H7V6a2 2 0 0 1 2-2Z" /><path d="M7 20h10" /><path d="M10 8h4" /></svg>
+          </button>
+        )}
       </div>
+
+      {planExit && (
+        <div style={{ borderTop: "1px solid var(--border)", background: "var(--bg)" }}>
+          <div style={{ position: "relative", maxHeight: 220, overflow: "hidden" }}>
+            <div style={{ padding: "8px 12px" }}>
+              <MarkdownBody className="markdown-file-preview">{planExit.planMarkdown}</MarkdownBody>
+            </div>
+            <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 64, background: "linear-gradient(transparent, var(--bg))", pointerEvents: "none" }} />
+          </div>
+          <div style={{ display: "flex", justifyContent: "flex-end", padding: "4px 10px 8px" }}>
+            <button
+              type="button"
+              onClick={openPlanPanel}
+              style={{ display: "flex", alignItems: "center", gap: 5, padding: "4px 10px", fontSize: 11, border: "1px solid var(--border)", borderRadius: 7, background: "transparent", color: "var(--text-muted)", cursor: "pointer" }}
+            >
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 4h6a2 2 0 0 1 2 2v14H7V6a2 2 0 0 1 2-2Z" /><path d="M7 20h10" /><path d="M10 8h4" /></svg>
+              {t("chat.planCardOpen")}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── Expanded: input args (only when no richer view exists); a codemode script in place of its JSON ── */}
       {expanded && (isStreamingInput || !isEditTool || (!result && !notRun && !editPreview)) && !patchFiles && (

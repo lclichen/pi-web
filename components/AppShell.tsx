@@ -20,6 +20,12 @@ import { AgentMiniStrip } from "./AgentMiniStrip";
 import { AgentSessionPanel } from "./AgentSessionPanel";
 import { DebugPanel, DebugPanelBoundary } from "./DebugPanel";
 import { SessionChatPanel } from "./SessionChatPanel";
+import { PlanPanel } from "./PlanPanel";
+import { SubagentDirectoryPanel } from "./SubagentDirectoryPanel";
+import { GitPanel } from "./GitPanel";
+import { PlatformAdminDialog } from "./PlatformAdminDialog";
+import { useSessionPlan } from "@/hooks/use-session-plan";
+import { OPEN_PLAN_PANEL_EVENT } from "@/lib/open-plan-event";
 import { TerminalPanel } from "./TerminalPanel";
 import { WorkspaceTerminal } from "./WorkspaceTerminal";
 import { EnvironmentsMenu } from "./EnvironmentsMenu";
@@ -240,6 +246,26 @@ export function AppShell() {
   const newSessionProjectLabelRef = useRef<string | null>(null);
   newSessionProjectLabelRef.current = newSessionProjectLabel;
   const activeNewSessionDraftKeyRef = useRef<string | null>(null);
+  // The execution mode of what the page shows: the selected session's, or a
+  // fresh draft's. Declared early because file tabs and linked-file opens bind
+  // their remote backend from it.
+  const activeSessionMode = selectedSession?.mode
+    ?? (selectedSession === null && newSessionCwd !== null ? newSessionMode : undefined);
+  // Memoized identity: the explorer/terminal effects key on the object; a fresh
+  // object per render would tear down and recreate the remote PTY.
+  const remoteSessionCtx = useMemo(
+    () => activeSessionMode && activeSessionMode !== "host" && activeSessionMode !== "quick" && selectedSession
+      ? {
+          sessionId: selectedSession.id,
+          label: activeSessionMode === "sandbox"
+            ? translate("app.sandboxContainer")
+            : activeSessionMode === "ssh"
+              ? translate("app.sshRemoteHost")
+              : translate("app.localMachine"),
+        }
+      : null,
+    [activeSessionMode, selectedSession, translate],
+  );
   // The bar above a fresh composer (NewSessionContextBar): the sidebar reports
   // what it shows and carries out its moves, which remount the composer. Its
   // model and reasoning picks, as it last reported them, go along with the
@@ -290,6 +316,7 @@ export function AppShell() {
     user: { id: number; username: string; role: "admin" | "user" } | null;
   } | null>(null);
   const [myWorkspaceOpen, setMyWorkspaceOpen] = useState(false);
+  const [platformAdminOpen, setPlatformAdminOpen] = useState(false);
   const [sandboxManager, setSandboxManager] = useState<
     { projectId?: string; projectName?: string; containerId?: number } | null
   >(null);
@@ -349,6 +376,14 @@ export function AppShell() {
   const desktopSidebarOpenRef = useRef(!initialNavigation.sidebarCollapsed);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
   const [rightPanelExpanded, setRightPanelExpanded] = useState(false);
+  // Session plan + subagent panels: shell-owned overlays opened from the chat
+  // status capsule or an exit_plan_mode card. The plan probe is the single
+  // source shared by the capsule and the panel.
+  const [planActivityTick, setPlanActivityTick] = useState(0);
+  const [planPanelOpen, setPlanPanelOpen] = useState(false);
+  const [agentsPanelOpen, setAgentsPanelOpen] = useState(false);
+  const [gitPanelCwd, setGitPanelCwd] = useState<string | null>(null);
+  const [subagentCalls, setSubagentCalls] = useState<import("@/hooks/useAgentSession").SubagentCall[]>([]);
   const rightPanelFullWidth = rightPanelOpen && rightPanelExpanded && !isMobile;
   useEffect(() => {
     if (!rightPanelOpen || isMobile) setRightPanelExpanded(false);
@@ -1451,11 +1486,12 @@ export function AppShell() {
   const handleOpenFile = useCallback((
     filePath: string,
     fileName: string,
-    options?: { sourceSessionId?: string | null; modeHint?: "diff"; page?: number },
+    options?: { sourceSessionId?: string | null; modeHint?: "diff"; page?: number; remote?: { sessionId: string; label: string } | null },
   ) => {
     const sourceSessionId = options?.sourceSessionId;
     const modeHint = options?.modeHint;
     const page = options?.page;
+    const remote = options?.remote;
     const tabId = `file:${filePath}`;
     setFileTabs((prev) => openFileTab(prev, {
       fileName,
@@ -1463,6 +1499,7 @@ export function AppShell() {
       modeHint,
       page,
       sourceSessionId,
+      remote,
       tabId,
     }));
     setActiveFileTabId(tabId);
@@ -1472,8 +1509,12 @@ export function AppShell() {
   }, [isMobile]);
 
   const handleOpenLinkedFile = useCallback((filePath: string, page?: number) => {
-    handleOpenFile(filePath, getFileName(filePath), { sourceSessionId: selectedSession?.id ?? null, page });
-  }, [handleOpenFile, selectedSession?.id]);
+    handleOpenFile(filePath, getFileName(filePath), {
+      sourceSessionId: selectedSession?.id ?? null,
+      remote: remoteSessionCtx,
+      page,
+    });
+  }, [handleOpenFile, remoteSessionCtx, selectedSession?.id]);
 
   const handleOpenTerminal = useCallback((cwd: string, remote?: { sessionId: string; label: string } | null) => {
     const existing = remote
@@ -1645,28 +1686,25 @@ export function AppShell() {
 
   // Show chat area if a session is selected, or if we have a cwd to start a new session in
   const effectiveNewSessionCwd = newSessionCwd ?? (selectedSession === null && activeCwd ? activeCwd : null);
-  const activeSessionMode = selectedSession?.mode
-    ?? (selectedSession === null && newSessionCwd !== null ? newSessionMode : undefined);
-  // Memoized identity: the explorer/terminal effects key on the object; a fresh
-  // object per render would tear down and recreate the remote PTY.
-  const remoteSessionCtx = useMemo(
-    () => activeSessionMode && activeSessionMode !== "host" && activeSessionMode !== "quick" && selectedSession
-      ? {
-          sessionId: selectedSession.id,
-          label: activeSessionMode === "sandbox"
-            ? translate("app.sandboxContainer")
-            : activeSessionMode === "ssh"
-              ? translate("app.sshRemoteHost")
-              : translate("app.localMachine"),
-        }
-      : null,
-    [activeSessionMode, selectedSession, translate],
-  );
   // A remote draft has no session yet: file/terminal panels must wait instead of
   // falling back to the server's local directory.
   const pendingRemoteMode = selectedSession === null && newSessionCwd !== null && newSessionMode !== "host"
     ? newSessionMode
     : null;
+  // One probe per session, shared by the capsule row and the plan panel.
+  const { plan: sessionPlan } = useSessionPlan({
+    sessionId: selectedSession?.id ?? null,
+    cwd: selectedSession?.cwd ?? (activeSessionMode === "quick" ? undefined : effectiveNewSessionCwd ?? undefined),
+    remote: remoteSessionCtx,
+    reprobeSignal: planActivityTick,
+  });
+  // Tool cards deep in the memoized message tree dispatch a window event
+  // instead of threading a callback through it.
+  useEffect(() => {
+    const open = () => setPlanPanelOpen(true);
+    window.addEventListener(OPEN_PLAN_PANEL_EVENT, open);
+    return () => window.removeEventListener(OPEN_PLAN_PANEL_EVENT, open);
+  }, []);
   const newSessionDraftKey = selectedSession === null && effectiveNewSessionCwd
     ? `new:${newSessionDraftId}:${effectiveNewSessionCwd}`
     : null;
@@ -1830,6 +1868,7 @@ export function AppShell() {
         authInfo={authInfo}
         remoteSessionProp={remoteSessionCtx}
         pendingRemoteMode={pendingRemoteMode}
+        hideFileExplorer={activeSessionMode === "quick"}
         onManageSandbox={(project) => setSandboxManager({
           projectId: project.id,
           projectName: project.name,
@@ -1839,6 +1878,7 @@ export function AppShell() {
         onCwdChange={handleCwdChange}
         onOpenFile={handleOpenFile}
         onOpenTerminal={handleOpenTerminal}
+        onOpenGit={setGitPanelCwd}
         explorerRefreshKey={explorerRefreshKey}
         onExplorerRefresh={handleExplorerRefresh}
         onAtMention={handleAtMention}
@@ -2685,8 +2725,10 @@ export function AppShell() {
           {!isMobile && (
             <EnvironmentsMenu
               signedIn={signedIn}
+              isAdmin={isAdminUser}
               onOpenWorkspace={() => setMyWorkspaceOpen(true)}
               onOpenSandbox={() => setSandboxManager({})}
+              onOpenPlatformAdmin={() => setPlatformAdminOpen(true)}
             />
           )}
           {isMobile && (
@@ -3075,6 +3117,19 @@ export function AppShell() {
               newSessionProjectId={newSessionProjectId}
               newSessionMode={newSessionMode}
               newSessionTemplateId={newSessionTemplateId}
+              onNewSessionTemplateChange={(id) => {
+                setNewSessionTemplateId(id);
+                // A template switch is a workspace switch: resolve the new
+                // template's directory and move the draft composer there.
+                void fetch(`/api/quick-workspace/${encodeURIComponent(id)}`)
+                  .then((res) => (res.ok ? (res.json() as Promise<{ cwd?: string }>) : null))
+                  .then((data) => {
+                    if (data?.cwd) setNewSessionCwd(data.cwd);
+                  })
+                  .catch(() => {
+                    // Resolve failure keeps the current workspace.
+                  });
+              }}
               newSessionContextBar={newSessionContextBar}
               initialNewSessionChoices={selectedSession === null ? carriedNewSessionChoices : null}
               onNewSessionChoicesChange={handleNewSessionChoicesChange}
@@ -3099,6 +3154,13 @@ export function AppShell() {
               onOpenFile={handleOpenLinkedFile}
               onFilesUploaded={handleExplorerRefresh}
               onOpenSubagent={handleOpenSubagentTab}
+              quickMode={activeSessionMode === "quick"}
+              plan={sessionPlan}
+              planPanelActive={planPanelOpen}
+              onOpenPlanPanel={() => setPlanPanelOpen(true)}
+              onOpenAgentsPanel={() => setAgentsPanelOpen(true)}
+              onPlanActivity={() => setPlanActivityTick((n) => n + 1)}
+              onSubagentCallsChange={setSubagentCalls}
               quoteSelectionEnabled={quoteSelectionEnabled}
               soundEnabled={soundEnabled}
               onSoundToggle={onSoundToggle}
@@ -3242,7 +3304,7 @@ export function AppShell() {
               key={`${fileWorkspaceGeneration}:${activeFileTab.id}:${activeFileTab.viewerRevision ?? 0}`}
               filePath={activeFileTab.filePath}
               cwd={activeCwd ?? undefined}
-              remote={remoteSessionCtx}
+              remote={activeFileTab.remote ?? null}
               sourceSessionId={activeFileTab.sourceSessionId}
               gitRefreshKey={explorerRefreshKey}
               initialDisplayMode={activeFileTab.initialDisplayMode}
@@ -3322,6 +3384,71 @@ export function AppShell() {
         </div>
       </div>
     </div>
+    {planPanelOpen && (
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={translate("chat.planPanelTitle")}
+        onClick={() => setPlanPanelOpen(false)}
+        style={{ position: "fixed", inset: 0, zIndex: 120, display: "flex", justifyContent: "flex-end", background: "rgba(0,0,0,0.32)" }}
+      >
+        <div
+          onClick={(event) => event.stopPropagation()}
+          style={{ display: "flex", flexDirection: "column", width: "min(560px, 100vw)", height: "100%", minWidth: 0, background: "var(--bg)", borderLeft: "1px solid var(--border)" }}
+        >
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "10px 14px", borderBottom: "1px solid var(--border)" }}>
+            <strong style={{ fontSize: 13 }}>{translate("chat.planPanelTitle")}</strong>
+            <button type="button" onClick={() => setPlanPanelOpen(false)} title={translate("chat.close")} aria-label={translate("chat.close")} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 18, lineHeight: 1 }}>×</button>
+          </div>
+          <div style={{ flex: 1, minHeight: 0 }}>
+            <PlanPanel plan={sessionPlan} sessionId={selectedSession?.id ?? null} />
+          </div>
+        </div>
+      </div>
+    )}
+    {agentsPanelOpen && (
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={translate("chat.agentsPanelTitle")}
+        onClick={() => setAgentsPanelOpen(false)}
+        style={{ position: "fixed", inset: 0, zIndex: 120, display: "flex", justifyContent: "flex-end", background: "rgba(0,0,0,0.32)" }}
+      >
+        <div
+          onClick={(event) => event.stopPropagation()}
+          style={{ display: "flex", flexDirection: "column", width: "min(560px, 100vw)", height: "100%", minWidth: 0, background: "var(--bg)", borderLeft: "1px solid var(--border)" }}
+        >
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "10px 14px", borderBottom: "1px solid var(--border)" }}>
+            <strong style={{ fontSize: 13 }}>{translate("chat.agentsPanelTitle")}</strong>
+            <button type="button" onClick={() => setAgentsPanelOpen(false)} title={translate("chat.close")} aria-label={translate("chat.close")} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 18, lineHeight: 1 }}>×</button>
+          </div>
+          <div style={{ flex: 1, minHeight: 0 }}>
+            <SubagentDirectoryPanel sessionId={selectedSession?.id ?? null} subagentCalls={subagentCalls} />
+          </div>
+        </div>
+      </div>
+    )}
+    {gitPanelCwd && (
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={translate("sidebar.openGit")}
+        onClick={() => setGitPanelCwd(null)}
+        style={{ position: "fixed", inset: 0, zIndex: 120, display: "flex", justifyContent: "flex-end", background: "rgba(0,0,0,0.32)" }}
+      >
+        <div
+          onClick={(event) => event.stopPropagation()}
+          style={{ display: "flex", flexDirection: "column", width: "min(720px, 100vw)", height: "100%", minWidth: 0, background: "var(--bg)", borderLeft: "1px solid var(--border)" }}
+        >
+          <GitPanel
+            cwd={gitPanelCwd}
+            sessionId={selectedSession?.id ?? null}
+            refreshKey={explorerRefreshKey}
+            onClose={() => setGitPanelCwd(null)}
+          />
+        </div>
+      </div>
+    )}
     {settingsSection && (
       <SettingsPanel
         cwd={projectTrustCwd}
@@ -3353,6 +3480,7 @@ export function AppShell() {
         onStatus={setProjectTrust}
       />
     )}
+    {platformAdminOpen && <PlatformAdminDialog open={platformAdminOpen} onClose={() => setPlatformAdminOpen(false)} />}
     {myWorkspaceOpen && <MyWorkspaceDialog onClose={() => setMyWorkspaceOpen(false)} />}
     {sandboxManager && (
       <SandboxManagerDialog
@@ -3364,7 +3492,11 @@ export function AppShell() {
             }
           : null}
         onClose={() => setSandboxManager(null)}
-        onChanged={() => setRefreshKey((key) => key + 1)}
+        onChanged={() => {
+          setRefreshKey((key) => key + 1);
+          // The bound project's row state and the session list both change.
+          window.dispatchEvent(new Event("pi-web:config-changed"));
+        }}
       />
     )}
     <WebUIGuide

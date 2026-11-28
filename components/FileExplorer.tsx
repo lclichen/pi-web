@@ -504,7 +504,7 @@ export function TreeNode({
       onToggleExpanded(node.fullPath, next);
       if (next && !loaded && !pendingLinkTarget) loadChildren();
     } else {
-      onOpenFile(node.fullPath, node.name);
+      onOpenFile(node.fullPath, node.name, remote ? { sourceSessionId: remote.sessionId, remote } : undefined);
     }
   }, [node.isDir, node.fullPath, node.name, loaded, open, pendingLinkTarget, loadChildren, onOpenFile, onToggleExpanded, remote]);
 
@@ -941,7 +941,7 @@ export function TreeNode({
   );
 }
 
-type OpenFileOptions = { sourceSessionId?: string | null; modeHint?: "diff" };
+type OpenFileOptions = { sourceSessionId?: string | null; modeHint?: "diff"; remote?: { sessionId: string; label: string } | null };
 
 type OpenFileHandler = (filePath: string, fileName: string, options?: OpenFileOptions) => void;
 

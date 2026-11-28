@@ -13,13 +13,18 @@ import { LocalMachinesDialog } from "./relay/ConnectLocalMachine";
  */
 export function EnvironmentsMenu({
   signedIn,
+  isAdmin = false,
   onOpenWorkspace,
   onOpenSandbox,
+  onOpenPlatformAdmin,
 }: {
   /** 工作区/沙箱容器条目需要登录态（与原顶栏按钮的 webUser 门控一致）。 */
   signedIn: boolean;
+  /** The platform admin console is an admin-only entry. */
+  isAdmin?: boolean;
   onOpenWorkspace: () => void;
   onOpenSandbox: () => void;
+  onOpenPlatformAdmin?: () => void;
 }) {
   const { t } = useI18n();
   const { online, ready, machines } = useRelayAgent();
@@ -179,6 +184,35 @@ export function EnvironmentsMenu({
               );
             },
           } as const,
+          ...(isAdmin && onOpenPlatformAdmin
+            ? [
+                {
+                  key: "platform-admin",
+                  title: t("app.platformAdmin"),
+                  desc: t("app.platformAdminDesc"),
+                  icon: (
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z" />
+                      <path d="m9 12 2 2 4-4" />
+                    </svg>
+                  ),
+                  onSelect: () => {
+                    setMenuOpen(false);
+                    onOpenPlatformAdmin();
+                  },
+                } as const,
+              ]
+            : []),
         ]
       : []),
   ];

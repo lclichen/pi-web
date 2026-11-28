@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
+import path from "node:path";
 import { detectFileLanguage } from "@/lib/file-language";
+import { DOCX_PREVIEW_MAX_BYTES, getFileExt } from "@/lib/file-types";
+import { DOCX_PREVIEW_HEADERS, wrapDocxPreviewHtml } from "@/lib/docx-preview";
 import { remoteBytesResponse, shouldServeRemoteBytes } from "@/lib/remote-file-response";
 import {
   hostAttachmentsDir,
@@ -70,6 +73,25 @@ export async function GET(req: Request, ctx: { params: Promise<{ path: string[] 
       if (!query) return NextResponse.json({ matches: [] });
       const matches = await remoteFind(remote.ctx, filePath, query);
       return NextResponse.json({ matches });
+    }
+    if (type === "preview") {
+      // DOCX preview: read the bytes from the remote backend and render the
+      // same self-contained HTML the local /api/files preview serves.
+      if (getFileExt(filePath) !== "docx") {
+        return NextResponse.json({ error: "Preview not available for this file type" }, { status: 400 });
+      }
+      const { bytes } = await remoteReadBinary(remote.ctx, filePath);
+      if (bytes.length > DOCX_PREVIEW_MAX_BYTES) {
+        return NextResponse.json({ error: "DOCX too large for preview (>10MB)" }, { status: 413 });
+      }
+      const mammoth = await import("mammoth");
+      const result = await mammoth.convertToHtml(
+        { buffer: bytes },
+        { externalFileAccess: false, convertImage: mammoth.images.dataUri },
+      );
+      return new Response(wrapDocxPreviewHtml(result.value, path.basename(filePath)), {
+        headers: DOCX_PREVIEW_HEADERS,
+      });
     }
     if (type === "read" || type === "download") {
       // Downloads must always be raw bytes: the JSON text read decodes UTF-8

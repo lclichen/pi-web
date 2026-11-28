@@ -36,6 +36,7 @@ interface OpenFileTabInput {
   modeHint?: "diff";
   page?: number;
   sourceSessionId?: string | null;
+  remote?: { sessionId: string; label: string } | null;
   tabId: string;
 }
 
@@ -47,6 +48,7 @@ export function openFileTab(tabs: Tab[], input: OpenFileTabInput): Tab[] {
       label: input.fileName,
       filePath: input.filePath,
       sourceSessionId: input.sourceSessionId,
+      remote: input.remote ?? null,
       initialDisplayMode: input.modeHint,
       page: input.page,
       viewerState: input.modeHint ? {
@@ -62,8 +64,9 @@ export function openFileTab(tabs: Tab[], input: OpenFileTabInput): Tab[] {
     input.sourceSessionId && existing.sourceSessionId !== input.sourceSessionId,
   );
   const sourceUnchanged = !sourceChanged;
+  const remoteChanged = (input.remote?.sessionId ?? null) !== (existing.remote?.sessionId ?? null);
   const pageChanged = existing.page !== input.page;
-  if (sourceUnchanged && !input.modeHint && !pageChanged) return tabs;
+  if (sourceUnchanged && !remoteChanged && !input.modeHint && !pageChanged) return tabs;
 
   return tabs.map((tab) => {
     if (tab.id !== input.tabId) return tab;
@@ -71,6 +74,10 @@ export function openFileTab(tabs: Tab[], input: OpenFileTabInput): Tab[] {
     let bumpRevision = false;
     if (sourceChanged) {
       next.sourceSessionId = input.sourceSessionId;
+      bumpRevision = true;
+    }
+    if (remoteChanged) {
+      next.remote = input.remote ?? null;
       bumpRevision = true;
     }
     if (pageChanged) {

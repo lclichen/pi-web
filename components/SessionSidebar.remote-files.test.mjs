@@ -39,7 +39,12 @@ test("the terminal opens on the session's remote backend", () => {
 });
 
 test("files opened from the remote explorer load through the remote viewer", async () => {
-  assert.match(shell, /remote=\{remoteSessionCtx\}/);
+  // A file tab keeps the backend it was opened on, even after the page moves
+  // to another session (a local one would otherwise read the remote path here).
+  const tabs = await readFile(new URL("./file-tab-state.ts", import.meta.url), "utf8");
+  assert.match(tabs, /remote\?: \{ sessionId: string; label: string \} \| null/);
+  assert.match(tabs, /remote: input\.remote \?\? null/);
+  assert.match(shell, /remote=\{activeFileTab\.remote \?\? null\}/);
   const viewer = await readFile(new URL("./FileViewer.tsx", import.meta.url), "utf8");
   assert.match(viewer, /remote = null,\s*onOpenFile,/);
   // Text, image, audio, video and document viewers all forward the context.

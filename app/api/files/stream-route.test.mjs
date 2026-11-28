@@ -4,7 +4,7 @@ import test from "node:test";
 
 const source = await readFile(new URL("./[...path]/route.ts", import.meta.url), "utf8");
 const start = source.indexOf("function streamFile");
-const end = source.indexOf("function escapeHtml", start);
+const end = source.indexOf("export async function GET", start);
 assert.notEqual(start, -1, "streamFile not found");
 assert.notEqual(end, -1, "streamFile end not found");
 const streamBlock = source.slice(start, end);

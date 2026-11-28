@@ -241,7 +241,7 @@ async function sshClientFor(ctx: RemoteSessionContext) {
 
 interface SftpListEntry {
   filename: string;
-  attrs: { isDirectory(): boolean; size: number };
+  attrs: { isDirectory(): boolean; size: number; mtime?: number };
 }
 
 async function sshRun(ctx: RemoteSessionContext, command: string): Promise<void> {
@@ -349,7 +349,12 @@ export async function remoteList(ctx: RemoteSessionContext, path: string): Promi
         s.readdir(sshPath(ctx, path), (e, l) => (e ? reject(e) : resolve(l))),
       ),
     );
-    return list.map((e) => ({ name: e.filename, isDir: e.attrs.isDirectory(), size: e.attrs.size, modified: "" }));
+    return list.map((e) => ({
+      name: e.filename,
+      isDir: e.attrs.isDirectory(),
+      size: e.attrs.size,
+      modified: e.attrs.mtime ? new Date(e.attrs.mtime * 1000).toISOString() : "",
+    }));
   }
   if (ctx.mode === "local-machine") {
     const scope = localScope(ctx);

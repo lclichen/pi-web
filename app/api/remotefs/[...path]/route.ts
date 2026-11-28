@@ -27,7 +27,7 @@ export const dynamic = "force-dynamic";
 // Mode-scoped file API for sandbox / local-machine sessions — the same verbs
 // the local /api/files route serves (list/read/put/delete/patch), executed on
 // the session's remote backend (platform container or the user's relay).
-// Query: ?src=<sessionId>&type=... — watch is unsupported (501).
+// Query: ?src=<sessionId>&type=... — watch is a polled SSE stream.
 
 function filePathFromSegments(segments: string[]): string {
   const joined = segments.map(decodeURIComponent).join("/");
@@ -62,7 +62,78 @@ export async function GET(req: Request, ctx: { params: Promise<{ path: string[] 
 
   try {
     if (type === "watch") {
-      return NextResponse.json({ error: "远程会话暂不支持文件监听" }, { status: 501 });
+      // Remote backends have no filesystem watcher in this process: poll the
+      // parent listing for the size/mtime pair the viewer's change event
+      // carries. One round trip every few seconds per open remote file.
+      const directory = path.dirname(filePath);
+      const fileName = path.basename(filePath);
+      const encoder = new TextEncoder();
+      let timer: ReturnType<typeof setInterval> | null = null;
+      let heartbeat: ReturnType<typeof setInterval> | null = null;
+      let closed = false;
+      let lastSignature: string | null = null;
+      const stream = new ReadableStream({
+        start(controller) {
+          const send = (event: string, data: Record<string, unknown>) => {
+            if (closed) return;
+            try {
+              controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+            } catch {
+              close();
+            }
+          };
+          const poll = async () => {
+            if (closed) return;
+            try {
+              const entries = await remoteList(remote.ctx, directory);
+              if (closed) return;
+              const entry = entries.find((candidate) => candidate.name === fileName);
+              const signature = entry ? `${entry.size}:${entry.modified}` : "missing";
+              if (lastSignature === null) {
+                lastSignature = signature;
+                send("connected", { size: entry?.size ?? 0, mtime: entry?.modified ?? "" });
+              } else if (signature !== lastSignature) {
+                lastSignature = signature;
+                send("change", { size: entry?.size ?? 0, mtime: entry?.modified ?? "" });
+              }
+            } catch {
+              // Transient backend errors: the next poll retries.
+            }
+          };
+          const close = () => {
+            if (closed) return;
+            closed = true;
+            if (timer) clearInterval(timer);
+            if (heartbeat) clearInterval(heartbeat);
+            timer = null;
+            heartbeat = null;
+            try {
+              controller.close();
+            } catch {
+              // Already closed.
+            }
+          };
+          void poll();
+          timer = setInterval(() => void poll(), 3_000);
+          heartbeat = setInterval(() => send("ping", {}), 15_000);
+          req.signal.addEventListener("abort", close, { once: true });
+        },
+        cancel() {
+          closed = true;
+          if (timer) clearInterval(timer);
+          if (heartbeat) clearInterval(heartbeat);
+          timer = null;
+          heartbeat = null;
+        },
+      });
+      return new Response(stream, {
+        headers: {
+          "Content-Type": "text/event-stream; charset=utf-8",
+          "Cache-Control": "no-cache, no-transform",
+          Connection: "keep-alive",
+          "X-Accel-Buffering": "no",
+        },
+      });
     }
     if (type === "list") {
       const entries = await remoteList(remote.ctx, filePath);

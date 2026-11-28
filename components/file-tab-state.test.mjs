@@ -156,3 +156,35 @@ test("opening a PDF without a page fragment clears a previous jump", () => {
   assert.equal(next.page, undefined);
   assert.equal(next.viewerRevision, 1);
 });
+
+test("a file tab remembers the remote backend it was opened on", () => {
+  const remote = { sessionId: "session-remote", label: "Sandbox" };
+  const [next] = openFileTab([], { ...openA, sourceSessionId: "session-remote", remote });
+  assert.deepEqual(next.remote, remote);
+  assert.equal(next.sourceSessionId, "session-remote");
+
+  // The same remote file, same backend: no remount.
+  const tabs = [next];
+  assert.strictEqual(openFileTab(tabs, { ...openA, sourceSessionId: "session-remote", remote }), tabs);
+});
+
+test("switching a tab between remote and local remounts the viewer", () => {
+  const remote = { sessionId: "session-remote", label: "Sandbox" };
+  const [onRemote] = openFileTab([], { ...openA, remote });
+  const [onLocal] = openFileTab([onRemote], openA);
+  assert.equal(onLocal.remote, null);
+  assert.equal(onLocal.viewerRevision, 1);
+
+  const [backOnRemote] = openFileTab([onLocal], { ...openA, remote });
+  assert.deepEqual(backOnRemote.remote, remote);
+  assert.equal(backOnRemote.viewerRevision, 2);
+});
+
+test("opening the same file on another remote backend swaps the context", () => {
+  const first = { sessionId: "session-a", label: "A" };
+  const second = { sessionId: "session-b", label: "B" };
+  const [tab] = openFileTab([], { ...openA, remote: first });
+  const [next] = openFileTab([tab], { ...openA, remote: second });
+  assert.deepEqual(next.remote, second);
+  assert.equal(next.viewerRevision, 1);
+});

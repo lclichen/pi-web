@@ -67,6 +67,7 @@
 | [feedback-api.md](./feedback-api.md) | 参考 | 消息反馈 API |
 | [otlp-tracing.md](./otlp-tracing.md) | 参考 | OpenTelemetry/OTLP 链路追踪 |
 | [agent-environment-dependencies.md](./agent-environment-dependencies.md) | 方案 | 依赖随包/离线的设计建议（部分未实现） |
+| [ui-consistency-task-plan.md](./ui-consistency-task-plan.md) | 计划 | dev-1.6.0 恢复功能的 UI 一致性任务（交给 UI Agent） |
 
 ## 5. 测试与质量
 
